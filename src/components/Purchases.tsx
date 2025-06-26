@@ -1,12 +1,62 @@
 'use client';
 
-import { useState } from 'react';
-import { ChevronDown, Edit, MoreHorizontal, ExternalLink } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { ChevronDown, Edit, MoreHorizontal, ExternalLink, Camera } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
+import ScanPackageModal from './ScanPackageModal';
 
 const Purchases = () => {
   const [sortBy, setSortBy] = useState('Purchase Date');
+  const [showScanModal, setShowScanModal] = useState(false);
   const { currentTheme } = useTheme();
+  
+  // Column width state
+  const [columnWidths, setColumnWidths] = useState({
+    product: 300,
+    orderNumber: 150,
+    status: 120,
+    tracking: 150,
+    market: 100,
+    price: 130,
+    purchaseDate: 120,
+    dateAdded: 120,
+    verified: 80,
+    edit: 80
+  });
+  
+  const [isResizing, setIsResizing] = useState(false);
+  const [resizingColumn, setResizingColumn] = useState<string | null>(null);
+  const tableRef = useRef<HTMLTableElement>(null);
+  
+  // Handle mouse down on resize handle
+  const handleMouseDown = (e: React.MouseEvent, columnKey: string) => {
+    e.preventDefault();
+    setIsResizing(true);
+    setResizingColumn(columnKey);
+    
+    const startX = e.clientX;
+    const startWidth = columnWidths[columnKey as keyof typeof columnWidths];
+    
+    const handleMouseMove = (e: MouseEvent) => {
+      const diff = e.clientX - startX;
+      const newWidth = Math.max(60, startWidth + diff); // Minimum width of 60px
+      
+      setColumnWidths(prev => ({
+        ...prev,
+        [columnKey]: newWidth
+      }));
+    };
+    
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      setResizingColumn(null);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
 
   const purchases = [
     {
@@ -206,13 +256,28 @@ const Purchases = () => {
     return `w-2 h-2 rounded-full ${colorClasses[color as keyof typeof colorClasses]}`;
   };
 
+  const handleScanComplete = (trackingNumber: string) => {
+    console.log('Scanned tracking number:', trackingNumber);
+    // TODO: Update purchase status to "Delivered" based on tracking number
+    // This would typically involve finding the purchase and updating its status
+  };
+
   return (
     <div className={`flex-1 ${currentTheme.colors.background} p-8`}>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Purchases</h1>
-          <p className="text-gray-600 mt-1">Showing 468 of 468 purchases</p>
+        <div className="flex items-center space-x-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Purchases</h1>
+            <p className="text-gray-600 mt-1">Showing 468 of 468 purchases</p>
+          </div>
+          <button
+            onClick={() => setShowScanModal(true)}
+            className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+          >
+            <Camera className="w-5 h-5" />
+            <span>Scan Package</span>
+          </button>
         </div>
         <div className="text-right">
           <p className="text-gray-600">Total value:</p>
@@ -223,50 +288,90 @@ const Purchases = () => {
       {/* Table */}
       <div className={`${currentTheme.colors.cardBackground} rounded-lg shadow-sm border border-gray-200 overflow-hidden`}>
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table ref={tableRef} className="w-full" style={{ tableLayout: 'fixed' }}>
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr className="h-10">
-                <th className="px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="relative px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.product}px` }}>
                   Product
+                  <div 
+                    className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-300 opacity-0 hover:opacity-100 transition-opacity"
+                    onMouseDown={(e) => handleMouseDown(e, 'product')}
+                  />
                 </th>
-                <th className="px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="relative px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.orderNumber}px` }}>
                   Order #
+                  <div 
+                    className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-300 opacity-0 hover:opacity-100 transition-opacity"
+                    onMouseDown={(e) => handleMouseDown(e, 'orderNumber')}
+                  />
                 </th>
-                <th className="px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="relative px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.status}px` }}>
                   Status / Delivery
+                  <div 
+                    className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-300 opacity-0 hover:opacity-100 transition-opacity"
+                    onMouseDown={(e) => handleMouseDown(e, 'status')}
+                  />
                 </th>
-                <th className="px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="relative px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.tracking}px` }}>
                   Tracking
+                  <div 
+                    className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-300 opacity-0 hover:opacity-100 transition-opacity"
+                    onMouseDown={(e) => handleMouseDown(e, 'tracking')}
+                  />
                 </th>
-                <th className="px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="relative px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.market}px` }}>
                   Market
+                  <div 
+                    className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-300 opacity-0 hover:opacity-100 transition-opacity"
+                    onMouseDown={(e) => handleMouseDown(e, 'market')}
+                  />
                 </th>
-                <th className="px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="relative px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.price}px` }}>
                   Price
+                  <div 
+                    className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-300 opacity-0 hover:opacity-100 transition-opacity"
+                    onMouseDown={(e) => handleMouseDown(e, 'price')}
+                  />
                 </th>
-                <th className="px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
+                <th className="relative px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" style={{ width: `${columnWidths.purchaseDate}px` }}>
                   <div className="flex items-center h-10">
                     Purchase Date
                     <ChevronDown className="w-4 h-4 ml-1" />
                   </div>
+                  <div 
+                    className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-300 opacity-0 hover:opacity-100 transition-opacity"
+                    onMouseDown={(e) => handleMouseDown(e, 'purchaseDate')}
+                  />
                 </th>
-                <th className="px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="relative px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.dateAdded}px` }}>
                   Date Added
+                  <div 
+                    className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-300 opacity-0 hover:opacity-100 transition-opacity"
+                    onMouseDown={(e) => handleMouseDown(e, 'dateAdded')}
+                  />
                 </th>
-                <th className="px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="relative px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.verified}px` }}>
                   Verified
+                  <div 
+                    className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-300 opacity-0 hover:opacity-100 transition-opacity"
+                    onMouseDown={(e) => handleMouseDown(e, 'verified')}
+                  />
                 </th>
-                <th className="px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="relative px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.edit}px` }}>
                   Edit
+                  <div 
+                    className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-300 opacity-0 hover:opacity-100 transition-opacity"
+                    onMouseDown={(e) => handleMouseDown(e, 'edit')}
+                  />
                 </th>
               </tr>
             </thead>
             <tbody className={`${currentTheme.colors.cardBackground} divide-y divide-gray-100`}>
               {purchases.map((purchase) => (
-                <tr key={purchase.id} className="hover:bg-gray-50 transition-colors h-12">
-                  <td className="px-6 py-0">
-                    <div className="flex items-center h-12">
-                      <div className={`w-8 h-8 rounded-lg mr-3 flex-shrink-0 overflow-hidden ${purchase.product.bgColor} flex items-center justify-center shadow-sm`}>
+                <tr key={purchase.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-6 py-2">
+                    <div className="flex items-start gap-3 min-h-12">
+                      <div className={`w-8 h-8 rounded-lg flex-shrink-0 overflow-hidden ${purchase.product.bgColor} flex items-center justify-center shadow-sm mt-1`}>
                         <img 
                           src={purchase.product.image} 
                           alt={purchase.product.name}
@@ -283,17 +388,17 @@ const Purchases = () => {
                           }}
                         />
                       </div>
-                      <div className="min-w-0 flex-1 overflow-hidden">
-                        <div className="text-sm font-medium text-gray-900 truncate">
+                      <div className="flex-1">
+                        <div className="text-sm font-medium text-gray-900 leading-tight" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
                           {purchase.product.name}
                         </div>
-                        <div className="text-xs text-gray-500 truncate">
+                        <div className="text-xs text-gray-500" style={{ wordBreak: 'break-word' }}>
                           {purchase.product.brand} • {purchase.product.size}
                         </div>
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-0 h-12 align-middle">
+                  <td className="px-6 py-2 align-middle">
                     <a 
                       href={`https://mail.google.com/mail/u/0/#search/"${encodeURIComponent(purchase.orderNumber)}"`}
                       target="_blank"
@@ -303,37 +408,35 @@ const Purchases = () => {
                       {purchase.orderNumber}
                     </a>
                   </td>
-                  <td className="px-6 py-0 h-12 align-middle">
+                  <td className="px-6 py-2 align-middle">
                     <span className={getStatusBadge(purchase.status, purchase.statusColor)}>
                       {purchase.status}
                     </span>
                   </td>
-                  <td className="px-6 py-0 h-12 align-middle">
+                  <td className="px-6 py-2 align-middle">
                     <a href="#" className={`${currentTheme.colors.accent} ${currentTheme.colors.primaryHover.replace('hover:bg-', 'hover:')} text-sm hover:underline`}>
                       {purchase.tracking}
                     </a>
                   </td>
-                  <td className="px-6 py-0 h-12 align-middle text-sm text-gray-900 font-medium">
+                  <td className="px-6 py-2 align-middle text-sm text-gray-900 font-medium">
                     {purchase.market}
                   </td>
-                  <td className="px-6 py-0 h-12 align-middle">
-                    <div className="text-sm font-semibold text-gray-900">
-                      {purchase.price}
-                      <span className="text-xs text-gray-500 font-normal ml-1">({purchase.originalPrice})</span>
-                    </div>
+                  <td className="px-6 py-2 align-middle">
+                    <div className="text-sm font-semibold text-gray-900">{purchase.price}</div>
+                    <div className="text-xs text-gray-500">({purchase.originalPrice})</div>
                   </td>
-                  <td className="px-6 py-0 h-12 align-middle text-sm text-gray-900 font-medium">
+                  <td className="px-6 py-2 align-middle text-sm text-gray-900 font-medium">
                     {purchase.purchaseDate}
                   </td>
-                  <td className="px-6 py-0 h-12 align-middle">
+                  <td className="px-6 py-2 align-middle">
                     <div className="text-sm text-gray-900 whitespace-nowrap">
                       {purchase.dateAdded.replace('\n', ' ')}
                     </div>
                   </td>
-                  <td className="px-6 py-0 h-12 align-middle">
+                  <td className="px-6 py-2 align-middle">
                     <div className={getVerifiedIndicator(purchase.verified, purchase.verifiedColor)}></div>
                   </td>
-                  <td className="px-6 py-0 h-12 align-middle">
+                  <td className="px-6 py-2 align-middle">
                     <div className="flex items-center space-x-1">
                       <button className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors">
                         <Edit className="w-4 h-4" />
@@ -349,6 +452,13 @@ const Purchases = () => {
           </table>
         </div>
       </div>
+
+      {/* Scan Package Modal */}
+      <ScanPackageModal
+        isOpen={showScanModal}
+        onClose={() => setShowScanModal(false)}
+        onScanComplete={handleScanComplete}
+      />
     </div>
   );
 };

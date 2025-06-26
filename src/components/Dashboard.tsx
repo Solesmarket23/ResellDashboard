@@ -1,14 +1,21 @@
 'use client';
 
-import { useState } from 'react';
-import { DollarSign, TrendingUp, Package, ShoppingCart, BarChart3, Calculator } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { DollarSign, TrendingUp, Package, ShoppingCart, BarChart3, Calculator, Calendar, X, Palette } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
+import DatePicker from './DatePicker';
 
 const Dashboard = () => {
-  const { currentTheme } = useTheme();
+  const { currentTheme, setTheme, themes } = useTheme();
   const [activeTimePeriod, setActiveTimePeriod] = useState('This Month');
+  const [showThemeSelector, setShowThemeSelector] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [customRangeLabel, setCustomRangeLabel] = useState('Custom Range');
+  const [showBackground, setShowBackground] = useState(true);
   
-  const timePeriods = ['This Month', 'Last Month', 'This Year'];
+  const timePeriods = ['Today', 'Yesterday', 'This Month', 'This Year', 'Custom Range'];
   
   // Calculate realistic profits based on actual sales data
   const dailyProfitData = [
@@ -35,6 +42,50 @@ const Dashboard = () => {
   }, dailyProfitData[0]);
   
   const bestFlipPercent = Math.round(((bestFlipData.salePrice - bestFlipData.fees - bestFlipData.purchasePrice) / bestFlipData.purchasePrice) * 100);
+
+  // Handle time period selection
+  const handleTimePeriodChange = (period: string) => {
+    if (period === 'Custom Range') {
+      setShowDatePicker(true);
+    } else {
+      setActiveTimePeriod(period);
+      setShowDatePicker(false);
+    }
+  };
+
+  // Handle custom date range selection
+  const handleCustomDateRange = () => {
+    if (startDate && endDate) {
+      const start = new Date(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const end = new Date(endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      setCustomRangeLabel(`${start} - ${end}`);
+      setActiveTimePeriod('Custom Range');
+      setShowDatePicker(false);
+    }
+  };
+
+  // Handle ESC key press to close modal
+  useEffect(() => {
+    const handleKeyPress = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && showDatePicker) {
+        setShowDatePicker(false);
+      }
+      // Press 'B' to toggle background
+      if (event.key === 'b' || event.key === 'B') {
+        if (showDatePicker) {
+          setShowBackground(!showBackground);
+        }
+      }
+    };
+
+    if (showDatePicker) {
+      document.addEventListener('keydown', handleKeyPress);
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyPress);
+    };
+  }, [showDatePicker, showBackground]);
   
   const metricCards = [
     {
@@ -81,7 +132,7 @@ const Dashboard = () => {
     }
   ];
 
-  // Updated top flips with realistic data
+  // Top 5 Most Profitable Flips data
   const topFlips = [
     {
       id: '1598',
@@ -128,38 +179,215 @@ const Dashboard = () => {
   return (
     <div className={`flex-1 ${currentTheme.colors.background} p-8`}>
       {/* Header */}
-      <div className="flex items-center mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mr-8">Dashboard</h1>
-        <div className="flex items-center space-x-2">
-          {timePeriods.map((period) => (
-            <button
-              key={period}
-              onClick={() => setActiveTimePeriod(period)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                activeTimePeriod === period
-                  ? `${currentTheme.colors.primary} text-white`
-                  : `${currentTheme.colors.cardBackground} text-gray-700 hover:bg-gray-100 border border-gray-200`
-              }`}
-            >
-              {period}
-            </button>
-          ))}
+      <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center">
+          <h1 className={`text-3xl font-bold ${currentTheme.colors.textPrimary} mr-8`}>Dashboard</h1>
+          <div className="relative flex items-center space-x-2">
+            {timePeriods.map((period) => (
+              <button
+                key={period}
+                onClick={() => handleTimePeriodChange(period)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center ${
+                  activeTimePeriod === period
+                    ? `${currentTheme.colors.primary} text-white`
+                    : `${currentTheme.colors.cardBackground} ${currentTheme.colors.textSecondary} hover:bg-gray-100 ${currentTheme.colors.border} border`
+                }`}
+              >
+                {period === 'Custom Range' && <Calendar className="w-4 h-4 mr-1" />}
+                {period === 'Custom Range' ? customRangeLabel : period}
+              </button>
+            ))}
+          </div>
+        </div>
+        
+        {/* Theme Toggle Button */}
+        <div className="relative">
+          <button
+            onClick={() => setShowThemeSelector(!showThemeSelector)}
+            className={`p-3 rounded-lg ${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border hover:bg-gray-100 transition-colors`}
+            title="Change Theme"
+          >
+            <Palette className={`w-5 h-5 ${currentTheme.colors.textSecondary}`} />
+          </button>
+          
+          {/* Theme Selector Dropdown */}
+          {showThemeSelector && (
+            <>
+              <div 
+                className="fixed inset-0 z-30" 
+                onClick={() => setShowThemeSelector(false)}
+              />
+              <div className={`absolute right-0 top-12 w-48 ${currentTheme.colors.cardBackground} rounded-lg shadow-xl ${currentTheme.colors.border} border z-40 overflow-hidden`}>
+                <div className={`px-4 py-3 ${currentTheme.colors.border} border-b`}>
+                  <h3 className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>Choose Theme</h3>
+                </div>
+                <div className="py-1">
+                  {Object.values(themes).map((theme) => (
+                    <button
+                      key={theme.name}
+                      onClick={() => {
+                        setTheme(theme.name);
+                        setShowThemeSelector(false);
+                      }}
+                      className={`w-full flex items-center px-4 py-3 text-sm transition-colors ${
+                        currentTheme.name === theme.name 
+                          ? `${currentTheme.colors.primaryLight} ${currentTheme.colors.accent}` 
+                          : `${currentTheme.colors.textSecondary} hover:bg-gray-100`
+                      }`}
+                    >
+                      <div className={`w-4 h-4 rounded-full mr-3 ${
+                        theme.name === 'Light' ? 'bg-gradient-to-r from-blue-400 to-blue-600' :
+                        theme.name === 'Dark' ? 'bg-gradient-to-r from-gray-600 to-gray-800' :
+                        'bg-gradient-to-r from-amber-500 via-red-500 to-purple-600'
+                      }`}></div>
+                      {theme.name}
+                      {currentTheme.name === theme.name && (
+                        <div className="ml-auto w-2 h-2 bg-current rounded-full"></div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Metric Cards */}
+      {/* Custom Date Range Modal */}
+      {showDatePicker && (
+        <div className={`fixed inset-0 flex items-center justify-center z-50 ${showBackground ? 'backdrop-blur-md' : ''}`}
+             style={{
+               background: showBackground 
+                 ? 'radial-gradient(ellipse at center, rgba(0,0,0,0.8) 0%, rgba(15,23,42,0.95) 100%)'
+                 : 'transparent'
+             }}>
+           
+          <div className="relative max-w-lg w-full mx-4 overflow-hidden"
+               style={{
+                 background: 'linear-gradient(145deg, rgba(15,23,42,0.95), rgba(30,41,59,0.98))',
+                 borderRadius: '24px',
+                 border: '1px solid rgba(148,163,184,0.3)',
+                 boxShadow: '0 32px 64px -12px rgba(0,0,0,0.8), 0 0 0 1px rgba(148,163,184,0.1), inset 0 1px 0 rgba(255,255,255,0.1)'
+               }}>
+             
+            <div className="absolute inset-0 opacity-10">
+              <div className="absolute top-0 left-0 w-full h-full"
+                   style={{
+                     background: 'repeating-linear-gradient(45deg, transparent, transparent 2px, rgba(255,255,255,0.03) 2px, rgba(255,255,255,0.03) 4px)'
+                   }}></div>
+            </div>
+             
+            <div className="relative z-10 p-8">
+              <div className="flex items-start justify-between mb-8">
+                <div className="flex items-center space-x-4">
+                  <div className="relative p-3 rounded-xl"
+                       style={{
+                         background: 'linear-gradient(135deg, #f59e0b, #ef4444, #8b5cf6)',
+                         boxShadow: '0 8px 16px rgba(139,92,246,0.3)'
+                       }}>
+                    <Calendar className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-bold text-white tracking-tight">Custom Range</h3>
+                    <p className="text-sm text-slate-400 font-medium">Select your date period</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowDatePicker(false)}
+                  className="p-3 text-slate-400 hover:text-white transition-all duration-200 hover:bg-white/10 rounded-xl border border-slate-600/30 hover:border-slate-500/50"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+             
+              <div className="space-y-6">
+                <div className="group">
+                  <label className="block text-sm font-semibold text-slate-300 mb-3 tracking-wide uppercase">
+                    Start Date
+                  </label>
+                  <div className="relative">
+                    <DatePicker
+                      value={startDate}
+                      onChange={setStartDate}
+                      placeholder="Select start date"
+                      variant="premium"
+                    />
+                  </div>
+                </div>
+                
+                <div className="group">
+                  <label className="block text-sm font-semibold text-slate-300 mb-3 tracking-wide uppercase">
+                    End Date
+                  </label>
+                  <div className="relative">
+                    <DatePicker
+                      value={endDate}
+                      onChange={setEndDate}
+                      placeholder="Select end date"
+                      variant="premium"
+                    />
+                  </div>
+                </div>
+                
+                <div className="flex items-center justify-between pt-8 mt-8"
+                     style={{ borderTop: '1px solid rgba(148,163,184,0.2)' }}>
+                  <button
+                    onClick={() => setShowDatePicker(false)}
+                    className="px-6 py-3 text-slate-400 hover:text-white transition-all duration-300 hover:bg-white/5 rounded-xl font-medium tracking-wide"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCustomDateRange}
+                    disabled={!startDate || !endDate}
+                    className={`relative px-8 py-3 rounded-xl font-bold tracking-wide transition-all duration-300 transform hover:scale-105 ${
+                      startDate && endDate
+                        ? 'text-white shadow-xl hover:shadow-2xl'
+                        : 'text-slate-500 cursor-not-allowed'
+                    }`}
+                    style={{
+                      background: startDate && endDate 
+                        ? 'linear-gradient(135deg, #f59e0b, #ef4444, #8b5cf6)' 
+                        : 'rgba(148,163,184,0.2)',
+                      boxShadow: startDate && endDate 
+                        ? '0 12px 24px rgba(139,92,246,0.4), inset 0 1px 0 rgba(255,255,255,0.2)' 
+                        : 'none'
+                    }}
+                  >
+                    Apply Range
+                    {startDate && endDate && (
+                      <div className="absolute inset-0 rounded-xl opacity-0 hover:opacity-20 transition-opacity"
+                           style={{ background: 'linear-gradient(135deg, #ffffff, #ffffff)' }}></div>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Metrics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
         {metricCards.map((card, index) => {
-          const Icon = card.icon;
+          const IconComponent = card.icon;
           return (
-            <div key={index} className={`${currentTheme.colors.cardBackground} rounded-lg p-6 shadow-sm border border-gray-200`}>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-medium text-gray-600">{card.title}</h3>
-                <Icon className={`w-5 h-5 ${card.iconColor}`} />
-              </div>
-              <div className="space-y-1">
-                <p className="text-2xl font-bold text-gray-900">{card.value}</p>
-                <p className="text-sm text-gray-500">{card.subtitle}</p>
+            <div key={index} className={`${currentTheme.colors.cardBackground} rounded-lg p-6 shadow-sm ${currentTheme.colors.border} border`}>
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <p className={`text-sm font-medium ${currentTheme.colors.textSecondary} mb-1`}>
+                    {card.title}
+                  </p>
+                  <p className={`text-2xl font-bold ${currentTheme.colors.textPrimary} mb-1`}>
+                    {card.value}
+                  </p>
+                  <p className={`text-sm ${currentTheme.colors.textSecondary}`}>
+                    {card.subtitle}
+                  </p>
+                </div>
+                <div className={`p-3 rounded-lg bg-gray-50`}>
+                  <IconComponent className={`w-6 h-6 ${card.iconColor}`} />
+                </div>
               </div>
             </div>
           );
@@ -169,128 +397,186 @@ const Dashboard = () => {
       {/* Bottom Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Profit Chart */}
-        <div className={`${currentTheme.colors.cardBackground} rounded-lg p-6 shadow-sm border border-gray-200`}>
+        <div className={`${currentTheme.colors.cardBackground} rounded-lg p-6 shadow-sm ${currentTheme.colors.border} border`}>
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center">
-              <BarChart3 className="w-5 h-5 text-gray-600 mr-2" />
-              <h3 className="text-lg font-semibold text-gray-900">Profit Chart</h3>
+              <BarChart3 className={`w-5 h-5 ${currentTheme.colors.textSecondary} mr-2`} />
+              <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>Profit Chart</h3>
             </div>
             <div className="text-right">
-              <div className="text-sm text-gray-500">Total Growth</div>
+              <div className={`text-sm ${currentTheme.colors.textSecondary}`}>Total Growth</div>
               <div className="text-lg font-bold text-green-600">+${totalProfit.toLocaleString()}</div>
             </div>
           </div>
           
           <div className="mb-6">
             <div className="flex items-center justify-between mb-4">
-              <p className="text-sm text-gray-600">Profit Over Time</p>
+              <p className={`text-sm ${currentTheme.colors.textSecondary}`}>Profit Over Time</p>
               <div className="flex items-center space-x-4">
                 <div className="flex items-center">
                   <div className={`w-3 h-3 ${currentTheme.colors.primary} rounded-full mr-2`}></div>
-                  <span className="text-xs text-gray-600">Daily Profit</span>
+                  <span className={`text-xs ${currentTheme.colors.textSecondary}`}>Daily Profit</span>
                 </div>
                 <div className="flex items-center">
                   <div className="w-3 h-3 bg-gray-300 rounded-full mr-2"></div>
-                  <span className="text-xs text-gray-600">Baseline</span>
+                  <span className={`text-xs ${currentTheme.colors.textSecondary}`}>Baseline</span>
                 </div>
               </div>
             </div>
           </div>
 
           {/* Enhanced Chart Representation */}
-          <div className="relative h-52 bg-gradient-to-t from-gray-50 to-white rounded-lg p-4 border border-gray-100">
+          <div className="relative h-64 bg-gradient-to-br from-blue-50 via-white to-green-50 rounded-lg p-4 border border-gray-100 shadow-inner">
             {/* Grid lines */}
             <div className="absolute inset-4 flex flex-col justify-between">
-              {[1000, 750, 500, 250, 0].map((value, index) => (
+              {[800, 600, 400, 200, 0].map((value, index) => (
                 <div key={value} className="flex items-center">
-                  <span className="text-xs text-gray-400 w-10">${value}</span>
-                  <div className="flex-1 h-px bg-gray-200 ml-2"></div>
+                  <span className="text-xs text-gray-500 w-10 font-medium">${value}</span>
+                  <div className="flex-1 h-px bg-gray-200 ml-2 opacity-50"></div>
                 </div>
               ))}
             </div>
             
-            {/* Chart bars */}
-            <div className="absolute bottom-4 left-14 right-4 flex items-end justify-between h-40">
-              {dailyProfitData.map((bar, index) => (
-                <div key={index} className="group relative flex flex-col items-center">
-                  <div 
-                    className={`w-8 ${currentTheme.colors.primary} rounded-t-sm transition-all duration-300 hover:opacity-80 cursor-pointer`}
-                    style={{ height: `${(bar.value / 1000) * 100}%` }}
-                  >
-                    {/* Hover tooltip */}
-                    <div className="absolute -top-20 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs py-2 px-3 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
-                      <div className="font-semibold">${bar.value} profit</div>
-                      <div className="text-gray-300">{bar.items}</div>
-                      <div className="text-gray-400 text-xs">
-                        Sale: ${bar.salePrice} | Cost: ${bar.purchasePrice}
+            {/* Chart bars with enhanced styling */}
+            <div className="absolute bottom-4 left-14 right-4 flex items-end justify-between h-48">
+              {dailyProfitData.map((bar, index) => {
+                const barHeight = Math.max((bar.value / 800) * 100, 8); // Minimum 8% height for visibility
+                const barColor = bar.value > 500 ? 'bg-green-500' : bar.value > 300 ? 'bg-blue-500' : 'bg-purple-500';
+                
+                return (
+                  <div key={index} className="group relative flex flex-col items-center">
+                    {/* Bar with gradient and shadow */}
+                    <div className="relative">
+                      <div 
+                        className={`w-10 ${barColor} rounded-t-lg shadow-lg transition-all duration-300 hover:scale-110 cursor-pointer relative overflow-hidden`}
+                        style={{ height: `${barHeight}%` }}
+                      >
+                        {/* Shimmer effect */}
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-20 transform -skew-x-12 animate-pulse"></div>
+                        
+                        {/* Value label on top of bar */}
+                        <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs font-bold text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity">
+                          ${bar.value}
+                        </div>
+                      </div>
+                      
+                      {/* Enhanced hover tooltip */}
+                      <div className="absolute -top-24 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white text-xs py-3 px-4 rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-200 whitespace-nowrap z-20 shadow-xl">
+                        <div className="font-bold text-green-400">${bar.value} profit</div>
+                        <div className="text-gray-200 font-medium">{bar.items}</div>
+                        <div className="text-gray-400 text-xs mt-1">
+                          Sale: ${bar.salePrice} | Cost: ${bar.purchasePrice}
+                        </div>
+                        <div className="text-gray-400 text-xs">
+                          ROI: {Math.round(((bar.salePrice - bar.purchasePrice) / bar.purchasePrice) * 100)}%
+                        </div>
+                        {/* Tooltip arrow */}
+                        <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
                       </div>
                     </div>
+                    
+                    <span className="text-xs text-gray-600 mt-3 font-medium">{bar.date.split(' ')[1]}</span>
                   </div>
-                  <span className="text-xs text-gray-500 mt-2 transform -rotate-45 origin-left">{bar.date}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
-            {/* Trend line overlay */}
-            <div className="absolute bottom-4 left-14 right-4 h-40 pointer-events-none">
+            {/* Enhanced trend line with dynamic path */}
+            <div className="absolute bottom-4 left-14 right-4 h-48 pointer-events-none">
               <svg className="w-full h-full">
+                <defs>
+                  <linearGradient id="trendGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="#3B82F6" stopOpacity="0.8"/>
+                    <stop offset="50%" stopColor="#8B5CF6" stopOpacity="0.6"/>
+                    <stop offset="100%" stopColor="#10B981" stopOpacity="0.8"/>
+                  </linearGradient>
+                </defs>
                 <path
-                  d="M 16 152 Q 80 140 144 156 Q 208 120 272 100 Q 336 120 400 80"
-                  stroke={currentTheme.colors.primary.replace('bg-', '#')}
-                  strokeWidth="2"
+                  d={`M ${20} ${192 - (dailyProfitData[0].value / 800) * 192} 
+                      L ${80} ${192 - (dailyProfitData[1].value / 800) * 192} 
+                      L ${140} ${192 - (dailyProfitData[2].value / 800) * 192} 
+                      L ${200} ${192 - (dailyProfitData[3].value / 800) * 192} 
+                      L ${260} ${192 - (dailyProfitData[4].value / 800) * 192} 
+                      L ${320} ${192 - (dailyProfitData[5].value / 800) * 192} 
+                      L ${380} ${192 - (dailyProfitData[6].value / 800) * 192}`}
+                  stroke="url(#trendGradient)"
+                  strokeWidth="3"
                   fill="none"
-                  className="opacity-60"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="drop-shadow-sm"
                 />
+                {/* Data points */}
+                {dailyProfitData.map((point, index) => (
+                  <circle
+                    key={index}
+                    cx={20 + index * 60}
+                    cy={192 - (point.value / 800) * 192}
+                    r="4"
+                    fill="white"
+                    stroke="url(#trendGradient)"
+                    strokeWidth="2"
+                    className="drop-shadow-sm"
+                  />
+                ))}
               </svg>
+            </div>
+
+            {/* Performance indicator */}
+            <div className="absolute top-4 right-4 flex items-center space-x-2">
+              <div className="flex items-center">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-1"></div>
+                <span className="text-xs text-green-600 font-semibold">Trending Up</span>
+              </div>
             </div>
           </div>
 
           {/* Summary stats */}
           <div className="grid grid-cols-3 gap-4 mt-6 pt-4 border-t border-gray-200">
             <div className="text-center">
-              <div className="text-xs text-gray-500">Peak Day</div>
-              <div className="text-sm font-semibold text-gray-900">${peakDay}</div>
-              <div className="text-xs text-gray-400">{peakDayItem}</div>
+              <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Peak Day</div>
+              <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>${peakDay}</div>
+              <div className={`text-xs ${currentTheme.colors.textSecondary}`}>{peakDayItem}</div>
             </div>
             <div className="text-center">
-              <div className="text-xs text-gray-500">Daily Average</div>
-              <div className="text-sm font-semibold text-gray-900">${avgProfitPerDay}</div>
-              <div className="text-xs text-gray-400">7-day period</div>
+              <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Daily Average</div>
+              <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>${avgProfitPerDay}</div>
+              <div className={`text-xs ${currentTheme.colors.textSecondary}`}>7-day period</div>
             </div>
             <div className="text-center">
-              <div className="text-xs text-gray-500">Best Flip</div>
+              <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Best Flip</div>
               <div className="text-sm font-semibold text-green-600">{bestFlipPercent}%</div>
-              <div className="text-xs text-gray-400">{bestFlipData.items}</div>
+              <div className={`text-xs ${currentTheme.colors.textSecondary}`}>{bestFlipData.items}</div>
             </div>
           </div>
         </div>
 
         {/* Top 5 Most Profitable Flips */}
-        <div className={`${currentTheme.colors.cardBackground} rounded-lg p-6 shadow-sm border border-gray-200`}>
+        <div className={`${currentTheme.colors.cardBackground} rounded-lg p-6 shadow-sm ${currentTheme.colors.border} border`}>
           <div className="flex items-center mb-6">
-            <TrendingUp className="w-5 h-5 text-gray-600 mr-2" />
-            <h3 className="text-lg font-semibold text-gray-900">Top 5 Most Profitable Flips</h3>
+            <TrendingUp className={`w-5 h-5 ${currentTheme.colors.textSecondary} mr-2`} />
+            <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>Top 5 Most Profitable Flips</h3>
           </div>
 
           <div className="space-y-4">
             {topFlips.map((flip) => (
-              <div key={flip.id} className="border-b border-gray-100 pb-4 last:border-b-0 last:pb-0">
+              <div key={flip.id} className={`border-b ${currentTheme.colors.border} pb-4 last:border-b-0 last:pb-0`}>
                 <div className="flex items-center justify-between mb-2">
                   <div>
-                    <h4 className="text-sm font-semibold text-gray-900">{flip.product}</h4>
-                    <p className="text-sm text-gray-600">Sale #{flip.id} • {flip.platform}</p>
+                    <h4 className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>{flip.product}</h4>
+                    <p className={`text-sm ${currentTheme.colors.textSecondary}`}>Sale #{flip.id} • {flip.platform}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-lg font-bold text-green-600">${flip.profit.toFixed(2)}</p>
-                    <p className="text-xs text-gray-500">
+                    <div className="text-lg font-bold text-green-600">${flip.profit.toFixed(2)}</div>
+                    <div className={`text-xs ${currentTheme.colors.textSecondary}`}>
                       {Math.round(((flip.orderPrice - flip.purchasePrice) / flip.purchasePrice) * 100)}% ROI
-                    </p>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center text-sm text-gray-500">
-                  <span>Sale ${flip.orderPrice.toFixed(2)}</span>
-                  <span className="mx-2">→</span>
-                  <span>Cost ${flip.purchasePrice.toFixed(2)}</span>
+                <div className="flex items-center justify-between text-xs">
+                  <span className={`${currentTheme.colors.textSecondary}`}>
+                    Sale ${flip.orderPrice.toFixed(2)} → Cost ${flip.purchasePrice.toFixed(2)}
+                  </span>
                 </div>
               </div>
             ))}

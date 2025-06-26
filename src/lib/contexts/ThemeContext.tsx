@@ -9,110 +9,59 @@ export interface ThemeColors {
   accent: string;
   background: string;
   cardBackground: string;
+  textPrimary: string;
+  textSecondary: string;
+  border: string;
 }
 
 export interface Theme {
   name: string;
   colors: ThemeColors;
-  dotColor: string;
 }
 
+// Three theme options
 const themes: Record<string, Theme> = {
-  Energetic: {
-    name: 'Energetic',
-    colors: {
-      primary: 'bg-red-600',
-      primaryHover: 'hover:bg-red-700',
-      primaryLight: 'bg-red-50',
-      accent: 'text-red-600',
-      background: 'bg-white',
-      cardBackground: 'bg-red-100'
-    },
-    dotColor: 'bg-red-500'
-  },
-  Calm: {
-    name: 'Calm',
-    colors: {
-      primary: 'bg-blue-400',
-      primaryHover: 'hover:bg-blue-500',
-      primaryLight: 'bg-blue-50',
-      accent: 'text-blue-400',
-      background: 'bg-white',
-      cardBackground: 'bg-blue-100'
-    },
-    dotColor: 'bg-blue-300'
-  },
-  Focus: {
-    name: 'Focus',
-    colors: {
-      primary: 'bg-purple-600',
-      primaryHover: 'hover:bg-purple-700',
-      primaryLight: 'bg-purple-50',
-      accent: 'text-purple-600',
-      background: 'bg-white',
-      cardBackground: 'bg-purple-200'
-    },
-    dotColor: 'bg-purple-400'
-  },
-  Success: {
-    name: 'Success',
-    colors: {
-      primary: 'bg-green-600',
-      primaryHover: 'hover:bg-green-700',
-      primaryLight: 'bg-green-50',
-      accent: 'text-green-600',
-      background: 'bg-white',
-      cardBackground: 'bg-green-100'
-    },
-    dotColor: 'bg-green-600'
-  },
-  Warning: {
-    name: 'Warning',
-    colors: {
-      primary: 'bg-yellow-600',
-      primaryHover: 'hover:bg-yellow-700',
-      primaryLight: 'bg-yellow-50',
-      accent: 'text-yellow-600',
-      background: 'bg-white',
-      cardBackground: 'bg-yellow-100'
-    },
-    dotColor: 'bg-yellow-500'
-  },
-  Creative: {
-    name: 'Creative',
-    colors: {
-      primary: 'bg-pink-600',
-      primaryHover: 'hover:bg-pink-700',
-      primaryLight: 'bg-pink-50',
-      accent: 'text-pink-600',
-      background: 'bg-white',
-      cardBackground: 'bg-pink-100'
-    },
-    dotColor: 'bg-pink-400'
-  },
-  Professional: {
-    name: 'Professional',
+  Light: {
+    name: 'Light',
     colors: {
       primary: 'bg-blue-600',
       primaryHover: 'hover:bg-blue-700',
       primaryLight: 'bg-blue-50',
       accent: 'text-blue-600',
-      background: 'bg-white',
-      cardBackground: 'bg-white'
-    },
-    dotColor: 'bg-blue-600'
+      background: 'bg-gray-50',
+      cardBackground: 'bg-white',
+      textPrimary: 'text-gray-900',
+      textSecondary: 'text-gray-600',
+      border: 'border-gray-200'
+    }
   },
-  Cozy: {
-    name: 'Cozy',
+  Dark: {
+    name: 'Dark',
     colors: {
-      primary: 'bg-orange-600',
-      primaryHover: 'hover:bg-orange-700',
-      primaryLight: 'bg-orange-50',
-      accent: 'text-orange-600',
-      background: 'bg-white',
-      cardBackground: 'bg-orange-100'
-    },
-    dotColor: 'bg-orange-500'
+      primary: 'bg-blue-600',
+      primaryHover: 'hover:bg-blue-700',
+      primaryLight: 'bg-blue-900/20',
+      accent: 'text-blue-400',
+      background: 'bg-gray-900',
+      cardBackground: 'bg-gray-800',
+      textPrimary: 'text-white',
+      textSecondary: 'text-gray-300',
+      border: 'border-gray-700'
+    }
+  },
+  Premium: {
+    name: 'Premium',
+    colors: {
+      primary: 'bg-gradient-to-r from-amber-500 via-red-500 to-purple-600',
+      primaryHover: 'hover:from-amber-600 hover:via-red-600 hover:to-purple-700',
+      primaryLight: 'bg-slate-800/50',
+      accent: 'text-amber-400',
+      background: 'bg-slate-900',
+      cardBackground: 'bg-gradient-to-br from-slate-800/90 to-slate-900/90',
+      textPrimary: 'text-white',
+      textSecondary: 'text-slate-300',
+      border: 'border-slate-700/50'
+    }
   }
 };
 
@@ -137,7 +86,7 @@ interface ThemeProviderProps {
 }
 
 export const ThemeProvider = ({ children }: ThemeProviderProps) => {
-  const [currentTheme, setCurrentTheme] = useState<Theme>(themes.Professional);
+  const [currentTheme, setCurrentTheme] = useState<Theme>(themes.Light);
 
   const setTheme = (themeName: string) => {
     if (themes[themeName]) {
