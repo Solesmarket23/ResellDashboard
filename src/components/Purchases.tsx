@@ -1,13 +1,19 @@
 'use client';
 
-import { useState, useRef } from 'react';
-import { ChevronDown, Edit, MoreHorizontal, ExternalLink, Camera } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { ChevronDown, Edit, MoreHorizontal, Camera, RefreshCw, Mail } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import ScanPackageModal from './ScanPackageModal';
+import GmailConnector from './GmailConnector';
 
 const Purchases = () => {
   const [sortBy, setSortBy] = useState('Purchase Date');
   const [showScanModal, setShowScanModal] = useState(false);
+  const [gmailConnected, setGmailConnected] = useState(false);
+  const [purchases, setPurchases] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [totalValue, setTotalValue] = useState('$0.00');
+  const [totalCount, setTotalCount] = useState(0);
   const { currentTheme } = useTheme();
   
   // Column width state
@@ -39,7 +45,7 @@ const Purchases = () => {
     
     const handleMouseMove = (e: MouseEvent) => {
       const diff = e.clientX - startX;
-      const newWidth = Math.max(60, startWidth + diff); // Minimum width of 60px
+      const newWidth = Math.max(60, startWidth + diff);
       
       setColumnWidths(prev => ({
         ...prev,
@@ -58,184 +64,121 @@ const Purchases = () => {
     document.addEventListener('mouseup', handleMouseUp);
   };
 
-  const purchases = [
-    {
-      id: 1,
-      product: {
-        name: "Travis Scott Cactus Jack x Spider Days Before Rode...",
-        brand: "Travis Scott",
-        size: "Size US XL",
-        image: "https://picsum.photos/200/200?random=1",
-        bgColor: "bg-amber-900",
-        color: "brown"
-      },
-      orderNumber: "81-CE1Y398K3Z",
-      status: "Delivered",
-      statusColor: "green",
-      tracking: "888637538408",
-      market: "StockX",
-      price: "$118.90",
-      originalPrice: "$118.90 + $0.00",
-      purchaseDate: "Jun 23",
-      dateAdded: "Jun 23\n4:15 PM",
-      verified: "verified",
-      verifiedColor: "green"
-    },
-    {
-      id: 2,
-      product: {
-        name: "Travis Scott Cactus Jack x Spider Days Before Rode...",
-        brand: "Travis Scott",
-        size: "Size US S",
-        image: "https://picsum.photos/200/200?random=2",
-        bgColor: "bg-amber-900",
-        color: "brown"
-      },
-      orderNumber: "81-FC440HCNLH",
-      status: "Ordered",
-      statusColor: "orange",
-      tracking: "888327774362",
-      market: "StockX",
-      price: "$165.11",
-      originalPrice: "$165.11 + $0.00",
-      purchaseDate: "Jun 23",
-      dateAdded: "Jun 23\n4:15 PM",
-      verified: "pending",
-      verifiedColor: "orange"
-    },
-    {
-      id: 3,
-      product: {
-        name: "Denim Tears Cotton Wreath Hoodie Black Monochro...",
-        brand: "Denim Tears",
-        size: "Size US S",
-        image: "https://picsum.photos/200/200?random=3",
-        bgColor: "bg-gray-900",
-        color: "black"
-      },
-      orderNumber: "81-DHFSC2NK16",
-      status: "Shipped",
-      statusColor: "blue",
-      tracking: "882268115454",
-      market: "StockX",
-      price: "$197.83",
-      originalPrice: "$197.83 + $0.00",
-      purchaseDate: "Jun 23",
-      dateAdded: "Jun 23\n4:15 PM",
-      verified: "pending",
-      verifiedColor: "orange"
-    },
-    {
-      id: 4,
-      product: {
-        name: "Denim Tears The Cotton Wreath Shorts Grey",
-        brand: "Denim Tears",
-        size: "Size US L",
-        image: "https://picsum.photos/200/200?random=4",
-        bgColor: "bg-gray-400",
-        color: "gray"
-      },
-      orderNumber: "81-S88U6Q0NBP",
-      status: "Shipped",
-      statusColor: "blue",
-      tracking: "882258186354",
-      market: "StockX",
-      price: "$222.39",
-      originalPrice: "$222.39 + $0.00",
-      purchaseDate: "Jun 23",
-      dateAdded: "Jun 23\n4:15 PM",
-      verified: "pending",
-      verifiedColor: "orange"
-    },
-    {
-      id: 5,
-      product: {
-        name: "Denim Tears The Cotton Wreath Sweatshirt Black",
-        brand: "Denim Tears",
-        size: "Size US M",
-        image: "https://picsum.photos/200/200?random=5",
-        bgColor: "bg-gray-900",
-        color: "black"
-      },
-      orderNumber: "81-LG34U384ZP",
-      status: "Delivered",
-      statusColor: "green",
-      tracking: "430386817447",
-      market: "StockX",
-      price: "$238.13",
-      originalPrice: "$238.13 + $0.00",
-      purchaseDate: "Jun 23",
-      dateAdded: "Jun 23\n4:15 PM",
-      verified: "pending",
-      verifiedColor: "orange"
-    },
-    {
-      id: 6,
-      product: {
-        name: "Denim Tears The Cotton Wreath Sweatshirt Royal Blue",
-        brand: "Denim Tears",
-        size: "Size US S",
-        image: "https://picsum.photos/200/200?random=6",
-        bgColor: "bg-blue-600",
-        color: "blue"
-      },
-      orderNumber: "81-B8BM19830M",
-      status: "Ordered",
-      statusColor: "orange",
-      tracking: "881697844256",
-      market: "StockX",
-      price: "$230.99",
-      originalPrice: "$230.99 + $0.00",
-      purchaseDate: "Jun 23",
-      dateAdded: "Jun 23\n4:15 PM",
-      verified: "pending",
-      verifiedColor: "orange"
-    },
-    {
-      id: 7,
-      product: {
-        name: "Denim Tears The Cotton Wreath Sweatshirt Grey",
-        brand: "Denim Tears",
-        size: "Size US M",
-        image: "https://picsum.photos/200/200?random=7",
-        bgColor: "bg-gray-500",
-        color: "gray"
-      },
-      orderNumber: "81-EBN0136AHN",
-      status: "Ordered",
-      statusColor: "orange",
-      tracking: "881913545073",
-      market: "StockX",
-      price: "$207.78",
-      originalPrice: "$207.78 + $0.00",
-      purchaseDate: "Jun 23",
-      dateAdded: "Jun 23\n4:15 PM",
-      verified: "pending",
-      verifiedColor: "orange"
-    },
-    {
-      id: 8,
-      product: {
-        name: "Denim Tears The Cotton Wreath Sweatshirt Grey",
-        brand: "Denim Tears",
-        size: "Size US S",
-        image: "https://picsum.photos/200/200?random=8",
-        bgColor: "bg-gray-500",
-        color: "gray"
-      },
-      orderNumber: "81-Y17HK445F7",
-      status: "Ordered",
-      statusColor: "orange",
-      tracking: "882071931655",
-      market: "StockX",
-      price: "$212.02",
-      originalPrice: "$212.02 + $0.00",
-      purchaseDate: "Jun 23",
-      dateAdded: "Jun 23\n4:15 PM",
-      verified: "pending",
-      verifiedColor: "orange"
+  useEffect(() => {
+    if (gmailConnected) {
+      fetchPurchases();
+    } else {
+      loadMockData();
     }
-  ];
+  }, [gmailConnected]);
+
+  const fetchPurchases = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/gmail/purchases');
+      if (response.ok) {
+        const data = await response.json();
+        setPurchases(data.purchases || []);
+        calculateTotals(data.purchases || []);
+      } else {
+        console.error('Failed to fetch purchases');
+        loadMockData();
+      }
+    } catch (error) {
+      console.error('Error fetching purchases:', error);
+      loadMockData();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadMockData = () => {
+    const mockPurchases = [
+      {
+        id: 1,
+        product: {
+          name: "Travis Scott Cactus Jack x Spider Days Before Rode...",
+          brand: "Travis Scott",
+          size: "Size US XL",
+          image: "https://picsum.photos/200/200?random=1",
+          bgColor: "bg-amber-900",
+          color: "brown"
+        },
+        orderNumber: "81-CE1Y398K3Z",
+        status: "Delivered",
+        statusColor: "green",
+        tracking: "888637538408",
+        market: "StockX",
+        price: "$118.90",
+        originalPrice: "$118.90 + $0.00",
+        purchaseDate: "Jun 23",
+        dateAdded: "Jun 23\n4:15 PM",
+        verified: "verified",
+        verifiedColor: "green"
+      },
+      {
+        id: 2,
+        product: {
+          name: "Denim Tears Cotton Wreath Hoodie Black Monochro...",
+          brand: "Denim Tears",
+          size: "Size US S",
+          image: "https://picsum.photos/200/200?random=3",
+          bgColor: "bg-gray-900",
+          color: "black"
+        },
+        orderNumber: "81-DHFSC2NK16",
+        status: "Shipped",
+        statusColor: "blue",
+        tracking: "882268115454",
+        market: "StockX",
+        price: "$197.83",
+        originalPrice: "$197.83 + $0.00",
+        purchaseDate: "Jun 23",
+        dateAdded: "Jun 23\n4:15 PM",
+        verified: "pending",
+        verifiedColor: "orange"
+      },
+      {
+        id: 3,
+        product: {
+          name: "Denim Tears The Cotton Wreath Sweatshirt Black",
+          brand: "Denim Tears",
+          size: "Size US M",
+          image: "https://picsum.photos/200/200?random=5",
+          bgColor: "bg-gray-900",
+          color: "black"
+        },
+        orderNumber: "81-LG34U384ZP",
+        status: "Delivered",
+        statusColor: "green",
+        tracking: "430386817447",
+        market: "StockX",
+        price: "$238.13",
+        originalPrice: "$238.13 + $0.00",
+        purchaseDate: "Jun 23",
+        dateAdded: "Jun 23\n4:15 PM",
+        verified: "pending",
+        verifiedColor: "orange"
+      }
+    ];
+    setPurchases(mockPurchases);
+    calculateTotals(mockPurchases);
+  };
+
+  const calculateTotals = (purchaseList: any[]) => {
+    const total = purchaseList.reduce((sum, purchase) => {
+      const price = parseFloat(purchase.price.replace('$', '').replace(',', ''));
+      return sum + price;
+    }, 0);
+    setTotalValue(`$${total.toLocaleString()}`);
+    setTotalCount(purchaseList.length);
+  };
+
+  const refreshPurchases = () => {
+    if (gmailConnected) {
+      fetchPurchases();
+    }
+  };
 
   const getStatusBadge = (status: string, color: string) => {
     const baseClasses = "px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap";
@@ -258,32 +201,66 @@ const Purchases = () => {
 
   const handleScanComplete = (trackingNumber: string) => {
     console.log('Scanned tracking number:', trackingNumber);
-    // TODO: Update purchase status to "Delivered" based on tracking number
-    // This would typically involve finding the purchase and updating its status
   };
 
   return (
     <div className={`flex-1 ${currentTheme.colors.background} p-8`}>
+      {/* Gmail Connection Status */}
+      <div className="mb-6">
+        <GmailConnector onConnectionChange={setGmailConnected} />
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center space-x-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Purchases</h1>
-            <p className="text-gray-600 mt-1">Showing 468 of 468 purchases</p>
+            <p className="text-gray-600 mt-1">
+              {gmailConnected ? 
+                `Showing ${totalCount} purchases from Gmail` : 
+                `Showing ${totalCount} purchases (Demo data)`
+              }
+            </p>
           </div>
-          <button
-            onClick={() => setShowScanModal(true)}
-            className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
-          >
-            <Camera className="w-5 h-5" />
-            <span>Scan Package</span>
-          </button>
+          <div className="flex items-center space-x-2">
+            {gmailConnected && (
+              <button
+                onClick={refreshPurchases}
+                disabled={loading}
+                className="flex items-center space-x-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+              >
+                <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+                <span>Sync Gmail</span>
+              </button>
+            )}
+            <button
+              onClick={() => setShowScanModal(true)}
+              className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+            >
+              <Camera className="w-5 h-5" />
+              <span>Scan Package</span>
+            </button>
+          </div>
         </div>
         <div className="text-right">
           <p className="text-gray-600">Total value:</p>
-          <p className="text-xl font-bold text-gray-900">$89510.63</p>
+          <p className="text-xl font-bold text-gray-900">{totalValue}</p>
+          {gmailConnected && (
+            <p className="text-xs text-green-600 flex items-center justify-end mt-1">
+              <Mail className="w-3 h-3 mr-1" />
+              Live from Gmail
+            </p>
+          )}
         </div>
       </div>
+
+      {/* Loading State */}
+      {loading && (
+        <div className="flex items-center justify-center py-8">
+          <RefreshCw className="w-6 h-6 animate-spin text-blue-600 mr-2" />
+          <span className="text-gray-600">Fetching purchases from Gmail...</span>
+        </div>
+      )}
 
       {/* Table */}
       <div className={`${currentTheme.colors.cardBackground} rounded-lg shadow-sm border border-gray-200 overflow-hidden`}>
