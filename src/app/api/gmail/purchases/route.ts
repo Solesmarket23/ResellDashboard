@@ -67,27 +67,29 @@ function getDefaultConfig() {
       stockx: {
         name: "StockX",
         emailDomain: "stockx.com",
-        enabled: true
+        enabled: true,
+        available: true
       },
       goat: {
         name: "GOAT",
         emailDomain: "goat.com", 
-        enabled: true
+        enabled: false,
+        available: false,
+        comingSoon: true
       },
-      flightclub: {
-        name: "Flight Club",
-        emailDomain: "flightclub.com",
-        enabled: true
+      alias: {
+        name: "Alias",
+        emailDomain: "alias.com",
+        enabled: false,
+        available: false,
+        comingSoon: true
       },
-      deadstock: {
-        name: "Deadstock",
-        emailDomain: "deadstock.com",
-        enabled: true
-      },
-      novelship: {
-        name: "Novelship", 
-        emailDomain: "novelship.com",
-        enabled: true
+      ebay: {
+        name: "eBay", 
+        emailDomain: "ebay.com",
+        enabled: false,
+        available: false,
+        comingSoon: true
       }
     }
   };
@@ -97,9 +99,9 @@ function getDefaultConfig() {
 function generateQueries(config: any) {
   const queries: string[] = [];
   
-  // Get enabled marketplaces
+  // Get available and enabled marketplaces
   const enabledMarketplaces = Object.values(config.marketplaces)
-    .filter((marketplace: any) => marketplace.enabled);
+    .filter((marketplace: any) => marketplace.available && marketplace.enabled);
   
   // Generate queries for each enabled marketplace and each email category
   for (const marketplace of enabledMarketplaces) {

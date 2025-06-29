@@ -15,6 +15,8 @@ interface Marketplace {
   name: string;
   emailDomain: string;
   enabled: boolean;
+  available: boolean;
+  comingSoon?: boolean;
 }
 
 interface EmailParsingConfig {
@@ -89,27 +91,29 @@ const defaultConfig: EmailParsingConfig = {
     stockx: {
       name: "StockX",
       emailDomain: "stockx.com",
-      enabled: true
+      enabled: true,
+      available: true
     },
     goat: {
       name: "GOAT",
       emailDomain: "goat.com", 
-      enabled: true
+      enabled: false,
+      available: false,
+      comingSoon: true
     },
-    flightclub: {
-      name: "Flight Club",
-      emailDomain: "flightclub.com",
-      enabled: true
+    alias: {
+      name: "Alias",
+      emailDomain: "alias.com",
+      enabled: false,
+      available: false,
+      comingSoon: true
     },
-    deadstock: {
-      name: "Deadstock",
-      emailDomain: "deadstock.com",
-      enabled: true
-    },
-    novelship: {
-      name: "Novelship", 
-      emailDomain: "novelship.com",
-      enabled: true
+    ebay: {
+      name: "eBay", 
+      emailDomain: "ebay.com",
+      enabled: false,
+      available: false,
+      comingSoon: true
     }
   }
 };
@@ -171,9 +175,14 @@ const EmailParsingSettings = ({ isOpen, onClose }: EmailParsingSettingsProps) =>
 
   const toggleMarketplace = (marketplaceKey: string) => {
     const newConfig = { ...config };
-    newConfig.marketplaces[marketplaceKey].enabled = !newConfig.marketplaces[marketplaceKey].enabled;
-    setConfig(newConfig);
-    setHasChanges(true);
+    const marketplace = newConfig.marketplaces[marketplaceKey];
+    
+    // Only allow toggling if the marketplace is available
+    if (marketplace.available) {
+      marketplace.enabled = !marketplace.enabled;
+      setConfig(newConfig);
+      setHasChanges(true);
+    }
   };
 
   if (!isOpen) return null;
@@ -200,21 +209,35 @@ const EmailParsingSettings = ({ isOpen, onClose }: EmailParsingSettingsProps) =>
           {/* Marketplaces Section */}
           <div className="mb-8">
             <h3 className="text-lg font-medium text-gray-900 mb-4">Supported Marketplaces</h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {Object.entries(config.marketplaces).map(([key, marketplace]) => (
-                <label key={key} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
-                  <input
-                    type="checkbox"
-                    checked={marketplace.enabled}
-                    onChange={() => toggleMarketplace(key)}
-                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
-                  />
-                  <div>
-                    <div className="font-medium text-gray-900">{marketplace.name}</div>
-                    <div className="text-sm text-gray-500">{marketplace.emailDomain}</div>
-                  </div>
-                </label>
-              ))}
+                         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+               {Object.entries(config.marketplaces).map(([key, marketplace]) => (
+                 <label key={key} className={`flex items-center space-x-3 p-3 rounded-lg relative ${
+                   marketplace.available ? 'bg-gray-50 hover:bg-gray-100 cursor-pointer' : 'bg-gray-100 cursor-not-allowed opacity-60'
+                 }`}>
+                   <input
+                     type="checkbox"
+                     checked={marketplace.enabled && marketplace.available}
+                     onChange={() => marketplace.available && toggleMarketplace(key)}
+                     disabled={!marketplace.available}
+                     className={`w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 ${
+                       !marketplace.available ? 'cursor-not-allowed opacity-50' : ''
+                     }`}
+                   />
+                   <div className="flex-1">
+                     <div className={`font-medium ${marketplace.available ? 'text-gray-900' : 'text-gray-500'}`}>
+                       {marketplace.name}
+                     </div>
+                     <div className={`text-sm ${marketplace.available ? 'text-gray-500' : 'text-gray-400'}`}>
+                       {marketplace.emailDomain}
+                     </div>
+                   </div>
+                   {marketplace.comingSoon && (
+                     <span className="absolute top-2 right-2 px-2 py-1 bg-orange-100 text-orange-800 text-xs font-medium rounded-full">
+                       Coming Soon
+                     </span>
+                   )}
+                 </label>
+               ))}
             </div>
           </div>
 
