@@ -39,7 +39,9 @@ const defaultConfig: EmailParsingConfig = {
       status: "Ordered",
       statusColor: "orange",
       subjectPatterns: [
-        "Order Confirmation"
+        "Order Confirmation:",
+        "Xpress Order Confirmed:",
+        "Order Confirmed:"
       ]
     },
     orderShipped: {
@@ -47,7 +49,8 @@ const defaultConfig: EmailParsingConfig = {
       status: "Shipped", 
       statusColor: "blue",
       subjectPatterns: [
-        "Your order has shipped"
+        "Order Shipped:",
+        "Xpress Order Shipped:"
       ]
     },
     orderDelivered: {
@@ -55,7 +58,7 @@ const defaultConfig: EmailParsingConfig = {
       status: "Delivered",
       statusColor: "green", 
       subjectPatterns: [
-        "Order delivered"
+        "Xpress Ship Order Delivered:"
       ]
     },
     orderDelayed: {
@@ -63,7 +66,7 @@ const defaultConfig: EmailParsingConfig = {
       status: "Delayed",
       statusColor: "orange",
       subjectPatterns: [
-        "Order delayed"
+        "Encountered a Delay"
       ]
     },
     orderCanceled: {
@@ -71,7 +74,7 @@ const defaultConfig: EmailParsingConfig = {
       status: "Canceled",
       statusColor: "red",
       subjectPatterns: [
-        "Order canceled"
+        "Refund Issued:"
       ]
     }
   },
@@ -81,7 +84,8 @@ const defaultConfig: EmailParsingConfig = {
       status: "Sold",
       statusColor: "green",
       subjectPatterns: [
-        "Sale confirmed"
+        "You Sold Your Item!",
+        "You Sold Your Flex Item"
       ]
     },
     verificationFailed: {
@@ -89,7 +93,7 @@ const defaultConfig: EmailParsingConfig = {
       status: "Failed Verification",
       statusColor: "red",
       subjectPatterns: [
-        "Verification failed"
+        "An Update Regarding Your Sale"
       ]
     }
   },
@@ -224,10 +228,10 @@ const EmailParsingSettings = ({ isOpen, onClose }: EmailParsingSettingsProps) =>
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-300">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[99999] animate-in fade-in duration-300">
       <div className="bg-white rounded-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto shadow-2xl animate-in zoom-in-95 slide-in-from-bottom-4 duration-300">
         {/* Header */}
-        <div className="sticky top-0 bg-white/95 backdrop-blur-sm border-b border-gray-100 px-8 py-6 rounded-t-2xl">
+        <div className="bg-white border-b border-gray-100 px-8 py-6 rounded-t-2xl">
           <div className="flex justify-between items-center">
             <div className="flex items-center space-x-3">
               <div className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl text-white">
@@ -495,7 +499,7 @@ const EmailParsingSettings = ({ isOpen, onClose }: EmailParsingSettingsProps) =>
         </div>
 
         {/* Footer */}
-        <div className="sticky bottom-0 bg-white/95 backdrop-blur-sm border-t border-gray-100 px-8 py-6 rounded-b-2xl">
+        <div className="sticky bottom-0 bg-white border-t border-gray-100 px-8 py-6 rounded-b-2xl">
           <div className="flex justify-between items-center">
             <div className="flex items-center space-x-2 text-sm text-gray-600">
               {hasChanges && (
