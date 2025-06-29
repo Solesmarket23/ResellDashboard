@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Edit, MoreHorizontal, Camera, RefreshCw, Mail, Trash2 } from 'lucide-react';
+import { ChevronDown, Edit, MoreHorizontal, Camera, RefreshCw, Mail, Trash2, Settings } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import ScanPackageModal from './ScanPackageModal';
 import GmailConnector from './GmailConnector';
+import EmailParsingSettings from './EmailParsingSettings';
 
 const Purchases = () => {
   const [sortBy, setSortBy] = useState('Purchase Date');
@@ -15,6 +16,7 @@ const Purchases = () => {
   const [totalValue, setTotalValue] = useState('$0.00');
   const [totalCount, setTotalCount] = useState(0);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showEmailSettings, setShowEmailSettings] = useState(false);
   const { currentTheme } = useTheme();
   
   // Column width state
@@ -71,12 +73,34 @@ const Purchases = () => {
     } else {
       loadMockData();
     }
+
+    // Listen for email config updates and refresh purchases
+    const handleConfigUpdate = () => {
+      if (gmailConnected) {
+        fetchPurchases();
+      }
+    };
+
+    window.addEventListener('emailConfigUpdated', handleConfigUpdate);
+    
+    return () => {
+      window.removeEventListener('emailConfigUpdated', handleConfigUpdate);
+    };
   }, [gmailConnected]);
 
   const fetchPurchases = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/gmail/purchases');
+      // Get email parsing configuration from localStorage
+      const emailConfig = localStorage.getItem('emailParsingConfig');
+      
+      const response = await fetch('/api/gmail/purchases', {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(emailConfig ? { 'email-config': emailConfig } : {})
+        }
+      });
+      
       if (response.ok) {
         const data = await response.json();
         setPurchases(data.purchases || []);
@@ -265,6 +289,13 @@ const Purchases = () => {
                 <span>Reset</span>
               </button>
             )}
+            <button
+              onClick={() => setShowEmailSettings(true)}
+              className="flex items-center space-x-2 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+            >
+              <Settings className="w-5 h-5" />
+              <span>Settings</span>
+            </button>
           </div>
         </div>
         <div className="text-right">
@@ -491,6 +522,12 @@ const Purchases = () => {
           </div>
         </div>
       )}
+
+      {/* Email Parsing Settings Modal */}
+      <EmailParsingSettings
+        isOpen={showEmailSettings}
+        onClose={() => setShowEmailSettings(false)}
+      />
     </div>
   );
 };

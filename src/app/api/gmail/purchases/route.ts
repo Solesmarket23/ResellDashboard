@@ -2,6 +2,138 @@ import { NextRequest, NextResponse } from 'next/server';
 import { google } from 'googleapis';
 import { cookies } from 'next/headers';
 
+// Default configuration if none is provided
+function getDefaultConfig() {
+  return {
+    emailCategories: {
+      orderPlaced: {
+        name: "Order Placed",
+        status: "Ordered",
+        statusColor: "orange",
+        subjectPatterns: [
+          "Order Confirmation",
+          "Your order has been placed",
+          "Purchase confirmed",
+          "Order received"
+        ]
+      },
+      orderShipped: {
+        name: "Order Shipped",
+        status: "Shipped", 
+        statusColor: "blue",
+        subjectPatterns: [
+          "Your order has shipped",
+          "Shipment notification",
+          "Order shipped",
+          "Package on the way"
+        ]
+      },
+      orderDelivered: {
+        name: "Order Delivered",
+        status: "Delivered",
+        statusColor: "green", 
+        subjectPatterns: [
+          "Order delivered",
+          "Package delivered", 
+          "Delivery confirmation",
+          "Your package has arrived"
+        ]
+      },
+      orderDelayed: {
+        name: "Order Delayed",
+        status: "Delayed",
+        statusColor: "orange",
+        subjectPatterns: [
+          "Order delayed",
+          "Shipping delay",
+          "Delivery postponed",
+          "Expected delivery updated"
+        ]
+      },
+      orderCanceled: {
+        name: "Order Canceled/Refunded", 
+        status: "Canceled",
+        statusColor: "red",
+        subjectPatterns: [
+          "Order canceled",
+          "Order cancelled",
+          "Refund processed", 
+          "Order refunded",
+          "Purchase refund"
+        ]
+      }
+    },
+    marketplaces: {
+      stockx: {
+        name: "StockX",
+        emailDomain: "stockx.com",
+        enabled: true
+      },
+      goat: {
+        name: "GOAT",
+        emailDomain: "goat.com", 
+        enabled: true
+      },
+      flightclub: {
+        name: "Flight Club",
+        emailDomain: "flightclub.com",
+        enabled: true
+      },
+      deadstock: {
+        name: "Deadstock",
+        emailDomain: "deadstock.com",
+        enabled: true
+      },
+      novelship: {
+        name: "Novelship", 
+        emailDomain: "novelship.com",
+        enabled: true
+      }
+    }
+  };
+}
+
+// Generate Gmail search queries based on configuration
+function generateQueries(config: any) {
+  const queries: string[] = [];
+  
+  // Get enabled marketplaces
+  const enabledMarketplaces = Object.values(config.marketplaces)
+    .filter((marketplace: any) => marketplace.enabled);
+  
+  // Generate queries for each enabled marketplace and each email category
+  for (const marketplace of enabledMarketplaces) {
+    for (const category of Object.values(config.emailCategories)) {
+      for (const pattern of (category as any).subjectPatterns) {
+        if (pattern.trim()) {
+          queries.push(`from:${(marketplace as any).emailDomain} "${pattern}"`);
+        }
+      }
+    }
+  }
+  
+  return queries;
+}
+
+// Determine email category and status based on subject line
+function categorizeEmail(subject: string, config: any) {
+  for (const [categoryKey, category] of Object.entries(config.emailCategories)) {
+    for (const pattern of (category as any).subjectPatterns) {
+      if (subject.toLowerCase().includes(pattern.toLowerCase())) {
+        return {
+          status: (category as any).status,
+          statusColor: (category as any).statusColor
+        };
+      }
+    }
+  }
+  // Default if no match found
+  return {
+    status: 'Ordered',
+    statusColor: 'orange'
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const cookieStore = cookies();
@@ -26,14 +158,12 @@ export async function GET(request: NextRequest) {
 
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
-    // Search for purchase confirmation emails
-    const queries = [
-      'from:stockx.com "Order Confirmation"',
-      'from:goat.com "Order Confirmed"',
-      'from:flightclub.com "Order Confirmation"',
-      'from:deadstock.com "Order Confirmation"',
-      'from:novelship.com "Order Confirmed"'
-    ];
+    // Get email parsing configuration from request headers (sent by frontend)
+    const configHeader = request.headers.get('email-config');
+    const config = configHeader ? JSON.parse(configHeader) : getDefaultConfig();
+
+    // Generate dynamic queries based on configuration
+    const queries = generateQueries(config);
 
     const allPurchases: any[] = [];
 
@@ -53,7 +183,7 @@ export async function GET(request: NextRequest) {
               format: 'full'
             });
             
-            const purchase = parsePurchaseEmail(emailData.data);
+            const purchase = parsePurchaseEmail(emailData.data, config);
             if (purchase) {
               allPurchases.push(purchase);
             }
@@ -72,11 +202,15 @@ export async function GET(request: NextRequest) {
   }
 }
 
-function parsePurchaseEmail(email: any) {
+function parsePurchaseEmail(email: any, config: any) {
   try {
     const content = extractEmailContent(email);
     const fromHeader = email.payload.headers.find((h: any) => h.name === 'From')?.value || '';
+    const subjectHeader = email.payload.headers.find((h: any) => h.name === 'Subject')?.value || '';
     const market = identifyMarket(fromHeader);
+
+    // Categorize email based on subject line and configuration
+    const category = categorizeEmail(subjectHeader, config);
 
     // Extract order number
     const orderNumberRegex = /(?:Order|Purchase|Confirmation)[\s#:]*([A-Z0-9-]{10,})/i;
@@ -123,8 +257,8 @@ function parsePurchaseEmail(email: any) {
         image: `https://picsum.photos/200/200?random=${email.id.substring(0, 4)}`,
         bgColor: getBrandColor(brand)
       },
-      status: 'Ordered',
-      statusColor: 'orange',
+      status: category.status,
+      statusColor: category.statusColor,
       tracking,
       market,
       price,
@@ -133,7 +267,8 @@ function parsePurchaseEmail(email: any) {
       dateAdded,
       verified: 'pending',
       verifiedColor: 'orange',
-      emailId: email.id
+      emailId: email.id,
+      subject: subjectHeader // Include subject for debugging
     };
 
   } catch (error) {
