@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, Save, RotateCcw, Mail, Settings, X } from 'lucide-react';
+import { Plus, Trash2, Save, RotateCcw, Mail, Settings, X, Info } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 
 interface EmailCategory {
@@ -136,6 +136,7 @@ interface EmailParsingSettingsProps {
 const EmailParsingSettings = ({ isOpen, onClose }: EmailParsingSettingsProps) => {
   const [config, setConfig] = useState<EmailParsingConfig>(defaultConfig);
   const [hasChanges, setHasChanges] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const { currentTheme } = useTheme();
 
   useEffect(() => {
@@ -150,9 +151,13 @@ const EmailParsingSettings = ({ isOpen, onClose }: EmailParsingSettingsProps) =>
     }
   }, []);
 
-  const saveConfig = () => {
+  const saveConfig = async () => {
+    setIsSaving(true);
+    // Simulate save delay for better UX
+    await new Promise(resolve => setTimeout(resolve, 500));
     localStorage.setItem('emailParsingConfig', JSON.stringify(config));
     setHasChanges(false);
+    setIsSaving(false);
     // Trigger a custom event to notify other components
     window.dispatchEvent(new CustomEvent('emailConfigUpdated', { detail: config }));
   };
@@ -219,260 +224,317 @@ const EmailParsingSettings = ({ isOpen, onClose }: EmailParsingSettingsProps) =>
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">Email Parsing Settings</h2>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-300">
+      <div className="bg-white rounded-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto shadow-2xl animate-in zoom-in-95 slide-in-from-bottom-4 duration-300">
+        {/* Header */}
+        <div className="sticky top-0 bg-white/95 backdrop-blur-sm border-b border-gray-100 px-8 py-6 rounded-t-2xl">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl text-white">
+                <Settings className="w-6 h-6" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Email Parsing Settings</h2>
+                <p className="text-sm text-gray-600 mt-1">Configure how emails are detected and categorized</p>
+              </div>
+            </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600"
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-all duration-200"
             >
               <X className="w-6 h-6" />
             </button>
           </div>
+        </div>
 
+        <div className="px-8 py-6 space-y-8">
           {/* Explanation Section */}
-          <div className="mb-8 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <div className="flex items-start space-x-3">
-              <div className="flex-shrink-0">
-                <svg className="w-5 h-5 text-blue-500 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="text-sm font-medium text-blue-900 mb-2">Why configure these patterns?</h3>
-                <p className="text-sm text-blue-800">
-                  These email subject patterns help our system automatically detect and categorize your purchase and sale emails from Gmail. 
-                  The more accurate patterns you provide, the better we can track your purchases, sales, deliveries, and verification failures automatically - 
-                  saving you time and ensuring nothing gets missed.
-                </p>
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 shadow-sm">
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-indigo-500/5"></div>
+            <div className="relative p-6">
+              <div className="flex items-start space-x-4">
+                <div className="flex-shrink-0 p-2 bg-blue-500 rounded-xl text-white">
+                  <Info className="w-5 h-5" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-blue-900 mb-3">Why configure these patterns?</h3>
+                  <p className="text-blue-800 leading-relaxed">
+                    These email subject patterns help our system automatically detect and categorize your purchase and sale emails from Gmail. 
+                    The more accurate patterns you provide, the better we can track your purchases, sales, deliveries, and verification failures automatically - 
+                    saving you time and ensuring nothing gets missed.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
 
           {/* Marketplaces Section */}
-          <div className="mb-8">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Supported Marketplaces</h3>
-                         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-               {Object.entries(config.marketplaces).map(([key, marketplace]) => (
-                 <label key={key} className={`flex items-center space-x-3 p-3 rounded-lg relative ${
-                   marketplace.available ? 'bg-blue-50 hover:bg-blue-100 cursor-pointer border border-blue-200' : 'bg-gray-50 cursor-not-allowed opacity-60 border border-gray-200'
-                 }`}>
-                   <input
-                     type="checkbox"
-                     checked={marketplace.enabled && marketplace.available}
-                     onChange={() => marketplace.available && toggleMarketplace(key)}
-                     disabled={!marketplace.available}
-                     className={`w-4 h-4 text-blue-600 bg-white border-gray-300 rounded focus:ring-blue-500 ${
-                       !marketplace.available ? 'cursor-not-allowed opacity-50' : ''
-                     }`}
-                   />
-                                        <div className="flex-1">
-                       <div className="font-medium">
-                        <div className="flex items-center space-x-2">
-                          <span className={`text-sm font-medium ${marketplace.available ? 'text-blue-900' : 'text-gray-500'}`}>{marketplace.name}</span>
-                        </div>
-                       </div>
-                     <div className={`text-sm ${marketplace.available ? 'text-blue-700' : 'text-gray-400'}`}>
-                       {marketplace.emailDomain}
-                     </div>
-                   </div>
-                   {marketplace.comingSoon && (
-                     <span className="absolute top-2 right-2 px-2 py-1 bg-orange-100 text-orange-800 text-xs font-medium rounded-full">
-                       Coming Soon
-                     </span>
-                   )}
-                 </label>
-               ))}
+          <div className="space-y-6">
+            <div className="flex items-center space-x-3">
+              <div className="p-1.5 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg text-white">
+                <Mail className="w-5 h-5" />
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900">Supported Marketplaces</h3>
             </div>
-          </div>
-
-          {/* Email Categories Section */}
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Purchases</h3>
-            <div className="space-y-6">
-              {Object.entries(config.emailCategories).map(([categoryKey, category]) => (
-                <div key={categoryKey} className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center">
-                      <Mail className="w-5 h-5 text-gray-400 mr-2" />
-                      <h4 className="font-medium text-gray-900">{category.name}</h4>
-                      <span className={`ml-3 px-2 py-1 rounded-full text-xs font-medium ${
-                        category.statusColor === 'green' ? 'bg-green-100 text-green-800' :
-                        category.statusColor === 'blue' ? 'bg-blue-100 text-blue-800' :
-                        category.statusColor === 'orange' ? 'bg-orange-100 text-orange-800' :
-                        'bg-red-100 text-red-800'
-                      }`}>
-                        {category.status}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {Object.entries(config.marketplaces).map(([key, marketplace]) => (
+                <label key={key} className={`group relative flex items-center space-x-4 p-4 rounded-2xl border-2 transition-all duration-200 cursor-pointer ${
+                  marketplace.available 
+                    ? 'bg-gradient-to-br from-blue-50 to-blue-50/50 hover:from-blue-100 hover:to-blue-100/50 border-blue-200 hover:border-blue-300 hover:shadow-md' 
+                    : 'bg-gray-50 border-gray-200 cursor-not-allowed opacity-60'
+                }`}>
+                  <input
+                    type="checkbox"
+                    checked={marketplace.enabled && marketplace.available}
+                    onChange={() => marketplace.available && toggleMarketplace(key)}
+                    disabled={!marketplace.available}
+                    className={`w-5 h-5 text-blue-600 bg-white border-2 border-gray-300 rounded-lg focus:ring-blue-500 focus:ring-2 transition-all duration-200 ${
+                      !marketplace.available ? 'cursor-not-allowed opacity-50' : ''
+                    }`}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center space-x-2">
+                      <span className={`font-semibold ${marketplace.available ? 'text-blue-900' : 'text-gray-500'}`}>
+                        {marketplace.name}
                       </span>
                     </div>
-                    <button
-                      onClick={() => addSubjectPattern(categoryKey)}
-                      className="flex items-center text-sm text-blue-600 hover:text-blue-700"
-                    >
-                      <Plus className="w-4 h-4 mr-1" />
-                      Add Pattern
-                    </button>
+                    <p className={`text-sm ${marketplace.available ? 'text-blue-700' : 'text-gray-400'} truncate`}>
+                      {marketplace.emailDomain}
+                    </p>
                   </div>
-                  
-                  <div className="space-y-2">
-                    {category.subjectPatterns.map((pattern, index) => {
-                      // Get appropriate placeholder text based on category
-                      const getPlaceholder = (catKey: string, idx: number) => {
-                        const placeholders = {
-                          orderPlaced: [
-                            "Example: Order Confirmation",
-                            "Example: Your order has been placed",
-                            "Example: Purchase confirmed",
-                            "Example: Order received"
-                          ],
-                          orderShipped: [
-                            "Example: Your order has shipped", 
-                            "Example: Shipment notification",
-                            "Example: Order shipped",
-                            "Example: Package on the way"
-                          ],
-                          orderDelivered: [
-                            "Example: Order delivered",
-                            "Example: Package delivered",
-                            "Example: Delivery confirmation", 
-                            "Example: Your package has arrived"
-                          ],
-                          orderDelayed: [
-                            "Example: Order delayed",
-                            "Example: Shipping delay",
-                            "Example: Delivery postponed",
-                            "Example: Expected delivery updated"
-                          ],
-                          orderCanceled: [
-                            "Example: Order canceled",
-                            "Example: Order cancelled", 
-                            "Example: Refund processed",
-                            "Example: Order refunded"
-                          ]
-                        };
-                        const categoryPlaceholders = placeholders[catKey as keyof typeof placeholders] || [];
-                        return categoryPlaceholders[idx] || "Example: Enter email subject line pattern...";
-                      };
-
-                      return (
-                        <div key={index} className="flex items-center space-x-2">
-                          <input
-                            type="text"
-                            value={pattern}
-                            onChange={(e) => updateSubjectPattern(categoryKey, index, e.target.value)}
-                            placeholder={getPlaceholder(categoryKey, index)}
-                            className="flex-1 px-3 py-2 border border-gray-300 rounded-md bg-white text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          />
-                          <button
-                            onClick={() => removeSubjectPattern(categoryKey, index)}
-                            className="text-red-600 hover:text-red-700 p-1"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                  {marketplace.comingSoon && (
+                    <span className="absolute -top-2 -right-2 px-3 py-1 bg-gradient-to-r from-orange-500 to-orange-600 text-white text-xs font-semibold rounded-full shadow-sm">
+                      Coming Soon
+                    </span>
+                  )}
+                </label>
               ))}
             </div>
           </div>
 
-          {/* Sales Categories Section */}
-          <div className="mt-8">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Sales</h3>
+          {/* Categories Container */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+            {/* Purchases Section */}
             <div className="space-y-6">
-              {Object.entries(config.salesCategories).map(([categoryKey, category]) => (
-                <div key={categoryKey} className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center">
-                      <Mail className="w-5 h-5 text-gray-400 mr-2" />
-                      <h4 className="font-medium text-gray-900">{category.name}</h4>
-                      <span className={`ml-3 px-2 py-1 rounded-full text-xs font-medium ${
-                        category.statusColor === 'green' ? 'bg-green-100 text-green-800' :
-                        category.statusColor === 'red' ? 'bg-red-100 text-red-800' : ''
-                      }`}>
-                        {category.status}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => addSalesSubjectPattern(categoryKey)}
-                      className="flex items-center text-sm text-blue-600 hover:text-blue-700"
-                    >
-                      <Plus className="w-4 h-4 mr-1" />
-                      Add Pattern
-                    </button>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    {category.subjectPatterns.map((pattern, index) => {
-                      // Get appropriate placeholder text based on sales category
-                      const getSalesPlaceholder = (catKey: string, idx: number) => {
-                        const placeholders = {
-                          saleMade: [
-                            "Example: Sale confirmed",
-                            "Example: Your item sold",
-                            "Example: Sale notification",
-                            "Example: Item purchased"
-                          ],
-                          verificationFailed: [
-                            "Example: Verification failed",
-                            "Example: Unable to verify",
-                            "Example: Authentication failed",
-                            "Example: Item not authentic"
-                          ]
-                        };
-                        const categoryPlaceholders = placeholders[catKey as keyof typeof placeholders] || [];
-                        return categoryPlaceholders[idx] || "Example: Enter email subject line pattern...";
-                      };
-
-                      return (
-                        <div key={index} className="flex items-center space-x-2">
-                          <input
-                            type="text"
-                            value={pattern}
-                            onChange={(e) => updateSalesSubjectPattern(categoryKey, index, e.target.value)}
-                            placeholder={getSalesPlaceholder(categoryKey, index)}
-                            className="flex-1 px-3 py-2 border border-gray-300 rounded-md bg-white text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          />
-                          <button
-                            onClick={() => removeSalesSubjectPattern(categoryKey, index)}
-                            className="text-red-600 hover:text-red-700 p-1"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
+              <div className="flex items-center space-x-3">
+                <div className="p-1.5 bg-gradient-to-br from-green-500 to-green-600 rounded-lg text-white">
+                  <Mail className="w-5 h-5" />
                 </div>
-              ))}
+                <h3 className="text-xl font-semibold text-gray-900">Purchases</h3>
+              </div>
+              <div className="space-y-4">
+                {Object.entries(config.emailCategories).map(([categoryKey, category]) => (
+                  <div key={categoryKey} className="group bg-white rounded-2xl border border-gray-200 hover:border-gray-300 shadow-sm hover:shadow-md transition-all duration-200">
+                    <div className="p-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center space-x-3">
+                          <Mail className="w-5 h-5 text-gray-400" />
+                          <h4 className="font-semibold text-gray-900">{category.name}</h4>
+                          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                            category.statusColor === 'green' ? 'bg-green-100 text-green-800' :
+                            category.statusColor === 'blue' ? 'bg-blue-100 text-blue-800' :
+                            category.statusColor === 'orange' ? 'bg-orange-100 text-orange-800' :
+                            'bg-red-100 text-red-800'
+                          }`}>
+                            {category.status}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => addSubjectPattern(categoryKey)}
+                          className="flex items-center space-x-2 px-3 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-xl transition-all duration-200"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Add Pattern</span>
+                        </button>
+                      </div>
+                      
+                      <div className="space-y-3">
+                        {category.subjectPatterns.map((pattern, index) => {
+                          // Get appropriate placeholder text based on category
+                          const getPlaceholder = (catKey: string, idx: number) => {
+                            const placeholders = {
+                              orderPlaced: [
+                                "Example: Order Confirmation",
+                                "Example: Your order has been placed",
+                                "Example: Purchase confirmed",
+                                "Example: Order received"
+                              ],
+                              orderShipped: [
+                                "Example: Your order has shipped", 
+                                "Example: Shipment notification",
+                                "Example: Order shipped",
+                                "Example: Package on the way"
+                              ],
+                              orderDelivered: [
+                                "Example: Order delivered",
+                                "Example: Package delivered",
+                                "Example: Delivery confirmation", 
+                                "Example: Your package has arrived"
+                              ],
+                              orderDelayed: [
+                                "Example: Order delayed",
+                                "Example: Shipping delay",
+                                "Example: Delivery postponed",
+                                "Example: Expected delivery updated"
+                              ],
+                              orderCanceled: [
+                                "Example: Order canceled",
+                                "Example: Order cancelled", 
+                                "Example: Refund processed",
+                                "Example: Order refunded"
+                              ]
+                            };
+                            const categoryPlaceholders = placeholders[catKey as keyof typeof placeholders] || [];
+                            return categoryPlaceholders[idx] || "Example: Enter email subject line pattern...";
+                          };
+
+                          return (
+                            <div key={index} className="flex items-center space-x-3 group/item">
+                              <input
+                                type="text"
+                                value={pattern}
+                                onChange={(e) => updateSubjectPattern(categoryKey, index, e.target.value)}
+                                placeholder={getPlaceholder(categoryKey, index)}
+                                className="flex-1 px-4 py-3 border border-gray-200 rounded-xl bg-white text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 hover:border-gray-300"
+                              />
+                              <button
+                                onClick={() => removeSubjectPattern(categoryKey, index)}
+                                className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl transition-all duration-200 opacity-0 group-hover/item:opacity-100"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Sales Section */}
+            <div className="space-y-6">
+              <div className="flex items-center space-x-3">
+                <div className="p-1.5 bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg text-white">
+                  <Mail className="w-5 h-5" />
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900">Sales</h3>
+              </div>
+              <div className="space-y-4">
+                {Object.entries(config.salesCategories).map(([categoryKey, category]) => (
+                  <div key={categoryKey} className="group bg-white rounded-2xl border border-gray-200 hover:border-gray-300 shadow-sm hover:shadow-md transition-all duration-200">
+                    <div className="p-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center space-x-3">
+                          <Mail className="w-5 h-5 text-gray-400" />
+                          <h4 className="font-semibold text-gray-900">{category.name}</h4>
+                          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                            category.statusColor === 'green' ? 'bg-green-100 text-green-800' :
+                            category.statusColor === 'red' ? 'bg-red-100 text-red-800' : ''
+                          }`}>
+                            {category.status}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => addSalesSubjectPattern(categoryKey)}
+                          className="flex items-center space-x-2 px-3 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-xl transition-all duration-200"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Add Pattern</span>
+                        </button>
+                      </div>
+                      
+                      <div className="space-y-3">
+                        {category.subjectPatterns.map((pattern, index) => {
+                          // Get appropriate placeholder text based on sales category
+                          const getSalesPlaceholder = (catKey: string, idx: number) => {
+                            const placeholders = {
+                              saleMade: [
+                                "Example: Sale confirmed",
+                                "Example: Your item sold",
+                                "Example: Sale notification",
+                                "Example: Item purchased"
+                              ],
+                              verificationFailed: [
+                                "Example: Verification failed",
+                                "Example: Unable to verify",
+                                "Example: Authentication failed",
+                                "Example: Item not authentic"
+                              ]
+                            };
+                            const categoryPlaceholders = placeholders[catKey as keyof typeof placeholders] || [];
+                            return categoryPlaceholders[idx] || "Example: Enter email subject line pattern...";
+                          };
+
+                          return (
+                            <div key={index} className="flex items-center space-x-3 group/item">
+                              <input
+                                type="text"
+                                value={pattern}
+                                onChange={(e) => updateSalesSubjectPattern(categoryKey, index, e.target.value)}
+                                placeholder={getSalesPlaceholder(categoryKey, index)}
+                                className="flex-1 px-4 py-3 border border-gray-200 rounded-xl bg-white text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 hover:border-gray-300"
+                              />
+                              <button
+                                onClick={() => removeSalesSubjectPattern(categoryKey, index)}
+                                className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl transition-all duration-200 opacity-0 group-hover/item:opacity-100"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
+        </div>
 
-          {/* Footer */}
-          <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
-            <button
-              onClick={resetToDefaults}
-              className="flex items-center px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
-            >
-              <RotateCcw className="w-4 h-4 mr-2" />
-              Reset to Defaults
-            </button>
-            <button
-              onClick={saveConfig}
-              disabled={!hasChanges}
-              className={`flex items-center px-6 py-2 rounded-md ${
-                hasChanges
-                  ? 'bg-blue-600 text-white hover:bg-blue-700'
-                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-              }`}
-            >
-              <Save className="w-4 h-4 mr-2" />
-              Save Changes
-            </button>
+        {/* Footer */}
+        <div className="sticky bottom-0 bg-white/95 backdrop-blur-sm border-t border-gray-100 px-8 py-6 rounded-b-2xl">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center space-x-2 text-sm text-gray-600">
+              {hasChanges && (
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div>
+                  <span>You have unsaved changes</span>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={resetToDefaults}
+                className="flex items-center space-x-2 px-4 py-2.5 text-gray-600 border border-gray-300 rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 font-medium"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>Reset to Defaults</span>
+              </button>
+              <button
+                onClick={saveConfig}
+                disabled={!hasChanges || isSaving}
+                className={`flex items-center space-x-2 px-6 py-2.5 rounded-xl font-medium transition-all duration-200 ${
+                  hasChanges && !isSaving
+                    ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800 shadow-lg hover:shadow-xl'
+                    : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                }`}
+              >
+                {isSaving ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    <span>Save Changes</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>
