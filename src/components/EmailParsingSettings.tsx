@@ -35,10 +35,7 @@ const defaultConfig: EmailParsingConfig = {
       status: "Ordered",
       statusColor: "orange",
       subjectPatterns: [
-        "Order Confirmation",
-        "Your order has been placed",
-        "Purchase confirmed",
-        "Order received"
+        "Order Confirmation"
       ]
     },
     orderShipped: {
@@ -46,10 +43,7 @@ const defaultConfig: EmailParsingConfig = {
       status: "Shipped", 
       statusColor: "blue",
       subjectPatterns: [
-        "Your order has shipped",
-        "Shipment notification",
-        "Order shipped",
-        "Package on the way"
+        "Your order has shipped"
       ]
     },
     orderDelivered: {
@@ -57,10 +51,7 @@ const defaultConfig: EmailParsingConfig = {
       status: "Delivered",
       statusColor: "green", 
       subjectPatterns: [
-        "Order delivered",
-        "Package delivered", 
-        "Delivery confirmation",
-        "Your package has arrived"
+        "Order delivered"
       ]
     },
     orderDelayed: {
@@ -68,10 +59,7 @@ const defaultConfig: EmailParsingConfig = {
       status: "Delayed",
       statusColor: "orange",
       subjectPatterns: [
-        "Order delayed",
-        "Shipping delay",
-        "Delivery postponed",
-        "Expected delivery updated"
+        "Order delayed"
       ]
     },
     orderCanceled: {
@@ -79,11 +67,7 @@ const defaultConfig: EmailParsingConfig = {
       status: "Canceled",
       statusColor: "red",
       subjectPatterns: [
-        "Order canceled",
-        "Order cancelled",
-        "Refund processed", 
-        "Order refunded",
-        "Purchase refund"
+        "Order canceled"
       ]
     }
   },
@@ -270,23 +254,63 @@ const EmailParsingSettings = ({ isOpen, onClose }: EmailParsingSettingsProps) =>
                   </div>
                   
                   <div className="space-y-2">
-                    {category.subjectPatterns.map((pattern, index) => (
-                      <div key={index} className="flex items-center space-x-2">
-                        <input
-                          type="text"
-                          value={pattern}
-                          onChange={(e) => updateSubjectPattern(categoryKey, index, e.target.value)}
-                          placeholder="Enter email subject line pattern..."
-                          className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        />
-                        <button
-                          onClick={() => removeSubjectPattern(categoryKey, index)}
-                          className="text-red-600 hover:text-red-700 p-1"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
+                    {category.subjectPatterns.map((pattern, index) => {
+                      // Get appropriate placeholder text based on category
+                      const getPlaceholder = (catKey: string, idx: number) => {
+                        const placeholders = {
+                          orderPlaced: [
+                            "Order Confirmation",
+                            "Your order has been placed",
+                            "Purchase confirmed",
+                            "Order received"
+                          ],
+                          orderShipped: [
+                            "Your order has shipped", 
+                            "Shipment notification",
+                            "Order shipped",
+                            "Package on the way"
+                          ],
+                          orderDelivered: [
+                            "Order delivered",
+                            "Package delivered",
+                            "Delivery confirmation", 
+                            "Your package has arrived"
+                          ],
+                          orderDelayed: [
+                            "Order delayed",
+                            "Shipping delay",
+                            "Delivery postponed",
+                            "Expected delivery updated"
+                          ],
+                          orderCanceled: [
+                            "Order canceled",
+                            "Order cancelled", 
+                            "Refund processed",
+                            "Order refunded"
+                          ]
+                        };
+                        const categoryPlaceholders = placeholders[catKey as keyof typeof placeholders] || [];
+                        return categoryPlaceholders[idx] || "Enter email subject line pattern...";
+                      };
+
+                      return (
+                        <div key={index} className="flex items-center space-x-2">
+                          <input
+                            type="text"
+                            value={pattern}
+                            onChange={(e) => updateSubjectPattern(categoryKey, index, e.target.value)}
+                            placeholder={getPlaceholder(categoryKey, index)}
+                            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                          <button
+                            onClick={() => removeSubjectPattern(categoryKey, index)}
+                            className="text-red-600 hover:text-red-700 p-1"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ))}

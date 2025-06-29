@@ -11,10 +11,7 @@ function getDefaultConfig() {
         status: "Ordered",
         statusColor: "orange",
         subjectPatterns: [
-          "Order Confirmation",
-          "Your order has been placed",
-          "Purchase confirmed",
-          "Order received"
+          "Order Confirmation"
         ]
       },
       orderShipped: {
@@ -22,10 +19,7 @@ function getDefaultConfig() {
         status: "Shipped", 
         statusColor: "blue",
         subjectPatterns: [
-          "Your order has shipped",
-          "Shipment notification",
-          "Order shipped",
-          "Package on the way"
+          "Your order has shipped"
         ]
       },
       orderDelivered: {
@@ -33,10 +27,7 @@ function getDefaultConfig() {
         status: "Delivered",
         statusColor: "green", 
         subjectPatterns: [
-          "Order delivered",
-          "Package delivered", 
-          "Delivery confirmation",
-          "Your package has arrived"
+          "Order delivered"
         ]
       },
       orderDelayed: {
@@ -44,10 +35,7 @@ function getDefaultConfig() {
         status: "Delayed",
         statusColor: "orange",
         subjectPatterns: [
-          "Order delayed",
-          "Shipping delay",
-          "Delivery postponed",
-          "Expected delivery updated"
+          "Order delayed"
         ]
       },
       orderCanceled: {
@@ -55,11 +43,7 @@ function getDefaultConfig() {
         status: "Canceled",
         statusColor: "red",
         subjectPatterns: [
-          "Order canceled",
-          "Order cancelled",
-          "Refund processed", 
-          "Order refunded",
-          "Purchase refund"
+          "Order canceled"
         ]
       }
     },
