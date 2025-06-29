@@ -27,31 +27,40 @@ export async function GET(request: NextRequest) {
     
     // Store tokens securely (in production, use a secure database)
     const cookieStore = cookies();
+    
+    console.log('🍪 Setting cookies with tokens:', {
+      hasAccessToken: !!tokens.access_token,
+      hasRefreshToken: !!tokens.refresh_token,
+      accessTokenLength: tokens.access_token?.length || 0
+    });
+    
     cookieStore.set('gmail_access_token', tokens.access_token || '', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      httpOnly: false, // Allow frontend access for debugging
+      secure: false, // Allow localhost
+      sameSite: 'lax',
+      path: '/',
       maxAge: 3600 // 1 hour
     });
     
     if (tokens.refresh_token) {
       cookieStore.set('gmail_refresh_token', tokens.refresh_token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
+        httpOnly: false, // Allow frontend access for debugging
+        secure: false, // Allow localhost
+        sameSite: 'lax',
+        path: '/',
         maxAge: 30 * 24 * 60 * 60 // 30 days
       });
     }
 
-    // Redirect back to dashboard with success - force localhost to fix cookie issues
-    const redirectUrl = request.url.includes('localhost') 
-      ? new URL('/?gmail_connected=true', request.url)
-      : new URL('http://localhost:3000/?gmail_connected=true');
+    console.log('✅ Gmail tokens stored in cookies successfully');
+
+    // Redirect back to dashboard with success - use dynamic base URL
+    const redirectUrl = new URL('/?gmail_connected=true', baseUrl);
     return NextResponse.redirect(redirectUrl);
     
   } catch (error) {
     console.error('Error handling OAuth callback:', error);
-    const errorUrl = request.url.includes('localhost') 
-      ? new URL('/?gmail_error=true', request.url)
-      : new URL('http://localhost:3000/?gmail_error=true');
+    const errorUrl = new URL('/?gmail_error=true', baseUrl);
     return NextResponse.redirect(errorUrl);
   }
 } 
