@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Edit, MoreHorizontal, Camera, RefreshCw, Mail } from 'lucide-react';
+import { ChevronDown, Edit, MoreHorizontal, Camera, RefreshCw, Mail, Trash2 } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import ScanPackageModal from './ScanPackageModal';
 import GmailConnector from './GmailConnector';
@@ -14,6 +14,7 @@ const Purchases = () => {
   const [loading, setLoading] = useState(false);
   const [totalValue, setTotalValue] = useState('$0.00');
   const [totalCount, setTotalCount] = useState(0);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const { currentTheme } = useTheme();
   
   // Column width state
@@ -180,6 +181,21 @@ const Purchases = () => {
     }
   };
 
+  const handleResetClick = () => {
+    setShowResetConfirm(true);
+  };
+
+  const confirmReset = () => {
+    setPurchases([]);
+    setTotalValue('$0');
+    setTotalCount(0);
+    setShowResetConfirm(false);
+  };
+
+  const cancelReset = () => {
+    setShowResetConfirm(false);
+  };
+
   const getStatusBadge = (status: string, color: string) => {
     const baseClasses = "px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap";
     const colorClasses = {
@@ -240,6 +256,15 @@ const Purchases = () => {
               <Camera className="w-5 h-5" />
               <span>Scan Package</span>
             </button>
+            {totalCount > 0 && (
+              <button
+                onClick={handleResetClick}
+                className="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+              >
+                <Trash2 className="w-5 h-5" />
+                <span>Reset</span>
+              </button>
+            )}
           </div>
         </div>
         <div className="text-right">
@@ -436,6 +461,36 @@ const Purchases = () => {
         onClose={() => setShowScanModal(false)}
         onScanComplete={handleScanComplete}
       />
+
+      {/* Reset Confirmation Modal */}
+      {showResetConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <div className="flex items-center mb-4">
+              <Trash2 className="w-6 h-6 text-red-600 mr-3" />
+              <h3 className="text-lg font-semibold text-gray-900">Reset All Purchases</h3>
+            </div>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to clear all purchases? This action cannot be undone.
+              {gmailConnected && " You can always sync with Gmail again to restore your data."}
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={cancelReset}
+                className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmReset}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
+              >
+                Reset All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
