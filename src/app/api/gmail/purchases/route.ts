@@ -81,19 +81,66 @@ function getDefaultConfig() {
 
 // Generate Gmail search queries based on configuration
 function generateQueries(config: any) {
-  const queries: string[] = [];
+  const queries = [];
   
-  // Get available and enabled marketplaces
-  const enabledMarketplaces = Object.values(config.marketplaces)
-    .filter((marketplace: any) => marketplace.available && marketplace.enabled);
-  
-  // Generate queries for each enabled marketplace and each email category
-  for (const marketplace of enabledMarketplaces) {
-    for (const category of Object.values(config.emailCategories)) {
-      for (const pattern of (category as any).subjectPatterns) {
-        if (pattern.trim()) {
-          queries.push(`from:${(marketplace as any).emailDomain} "${pattern}"`);
+  // Get enabled and available marketplaces
+  const enabledMarketplaces = Object.entries(config.marketplaces)
+    .filter(([_, marketplace]: [string, any]) => marketplace.enabled && marketplace.available);
+
+  // Generate queries for each enabled marketplace
+  for (const [marketplaceKey, marketplace] of enabledMarketplaces) {
+    const mp = marketplace as any;
+    
+    // Generate sender email queries if marketplace has sender emails
+    if (mp.senderEmails && mp.senderEmails.length > 0) {
+      for (const senderEmail of mp.senderEmails) {
+        // Create a comprehensive query that includes sender email AND subject patterns
+        const subjectPatterns = [];
+        for (const [categoryKey, category] of Object.entries(config.emailCategories)) {
+          const cat = category as any;
+          subjectPatterns.push(...cat.subjectPatterns);
         }
+        
+        // Create query: from sender AND (subject pattern 1 OR subject pattern 2...)
+        if (subjectPatterns.length > 0) {
+          const subjectQuery = subjectPatterns
+            .map(pattern => `subject:"${pattern}"`)
+            .join(' OR ');
+          queries.push(`from:${senderEmail} AND (${subjectQuery})`);
+        } else {
+          // Fallback: just filter by sender if no subject patterns
+          queries.push(`from:${senderEmail}`);
+        }
+      }
+    } else {
+      // Fallback for marketplaces without specific sender emails
+      // Use domain-based filtering with subject patterns
+      const subjectPatterns = [];
+      for (const [categoryKey, category] of Object.entries(config.emailCategories)) {
+        const cat = category as any;
+        subjectPatterns.push(...cat.subjectPatterns);
+      }
+      
+      if (subjectPatterns.length > 0) {
+        const subjectQuery = subjectPatterns
+          .map(pattern => `subject:"${pattern}"`)
+          .join(' OR ');
+        queries.push(`from:${mp.emailDomain} AND (${subjectQuery})`);
+      }
+    }
+  }
+
+  // If no marketplace-specific queries were generated, create fallback queries
+  if (queries.length === 0) {
+    const subjectPatterns = [];
+    for (const [categoryKey, category] of Object.entries(config.emailCategories)) {
+      const cat = category as any;
+      subjectPatterns.push(...cat.subjectPatterns);
+    }
+    
+    if (subjectPatterns.length > 0) {
+      for (const pattern of subjectPatterns) {
+        queries.push(`subject:"${pattern}"`);
       }
     }
   }
@@ -282,11 +329,17 @@ function extractEmailContent(email: any): string {
 }
 
 function identifyMarket(fromHeader: string): string {
+  // Check for specific sender email addresses first (most precise)
+  if (fromHeader.includes('noreply@stockx.com')) return 'StockX';
+  
+  // Fallback to domain-based identification
   if (fromHeader.includes('stockx.com')) return 'StockX';
   if (fromHeader.includes('goat.com')) return 'GOAT';
   if (fromHeader.includes('flightclub.com')) return 'Flight Club';
   if (fromHeader.includes('deadstock.com')) return 'Deadstock';
   if (fromHeader.includes('novelship.com')) return 'Novelship';
+  if (fromHeader.includes('ebay.com')) return 'eBay';
+  if (fromHeader.includes('alias.com')) return 'Alias';
   return 'Unknown';
 }
 
