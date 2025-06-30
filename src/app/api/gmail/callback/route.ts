@@ -17,10 +17,37 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = url;
     const code = searchParams.get('code');
+    const state = searchParams.get('state');
+
+    console.log('🔍 Gmail callback debug:', {
+      hasCode: !!code,
+      hasState: !!state,
+      stateValue: state,
+      fullUrl: request.url
+    });
 
     if (!code) {
       return NextResponse.json({ error: 'Authorization code not found' }, { status: 400 });
     }
+
+    // Parse the return URL from the state parameter
+    let returnUrl = '/';
+    if (state) {
+      try {
+        const stateData = JSON.parse(state);
+        returnUrl = stateData.returnUrl || '/';
+        console.log('✅ Parsed state successfully:', stateData);
+      } catch (error) {
+        console.error('❌ Error parsing state parameter:', error);
+        console.log('📝 Raw state value:', state);
+        // Default to homepage if state parsing fails
+        returnUrl = '/';
+      }
+    } else {
+      console.log('⚠️ No state parameter received');
+    }
+
+    console.log('🎯 Will redirect to:', returnUrl);
 
     // Exchange code for tokens
     const { tokens } = await oauth2Client.getToken(code);
@@ -35,7 +62,7 @@ export async function GET(request: NextRequest) {
     });
     
     cookieStore.set('gmail_access_token', tokens.access_token || '', {
-      httpOnly: false, // Allow frontend access for debugging
+      httpOnly: true, // Changed back to true for security
       secure: false, // Allow localhost
       sameSite: 'lax',
       path: '/',
@@ -44,7 +71,7 @@ export async function GET(request: NextRequest) {
     
     if (tokens.refresh_token) {
       cookieStore.set('gmail_refresh_token', tokens.refresh_token, {
-        httpOnly: false, // Allow frontend access for debugging
+        httpOnly: true, // Changed back to true for security
         secure: false, // Allow localhost
         sameSite: 'lax',
         path: '/',
@@ -54,13 +81,25 @@ export async function GET(request: NextRequest) {
 
     console.log('✅ Gmail tokens stored in cookies successfully');
 
-    // Redirect back to dashboard with success - use dynamic base URL
-    const redirectUrl = new URL('/?gmail_connected=true', baseUrl);
+    // Redirect back to the return URL with success parameter
+    const redirectUrl = new URL(`${returnUrl}?gmail_connected=true`, baseUrl);
+    console.log('🔄 Final redirect URL:', redirectUrl.toString());
     return NextResponse.redirect(redirectUrl);
     
   } catch (error) {
     console.error('Error handling OAuth callback:', error);
-    const errorUrl = new URL('/?gmail_error=true', baseUrl);
+    // Use return URL from state or default to homepage for error redirect
+    let errorReturnUrl = '/';
+    const state = new URL(request.url).searchParams.get('state');
+    if (state) {
+      try {
+        const stateData = JSON.parse(state);
+        errorReturnUrl = stateData.returnUrl || '/';
+      } catch (parseError) {
+        console.error('Error parsing state for error redirect:', parseError);
+      }
+    }
+    const errorUrl = new URL(`${errorReturnUrl}?gmail_error=true`, baseUrl);
     return NextResponse.redirect(errorUrl);
   }
 } 

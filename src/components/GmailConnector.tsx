@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Mail, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 
 interface GmailConnectorProps {
@@ -11,32 +11,63 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const urlConfirmedRef = useRef(false);
 
   useEffect(() => {
-    checkConnectionStatus();
-    
-    // Check for OAuth callback results
+    // Check for OAuth callback results FIRST and ONLY
     const urlParams = new URLSearchParams(window.location.search);
+    
     if (urlParams.get('gmail_connected') === 'true') {
+      console.log('🎉 Gmail connection confirmed by URL parameter - BLOCKING ALL API CHECKS');
+      urlConfirmedRef.current = true; // BLOCK all future API checks
       setIsConnected(true);
       onConnectionChange?.(true);
       // Clean up URL
       const newUrl = window.location.pathname;
       window.history.replaceState({}, document.title, newUrl);
-    } else if (urlParams.get('gmail_error') === 'true') {
+      return;
+    } 
+    
+    if (urlParams.get('gmail_error') === 'true') {
       setError('Failed to connect to Gmail. Please try again.');
       // Clean up URL
       const newUrl = window.location.pathname;
       window.history.replaceState({}, document.title, newUrl);
+      return;
+    }
+    
+    // ONLY check API if URL was never confirmed
+    if (!urlConfirmedRef.current) {
+      console.log('🔍 No URL confirmation found, checking API status...');
+      checkConnectionStatus();
+    } else {
+      console.log('⚠️ BLOCKED API check - URL confirmation already received');
     }
   }, [onConnectionChange]);
 
   const checkConnectionStatus = async () => {
+    // Double-check the ref before making API call
+    if (urlConfirmedRef.current) {
+      console.log('⚠️ BLOCKED API call - URL confirmation already received');
+      return;
+    }
+
     try {
+      console.log('📡 Calling API to check Gmail connection...');
       const response = await fetch('/api/gmail/purchases');
-      setIsConnected(response.status !== 401);
-      onConnectionChange?.(response.status !== 401);
+      const connected = response.status !== 401;
+      console.log('📊 API Gmail connection status:', connected ? 'Connected' : 'Not connected');
+      setIsConnected(connected);
+      onConnectionChange?.(connected);
+      
+      if (response.status === 401) {
+        const data = await response.json();
+        if (data.needsReauth) {
+          setError('Gmail authentication expired. Please reconnect.');
+        }
+      }
     } catch (error) {
+      console.error('Error checking Gmail connection:', error);
       setIsConnected(false);
       onConnectionChange?.(false);
     }
@@ -47,10 +78,23 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
     setError(null);
 
     try {
-      const response = await fetch('/api/gmail/auth');
+      // Get current page path to return to after auth
+      const currentPath = window.location.pathname;
+      console.log('🔍 Gmail connect debug:', {
+        currentPath: currentPath,
+        fullLocation: window.location.href
+      });
+      
+      const authUrl = `/api/gmail/auth?returnUrl=${encodeURIComponent(currentPath)}`;
+      console.log('📡 Calling auth endpoint:', authUrl);
+      
+      const response = await fetch(authUrl);
       const data = await response.json();
       
+      console.log('📥 Auth response:', data);
+      
       if (data.authUrl) {
+        console.log('🚀 Redirecting to Google OAuth:', data.authUrl);
         // Redirect to Google OAuth
         window.location.href = data.authUrl;
       } else {
@@ -67,11 +111,18 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
     try {
       // Clear cookies by making a request to clear them
       await fetch('/api/gmail/disconnect', { method: 'POST' });
+      urlConfirmedRef.current = false; // Reset the block
       setIsConnected(false);
       onConnectionChange?.(false);
     } catch (error) {
       console.error('Error disconnecting from Gmail:', error);
     }
+  };
+
+  const recheckConnection = () => {
+    setError(null);
+    urlConfirmedRef.current = false; // Allow API check again
+    checkConnectionStatus();
   };
 
   if (isConnected) {
@@ -82,12 +133,20 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
           <div className="font-medium text-sm">Gmail Connected</div>
           <div className="text-xs text-green-600">Purchase emails will be automatically imported</div>
         </div>
-        <button
-          onClick={disconnectFromGmail}
-          className="text-xs text-green-700 hover:text-green-900 underline"
-        >
-          Disconnect
-        </button>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={recheckConnection}
+            className="text-xs text-green-700 hover:text-green-900 underline"
+          >
+            Refresh
+          </button>
+          <button
+            onClick={disconnectFromGmail}
+            className="text-xs text-green-700 hover:text-green-900 underline"
+          >
+            Disconnect
+          </button>
+        </div>
       </div>
     );
   }

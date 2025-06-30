@@ -8,6 +8,10 @@ import confetti from 'canvas-confetti';
 const Sales = () => {
   const [activeFilter, setActiveFilter] = useState('All Time');
   const { currentTheme } = useTheme();
+  const isPremium = currentTheme.name === 'Premium';
+  const isLight = currentTheme.name === 'Light';
+  const isRevolutionary = currentTheme.name === 'Premium'; // Revolutionary Creative = Premium theme
+  
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; sale: any }>({
     isOpen: false,
     sale: null
@@ -283,12 +287,36 @@ const Sales = () => {
   ];
 
   return (
-    <div className={`flex-1 ${currentTheme.colors.background} p-8`}>
+    <div className={`flex-1 p-8 ${
+      isRevolutionary
+        ? 'ml-80 bg-slate-900'
+        : isPremium 
+          ? 'ml-80 bg-slate-900' 
+          : isLight 
+            ? 'ml-80 bg-gray-50' 
+            : 'ml-80 bg-gray-900'
+    }`}>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Sales Tracking</h1>
-          <p className="text-gray-600 mt-1">Record and track all your sales across marketplaces</p>
+          <h1 className={`text-2xl font-bold ${
+            isPremium 
+              ? 'text-premium-gradient' 
+              : isLight
+                ? 'text-gray-900'
+                : 'text-white'
+          }`}>
+            Sales Tracking
+          </h1>
+          <p className={`mt-1 ${
+            isPremium 
+              ? 'text-slate-400' 
+              : isLight
+                ? 'text-gray-600'
+                : 'text-gray-400'
+          }`}>
+            Record and track all your sales across marketplaces
+          </p>
         </div>
         <div className="flex items-center space-x-3">
           <button 

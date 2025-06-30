@@ -10,6 +10,9 @@ const FailedVerifications = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [showScanResult, setShowScanResult] = useState(false);
   const { currentTheme } = useTheme();
+  const isPremium = currentTheme.name === 'Premium';
+  const isLight = currentTheme.name === 'Light';
+  const isRevolutionary = currentTheme.name === 'Premium'; // Revolutionary Creative = Premium theme
 
   const handleScanClick = () => {
     setIsScanning(true);
@@ -58,12 +61,36 @@ const FailedVerifications = () => {
   ];
 
   return (
-    <div className={`flex-1 ${currentTheme.colors.background} p-8`}>
+    <div className={`flex-1 p-8 ${
+      isRevolutionary
+        ? 'ml-80 bg-slate-900'
+        : isPremium 
+          ? 'ml-80 bg-slate-900' 
+          : isLight 
+            ? 'ml-80 bg-gray-50' 
+            : 'ml-80 bg-gray-900'
+    }`}>
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Failed Verifications</h1>
-          <p className="text-gray-600 mt-1">Track items that failed marketplace verification</p>
+          <h1 className={`text-2xl font-bold ${
+            isPremium 
+              ? 'text-premium-gradient' 
+              : isLight 
+                ? 'text-gray-900' 
+                : 'text-white'
+          }`}>
+            Failed Verifications
+          </h1>
+          <p className={`mt-1 ${
+            isPremium 
+              ? 'text-slate-300' 
+              : isLight 
+                ? 'text-gray-600' 
+                : 'text-gray-300'
+          }`}>
+            Track items that failed marketplace verification
+          </p>
         </div>
         <div className="flex items-center space-x-3">
           <button 
@@ -71,14 +98,26 @@ const FailedVerifications = () => {
             disabled={isScanning}
             className={`flex items-center px-4 py-2 text-white rounded-lg transition-colors ${
               isScanning 
-                ? 'bg-blue-500 cursor-not-allowed' 
-                : 'bg-blue-600 hover:bg-blue-700'
+                ? isPremium 
+                  ? 'bg-purple-500 cursor-not-allowed'
+                  : 'bg-blue-500 cursor-not-allowed'
+                : isPremium
+                  ? 'btn-premium'
+                  : isLight
+                    ? 'bg-blue-600 hover:bg-blue-700'
+                    : 'bg-blue-600 hover:bg-blue-700'
             }`}
           >
             <Search className="w-4 h-4 mr-2" />
             {isScanning ? 'Scanning...' : 'Scan for Verification Failures'}
           </button>
-          <button className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+          <button className={`flex items-center px-4 py-2 text-white rounded-lg transition-colors ${
+            isPremium
+              ? 'btn-premium'
+              : isLight
+                ? 'bg-blue-600 hover:bg-blue-700'
+                : 'bg-blue-600 hover:bg-blue-700'
+          }`}>
             <Plus className="w-4 h-4 mr-2" />
             Add Failed Verification
           </button>
@@ -86,23 +125,47 @@ const FailedVerifications = () => {
       </div>
 
       {/* Main Metrics Section */}
-      <div className={`${currentTheme.colors.cardBackground} rounded-lg p-8 shadow-sm border border-gray-200 mb-6`}>
+      <div className={`rounded-lg p-8 shadow-sm border mb-6 ${
+        isPremium
+          ? 'dark-premium-card'
+          : isLight
+            ? 'bg-white border-gray-200'
+            : 'bg-gray-800 border-gray-700'
+      }`}>
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center">
-            <AlertTriangle className="w-6 h-6 text-orange-500 mr-3" />
-            <h2 className="text-xl font-semibold text-gray-900">Verification Failure Rate</h2>
+            <AlertTriangle className={`w-6 h-6 mr-3 ${
+              isPremium ? 'text-orange-400' : 'text-orange-500'
+            }`} />
+            <h2 className={`text-xl font-semibold ${
+              isPremium 
+                ? 'text-white' 
+                : isLight 
+                  ? 'text-gray-900' 
+                  : 'text-white'
+            }`}>
+              Verification Failure Rate
+            </h2>
           </div>
           <div className="relative">
             <select 
               value={timeFilter}
               onChange={(e) => setTimeFilter(e.target.value)}
-              className={`appearance-none ${currentTheme.colors.cardBackground} border border-gray-300 rounded-lg px-4 py-2 pr-8 text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 ${currentTheme.colors.primary.replace('bg-', 'focus:ring-')} focus:border-opacity-50`}
+              className={`appearance-none border rounded-lg px-4 py-2 pr-8 text-sm font-medium focus:outline-none focus:ring-2 focus:border-opacity-50 ${
+                isPremium
+                  ? 'bg-slate-800 border-slate-600 text-slate-300 focus:ring-purple-500'
+                  : isLight
+                    ? 'bg-white border-gray-300 text-gray-700 focus:ring-blue-500'
+                    : 'bg-gray-700 border-gray-600 text-gray-300 focus:ring-blue-500'
+              }`}
             >
               <option>Monthly</option>
               <option>Weekly</option>
               <option>Daily</option>
             </select>
-            <ChevronDown className="w-4 h-4 absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none" />
+            <ChevronDown className={`w-4 h-4 absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none ${
+              isPremium ? 'text-slate-400' : 'text-gray-400'
+            }`} />
           </div>
         </div>
 
@@ -110,45 +173,125 @@ const FailedVerifications = () => {
         <div className="grid grid-cols-3 gap-8 mb-6">
           <div className="text-center">
             <div className="text-4xl font-bold text-red-600 mb-2">0.0%</div>
-            <div className="text-sm text-gray-500">Overall Rate</div>
+            <div className={`text-sm ${
+              isPremium ? 'text-slate-400' : isLight ? 'text-gray-500' : 'text-gray-400'
+            }`}>
+              Overall Rate
+            </div>
           </div>
           <div className="text-center">
-            <div className="text-4xl font-bold text-gray-900 mb-2">0</div>
-            <div className="text-sm text-gray-500">Total Failures</div>
+            <div className={`text-4xl font-bold mb-2 ${
+              isPremium 
+                ? 'text-white' 
+                : isLight 
+                  ? 'text-gray-900' 
+                  : 'text-white'
+            }`}>
+              0
+            </div>
+            <div className={`text-sm ${
+              isPremium ? 'text-slate-400' : isLight ? 'text-gray-500' : 'text-gray-400'
+            }`}>
+              Total Failures
+            </div>
           </div>
           <div className="text-center">
-            <div className="text-4xl font-bold text-gray-900 mb-2">10</div>
-            <div className="text-sm text-gray-500">Total Sales</div>
+            <div className={`text-4xl font-bold mb-2 ${
+              isPremium 
+                ? 'text-white' 
+                : isLight 
+                  ? 'text-gray-900' 
+                  : 'text-white'
+            }`}>
+              10
+            </div>
+            <div className={`text-sm ${
+              isPremium ? 'text-slate-400' : isLight ? 'text-gray-500' : 'text-gray-400'
+            }`}>
+              Total Sales
+            </div>
           </div>
         </div>
 
         {/* Current Month Rate */}
-        <div className="flex items-center justify-between pt-6 border-t border-gray-200">
+        <div className={`flex items-center justify-between pt-6 border-t ${
+          isPremium ? 'border-slate-700' : isLight ? 'border-gray-200' : 'border-gray-700'
+        }`}>
           <div>
-            <div className="text-2xl font-bold text-gray-900">0.0%</div>
-            <div className="text-sm text-gray-500">Current month rate</div>
+            <div className={`text-2xl font-bold ${
+              isPremium 
+                ? 'text-white' 
+                : isLight 
+                  ? 'text-gray-900' 
+                  : 'text-white'
+            }`}>
+              0.0%
+            </div>
+            <div className={`text-sm ${
+              isPremium ? 'text-slate-400' : isLight ? 'text-gray-500' : 'text-gray-400'
+            }`}>
+              Current month rate
+            </div>
           </div>
-          <div className="text-sm text-gray-500">No change</div>
+          <div className={`text-sm ${
+            isPremium ? 'text-slate-400' : isLight ? 'text-gray-500' : 'text-gray-400'
+          }`}>
+            No change
+          </div>
         </div>
       </div>
 
       {/* Monthly Breakdown */}
-      <div className={`${currentTheme.colors.cardBackground} rounded-lg p-6 shadow-sm border border-gray-200 mb-6`}>
+      <div className={`rounded-lg p-6 shadow-sm border mb-6 ${
+        isPremium
+          ? 'dark-premium-card'
+          : isLight
+            ? 'bg-white border-gray-200'
+            : 'bg-gray-800 border-gray-700'
+      }`}>
         <div className="flex items-center mb-6">
-          <Calendar className="w-5 h-5 text-gray-600 mr-2" />
-          <h3 className="text-lg font-semibold text-gray-900">Monthly Breakdown</h3>
+          <Calendar className={`w-5 h-5 mr-2 ${
+            isPremium ? 'text-slate-400' : isLight ? 'text-gray-600' : 'text-gray-400'
+          }`} />
+          <h3 className={`text-lg font-semibold ${
+            isPremium 
+              ? 'text-white' 
+              : isLight 
+                ? 'text-gray-900' 
+                : 'text-white'
+          }`}>
+            Monthly Breakdown
+          </h3>
         </div>
 
         <div className="space-y-4">
           {monthlyData.map((month, index) => (
-            <div key={index} className="flex items-center justify-between py-3 border-b border-gray-100 last:border-b-0">
+            <div key={index} className={`flex items-center justify-between py-3 border-b last:border-b-0 ${
+              isPremium ? 'border-slate-700' : isLight ? 'border-gray-100' : 'border-gray-700'
+            }`}>
               <div className="flex-1">
-                <div className="font-medium text-gray-900">{month.month}</div>
-                <div className="text-sm text-gray-500">{month.failed} of {month.total} sales failed</div>
+                <div className={`font-medium ${
+                  isPremium 
+                    ? 'text-white' 
+                    : isLight 
+                      ? 'text-gray-900' 
+                      : 'text-white'
+                }`}>
+                  {month.month}
+                </div>
+                <div className={`text-sm ${
+                  isPremium ? 'text-slate-400' : isLight ? 'text-gray-500' : 'text-gray-400'
+                }`}>
+                  {month.failed} of {month.total} sales failed
+                </div>
               </div>
               <div className="text-right">
                 <div className="text-lg font-bold text-green-600">{month.rate}</div>
-                <div className="text-sm text-gray-500">{month.status}</div>
+                <div className={`text-sm ${
+                  isPremium ? 'text-slate-400' : isLight ? 'text-gray-500' : 'text-gray-400'
+                }`}>
+                  {month.status}
+                </div>
               </div>
             </div>
           ))}
@@ -160,12 +303,28 @@ const FailedVerifications = () => {
         {statusCards.map((card, index) => {
           const Icon = card.icon;
           return (
-            <div key={index} className={`${currentTheme.colors.cardBackground} rounded-lg p-6 shadow-sm border border-gray-200`}>
+            <div key={index} className={`rounded-lg p-6 shadow-sm border ${
+              isPremium
+                ? 'dark-premium-card'
+                : isLight
+                  ? 'bg-white border-gray-200'
+                  : 'bg-gray-800 border-gray-700'
+            }`}>
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-medium text-gray-600">{card.title}</h3>
+                <h3 className={`text-sm font-medium ${
+                  isPremium ? 'text-slate-400' : isLight ? 'text-gray-600' : 'text-gray-400'
+                }`}>
+                  {card.title}
+                </h3>
                 <Icon className={`w-5 h-5 ${card.iconColor}`} />
               </div>
-              <p className={`text-2xl font-bold ${card.valueColor || 'text-gray-900'}`}>
+              <p className={`text-2xl font-bold ${card.valueColor || (
+                isPremium 
+                  ? 'text-white' 
+                  : isLight 
+                    ? 'text-gray-900' 
+                    : 'text-white'
+              )}`}>
                 {card.value}
               </p>
             </div>
@@ -176,11 +335,19 @@ const FailedVerifications = () => {
       {/* Search and Filter */}
       <div className="flex items-center justify-between mb-6">
         <div className="relative flex-1 max-w-md">
-          <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+          <Search className={`w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 ${
+            isPremium ? 'text-slate-400' : 'text-gray-400'
+          }`} />
           <input
             type="text"
             placeholder="Search failed verifications..."
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className={`w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 ${
+              isPremium
+                ? 'input-premium'
+                : isLight
+                  ? 'border-gray-300 focus:ring-blue-500 focus:border-blue-500'
+                  : 'bg-gray-700 border-gray-600 text-white focus:ring-blue-500 focus:border-blue-500'
+            }`}
           />
         </div>
         <div className="ml-4">
@@ -188,14 +355,22 @@ const FailedVerifications = () => {
             <select 
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className={`appearance-none ${currentTheme.colors.cardBackground} border border-gray-300 rounded-lg px-4 py-2 pr-8 text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 ${currentTheme.colors.primary.replace('bg-', 'focus:ring-')} focus:border-opacity-50`}
+              className={`appearance-none border rounded-lg px-4 py-2 pr-8 text-sm font-medium focus:outline-none focus:ring-2 focus:border-opacity-50 ${
+                isPremium
+                  ? 'bg-slate-800 border-slate-600 text-slate-300 focus:ring-purple-500'
+                  : isLight
+                    ? 'bg-white border-gray-300 text-gray-700 focus:ring-blue-500'
+                    : 'bg-gray-700 border-gray-600 text-gray-300 focus:ring-blue-500'
+              }`}
             >
               <option>All Statuses</option>
               <option>Failed</option>
               <option>Pending</option>
               <option>Completed</option>
             </select>
-            <ChevronDown className="w-4 h-4 absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none" />
+            <ChevronDown className={`w-4 h-4 absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none ${
+              isPremium ? 'text-slate-400' : 'text-gray-400'
+            }`} />
           </div>
         </div>
       </div>

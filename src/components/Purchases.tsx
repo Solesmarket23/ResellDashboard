@@ -6,8 +6,14 @@ import { useTheme } from '../lib/contexts/ThemeContext';
 import ScanPackageModal from './ScanPackageModal';
 import GmailConnector from './GmailConnector';
 import EmailParsingSettings from './EmailParsingSettings';
+import QuickTrackingFix from './QuickTrackingFix';
 
 const Purchases = () => {
+  const { currentTheme } = useTheme();
+  const isPremium = currentTheme.name === 'Premium';
+  const isLight = currentTheme.name === 'Light';
+  const isRevolutionary = currentTheme.name === 'Premium'; // Revolutionary Creative = Premium theme
+  
   const [sortBy, setSortBy] = useState('Purchase Date');
   const [showScanModal, setShowScanModal] = useState(false);
   const [gmailConnected, setGmailConnected] = useState(false);
@@ -17,7 +23,7 @@ const Purchases = () => {
   const [totalCount, setTotalCount] = useState(0);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showEmailSettings, setShowEmailSettings] = useState(false);
-  const { currentTheme } = useTheme();
+  const [lastSyncInfo, setLastSyncInfo] = useState<{totalFound: number, afterConsolidation: number} | null>(null);
   
   // Column width state
   const [columnWidths, setColumnWidths] = useState({
@@ -88,29 +94,54 @@ const Purchases = () => {
     };
   }, [gmailConnected]);
 
-  const fetchPurchases = async () => {
+  const fetchPurchases = async (limit?: number) => {
     setLoading(true);
     try {
       // Get email parsing configuration from localStorage
       const emailConfig = localStorage.getItem('emailParsingConfig');
       
-      const response = await fetch('/api/gmail/purchases', {
+      // Build URL with limit parameter if provided
+      const url = limit ? `/api/gmail/purchases?limit=${limit}` : '/api/gmail/purchases';
+      
+      console.log(`🔄 Fetching purchases from: ${url}`);
+      
+      const response = await fetch(url, {
         headers: {
           'Content-Type': 'application/json',
           ...(emailConfig ? { 'email-config': emailConfig } : {})
-        }
+        },
+        credentials: 'include' // Ensure cookies are included
       });
       
       if (response.ok) {
         const data = await response.json();
+        console.log(`✅ Successfully fetched ${data.purchases?.length || 0} purchases`);
         setPurchases(data.purchases || []);
         calculateTotals(data.purchases || []);
+        
+        // Store consolidation info for UI display
+        if (data.totalFound && data.afterConsolidation) {
+          setLastSyncInfo({
+            totalFound: data.totalFound,
+            afterConsolidation: data.afterConsolidation
+          });
+          console.log(`Gmail Sync: Found ${data.totalFound} emails, consolidated to ${data.afterConsolidation} unique purchases`);
+        }
+      } else if (response.status === 401) {
+        console.error('❌ Authentication failed - Gmail connection may have expired');
+        const errorData = await response.json();
+        if (errorData.needsReauth) {
+          console.log('🔄 Need to reauthenticate - setting Gmail as disconnected');
+          setGmailConnected(false);
+          alert('Gmail authentication expired. Please reconnect your Gmail account.');
+        }
+        loadMockData();
       } else {
-        console.error('Failed to fetch purchases');
+        console.error(`❌ Failed to fetch purchases: ${response.status}`);
         loadMockData();
       }
     } catch (error) {
-      console.error('Error fetching purchases:', error);
+      console.error('❌ Error fetching purchases:', error);
       loadMockData();
     } finally {
       setLoading(false);
@@ -205,6 +236,17 @@ const Purchases = () => {
     }
   };
 
+  const fetchLimitedPurchases = (limit: number) => {
+    console.log(`🧪 Test button clicked: limit=${limit}, gmailConnected=${gmailConnected}, loading=${loading}`);
+    if (gmailConnected) {
+      console.log(`🔄 Calling fetchPurchases with limit=${limit}`);
+      fetchPurchases(limit);
+    } else {
+      console.log(`❌ Cannot fetch - Gmail not connected`);
+      alert('Gmail is not connected. Please connect your Gmail account first.');
+    }
+  };
+
   const handleResetClick = () => {
     setShowResetConfirm(true);
   };
@@ -244,7 +286,18 @@ const Purchases = () => {
   };
 
   return (
-    <div className={`flex-1 ${currentTheme.colors.background} p-8`}>
+    <div className={`flex-1 p-8 ${
+      isRevolutionary
+        ? 'ml-80 bg-slate-900'
+        : isPremium 
+          ? 'ml-80 bg-slate-900' 
+          : isLight 
+            ? 'ml-80 bg-gray-50' 
+            : 'ml-80 bg-gray-900'
+    }`}>
+      {/* Quick Fix Component - Remove after fixing */}
+      <QuickTrackingFix />
+      
       {/* Gmail Connection Status */}
       <div className="mb-6">
         <GmailConnector onConnectionChange={setGmailConnected} />
@@ -254,8 +307,22 @@ const Purchases = () => {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center space-x-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Purchases</h1>
-            <p className="text-gray-600 mt-1">
+            <h1 className={`text-2xl font-bold ${
+              isPremium 
+                ? 'text-premium-gradient' 
+                : isLight
+                  ? 'text-gray-900'
+                  : 'text-white'
+            }`}>
+              Purchases
+            </h1>
+            <p className={`mt-1 ${
+              isPremium 
+                ? 'text-slate-400' 
+                : isLight
+                  ? 'text-gray-600'
+                  : 'text-gray-400'
+            }`}>
               {gmailConnected ? 
                 `Showing ${totalCount} purchases from Gmail` : 
                 `Showing ${totalCount} purchases (Demo data)`
@@ -264,14 +331,74 @@ const Purchases = () => {
           </div>
           <div className="flex items-center space-x-2">
             {gmailConnected && (
-              <button
-                onClick={refreshPurchases}
-                disabled={loading}
-                className="flex items-center space-x-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg font-medium transition-colors"
-              >
-                <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
-                <span>Sync Gmail</span>
-              </button>
+              <>
+                <button
+                  onClick={refreshPurchases}
+                  disabled={loading}
+                  className="flex items-center space-x-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                >
+                  <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+                  <span>Sync Gmail</span>
+                </button>
+                
+                {/* Testing Controls */}
+                <div className={`flex items-center space-x-1 rounded-lg p-1 ${
+                  isPremium
+                    ? 'bg-slate-800'
+                    : isLight
+                      ? 'bg-gray-100'
+                      : 'bg-gray-800'
+                }`}>
+                  <span className={`text-sm px-2 ${
+                    isPremium
+                      ? 'text-slate-400'
+                      : isLight
+                        ? 'text-gray-600'
+                        : 'text-gray-400'
+                  }`}>
+                    Test:
+                  </span>
+                  <button
+                    onClick={() => fetchLimitedPurchases(1)}
+                    disabled={loading}
+                    className={`px-2 py-1 text-sm disabled:opacity-50 rounded font-medium transition-colors ${
+                      isPremium
+                        ? 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+                        : isLight
+                          ? 'bg-white hover:bg-gray-50 text-gray-700'
+                          : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                    }`}
+                  >
+                    1
+                  </button>
+                  <button
+                    onClick={() => fetchLimitedPurchases(10)}
+                    disabled={loading}
+                    className={`px-2 py-1 text-sm disabled:opacity-50 rounded font-medium transition-colors ${
+                      isPremium
+                        ? 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+                        : isLight
+                          ? 'bg-white hover:bg-gray-50 text-gray-700'
+                          : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                    }`}
+                  >
+                    10
+                  </button>
+                  <button
+                    onClick={() => fetchLimitedPurchases(50)}
+                    disabled={loading}
+                    className={`px-2 py-1 text-sm disabled:opacity-50 rounded font-medium transition-colors ${
+                      isPremium
+                        ? 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+                        : isLight
+                          ? 'bg-white hover:bg-gray-50 text-gray-700'
+                          : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                    }`}
+                  >
+                    50
+                  </button>
+                </div>
+              </>
             )}
             <button
               onClick={() => setShowScanModal(true)}
@@ -299,8 +426,24 @@ const Purchases = () => {
           </div>
         </div>
         <div className="text-right">
-          <p className="text-gray-600">Total value:</p>
-          <p className="text-xl font-bold text-gray-900">{totalValue}</p>
+          <p className={`${
+            isPremium 
+              ? 'text-slate-400' 
+              : isLight
+                ? 'text-gray-600'
+                : 'text-gray-400'
+          }`}>
+            Total value:
+          </p>
+          <p className={`text-xl font-bold ${
+            isPremium 
+              ? 'text-white' 
+              : isLight
+                ? 'text-gray-900'
+                : 'text-white'
+          }`}>
+            {totalValue}
+          </p>
           {gmailConnected && (
             <p className="text-xs text-green-600 flex items-center justify-end mt-1">
               <Mail className="w-3 h-3 mr-1" />
@@ -310,28 +453,96 @@ const Purchases = () => {
         </div>
       </div>
 
+      {/* Sync Information */}
+      {gmailConnected && lastSyncInfo && (
+        <div className={`mb-4 rounded-lg p-3 border ${
+          isPremium
+            ? 'bg-slate-800 border-slate-700'
+            : isLight
+              ? 'bg-blue-50 border-blue-200'
+              : 'bg-gray-800 border-gray-700'
+        }`}>
+          <div className={`flex items-center text-sm ${
+            isPremium
+              ? 'text-slate-300'
+              : isLight
+                ? 'text-blue-800'
+                : 'text-gray-300'
+          }`}>
+            <Mail className="w-4 h-4 mr-2" />
+            <span>
+              Last sync: Found <strong>{lastSyncInfo.totalFound}</strong> emails, 
+              consolidated to <strong>{lastSyncInfo.afterConsolidation}</strong> unique purchases
+              {lastSyncInfo.totalFound > lastSyncInfo.afterConsolidation && (
+                <span className={`ml-2 ${
+                  isPremium
+                    ? 'text-purple-400'
+                    : isLight
+                      ? 'text-blue-600'
+                      : 'text-blue-400'
+                }`}>
+                  ({lastSyncInfo.totalFound - lastSyncInfo.afterConsolidation} duplicates merged using priority system)
+                </span>
+              )}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Loading State */}
       {loading && (
         <div className="flex items-center justify-center py-8">
           <RefreshCw className="w-6 h-6 animate-spin text-blue-600 mr-2" />
-          <span className="text-gray-600">Fetching purchases from Gmail...</span>
+          <span className={`${
+            isPremium 
+              ? 'text-slate-400' 
+              : isLight
+                ? 'text-gray-600'
+                : 'text-gray-400'
+          }`}>
+            Fetching purchases from Gmail...
+          </span>
         </div>
       )}
 
       {/* Table */}
-      <div className={`${currentTheme.colors.cardBackground} rounded-lg shadow-sm border border-gray-200 overflow-hidden`}>
+      <div className={`rounded-lg shadow-sm border overflow-hidden ${
+        isPremium
+          ? 'dark-premium-card'
+          : isLight
+            ? 'bg-white border-gray-200'
+            : 'bg-gray-800 border-gray-700'
+      }`}>
         <div className="overflow-x-auto">
           <table ref={tableRef} className="w-full" style={{ tableLayout: 'fixed' }}>
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className={`border-b ${
+              isPremium
+                ? 'bg-slate-800 border-slate-700'
+                : isLight
+                  ? 'bg-gray-50 border-gray-200'
+                  : 'bg-gray-700 border-gray-600'
+            }`}>
               <tr className="h-10">
-                <th className="relative px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.product}px` }}>
+                <th className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium uppercase tracking-wider ${
+                  isPremium
+                    ? 'text-slate-400'
+                    : isLight
+                      ? 'text-gray-500'
+                      : 'text-gray-400'
+                }`} style={{ width: `${columnWidths.product}px` }}>
                   Product
                   <div 
                     className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-300 opacity-0 hover:opacity-100 transition-opacity"
                     onMouseDown={(e) => handleMouseDown(e, 'product')}
                   />
                 </th>
-                <th className="relative px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.orderNumber}px` }}>
+                <th className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium uppercase tracking-wider ${
+                  isPremium
+                    ? 'text-slate-400'
+                    : isLight
+                      ? 'text-gray-500'
+                      : 'text-gray-400'
+                }`} style={{ width: `${columnWidths.orderNumber}px` }}>
                   Order #
                   <div 
                     className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-300 opacity-0 hover:opacity-100 transition-opacity"

@@ -272,6 +272,55 @@ const EmailParsingSettings = ({ isOpen, onClose }: EmailParsingSettingsProps) =>
             </div>
           </div>
 
+          {/* Priority System Explanation */}
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-green-50 to-emerald-50 border border-green-100 shadow-sm">
+            <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 to-emerald-500/5"></div>
+            <div className="relative p-6">
+              <div className="flex items-start space-x-4">
+                <div className="flex-shrink-0 p-2 bg-green-500 rounded-xl text-white">
+                  <Settings className="w-5 h-5" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-green-900 mb-3">How the Priority System Works</h3>
+                  <p className="text-green-800 leading-relaxed mb-4">
+                    When multiple emails are found for the same order, our system uses priority ranking to determine the final status. 
+                    This ensures you always see the most important status for each purchase.
+                  </p>
+                  <div className="bg-white/50 rounded-xl p-4 border border-green-200">
+                    <h4 className="font-semibold text-green-900 mb-2">Priority Order (Highest to Lowest):</h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center space-x-3">
+                        <span className="w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs font-bold">1</span>
+                        <span className="font-medium text-red-700">Order Canceled/Refunded</span>
+                        <span className="text-green-700">- Always takes priority</span>
+                      </div>
+                      <div className="flex items-center space-x-3">
+                        <span className="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-xs font-bold">2</span>
+                        <span className="font-medium text-green-700">Order Delivered</span>
+                        <span className="text-green-700">- Final successful status</span>
+                      </div>
+                      <div className="flex items-center space-x-3">
+                        <span className="w-6 h-6 bg-orange-500 text-white rounded-full flex items-center justify-center text-xs font-bold">3</span>
+                        <span className="font-medium text-orange-700">Order Delayed</span>
+                        <span className="text-green-700">- Important status update</span>
+                      </div>
+                      <div className="flex items-center space-x-3">
+                        <span className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">4</span>
+                        <span className="font-medium text-blue-700">Order Shipped</span>
+                        <span className="text-green-700">- Progress update</span>
+                      </div>
+                      <div className="flex items-center space-x-3">
+                        <span className="w-6 h-6 bg-orange-400 text-white rounded-full flex items-center justify-center text-xs font-bold">5</span>
+                        <span className="font-medium text-orange-700">Order Placed</span>
+                        <span className="text-green-700">- Initial status</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Marketplaces Section */}
           <div className="space-y-6">
             <div className="flex items-center space-x-3">

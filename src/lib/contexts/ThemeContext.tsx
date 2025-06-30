@@ -12,6 +12,7 @@ export interface ThemeColors {
   textPrimary: string;
   textSecondary: string;
   border: string;
+  bodyClass: string;
 }
 
 export interface Theme {
@@ -19,48 +20,51 @@ export interface Theme {
   colors: ThemeColors;
 }
 
-// Three theme options
+// Three theme options that match exactly with Plans page designs
 const themes: Record<string, Theme> = {
   Light: {
     name: 'Light',
     colors: {
-      primary: 'bg-blue-600',
-      primaryHover: 'hover:bg-blue-700',
-      primaryLight: 'bg-blue-50',
-      accent: 'text-blue-600',
-      background: 'bg-gray-50',
+      primary: 'bg-gradient-to-r from-purple-500 to-pink-500',
+      primaryHover: 'hover:from-purple-600 hover:to-pink-600',
+      primaryLight: 'bg-purple-50',
+      accent: 'text-purple-600',
+      background: 'bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50',
       cardBackground: 'bg-white',
       textPrimary: 'text-gray-900',
       textSecondary: 'text-gray-600',
-      border: 'border-gray-200'
+      border: 'border-gray-200',
+      bodyClass: 'theme-light'
     }
   },
   Dark: {
     name: 'Dark',
     colors: {
-      primary: 'bg-blue-600',
-      primaryHover: 'hover:bg-blue-700',
-      primaryLight: 'bg-blue-900/20',
+      primary: 'bg-gradient-to-r from-purple-500 to-pink-500',
+      primaryHover: 'hover:from-purple-600 hover:to-pink-600',
+      primaryLight: 'bg-slate-800/50',
       accent: 'text-blue-400',
-      background: 'bg-gray-900',
-      cardBackground: 'bg-gray-800',
+      background: 'bg-slate-950',
+      cardBackground: 'bg-slate-900/80',
       textPrimary: 'text-white',
-      textSecondary: 'text-gray-300',
-      border: 'border-gray-700'
+      textSecondary: 'text-slate-300',
+      border: 'border-slate-700/50',
+      bodyClass: 'theme-dark'
     }
   },
   Premium: {
     name: 'Premium',
     colors: {
-      primary: 'bg-gradient-to-r from-amber-500 via-red-500 to-purple-600',
-      primaryHover: 'hover:from-amber-600 hover:via-red-600 hover:to-purple-700',
-      primaryLight: 'bg-slate-800/50',
-      accent: 'text-amber-400',
-      background: 'bg-slate-900',
-      cardBackground: 'bg-gradient-to-br from-slate-800/90 to-slate-900/90',
+      primary: 'bg-gradient-to-r from-cyan-500 to-purple-500',
+      primaryHover: 'hover:from-cyan-600 hover:to-purple-600',
+      primaryLight: 'bg-white/5',
+      accent: 'text-cyan-400',
+      background: 'bg-gradient-to-br from-violet-900 via-purple-900 to-pink-900',
+      cardBackground: 'bg-white/5',
       textPrimary: 'text-white',
-      textSecondary: 'text-slate-300',
-      border: 'border-slate-700/50'
+      textSecondary: 'text-white/80',
+      border: 'border-white/20',
+      bodyClass: 'theme-revolutionary'
     }
   }
 };
@@ -91,6 +95,11 @@ export const ThemeProvider = ({ children }: ThemeProviderProps) => {
   const setTheme = (themeName: string) => {
     if (themes[themeName]) {
       setCurrentTheme(themes[themeName]);
+      // Update body class to match theme
+      if (typeof document !== 'undefined') {
+        document.body.className = document.body.className.replace(/theme-\w+/g, '');
+        document.body.classList.add(themes[themeName].colors.bodyClass);
+      }
     }
   };
 

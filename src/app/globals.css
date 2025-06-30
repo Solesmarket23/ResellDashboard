@@ -1,36 +1,781 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
-  }
+  /* Dark Premium Theme Colors */
+  --foreground-rgb: 255, 255, 255;
+  --background-start-rgb: 15, 23, 42; /* slate-900 */
+  --background-end-rgb: 30, 41, 59; /* slate-800 */
+  
+  /* Premium Brand Colors */
+  --primary-purple: 147, 51, 234; /* purple-600 */
+  --primary-blue: 59, 130, 246; /* blue-500 */
+  --accent-purple: 168, 85, 247; /* purple-500 */
+  --accent-blue: 99, 102, 241; /* indigo-500 */
+  
+  /* Revolutionary Creative Colors */
+  --revolutionary-cyan: 6, 182, 212; /* cyan-500 */
+  --revolutionary-purple: 168, 85, 247; /* purple-500 */
+  --revolutionary-pink: 236, 72, 153; /* pink-500 */
+  --revolutionary-orange: 249, 115, 22; /* orange-500 */
+  --revolutionary-yellow: 234, 179, 8; /* yellow-500 */
+  
+  /* Surface Colors */
+  --card-bg: 30, 41, 59; /* slate-800 */
+  --card-border: 51, 65, 85; /* slate-700 */
+  --hover-bg: 51, 65, 85; /* slate-700 */
+  
+  /* Text Colors */
+  --text-primary: 248, 250, 252; /* slate-50 */
+  --text-secondary: 203, 213, 225; /* slate-300 */
+  --text-muted: 148, 163, 184; /* slate-400 */
 }
 
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+  color: rgb(var(--text-primary));
+  background: linear-gradient(135deg, 
+    rgb(var(--background-start-rgb)) 0%, 
+    rgb(var(--background-end-rgb)) 100%
+  );
+  min-height: 100vh;
+}
+
+/* Theme 1 - Light Theme (Clean & Professional) - Matches Plans Design 1 */
+body.theme-light {
+  background: linear-gradient(135deg, #f9fafb 0%, #dbeafe 30%, #f3e8ff 100%);
+  color: #111827;
+}
+
+/* Theme 2 - Dark Theme (Dark Premium) - Matches Plans Design 2 */
+body.theme-dark {
+  background: #020617;
+  color: #ffffff;
+  position: relative;
+}
+
+body.theme-dark::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, rgba(67, 56, 202, 0.2) 0%, rgba(147, 51, 234, 0.2) 50%, rgba(219, 39, 119, 0.2) 100%);
+  z-index: -1;
+  pointer-events: none;
+}
+
+body.theme-dark::after {
+  content: '';
+  position: fixed;
+  top: 25%;
+  left: 25%;
+  width: 288px;
+  height: 288px;
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: 50%;
+  filter: blur(3rem);
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* Theme 3 - Revolutionary Creative Theme - Matches Plans Design 3 */
+body.theme-revolutionary {
+  background: #0f172a;
+  color: #ffffff;
+  overflow-x: hidden;
+}
+
+/* Removed full-screen background overlay that was creating purple box */
+
+/* Removed purple box overlay that was appearing between sidebar and content */
+
+
+
+/* Revolutionary Animated Background */
+/* Removed revolutionary-background class that was creating purple overlays */
+
+/* Dark Premium Theme Base Styles */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--card-border)) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, 
+    rgb(var(--primary-purple)) 0%, 
+    rgb(var(--primary-blue)) 100%
+  );
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, 
+    rgb(var(--accent-purple)) 0%, 
+    rgb(var(--accent-blue)) 100%
+  );
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
+  
+  /* Revolutionary Creative Theme Styles */
+  .revolutionary-card {
+    @apply backdrop-blur-2xl border rounded-2xl overflow-hidden relative;
+    background: linear-gradient(135deg, 
+      rgba(255, 255, 255, 0.05) 0%, 
+      rgba(255, 255, 255, 0.02) 100%
+    );
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 
+      0 8px 32px rgba(0, 0, 0, 0.3),
+      0 0 0 1px rgba(255, 255, 255, 0.05),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .revolutionary-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg, 
+      rgba(255, 255, 255, 0.02) 0%,
+      rgba(255, 255, 255, 0.01) 50%,
+      rgba(255, 255, 255, 0.02) 100%
+    );
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    z-index: -1;
+  }
+  
+  .revolutionary-card:hover {
+    transform: translateY(-8px) scale(1.02);
+    box-shadow: 
+      0 20px 40px rgba(0, 0, 0, 0.4),
+      0 0 60px rgba(6, 182, 212, 0.2),
+      0 0 0 1px rgba(255, 255, 255, 0.1);
+  }
+  
+  .revolutionary-card:hover::before {
+    opacity: 1;
+  }
+  
+  /* Revolutionary Button Styles */
+  .btn-revolutionary {
+    @apply px-6 py-3 rounded-xl font-bold text-white relative overflow-hidden;
+    background: linear-gradient(135deg, 
+      rgb(var(--revolutionary-cyan)) 0%, 
+      rgb(var(--revolutionary-purple)) 50%,
+      rgb(var(--revolutionary-pink)) 100%
+    );
+    box-shadow: 
+      0 8px 25px rgba(6, 182, 212, 0.3),
+      0 0 30px rgba(168, 85, 247, 0.2);
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .btn-revolutionary::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, 
+      transparent 0%, 
+      rgba(255, 255, 255, 0.2) 50%, 
+      transparent 100%
+    );
+    transition: left 0.6s ease;
+  }
+  
+  .btn-revolutionary:hover {
+    transform: translateY(-3px) scale(1.05);
+    box-shadow: 
+      0 15px 35px rgba(6, 182, 212, 0.4),
+      0 0 60px rgba(168, 85, 247, 0.3),
+      0 0 100px rgba(236, 72, 153, 0.2);
+  }
+  
+  .btn-revolutionary:hover::before {
+    left: 100%;
+  }
+  
+  /* Revolutionary Text Effects */
+  .text-revolutionary-gradient {
+    background: linear-gradient(135deg, 
+      rgb(var(--revolutionary-cyan)) 0%, 
+      rgb(var(--revolutionary-purple)) 35%,
+      rgb(var(--revolutionary-pink)) 70%,
+      rgb(var(--revolutionary-orange)) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-size: 200% 200%;
+    animation: revolutionaryTextFlow 3s ease-in-out infinite;
+  }
+  
+  .text-revolutionary-glow {
+    @apply text-white;
+    text-shadow: 
+      0 0 10px rgba(6, 182, 212, 0.5),
+      0 0 20px rgba(168, 85, 247, 0.3),
+      0 0 30px rgba(236, 72, 153, 0.2);
+  }
+  
+  /* Revolutionary Typography */
+  .heading-revolutionary {
+    @apply font-black text-transparent bg-clip-text;
+    background: linear-gradient(135deg, 
+      #ffffff 0%,
+      rgb(var(--revolutionary-cyan)) 25%,
+      rgb(var(--revolutionary-purple)) 50%,
+      rgb(var(--revolutionary-pink)) 75%,
+      #ffffff 100%
+    );
+    background-size: 300% 300%;
+    animation: revolutionaryHeadingFlow 4s ease-in-out infinite;
+    letter-spacing: -0.025em;
+  }
+  
+  /* Revolutionary Sidebar */
+  .sidebar-revolutionary {
+    @apply relative overflow-hidden;
+    background: linear-gradient(180deg, 
+      rgba(15, 23, 42, 0.8) 0%, 
+      rgba(30, 41, 59, 0.6) 50%,
+      rgba(15, 23, 42, 0.8) 100%
+    );
+    backdrop-filter: blur(20px);
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  
+  /* Removed sidebar revolutionary overlay that was creating purple effects */
+  
+  /* Revolutionary Navigation */
+  .nav-item-revolutionary {
+    @apply flex items-center px-4 py-3 mx-2 rounded-xl relative overflow-hidden;
+    @apply text-slate-300 hover:text-white transition-all duration-300;
+    backdrop-filter: blur(10px);
+  }
+  
+  .nav-item-revolutionary::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, 
+      rgba(255, 255, 255, 0.05) 0%,
+      rgba(255, 255, 255, 0.1) 50%,
+      rgba(255, 255, 255, 0.05) 100%
+    );
+    transition: left 0.4s ease;
+    z-index: -1;
+  }
+  
+  .nav-item-revolutionary:hover::before {
+    left: 0;
+  }
+  
+  .nav-item-revolutionary.active {
+    @apply text-white;
+    background: linear-gradient(135deg, 
+      rgba(6, 182, 212, 0.3) 0%,
+      rgba(168, 85, 247, 0.2) 50%,
+      rgba(236, 72, 153, 0.3) 100%
+    );
+    box-shadow: 
+      0 4px 15px rgba(6, 182, 212, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  }
+  
+  /* Revolutionary Input Styles */
+  .input-revolutionary {
+    @apply rounded-xl px-4 py-3 text-white placeholder-slate-400 relative;
+    background: linear-gradient(135deg, 
+      rgba(255, 255, 255, 0.05) 0%, 
+      rgba(255, 255, 255, 0.02) 100%
+    );
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    transition: all 0.3s ease;
+  }
+  
+  .input-revolutionary:focus {
+    outline: none;
+    border-color: rgba(6, 182, 212, 0.5);
+    box-shadow: 
+      0 0 0 3px rgba(6, 182, 212, 0.1),
+      0 0 20px rgba(6, 182, 212, 0.2);
+    background: linear-gradient(135deg, 
+      rgba(6, 182, 212, 0.1) 0%, 
+      rgba(168, 85, 247, 0.05) 100%
+    );
+  }
+  
+  /* Revolutionary Badge */
+  .badge-revolutionary {
+    @apply px-3 py-1 rounded-full text-xs font-bold relative overflow-hidden;
+    background: linear-gradient(135deg, 
+      rgba(6, 182, 212, 0.2) 0%,
+      rgba(168, 85, 247, 0.2) 50%,
+      rgba(236, 72, 153, 0.2) 100%
+    );
+    border: 1px solid rgba(6, 182, 212, 0.3);
+    color: rgb(var(--revolutionary-cyan));
+    backdrop-filter: blur(10px);
+  }
+  
+  /* Revolutionary Glow Effects */
+  .glow-revolutionary {
+    box-shadow: 
+      0 0 20px rgba(6, 182, 212, 0.3),
+      0 0 40px rgba(168, 85, 247, 0.2),
+      0 0 60px rgba(236, 72, 153, 0.1);
+  }
+  
+  .glow-revolutionary-hover:hover {
+    box-shadow: 
+      0 0 30px rgba(6, 182, 212, 0.4),
+      0 0 60px rgba(168, 85, 247, 0.3),
+      0 0 100px rgba(236, 72, 153, 0.2);
+  }
+  
+  /* Removed page-revolutionary background overlays that were creating purple boxes */
+  
+  /* Dark Premium Card Styles */
+  .dark-premium-card {
+    @apply bg-slate-800 border border-slate-700 rounded-xl p-6 backdrop-blur-sm;
+    background: linear-gradient(135deg, 
+      rgba(30, 41, 59, 0.9) 0%, 
+      rgba(51, 65, 85, 0.5) 100%
+    );
+    box-shadow: 
+      0 4px 6px -1px rgba(0, 0, 0, 0.3),
+      0 0 20px rgba(147, 51, 234, 0.1);
+  }
+  
+  .dark-premium-card:hover {
+    box-shadow: 
+      0 10px 25px -3px rgba(0, 0, 0, 0.3),
+      0 0 30px rgba(147, 51, 234, 0.2);
+    transform: translateY(-2px);
+    transition: all 0.3s ease;
+  }
+  
+  /* Premium Button Styles */
+  .btn-premium {
+    @apply px-6 py-3 rounded-lg font-semibold text-white transition-all duration-300;
+    background: linear-gradient(135deg, 
+      rgb(var(--primary-purple)) 0%, 
+      rgb(var(--primary-blue)) 100%
+    );
+    box-shadow: 
+      0 4px 15px rgba(147, 51, 234, 0.3),
+      0 0 20px rgba(59, 130, 246, 0.2);
+  }
+  
+  .btn-premium:hover {
+    background: linear-gradient(135deg, 
+      rgb(var(--accent-purple)) 0%, 
+      rgb(var(--accent-blue)) 100%
+    );
+    box-shadow: 
+      0 6px 20px rgba(147, 51, 234, 0.4),
+      0 0 30px rgba(59, 130, 246, 0.3);
+    transform: translateY(-2px);
+  }
+  
+  /* Premium Text Gradients */
+  .text-premium-gradient {
+    background: linear-gradient(135deg, 
+      rgb(var(--primary-purple)) 0%, 
+      rgb(var(--primary-blue)) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  
+  /* Sidebar Dark Premium */
+  .sidebar-dark-premium {
+    @apply bg-slate-900 border-r border-slate-700;
+    background: linear-gradient(180deg, 
+      rgba(15, 23, 42, 0.95) 0%, 
+      rgba(30, 41, 59, 0.9) 100%
+    );
+    backdrop-filter: blur(20px);
+  }
+  
+  /* Navigation Item Premium */
+  .nav-item-premium {
+    @apply flex items-center px-4 py-3 mx-2 rounded-lg transition-all duration-200 text-slate-300 hover:text-white;
+  }
+  
+  .nav-item-premium:hover {
+    background: linear-gradient(135deg, 
+      rgba(147, 51, 234, 0.2) 0%, 
+      rgba(59, 130, 246, 0.1) 100%
+    );
+    box-shadow: 0 4px 12px rgba(147, 51, 234, 0.2);
+  }
+  
+  .nav-item-premium.active {
+    background: linear-gradient(135deg, 
+      rgba(147, 51, 234, 0.3) 0%, 
+      rgba(59, 130, 246, 0.2) 100%
+    );
+    @apply text-white;
+    box-shadow: 0 4px 15px rgba(147, 51, 234, 0.3);
+  }
+  
+  /* Premium Input Styles */
+  .input-premium {
+    @apply bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-400;
+    @apply focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all duration-200;
+  }
+  
+  /* Premium Badge */
+  .badge-premium {
+    @apply px-3 py-1 rounded-full text-xs font-semibold;
+    background: linear-gradient(135deg, 
+      rgba(147, 51, 234, 0.2) 0%, 
+      rgba(59, 130, 246, 0.2) 100%
+    );
+    border: 1px solid rgba(147, 51, 234, 0.3);
+    @apply text-purple-300;
+  }
+  
+  /* Premium Glow Effects */
+  .glow-purple {
+    box-shadow: 0 0 20px rgba(147, 51, 234, 0.3);
+  }
+  
+  .glow-blue {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+  }
+  
+  /* Touch-friendly button improvements */
+  .touch-manipulation {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  /* Better focus states for accessibility */
+  .focus-visible-ring {
+    @apply focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 focus-visible:outline-none;
+  }
+  
+  /* Smooth animations for better UX */
+  .animate-in {
+    animation-fill-mode: both;
+  }
+  
+  .fade-in {
+    animation: fadeIn 0.3s ease-out;
+  }
+  
+  .zoom-in-95 {
+    animation: zoomIn95 0.3s ease-out;
+  }
+  
+  .slide-in-from-bottom-4 {
+    animation: slideInFromBottom4 0.3s ease-out;
+  }
+  
+  /* Button improvements for mobile */
+  .btn-mobile-friendly {
+    @apply min-h-[44px] px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 touch-manipulation focus-visible-ring;
+  }
+  
+  /* Responsive grid improvements */
+  .grid-responsive {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: 1fr;
+  }
+  
+  @media (min-width: 640px) {
+    .grid-responsive {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+    }
+  }
+  
+  @media (min-width: 1024px) {
+    .grid-responsive {
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2rem;
+    }
+  }
+  
+  /* Truncate text with ellipsis helper */
+  .truncate-multiline {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+
+/* Enhanced Keyframe animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes zoomIn95 {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes slideInFromBottom4 {
+  from {
+    opacity: 0;
+    transform: translateY(1rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes premiumGlow {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-premium-glow {
+  animation: premiumGlow 2s ease-in-out infinite;
+}
+
+/* Revolutionary Creative Animations */
+@keyframes revolutionaryMove {
+  0%, 100% { 
+    transform: translate(0, 0) rotate(0deg); 
+  }
+  25% { 
+    transform: translate(20px, -20px) rotate(90deg); 
+  }
+  50% { 
+    transform: translate(-10px, 30px) rotate(180deg); 
+  }
+  75% { 
+    transform: translate(-30px, -10px) rotate(270deg); 
+  }
+}
+
+@keyframes revolutionaryRotate {
+  0% { 
+    transform: rotate(0deg) scale(1); 
+  }
+  33% { 
+    transform: rotate(120deg) scale(1.1); 
+  }
+  66% { 
+    transform: rotate(240deg) scale(0.9); 
+  }
+  100% { 
+    transform: rotate(360deg) scale(1); 
+  }
+}
+
+@keyframes revolutionaryTextFlow {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+@keyframes revolutionaryHeadingFlow {
+  0%, 100% {
+    background-position: 0% 50%;
+    filter: hue-rotate(0deg);
+  }
+  25% {
+    background-position: 25% 25%;
+    filter: hue-rotate(90deg);
+  }
+  50% {
+    background-position: 100% 50%;
+    filter: hue-rotate(180deg);
+  }
+  75% {
+    background-position: 75% 75%;
+    filter: hue-rotate(270deg);
+  }
+}
+
+@keyframes revolutionarySidebarGlow {
+  0%, 100% {
+    opacity: 0.3;
+    transform: translateY(0) scale(1);
+  }
+  33% {
+    opacity: 0.7;
+    transform: translateY(-10px) scale(1.05);
+  }
+  66% {
+    opacity: 0.5;
+    transform: translateY(10px) scale(0.95);
+  }
+}
+
+@keyframes revolutionaryPageGlow {
+  0%, 100% {
+    opacity: 0.1;
+    transform: scale(1) rotate(0deg);
+  }
+  25% {
+    opacity: 0.2;
+    transform: scale(1.1) rotate(90deg);
+  }
+  50% {
+    opacity: 0.3;
+    transform: scale(0.9) rotate(180deg);
+  }
+  75% {
+    opacity: 0.15;
+    transform: scale(1.05) rotate(270deg);
+  }
+}
+
+/* Fix for iOS Safari zoom on input focus */
+@media screen and (max-width: 767px) {
+  input, textarea, select {
+    font-size: 16px;
+  }
+}
+
+/* Better tap targets for mobile */
+@media (max-width: 768px) {
+  button, 
+  .btn-premium,
+  .btn-revolutionary {
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Theme-specific card styles to match Plans page designs */
+.theme-light .dark-premium-card,
+.theme-light .revolutionary-card {
+  @apply bg-white border-gray-200 text-gray-900;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.theme-light .dark-premium-card:hover,
+.theme-light .revolutionary-card:hover {
+  @apply border-purple-300;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+.theme-dark .dark-premium-card,
+.theme-dark .revolutionary-card {
+  @apply bg-slate-900/80 border-slate-700/50 text-white;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.theme-dark .dark-premium-card:hover,
+.theme-dark .revolutionary-card:hover {
+  @apply border-blue-500/50;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+}
+
+.theme-revolutionary .dark-premium-card,
+.theme-revolutionary .revolutionary-card {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
+  color: white;
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.theme-revolutionary .dark-premium-card:hover,
+.theme-revolutionary .revolutionary-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 
+    0 20px 40px rgba(0, 0, 0, 0.4),
+    0 0 60px rgba(6, 182, 212, 0.2);
+}
+
+/* Theme-specific button styles */
+.theme-light .btn-premium,
+.theme-light .btn-revolutionary {
+  @apply bg-gradient-to-r from-purple-500 to-pink-500 text-white;
+}
+
+.theme-light .btn-premium:hover,
+.theme-light .btn-revolutionary:hover {
+  @apply from-purple-600 to-pink-600;
+}
+
+.theme-dark .btn-premium,
+.theme-dark .btn-revolutionary {
+  @apply bg-gradient-to-r from-purple-500 to-pink-500 text-white;
+  box-shadow: 0 8px 25px rgba(147, 51, 234, 0.3);
+}
+
+.theme-dark .btn-premium:hover,
+.theme-dark .btn-revolutionary:hover {
+  @apply from-purple-600 to-pink-600;
+  box-shadow: 0 12px 30px rgba(147, 51, 234, 0.4);
+}
+
+.theme-revolutionary .btn-premium,
+.theme-revolutionary .btn-revolutionary {
+  @apply bg-gradient-to-r from-cyan-500 to-purple-500 text-white;
+  box-shadow: 
+    0 8px 25px rgba(6, 182, 212, 0.3),
+    0 0 30px rgba(168, 85, 247, 0.2);
+}
+
+.theme-revolutionary .btn-premium:hover,
+.theme-revolutionary .btn-revolutionary:hover {
+  @apply from-cyan-600 to-purple-600;
+  box-shadow: 
+    0 12px 30px rgba(6, 182, 212, 0.4),
+    0 0 40px rgba(168, 85, 247, 0.3);
 }
