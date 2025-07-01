@@ -227,12 +227,18 @@ export async function GET(request: NextRequest) {
     const cookieStore = cookies();
     const accessToken = cookieStore.get('gmail_access_token')?.value;
     const refreshToken = cookieStore.get('gmail_refresh_token')?.value;
+    const gmailConnected = cookieStore.get('gmail_connected')?.value;
 
-    console.log('🔐 Cookie check:', {
+    console.log('🔐 Full cookie debug:', {
       hasAccessToken: !!accessToken,
       hasRefreshToken: !!refreshToken,
-      accessTokenLength: accessToken?.length || 0
+      hasGmailConnected: !!gmailConnected,
+      accessTokenLength: accessToken?.length || 0,
+      accessTokenPreview: accessToken ? `${accessToken.substring(0, 10)}...` : 'null'
     });
+
+    // Add a delay to ensure cookies are available
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     if (!accessToken) {
       console.log('❌ No access token found in cookies');
@@ -356,11 +362,16 @@ export async function GET(request: NextRequest) {
 
     // Update cookies with new tokens if they were refreshed
     if (newTokens) {
-      response.cookies.set('gmail_access_token', newTokens.access_token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: 3600 // 1 hour
-      });
+      const cookieOptions = {
+        httpOnly: false, // Allow client-side access for debugging in development
+        secure: false, // Allow localhost (non-HTTPS) 
+        sameSite: 'lax' as const,
+        path: '/',
+        maxAge: 24 * 60 * 60 // 24 hours
+      };
+      
+      response.cookies.set('gmail_access_token', newTokens.access_token, cookieOptions);
+      response.cookies.set('gmail_connected', 'true', cookieOptions);
       console.log('🔄 Updated access token in response cookies');
     }
 

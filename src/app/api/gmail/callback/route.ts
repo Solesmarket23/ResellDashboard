@@ -25,42 +25,61 @@ export async function GET(request: NextRequest) {
     // Exchange code for tokens
     const { tokens } = await oauth2Client.getToken(code);
     
-    // Store tokens securely (in production, use a secure database)
-    const cookieStore = cookies();
-    
-    console.log('🍪 Setting cookies with tokens:', {
+    console.log('🔐 Received tokens from Google:', {
       hasAccessToken: !!tokens.access_token,
       hasRefreshToken: !!tokens.refresh_token,
       accessTokenLength: tokens.access_token?.length || 0
     });
+
+    if (!tokens.access_token) {
+      throw new Error('No access token received from Google');
+    }
     
-    cookieStore.set('gmail_access_token', tokens.access_token || '', {
-      httpOnly: false, // Allow frontend access for debugging
-      secure: false, // Allow localhost
-      sameSite: 'lax',
+    // Create response with redirect
+    const redirectUrl = new URL('/dashboard?gmail_connected=true', baseUrl);
+    const response = NextResponse.redirect(redirectUrl);
+    
+    // Set cookies with relaxed security for localhost development
+    const cookieOptions = {
+      httpOnly: false, // Allow client-side access for debugging in development
+      secure: false, // Allow localhost (non-HTTPS)
+      sameSite: 'lax' as const,
       path: '/',
-      maxAge: 3600 // 1 hour
-    });
+      maxAge: 24 * 60 * 60, // 24 hours
+      domain: undefined // Let browser handle domain automatically
+    };
+    
+    console.log('🍪 Setting cookies with options:', cookieOptions);
+    
+    // Set cookies on the response object
+    response.cookies.set('gmail_access_token', tokens.access_token, cookieOptions);
     
     if (tokens.refresh_token) {
-      cookieStore.set('gmail_refresh_token', tokens.refresh_token, {
-        httpOnly: false, // Allow frontend access for debugging
-        secure: false, // Allow localhost
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 30 * 24 * 60 * 60 // 30 days
+      response.cookies.set('gmail_refresh_token', tokens.refresh_token, {
+        ...cookieOptions,
+        maxAge: 30 * 24 * 60 * 60 // 30 days for refresh token
       });
     }
+    
+    // Also store in a more accessible format for immediate use
+    response.cookies.set('gmail_connected', 'true', {
+      httpOnly: false,
+      secure: false,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 24 * 60 * 60
+    });
 
-    console.log('✅ Gmail tokens stored in cookies successfully');
+    console.log('✅ Gmail tokens stored in response cookies');
+    console.log('🔄 Redirecting to:', redirectUrl.toString());
 
-    // Redirect back to dashboard with success - use dynamic base URL
-    const redirectUrl = new URL('/?gmail_connected=true', baseUrl);
-    return NextResponse.redirect(redirectUrl);
+    return response;
     
   } catch (error) {
     console.error('Error handling OAuth callback:', error);
-    const errorUrl = new URL('/?gmail_error=true', baseUrl);
+    const url = new URL(request.url);
+    const baseUrl = `${url.protocol}//${url.host}`;
+    const errorUrl = new URL('/dashboard?gmail_error=true', baseUrl);
     return NextResponse.redirect(errorUrl);
   }
 } 
