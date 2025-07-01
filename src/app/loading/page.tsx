@@ -2,14 +2,17 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { useTheme } from '@/lib/contexts/ThemeContext';
-import { TrendingUp, BarChart3, DollarSign, Target, CheckCircle, Sparkles } from 'lucide-react';
+import { TrendingUp, BarChart3, DollarSign, Target, CheckCircle } from 'lucide-react';
 
 const LoadingPage = () => {
   const { currentTheme } = useTheme();
   const router = useRouter();
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState(0);
+  const [isVisible, setIsVisible] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
 
   const loadingSteps = [
     { 
@@ -40,12 +43,28 @@ const LoadingPage = () => {
   ];
 
   useEffect(() => {
+    // Trigger fade-in animation after component mounts
+    const timer = setTimeout(() => {
+      setIsVisible(true);
+    }, 50);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleNavigation = (path: string) => {
+    setIsTransitioning(true);
+    setIsVisible(false);
+    setTimeout(() => {
+      router.push(path);
+    }, 300);
+  };
+
+  useEffect(() => {
     const interval = setInterval(() => {
       setProgress(prev => {
         if (prev >= 100) {
           clearInterval(interval);
           setTimeout(() => {
-            router.push('/dashboard');
+            handleNavigation('/dashboard');
           }, 500);
           return 100;
         }
@@ -71,7 +90,7 @@ const LoadingPage = () => {
   }, [loadingSteps.length]);
 
   return (
-    <div className={`min-h-screen ${currentTheme.colors.background} ${currentTheme.colors.bodyClass} flex items-center justify-center p-4`}>
+    <div className={`min-h-screen ${currentTheme.colors.background} ${currentTheme.colors.bodyClass} flex items-center justify-center p-4 transition-all duration-500 ease-out ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
       {/* Animated background */}
       <div className="absolute inset-0 overflow-hidden">
         <div className={`absolute top-1/3 left-1/3 w-72 h-72 rounded-full blur-3xl opacity-30 animate-pulse ${
@@ -110,9 +129,13 @@ const LoadingPage = () => {
               ? 'bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 border border-cyan-500/30' 
               : 'bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30'
           } backdrop-blur-sm`}>
-            <TrendingUp className={`w-12 h-12 ${
-              currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-purple-400'
-            }`} />
+            <Image
+              src="/flip-flow-logo.svg"
+              alt="Flip Flow Logo"
+              width={48}
+              height={48}
+              className="w-12 h-12"
+            />
             <div className={`absolute inset-0 rounded-2xl ${
               currentTheme.name === 'Neon' 
                 ? 'bg-gradient-to-r from-emerald-500/10 to-cyan-500/10' 
@@ -123,7 +146,7 @@ const LoadingPage = () => {
 
         {/* Title */}
         <h1 className={`text-3xl font-bold ${currentTheme.colors.textPrimary} mb-2`}>
-          Resell Dashboard
+          Flip Flow
         </h1>
         <p className={`text-lg ${currentTheme.colors.textSecondary} mb-12`}>
           Revolutionary Analytics Suite

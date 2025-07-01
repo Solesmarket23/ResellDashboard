@@ -2,7 +2,7 @@
 
 ## 🚀 **What We Built Together**
 
-This document summarizes the complete package scanning functionality implemented for the resell dashboard.
+This document summarizes the complete package scanning functionality implemented for the Flip Flow dashboard.
 
 ## 📦 **Core Features Implemented**
 

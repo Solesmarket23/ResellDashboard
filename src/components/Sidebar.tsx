@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { 
   Home, 
   Package, 
@@ -74,11 +75,17 @@ const Sidebar = ({ activeItem, onItemClick }: SidebarProps) => {
       {/* Header */}
       <div className="p-6 border-b border-gray-700/20">
         <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-sm">⚡</span>
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center">
+            <Image
+              src="/flip-flow-logo.svg"
+              alt="Flip Flow Logo"
+              width={32}
+              height={32}
+              className="w-8 h-8"
+            />
           </div>
           <div>
-            <h1 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>Resell Dashboard</h1>
+            <h1 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>Flip Flow</h1>
             <p className={`text-sm ${currentTheme.colors.textSecondary}`}>Revolutionary Analytics Suite</p>
           </div>
         </div>

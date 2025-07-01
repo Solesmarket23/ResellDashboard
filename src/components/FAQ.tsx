@@ -27,16 +27,16 @@ const FAQ = () => {
       color: isLight ? 'from-blue-500 to-blue-600' : 'from-emerald-500 to-cyan-500',
       items: [
         {
-          question: 'What is Resell Dashboard and how does it work?',
-          answer: 'Resell Dashboard is a comprehensive resell intelligence platform designed for sneaker and streetwear resellers. It automatically tracks your purchases through Gmail integration, monitors inventory, calculates profits, and provides market insights to help you make better business decisions. Simply connect your Gmail account and let our AI parse your purchase confirmations and shipping notifications.'
+          question: 'What is Flip Flow and how does it work?',
+          answer: 'Flip Flow is a comprehensive resell intelligence platform designed for sneaker and streetwear resellers. It automatically tracks your purchases through Gmail integration, monitors inventory, calculates profits, and provides market insights to help you make better business decisions. Simply connect your Gmail account and let our AI parse your purchase confirmations and shipping notifications.'
         },
         {
-          question: 'How do I get started with Resell Dashboard?',
+          question: 'How do I get started with Flip Flow?',
           answer: 'Getting started is easy! First, sign up for an account and choose your plan. Then connect your Gmail account to automatically import your purchase data. Our system will scan your emails for order confirmations and shipping notifications from major resell platforms like StockX, GOAT, and others. You can also manually add purchases if needed.'
         },
         {
-          question: 'Which platforms does Resell Dashboard support?',
-          answer: 'Resell Dashboard supports all major resell platforms including StockX, GOAT, Flight Club, Stadium Goods, eBay, Grailed, and many more. Our AI email parsing system is constantly updated to recognize new platforms and email formats. If you use a platform we don\'t support yet, our system will learn from your data.'
+          question: 'Which platforms does Flip Flow support?',
+          answer: 'Flip Flow supports all major resell platforms including StockX, GOAT, Flight Club, Stadium Goods, eBay, Grailed, and many more. Our AI email parsing system is constantly updated to recognize new platforms and email formats. If you use a platform we don\'t support yet, our system will learn from your data.'
         }
       ]
     },
@@ -50,8 +50,8 @@ const FAQ = () => {
           answer: 'Absolutely! We use Google\'s official OAuth 2.0 authentication system, which means we never see your password. You can revoke access at any time through your Google account settings. We only read emails related to your purchases and never access personal emails or send emails on your behalf.'
         },
         {
-          question: 'What email data does Resell Dashboard access?',
-          answer: 'Resell Dashboard only accesses emails that match specific patterns for purchase confirmations, shipping notifications, and delivery updates from known resell platforms. We use advanced AI to extract relevant information like order numbers, product names, prices, and tracking numbers while ignoring all other emails.'
+                  question: 'What email data does Flip Flow access?',
+        answer: 'Flip Flow only accesses emails that match specific patterns for purchase confirmations, shipping notifications, and delivery updates from known resell platforms. We use advanced AI to extract relevant information like order numbers, product names, prices, and tracking numbers while ignoring all other emails.'
         },
         {
           question: 'Why are some of my purchases not showing up?',
@@ -70,7 +70,7 @@ const FAQ = () => {
         },
         {
           question: 'Can I track inventory that hasn\'t sold yet?',
-          answer: 'Yes! Resell Dashboard tracks all your purchases regardless of sale status. Unsold items appear in your inventory with current market values, helping you decide when to sell or hold. We provide real-time market data and price trends for informed decision-making.'
+          answer: 'Yes! Flip Flow tracks all your purchases regardless of sale status. Unsold items appear in your inventory with current market values, helping you decide when to sell or hold. We provide real-time market data and price trends for informed decision-making.'
         },
         {
           question: 'How do you determine current market values?',
@@ -93,7 +93,7 @@ const FAQ = () => {
         },
         {
           question: 'Do you offer refunds?',
-          answer: 'We offer a 30-day money-back guarantee for all paid plans. If you\'re not satisfied with Resell Dashboard for any reason, contact our support team for a full refund. We believe in our product and want you to be completely satisfied.'
+          answer: 'We offer a 30-day money-back guarantee for all paid plans. If you\'re not satisfied with Flip Flow for any reason, contact our support team for a full refund. We believe in our product and want you to be completely satisfied.'
         }
       ]
     },
@@ -182,9 +182,9 @@ const FAQ = () => {
               : 'text-gray-600'
             }
           `}>
-            Find answers to common questions about Resell Dashboard. Can't find what you're looking for? 
+            Find answers to common questions about Flip Flow. Can't find what you're looking for? 
             <a 
-              href="mailto:support@reselldashboard.com" 
+              href="mailto:support@flipflow.com" 
               className={`
                 ml-1 transition-colors
                 ${isNeon

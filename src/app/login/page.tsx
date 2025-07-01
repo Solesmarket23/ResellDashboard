@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { useTheme } from '@/lib/contexts/ThemeContext';
-import { TrendingUp, Mail, Lock, User, Eye, EyeOff, ArrowLeft, Sparkles } from 'lucide-react';
+import { Mail, Lock, User, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 
 const LoginPage = () => {
   const { currentTheme, setTheme, themes } = useTheme();
@@ -12,6 +13,7 @@ const LoginPage = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -19,6 +21,21 @@ const LoginPage = () => {
     firstName: '',
     lastName: ''
   });
+
+  useEffect(() => {
+    // Trigger fade-in animation after component mounts
+    const timer = setTimeout(() => {
+      setIsVisible(true);
+    }, 50);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleNavigation = (path: string) => {
+    setIsVisible(false);
+    setTimeout(() => {
+      router.push(path);
+    }, 300);
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData(prev => ({
@@ -45,7 +62,7 @@ const LoginPage = () => {
   };
 
   return (
-    <div className={`min-h-screen ${currentTheme.colors.background} ${currentTheme.colors.bodyClass} flex items-center justify-center p-4`}>
+    <div className={`min-h-screen ${currentTheme.colors.background} ${currentTheme.colors.bodyClass} flex items-center justify-center p-4 transition-all duration-500 ease-out ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
       {/* Background decoration */}
       <div className="absolute inset-0 overflow-hidden">
         <div className={`absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-3xl opacity-20 ${
@@ -63,13 +80,13 @@ const LoginPage = () => {
       <div className="relative w-full max-w-md">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
-          <Link 
-            href="/landing"
+          <button 
+            onClick={() => handleNavigation('/landing')}
             className={`flex items-center space-x-2 ${currentTheme.colors.textSecondary} hover:${currentTheme.colors.textPrimary} transition-colors`}
           >
             <ArrowLeft className="w-5 h-5" />
             <span>Back</span>
-          </Link>
+          </button>
           
           {/* Theme Selector */}
           <div className="flex items-center space-x-2">
@@ -100,9 +117,13 @@ const LoginPage = () => {
                 ? 'bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 border border-cyan-500/30' 
                 : 'bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30'
             } backdrop-blur-sm`}>
-              <TrendingUp className={`w-8 h-8 ${
-                currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-purple-400'
-              }`} />
+              <Image
+                src="/flip-flow-logo.svg"
+                alt="Flip Flow Logo"
+                width={32}
+                height={32}
+                className="w-8 h-8"
+              />
             </div>
           </div>
           <h1 className={`text-2xl font-bold ${currentTheme.colors.textPrimary} mb-2`}>
@@ -114,7 +135,7 @@ const LoginPage = () => {
         </div>
 
         {/* Auth Card */}
-        <div className={`p-8 rounded-2xl ${
+        <div className={`p-8 rounded-2xl login-card-glow ${
           currentTheme.name === 'Neon'
             ? 'bg-white/5 border border-cyan-500/20 backdrop-blur-sm'
             : `${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border backdrop-blur-sm`

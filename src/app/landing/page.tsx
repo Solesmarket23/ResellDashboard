@@ -1,12 +1,23 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useTheme } from '@/lib/contexts/ThemeContext';
-import { TrendingUp, Shield, Zap, BarChart3, DollarSign, Target, ArrowRight, Sparkles } from 'lucide-react';
+import { TrendingUp, Shield, Zap, BarChart3, DollarSign, Target, ArrowRight } from 'lucide-react';
 
 const LandingPage = () => {
   const { currentTheme, setTheme, themes } = useTheme();
+  const router = useRouter();
+  const [isTransitioning, setIsTransitioning] = useState(false);
+
+  const handleNavigation = (path: string) => {
+    setIsTransitioning(true);
+    setTimeout(() => {
+      router.push(path);
+    }, 300); // 300ms delay for fade-out animation
+  };
 
   const features = [
     {
@@ -36,15 +47,21 @@ const LandingPage = () => {
   ];
 
   return (
-    <div className={`min-h-screen ${currentTheme.colors.background} ${currentTheme.colors.bodyClass}`}>
+    <div className={`min-h-screen ${currentTheme.colors.background} ${currentTheme.colors.bodyClass} transition-opacity duration-300 ${isTransitioning ? 'opacity-0' : 'opacity-100'}`}>
       {/* Navigation */}
       <nav className="flex items-center justify-between p-6 max-w-7xl mx-auto">
         <div className="flex items-center space-x-2">
-          <div className={`w-8 h-8 rounded-lg ${currentTheme.colors.primary} flex items-center justify-center`}>
-            <TrendingUp className="w-5 h-5 text-white" />
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center">
+            <Image
+              src="/flip-flow-logo.svg"
+              alt="Flip Flow Logo"
+              width={32}
+              height={32}
+              className="w-8 h-8"
+            />
           </div>
           <span className={`text-xl font-bold ${currentTheme.colors.textPrimary}`}>
-            Resell Dashboard
+            Flip Flow
           </span>
         </div>
         
@@ -69,8 +86,8 @@ const LandingPage = () => {
             </div>
           </div>
           
-          <Link 
-            href="/login"
+          <button 
+            onClick={() => handleNavigation('/login')}
             className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
               currentTheme.name === 'Neon'
                 ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white hover:shadow-lg hover:shadow-cyan-500/25'
@@ -78,7 +95,7 @@ const LandingPage = () => {
             }`}
           >
             Sign In
-          </Link>
+          </button>
         </div>
       </nav>
 
@@ -91,9 +108,13 @@ const LandingPage = () => {
                 ? 'bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 border border-cyan-500/30' 
                 : 'bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30'
             } backdrop-blur-sm`}>
-              <Sparkles className={`w-12 h-12 ${
-                currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-purple-400'
-              }`} />
+              <Image
+                src="/flip-flow-logo.svg"
+                alt="Flip Flow Logo"
+                width={48}
+                height={48}
+                className="w-12 h-12"
+              />
               <div className={`absolute inset-0 rounded-2xl ${
                 currentTheme.name === 'Neon' 
                   ? 'bg-gradient-to-r from-emerald-500/10 to-cyan-500/10' 
@@ -119,8 +140,8 @@ const LandingPage = () => {
           </p>
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link 
-              href="/login"
+            <button 
+              onClick={() => handleNavigation('/login')}
               className={`px-8 py-4 rounded-xl font-bold text-lg leading-none transition-all duration-300 transform hover:scale-105 ${
                 currentTheme.name === 'Neon'
                   ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white hover:shadow-2xl hover:shadow-cyan-500/25'
@@ -129,7 +150,7 @@ const LandingPage = () => {
             >
               <span>Get Started Free</span>
               <ArrowRight className="w-5 h-5" />
-            </Link>
+            </button>
             
             <button className={`px-8 py-4 rounded-xl font-bold text-lg leading-none transition-all duration-300 ${
               currentTheme.name === 'Neon'
