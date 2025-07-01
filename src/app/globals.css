@@ -308,7 +308,7 @@ body {
   animation: pageTransitionOut 0.3s ease-in forwards;
 }
 
-/* Login Card Glow Effects */
+/* Login Card Glow Effects - Fixed for symmetry */
 .login-card-glow {
   position: relative;
   transition: all 0.3s ease;
@@ -317,50 +317,47 @@ body {
 .login-card-glow::before {
   content: '';
   position: absolute;
-  top: -2px;
-  left: -2px;
-  right: -2px;
-  bottom: -2px;
-  border-radius: 18px;
+  inset: -2px;
+  border-radius: calc(1rem + 2px);
   z-index: -1;
-  opacity: 0.6;
+  opacity: 0.8;
   transition: all 0.3s ease;
 }
 
 /* Neon theme login card glow */
 .theme-neon .login-card-glow {
   box-shadow: 
-    0 0 20px rgba(6, 182, 212, 0.2),
-    0 0 40px rgba(16, 185, 129, 0.1);
+    0 0 30px rgba(6, 182, 212, 0.15),
+    0 4px 20px rgba(16, 185, 129, 0.1);
 }
 
 .theme-neon .login-card-glow::before {
   background: linear-gradient(135deg, 
-    rgba(6, 182, 212, 0.15), 
-    rgba(16, 185, 129, 0.15), 
-    rgba(6, 182, 212, 0.15)
+    rgba(6, 182, 212, 0.2), 
+    rgba(16, 185, 129, 0.2), 
+    rgba(6, 182, 212, 0.2)
   );
   box-shadow: 
-    inset 0 0 0 1px rgba(6, 182, 212, 0.3),
-    0 0 15px rgba(6, 182, 212, 0.2);
+    inset 0 0 0 1px rgba(6, 182, 212, 0.4),
+    0 0 20px rgba(6, 182, 212, 0.25);
 }
 
 /* Light theme login card glow */
 .theme-light .login-card-glow {
   box-shadow: 
-    0 0 20px rgba(139, 92, 246, 0.15),
-    0 0 40px rgba(236, 72, 153, 0.1);
+    0 0 30px rgba(139, 92, 246, 0.12),
+    0 4px 20px rgba(236, 72, 153, 0.08);
 }
 
 .theme-light .login-card-glow::before {
   background: linear-gradient(135deg, 
-    rgba(139, 92, 246, 0.15), 
-    rgba(236, 72, 153, 0.15), 
-    rgba(139, 92, 246, 0.15)
+    rgba(139, 92, 246, 0.18), 
+    rgba(236, 72, 153, 0.18), 
+    rgba(139, 92, 246, 0.18)
   );
   box-shadow: 
-    inset 0 0 0 1px rgba(139, 92, 246, 0.25),
-    0 0 15px rgba(139, 92, 246, 0.2);
+    inset 0 0 0 1px rgba(139, 92, 246, 0.3),
+    0 0 20px rgba(139, 92, 246, 0.2);
 }
 
 @layer utilities {
