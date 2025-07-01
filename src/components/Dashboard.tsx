@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { DollarSign, TrendingUp, Package, ShoppingCart, BarChart3, Calculator, Calendar, X, Palette } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import DatePicker from './DatePicker';
+import MarketAlerts from './MarketAlerts';
 
 const Dashboard = () => {
   const { currentTheme, setTheme, themes } = useTheme();
@@ -189,8 +190,12 @@ const Dashboard = () => {
                 onClick={() => handleTimePeriodChange(period)}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center ${
                   activeTimePeriod === period
-                    ? `${currentTheme.colors.primary} text-white`
-                    : `${currentTheme.colors.cardBackground} ${currentTheme.colors.textSecondary} hover:bg-gray-100 ${currentTheme.colors.border} border`
+                    ? currentTheme.name === 'Neon'
+                      ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white'
+                      : `${currentTheme.colors.primary} text-white`
+                    : currentTheme.name === 'Neon'
+                      ? 'bg-white/10 backdrop-blur-sm text-gray-300 hover:bg-white/20 border border-white/10'
+                      : `${currentTheme.colors.cardBackground} ${currentTheme.colors.textSecondary} hover:bg-gray-100 ${currentTheme.colors.border} border`
                 }`}
               >
                 {period === 'Custom Range' && <Calendar className="w-4 h-4 mr-1" />}
@@ -200,56 +205,27 @@ const Dashboard = () => {
           </div>
         </div>
         
-        {/* Theme Toggle Button */}
-        <div className="relative">
-          <button
-            onClick={() => setShowThemeSelector(!showThemeSelector)}
-            className={`p-3 rounded-lg ${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border hover:bg-gray-100 transition-colors`}
-            title="Change Theme"
-          >
-            <Palette className={`w-5 h-5 ${currentTheme.colors.textSecondary}`} />
-          </button>
-          
-          {/* Theme Selector Dropdown */}
-          {showThemeSelector && (
-            <>
-              <div 
-                className="fixed inset-0 z-30" 
-                onClick={() => setShowThemeSelector(false)}
-              />
-              <div className={`absolute right-0 top-12 w-48 ${currentTheme.colors.cardBackground} rounded-lg shadow-xl ${currentTheme.colors.border} border z-40 overflow-hidden`}>
-                <div className={`px-4 py-3 ${currentTheme.colors.border} border-b`}>
-                  <h3 className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>Choose Theme</h3>
-                </div>
-                <div className="py-1">
-                  {Object.values(themes).map((theme) => (
-                    <button
-                      key={theme.name}
-                      onClick={() => {
-                        setTheme(theme.name);
-                        setShowThemeSelector(false);
-                      }}
-                      className={`w-full flex items-center px-4 py-3 text-sm transition-colors ${
-                        currentTheme.name === theme.name 
-                          ? `${currentTheme.colors.primaryLight} ${currentTheme.colors.accent}` 
-                          : `${currentTheme.colors.textSecondary} hover:bg-gray-100`
-                      }`}
-                    >
-                      <div className={`w-4 h-4 rounded-full mr-3 ${
-                        theme.name === 'Light' ? 'bg-gradient-to-r from-blue-400 to-blue-600' :
-                        theme.name === 'Dark' ? 'bg-gradient-to-r from-gray-600 to-gray-800' :
-                        'bg-gradient-to-r from-amber-500 via-red-500 to-purple-600'
-                      }`}></div>
-                      {theme.name}
-                      {currentTheme.name === theme.name && (
-                        <div className="ml-auto w-2 h-2 bg-current rounded-full"></div>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
+        {/* Theme Number Selector */}
+        <div className="flex items-center space-x-2">
+          <span className={`text-sm font-medium ${currentTheme.colors.textSecondary} mr-2`}>Theme:</span>
+          <div className="flex items-center space-x-1 p-1 rounded-lg bg-black/20 backdrop-blur-sm">
+            {Object.values(themes).map((theme, index) => (
+              <button
+                key={theme.name}
+                onClick={() => setTheme(theme.name)}
+                className={`w-8 h-8 rounded-md text-sm font-bold transition-all duration-200 ${
+                  currentTheme.name === theme.name 
+                    ? 'bg-gradient-to-r from-cyan-500 to-purple-500 text-white shadow-lg scale-105' 
+                    : 'text-gray-400 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                {index + 1}
+              </button>
+            ))}
+            <button className="w-8 h-8 rounded-md text-sm text-gray-400 hover:text-white hover:bg-white/10 transition-all duration-200">
+              <span className="text-xs">⚙️</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -371,8 +347,14 @@ const Dashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
         {metricCards.map((card, index) => {
           const IconComponent = card.icon;
+          const isNeon = currentTheme.name === 'Neon';
+          
           return (
-            <div key={index} className={`${currentTheme.colors.cardBackground} rounded-lg p-6 shadow-sm ${currentTheme.colors.border} border`}>
+            <div key={index} className={`metric-card ${
+              isNeon
+                ? 'dark-neon-card neon-glow'
+                : `${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border`
+            } rounded-lg p-6 shadow-sm`}>
               <div className="flex items-center justify-between">
                 <div className="flex-1">
                   <p className={`text-sm font-medium ${currentTheme.colors.textSecondary} mb-1`}>
@@ -385,7 +367,9 @@ const Dashboard = () => {
                     {card.subtitle}
                   </p>
                 </div>
-                <div className={`p-3 rounded-lg bg-gray-50`}>
+                <div className={`p-3 rounded-lg ${
+                  isNeon ? 'bg-white/10 backdrop-blur-sm' : 'bg-gray-50'
+                }`}>
                   <IconComponent className={`w-6 h-6 ${card.iconColor}`} />
                 </div>
               </div>
@@ -397,7 +381,11 @@ const Dashboard = () => {
       {/* Bottom Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Profit Chart */}
-        <div className={`${currentTheme.colors.cardBackground} rounded-lg p-6 shadow-sm ${currentTheme.colors.border} border`}>
+        <div className={`${
+          currentTheme.name === 'Neon'
+            ? 'dark-neon-card neon-glow'
+            : `${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border`
+        } rounded-lg p-6 shadow-sm`}>
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center">
               <BarChart3 className={`w-5 h-5 ${currentTheme.colors.textSecondary} mr-2`} />
@@ -552,7 +540,11 @@ const Dashboard = () => {
         </div>
 
         {/* Top 5 Most Profitable Flips */}
-        <div className={`${currentTheme.colors.cardBackground} rounded-lg p-6 shadow-sm ${currentTheme.colors.border} border`}>
+        <div className={`${
+          currentTheme.name === 'Neon'
+            ? 'dark-neon-card neon-glow'
+            : `${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border`
+        } rounded-lg p-6 shadow-sm`}>
           <div className="flex items-center mb-6">
             <TrendingUp className={`w-5 h-5 ${currentTheme.colors.textSecondary} mr-2`} />
             <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>Top 5 Most Profitable Flips</h3>
@@ -582,6 +574,11 @@ const Dashboard = () => {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Market Alerts Section */}
+      <div className="mt-8">
+        <MarketAlerts />
       </div>
     </div>
   );

@@ -222,21 +222,39 @@ const Purchases = () => {
 
   const getStatusBadge = (status: string, color: string) => {
     const baseClasses = "px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap";
-    const colorClasses = {
-      green: "bg-green-100 text-green-800",
-      orange: "bg-orange-100 text-orange-800",
-      blue: "bg-blue-100 text-blue-800"
-    };
-    return `${baseClasses} ${colorClasses[color as keyof typeof colorClasses]}`;
+    if (currentTheme.name === 'Neon') {
+      const colorClasses = {
+        green: "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30",
+        orange: "bg-orange-500/20 text-orange-400 border border-orange-500/30",
+        blue: "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
+      };
+      return `${baseClasses} ${colorClasses[color as keyof typeof colorClasses]}`;
+    } else {
+      const colorClasses = {
+        green: "bg-green-100 text-green-800",
+        orange: "bg-orange-100 text-orange-800",
+        blue: "bg-blue-100 text-blue-800"
+      };
+      return `${baseClasses} ${colorClasses[color as keyof typeof colorClasses]}`;
+    }
   };
 
   const getVerifiedIndicator = (verified: string, color: string) => {
-    const colorClasses = {
-      green: "bg-green-500",
-      orange: "bg-orange-500",
-      red: "bg-red-500"
-    };
-    return `w-2 h-2 rounded-full ${colorClasses[color as keyof typeof colorClasses]}`;
+    if (currentTheme.name === 'Neon') {
+      const colorClasses = {
+        green: "bg-emerald-500",
+        orange: "bg-orange-500",
+        red: "bg-red-500"
+      };
+      return `w-2 h-2 rounded-full ${colorClasses[color as keyof typeof colorClasses]}`;
+    } else {
+      const colorClasses = {
+        green: "bg-green-500",
+        orange: "bg-orange-500",
+        red: "bg-red-500"
+      };
+      return `w-2 h-2 rounded-full ${colorClasses[color as keyof typeof colorClasses]}`;
+    }
   };
 
   const handleScanComplete = (trackingNumber: string) => {
@@ -254,8 +272,8 @@ const Purchases = () => {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center space-x-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Purchases</h1>
-            <p className="text-gray-600 mt-1">
+            <h1 className={`text-2xl font-bold ${currentTheme.colors.textPrimary}`}>Purchases</h1>
+            <p className={`${currentTheme.colors.textSecondary} mt-1`}>
               {gmailConnected ? 
                 `Showing ${totalCount} purchases from Gmail` : 
                 `Showing ${totalCount} purchases (Demo data)`
@@ -267,7 +285,11 @@ const Purchases = () => {
               <button
                 onClick={refreshPurchases}
                 disabled={loading}
-                className="flex items-center space-x-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                className={`flex items-center space-x-2 ${
+                  currentTheme.name === 'Neon' 
+                    ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 shadow-lg hover:shadow-emerald-500/25' 
+                    : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 shadow-lg hover:shadow-purple-500/25'
+                } disabled:opacity-50 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200`}
               >
                 <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
                 <span>Sync Gmail</span>
@@ -275,7 +297,11 @@ const Purchases = () => {
             )}
             <button
               onClick={() => setShowScanModal(true)}
-              className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+              className={`flex items-center space-x-2 ${
+                currentTheme.name === 'Neon' 
+                  ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 shadow-lg hover:shadow-emerald-500/25' 
+                  : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 shadow-lg hover:shadow-purple-500/25'
+              } text-white px-4 py-2 rounded-lg font-medium transition-all duration-200`}
             >
               <Camera className="w-5 h-5" />
               <span>Scan Package</span>
@@ -283,7 +309,11 @@ const Purchases = () => {
             {totalCount > 0 && (
               <button
                 onClick={handleResetClick}
-                className="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                className={`flex items-center space-x-2 ${
+                  currentTheme.name === 'Neon' 
+                    ? 'bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30' 
+                    : 'bg-red-600 hover:bg-red-700 text-white'
+                } px-4 py-2 rounded-lg font-medium transition-all duration-200`}
               >
                 <Trash2 className="w-5 h-5" />
                 <span>Reset</span>
@@ -291,7 +321,11 @@ const Purchases = () => {
             )}
             <button
               onClick={() => setShowEmailSettings(true)}
-              className="flex items-center space-x-2 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+              className={`flex items-center space-x-2 ${
+                currentTheme.name === 'Neon' 
+                  ? 'bg-white/10 hover:bg-white/20 text-gray-300 border border-white/20' 
+                  : 'bg-gray-600 hover:bg-gray-700 text-white'
+              } px-4 py-2 rounded-lg font-medium transition-all duration-200`}
             >
               <Settings className="w-5 h-5" />
               <span>Settings</span>
@@ -299,10 +333,10 @@ const Purchases = () => {
           </div>
         </div>
         <div className="text-right">
-          <p className="text-gray-600">Total value:</p>
-          <p className="text-xl font-bold text-gray-900">{totalValue}</p>
+          <p className={`${currentTheme.colors.textSecondary}`}>Total value:</p>
+          <p className={`text-xl font-bold ${currentTheme.colors.textPrimary}`}>{totalValue}</p>
           {gmailConnected && (
-            <p className="text-xs text-green-600 flex items-center justify-end mt-1">
+            <p className={`text-xs ${currentTheme.name === 'Neon' ? 'text-emerald-400' : 'text-green-600'} flex items-center justify-end mt-1`}>
               <Mail className="w-3 h-3 mr-1" />
               Live from Gmail
             </p>
@@ -313,95 +347,125 @@ const Purchases = () => {
       {/* Loading State */}
       {loading && (
         <div className="flex items-center justify-center py-8">
-          <RefreshCw className="w-6 h-6 animate-spin text-blue-600 mr-2" />
-          <span className="text-gray-600">Fetching purchases from Gmail...</span>
+          <RefreshCw className={`w-6 h-6 animate-spin ${currentTheme.colors.accent} mr-2`} />
+          <span className={`${currentTheme.colors.textSecondary}`}>Fetching purchases from Gmail...</span>
         </div>
       )}
 
       {/* Table */}
-      <div className={`${currentTheme.colors.cardBackground} rounded-lg shadow-sm border border-gray-200 overflow-hidden`}>
+      <div className={`${currentTheme.colors.cardBackground} rounded-lg shadow-sm ${currentTheme.colors.border} border overflow-hidden`}>
         <div className="overflow-x-auto">
           <table ref={tableRef} className="w-full" style={{ tableLayout: 'fixed' }}>
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className={`${
+              currentTheme.name === 'Neon' 
+                ? 'bg-white/5 border-b border-white/10' 
+                : 'bg-gray-50 border-b border-gray-200'
+            }`}>
               <tr className="h-10">
-                <th className="relative px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.product}px` }}>
+                <th className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`} style={{ width: `${columnWidths.product}px` }}>
                   Product
                   <div 
-                    className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-300 opacity-0 hover:opacity-100 transition-opacity"
+                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50' : 'hover:bg-blue-300'
+                    } opacity-0 hover:opacity-100 transition-opacity`}
                     onMouseDown={(e) => handleMouseDown(e, 'product')}
                   />
                 </th>
-                <th className="relative px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.orderNumber}px` }}>
+                <th className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`} style={{ width: `${columnWidths.orderNumber}px` }}>
                   Order #
                   <div 
-                    className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-300 opacity-0 hover:opacity-100 transition-opacity"
+                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50' : 'hover:bg-blue-300'
+                    } opacity-0 hover:opacity-100 transition-opacity`}
                     onMouseDown={(e) => handleMouseDown(e, 'orderNumber')}
                   />
                 </th>
-                <th className="relative px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.status}px` }}>
+                <th className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`} style={{ width: `${columnWidths.status}px` }}>
                   Status / Delivery
                   <div 
-                    className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-300 opacity-0 hover:opacity-100 transition-opacity"
+                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50' : 'hover:bg-blue-300'
+                    } opacity-0 hover:opacity-100 transition-opacity`}
                     onMouseDown={(e) => handleMouseDown(e, 'status')}
                   />
                 </th>
-                <th className="relative px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.tracking}px` }}>
+                <th className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`} style={{ width: `${columnWidths.tracking}px` }}>
                   Tracking
                   <div 
-                    className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-300 opacity-0 hover:opacity-100 transition-opacity"
+                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50' : 'hover:bg-blue-300'
+                    } opacity-0 hover:opacity-100 transition-opacity`}
                     onMouseDown={(e) => handleMouseDown(e, 'tracking')}
                   />
                 </th>
-                <th className="relative px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.market}px` }}>
+                <th className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`} style={{ width: `${columnWidths.market}px` }}>
                   Market
                   <div 
-                    className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-300 opacity-0 hover:opacity-100 transition-opacity"
+                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50' : 'hover:bg-blue-300'
+                    } opacity-0 hover:opacity-100 transition-opacity`}
                     onMouseDown={(e) => handleMouseDown(e, 'market')}
                   />
                 </th>
-                <th className="relative px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.price}px` }}>
+                <th className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`} style={{ width: `${columnWidths.price}px` }}>
                   Price
                   <div 
-                    className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-300 opacity-0 hover:opacity-100 transition-opacity"
+                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50' : 'hover:bg-blue-300'
+                    } opacity-0 hover:opacity-100 transition-opacity`}
                     onMouseDown={(e) => handleMouseDown(e, 'price')}
                   />
                 </th>
-                <th className="relative px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" style={{ width: `${columnWidths.purchaseDate}px` }}>
+                <th className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer ${
+                  currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                }`} style={{ width: `${columnWidths.purchaseDate}px` }}>
                   <div className="flex items-center h-10">
                     Purchase Date
                     <ChevronDown className="w-4 h-4 ml-1" />
                   </div>
                   <div 
-                    className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-300 opacity-0 hover:opacity-100 transition-opacity"
+                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50' : 'hover:bg-blue-300'
+                    } opacity-0 hover:opacity-100 transition-opacity`}
                     onMouseDown={(e) => handleMouseDown(e, 'purchaseDate')}
                   />
                 </th>
-                <th className="relative px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.dateAdded}px` }}>
+                <th className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`} style={{ width: `${columnWidths.dateAdded}px` }}>
                   Date Added
                   <div 
-                    className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-300 opacity-0 hover:opacity-100 transition-opacity"
+                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50' : 'hover:bg-blue-300'
+                    } opacity-0 hover:opacity-100 transition-opacity`}
                     onMouseDown={(e) => handleMouseDown(e, 'dateAdded')}
                   />
                 </th>
-                <th className="relative px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.verified}px` }}>
+                <th className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`} style={{ width: `${columnWidths.verified}px` }}>
                   Verified
                   <div 
-                    className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-300 opacity-0 hover:opacity-100 transition-opacity"
+                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50' : 'hover:bg-blue-300'
+                    } opacity-0 hover:opacity-100 transition-opacity`}
                     onMouseDown={(e) => handleMouseDown(e, 'verified')}
                   />
                 </th>
-                <th className="relative px-6 py-0 h-10 align-middle text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.edit}px` }}>
+                <th className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`} style={{ width: `${columnWidths.edit}px` }}>
                   Edit
                   <div 
-                    className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-300 opacity-0 hover:opacity-100 transition-opacity"
+                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50' : 'hover:bg-blue-300'
+                    } opacity-0 hover:opacity-100 transition-opacity`}
                     onMouseDown={(e) => handleMouseDown(e, 'edit')}
                   />
                 </th>
               </tr>
             </thead>
-            <tbody className={`${currentTheme.colors.cardBackground} divide-y divide-gray-100`}>
+            <tbody className={`${currentTheme.colors.cardBackground} ${
+              currentTheme.name === 'Neon' ? 'divide-y divide-white/10' : 'divide-y divide-gray-100'
+            }`}>
               {purchases.map((purchase) => (
-                <tr key={purchase.id} className="hover:bg-gray-50 transition-colors">
+                <tr key={purchase.id} className={`${
+                  currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-50'
+                } transition-colors`}>
                   <td className="px-6 py-2">
                     <div className="flex items-start gap-3 min-h-12">
                       <div className={`w-8 h-8 rounded-lg flex-shrink-0 overflow-hidden ${purchase.product.bgColor} flex items-center justify-center shadow-sm mt-1`}>
@@ -422,10 +486,10 @@ const Purchases = () => {
                         />
                       </div>
                       <div className="flex-1">
-                        <div className="text-sm font-medium text-gray-900 leading-tight" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
+                        <div className={`text-sm font-medium ${currentTheme.colors.textPrimary} leading-tight`} style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
                           {purchase.product.name}
                         </div>
-                        <div className="text-xs text-gray-500" style={{ wordBreak: 'break-word' }}>
+                        <div className={`text-xs ${currentTheme.colors.textSecondary}`} style={{ wordBreak: 'break-word' }}>
                           {purchase.product.brand} • {purchase.product.size}
                         </div>
                       </div>
@@ -436,7 +500,7 @@ const Purchases = () => {
                       href={`https://mail.google.com/mail/u/0/#search/"${encodeURIComponent(purchase.orderNumber)}"`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className={`${currentTheme.colors.accent} ${currentTheme.colors.primaryHover.replace('hover:bg-', 'hover:')} text-sm font-medium hover:underline whitespace-nowrap`}
+                      className={`${currentTheme.colors.accent} text-sm font-medium hover:underline whitespace-nowrap transition-colors`}
                     >
                       {purchase.orderNumber}
                     </a>
@@ -447,22 +511,26 @@ const Purchases = () => {
                     </span>
                   </td>
                   <td className="px-6 py-2 align-middle">
-                    <a href="#" className={`${currentTheme.colors.accent} ${currentTheme.colors.primaryHover.replace('hover:bg-', 'hover:')} text-sm hover:underline`}>
+                    <a href="#" className={`${currentTheme.colors.accent} text-sm hover:underline transition-colors`}>
                       {purchase.tracking}
                     </a>
                   </td>
-                  <td className="px-6 py-2 align-middle text-sm text-gray-900 font-medium">
-                    {purchase.market}
+                  <td className="px-6 py-2 align-middle">
+                    <span className={`text-sm ${currentTheme.colors.textPrimary} font-medium`}>
+                      {purchase.market}
+                    </span>
                   </td>
                   <td className="px-6 py-2 align-middle">
-                    <div className="text-sm font-semibold text-gray-900">{purchase.price}</div>
-                    <div className="text-xs text-gray-500">({purchase.originalPrice})</div>
-                  </td>
-                  <td className="px-6 py-2 align-middle text-sm text-gray-900 font-medium">
-                    {purchase.purchaseDate}
+                    <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>{purchase.price}</div>
+                    <div className={`text-xs ${currentTheme.colors.textSecondary}`}>({purchase.originalPrice})</div>
                   </td>
                   <td className="px-6 py-2 align-middle">
-                    <div className="text-sm text-gray-900 whitespace-nowrap">
+                    <span className={`text-sm ${currentTheme.colors.textPrimary} font-medium`}>
+                      {purchase.purchaseDate}
+                    </span>
+                  </td>
+                  <td className="px-6 py-2 align-middle">
+                    <div className={`text-sm ${currentTheme.colors.textPrimary} whitespace-nowrap`}>
                       {purchase.dateAdded.replace('\n', ' ')}
                     </div>
                   </td>
@@ -471,10 +539,14 @@ const Purchases = () => {
                   </td>
                   <td className="px-6 py-2 align-middle">
                     <div className="flex items-center space-x-1">
-                      <button className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors">
+                      <button className={`p-1 ${currentTheme.colors.textSecondary} ${
+                        currentTheme.name === 'Neon' ? 'hover:text-cyan-400 hover:bg-white/10' : 'hover:text-gray-600 hover:bg-gray-100'
+                      } rounded transition-colors`}>
                         <Edit className="w-4 h-4" />
                       </button>
-                      <button className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors">
+                      <button className={`p-1 ${currentTheme.colors.textSecondary} ${
+                        currentTheme.name === 'Neon' ? 'hover:text-cyan-400 hover:bg-white/10' : 'hover:text-gray-600 hover:bg-gray-100'
+                      } rounded transition-colors`}>
                         <MoreHorizontal className="w-4 h-4" />
                       </button>
                     </div>
@@ -496,25 +568,35 @@ const Purchases = () => {
       {/* Reset Confirmation Modal */}
       {showResetConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+          <div className={`${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border rounded-lg p-6 max-w-md w-full mx-4`}>
             <div className="flex items-center mb-4">
-              <Trash2 className="w-6 h-6 text-red-600 mr-3" />
-              <h3 className="text-lg font-semibold text-gray-900">Reset All Purchases</h3>
+              <Trash2 className={`w-6 h-6 ${
+                currentTheme.name === 'Neon' ? 'text-red-400' : 'text-red-600'
+              } mr-3`} />
+              <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>Reset All Purchases</h3>
             </div>
-            <p className="text-gray-600 mb-6">
+            <p className={`${currentTheme.colors.textSecondary} mb-6`}>
               Are you sure you want to clear all purchases? This action cannot be undone.
               {gmailConnected && " You can always sync with Gmail again to restore your data."}
             </p>
             <div className="flex justify-end space-x-3">
               <button
                 onClick={cancelReset}
-                className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors"
+                className={`px-4 py-2 ${
+                  currentTheme.name === 'Neon' 
+                    ? 'bg-white/10 hover:bg-white/20 text-gray-300 border border-white/20' 
+                    : 'text-gray-700 bg-gray-100 hover:bg-gray-200'
+                } rounded-lg font-medium transition-colors`}
               >
                 Cancel
               </button>
               <button
                 onClick={confirmReset}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
+                className={`px-4 py-2 ${
+                  currentTheme.name === 'Neon' 
+                    ? 'bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30' 
+                    : 'bg-red-600 hover:bg-red-700 text-white'
+                } rounded-lg font-medium transition-colors`}
               >
                 Reset All
               </button>
