@@ -91,11 +91,7 @@ const Plans = () => {
   ];
 
   return (
-    <div className={`min-h-screen relative overflow-hidden py-4 sm:py-8 px-4 flex-1 ${
-      isNeon 
-        ? 'bg-slate-950' 
-        : 'bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50'
-    }`}>
+    <div className={`min-h-screen relative overflow-hidden py-4 sm:py-8 px-4 flex-1 ${currentTheme.colors.background}`}>
         {/* Neon theme background effects */}
         {isNeon && (
           <>

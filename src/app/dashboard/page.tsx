@@ -32,11 +32,7 @@ export default function DashboardPage() {
         return <Dashboard />;
       case 'inventory':
         return (
-          <div className={`flex-1 p-8 ${
-            isNeon 
-              ? 'bg-slate-950' 
-              : 'bg-gray-50'
-          }`}>
+          <div className={`flex-1 p-8 ${currentTheme.colors.background}`}>
             <h1 className={`text-3xl font-bold ${
               isNeon ? 'text-white' : 'text-gray-900'
             }`}>Inventory</h1>
@@ -57,11 +53,7 @@ export default function DashboardPage() {
         return <Profile />;
       case 'price-tracker':
         return (
-          <div className={`flex-1 p-8 ${
-            isNeon 
-              ? 'bg-slate-950' 
-              : 'bg-gray-50'
-          }`}>
+          <div className={`flex-1 p-8 ${currentTheme.colors.background}`}>
             <h1 className={`text-3xl font-bold ${
               isNeon ? 'text-white' : 'text-gray-900'
             }`}>Price Tracker</h1>
@@ -72,11 +64,7 @@ export default function DashboardPage() {
         );
       case 'flip-finder':
         return (
-          <div className={`flex-1 p-8 ${
-            isNeon 
-              ? 'bg-slate-950' 
-              : 'bg-gray-50'
-          }`}>
+          <div className={`flex-1 p-8 ${currentTheme.colors.background}`}>
             <h1 className={`text-3xl font-bold ${
               isNeon ? 'text-white' : 'text-gray-900'
             }`}>Flip Finder</h1>
@@ -87,21 +75,13 @@ export default function DashboardPage() {
         );
       case 'market-alerts':
         return (
-          <div className={`flex-1 p-8 ${
-            isNeon 
-              ? 'bg-slate-950' 
-              : 'bg-gray-50'
-          }`}>
+          <div className={`flex-1 p-8 ${currentTheme.colors.background}`}>
             <MarketAlerts />
           </div>
         );
       case 'loss-tracker':
         return (
-          <div className={`flex-1 p-8 ${
-            isNeon 
-              ? 'bg-slate-950' 
-              : 'bg-gray-50'
-          }`}>
+          <div className={`flex-1 p-8 ${currentTheme.colors.background}`}>
             <h1 className={`text-3xl font-bold ${
               isNeon ? 'text-white' : 'text-gray-900'
             }`}>Loss Tracker</h1>
@@ -112,11 +92,7 @@ export default function DashboardPage() {
         );
       case 'audio-preview':
         return (
-          <div className={`flex-1 ${
-            isNeon 
-              ? 'bg-slate-950' 
-              : 'bg-gray-50'
-          }`}>
+          <div className={`flex-1 ${currentTheme.colors.background}`}>
             <AudioPreview />
           </div>
         );
@@ -128,11 +104,7 @@ export default function DashboardPage() {
         return <FAQ />;
       default:
         return (
-          <div className={`flex-1 p-8 ${
-            isNeon 
-              ? 'bg-slate-950' 
-              : 'bg-gray-50'
-          }`}>
+          <div className={`flex-1 p-8 ${currentTheme.colors.background}`}>
             <h1 className={`text-3xl font-bold ${
               isNeon ? 'text-white' : 'text-gray-900'
             }`}>
@@ -147,13 +119,11 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className={`flex h-screen ${
-      isNeon 
-        ? 'bg-slate-950' 
-        : 'bg-gray-100'
-    }`}>
+    <div className={`flex h-screen overflow-hidden ${currentTheme.colors.background}`}>
       <Sidebar activeItem={activeItem} onItemClick={handleItemClick} />
-      {renderContent()}
+      <div className="flex-1 overflow-auto">
+        {renderContent()}
+      </div>
     </div>
   );
 } 

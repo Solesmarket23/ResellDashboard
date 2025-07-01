@@ -75,7 +75,7 @@ const Sidebar = ({ activeItem, onItemClick }: SidebarProps) => {
   };
 
   return (
-    <div className={`w-72 ${currentTheme.colors.background} h-screen flex flex-col border-r border-gray-700/20`}>
+    <div className={`w-64 xl:w-72 ${currentTheme.colors.background} h-screen flex flex-col border-r border-gray-700/20 flex-shrink-0`}>
       {/* Header */}
       <div className="p-6 border-b border-gray-700/20">
         <div className="flex items-center space-x-3">
