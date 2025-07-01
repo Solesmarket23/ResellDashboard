@@ -1,0 +1,141 @@
+import { NextRequest, NextResponse } from 'next/server';
+
+export async function POST(request: NextRequest) {
+  try {
+    const { itemName, size } = await request.json();
+    
+    if (!itemName) {
+      return NextResponse.json(
+        { error: 'Item name is required' },
+        { status: 400 }
+      );
+    }
+
+    let results = [];
+    let dataSource = 'mock';
+
+    // Try to use sneaks-api first
+    try {
+      const SneaksAPI = require('sneaks-api');
+      const sneaks = new SneaksAPI();
+
+      console.log('Attempting to search with sneaks-api for:', itemName);
+
+      // Search for products with timeout
+      const searchResults = await Promise.race([
+        new Promise((resolve, reject) => {
+          sneaks.getProducts(itemName, (err: any, products: any) => {
+            if (err) {
+              console.error('Sneaks API error:', err);
+              reject(err);
+            } else {
+              console.log('Sneaks API results:', products?.length || 0, 'products');
+              resolve(products || []);
+            }
+          });
+        }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Timeout')), 10000)
+        )
+      ]);
+
+      if (Array.isArray(searchResults) && searchResults.length > 0) {
+        // Process real data
+        results = searchResults.slice(0, 3).map((product: any) => ({
+          shoe: product.shoe || product.name || 'Unknown',
+          brand: product.brand || 'Unknown',
+          silhoutte: product.silhoutte || product.category || 'Unknown',
+          styleID: product.styleID || 'N/A',
+          retailPrice: product.retailPrice || 0,
+          thumbnail: product.thumbnail || product.image || 'https://via.placeholder.com/150x150/CCCCCC/FFFFFF?text=No+Image',
+          links: {
+            stockX: product.links?.stockX || '#',
+            goat: product.links?.goat || '#',
+            flightClub: product.links?.flightClub || '#',
+            stadiumGoods: product.links?.stadiumGoods || '#'
+          },
+          sizeSpecificData: null, // We'll add detailed pricing later
+          detailedData: null
+        }));
+        dataSource = 'sneaks-api';
+      }
+    } catch (apiError) {
+      console.error('Failed to fetch from sneaks-api:', apiError);
+      // Fall back to mock data
+    }
+
+    // If no real data, use mock data
+    if (results.length === 0) {
+      results = [
+        {
+          shoe: `${itemName} - Mock Result`,
+          brand: 'Nike',
+          silhoutte: 'Air Jordan 1',
+          styleID: 'MOCK123',
+          retailPrice: 170,
+          thumbnail: 'https://via.placeholder.com/150x150/FF0000/FFFFFF?text=Test+Shoe',
+          links: {
+            stockX: 'https://stockx.com/test',
+            goat: 'https://goat.com/test',
+            flightClub: 'https://flightclub.com/test',
+            stadiumGoods: 'https://stadiumgoods.com/test'
+          },
+          sizeSpecificData: size ? {
+            size,
+            prices: {
+              stockX: 250 + Math.floor(Math.random() * 50),
+              goat: 245 + Math.floor(Math.random() * 50),
+              flightClub: 260 + Math.floor(Math.random() * 50),
+              stadiumGoods: 255 + Math.floor(Math.random() * 50)
+            }
+          } : null,
+          detailedData: null
+        },
+        {
+          shoe: `${itemName} High - Mock Result`,
+          brand: 'Nike',
+          silhoutte: 'Air Jordan 1 High',
+          styleID: 'MOCK456',
+          retailPrice: 190,
+          thumbnail: 'https://via.placeholder.com/150x150/0000FF/FFFFFF?text=Test+Shoe+2',
+          links: {
+            stockX: 'https://stockx.com/test2',
+            goat: 'https://goat.com/test2',
+            flightClub: 'https://flightclub.com/test2',
+            stadiumGoods: 'https://stadiumgoods.com/test2'
+          },
+          sizeSpecificData: size ? {
+            size,
+            prices: {
+              stockX: 320 + Math.floor(Math.random() * 50),
+              goat: 315 + Math.floor(Math.random() * 50),
+              flightClub: 330 + Math.floor(Math.random() * 50),
+              stadiumGoods: 325 + Math.floor(Math.random() * 50)
+            }
+          } : null,
+          detailedData: null
+        }
+      ];
+      dataSource = 'mock';
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: results,
+      searchTerm: itemName,
+      requestedSize: size,
+      dataSource,
+      note: dataSource === 'mock' ? 'Using test data - sneaks-api may be unavailable' : 'Live data from sneaks-api'
+    });
+
+  } catch (error) {
+    console.error('Market alerts search error:', error);
+    return NextResponse.json(
+      { 
+        error: 'Failed to search market data',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
+      { status: 500 }
+    );
+  }
+} 

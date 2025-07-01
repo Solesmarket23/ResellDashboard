@@ -8,6 +8,8 @@ import Sales from '../components/Sales';
 import FailedVerifications from '../components/FailedVerifications';
 import ProfitCalculator from '../components/ProfitCalculator';
 import AudioPreview from '../components/AudioPreview';
+import MarketAlerts from '../components/MarketAlerts';
+import Plans from '../components/Plans';
 
 export default function Home() {
   const [activeItem, setActiveItem] = useState('dashboard');
@@ -52,8 +54,7 @@ export default function Home() {
       case 'market-alerts':
         return (
           <div className="flex-1 bg-gray-50 p-8">
-            <h1 className="text-3xl font-bold text-gray-900">Market Alerts</h1>
-            <p className="text-gray-600 mt-4">Get instant notifications for price changes, new releases, and market opportunities. Customize alerts for specific brands, sizes, and price ranges. Coming soon...</p>
+            <MarketAlerts />
           </div>
         );
       case 'loss-tracker':
@@ -69,6 +70,8 @@ export default function Home() {
             <AudioPreview />
           </div>
         );
+      case 'plans':
+        return <Plans />;
       default:
         return (
           <div className="flex-1 bg-gray-50 p-8">

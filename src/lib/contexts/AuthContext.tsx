@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { signInWithPopup, GoogleAuthProvider, signOut as firebaseSignOut } from "firebase/auth";
 import { User } from "firebase/auth";
 import { auth } from "../firebase/firebase";
@@ -12,18 +12,27 @@ interface AuthContextType {
   signOut: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType>({
-  user: null,
-  loading: true,
-  signInWithGoogle: async () => {},
-  signOut: async () => {},
-});
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};
+
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!auth) {
+      // Firebase not configured, set to demo mode
+      setLoading(false);
+      return;
+    }
+
     const unsubscribe = auth.onAuthStateChanged((user) => {
       setUser(user);
       setLoading(false);
@@ -33,27 +42,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signInWithGoogle = async () => {
+    if (!auth) {
+      console.log("🔧 Firebase not configured - demo sign in");
+      return;
+    }
+
     const provider = new GoogleAuthProvider();
-    try {
-      await signInWithPopup(auth, provider);
-    } catch (error) {
-      console.error("Error signing in with Google", error);
-    }
+    await signInWithPopup(auth, provider);
   };
 
-  const signOutUser = async () => {
-    try {
-      await firebaseSignOut(auth);
-    } catch (error) {
-      console.error("Error signing out", error);
+  const signOut = async () => {
+    if (!auth) {
+      console.log("🔧 Firebase not configured - demo sign out");
+      return;
     }
+
+    await firebaseSignOut(auth);
   };
 
-  return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signOut: signOutUser }}>
-      {children}
-    </AuthContext.Provider>
-  );
-}
+  const value = {
+    user,
+    loading,
+    signInWithGoogle,
+    signOut,
+  };
 
-export { AuthContext };
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+};
