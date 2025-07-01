@@ -57,7 +57,7 @@ const LandingPage = () => {
                 <button
                   key={theme.name}
                   onClick={() => setTheme(theme.name)}
-                  className={`w-8 h-8 rounded-md text-sm font-bold transition-all duration-200 ${
+                  className={`w-8 h-8 rounded-md text-sm font-bold transition-all duration-200 flex items-center justify-center ${
                     currentTheme.name === theme.name 
                       ? 'bg-gradient-to-r from-cyan-500 to-purple-500 text-white shadow-lg scale-105' 
                       : 'text-gray-400 hover:text-white hover:bg-white/10'
@@ -84,7 +84,7 @@ const LandingPage = () => {
 
       {/* Hero Section */}
       <section className="max-w-7xl mx-auto px-6 py-20">
-        <div className="text-center mb-16">
+        <div className="text-center mb-16 overflow-visible">
           <div className="flex justify-center mb-6">
             <div className={`relative p-4 rounded-2xl ${
               currentTheme.name === 'Neon' 
@@ -102,13 +102,13 @@ const LandingPage = () => {
             </div>
           </div>
           
-          <h1 className={`text-5xl lg:text-7xl font-bold ${currentTheme.colors.textPrimary} mb-6`}>
+          <h1 className={`text-5xl lg:text-7xl font-bold leading-tight lg:leading-tight ${currentTheme.colors.textPrimary} mb-6 pb-2`}>
             Revolutionary
             <span className={`block bg-gradient-to-r ${
               currentTheme.name === 'Neon' 
                 ? 'from-emerald-400 to-cyan-400' 
                 : 'from-purple-400 to-pink-400'
-            } bg-clip-text text-transparent`}>
+            } bg-clip-text text-transparent leading-tight lg:leading-tight pb-2`}>
               Analytics Suite
             </span>
           </h1>
@@ -121,21 +121,21 @@ const LandingPage = () => {
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link 
               href="/login"
-              className={`px-8 py-4 rounded-xl font-bold text-lg transition-all duration-300 transform hover:scale-105 ${
+              className={`px-8 py-4 rounded-xl font-bold text-lg leading-none transition-all duration-300 transform hover:scale-105 ${
                 currentTheme.name === 'Neon'
                   ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white hover:shadow-2xl hover:shadow-cyan-500/25'
                   : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:shadow-2xl hover:shadow-purple-500/25'
-              } flex items-center space-x-2`}
+              } flex items-center justify-center space-x-2`}
             >
               <span>Get Started Free</span>
               <ArrowRight className="w-5 h-5" />
             </Link>
             
-            <button className={`px-8 py-4 rounded-xl font-bold text-lg transition-all duration-300 ${
+            <button className={`px-8 py-4 rounded-xl font-bold text-lg leading-none transition-all duration-300 ${
               currentTheme.name === 'Neon'
                 ? 'border-2 border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/10'
                 : 'border-2 border-purple-500/50 text-purple-400 hover:bg-purple-500/10'
-            } backdrop-blur-sm`}>
+            } backdrop-blur-sm flex items-center justify-center`}>
               Watch Demo
             </button>
           </div>
@@ -154,10 +154,10 @@ const LandingPage = () => {
                 <div className={`w-12 h-12 rounded-lg bg-gradient-to-r ${feature.color} flex items-center justify-center mb-4`}>
                   <IconComponent className="w-6 h-6 text-white" />
                 </div>
-                <h3 className={`text-lg font-bold ${currentTheme.colors.textPrimary} mb-2`}>
+                <h3 className={`text-lg font-bold leading-relaxed ${currentTheme.colors.textPrimary} mb-2`}>
                   {feature.title}
                 </h3>
-                <p className={`${currentTheme.colors.textSecondary}`}>
+                <p className={`${currentTheme.colors.textSecondary} leading-relaxed`}>
                   {feature.description}
                 </p>
               </div>
@@ -173,32 +173,32 @@ const LandingPage = () => {
         } backdrop-blur-sm`}>
           <div className="grid md:grid-cols-3 gap-8 text-center">
             <div>
-              <div className={`text-4xl font-bold ${
+              <div className={`text-4xl font-bold leading-snug ${
                 currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-purple-400'
               } mb-2`}>
                 $2.3M+
               </div>
-              <div className={`${currentTheme.colors.textSecondary}`}>
+              <div className={`${currentTheme.colors.textSecondary} leading-relaxed`}>
                 Total Profits Tracked
               </div>
             </div>
             <div>
-              <div className={`text-4xl font-bold ${
+              <div className={`text-4xl font-bold leading-snug ${
                 currentTheme.name === 'Neon' ? 'text-emerald-400' : 'text-pink-400'
               } mb-2`}>
                 15K+
               </div>
-              <div className={`${currentTheme.colors.textSecondary}`}>
+              <div className={`${currentTheme.colors.textSecondary} leading-relaxed`}>
                 Active Resellers
               </div>
             </div>
             <div>
-              <div className={`text-4xl font-bold ${
+              <div className={`text-4xl font-bold leading-snug ${
                 currentTheme.name === 'Neon' ? 'text-blue-400' : 'text-indigo-400'
               } mb-2`}>
                 98%
               </div>
-              <div className={`${currentTheme.colors.textSecondary}`}>
+              <div className={`${currentTheme.colors.textSecondary} leading-relaxed`}>
                 Accuracy Rate
               </div>
             </div>
@@ -213,15 +213,15 @@ const LandingPage = () => {
           : 'bg-gradient-to-r from-purple-900/20 to-pink-900/20'
       }`}>
         <div className="max-w-4xl mx-auto text-center px-6">
-          <h2 className={`text-4xl font-bold ${currentTheme.colors.textPrimary} mb-6`}>
+          <h2 className={`text-4xl font-bold leading-snug ${currentTheme.colors.textPrimary} mb-6`}>
             Ready to Transform Your Business?
           </h2>
-          <p className={`text-xl ${currentTheme.colors.textSecondary} mb-8`}>
+          <p className={`text-xl ${currentTheme.colors.textSecondary} leading-relaxed mb-8`}>
             Join thousands of successful resellers using our platform to maximize profits.
           </p>
           <Link 
             href="/login"
-            className={`inline-flex items-center space-x-2 px-8 py-4 rounded-xl font-bold text-lg transition-all duration-300 transform hover:scale-105 ${
+            className={`inline-flex items-center justify-center space-x-2 px-8 py-4 rounded-xl font-bold text-lg leading-none transition-all duration-300 transform hover:scale-105 ${
               currentTheme.name === 'Neon'
                 ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white hover:shadow-2xl hover:shadow-cyan-500/25'
                 : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:shadow-2xl hover:shadow-purple-500/25'
