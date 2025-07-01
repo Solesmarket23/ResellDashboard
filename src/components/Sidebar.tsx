@@ -17,7 +17,9 @@ import {
   CreditCard,
   User,
   LogOut,
-  Settings
+  Settings,
+  HelpCircle,
+  Zap
 } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 
@@ -61,6 +63,8 @@ const Sidebar = ({ activeItem, onItemClick }: SidebarProps) => {
       section: 'SUPPORT',
       items: [
         { id: 'plans', label: 'Plans & Pricing', icon: CreditCard },
+        { id: 'feature-requests', label: 'Feature Requests', icon: Zap },
+        { id: 'faq', label: 'FAQ', icon: HelpCircle },
       ]
     }
   ];
