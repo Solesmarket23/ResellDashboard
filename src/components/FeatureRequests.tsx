@@ -14,7 +14,9 @@ import {
   Send,
   Search,
   Tag,
-  TrendingUp
+  TrendingUp,
+  List,
+  LayoutDashboard
 } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 
@@ -40,6 +42,7 @@ const FeatureRequests = () => {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('votes');
+  const [viewMode, setViewMode] = useState<'list' | 'pipeline'>('list');
   const [newRequest, setNewRequest] = useState({
     title: '',
     description: '',
@@ -395,8 +398,52 @@ const FeatureRequests = () => {
         </div>
       </div>
 
-      {/* Feature Requests List */}
-      <div className="space-y-6">
+      {/* View Toggle */}
+      <div className="flex items-center justify-between mb-6">
+        <div className={`flex items-center rounded-lg p-1 ${
+          isNeon ? 'bg-slate-800/50 border border-slate-700/50' : 'bg-gray-100 border border-gray-200'
+        }`}>
+          <button
+            onClick={() => setViewMode('list')}
+            className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+              viewMode === 'list'
+                ? isNeon
+                  ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 text-white shadow-lg'
+                  : 'bg-white text-gray-900 shadow-sm'
+                : isNeon
+                  ? 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <List className="w-4 h-4 mr-2" />
+            List View
+          </button>
+          <button
+            onClick={() => setViewMode('pipeline')}
+            className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+              viewMode === 'pipeline'
+                ? isNeon
+                  ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 text-white shadow-lg'
+                  : 'bg-white text-gray-900 shadow-sm'
+                : isNeon
+                  ? 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <LayoutDashboard className="w-4 h-4 mr-2" />
+            Pipeline View
+          </button>
+        </div>
+        
+        <div className={`text-sm ${isNeon ? 'text-slate-400' : 'text-gray-500'}`}>
+          {filteredRequests.length} request{filteredRequests.length !== 1 ? 's' : ''}
+        </div>
+      </div>
+
+      {/* Content Views */}
+      {viewMode === 'list' ? (
+        /* List View */
+        <div className="space-y-6">
         {filteredRequests.map(request => (
           <div
             key={request.id}
@@ -514,6 +561,142 @@ const FeatureRequests = () => {
           </div>
         ))}
       </div>
+      ) : (
+        /* Pipeline View */
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {statusOptions.filter(status => status.value !== 'all').map(status => {
+            const statusRequests = filteredRequests.filter(req => req.status === status.value);
+            
+            return (
+              <div key={status.value} className={`rounded-xl p-6 ${
+                isNeon
+                  ? 'dark-neon-card border border-slate-700/50'
+                  : 'bg-white border border-gray-200 shadow-sm'
+              }`}>
+                {/* Status Header */}
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center space-x-3">
+                    <div className={`w-3 h-3 rounded-full ${
+                      status.color === 'blue' ? 'bg-blue-500' :
+                      status.color === 'yellow' ? 'bg-yellow-500' :
+                      status.color === 'green' ? 'bg-green-500' : 'bg-gray-500'
+                    }`}></div>
+                    <h3 className={`text-lg font-semibold ${
+                      isNeon ? 'text-white' : 'text-gray-900'
+                    }`}>
+                      {status.label}
+                    </h3>
+                  </div>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    isNeon
+                      ? 'bg-slate-800/50 text-slate-300'
+                      : 'bg-gray-100 text-gray-600'
+                  }`}>
+                    {statusRequests.length}
+                  </span>
+                </div>
+
+                {/* Requests in this status */}
+                <div className="space-y-4">
+                  {statusRequests.map(request => (
+                    <div
+                      key={request.id}
+                      className={`p-4 rounded-lg transition-all duration-300 cursor-pointer ${
+                        isNeon
+                          ? 'bg-slate-800/30 border border-slate-700/30 hover:border-cyan-500/50 hover:bg-slate-800/50'
+                          : 'bg-gray-50 border border-gray-200 hover:border-gray-300 hover:bg-gray-100'
+                      }`}
+                    >
+                      {/* Request Header */}
+                      <div className="flex items-start justify-between mb-3">
+                        <h4 className={`font-medium text-sm leading-tight ${
+                          isNeon ? 'text-white' : 'text-gray-900'
+                        }`}>
+                          {request.title}
+                        </h4>
+                        <div className="flex items-center space-x-1 ml-2">
+                          {getPriorityBadge(request.priority)}
+                        </div>
+                      </div>
+
+                      {/* Request Description */}
+                      <p className={`text-sm mb-3 line-clamp-2 ${
+                        isNeon ? 'text-slate-400' : 'text-gray-600'
+                      }`}>
+                        {request.description}
+                      </p>
+
+                      {/* Vote and Meta Info */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          {/* Vote Button */}
+                          <button
+                            onClick={() => handleVote(request.id)}
+                            className={`flex items-center space-x-1 px-2 py-1 rounded text-xs transition-all duration-300 ${
+                              request.hasUserVoted
+                                ? isNeon
+                                  ? 'bg-gradient-to-r from-cyan-500/20 to-emerald-500/20 text-cyan-400 border border-cyan-500/30'
+                                  : 'bg-blue-100 text-blue-600 border border-blue-200'
+                                : isNeon
+                                  ? 'bg-slate-700/50 text-slate-400 border border-slate-600/50 hover:border-cyan-500/30 hover:text-cyan-400'
+                                  : 'bg-white text-gray-500 border border-gray-200 hover:bg-gray-50'
+                            }`}
+                          >
+                            <ChevronUp className="w-3 h-3" />
+                            <span className="font-medium">{request.votes}</span>
+                          </button>
+
+                          {/* Comments */}
+                          <div className="flex items-center space-x-1">
+                            <MessageSquare className={`w-3 h-3 ${
+                              isNeon ? 'text-slate-500' : 'text-gray-400'
+                            }`} />
+                            <span className={`text-xs ${
+                              isNeon ? 'text-slate-500' : 'text-gray-500'
+                            }`}>
+                              {request.comments}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Author Avatar */}
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
+                          isNeon
+                            ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 text-white'
+                            : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white'
+                        }`}>
+                          {request.authorAvatar}
+                        </div>
+                      </div>
+
+                      {/* Category Tag */}
+                      <div className="mt-3 pt-3 border-t border-opacity-20 border-gray-400">
+                        <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
+                          isNeon
+                            ? 'bg-slate-700/50 text-slate-300'
+                            : 'bg-gray-200 text-gray-700'
+                        }`}>
+                          {categories.find(c => c.value === request.category)?.label}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Empty State */}
+                  {statusRequests.length === 0 && (
+                    <div className={`text-center py-8 ${
+                      isNeon ? 'text-slate-500' : 'text-gray-400'
+                    }`}>
+                      <div className="mb-2">No requests</div>
+                      <div className="text-xs">in this status</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Submit Request Modal */}
       {showSubmitForm && (
