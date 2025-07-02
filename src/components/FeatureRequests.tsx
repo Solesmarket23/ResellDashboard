@@ -494,7 +494,8 @@ const FeatureRequests = () => {
         {filteredRequests.map(request => (
           <div
             key={request.id}
-            className={`p-6 rounded-xl transition-all duration-300 ${
+            onClick={() => setShowComments(request.id)}
+            className={`p-6 rounded-xl transition-all duration-300 cursor-pointer ${
               isNeon
                 ? 'dark-neon-card border border-slate-700/50 hover:border-cyan-500/30'
                 : 'bg-white border border-gray-200 hover:border-gray-300 shadow-sm hover:shadow-md'
@@ -504,7 +505,10 @@ const FeatureRequests = () => {
               {/* Vote Button */}
               <div className="flex flex-col items-center">
                 <button
-                  onClick={() => handleVote(request.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleVote(request.id);
+                  }}
                   className={`p-2 rounded-lg transition-all duration-300 ${
                     request.hasUserVoted
                       ? isNeon
@@ -581,7 +585,10 @@ const FeatureRequests = () => {
                     </div>
 
                     <button
-                      onClick={() => setShowComments(request.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowComments(request.id);
+                      }}
                       className={`flex items-center transition-colors hover:${
                         isNeon ? 'text-cyan-400' : 'text-blue-600'
                       }`}
@@ -653,6 +660,7 @@ const FeatureRequests = () => {
                   {statusRequests.map(request => (
                     <div
                       key={request.id}
+                      onClick={() => setShowComments(request.id)}
                       className={`p-4 rounded-lg transition-all duration-300 cursor-pointer ${
                         isNeon
                           ? 'bg-slate-800/30 border border-slate-700/30 hover:border-cyan-500/50 hover:bg-slate-800/50'
@@ -683,7 +691,10 @@ const FeatureRequests = () => {
                         <div className="flex items-center space-x-3">
                           {/* Vote Button */}
                           <button
-                            onClick={() => handleVote(request.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleVote(request.id);
+                            }}
                             className={`flex items-center space-x-1 px-2 py-1 rounded text-xs transition-all duration-300 ${
                               request.hasUserVoted
                                 ? isNeon
@@ -700,7 +711,10 @@ const FeatureRequests = () => {
 
                           {/* Comments */}
                           <button
-                            onClick={() => setShowComments(request.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowComments(request.id);
+                            }}
                             className={`flex items-center space-x-1 transition-colors hover:${
                               isNeon ? 'text-cyan-400' : 'text-blue-600'
                             }`}
