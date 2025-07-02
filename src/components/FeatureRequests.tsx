@@ -20,6 +20,14 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 
+interface Comment {
+  id: number;
+  author: string;
+  authorAvatar: string;
+  content: string;
+  createdAt: string;
+}
+
 interface FeatureRequest {
   id: number;
   title: string;
@@ -31,7 +39,7 @@ interface FeatureRequest {
   votes: number;
   hasUserVoted: boolean;
   createdAt: string;
-  comments: number;
+  comments: Comment[];
   priority: 'low' | 'medium' | 'high';
 }
 
@@ -43,6 +51,8 @@ const FeatureRequests = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('votes');
   const [viewMode, setViewMode] = useState<'list' | 'pipeline'>('list');
+  const [showComments, setShowComments] = useState<number | null>(null);
+  const [newComment, setNewComment] = useState('');
   const [newRequest, setNewRequest] = useState({
     title: '',
     description: '',
@@ -65,7 +75,11 @@ const FeatureRequests = () => {
       votes: 47,
       hasUserVoted: true,
       createdAt: '2024-01-15',
-      comments: 8,
+      comments: [
+        { id: 1, author: 'Mike Milburn', authorAvatar: 'MM', content: 'This would be amazing for late night trading sessions!', createdAt: '2024-01-16' },
+        { id: 2, author: 'Alex Chen', authorAvatar: 'AC', content: 'Definitely needed. Current white theme hurts my eyes at night.', createdAt: '2024-01-17' },
+        { id: 3, author: 'Sarah Chen', authorAvatar: 'SC', content: 'Thanks for the feedback! Working on this now.', createdAt: '2024-01-18' }
+      ],
       priority: 'high'
     },
     {
@@ -79,7 +93,10 @@ const FeatureRequests = () => {
       votes: 34,
       hasUserVoted: false,
       createdAt: '2024-01-12',
-      comments: 12,
+      comments: [
+        { id: 4, author: 'Emma Wilson', authorAvatar: 'EW', content: 'Would save so much time! What formats would be supported?', createdAt: '2024-01-13' },
+        { id: 5, author: 'Mike Rodriguez', authorAvatar: 'MR', content: 'Thinking CSV and Excel primarily. Maybe JSON for power users.', createdAt: '2024-01-13' }
+      ],
       priority: 'medium'
     },
     {
@@ -93,7 +110,11 @@ const FeatureRequests = () => {
       votes: 89,
       hasUserVoted: true,
       createdAt: '2024-01-08',
-      comments: 23,
+      comments: [
+        { id: 6, author: 'Jordan Kim', authorAvatar: 'JK', content: 'This feature is live and working great! Thanks!', createdAt: '2024-01-20' },
+        { id: 7, author: 'David Park', authorAvatar: 'DP', content: 'Can we add SMS alerts too?', createdAt: '2024-01-21' },
+        { id: 8, author: 'Alex Thompson', authorAvatar: 'AT', content: '@David SMS coming in v2!', createdAt: '2024-01-21' }
+      ],
       priority: 'high'
     },
     {
@@ -107,7 +128,10 @@ const FeatureRequests = () => {
       votes: 56,
       hasUserVoted: false,
       createdAt: '2024-01-10',
-      comments: 15,
+      comments: [
+        { id: 9, author: 'Sarah Chen', authorAvatar: 'SC', content: 'This would eliminate so many manual steps!', createdAt: '2024-01-11' },
+        { id: 10, author: 'Mike Milburn', authorAvatar: 'MM', content: 'Looking into eBay API documentation now.', createdAt: '2024-01-12' }
+      ],
       priority: 'high'
     },
     {
@@ -121,7 +145,10 @@ const FeatureRequests = () => {
       votes: 73,
       hasUserVoted: false,
       createdAt: '2024-01-05',
-      comments: 19,
+      comments: [
+        { id: 11, author: 'David Park', authorAvatar: 'DP', content: 'Love the predictive insights idea! Machine learning?', createdAt: '2024-01-06' },
+        { id: 12, author: 'Emma Wilson', authorAvatar: 'EW', content: 'Yes! Using historical data to predict market trends.', createdAt: '2024-01-07' }
+      ],
       priority: 'medium'
     },
     {
@@ -135,7 +162,10 @@ const FeatureRequests = () => {
       votes: 42,
       hasUserVoted: true,
       createdAt: '2024-01-03',
-      comments: 7,
+      comments: [
+        { id: 13, author: 'Mike Milburn', authorAvatar: 'MM', content: 'Security is crucial. Great addition!', createdAt: '2024-01-04' },
+        { id: 14, author: 'David Park', authorAvatar: 'DP', content: 'Feature is now live! Check your account settings.', createdAt: '2024-01-20' }
+      ],
       priority: 'high'
     }
   ]);
@@ -194,13 +224,34 @@ const FeatureRequests = () => {
         votes: 1, // Author automatically votes
         hasUserVoted: true,
         createdAt: new Date().toISOString().split('T')[0],
-        comments: 0,
+        comments: [],
         priority: 'medium'
       };
       
       setRequests(prev => [request, ...prev]);
       setNewRequest({ title: '', description: '', category: 'feature' });
       setShowSubmitForm(false);
+    }
+  };
+
+  const handleAddComment = (requestId: number) => {
+    if (newComment.trim()) {
+      const comment: Comment = {
+        id: Date.now(),
+        author: 'Mike Milburn', // Current user
+        authorAvatar: 'MM',
+        content: newComment.trim(),
+        createdAt: new Date().toISOString().split('T')[0]
+      };
+
+      setRequests(prev => prev.map(request => 
+        request.id === requestId 
+          ? { ...request, comments: [...request.comments, comment] }
+          : request
+      ));
+
+      setNewComment('');
+      setShowComments(null);
     }
   };
 
@@ -284,18 +335,14 @@ const FeatureRequests = () => {
         case 'recent':
           return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
         case 'comments':
-          return b.comments - a.comments;
+          return b.comments.length - a.comments.length;
         default:
           return b.votes - a.votes;
       }
     });
 
   return (
-    <div className={`flex-1 p-8 ${
-      isNeon 
-        ? 'bg-slate-950' 
-        : currentTheme.colors.background
-    }`}>
+    <div className={`flex-1 p-8 ${currentTheme.colors.background}`}>
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
@@ -533,16 +580,21 @@ const FeatureRequests = () => {
                       </span>
                     </div>
 
-                    <div className="flex items-center">
+                    <button
+                      onClick={() => setShowComments(request.id)}
+                      className={`flex items-center transition-colors hover:${
+                        isNeon ? 'text-cyan-400' : 'text-blue-600'
+                      }`}
+                    >
                       <MessageSquare className={`w-4 h-4 mr-1 ${
                         isNeon ? 'text-slate-400' : 'text-gray-400'
                       }`} />
                       <span className={`text-sm ${
                         isNeon ? 'text-slate-400' : 'text-gray-500'
                       }`}>
-                        {request.comments} comments
+                        {request.comments.length} comments
                       </span>
-                    </div>
+                    </button>
 
                     <div className="flex items-center">
                       <Tag className={`w-4 h-4 mr-1 ${
@@ -647,16 +699,21 @@ const FeatureRequests = () => {
                           </button>
 
                           {/* Comments */}
-                          <div className="flex items-center space-x-1">
+                          <button
+                            onClick={() => setShowComments(request.id)}
+                            className={`flex items-center space-x-1 transition-colors hover:${
+                              isNeon ? 'text-cyan-400' : 'text-blue-600'
+                            }`}
+                          >
                             <MessageSquare className={`w-3 h-3 ${
                               isNeon ? 'text-slate-500' : 'text-gray-400'
                             }`} />
                             <span className={`text-xs ${
                               isNeon ? 'text-slate-500' : 'text-gray-500'
                             }`}>
-                              {request.comments}
+                              {request.comments.length}
                             </span>
-                          </div>
+                          </button>
                         </div>
 
                         {/* Author Avatar */}
@@ -695,6 +752,151 @@ const FeatureRequests = () => {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Comments Modal */}
+      {showComments && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className={`w-full max-w-4xl max-h-[80vh] rounded-xl overflow-hidden ${
+            isNeon
+              ? 'dark-neon-card border border-slate-700/50'
+              : 'bg-white border border-gray-200 shadow-xl'
+          }`}>
+            {(() => {
+              const request = requests.find(r => r.id === showComments);
+              if (!request) return null;
+
+              return (
+                <>
+                  {/* Header */}
+                  <div className={`p-6 border-b ${
+                    isNeon ? 'border-slate-700/50' : 'border-gray-200'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h2 className={`text-xl font-bold ${
+                          isNeon ? 'text-white' : 'text-gray-900'
+                        }`}>
+                          Comments
+                        </h2>
+                        <p className={`text-sm mt-1 ${
+                          isNeon ? 'text-slate-400' : 'text-gray-600'
+                        }`}>
+                          {request.title}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setShowComments(null)}
+                        className={`p-2 rounded-lg transition-colors ${
+                          isNeon
+                            ? 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                            : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                        }`}
+                      >
+                        <X className="w-6 h-6" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Comments List */}
+                  <div className="max-h-96 overflow-y-auto p-6">
+                    {request.comments.length > 0 ? (
+                      <div className="space-y-4">
+                        {request.comments.map(comment => (
+                          <div key={comment.id} className={`p-4 rounded-lg ${
+                            isNeon 
+                              ? 'bg-slate-800/30 border border-slate-700/30'
+                              : 'bg-gray-50 border border-gray-200'
+                          }`}>
+                            <div className="flex items-start space-x-3">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                                isNeon
+                                  ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 text-white'
+                                  : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white'
+                              }`}>
+                                {comment.authorAvatar}
+                              </div>
+                              <div className="flex-1">
+                                <div className="flex items-center space-x-2 mb-2">
+                                  <span className={`font-medium text-sm ${
+                                    isNeon ? 'text-white' : 'text-gray-900'
+                                  }`}>
+                                    {comment.author}
+                                  </span>
+                                  <span className={`text-xs ${
+                                    isNeon ? 'text-slate-500' : 'text-gray-500'
+                                  }`}>
+                                    {new Date(comment.createdAt).toLocaleDateString()}
+                                  </span>
+                                </div>
+                                <p className={`text-sm leading-relaxed ${
+                                  isNeon ? 'text-slate-300' : 'text-gray-700'
+                                }`}>
+                                  {comment.content}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className={`text-center py-8 ${
+                        isNeon ? 'text-slate-400' : 'text-gray-500'
+                      }`}>
+                        <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                        <p>No comments yet</p>
+                        <p className="text-sm mt-1">Be the first to comment on this request</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Add Comment Form */}
+                  <div className={`p-6 border-t ${
+                    isNeon ? 'border-slate-700/50' : 'border-gray-200'
+                  }`}>
+                    <div className="space-y-4">
+                      <textarea
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        placeholder="Add your comment..."
+                        rows={3}
+                        className={`w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 transition-all duration-300 resize-none ${
+                          isNeon
+                            ? 'input-premium text-white placeholder-slate-400 border-slate-600/50 focus:ring-cyan-500 focus:border-cyan-500'
+                            : 'border border-gray-300 focus:ring-blue-500 focus:border-blue-500'
+                        }`}
+                      />
+                      <div className="flex justify-end space-x-3">
+                        <button
+                          onClick={() => setShowComments(null)}
+                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${
+                            isNeon
+                              ? 'bg-slate-800/50 text-slate-300 hover:bg-slate-700/50'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => handleAddComment(request.id)}
+                          disabled={!newComment.trim()}
+                          className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed ${
+                            isNeon
+                              ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 text-white hover:from-cyan-600 hover:to-emerald-600'
+                              : 'bg-blue-600 text-white hover:bg-blue-700'
+                          }`}
+                        >
+                          <Send className="w-4 h-4 mr-2" />
+                          Post Comment
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
         </div>
       )}
 
