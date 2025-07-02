@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown, Edit, MoreHorizontal, Camera, RefreshCw, Mail, Trash2, Settings } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
-import ScanPackageModal from './ScanPackageModal';
+import NativeBarcodeScannerModal from './NativeBarcodeScannerModal';
 import GmailConnector from './GmailConnector';
 import EmailParsingSettings from './EmailParsingSettings';
 
@@ -558,8 +558,8 @@ const Purchases = () => {
         </div>
       </div>
 
-      {/* Scan Package Modal */}
-      <ScanPackageModal
+      {/* Native Barcode Scanner Modal */}
+      <NativeBarcodeScannerModal
         isOpen={showScanModal}
         onClose={() => setShowScanModal(false)}
         onScanComplete={handleScanComplete}
