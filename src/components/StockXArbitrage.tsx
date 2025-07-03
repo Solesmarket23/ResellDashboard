@@ -1,7 +1,25 @@
 'use client';
 
-import React, { useState } from 'react';
-import { ArrowLeftRight, TrendingUp, DollarSign, ExternalLink, Search, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ArrowLeftRight, TrendingUp, DollarSign, ExternalLink, Search, AlertCircle, BarChart3, Clock, TrendingDown, LogIn, CheckCircle } from 'lucide-react';
+
+interface HistoricalSales {
+  totalSales: number;
+  averagePrice: number;
+  lowestSale: number;
+  highestSale: number;
+  lastSalePrice: number;
+  lastSaleDate: string;
+  priceHistory: Array<{
+    week: string;
+    averagePrice: number;
+    salesCount: number;
+  }>;
+  salesVolume: number;
+  trendDirection: 'up' | 'down' | 'stable';
+  priceChangePercent: number;
+  isGenerated?: boolean;
+}
 
 interface ArbitrageOpportunity {
   id: string;
@@ -16,6 +34,7 @@ interface ArbitrageOpportunity {
   profitMargin: number;
   stockxUrl: string;
   brand: string;
+  historicalSales?: HistoricalSales;
 }
 
 const StockXArbitrage: React.FC = () => {
@@ -24,6 +43,26 @@ const StockXArbitrage: React.FC = () => {
   const [minSpreadPercentage, setMinSpreadPercentage] = useState(10);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isAuthError, setIsAuthError] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Check for success message on component mount
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('success') === 'true') {
+      setSuccessMessage('Successfully authenticated with StockX! You can now search for arbitrage opportunities.');
+      // Clear the URL parameters
+      const url = new URL(window.location.href);
+      url.searchParams.delete('success');
+      url.searchParams.delete('note');
+      window.history.replaceState({}, '', url.toString());
+      
+      // Auto-dismiss the success message after 5 seconds
+      setTimeout(() => {
+        setSuccessMessage(null);
+      }, 5000);
+    }
+  }, []);
 
   const generateStockXUrl = (productName: string, variantId: string) => {
     // Convert product name to URL slug
@@ -38,14 +77,24 @@ const StockXArbitrage: React.FC = () => {
     return `https://stockx.com/${slug}`;
   };
 
+  const handleStockXLogin = () => {
+    // Store the current page URL to redirect back after authentication
+    const currentUrl = window.location.href;
+    const authUrl = `/api/stockx/auth?returnTo=${encodeURIComponent(currentUrl)}`;
+    window.location.href = authUrl;
+  };
+
   const searchArbitrageOpportunities = async () => {
     if (!searchQuery.trim()) {
       setErrorMessage('Please enter a search query');
+      setIsAuthError(false);
       return;
     }
 
     setIsLoading(true);
     setErrorMessage(null);
+    setIsAuthError(false);
+    setSuccessMessage(null); // Clear any success message when searching
     setOpportunities([]);
 
     try {
@@ -56,17 +105,20 @@ const StockXArbitrage: React.FC = () => {
 
       if (!response.ok) {
         let errorMessage = 'Failed to search products';
+        let isAuth = false;
         
         if (response.status === 429) {
           errorMessage = 'Too many requests. Please wait a moment and try again.';
         } else if (response.status === 401) {
-          errorMessage = 'Please re-authenticate with StockX';
+          errorMessage = 'Please authenticate with StockX first';
+          isAuth = true;
         } else if (response.status === 403) {
           errorMessage = 'Access to this StockX endpoint is restricted.';
         } else if (response.status >= 500) {
           errorMessage = 'StockX servers are experiencing issues. Please try again later.';
         }
         
+        setIsAuthError(isAuth);
         throw new Error(data.message || errorMessage);
       }
 
@@ -87,7 +139,8 @@ const StockXArbitrage: React.FC = () => {
         spread: opportunity.spread,
         profitMargin: Math.round(opportunity.spreadPercent * 100) / 100,
         stockxUrl: opportunity.stockxUrl,
-        brand: opportunity.brand
+        brand: opportunity.brand,
+        historicalSales: opportunity.historicalSales
       }));
 
       setOpportunities(foundOpportunities);
@@ -177,12 +230,33 @@ const StockXArbitrage: React.FC = () => {
           </div>
         </div>
 
+        {/* Success Message */}
+        {successMessage && (
+          <div className="bg-green-900/20 border border-green-500 rounded-lg p-4 mb-6">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="w-5 h-5 text-green-400" />
+              <p className="text-green-400">{successMessage}</p>
+            </div>
+          </div>
+        )}
+
         {/* Error Message */}
         {errorMessage && (
           <div className="bg-red-900/20 border border-red-500 rounded-lg p-4 mb-6">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="w-5 h-5 text-red-400" />
-              <p className="text-red-400">{errorMessage}</p>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-red-400" />
+                <p className="text-red-400">{errorMessage}</p>
+              </div>
+              {isAuthError && (
+                <button
+                  onClick={handleStockXLogin}
+                  className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
+                >
+                  <LogIn className="w-4 h-4" />
+                  Login to StockX
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -259,17 +333,124 @@ const StockXArbitrage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex justify-between items-center p-3 bg-gray-700 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <ArrowLeftRight className="w-5 h-5 text-cyan-400" />
-                  <span className="text-sm text-gray-400">Potential Profit:</span>
-                  <span className="text-emerald-400 font-semibold">${opportunity.spread} ({opportunity.profitMargin}%)</span>
+              {/* Historical Sales Data Section */}
+              {opportunity.historicalSales && (
+                <div className="mb-4 p-4 bg-gray-700/50 rounded-lg border border-gray-600">
+                  <div className="flex items-center gap-2 mb-3">
+                    <BarChart3 className="w-5 h-5 text-blue-400" />
+                    <h4 className="text-lg font-semibold text-white">90-Day Sales History</h4>
+                    {opportunity.historicalSales.isGenerated && (
+                      <span className="text-xs bg-yellow-900/20 text-yellow-400 px-2 py-1 rounded border border-yellow-500/30">
+                        Simulated Data
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                    <div className="text-center p-3 bg-gray-800 rounded-lg">
+                      <p className="text-xs text-gray-400 mb-1">Total Sales</p>
+                      <p className="text-lg font-semibold text-white">{opportunity.historicalSales.totalSales}</p>
+                    </div>
+                    <div className="text-center p-3 bg-gray-800 rounded-lg">
+                      <p className="text-xs text-gray-400 mb-1">Avg Price</p>
+                      <p className="text-lg font-semibold text-blue-400">${opportunity.historicalSales.averagePrice}</p>
+                    </div>
+                    <div className="text-center p-3 bg-gray-800 rounded-lg">
+                      <p className="text-xs text-gray-400 mb-1">Last Sale</p>
+                      <p className="text-lg font-semibold text-emerald-400">${opportunity.historicalSales.lastSalePrice}</p>
+                      <p className="text-xs text-gray-500">
+                        {new Date(opportunity.historicalSales.lastSaleDate).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="text-center p-3 bg-gray-800 rounded-lg">
+                      <div className="flex items-center justify-center gap-1 mb-1">
+                        {opportunity.historicalSales.trendDirection === 'up' && (
+                          <TrendingUp className="w-4 h-4 text-green-400" />
+                        )}
+                        {opportunity.historicalSales.trendDirection === 'down' && (
+                          <TrendingDown className="w-4 h-4 text-red-400" />
+                        )}
+                        {opportunity.historicalSales.trendDirection === 'stable' && (
+                          <ArrowLeftRight className="w-4 h-4 text-gray-400" />
+                        )}
+                        <p className="text-xs text-gray-400">Trend</p>
+                      </div>
+                      <p className={`text-lg font-semibold ${
+                        opportunity.historicalSales.priceChangePercent > 0 ? 'text-green-400' : 
+                        opportunity.historicalSales.priceChangePercent < 0 ? 'text-red-400' : 'text-gray-400'
+                      }`}>
+                        {opportunity.historicalSales.priceChangePercent > 0 ? '+' : ''}
+                        {opportunity.historicalSales.priceChangePercent}%
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-gray-800 rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <TrendingDown className="w-4 h-4 text-red-400" />
+                        <span className="text-sm text-gray-400">Price Range</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <p className="text-xs text-gray-500">Low</p>
+                          <p className="text-sm font-semibold text-red-400">${opportunity.historicalSales.lowestSale}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-gray-500">High</p>
+                          <p className="text-sm font-semibold text-green-400">${opportunity.historicalSales.highestSale}</p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="bg-gray-800 rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Clock className="w-4 h-4 text-blue-400" />
+                        <span className="text-sm text-gray-400">Sales Activity</span>
+                      </div>
+                      <p className="text-sm text-blue-400">
+                        {opportunity.historicalSales.salesVolume} sales in 90 days
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        Avg: {Math.round(opportunity.historicalSales.salesVolume / 12.9)} per week
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Simple price history visualization */}
+                  {opportunity.historicalSales.priceHistory && opportunity.historicalSales.priceHistory.length > 0 && (
+                    <div className="mt-4">
+                      <h5 className="text-sm text-gray-400 mb-2">Weekly Price Trend</h5>
+                      <div className="flex items-end gap-1 h-16 bg-gray-800 rounded p-2">
+                        {opportunity.historicalSales.priceHistory.slice(-8).map((week, index) => {
+                          const maxPrice = Math.max(...opportunity.historicalSales!.priceHistory.map(w => w.averagePrice));
+                          const height = (week.averagePrice / maxPrice) * 100;
+                          return (
+                            <div
+                              key={index}
+                              className="flex-1 bg-blue-500 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
+                              style={{ height: `${Math.max(height, 10)}%` }}
+                              title={`Week ${week.week}: $${week.averagePrice} (${week.salesCount} sales)`}
+                            />
+                          );
+                        })}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">Last 8 weeks • Hover for details</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex justify-between items-center">
+                <div className="text-sm text-gray-400">
+                  <p>Product ID: {opportunity.productId}</p>
+                  <p>Variant ID: {opportunity.variantId}</p>
                 </div>
                 <a
                   href={opportunity.stockxUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
+                  className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
                 >
                   <ExternalLink className="w-4 h-4" />
                   View on StockX

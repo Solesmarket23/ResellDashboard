@@ -6,121 +6,115 @@ export async function GET(request: NextRequest) {
   const state = searchParams.get('state');
   const error = searchParams.get('error');
 
-  // Get the base URL for redirects - use the ngrok URL when available
-  let baseUrl;
-  const ngrokUrl = process.env.STOCKX_REDIRECT_URI?.replace('/api/stockx/callback', '');
-  
-  if (ngrokUrl) {
-    baseUrl = ngrokUrl;
-  } else if (request.nextUrl.protocol && request.nextUrl.host && !request.nextUrl.host.includes('0.0.0.0')) {
-    baseUrl = `${request.nextUrl.protocol}//${request.nextUrl.host}`;
-  } else {
-    // Fallback to localhost
-    baseUrl = 'http://localhost:3002';
-  }
+  // Get the current host from the request
+  const host = request.headers.get('host') || '';
+  const protocol = host.includes('localhost') ? 'http' : 'https';
+  const baseUrl = `${protocol}://${host}`;
 
-  console.log('Callback baseUrl:', baseUrl);
-  console.log('Headers:', Object.fromEntries(request.headers.entries()));
-  console.log('NextUrl:', request.nextUrl);
+  console.log('Callback request from:', {
+    host,
+    baseUrl,
+    code: code ? 'present' : 'missing',
+    state: state ? 'present' : 'missing',
+    error
+  });
 
-  // Check for OAuth error
   if (error) {
     console.log('OAuth error:', error);
-    return NextResponse.redirect(new URL(`/dashboard/stockx-test?error=${encodeURIComponent(error)}`, baseUrl));
+    return NextResponse.redirect(`${baseUrl}/dashboard?error=oauth_error&message=${encodeURIComponent(error)}`);
   }
 
-  // Validate state parameter
+  if (!code || !state) {
+    console.log('Missing code or state in callback');
+    return NextResponse.redirect(`${baseUrl}/dashboard?error=missing_params`);
+  }
+
+  // Get stored state from cookies
   const storedState = request.cookies.get('stockx_state')?.value;
-  const allCookies = Object.fromEntries(
-    Array.from(request.cookies.getAll()).map(cookie => [cookie.name, cookie.value])
-  );
+  const returnTo = request.cookies.get('stockx_return_to')?.value;
+
   console.log('State validation:', { state, storedState });
-  console.log('All cookies:', allCookies);
-  
-  if (!state || state !== storedState) {
+
+  if (!storedState) {
+    console.log('No stored state found');
+    return NextResponse.redirect(`${baseUrl}/dashboard?error=no_stored_state`);
+  }
+
+  if (state !== storedState) {
     console.log('State validation failed - redirecting with error');
-    // If tokens already exist, might be a re-authentication attempt
-    if (allCookies.stockx_access_token) {
+    // Check if we have existing valid tokens
+    const existingAccessToken = request.cookies.get('stockx_access_token')?.value;
+    const existingRefreshToken = request.cookies.get('stockx_refresh_token')?.value;
+    
+    if (existingAccessToken && existingRefreshToken) {
       console.log('Found existing tokens - redirecting to success despite state mismatch');
-      return NextResponse.redirect(new URL(`/dashboard/stockx-test?success=true&note=existing_tokens`, baseUrl));
+      const finalRedirect = returnTo || `${baseUrl}/dashboard?view=stockx-arbitrage`;
+      return NextResponse.redirect(`${finalRedirect}${finalRedirect.includes('?') ? '&' : '?'}success=true&note=existing_tokens`);
     }
-    return NextResponse.redirect(new URL(`/dashboard/stockx-test?error=invalid_state&debug=state_mismatch`, baseUrl));
+    
+    return NextResponse.redirect(`${baseUrl}/dashboard?error=state_mismatch`);
   }
 
-  if (!code) {
-    return NextResponse.redirect(new URL(`/dashboard/stockx-test?error=no_code`, baseUrl));
-  }
-
-  const clientId = process.env.STOCKX_CLIENT_ID;
-  const clientSecret = process.env.STOCKX_CLIENT_SECRET;
-  const redirectUri = process.env.STOCKX_REDIRECT_URI;
-
-  if (!clientId || !clientSecret || !redirectUri) {
-    return NextResponse.redirect(new URL(`/dashboard/stockx-test?error=missing_credentials`, baseUrl));
-  }
-
+  // Exchange code for tokens
   try {
-    // Exchange authorization code for tokens
     const tokenResponse = await fetch('https://accounts.stockx.com/oauth/token', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
+        'Content-Type': 'application/json',
       },
-      body: new URLSearchParams({
+      body: JSON.stringify({
         grant_type: 'authorization_code',
-        client_id: clientId,
-        client_secret: clientSecret,
+        client_id: process.env.STOCKX_CLIENT_ID,
+        client_secret: process.env.STOCKX_CLIENT_SECRET,
         code: code,
-        redirect_uri: redirectUri
-      })
+        redirect_uri: `${baseUrl}/api/stockx/callback`,
+      }),
     });
+
+    console.log('Token exchange response status:', tokenResponse.status);
 
     if (!tokenResponse.ok) {
       const errorText = await tokenResponse.text();
       console.error('Token exchange failed:', errorText);
-      return NextResponse.redirect(new URL(`/dashboard/stockx-test?error=token_exchange_failed&details=${encodeURIComponent(errorText)}`, baseUrl));
+      return NextResponse.redirect(`${baseUrl}/dashboard?error=token_exchange_failed`);
     }
 
-    const tokenData = await tokenResponse.json();
-    
-    // In a real application, you would securely store these tokens
-    // For now, we'll redirect back with success and token info
-    const response = NextResponse.redirect(new URL(`/dashboard/stockx-test?success=true`, baseUrl));
-    
-    // Store tokens in httpOnly cookies (in production, use proper session management)
-    // Set cookies that work on both ngrok and localhost
+    const tokens = await tokenResponse.json();
+    console.log('Tokens received:', {
+      access_token: tokens.access_token ? 'present' : 'missing',
+      refresh_token: tokens.refresh_token ? 'present' : 'missing',
+      expires_in: tokens.expires_in
+    });
+
+    // Store tokens in cookies
     const cookieOptions = {
       httpOnly: true,
-      secure: redirectUri.startsWith('https://'),
-      sameSite: 'none' as const, // Allow cross-site cookies for better ngrok/localhost compatibility
-      path: '/'
+      secure: true,
+      sameSite: 'none' as const,
+      path: '/',
     };
 
-    response.cookies.set('stockx_access_token', tokenData.access_token, {
-      ...cookieOptions,
-      maxAge: 43200 // 12 hours (token expiry)
-    });
+    const response = NextResponse.redirect(
+      returnTo || `${baseUrl}/dashboard?view=stockx-arbitrage&success=true`
+    );
 
-    if (tokenData.refresh_token) {
-      response.cookies.set('stockx_refresh_token', tokenData.refresh_token, {
-        ...cookieOptions,
-        maxAge: 86400 * 30 // 30 days
-      });
-    }
+    response.cookies.set('stockx_access_token', tokens.access_token, cookieOptions);
+    response.cookies.set('stockx_refresh_token', tokens.refresh_token, cookieOptions);
+
+    // Clean up temporary cookies
+    response.cookies.delete('stockx_state');
+    response.cookies.delete('stockx_return_to');
 
     console.log('Tokens stored in cookies:', {
-      accessTokenSet: !!tokenData.access_token,
-      refreshTokenSet: !!tokenData.refresh_token,
+      accessTokenSet: !!tokens.access_token,
+      refreshTokenSet: !!tokens.refresh_token,
       cookieOptions
     });
-
-    // Clear the state cookie
-    response.cookies.delete('stockx_state');
 
     return response;
 
   } catch (error) {
-    console.error('OAuth callback error:', error);
-    return NextResponse.redirect(new URL(`/dashboard/stockx-test?error=callback_error&details=${encodeURIComponent(error instanceof Error ? error.message : 'Unknown error')}`, baseUrl));
+    console.error('Token exchange error:', error);
+    return NextResponse.redirect(`${baseUrl}/dashboard?error=token_exchange_error`);
   }
 } 

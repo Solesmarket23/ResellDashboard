@@ -2,47 +2,55 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(request: NextRequest) {
   const clientId = process.env.STOCKX_CLIENT_ID;
-  const redirectUri = process.env.STOCKX_REDIRECT_URI;
 
-  if (!clientId || !redirectUri) {
+  if (!clientId) {
     return NextResponse.json(
       { error: 'Missing StockX OAuth credentials' },
       { status: 500 }
     );
   }
 
-  // Get the request origin to determine if we're on localhost or ngrok
-  const origin = request.headers.get('origin') || '';
+  // Get the returnTo URL from query params
+  const returnTo = request.nextUrl.searchParams.get('returnTo');
+
+  // Get the current host from the request
   const host = request.headers.get('host') || '';
   
-  console.log('Auth request from:', { origin, host, redirectUri });
+  // Build redirect URI dynamically based on current host
+  const protocol = host.includes('localhost') ? 'http' : 'https';
+  const redirectUri = `${protocol}://${host}/api/stockx/callback`;
+  
+  console.log('Auth request from:', {
+    host,
+    redirectUri,
+    returnTo
+  });
 
-  // Generate a random state for security
+  // Generate a random state for CSRF protection
   const state = Math.random().toString(36).substring(2, 15);
-  
-  // Build the authorization URL
-  const authUrl = new URL('https://accounts.stockx.com/authorize');
-  authUrl.searchParams.set('response_type', 'code');
-  authUrl.searchParams.set('client_id', clientId);
-  authUrl.searchParams.set('redirect_uri', redirectUri);
-  authUrl.searchParams.set('scope', 'offline_access openid');
-  authUrl.searchParams.set('audience', 'gateway.stockx.com');
-  authUrl.searchParams.set('state', state);
 
-  // Store state in session/cookie for validation (in production, use proper session management)
-  const response = NextResponse.redirect(authUrl.toString());
-  
-  // Set cookie with proper domain for ngrok - make it work across domains
+  // Create the response to redirect to StockX OAuth
+  const response = NextResponse.redirect(
+    `https://accounts.stockx.com/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&state=${state}&scope=openid%20offline_access`
+  );
+
+  // Set the state cookie with secure options
   const cookieOptions = {
     httpOnly: true,
-    secure: redirectUri.startsWith('https://'), // Use secure if redirect URI is https
-    sameSite: 'none' as const, // Allow cross-site cookies
+    secure: true,
+    sameSite: 'none' as const,
     maxAge: 300, // 5 minutes
-    path: '/' // Ensure path is set
+    path: '/',
   };
-  
-  console.log('Setting state cookie:', state, 'with options:', cookieOptions);
+
   response.cookies.set('stockx_state', state, cookieOptions);
+
+  // Set the returnTo cookie if provided
+  if (returnTo) {
+    response.cookies.set('stockx_return_to', returnTo, cookieOptions);
+  }
+
+  console.log('Setting state cookie:', state, 'with options:', cookieOptions);
 
   return response;
 } 
