@@ -19,7 +19,15 @@ import {
   LogOut,
   Settings,
   HelpCircle,
-  Zap
+  Zap,
+  Search,
+  Archive,
+  ArrowLeftRight,
+  Calendar,
+  Monitor,
+  LineChart,
+  Bell,
+  Activity
 } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 
@@ -57,6 +65,19 @@ const Sidebar = ({ activeItem, onItemClick }: SidebarProps) => {
         { id: 'failed-verifications', label: 'Failed Verifications', icon: AlertTriangle },
         { id: 'insights', label: 'Insights', icon: Lightbulb },
         { id: 'reviews', label: 'Reviews', icon: MessageSquare },
+      ]
+    },
+    {
+      section: 'STOCKX INTEGRATION',
+      items: [
+        { id: 'stockx-market-research', label: 'Market Research', icon: Search },
+        { id: 'stockx-inventory', label: 'Inventory Manager', icon: Archive },
+        { id: 'stockx-arbitrage', label: 'Arbitrage Finder', icon: ArrowLeftRight },
+        { id: 'stockx-releases', label: 'Release Calendar', icon: Calendar },
+        { id: 'stockx-price-monitor', label: 'Price Monitor', icon: Monitor },
+        { id: 'stockx-profit-calc', label: 'Enhanced Profit Calc', icon: Calculator },
+        { id: 'stockx-trends', label: 'Market Trends', icon: LineChart },
+        { id: 'stockx-alerts', label: 'Alert System', icon: Bell },
       ]
     },
     {

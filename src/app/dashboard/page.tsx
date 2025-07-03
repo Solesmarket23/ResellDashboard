@@ -13,6 +13,14 @@ import Plans from '../../components/Plans';
 import Profile from '../../components/Profile';
 import FAQ from '../../components/FAQ';
 import FeatureRequests from '../../components/FeatureRequests';
+import StockXMarketResearch from '../../components/StockXMarketResearch';
+import StockXInventory from '../../components/StockXInventory';
+import StockXArbitrage from '../../components/StockXArbitrage';
+import StockXReleases from '../../components/StockXReleases';
+import StockXPriceMonitor from '../../components/StockXPriceMonitor';
+import StockXProfitCalc from '../../components/StockXProfitCalc';
+import StockXTrends from '../../components/StockXTrends';
+import StockXAlerts from '../../components/StockXAlerts';
 import { useTheme } from '../../lib/contexts/ThemeContext';
 
 export default function DashboardPage() {
@@ -102,6 +110,22 @@ export default function DashboardPage() {
         return <FeatureRequests />;
       case 'faq':
         return <FAQ />;
+      case 'stockx-market-research':
+        return <StockXMarketResearch />;
+      case 'stockx-inventory':
+        return <StockXInventory />;
+      case 'stockx-arbitrage':
+        return <StockXArbitrage />;
+      case 'stockx-releases':
+        return <StockXReleases />;
+      case 'stockx-price-monitor':
+        return <StockXPriceMonitor />;
+      case 'stockx-profit-calc':
+        return <StockXProfitCalc />;
+      case 'stockx-trends':
+        return <StockXTrends />;
+      case 'stockx-alerts':
+        return <StockXAlerts />;
       default:
         return (
           <div className={`flex-1 p-8 ${currentTheme.colors.background}`}>

@@ -916,15 +916,15 @@ const FeatureRequests = () => {
 
       {/* Submit Request Modal */}
       {showSubmitForm && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className={`w-full max-w-2xl rounded-xl p-8 ${
             isNeon
-              ? 'dark-neon-card border border-slate-700/50'
+              ? 'bg-slate-800/80 backdrop-blur-xl border border-cyan-500/30 shadow-2xl shadow-cyan-500/20 ring-1 ring-cyan-400/10'
               : 'bg-white border border-gray-200 shadow-xl'
           }`}>
             <div className="flex items-center justify-between mb-6">
               <h2 className={`text-2xl font-bold ${
-                isNeon ? 'text-white' : 'text-gray-900'
+                isNeon ? 'text-cyan-50' : 'text-gray-900'
               }`}>
                 Submit Feature Request
               </h2>
@@ -932,7 +932,7 @@ const FeatureRequests = () => {
                 onClick={() => setShowSubmitForm(false)}
                 className={`p-2 rounded-lg transition-colors ${
                   isNeon
-                    ? 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                    ? 'text-slate-300 hover:text-cyan-100 hover:bg-slate-700/50'
                     : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
                 }`}
               >
@@ -943,7 +943,7 @@ const FeatureRequests = () => {
             <div className="space-y-6">
               <div>
                 <label className={`block text-sm font-medium mb-2 ${
-                  isNeon ? 'text-white' : 'text-gray-700'
+                  isNeon ? 'text-cyan-100' : 'text-gray-700'
                 }`}>
                   Title *
                 </label>
@@ -954,7 +954,7 @@ const FeatureRequests = () => {
                   placeholder="Brief, descriptive title for your request"
                   className={`w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 transition-all duration-300 ${
                     isNeon
-                      ? 'input-premium text-white placeholder-slate-400 border-slate-600/50 focus:ring-cyan-500 focus:border-cyan-500'
+                      ? 'bg-slate-700/50 text-white placeholder-slate-300 border-slate-500/50 focus:ring-cyan-400 focus:border-cyan-400 focus:bg-slate-700/70'
                       : 'border border-gray-300 focus:ring-blue-500 focus:border-blue-500'
                   }`}
                 />
@@ -962,7 +962,7 @@ const FeatureRequests = () => {
 
               <div>
                 <label className={`block text-sm font-medium mb-2 ${
-                  isNeon ? 'text-white' : 'text-gray-700'
+                  isNeon ? 'text-cyan-100' : 'text-gray-700'
                 }`}>
                   Category
                 </label>
@@ -971,7 +971,7 @@ const FeatureRequests = () => {
                   onChange={(e) => setNewRequest(prev => ({ ...prev, category: e.target.value }))}
                   className={`w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 transition-all duration-300 ${
                     isNeon
-                      ? 'input-premium text-white border-slate-600/50 focus:ring-cyan-500'
+                      ? 'bg-slate-700/50 text-white border-slate-500/50 focus:ring-cyan-400 focus:border-cyan-400'
                       : 'border border-gray-300 focus:ring-blue-500 focus:border-blue-500'
                   }`}
                 >
@@ -985,7 +985,7 @@ const FeatureRequests = () => {
 
               <div>
                 <label className={`block text-sm font-medium mb-2 ${
-                  isNeon ? 'text-white' : 'text-gray-700'
+                  isNeon ? 'text-cyan-100' : 'text-gray-700'
                 }`}>
                   Description *
                 </label>
@@ -996,7 +996,7 @@ const FeatureRequests = () => {
                   rows={6}
                   className={`w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 transition-all duration-300 resize-none ${
                     isNeon
-                      ? 'input-premium text-white placeholder-slate-400 border-slate-600/50 focus:ring-cyan-500 focus:border-cyan-500'
+                      ? 'bg-slate-700/50 text-white placeholder-slate-300 border-slate-500/50 focus:ring-cyan-400 focus:border-cyan-400 focus:bg-slate-700/70'
                       : 'border border-gray-300 focus:ring-blue-500 focus:border-blue-500'
                   }`}
                 />
@@ -1007,7 +1007,7 @@ const FeatureRequests = () => {
                   onClick={() => setShowSubmitForm(false)}
                   className={`px-6 py-3 rounded-lg font-medium transition-all duration-300 ${
                     isNeon
-                      ? 'bg-slate-800/50 text-slate-300 hover:bg-slate-700/50 border border-slate-700/50'
+                      ? 'bg-slate-700/60 text-slate-200 hover:bg-slate-600/70 border border-slate-500/50 hover:border-slate-400/60'
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
                   }`}
                 >

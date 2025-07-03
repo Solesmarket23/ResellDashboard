@@ -183,8 +183,8 @@ const LoginPage = () => {
                     onChange={handleInputChange}
                     className={`w-full pl-10 pr-4 py-3 rounded-lg ${
                       currentTheme.name === 'Neon'
-                        ? 'bg-white/10 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500'
-                        : 'bg-white border border-gray-300 text-gray-900 placeholder-gray-500 focus:border-purple-500'
+                        ? 'bg-slate-700/60 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500'
+                        : 'bg-gray-700 border border-gray-600 text-white placeholder-gray-400 focus:border-purple-500'
                     } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200`}
                     required={!isLogin}
                   />
@@ -199,8 +199,8 @@ const LoginPage = () => {
                     onChange={handleInputChange}
                     className={`w-full pl-10 pr-4 py-3 rounded-lg ${
                       currentTheme.name === 'Neon'
-                        ? 'bg-white/10 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500'
-                        : 'bg-white border border-gray-300 text-gray-900 placeholder-gray-500 focus:border-purple-500'
+                        ? 'bg-slate-700/60 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500'
+                        : 'bg-gray-700 border border-gray-600 text-white placeholder-gray-400 focus:border-purple-500'
                     } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200`}
                     required={!isLogin}
                   />
@@ -218,8 +218,8 @@ const LoginPage = () => {
                 onChange={handleInputChange}
                 className={`w-full pl-10 pr-4 py-3 rounded-lg ${
                   currentTheme.name === 'Neon'
-                    ? 'bg-white/10 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500'
-                    : 'bg-white border border-gray-300 text-gray-900 placeholder-gray-500 focus:border-purple-500'
+                    ? 'bg-slate-700/60 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500'
+                    : 'bg-gray-700 border border-gray-600 text-white placeholder-gray-400 focus:border-purple-500'
                 } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200`}
                 required
               />
@@ -235,8 +235,8 @@ const LoginPage = () => {
                 onChange={handleInputChange}
                 className={`w-full pl-10 pr-12 py-3 rounded-lg ${
                   currentTheme.name === 'Neon'
-                    ? 'bg-white/10 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500'
-                    : 'bg-white border border-gray-300 text-gray-900 placeholder-gray-500 focus:border-purple-500'
+                    ? 'bg-slate-700/60 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500'
+                    : 'bg-gray-700 border border-gray-600 text-white placeholder-gray-400 focus:border-purple-500'
                 } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200`}
                 required
               />
@@ -260,8 +260,8 @@ const LoginPage = () => {
                   onChange={handleInputChange}
                   className={`w-full pl-10 pr-4 py-3 rounded-lg ${
                     currentTheme.name === 'Neon'
-                      ? 'bg-white/10 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500'
-                      : 'bg-white border border-gray-300 text-gray-900 placeholder-gray-500 focus:border-purple-500'
+                      ? 'bg-slate-700/60 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500'
+                      : 'bg-gray-700 border border-gray-600 text-white placeholder-gray-400 focus:border-purple-500'
                   } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200`}
                   required={!isLogin}
                 />
