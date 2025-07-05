@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
 
   // Create the response to redirect to StockX OAuth
   const response = NextResponse.redirect(
-    `https://accounts.stockx.com/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&state=${state}&scope=openid%20offline_access`
+    `https://accounts.stockx.com/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&state=${state}&scope=openid%20offline_access&audience=gateway.stockx.com`
   );
 
   // Set the state cookie with secure options
