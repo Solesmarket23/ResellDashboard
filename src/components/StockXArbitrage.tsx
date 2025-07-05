@@ -1,40 +1,69 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { ArrowLeftRight, TrendingUp, DollarSign, ExternalLink, Search, AlertCircle, BarChart3, Clock, TrendingDown, LogIn, CheckCircle } from 'lucide-react';
+import { TrendingUp, DollarSign, ExternalLink, Search, AlertCircle, BarChart3, LogIn, CheckCircle } from 'lucide-react';
 
-interface HistoricalSales {
-  totalSales: number;
-  averagePrice: number;
-  lowestSale: number;
-  highestSale: number;
-  lastSalePrice: number;
-  lastSaleDate: string;
-  priceHistory: Array<{
-    week: string;
-    averagePrice: number;
-    salesCount: number;
-  }>;
-  salesVolume: number;
-  trendDirection: 'up' | 'down' | 'stable';
-  priceChangePercent: number;
-  isGenerated?: boolean;
+// Enhanced placeholder component for StockX products since images aren't publicly accessible
+interface FallbackImageProps {
+  imageUrls: string[];
+  alt: string;
+  className: string;
+  productTitle?: string;
+  brand?: string;
 }
 
+const FallbackImage: React.FC<FallbackImageProps> = ({ imageUrls, alt, className, productTitle, brand }) => {
+  // Since StockX images aren't publicly accessible, create an informative placeholder
+  const getBrandInitial = (brandName?: string) => {
+    if (!brandName) return '?';
+    return brandName.charAt(0).toUpperCase();
+  };
+
+  const getBrandColor = (brandName?: string) => {
+    if (!brandName) return 'bg-gray-600';
+    const colors = [
+      'bg-blue-600', 'bg-green-600', 'bg-purple-600', 'bg-red-600', 
+      'bg-yellow-600', 'bg-indigo-600', 'bg-pink-600', 'bg-teal-600'
+    ];
+    let hash = 0;
+    for (let i = 0; i < brandName.length; i++) {
+      hash = brandName.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return colors[Math.abs(hash) % colors.length];
+  };
+
+  return (
+    <div className={`${className} ${getBrandColor(brand)} flex items-center justify-center rounded-lg`}>
+      <div className="text-center">
+        <div className="text-white font-bold text-lg">
+          {getBrandInitial(brand)}
+        </div>
+        <div className="text-white text-xs opacity-75">
+          StockX
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Removed HistoricalSales interface - this data is not available from StockX API
+
 interface ArbitrageOpportunity {
-  id: string;
-  productName: string;
-  imageUrl: string;
   productId: string;
   variantId: string;
+  title: string;
   size: string;
-  lowestAsk: number;
   highestBid: number;
+  lowestAsk: number;
   spread: number;
-  profitMargin: number;
+  spreadPercent: number;
+  imageUrl: string;
+  imageUrls?: string[]; // Array of fallback image URLs
   stockxUrl: string;
   brand: string;
-  historicalSales?: HistoricalSales;
+  colorway: string;
+  releaseDate: string | null;
+  retailPrice: number | null;
 }
 
 const StockXArbitrage: React.FC = () => {
@@ -45,6 +74,7 @@ const StockXArbitrage: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isAuthError, setIsAuthError] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [hasSearched, setHasSearched] = useState(false); // Track if user has performed a search attempt
 
   // Check for success message on component mount
   useEffect(() => {
@@ -61,6 +91,63 @@ const StockXArbitrage: React.FC = () => {
       setTimeout(() => {
         setSuccessMessage(null);
       }, 5000);
+    }
+    
+    // Check for disconnect success message
+    if (urlParams.get('disconnected') === 'true') {
+      setSuccessMessage('StockX tokens cleared successfully! You can now re-authenticate.');
+      // Clear the URL parameters
+      const url = new URL(window.location.href);
+      url.searchParams.delete('disconnected');
+      window.history.replaceState({}, '', url.toString());
+      
+      // Auto-dismiss the success message after 5 seconds
+      setTimeout(() => {
+        setSuccessMessage(null);
+      }, 5000);
+    }
+    
+    // Check for manual token clear success message
+    if (urlParams.get('tokens_cleared') === 'true') {
+      setSuccessMessage('All StockX tokens have been cleared! Please click "Login to StockX" to authenticate with fresh tokens.');
+      // Clear the URL parameters
+      const url = new URL(window.location.href);
+      url.searchParams.delete('tokens_cleared');
+      window.history.replaceState({}, '', url.toString());
+      
+      // Auto-dismiss the success message after 7 seconds (longer for more detailed message)
+      setTimeout(() => {
+        setSuccessMessage(null);
+      }, 7000);
+    }
+    
+    // Check for authentication error from callback
+    const error = urlParams.get('error');
+    const needReauth = urlParams.get('need_reauth') === 'true';
+    
+    if (error === 'invalid_tokens' && needReauth) {
+      setErrorMessage('Your StockX authentication has expired. Please login again to continue.');
+      setIsAuthError(true);
+      // Clear the URL parameters
+      const url = new URL(window.location.href);
+      url.searchParams.delete('error');
+      url.searchParams.delete('need_reauth');
+      window.history.replaceState({}, '', url.toString());
+    } else if (error === 'no_tokens' && needReauth) {
+      setErrorMessage('You need to authenticate with StockX first to use this feature.');
+      setIsAuthError(true);
+      // Clear the URL parameters
+      const url = new URL(window.location.href);
+      url.searchParams.delete('error');
+      url.searchParams.delete('need_reauth');
+      window.history.replaceState({}, '', url.toString());
+    } else if (error === 'state_mismatch') {
+      setErrorMessage('Authentication security check failed. Please try logging in again.');
+      setIsAuthError(true);
+      // Clear the URL parameters
+      const url = new URL(window.location.href);
+      url.searchParams.delete('error');
+      window.history.replaceState({}, '', url.toString());
     }
   }, []);
 
@@ -84,6 +171,13 @@ const StockXArbitrage: React.FC = () => {
     window.location.href = authUrl;
   };
 
+  const handleClearTokens = () => {
+    // Clear all StockX tokens and force re-authentication
+    const currentUrl = window.location.href;
+    const disconnectUrl = `/api/stockx/disconnect?returnTo=${encodeURIComponent(currentUrl)}`;
+    window.location.href = disconnectUrl;
+  };
+
   const searchArbitrageOpportunities = async () => {
     if (!searchQuery.trim()) {
       setErrorMessage('Please enter a search query');
@@ -94,66 +188,114 @@ const StockXArbitrage: React.FC = () => {
     setIsLoading(true);
     setErrorMessage(null);
     setIsAuthError(false);
-    setSuccessMessage(null); // Clear any success message when searching
-    setOpportunities([]);
+    setSuccessMessage(null);
+    setOpportunities([]); // Clear previous results
+    setHasSearched(true);
 
     try {
-      const response = await fetch(
-        `/api/stockx/search?query=${encodeURIComponent(searchQuery)}&limit=50&arbitrageMode=true&minSpreadPercent=${minSpreadPercentage}`
-      );
-      const data = await response.json();
+      // Build query parameters for streaming
+      const params = new URLSearchParams({
+        query: searchQuery,
+        limit: '50',
+        arbitrageMode: 'true',
+        minSpreadPercent: minSpreadPercentage.toString(),
+        streaming: 'true' // Enable streaming
+      });
 
-      if (!response.ok) {
-        let errorMessage = 'Failed to search products';
-        let isAuth = false;
-        
-        if (response.status === 429) {
-          errorMessage = 'Too many requests. Please wait a moment and try again.';
-        } else if (response.status === 401) {
-          errorMessage = 'Please authenticate with StockX first';
-          isAuth = true;
-        } else if (response.status === 403) {
-          errorMessage = 'Access to this StockX endpoint is restricted.';
-        } else if (response.status >= 500) {
-          errorMessage = 'StockX servers are experiencing issues. Please try again later.';
+      // Use EventSource for streaming results
+      const eventSource = new EventSource(`/api/stockx/search?${params.toString()}`);
+      
+      let currentOpportunities: ArbitrageOpportunity[] = [];
+      let statusMessage = 'Searching...';
+      let progressMessage = '';
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          switch (data.type) {
+            case 'status':
+              statusMessage = data.message;
+              setSuccessMessage(`📡 ${statusMessage}`);
+              break;
+              
+            case 'progress':
+              progressMessage = `Processing ${data.current}/${data.total} products`;
+              setSuccessMessage(`🔍 ${progressMessage}... Found ${currentOpportunities.length} opportunities`);
+              break;
+              
+            case 'result':
+              // Add new result to the list
+              const newOpportunity: ArbitrageOpportunity = {
+                productId: data.data.productId,
+                variantId: data.data.variantId,
+                title: data.data.title,
+                size: data.data.size,
+                highestBid: data.data.highestBid,
+                lowestAsk: data.data.lowestAsk,
+                spread: data.data.spread,
+                spreadPercent: data.data.spreadPercent,
+                imageUrl: data.data.imageUrl,
+                imageUrls: data.data.imageUrls || [data.data.imageUrl], // Use fallback array or single URL
+                stockxUrl: data.data.stockxUrl,
+                brand: data.data.brand,
+                colorway: data.data.colorway,
+                releaseDate: data.data.releaseDate,
+                retailPrice: data.data.retailPrice
+              };
+              
+              currentOpportunities.push(newOpportunity);
+              setOpportunities([...currentOpportunities]);
+              setSuccessMessage(`🔍 Searching... Found ${currentOpportunities.length} opportunities so far`);
+              break;
+              
+            case 'complete':
+              setSuccessMessage(`✅ Search complete! Found ${data.total} arbitrage opportunities.`);
+              setIsLoading(false);
+              eventSource.close();
+              break;
+              
+            case 'error':
+              setErrorMessage(data.message);
+              setIsAuthError(data.statusCode === 401);
+              setIsLoading(false);
+              setHasSearched(true);
+              eventSource.close();
+              break;
+          }
+        } catch (error) {
+          console.error('Error parsing streaming data:', error);
         }
-        
-        setIsAuthError(isAuth);
-        throw new Error(data.message || errorMessage);
-      }
+      };
 
-      if (!data.success || !data.data?.products) {
-        throw new Error('No products found');
-      }
+      eventSource.onerror = (error) => {
+        console.error('EventSource error:', error);
+        setErrorMessage('Connection error while searching');
+        setIsLoading(false);
+        setHasSearched(true);
+        eventSource.close();
+      };
 
-      // Products are already processed as individual variant opportunities
-      const foundOpportunities: ArbitrageOpportunity[] = data.data.products.map((opportunity: any) => ({
-        id: opportunity.id,
-        productName: opportunity.title,
-        imageUrl: opportunity.imageUrl,
-        productId: opportunity.productId,
-        variantId: opportunity.variantId,
-        size: opportunity.size,
-        lowestAsk: opportunity.lowestAsk,
-        highestBid: opportunity.highestBid,
-        spread: opportunity.spread,
-        profitMargin: Math.round(opportunity.spreadPercent * 100) / 100,
-        stockxUrl: opportunity.stockxUrl,
-        brand: opportunity.brand,
-        historicalSales: opportunity.historicalSales
-      }));
+      // Cleanup function
+      const cleanup = () => {
+        eventSource.close();
+        setIsLoading(false);
+      };
 
-      setOpportunities(foundOpportunities);
-
-      if (foundOpportunities.length === 0) {
-        setErrorMessage(`No arbitrage opportunities found with at least ${minSpreadPercentage}% spread. Try lowering the minimum spread percentage.`);
-      }
+      // Set a timeout to prevent indefinite loading
+      setTimeout(() => {
+        if (eventSource.readyState !== EventSource.CLOSED) {
+          cleanup();
+          setErrorMessage('Search timeout. Please try again.');
+          setHasSearched(true);
+        }
+      }, 60000); // 60 second timeout
 
     } catch (error) {
       console.error('Search error:', error);
-      setErrorMessage(error instanceof Error ? error.message : 'An error occurred while searching');
-    } finally {
+      setErrorMessage('An error occurred while searching for opportunities');
       setIsLoading(false);
+      setHasSearched(true);
     }
   };
 
@@ -164,12 +306,12 @@ const StockXArbitrage: React.FC = () => {
   };
 
   return (
-    <div className="p-6 bg-gray-900 text-white min-h-screen">
+    <div className="p-4 sm:p-6 bg-gray-900 text-white min-h-screen">
       <div className="max-w-6xl mx-auto">
-        <div className="mb-8">
+        <div className="mb-6 sm:mb-8">
           <div className="flex items-center gap-3 mb-4">
-            <ArrowLeftRight className="w-8 h-8 text-cyan-400" />
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-emerald-400 bg-clip-text text-transparent">
+            <TrendingUp className="w-6 h-6 sm:w-8 sm:h-8 text-cyan-400" />
+            <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-cyan-400 to-emerald-400 bg-clip-text text-transparent">
               StockX Arbitrage Finder
             </h1>
           </div>
@@ -190,43 +332,46 @@ const StockXArbitrage: React.FC = () => {
         </div>
 
         {/* Search and Filters */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Search Products
-            </label>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyPress={handleKeyPress}
-              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-              placeholder="e.g., Jordan 1, Denim Tears, Nike"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Minimum Spread (%)
-            </label>
-            <input
-              type="number"
-              value={minSpreadPercentage}
-              onChange={(e) => setMinSpreadPercentage(Number(e.target.value))}
-              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-              placeholder="10"
-              min="0"
-              max="100"
-            />
-          </div>
-          <div className="flex items-end">
-            <button
-              onClick={searchArbitrageOpportunities}
-              disabled={isLoading || !searchQuery.trim()}
-              className="w-full bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              <Search className="w-4 h-4" />
-              {isLoading ? 'Searching...' : 'Find Opportunities'}
-            </button>
+        <div className="space-y-4 mb-6 sm:mb-8">
+          {/* Primary Search Row */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Search Products
+              </label>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyPress={handleKeyPress}
+                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                placeholder="e.g., Jordan 1, Denim Tears, Nike"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Minimum Spread (%)
+              </label>
+              <input
+                type="number"
+                value={minSpreadPercentage}
+                onChange={(e) => setMinSpreadPercentage(Number(e.target.value))}
+                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                placeholder="10"
+                min="0"
+                max="100"
+              />
+            </div>
+            <div className="flex items-end">
+              <button
+                onClick={searchArbitrageOpportunities}
+                disabled={isLoading || !searchQuery.trim()}
+                className="w-full bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <Search className="w-4 h-4" />
+                {isLoading ? 'Searching...' : 'Find Opportunities'}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -243,27 +388,49 @@ const StockXArbitrage: React.FC = () => {
         {/* Error Message */}
         {errorMessage && (
           <div className="bg-red-900/20 border border-red-500 rounded-lg p-4 mb-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="flex items-center gap-2">
-                <AlertCircle className="w-5 h-5 text-red-400" />
+                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
                 <p className="text-red-400">{errorMessage}</p>
               </div>
               {isAuthError && (
-                <button
-                  onClick={handleStockXLogin}
-                  className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
-                >
-                  <LogIn className="w-4 h-4" />
-                  Login to StockX
-                </button>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button
+                    onClick={handleClearTokens}
+                    className="bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center justify-center gap-2"
+                  >
+                    <AlertCircle className="w-4 h-4" />
+                    Clear Tokens
+                  </button>
+                  <button
+                    onClick={handleStockXLogin}
+                    className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center justify-center gap-2"
+                  >
+                    <LogIn className="w-4 h-4" />
+                    Login to StockX
+                  </button>
+                </div>
               )}
             </div>
           </div>
         )}
 
+        {/* Loading State */}
+        {isLoading && (
+          <div className="text-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto mb-4"></div>
+            <p className="text-gray-300">
+              {opportunities.length > 0 
+                ? `Streaming results... Found ${opportunities.length} opportunities so far`
+                : 'Searching StockX catalog...'
+              }
+            </p>
+          </div>
+        )}
+
         {/* Stats */}
         {opportunities.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
             <div className="bg-gray-800 rounded-lg p-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -278,7 +445,7 @@ const StockXArbitrage: React.FC = () => {
                 <div>
                   <p className="text-gray-400 text-sm">Avg Profit Margin</p>
                   <p className="text-2xl font-bold text-emerald-400">
-                    {Math.round(opportunities.reduce((sum, opp) => sum + opp.profitMargin, 0) / opportunities.length)}%
+                    {Math.round(opportunities.reduce((sum, opp) => sum + opp.spreadPercent, 0) / opportunities.length)}%
                   </p>
                 </div>
                 <DollarSign className="w-8 h-8 text-emerald-400" />
@@ -298,148 +465,109 @@ const StockXArbitrage: React.FC = () => {
           </div>
         )}
 
+        {/* Initial State Message - No Search Performed Yet */}
+        {!isLoading && opportunities.length === 0 && !errorMessage && !hasSearched && (
+          <div className="text-center py-12">
+            <div className="bg-gray-800 rounded-lg p-8">
+              <div className="text-6xl mb-4">🔍</div>
+              <h3 className="text-xl font-semibold text-gray-300 mb-2">Ready to Find Arbitrage Opportunities</h3>
+              <p className="text-gray-400 max-w-md mx-auto">
+                Enter a product name like "Nike", "Jordan 1", or "Denim Tears" and set your minimum spread percentage to discover profitable opportunities.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* No Results Message - After Search */}
+        {!isLoading && opportunities.length === 0 && !errorMessage && hasSearched && (
+          <div className="text-center py-12">
+            <div className="bg-gray-800 rounded-lg p-8">
+              <div className="text-6xl mb-4">📭</div>
+              <h3 className="text-xl font-semibold text-gray-300 mb-2">No Opportunities Found</h3>
+              <p className="text-gray-400 max-w-md mx-auto">
+                No arbitrage opportunities were found with at least {minSpreadPercentage}% spread. 
+                Try lowering the minimum spread percentage or searching for different products.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Opportunities List */}
         <div className="space-y-4">
           {opportunities.map((opportunity) => (
-            <div key={opportunity.id} className="bg-gray-800 rounded-lg p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-4">
-                  <img 
-                    src={opportunity.imageUrl} 
-                    alt={opportunity.productName}
-                    className="w-16 h-16 object-cover rounded-lg"
+            <div key={opportunity.productId} className="bg-gray-800 rounded-lg p-4 sm:p-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-4">
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <FallbackImage
+                    imageUrls={opportunity.imageUrls || [opportunity.imageUrl]}
+                    alt={opportunity.title}
+                    className="w-12 h-12 sm:w-16 sm:h-16 rounded-lg flex-shrink-0"
+                    productTitle={opportunity.title}
+                    brand={opportunity.brand}
                   />
-                  <div>
-                    <h3 className="text-xl font-semibold text-white">{opportunity.productName}</h3>
-                    <p className="text-gray-400">{opportunity.brand} • {opportunity.size}</p>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-lg sm:text-xl font-semibold text-white truncate">{opportunity.title}</h3>
+                    <p className="text-gray-400 text-sm sm:text-base">{opportunity.brand} • {opportunity.size}</p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-2xl font-bold text-green-400">${opportunity.spread}</p>
-                  <p className="text-gray-400">({opportunity.profitMargin}% margin)</p>
+                <div className="text-left sm:text-right">
+                  <p className="text-xl sm:text-2xl font-bold text-green-400">${opportunity.spread}</p>
+                  <p className="text-gray-400 text-sm">({opportunity.spreadPercent}% margin)</p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-4">
                 <div className="text-center p-3 bg-gray-700 rounded-lg">
-                  <p className="text-sm text-gray-400 mb-1">Highest Bid</p>
-                  <p className="text-lg font-semibold text-green-400">${opportunity.highestBid}</p>
+                  <p className="text-xs sm:text-sm text-gray-400 mb-1">Highest Bid</p>
+                  <p className="text-base sm:text-lg font-semibold text-green-400">${opportunity.highestBid}</p>
                   <p className="text-xs text-gray-500">Potential buy price</p>
                 </div>
                 <div className="text-center p-3 bg-gray-700 rounded-lg">
-                  <p className="text-sm text-gray-400 mb-1">Lowest Ask</p>
-                  <p className="text-lg font-semibold text-cyan-400">${opportunity.lowestAsk}</p>
+                  <p className="text-xs sm:text-sm text-gray-400 mb-1">Lowest Ask</p>
+                  <p className="text-base sm:text-lg font-semibold text-cyan-400">${opportunity.lowestAsk}</p>
                   <p className="text-xs text-gray-500">Potential sell price</p>
                 </div>
               </div>
 
-              {/* Historical Sales Data Section */}
-              {opportunity.historicalSales && (
-                <div className="mb-4 p-4 bg-gray-700/50 rounded-lg border border-gray-600">
-                  <div className="flex items-center gap-2 mb-3">
-                    <BarChart3 className="w-5 h-5 text-blue-400" />
-                    <h4 className="text-lg font-semibold text-white">90-Day Sales History</h4>
-                    {opportunity.historicalSales.isGenerated && (
-                      <span className="text-xs bg-yellow-900/20 text-yellow-400 px-2 py-1 rounded border border-yellow-500/30">
-                        Simulated Data
-                      </span>
-                    )}
+              {/* Real StockX Market Data - No Historical Sales Available */}
+              <div className="mb-4 p-4 bg-gray-700/50 rounded-lg border border-gray-600">
+                <div className="flex items-center gap-2 mb-3">
+                  <BarChart3 className="w-5 h-5 text-blue-400" />
+                  <h4 className="text-lg font-semibold text-white">Live Market Data</h4>
+                  <span className="text-xs bg-green-900/20 text-green-400 px-2 py-1 rounded border border-green-500/30">
+                    Real StockX API
+                  </span>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-gray-800 rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <TrendingUp className="w-4 h-4 text-green-400" />
+                      <span className="text-sm text-gray-400">Current Spread</span>
+                    </div>
+                    <p className="text-2xl font-bold text-green-400">${opportunity.spread}</p>
+                    <p className="text-sm text-gray-500">Potential profit per sale</p>
                   </div>
                   
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                    <div className="text-center p-3 bg-gray-800 rounded-lg">
-                      <p className="text-xs text-gray-400 mb-1">Total Sales</p>
-                      <p className="text-lg font-semibold text-white">{opportunity.historicalSales.totalSales}</p>
+                  <div className="bg-gray-800 rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <DollarSign className="w-4 h-4 text-blue-400" />
+                      <span className="text-sm text-gray-400">Profit Margin</span>
                     </div>
-                    <div className="text-center p-3 bg-gray-800 rounded-lg">
-                      <p className="text-xs text-gray-400 mb-1">Avg Price</p>
-                      <p className="text-lg font-semibold text-blue-400">${opportunity.historicalSales.averagePrice}</p>
-                    </div>
-                    <div className="text-center p-3 bg-gray-800 rounded-lg">
-                      <p className="text-xs text-gray-400 mb-1">Last Sale</p>
-                      <p className="text-lg font-semibold text-emerald-400">${opportunity.historicalSales.lastSalePrice}</p>
-                      <p className="text-xs text-gray-500">
-                        {new Date(opportunity.historicalSales.lastSaleDate).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <div className="text-center p-3 bg-gray-800 rounded-lg">
-                      <div className="flex items-center justify-center gap-1 mb-1">
-                        {opportunity.historicalSales.trendDirection === 'up' && (
-                          <TrendingUp className="w-4 h-4 text-green-400" />
-                        )}
-                        {opportunity.historicalSales.trendDirection === 'down' && (
-                          <TrendingDown className="w-4 h-4 text-red-400" />
-                        )}
-                        {opportunity.historicalSales.trendDirection === 'stable' && (
-                          <ArrowLeftRight className="w-4 h-4 text-gray-400" />
-                        )}
-                        <p className="text-xs text-gray-400">Trend</p>
-                      </div>
-                      <p className={`text-lg font-semibold ${
-                        opportunity.historicalSales.priceChangePercent > 0 ? 'text-green-400' : 
-                        opportunity.historicalSales.priceChangePercent < 0 ? 'text-red-400' : 'text-gray-400'
-                      }`}>
-                        {opportunity.historicalSales.priceChangePercent > 0 ? '+' : ''}
-                        {opportunity.historicalSales.priceChangePercent}%
-                      </p>
-                    </div>
+                    <p className="text-2xl font-bold text-blue-400">{opportunity.spreadPercent}%</p>
+                    <p className="text-sm text-gray-500">Based on current market</p>
                   </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-gray-800 rounded-lg p-3">
-                      <div className="flex items-center gap-2 mb-2">
-                        <TrendingDown className="w-4 h-4 text-red-400" />
-                        <span className="text-sm text-gray-400">Price Range</span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <p className="text-xs text-gray-500">Low</p>
-                          <p className="text-sm font-semibold text-red-400">${opportunity.historicalSales.lowestSale}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-xs text-gray-500">High</p>
-                          <p className="text-sm font-semibold text-green-400">${opportunity.historicalSales.highestSale}</p>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="bg-gray-800 rounded-lg p-3">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Clock className="w-4 h-4 text-blue-400" />
-                        <span className="text-sm text-gray-400">Sales Activity</span>
-                      </div>
-                      <p className="text-sm text-blue-400">
-                        {opportunity.historicalSales.salesVolume} sales in 90 days
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        Avg: {Math.round(opportunity.historicalSales.salesVolume / 12.9)} per week
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Simple price history visualization */}
-                  {opportunity.historicalSales.priceHistory && opportunity.historicalSales.priceHistory.length > 0 && (
-                    <div className="mt-4">
-                      <h5 className="text-sm text-gray-400 mb-2">Weekly Price Trend</h5>
-                      <div className="flex items-end gap-1 h-16 bg-gray-800 rounded p-2">
-                        {opportunity.historicalSales.priceHistory.slice(-8).map((week, index) => {
-                          const maxPrice = Math.max(...opportunity.historicalSales!.priceHistory.map(w => w.averagePrice));
-                          const height = (week.averagePrice / maxPrice) * 100;
-                          return (
-                            <div
-                              key={index}
-                              className="flex-1 bg-blue-500 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
-                              style={{ height: `${Math.max(height, 10)}%` }}
-                              title={`Week ${week.week}: $${week.averagePrice} (${week.salesCount} sales)`}
-                            />
-                          );
-                        })}
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1">Last 8 weeks • Hover for details</p>
-                    </div>
-                  )}
                 </div>
-              )}
+                
+                <div className="mt-4 p-3 bg-yellow-900/20 rounded-lg border border-yellow-500/30">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-yellow-400" />
+                    <p className="text-sm text-yellow-400">
+                      <strong>Note:</strong> StockX API doesn't provide historical sales data. Only current market data is available.
+                    </p>
+                  </div>
+                </div>
+              </div>
 
               <div className="flex justify-between items-center">
                 <div className="text-sm text-gray-400">
@@ -459,14 +587,6 @@ const StockXArbitrage: React.FC = () => {
             </div>
           ))}
         </div>
-
-        {opportunities.length === 0 && !isLoading && !errorMessage && (
-          <div className="text-center py-12">
-            <ArrowLeftRight className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-gray-400 mb-2">Search for Arbitrage Opportunities</h3>
-            <p className="text-gray-500">Enter a product name and minimum spread percentage to find profitable opportunities</p>
-          </div>
-        )}
       </div>
     </div>
   );
