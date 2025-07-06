@@ -28,6 +28,137 @@ function generateStockXUrl(urlKey: string, size?: string): string {
   return 'https://stockx.com';
 }
 
+// Helper function to parse StockX category URLs
+function parseStockXUrl(url: string): {
+  isStockXUrl: boolean;
+  category?: string;
+  sortBy?: string;
+  searchTerms?: string[];
+} {
+  try {
+    const parsedUrl = new URL(url);
+    
+    // Check if it's a StockX URL
+    if (!parsedUrl.hostname.includes('stockx.com')) {
+      return { isStockXUrl: false };
+    }
+    
+    // Parse category from path like /category/apparel or /browse/sneakers
+    const pathParts = parsedUrl.pathname.split('/').filter(part => part.length > 0);
+    let category = '';
+    
+    if (pathParts[0] === 'category' && pathParts[1]) {
+      category = pathParts[1].toLowerCase();
+    } else if (pathParts[0] === 'browse' && pathParts[1]) {
+      category = pathParts[1].toLowerCase();
+    } else if (pathParts[0] === 'sneakers' || pathParts[0] === 'apparel' || pathParts[0] === 'accessories') {
+      category = pathParts[0].toLowerCase();
+    }
+    
+    // Get sort parameter
+    const sortBy = parsedUrl.searchParams.get('sort');
+    
+    // Map categories to search terms based on what's actually trending on StockX
+    const categoryMapping: Record<string, { 'most-active': string[]; 'default': string[] }> = {
+      'apparel': {
+        'most-active': ['Fear of God Essentials', 'BAPE', 'Supreme', 'Off-White', 'Stussy', 'Kith', 'Chrome Hearts'],
+        'default': ['hoodie', 'sweatshirt', 't-shirt', 'jacket', 'pants', 'shorts']
+      },
+      'sneakers': {
+        'most-active': ['Jordan 1', 'Jordan 4', 'Nike Dunk', 'Travis Scott', 'Yeezy 350', 'Air Force 1'],
+        'default': ['nike', 'jordan', 'adidas', 'yeezy', 'dunk', 'air force', 'air max']
+      },
+      'shoes': {
+        'most-active': ['Jordan 1', 'Jordan 4', 'Nike Dunk', 'Travis Scott', 'Yeezy 350', 'Air Force 1'],
+        'default': ['nike', 'jordan', 'adidas', 'yeezy', 'dunk', 'air force', 'air max']
+      },
+      'accessories': {
+        'most-active': ['Supreme', 'Louis Vuitton', 'Chrome Hearts', 'Rolex', 'Cartier'],
+        'default': ['hat', 'cap', 'bag', 'backpack', 'belt', 'watch', 'jewelry']
+      },
+      'streetwear': {
+        'most-active': ['Supreme', 'Off-White', 'BAPE', 'Fear of God', 'Essentials', 'Chrome Hearts'],
+        'default': ['supreme', 'off-white', 'bape', 'kith', 'fear of god', 'essentials']
+      },
+      'collectibles': {
+        'most-active': ['Pokemon', 'Funko Pop', 'Trading Cards'],
+        'default': ['trading cards', 'pokemon', 'funko', 'figures', 'toys']
+      },
+      'electronics': {
+        'most-active': ['iPhone', 'MacBook', 'PlayStation', 'AirPods'],
+        'default': ['iphone', 'macbook', 'playstation', 'xbox', 'airpods']
+      },
+      'handbags': {
+        'most-active': ['Louis Vuitton', 'Gucci', 'Chanel', 'Hermès', 'Dior'],
+        'default': ['louis vuitton', 'gucci', 'chanel', 'prada', 'hermès']
+      },
+      'watches': {
+        'most-active': ['Rolex', 'Omega', 'Cartier', 'Patek Philippe', 'Audemars Piguet'],
+        'default': ['rolex', 'omega', 'cartier', 'patek philippe', 'audemars piguet']
+      },
+      'jewelry': {
+        'most-active': ['Tiffany', 'Cartier', 'Chrome Hearts', 'Van Cleef'],
+        'default': ['tiffany', 'cartier', 'chrome hearts', 'david yurman']
+      },
+      'trading-cards': {
+        'most-active': ['Pokemon', 'Topps', 'Panini'],
+        'default': ['pokemon', 'yugioh', 'magic', 'topps', 'panini']
+      }
+    };
+    
+    // Get search terms based on category and sort parameter
+    let searchTerms: string[] = [];
+    if (category && categoryMapping[category]) {
+      const categoryData = categoryMapping[category];
+      if (sortBy === 'most-active' && categoryData['most-active']) {
+        searchTerms = categoryData['most-active'];
+      } else {
+        searchTerms = categoryData['default'] || categoryData['most-active'] || [category];
+      }
+    } else if (category) {
+      searchTerms = [category];
+    }
+    
+    return {
+      isStockXUrl: true,
+      category,
+      sortBy,
+      searchTerms
+    };
+  } catch (error) {
+    console.log('URL parsing error:', error);
+    return { isStockXUrl: false };
+  }
+}
+
+// Helper function to get search query based on category or regular search
+function getSearchQuery(query: string): { searchQuery: string; isUrlSearch: boolean; categoryInfo?: any } {
+  // Check if query looks like a URL
+  if (query.includes('stockx.com') || query.startsWith('http')) {
+    const urlInfo = parseStockXUrl(query);
+    
+    if (urlInfo.isStockXUrl && urlInfo.searchTerms?.length) {
+      // Use the first search term for the category
+      const searchQuery = urlInfo.searchTerms[0];
+      console.log(`🔗 Detected StockX URL: ${query}`);
+      console.log(`📂 Category: ${urlInfo.category}, Sort: ${urlInfo.sortBy || 'none'}`);
+      console.log(`🔍 Using search term: ${searchQuery} (${urlInfo.searchTerms.length} terms available)`);
+      
+      return {
+        searchQuery,
+        isUrlSearch: true,
+        categoryInfo: urlInfo
+      };
+    }
+  }
+  
+  // Regular text search  
+  return {
+    searchQuery: query,
+    isUrlSearch: false
+  };
+}
+
 // Helper function to fetch product variants with retry logic
 async function fetchProductVariants(productId: string, accessToken: string, apiKey: string, retries = 2) {
   try {
@@ -101,9 +232,12 @@ async function fetchMarketData(productId: string, accessToken: string, apiKey: s
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
-  const query = searchParams.get('query') || '';
+  const rawQuery = searchParams.get('query') || '';
   const limit = searchParams.get('limit') || '10';
   const streaming = searchParams.get('streaming') === 'true';
+  
+  // Parse the query to handle StockX URLs
+  const { searchQuery: query, isUrlSearch, categoryInfo } = getSearchQuery(rawQuery);
 
   // Get access token from cookies
   const accessToken = request.cookies.get('stockx_access_token')?.value;
@@ -135,9 +269,16 @@ export async function GET(request: NextRequest) {
       async start(controller) {
         try {
           // Send initial status
+          const statusMessage = isUrlSearch 
+            ? `Searching StockX ${categoryInfo?.category || 'category'} for ${query}...`
+            : 'Searching StockX catalog...';
+          
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
             type: 'status', 
-            message: 'Searching StockX catalog...' 
+            message: statusMessage,
+            searchType: isUrlSearch ? 'url' : 'text',
+            category: categoryInfo?.category,
+            originalQuery: rawQuery
           })}\n\n`));
 
           // Step 1: Search for products
@@ -222,45 +363,91 @@ export async function GET(request: NextRequest) {
                 
                 // Process each market data entry - each contains variantId, bid, and ask
                 marketData.forEach(marketEntry => {
-                  const bid = parseInt(marketEntry.highestBidAmount) || 0;
-                  const ask = parseInt(marketEntry.lowestAskAmount) || 0;
+                  // Use best available pricing for arbitrage calculations
+                  const rawBid = parseInt(marketEntry.highestBidAmount) || 0;
+                  const standardAsk = parseInt(marketEntry.lowestAskAmount) || 0;
+                  const flexAsk = parseInt(marketEntry.flexLowestAskAmount) || 0;
+                  
+                  // For bids, use sellFasterAmount/earnMoreAmount if available (includes fees/taxes)
+                  const adjustedBid = parseInt(marketEntry.sellFasterAmount) || parseInt(marketEntry.earnMoreAmount) || rawBid;
+                  
+                  // For asks, use the lowest ask price between standard and flex
+                  let bestAsk = 0;
+                  if (standardAsk > 0 && flexAsk > 0) {
+                    bestAsk = Math.min(standardAsk, flexAsk);
+                  } else if (standardAsk > 0) {
+                    bestAsk = standardAsk;
+                  } else if (flexAsk > 0) {
+                    bestAsk = flexAsk;
+                  }
+                  
+                  const bid = adjustedBid > 0 ? adjustedBid : rawBid;
+                  const ask = bestAsk;
+                  
+                  // Debug: Show which ask price was chosen
+                  if (standardAsk > 0 && flexAsk > 0) {
+                    console.log(`🔍 Price comparison for ${product.title}: Standard Ask: $${standardAsk}, Flex Ask: $${flexAsk}, Using: $${ask}`);
+                  }
                   
                   if (bid > 0 && ask > 0) {
-                    const spread = ask - bid;
-                    const spreadPercent = ((spread / bid) * 100).toFixed(2);
-                    
                     // Get size from variant mapping
                     const variantInfo = variantMap.get(marketEntry.variantId);
                     const size = variantInfo?.size || 'Unknown';
                     
-                    console.log(`💰 Found opportunity: ${product.title} (${size}) - Bid: $${bid}, Ask: $${ask}, Spread: ${spreadPercent}%`);
+                    // Estimate buyer fees based on typical StockX fee structure
+                    const estimatedProcessingFee = Math.round(rawBid * 0.08); // 8% processing fee
+                    const estimatedShippingFee = 14.95; // Fixed $14.95 shipping fee
+                    const estimatedTotalBuyerCost = rawBid + estimatedProcessingFee + estimatedShippingFee;
                     
-                    const opportunity = {
-                      productId: product.productId,
-                      variantId: marketEntry.variantId,
-                      title: product.title, // Changed from productTitle to title
-                      brand: product.brand,
-                      size: size, // Now using actual size from variants
-                      imageUrl: getProductImageUrl(product),
-                      imageUrls: getProductImageUrlWithFallbacks(product), // Array of fallback image URLs
-                      highestBid: bid,
-                      lowestAsk: ask,
-                      spread: spread,
-                      spreadPercent: parseFloat(spreadPercent), // Send as number, not string
-                      stockxUrl: generateStockXUrl(product.urlKey, size), // Generate StockX URL with size parameter
-                      colorway: product.productAttributes?.colorway || null,
-                      releaseDate: product.productAttributes?.releaseDate || null,
-                      retailPrice: product.productAttributes?.retailPrice || null
-                    };
+                    // Calculate actual profit after all fees
+                    const spread = Math.round((ask - estimatedTotalBuyerCost) * 100) / 100; // Round to 2 decimal places
+                    const spreadPercent = ((spread / estimatedTotalBuyerCost) * 100).toFixed(2);
                     
-                    opportunities.push(opportunity);
-                    productOpportunities++;
+                    // Only process opportunities that are profitable and meet minimum threshold
+                    const minSpreadPercent = parseInt(searchParams.get('minSpreadPercent') || '10');
+                    const spreadPercentNum = parseFloat(spreadPercent);
                     
-                    // Stream this result immediately
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-                      type: 'result', 
-                      data: opportunity
-                    })}\n\n`));
+                    if (spreadPercentNum >= minSpreadPercent) {
+                      console.log(`💰 Found profitable opportunity: ${product.title} (${size}) - Best Ask: $${ask}, Total Cost: $${estimatedTotalBuyerCost.toFixed(2)}, Profit: $${spread.toFixed(2)} (${spreadPercent}%)`);
+                      
+                      const opportunity = {
+                        productId: product.productId,
+                        variantId: marketEntry.variantId,
+                        title: product.title, // Changed from productTitle to title
+                        brand: product.brand,
+                        size: size, // Now using actual size from variants
+                        imageUrl: getProductImageUrl(product),
+                        imageUrls: getProductImageUrlWithFallbacks(product), // Array of fallback image URLs
+                        highestBid: bid, // Using adjusted bid that includes fees
+                        lowestAsk: ask, // Using adjusted ask 
+                        rawBid: rawBid, // Also include raw values for reference
+                        rawAsk: standardAsk,
+                        sellFasterAmount: parseInt(marketEntry.sellFasterAmount) || null,
+                        earnMoreAmount: parseInt(marketEntry.earnMoreAmount) || null,
+                        flexLowestAskAmount: parseInt(marketEntry.flexLowestAskAmount) || null,
+                        // Add estimated buyer fees (since API doesn't provide exact fees)
+                        estimatedProcessingFee: estimatedProcessingFee,
+                        estimatedShippingFee: estimatedShippingFee,
+                        estimatedTotalBuyerCost: estimatedTotalBuyerCost,
+                        spread: spread,
+                        spreadPercent: parseFloat(spreadPercent), // Send as number, not string
+                        stockxUrl: generateStockXUrl(product.urlKey, size), // Generate StockX URL with size parameter
+                        colorway: product.productAttributes?.colorway || null,
+                        releaseDate: product.productAttributes?.releaseDate || null,
+                        retailPrice: product.productAttributes?.retailPrice || null
+                      };
+                      
+                      opportunities.push(opportunity);
+                      productOpportunities++;
+                      
+                      // Stream this profitable result immediately
+                      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                        type: 'result', 
+                        data: opportunity
+                      })}\n\n`));
+                    } else {
+                      console.log(`❌ Unprofitable opportunity filtered out: ${product.title} (${size}) - Ask: $${ask}, Total Cost: $${estimatedTotalBuyerCost.toFixed(2)}, Loss: $${spread.toFixed(2)} (${spreadPercent}%)`);
+                    }
                   } else {
                     console.log(`❌ Invalid pricing for ${product.title} (${variantInfo?.size || 'Unknown'}): bid=${bid}, ask=${ask}`);
                   }
@@ -282,21 +469,14 @@ export async function GET(request: NextRequest) {
             }
           }
           
-          console.log(`🏁 Processing complete: ${opportunities.length} opportunities found with real pricing`);
+          console.log(`🏁 Processing complete: ${opportunities.length} profitable opportunities found (after filtering)`);
           
-          // Filter opportunities by minimum spread percentage
           const minSpreadPercent = parseInt(searchParams.get('minSpreadPercent') || '10');
-          const filteredOpportunities = opportunities.filter(opp => {
-            const spreadPercent = parseFloat(opp.spreadPercent);
-            return spreadPercent >= minSpreadPercent;
-          });
-          
-          console.log(`🔍 After filtering (min ${minSpreadPercent}%): ${filteredOpportunities.length} opportunities`);
           
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
             type: 'complete', 
-            totalResults: filteredOpportunities.length,
-            message: `Found ${filteredOpportunities.length} arbitrage opportunities with real pricing data`
+            totalResults: opportunities.length,
+            message: `Found ${opportunities.length} profitable opportunities with ${minSpreadPercent}%+ profit margin (after fees)`
           })}\n\n`));
           
           controller.close();
@@ -329,5 +509,4 @@ export async function GET(request: NextRequest) {
     totalCount: 0,
     searchQuery: query
   });
-}
 }

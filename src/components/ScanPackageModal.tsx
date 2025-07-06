@@ -4,8 +4,16 @@ import { useState, useEffect, useRef } from 'react';
 import { X, Camera, Smartphone, CheckCircle, AlertTriangle } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 
-// Store the library references
-let Html5QrcodeLib: any = null;
+// QuaggaJS types
+interface QuaggaResult {
+  codeResult: {
+    code: string;
+    format: string;
+  };
+}
+
+// Store the library reference
+let Quagga: any = null;
 
 interface ScanPackageModalProps {
   isOpen: boolean;
@@ -22,13 +30,13 @@ const ScanPackageModal = ({ isOpen, onClose, onScanComplete }: ScanPackageModalP
   const [errorMessage, setErrorMessage] = useState('');
   const [searchResults, setSearchResults] = useState<any>(null);
   const [debugInfo, setDebugInfo] = useState([
-    'Enhanced Scanner Ready',
-    'Mobile-optimized camera support',
-    'Point camera at barcode/QR code'
+    'QuaggaJS Scanner Ready',
+    'Optimized for shipping barcodes',
+    'Supports UPC, Code 128, Code 39'
   ]);
   
-  const scannerRef = useRef<any>(null);
-  const elementId = 'barcode-scanner-container';
+  const scannerElementRef = useRef<HTMLDivElement>(null);
+  const isQuaggaInitialized = useRef(false);
 
   // Mock purchase data for demonstration
   const mockPurchases = [
@@ -60,23 +68,26 @@ const ScanPackageModal = ({ isOpen, onClose, onScanComplete }: ScanPackageModalP
     }
   ];
 
-  // Initialize html5-qrcode library
+  // Initialize QuaggaJS library
   useEffect(() => {
-    const loadScanner = async () => {
+    const loadQuagga = async () => {
       try {
-        if (typeof window !== 'undefined') {
-          const html5QrcodeModule = await import('html5-qrcode');
-          Html5QrcodeLib = html5QrcodeModule.Html5Qrcode;
-          console.log('✅ html5-qrcode library loaded successfully');
+        if (typeof window !== 'undefined' && !Quagga) {
+          // Dynamic import of QuaggaJS
+          const QuaggaModule = await import('quagga');
+          Quagga = QuaggaModule.default;
+          console.log('✅ QuaggaJS library loaded successfully');
+          setDebugInfo(prev => [...prev.slice(0, 2), 'QuaggaJS loaded successfully']);
         }
       } catch (error) {
-        console.error('❌ Failed to load html5-qrcode:', error);
+        console.error('❌ Failed to load QuaggaJS:', error);
         const errorMsg = error instanceof Error ? error.message : 'Unknown library loading error';
-        setErrorMessage(`Failed to load camera library: ${errorMsg}`);
+        setErrorMessage(`Failed to load barcode library: ${errorMsg}`);
+        setDebugInfo(prev => [...prev.slice(0, 2), `Load error: ${errorMsg}`]);
       }
     };
 
-    loadScanner();
+    loadQuagga();
   }, []);
 
   // Enhanced feedback function with multiple methods
@@ -118,216 +129,199 @@ const ScanPackageModal = ({ isOpen, onClose, onScanComplete }: ScanPackageModalP
       console.log('Audio failed:', audioError);
     }
     
-    // Method 3: Visual feedback
-    try {
-      const flashOverlay = document.createElement('div');
-      flashOverlay.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100vw;
-        height: 100vh;
-        background: rgba(34, 197, 94, 0.3);
-        z-index: 9999;
-        pointer-events: none;
-        animation: flashGreen 0.4s ease-out;
-      `;
-      
-      const style = document.createElement('style');
-      style.textContent = `
-        @keyframes flashGreen {
-          0% { opacity: 0; }
-          50% { opacity: 1; }
-          100% { opacity: 0; }
-        }
-      `;
-      document.head.appendChild(style);
-      document.body.appendChild(flashOverlay);
-      
-      setTimeout(() => {
-        if (document.body.contains(flashOverlay)) {
-          document.body.removeChild(flashOverlay);
-        }
-        if (document.head.contains(style)) {
-          document.head.removeChild(style);
-        }
-      }, 400);
-      
-      feedbackWorked = true;
-      console.log('✅ Visual feedback shown');
-    } catch (visualError) {
-      console.log('Visual feedback failed:', visualError);
+    // Fallback alert
+    if (!feedbackWorked) {
+      console.log('⚠️ No feedback methods worked, using visual only');
     }
   };
 
-  // Handle ESC key to close modal
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-
-    if (isOpen) {
-      document.addEventListener('keydown', handleEscape);
-    }
-
-  return () => {
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, [isOpen, onClose]);
-
-  // Cleanup when modal closes
-  useEffect(() => {
-    if (!isOpen) {
-      stopScanning();
-    }
-  }, [isOpen]);
-
-
-  const requestCameraPermission = async () => {
+  // Request camera permission explicitly
+  const requestCameraPermission = async (): Promise<boolean> => {
     try {
-      console.log("🎥 Requesting camera permission...");
+      console.log('🎥 Requesting camera permission...');
       const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: "environment" } 
+        video: { facingMode: 'environment' } 
       });
-      console.log("✅ Camera permission granted");
-      // Stop the test stream
+      
+      // Stop the stream immediately, we just wanted to check permission
       stream.getTracks().forEach(track => track.stop());
+      
+      console.log('✅ Camera permission granted');
       return true;
     } catch (error: any) {
-      console.error("❌ Camera permission denied:", error);
-      const errorName = error?.name || "";
-      const errorMessage = error?.message || "";
+      console.error('❌ Camera permission denied:', error);
       
-      let userFriendlyMessage = "Camera access failed: ";
-      
-      if (errorName === "NotAllowedError" || errorMessage.includes("Permission denied")) {
-        userFriendlyMessage += "Permission denied. Please allow camera access and try again.";
-        setCameraStatus("permission-denied");
-      } else if (errorName === "NotFoundError") {
-        userFriendlyMessage += "No camera found on this device.";
+      if (error.name === 'NotAllowedError') {
+        setErrorMessage('Camera permission denied. Please allow camera access and try again.');
+      } else if (error.name === 'NotFoundError') {
+        setErrorMessage('No camera found on this device. Please use manual entry.');
       } else {
-        userFriendlyMessage += `${errorMessage || "Unknown error occurred"}`;
+        setErrorMessage(`Camera error: ${error.message || 'Unknown error'}`);
       }
       
-      setErrorMessage(userFriendlyMessage);
-      setCameraStatus("error");
+      setCameraStatus('permission-denied');
       return false;
     }
   };
+
   const startScanning = async () => {
-    if (!Html5QrcodeLib) {
-      setErrorMessage('Scanner library not loaded yet. Please try again.');
+    if (!Quagga) {
+      setErrorMessage('QuaggaJS library not loaded yet. Please try again.');
       return;
     }
 
-
-    // First request camera permission explicitly
+    // Request camera permission first
     console.log("🎥 Requesting camera permission before starting scanner...");
     const hasPermission = await requestCameraPermission();
     if (!hasPermission) {
       setIsScanning(false);
       return;
     }
+
+    // Wait for DOM element to be ready
+    if (!scannerElementRef.current) {
+      console.log('Scanner container not ready, waiting...');
+      // Try again after a short delay
+      setTimeout(() => {
+        if (scannerElementRef.current) {
+          startScanningWithContainer();
+        } else {
+          setErrorMessage('Scanner container not ready. Please try manual entry.');
+          setCameraStatus('error');
+        }
+      }, 100);
+      return;
+    }
+
+    startScanningWithContainer();
+  };
+
+  const startScanningWithContainer = () => {
     try {
       setIsScanning(true);
       setCameraStatus('active');
       setErrorMessage('');
-      
-      // Create scanner instance
-      scannerRef.current = new Html5QrcodeLib(elementId);
-      
-      // Enhanced configuration for better mobile support
+      setDebugInfo(['🎯 Starting QuaggaJS...', 'Initializing camera', 'Preparing barcode detection']);
+
+      console.log('🎯 Starting QuaggaJS with container:', scannerElementRef.current);
+
+      // QuaggaJS configuration optimized for shipping labels and product barcodes
       const config = {
-        fps: 10,
-        qrbox: { width: 250, height: 250 },
-        aspectRatio: 1.777778, // 16:9
-        disableFlip: false,
-        videoConstraints: {
-          facingMode: "environment", // Back camera
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
+        inputStream: {
+          name: "Live",
+          type: "LiveStream",
+          target: scannerElementRef.current,
+          constraints: {
+            width: 640,
+            height: 480,
+            facingMode: "environment" // Use back camera on mobile
+          }
+        },
+        decoder: {
+          readers: [
+            "code_128_reader",    // Common for shipping labels
+            "ean_reader",         // Product barcodes
+            "ean_8_reader",       // Product barcodes
+            "code_39_reader",     // Industrial/shipping
+            "code_39_vin_reader", // Vehicle identification
+            "codabar_reader",     // Medical/library
+            "upc_reader",         // Product barcodes
+            "upc_e_reader"        // Compact UPC
+          ]
+        },
+        locate: true,
+        locator: {
+          patchSize: "medium",
+          halfSample: true
+        },
+        numOfWorkers: 2,
+        frequency: 10,
+        debug: {
+          showCanvas: false,
+          showPatches: false,
+          showFoundPatches: false,
+          showSkeleton: false,
+          showLabels: false,
+          showPatchLabels: false,
+          showRemainingPatchLabels: false,
+          boxFromPatches: {
+            showTransformed: false,
+            showTransformedBox: false,
+            showBB: false
+          }
         }
       };
 
-      const onScanSuccess = (decodedText: string, decodedResult: any) => {
-        console.log('✅ Barcode scanned successfully:', decodedText);
-        
-        // Trigger feedback
-        triggerHapticFeedback();
-        
-        // Stop scanning
-        stopScanning();
-        
-        // Handle the scanned result
-        handleScannedCode(decodedText);
-      };
+              // Initialize Quagga
+        Quagga.init(config, (err: any) => {
+          if (err) {
+            console.error('❌ QuaggaJS initialization failed:', err);
+            setErrorMessage(`Scanner initialization failed. Please try manual entry.`);
+            setCameraStatus('error');
+            setIsScanning(false);
+            setDebugInfo(['❌ Scanner init failed', 'Please try manual entry', 'Camera may be busy']);
+            return;
+          }
 
-      const onScanFailure = (error: string) => {
-        // Ignore frequent scanning errors to avoid spam
-        if (error && typeof error === 'string' && !error.includes('NotFoundException')) {
-          console.log('Scan attempt:', error);
-        }
-      };
+        console.log('✅ QuaggaJS initialized successfully');
+        isQuaggaInitialized.current = true;
+        
+        // Start scanning
+        Quagga.start();
+        setCameraStatus('active');
+        setDebugInfo(['🎯 Scanner active!', 'Point camera at barcode', 'Hold steady for best results']);
 
-      // Start scanning with enhanced error handling
-      await scannerRef.current.start(
-        { facingMode: "environment" },
-        config,
-        onScanSuccess,
-        onScanFailure
-      );
+        // Set up detection handler
+        Quagga.onDetected((result: QuaggaResult) => {
+          const code = result.codeResult.code;
+          const format = result.codeResult.format;
+          
+          console.log('✅ Barcode detected:', { code, format });
+          
+          // Trigger feedback
+          triggerHapticFeedback();
+          
+          // Stop scanning
+          stopScanning();
+          
+          // Handle the scanned result
+          handleScannedCode(code);
+          
+          setDebugInfo([
+            `✅ Detected: ${format}`,
+            `Code: ${code}`,
+            'Processing result...'
+          ]);
+        });
+      });
 
-      setCameraStatus('active');
-      console.log('✅ Camera started successfully');
+      console.log('✅ QuaggaJS setup completed');
       
-    } catch (error: any) {
-      console.error('❌ Camera start failed:', error);
-      
-      let userFriendlyMessage = 'Camera access failed: ';
-      
-      const errorName = error?.name || '';
-      const errorMessage = error?.message || '';
-      
-      if (errorName === 'NotAllowedError' || errorMessage.includes('Permission denied')) {
-        userFriendlyMessage += 'Permission denied. Please allow camera access and try again.';
-        setCameraStatus('permission-denied');
-      } else if (errorName === 'NotFoundError') {
-        userFriendlyMessage += 'No camera found on this device.';
-      } else if (errorName === 'NotSupportedError') {
-        userFriendlyMessage += 'Camera not supported on this device.\n\n';
-        userFriendlyMessage += '1. Make sure you\'re using Safari (iOS) or Chrome\n';
-        userFriendlyMessage += '2. Update your browser to latest version\n';
-        userFriendlyMessage += '3. Check if camera works in other apps\n';
-        userFriendlyMessage += '4. Try using Manual mode instead';
-      } else {
-        userFriendlyMessage += `${errorMessage || 'Unknown error occurred'}`;
+          } catch (error: any) {
+        console.error('❌ QuaggaJS setup error:', error);
+        setErrorMessage(`Scanner setup failed. Please try manual entry.`);
+        setCameraStatus('error');
+        setIsScanning(false);
+        setDebugInfo(['❌ Setup failed', 'Please try manual entry', 'Camera may be busy']);
       }
-      
-      setErrorMessage(userFriendlyMessage);
-      setCameraStatus('error');
-      setIsScanning(false);
-    }
   };
 
-  const stopScanning = async () => {
+  const stopScanning = () => {
+    console.log('🛑 Stopping QuaggaJS scanner...');
+    
     try {
-      if (scannerRef.current && typeof scannerRef.current.isScanning === 'boolean' && scannerRef.current.isScanning) {
-        await scannerRef.current.stop();
-        await scannerRef.current.clear();
+      if (Quagga && isQuaggaInitialized.current) {
+        Quagga.stop();
+        isQuaggaInitialized.current = false;
+        console.log('✅ QuaggaJS stopped');
       }
-      scannerRef.current = null;
-      setIsScanning(false);
-      setCameraStatus('ready');
-      console.log('✅ Camera stopped successfully');
     } catch (error) {
-      console.error('❌ Error stopping camera:', error);
-      // Always reset state even if stopping fails
-      scannerRef.current = null;
-      setIsScanning(false);
-      setCameraStatus('ready');
+      console.error('Error stopping Quagga:', error);
     }
+    
+    setIsScanning(false);
+    setCameraStatus('ready');
+    setDebugInfo(['📱 Scanner stopped', 'Ready to scan again', 'Click Start to begin']);
   };
 
   const handleScannedCode = (scannedCode: string) => {
@@ -387,6 +381,20 @@ const ScanPackageModal = ({ isOpen, onClose, onScanComplete }: ScanPackageModalP
       handleManualSubmit();
     }
   };
+
+  // Cleanup when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      stopScanning();
+    }
+  }, [isOpen]);
+
+  // Ensure DOM element is ready for scanning
+  useEffect(() => {
+    if (isOpen && scannerElementRef.current) {
+      console.log('✅ Scanner container is ready:', scannerElementRef.current);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -701,6 +709,21 @@ const ScanPackageModal = ({ isOpen, onClose, onScanComplete }: ScanPackageModalP
 
               {/* Camera Scanner Container */}
               <div className="bg-gray-900 rounded-2xl overflow-hidden relative border border-gray-200">
+                {/* QuaggaJS Scanner Container - Always render but hide when not scanning */}
+                <div 
+                  ref={scannerElementRef}
+                  className={`scanner-container absolute inset-0 w-full h-full z-10 ${isScanning ? 'block' : 'hidden'}`}
+                  style={{ 
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    minHeight: '300px',
+                    zIndex: 10
+                  }}
+                />
+
                 {!isScanning ? (
                   <div className="h-64 flex items-center justify-center text-center text-gray-400">
                     <div>
@@ -712,16 +735,9 @@ const ScanPackageModal = ({ isOpen, onClose, onScanComplete }: ScanPackageModalP
                     </div>
                   </div>
                 ) : (
-                  <div className="relative">
-                    {/* html5-qrcode scanner container */}
-                    <div 
-                      id={elementId} 
-                      className="w-full"
-                      style={{ minHeight: '300px' }}
-                    />
-                    
+                  <div className="relative h-64">
                     {/* Success overlay for visual feedback */}
-                    <div className="absolute top-4 left-4 right-4">
+                    <div className="absolute top-4 left-4 right-4 z-20">
                       <div className="bg-black/50 text-white px-3 py-2 rounded-lg text-sm">
                         📱 Point camera at barcode or QR code
                       </div>
@@ -741,7 +757,7 @@ const ScanPackageModal = ({ isOpen, onClose, onScanComplete }: ScanPackageModalP
                       startScanning();
                     }
                   }}
-                  disabled={!Html5QrcodeLib}
+                  disabled={!Quagga}
                   className={`w-full py-4 rounded-2xl font-semibold text-white transition-all duration-200 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed ${
                     isScanning 
                       ? 'bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 shadow-red-500/25' 
@@ -751,7 +767,7 @@ const ScanPackageModal = ({ isOpen, onClose, onScanComplete }: ScanPackageModalP
                   <div className="flex items-center justify-center space-x-3">
                     <Camera className="w-5 h-5" />
                     <span>
-                      {!Html5QrcodeLib ? 'Loading Scanner...' :
+                      {!Quagga ? 'Loading Scanner...' :
                        isScanning ? 'Stop Scanning' : 'Start Scanning'}
                     </span>
                   </div>

@@ -323,17 +323,21 @@ const LoginPage = () => {
         <div className="text-center mt-6">
           <p className={`text-sm ${currentTheme.colors.textSecondary}`}>
             By continuing, you agree to our{' '}
-            <a href="#" className={`${
+            <button 
+              onClick={() => alert('Terms of Service coming soon!')}
+              className={`${
               currentTheme.name === 'Neon' ? 'text-cyan-400 hover:text-cyan-300' : 'text-purple-600 hover:text-purple-500'
-            } underline`}>
+            } underline cursor-pointer`}>
               Terms of Service
-            </a>{' '}
+            </button>{' '}
             and{' '}
-            <a href="#" className={`${
+            <button 
+              onClick={() => alert('Privacy Policy coming soon!')}
+              className={`${
               currentTheme.name === 'Neon' ? 'text-cyan-400 hover:text-cyan-300' : 'text-purple-600 hover:text-purple-500'
-            } underline`}>
+            } underline cursor-pointer`}>
               Privacy Policy
-            </a>
+            </button>
           </p>
         </div>
       </div>

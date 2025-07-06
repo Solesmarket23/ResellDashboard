@@ -1,65 +1,92 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-export async function GET() {
-  // Get credentials from environment variables
-  const clientId = process.env.STOCKX_CLIENT_ID;
-  const clientSecret = process.env.STOCKX_CLIENT_SECRET;
+export async function GET(request: NextRequest) {
+  const accessToken = request.cookies.get('stockx_access_token')?.value;
   const apiKey = process.env.STOCKX_API_KEY;
-  const redirectUri = process.env.STOCKX_REDIRECT_URI;
 
-  // Check if all credentials are present
-  const credentialsStatus = {
-    clientId: clientId ? '✅ Present' : '❌ Missing',
-    clientSecret: clientSecret ? '✅ Present' : '❌ Missing',
-    apiKey: apiKey ? '✅ Present' : '❌ Missing',
-    redirectUri: redirectUri ? '✅ Present' : '❌ Missing'
-  };
-
-  const missingCredentials = !clientId || !clientSecret || !apiKey || !redirectUri;
-
-  if (missingCredentials) {
+  if (!accessToken || !apiKey) {
     return NextResponse.json({
-      status: 'error',
-      message: 'Missing StockX API credentials',
-      credentials: credentialsStatus,
-      oauthFlow: true,
-      instructions: [
-        '1. Add your StockX credentials to .env.local:',
-        '   STOCKX_CLIENT_ID=your_client_id',
-        '   STOCKX_CLIENT_SECRET=your_client_secret',
-        '   STOCKX_API_KEY=your_api_key',
-        '   STOCKX_REDIRECT_URI=http://localhost:3002/api/stockx/callback',
-        '2. Restart your development server',
-        '3. Make sure your redirect URI is registered in your StockX application',
-        '4. Click "Login with StockX" to start the OAuth flow'
-      ]
-    }, { status: 500 });
+      error: 'Missing token or API key',
+      hasAccessToken: !!accessToken,
+      hasApiKey: !!apiKey
+    }, { status: 401 });
   }
 
-  // For OAuth flow, we don't test the API directly here
-  // Instead, we provide guidance on the OAuth process
-  return NextResponse.json({
-    status: 'info',
-    message: 'StockX OAuth2 Flow Ready',
-    credentials: credentialsStatus,
-    oauthFlow: true,
-    flowSteps: [
-      '1. User clicks "Login with StockX"',
-      '2. Redirects to StockX authorization page',
-      '3. User logs in with StockX credentials',
-      '4. StockX redirects back with authorization code',
-      '5. System exchanges code for access token',
-      '6. Access token is used for API calls'
-    ],
-    endpoints: {
-      authorization: 'https://accounts.stockx.com/authorize',
-      token: 'https://accounts.stockx.com/oauth/token',
-      api: 'https://api.stockx.com'
+  // Test different API endpoints to see what permissions we have
+  const testEndpoints = [
+    {
+      name: 'User Profile',
+      url: 'https://api.stockx.com/v2/user/me',
+      description: 'Basic user info - should work with basic OAuth'
     },
-    nextSteps: [
-      'Click "Login with StockX" to start the OAuth flow',
-      'After successful authentication, you can test the search functionality',
-      'The access token will be stored securely in httpOnly cookies'
-    ]
+    {
+      name: 'Search',
+      url: 'https://api.stockx.com/v2/catalog/search?query=nike&limit=1',
+      description: 'Product search - requires catalog access'
+    },
+    {
+      name: 'Auth Check',
+      url: 'https://api.stockx.com/v2/auth/check',
+      description: 'Check authentication status'
+    }
+  ];
+
+  const results = [];
+
+  for (const endpoint of testEndpoints) {
+    try {
+      const response = await fetch(endpoint.url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'X-API-Key': apiKey,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'FlipFlow/1.0'
+        }
+      });
+
+      const responseText = await response.text();
+      let responseData;
+      
+      try {
+        responseData = JSON.parse(responseText);
+      } catch {
+        responseData = responseText;
+      }
+
+      results.push({
+        endpoint: endpoint.name,
+        url: endpoint.url,
+        description: endpoint.description,
+        status: response.status,
+        success: response.ok,
+        headers: Object.fromEntries(response.headers.entries()),
+        data: responseData
+      });
+
+    } catch (error) {
+      results.push({
+        endpoint: endpoint.name,
+        url: endpoint.url,
+        description: endpoint.description,
+        status: 'ERROR',
+        success: false,
+        error: error.message
+      });
+    }
+  }
+
+  return NextResponse.json({
+    message: 'StockX API Access Test',
+    accessTokenPresent: true,
+    apiKeyPresent: true,
+    results: results,
+    summary: {
+      workingEndpoints: results.filter(r => r.success).length,
+      totalEndpoints: results.length,
+      hasBasicAccess: results.some(r => r.endpoint === 'User Profile' && r.success),
+      hasCatalogAccess: results.some(r => r.endpoint === 'Search' && r.success)
+    }
   });
 } 

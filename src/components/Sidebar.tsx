@@ -27,16 +27,20 @@ import {
   Monitor,
   LineChart,
   Bell,
-  Activity
+  Activity,
+  X,
+  DollarSign
 } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 
 interface SidebarProps {
   activeItem: string;
   onItemClick: (item: string) => void;
+  isOpen: boolean;
+  onClose: () => void;
 }
 
-const Sidebar = ({ activeItem, onItemClick }: SidebarProps) => {
+const Sidebar = ({ activeItem, onItemClick, isOpen, onClose }: SidebarProps) => {
   const { currentTheme, setTheme, themes } = useTheme();
   const router = useRouter();
 
@@ -73,6 +77,8 @@ const Sidebar = ({ activeItem, onItemClick }: SidebarProps) => {
         { id: 'stockx-market-research', label: 'Market Research', icon: Search },
         { id: 'stockx-inventory', label: 'Inventory Manager', icon: Archive },
         { id: 'stockx-arbitrage', label: 'Arbitrage Finder', icon: ArrowLeftRight },
+        { id: 'stockx-repricing', label: 'Automated Repricing', icon: Activity },
+        { id: 'stockx-sales', label: 'My Sales', icon: DollarSign },
         { id: 'stockx-releases', label: 'Release Calendar', icon: Calendar },
         { id: 'stockx-price-monitor', label: 'Price Monitor', icon: Monitor },
         { id: 'stockx-profit-calc', label: 'Enhanced Profit Calc', icon: Calculator },
@@ -95,137 +101,172 @@ const Sidebar = ({ activeItem, onItemClick }: SidebarProps) => {
     router.push('/landing');
   };
 
+  const handleItemClick = (item: string) => {
+    onItemClick(item);
+    // Close sidebar on mobile after item click
+    if (window.innerWidth < 1024) {
+      onClose();
+    }
+  };
+
   return (
-    <div className={`w-64 xl:w-72 ${currentTheme.colors.background} h-screen flex flex-col border-r border-gray-700/20 flex-shrink-0`}>
-      {/* Header */}
-      <div className="p-6 border-b border-gray-700/20">
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center">
-            <Image
-              src="/flip-flow-logo.svg"
-              alt="Flip Flow Logo"
-              width={32}
-              height={32}
-              className="w-8 h-8"
-            />
-          </div>
-          <div>
-            <h1 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>Flip Flow</h1>
-            <p className={`text-sm ${currentTheme.colors.textSecondary}`}>Revolutionary Analytics Suite</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Navigation */}
-      <div className="flex-1 overflow-y-auto">
-        {navigationItems.map((section) => (
-          <div key={section.section} className="p-4">
-            <h3 className={`text-xs font-semibold ${currentTheme.colors.textSecondary} uppercase tracking-wider mb-3`}>
-              {section.section}
-            </h3>
-            <nav className="space-y-1">
-              {section.items.map((item) => {
-                const Icon = item.icon;
-                const isActive = activeItem === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => onItemClick(item.id)}
-                    className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 whitespace-nowrap ${
-                      isActive
-                        ? currentTheme.name === 'Neon'
-                          ? 'bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 text-cyan-400 border border-cyan-500/30'
-                          : `${currentTheme.colors.primary} text-white`
-                        : `${currentTheme.colors.textSecondary} hover:bg-white/5 hover:text-white`
-                    }`}
-                  >
-                    <Icon className="w-5 h-5 mr-3 flex-shrink-0" />
-                    {item.label}
-                    {isActive && (
-                      <div className="ml-auto w-2 h-2 bg-current rounded-full"></div>
-                    )}
-                  </button>
-                );
-              })}
-            </nav>
-          </div>
-        ))}
-      </div>
-
-      {/* Theme Selector */}
-      <div className="p-4 border-t border-gray-700/20">
-        <div className="flex items-center justify-between mb-4">
-          <span className={`text-xs font-semibold ${currentTheme.colors.textSecondary} uppercase tracking-wider`}>
-            Theme
-          </span>
-          <div className="flex items-center space-x-1">
-            <Settings className={`w-4 h-4 ${currentTheme.colors.textSecondary}`} />
-          </div>
-        </div>
-        <div className="flex items-center space-x-1 p-1 rounded-lg bg-black/20 backdrop-blur-sm">
-          {Object.values(themes).map((theme, index) => (
+    <>
+      {/* Mobile Overlay */}
+      {isOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          onClick={onClose}
+        />
+      )}
+      
+      {/* Sidebar */}
+      <div className={`
+        fixed lg:static inset-y-0 left-0 z-50 w-64 xl:w-72 
+        ${currentTheme.colors.background} 
+        h-screen flex flex-col border-r border-gray-700/20 
+        transform transition-transform duration-300 ease-in-out
+        ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        lg:flex-shrink-0
+      `}>
+        {/* Header */}
+        <div className="p-6 border-b border-gray-700/20">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center">
+                <Image
+                  src="/flip-flow-logo.svg"
+                  alt="Flip Flow Logo"
+                  width={32}
+                  height={32}
+                  className="w-8 h-8"
+                />
+              </div>
+              <div>
+                <h1 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>Flip Flow</h1>
+                <p className={`text-sm ${currentTheme.colors.textSecondary}`}>Revolutionary Analytics Suite</p>
+              </div>
+            </div>
+            
+            {/* Mobile Close Button */}
             <button
-              key={theme.name}
-              onClick={() => setTheme(theme.name)}
-              className={`flex-1 py-2 px-3 rounded-md text-sm font-bold transition-all duration-200 ${
-                currentTheme.name === theme.name 
-                  ? 'bg-gradient-to-r from-cyan-500 to-purple-500 text-white shadow-lg' 
-                  : 'text-gray-400 hover:text-white hover:bg-white/10'
-              }`}
+              onClick={onClose}
+              className={`lg:hidden p-2 rounded-md hover:bg-white/10 ${currentTheme.colors.textSecondary} hover:text-white transition-colors`}
             >
-              {index + 1}
+              <X className="w-5 h-5" />
             </button>
+          </div>
+        </div>
+
+        {/* Navigation */}
+        <div className="flex-1 overflow-y-auto">
+          {navigationItems.map((section) => (
+            <div key={section.section} className="p-4">
+              <h3 className={`text-xs font-semibold ${currentTheme.colors.textSecondary} uppercase tracking-wider mb-3`}>
+                {section.section}
+              </h3>
+              <nav className="space-y-1">
+                {section.items.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeItem === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => handleItemClick(item.id)}
+                      className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 whitespace-nowrap ${
+                        isActive
+                          ? currentTheme.name === 'Neon'
+                            ? 'bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+                            : `${currentTheme.colors.primary} text-white`
+                          : `${currentTheme.colors.textSecondary} hover:bg-white/5 hover:text-white`
+                      }`}
+                    >
+                      <Icon className="w-5 h-5 mr-3 flex-shrink-0" />
+                      {item.label}
+                      {isActive && (
+                        <div className="ml-auto w-2 h-2 bg-current rounded-full"></div>
+                      )}
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
           ))}
         </div>
-      </div>
 
-      {/* User Profile Section */}
-      <div className="p-4 border-t border-gray-700/20">
-        {/* User Info */}
-        <div className="flex items-center space-x-3 mb-4">
-          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-            currentTheme.name === 'Neon' 
-              ? 'bg-gradient-to-r from-emerald-500 to-cyan-500' 
-              : 'bg-gradient-to-r from-purple-500 to-pink-500'
-          }`}>
-            <User className="w-5 h-5 text-white" />
+        {/* Theme Selector */}
+        <div className="p-4 border-t border-gray-700/20">
+          <div className="flex items-center justify-between mb-4">
+            <span className={`text-xs font-semibold ${currentTheme.colors.textSecondary} uppercase tracking-wider`}>
+              Theme
+            </span>
+            <div className="flex items-center space-x-1">
+              <Settings className={`w-4 h-4 ${currentTheme.colors.textSecondary}`} />
+            </div>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className={`text-sm font-medium ${currentTheme.colors.textPrimary} truncate`}>
-              Mike Milburn
-            </p>
-            <p className={`text-xs ${currentTheme.colors.textSecondary} truncate`}>
-              Pro Member
-            </p>
+          <div className="flex items-center space-x-1 p-1 rounded-lg bg-black/20 backdrop-blur-sm">
+            {Object.values(themes).map((theme, index) => (
+              <button
+                key={theme.name}
+                onClick={() => setTheme(theme.name)}
+                className={`flex-1 py-2 px-3 rounded-md text-sm font-bold transition-all duration-200 ${
+                  currentTheme.name === theme.name 
+                    ? 'bg-gradient-to-r from-cyan-500 to-purple-500 text-white shadow-lg' 
+                    : 'text-gray-400 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                {index + 1}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="space-y-2">
-          <button
-            onClick={() => onItemClick('profile')}
-            className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
-              activeItem === 'profile'
-                ? currentTheme.name === 'Neon'
-                  ? 'bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 text-cyan-400 border border-cyan-500/30'
-                  : `${currentTheme.colors.primary} text-white`
-                : `${currentTheme.colors.textSecondary} hover:bg-white/5 hover:text-white`
-            }`}
-          >
-            <User className="w-4 h-4 mr-3" />
-            Profile Settings
-          </button>
-          
-          <button
-            onClick={handleLogout}
-            className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${currentTheme.colors.textSecondary} hover:bg-red-500/10 hover:text-red-400 group`}
-          >
-            <LogOut className="w-4 h-4 mr-3 group-hover:text-red-400" />
-            <span className="group-hover:text-red-400">Logout</span>
-          </button>
+        {/* User Profile Section */}
+        <div className="p-4 border-t border-gray-700/20">
+          {/* User Info */}
+          <div className="flex items-center space-x-3 mb-4">
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+              currentTheme.name === 'Neon' 
+                ? 'bg-gradient-to-r from-emerald-500 to-cyan-500' 
+                : 'bg-gradient-to-r from-purple-500 to-pink-500'
+            }`}>
+              <User className="w-5 h-5 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className={`text-sm font-medium ${currentTheme.colors.textPrimary} truncate`}>
+                Mike Milburn
+              </p>
+              <p className={`text-xs ${currentTheme.colors.textSecondary} truncate`}>
+                Pro Member
+              </p>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="space-y-2">
+            <button
+              onClick={() => handleItemClick('profile')}
+              className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
+                activeItem === 'profile'
+                  ? currentTheme.name === 'Neon'
+                    ? 'bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+                    : `${currentTheme.colors.primary} text-white`
+                  : `${currentTheme.colors.textSecondary} hover:bg-white/5 hover:text-white`
+              }`}
+            >
+              <User className="w-4 h-4 mr-2" />
+              Profile
+            </button>
+            <button
+              onClick={handleLogout}
+              className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${currentTheme.colors.textSecondary} hover:bg-red-500/10 hover:text-red-400`}
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Logout
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 };
 

@@ -75,7 +75,7 @@ interface ThemeProviderProps {
 }
 
 export const ThemeProvider = ({ children }: ThemeProviderProps) => {
-  const [currentTheme, setCurrentTheme] = useState<Theme>(themes.Light);
+  const [currentTheme, setCurrentTheme] = useState<Theme>(themes.Neon);
 
   const setTheme = (themeName: string) => {
     if (themes[themeName]) {

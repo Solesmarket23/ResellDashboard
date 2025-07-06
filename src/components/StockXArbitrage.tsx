@@ -53,8 +53,17 @@ interface ArbitrageOpportunity {
   variantId: string;
   title: string;
   size: string;
-  highestBid: number;
-  lowestAsk: number;
+  highestBid: number; // Adjusted bid (includes fees/taxes)
+  lowestAsk: number; // Adjusted ask
+  rawBid?: number; // Raw bid amount from API
+  rawAsk?: number; // Raw ask amount from API
+  sellFasterAmount?: number | null; // Price to list at inclusive of duties/taxes
+  earnMoreAmount?: number | null; // Price to list at in your region (VAT/taxes)
+  flexLowestAskAmount?: number | null; // Flex program pricing
+  // Estimated buyer fees (since API doesn't provide exact fees)
+  estimatedProcessingFee?: number;
+  estimatedShippingFee?: number;
+  estimatedTotalBuyerCost?: number;
   spread: number;
   spreadPercent: number;
   imageUrl: string;
@@ -233,6 +242,15 @@ const StockXArbitrage: React.FC = () => {
                 size: data.data.size,
                 highestBid: data.data.highestBid,
                 lowestAsk: data.data.lowestAsk,
+                rawBid: data.data.rawBid,
+                rawAsk: data.data.rawAsk,
+                sellFasterAmount: data.data.sellFasterAmount,
+                earnMoreAmount: data.data.earnMoreAmount,
+                flexLowestAskAmount: data.data.flexLowestAskAmount,
+                // Include estimated buyer fees
+                estimatedProcessingFee: data.data.estimatedProcessingFee,
+                estimatedShippingFee: data.data.estimatedShippingFee,
+                estimatedTotalBuyerCost: data.data.estimatedTotalBuyerCost,
                 spread: data.data.spread,
                 spreadPercent: data.data.spreadPercent,
                 imageUrl: data.data.imageUrl,
@@ -324,7 +342,7 @@ const StockXArbitrage: React.FC = () => {
               <div>
                 <p className="text-blue-300 font-medium">How it works:</p>
                 <p className="text-blue-200 text-sm mt-1">
-                  This tool analyzes each size variant individually to find specific arbitrage opportunities. Each result shows a specific product and size where you could potentially place a bid at the highest bid price and then sell at the lowest ask price for a profit.
+                  This tool analyzes each size variant individually to find specific arbitrage opportunities. Search by trending brand names (e.g., "Fear of God Essentials") or paste StockX category URLs with "sort=most-active" (e.g., "https://stockx.com/category/apparel?sort=most-active") to discover trending products similar to what you see on the actual StockX website. Each result shows a specific product and size where you could potentially place a bid at the highest bid price and then sell at the lowest ask price for a profit.
                 </p>
               </div>
             </div>
@@ -337,7 +355,7 @@ const StockXArbitrage: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
-                Search Products
+                Search Products or StockX URL
               </label>
               <input
                 type="text"
@@ -345,8 +363,34 @@ const StockXArbitrage: React.FC = () => {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyPress={handleKeyPress}
                 className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                placeholder="e.g., Jordan 1, Denim Tears, Nike"
+                placeholder="e.g., Jordan 1, Nike, or https://stockx.com/category/apparel"
               />
+              <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-400">
+                <span>💡 Try:</span>
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('https://stockx.com/category/apparel?sort=most-active')}
+                  className="text-cyan-400 hover:text-cyan-300 underline"
+                >
+                  Trending Apparel
+                </button>
+                <span>•</span>
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('https://stockx.com/category/sneakers?sort=most-active')}
+                  className="text-cyan-400 hover:text-cyan-300 underline"
+                >
+                  Trending Sneakers
+                </button>
+                <span>•</span>
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('Fear of God Essentials')}
+                  className="text-cyan-400 hover:text-cyan-300 underline"
+                >
+                  Fear of God
+                </button>
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -472,7 +516,7 @@ const StockXArbitrage: React.FC = () => {
               <div className="text-6xl mb-4">🔍</div>
               <h3 className="text-xl font-semibold text-gray-300 mb-2">Ready to Find Arbitrage Opportunities</h3>
               <p className="text-gray-400 max-w-md mx-auto">
-                Enter a product name like "Nike", "Jordan 1", or "Denim Tears" and set your minimum spread percentage to discover profitable opportunities.
+                Search by popular brands like "Fear of God Essentials" or "Supreme", or paste StockX trending URLs like "https://stockx.com/category/apparel?sort=most-active" to discover what's currently hot on StockX. Set your minimum profit percentage to find profitable opportunities.
               </p>
             </div>
           </div>
@@ -511,21 +555,39 @@ const StockXArbitrage: React.FC = () => {
                   </div>
                 </div>
                 <div className="text-left sm:text-right">
-                  <p className="text-xl sm:text-2xl font-bold text-green-400">${opportunity.spread}</p>
-                  <p className="text-gray-400 text-sm">({opportunity.spreadPercent}% margin)</p>
+                  <p className="text-xl sm:text-2xl font-bold text-green-400">
+                    +${opportunity.spread.toFixed(2)}
+                  </p>
+                  <p className="text-gray-400 text-sm">
+                    (+{opportunity.spreadPercent}% profit)
+                  </p>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-4">
                 <div className="text-center p-3 bg-gray-700 rounded-lg">
                   <p className="text-xs sm:text-sm text-gray-400 mb-1">Highest Bid</p>
-                  <p className="text-base sm:text-lg font-semibold text-green-400">${opportunity.highestBid}</p>
-                  <p className="text-xs text-gray-500">Potential buy price</p>
+                  <p className="text-base sm:text-lg font-semibold text-green-400">${opportunity.rawBid || opportunity.highestBid}</p>
+                  {opportunity.estimatedTotalBuyerCost && (
+                    <div className="mt-2 text-xs text-gray-400">
+                      <p className="text-orange-400 font-semibold">Est. Total Cost: ${opportunity.estimatedTotalBuyerCost}</p>
+                      <p className="text-gray-500">
+                        Item: ${opportunity.rawBid || opportunity.highestBid} + 
+                        Fees: ${(opportunity.estimatedProcessingFee || 0) + (opportunity.estimatedShippingFee || 0)}
+                      </p>
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-500 mt-1">Bid price + estimated fees</p>
                 </div>
                 <div className="text-center p-3 bg-gray-700 rounded-lg">
                   <p className="text-xs sm:text-sm text-gray-400 mb-1">Lowest Ask</p>
                   <p className="text-base sm:text-lg font-semibold text-cyan-400">${opportunity.lowestAsk}</p>
-                  <p className="text-xs text-gray-500">Potential sell price</p>
+                  {opportunity.rawAsk && opportunity.rawAsk !== opportunity.lowestAsk && (
+                    <p className="text-xs text-gray-500">Raw: ${opportunity.rawAsk}</p>
+                  )}
+                  <p className="text-xs text-gray-500">
+                    {opportunity.flexLowestAskAmount ? 'Flex pricing' : 'Potential sell price'}
+                  </p>
                 </div>
               </div>
 
@@ -539,32 +601,109 @@ const StockXArbitrage: React.FC = () => {
                   </span>
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                   <div className="bg-gray-800 rounded-lg p-4">
                     <div className="flex items-center gap-2 mb-2">
                       <TrendingUp className="w-4 h-4 text-green-400" />
-                      <span className="text-sm text-gray-400">Current Spread</span>
+                      <span className="text-sm text-gray-400">Net Profit (After Fees)</span>
                     </div>
-                    <p className="text-2xl font-bold text-green-400">${opportunity.spread}</p>
-                    <p className="text-sm text-gray-500">Potential profit per sale</p>
+                    <p className="text-2xl font-bold text-green-400">
+                      +${opportunity.spread.toFixed(2)}
+                    </p>
+                    <p className="text-sm text-gray-500">Profit per sale</p>
                   </div>
                   
                   <div className="bg-gray-800 rounded-lg p-4">
                     <div className="flex items-center gap-2 mb-2">
                       <DollarSign className="w-4 h-4 text-blue-400" />
-                      <span className="text-sm text-gray-400">Profit Margin</span>
+                      <span className="text-sm text-gray-400">ROI (After Fees)</span>
                     </div>
-                    <p className="text-2xl font-bold text-blue-400">{opportunity.spreadPercent}%</p>
-                    <p className="text-sm text-gray-500">Based on current market</p>
+                    <p className="text-2xl font-bold text-blue-400">
+                      +{opportunity.spreadPercent}%
+                    </p>
+                    <p className="text-sm text-gray-500">Return on total investment</p>
+                  </div>
+                </div>
+                
+                {/* Detailed Pricing Breakdown */}
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <h5 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+                    <DollarSign className="w-4 h-4 text-yellow-400" />
+                    Buyer Cost Breakdown
+                  </h5>
+                  
+                  {/* Buyer Fee Breakdown */}
+                  {opportunity.estimatedTotalBuyerCost && (
+                    <div className="mb-4 p-3 bg-orange-900/20 rounded border border-orange-500/30">
+                      <p className="text-orange-300 text-sm font-semibold mb-2">Estimated Total Purchase Cost</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                        <div className="bg-gray-700/50 rounded p-2">
+                          <p className="text-gray-400">Item Price</p>
+                          <p className="text-white font-semibold">${opportunity.rawBid || opportunity.highestBid}</p>
+                        </div>
+                        <div className="bg-gray-700/50 rounded p-2">
+                          <p className="text-gray-400">Processing Fee (8%)</p>
+                          <p className="text-orange-400 font-semibold">${opportunity.estimatedProcessingFee}</p>
+                        </div>
+                        <div className="bg-gray-700/50 rounded p-2">
+                          <p className="text-gray-400">Shipping Fee ($14.95)</p>
+                          <p className="text-orange-400 font-semibold">${opportunity.estimatedShippingFee}</p>
+                        </div>
+                        <div className="bg-gray-700/50 rounded p-2 border border-orange-500/50">
+                          <p className="text-gray-400">Total Cost</p>
+                          <p className="text-orange-300 font-bold">${opportunity.estimatedTotalBuyerCost}</p>
+                        </div>
+                      </div>
+                      <p className="text-orange-200 text-xs mt-2">
+                        <strong>Note:</strong> Estimated fees: 8% processing + $14.95 shipping. Actual fees may vary.
+                      </p>
+                    </div>
+                  )}
+                  
+                  {/* Seller Pricing Information */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                    {opportunity.rawBid && (
+                      <div className="bg-gray-700/50 rounded p-2">
+                        <p className="text-gray-400 text-xs">Raw Bid</p>
+                        <p className="text-white font-semibold">${opportunity.rawBid}</p>
+                      </div>
+                    )}
+                    {opportunity.sellFasterAmount && (
+                      <div className="bg-gray-700/50 rounded p-2">
+                        <p className="text-gray-400 text-xs">Sell Faster (w/ fees)</p>
+                        <p className="text-green-400 font-semibold">${opportunity.sellFasterAmount}</p>
+                      </div>
+                    )}
+                    {opportunity.earnMoreAmount && (
+                      <div className="bg-gray-700/50 rounded p-2">
+                        <p className="text-gray-400 text-xs">Earn More (w/ VAT)</p>
+                        <p className="text-blue-400 font-semibold">${opportunity.earnMoreAmount}</p>
+                      </div>
+                    )}
+                    {opportunity.flexLowestAskAmount && (
+                      <div className="bg-gray-700/50 rounded p-2">
+                        <p className="text-gray-400 text-xs">Flex Ask</p>
+                        <p className="text-purple-400 font-semibold">${opportunity.flexLowestAskAmount}</p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-3 p-2 bg-yellow-900/20 rounded border border-yellow-500/30">
+                    <p className="text-yellow-400 text-xs">
+                      <strong>Seller Note:</strong> "Sell Faster" includes duties/taxes for US buyers. "Earn More" accounts for VAT/taxes in your region.
+                    </p>
                   </div>
                 </div>
                 
                 <div className="mt-4 p-3 bg-yellow-900/20 rounded-lg border border-yellow-500/30">
                   <div className="flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 text-yellow-400" />
-                    <p className="text-sm text-yellow-400">
-                      <strong>Note:</strong> StockX API doesn't provide historical sales data. Only current market data is available.
-                    </p>
+                    <div className="text-sm text-yellow-400">
+                      <p><strong>Important:</strong> Profit calculations include estimated buyer fees.</p>
+                      <p className="mt-1 text-xs">• Buyer fees: 8% processing + $14.95 shipping = Total Cost</p>
+                      <p className="text-xs">• Profit = Ask Price - Total Cost (including all fees)</p>
+                      <p className="text-xs">• Only showing profitable opportunities meeting your threshold</p>
+                      <p className="text-xs">• StockX API provides market data only, not exact fees</p>
+                    </div>
                   </div>
                 </div>
               </div>
