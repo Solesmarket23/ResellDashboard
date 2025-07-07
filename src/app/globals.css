@@ -409,3 +409,42 @@ canvas, video {
     }
   }
 }
+
+/* Dark Input Autofill Styles - Prevents white backgrounds */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 30px #1e293b inset !important;
+  -webkit-text-fill-color: white !important;
+  box-shadow: 0 0 0 30px #1e293b inset !important;
+  background-color: #1e293b !important;
+  color: white !important;
+}
+
+/* Dark Input Autofill for different themes */
+.theme-neon input:-webkit-autofill,
+.theme-neon input:-webkit-autofill:hover,
+.theme-neon input:-webkit-autofill:focus,
+.theme-neon input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 30px #1e293b inset !important;
+  -webkit-text-fill-color: white !important;
+  box-shadow: 0 0 0 30px #1e293b inset !important;
+  background-color: #1e293b !important;
+}
+
+/* Firefox autofill styles */
+input:-moz-autofill,
+input:-moz-autofill:hover,
+input:-moz-autofill:focus {
+  background-color: #1e293b !important;
+  color: white !important;
+}
+
+/* Generic autofill prevention for all dark inputs */
+input[type="text"]:autofill,
+input[type="email"]:autofill,
+input[type="password"]:autofill {
+  background-color: #1e293b !important;
+  color: white !important;
+}
