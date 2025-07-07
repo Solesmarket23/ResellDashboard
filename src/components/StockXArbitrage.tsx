@@ -65,6 +65,7 @@ interface ArbitrageOpportunity {
   bidAmount?: number;
   askAmount?: number;
   stockxUrl?: string; // Add the stockxUrl field
+  flexAskAmount?: number; // Add flex ask amount
 }
 
 const StockXArbitrage: React.FC = () => {
@@ -84,6 +85,7 @@ const StockXArbitrage: React.FC = () => {
   const [hasMore, setHasMore] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [showFlexAsk, setShowFlexAsk] = useState(false); // Toggle for flex ask display
 
   // Check authentication status on component mount
   useEffect(() => {
@@ -276,7 +278,8 @@ const StockXArbitrage: React.FC = () => {
                 variantId: data.data.variantId || '',
                 bidAmount: data.data.highestBid,
                 askAmount: data.data.lowestAsk,
-                stockxUrl: data.data.stockxUrl || ''
+                stockxUrl: data.data.stockxUrl || '',
+                flexAskAmount: data.data.flexLowestAskAmount
               };
               
               currentOpportunities.push(newOpportunity);
@@ -444,7 +447,7 @@ const StockXArbitrage: React.FC = () => {
           </div>
 
           {/* Secondary Filters Row */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
                 Exclude Brands (optional)
@@ -476,13 +479,41 @@ const StockXArbitrage: React.FC = () => {
                 </button>
               </div>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Display Options
+              </label>
+              <div className="flex items-center justify-between p-3 bg-gray-800 border border-gray-700 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-300">Show Flex Ask Prices</span>
+                  <div className="text-xs text-gray-400">(when available)</div>
+                </div>
+                <button
+                  onClick={() => setShowFlexAsk(!showFlexAsk)}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                    showFlexAsk 
+                      ? 'bg-gradient-to-r from-purple-500 to-pink-500' 
+                      : 'bg-gray-600'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                      showFlexAsk ? 'translate-x-5' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+              <div className="mt-1 text-xs text-gray-400">
+                Flex asks are faster-selling prices that may include additional fees
+              </div>
+            </div>
             <div className="flex items-end">
               <div className="text-sm text-gray-400">
-                <p className="mb-1">📊 Brand filtering helps you focus on:</p>
+                <p className="mb-1">📊 Features:</p>
                 <ul className="text-xs space-y-0.5">
-                  <li>• Brands you're familiar with</li>
-                  <li>• Products with better profit margins</li>
-                  <li>• Items that are easier to resell</li>
+                  <li>• Brand filtering for focused results</li>
+                  <li>• Flex ask prices for faster sales</li>
+                  <li>• Real-time profit calculations</li>
                 </ul>
               </div>
             </div>
@@ -589,7 +620,7 @@ const StockXArbitrage: React.FC = () => {
 
         {/* Stats */}
         {opportunities.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
+          <div className={`grid grid-cols-1 gap-4 sm:gap-6 mb-6 sm:mb-8 ${showFlexAsk ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
             <div className="bg-gray-800 rounded-lg p-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -621,6 +652,19 @@ const StockXArbitrage: React.FC = () => {
                 <TrendingUp className="w-8 h-8 text-green-400" />
               </div>
             </div>
+            {showFlexAsk && (
+              <div className="bg-gray-800 rounded-lg p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-400 text-sm">Flex Ask Available</p>
+                    <p className="text-2xl font-bold text-purple-400">
+                      {opportunities.filter(opp => opp.flexAskAmount && opp.flexAskAmount > 0).length}
+                    </p>
+                  </div>
+                  <div className="w-8 h-8 flex items-center justify-center text-purple-400 text-xl">🚀</div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -687,21 +731,33 @@ const StockXArbitrage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-4">
+              <div className={`grid gap-3 sm:gap-4 mb-4 ${showFlexAsk && opportunity.flexAskAmount ? 'grid-cols-3' : 'grid-cols-2'}`}>
                 <div className="text-center p-3 bg-gray-700 rounded-lg">
                   <p className="text-xs sm:text-sm text-gray-400 mb-1">Cost Price</p>
                   <p className="text-base sm:text-lg font-semibold text-green-400">${(opportunity.costPrice || 0).toFixed(2)}</p>
                 </div>
                 <div className="text-center p-3 bg-gray-700 rounded-lg">
-                  <p className="text-xs sm:text-sm text-gray-400 mb-1">Selling Price</p>
+                  <p className="text-xs sm:text-sm text-gray-400 mb-1">Standard Ask</p>
                   <p className="text-base sm:text-lg font-semibold text-cyan-400">${(opportunity.sellingPrice || 0).toFixed(2)}</p>
                 </div>
+                {showFlexAsk && opportunity.flexAskAmount && (
+                  <div className="text-center p-3 bg-purple-900/30 border border-purple-500/30 rounded-lg">
+                    <p className="text-xs sm:text-sm text-purple-300 mb-1">Flex Ask</p>
+                    <p className="text-base sm:text-lg font-semibold text-purple-400">${opportunity.flexAskAmount.toFixed(2)}</p>
+                    <p className="text-xs text-purple-300 mt-1">Faster Sale</p>
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-between items-center">
                 <div className="text-sm text-gray-400">
                   <p>Product ID: {opportunity.productId}</p>
                   <p>Variant ID: {opportunity.variantId}</p>
+                  {showFlexAsk && opportunity.flexAskAmount && (
+                    <p className="text-purple-400 mt-1">
+                      🚀 Flex Ask Available: ${opportunity.flexAskAmount.toFixed(2)}
+                    </p>
+                  )}
                 </div>
                 <a
                   href={opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId)}
