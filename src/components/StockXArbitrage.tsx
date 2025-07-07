@@ -80,12 +80,14 @@ const StockXArbitrage: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isAuthError, setIsAuthError] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [trackingMessage, setTrackingMessage] = useState<string | null>(null); // Separate message for tracking confirmations
+  const [clickedButtons, setClickedButtons] = useState<Set<string>>(new Set()); // Track which buttons were clicked
   const [hasSearched, setHasSearched] = useState(false); // Track if user has performed a search attempt
   const [currentPage, setCurrentPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [showFlexAsk, setShowFlexAsk] = useState(false); // Toggle for flex ask display
+  const [showFlexAsk, setShowFlexAsk] = useState(true); // Toggle for flex ask display - enabled by default
 
   // Check authentication status on component mount
   useEffect(() => {
@@ -352,6 +354,13 @@ const StockXArbitrage: React.FC = () => {
   };
 
   const addToFlexAskMonitor = (opportunity: ArbitrageOpportunity) => {
+    console.log('🔔 Track Flex Ask button clicked!');
+    console.log('🔔 Adding to Flex Ask Monitor:', opportunity.productName, opportunity.size, 'Flex Ask:', opportunity.flexAskAmount);
+    
+    // Add visual feedback for button click
+    const buttonId = `${opportunity.productId}-${opportunity.variantId}`;
+    setClickedButtons(prev => new Set([...prev, buttonId]));
+    
     const flexAskItem = {
       productId: opportunity.productId,
       variantId: opportunity.variantId,
@@ -363,9 +372,13 @@ const StockXArbitrage: React.FC = () => {
       title: opportunity.productName
     };
 
+    console.log('🔔 Item to track:', flexAskItem);
+
     // Get existing tracked items
     const existingItems = localStorage.getItem('flexAskTrackedItems');
+    console.log('🔔 Existing localStorage data:', existingItems);
     const trackedItems = existingItems ? JSON.parse(existingItems) : [];
+    console.log('🔔 Parsed existing items:', trackedItems);
     
     // Check if item is already being tracked
     const isAlreadyTracked = trackedItems.some((item: any) => 
@@ -373,12 +386,22 @@ const StockXArbitrage: React.FC = () => {
     );
     
     if (isAlreadyTracked) {
-      setErrorMessage('This item is already being tracked in your Flex Ask Monitor');
-      setTimeout(() => setErrorMessage(null), 3000);
+      console.log('⚠️ Item already tracked, showing warning message');
+      setTrackingMessage('⚠️ This item is already being tracked in your Flex Ask Monitor');
+      setTimeout(() => {
+        setTrackingMessage(null);
+        // Reset button state
+        setClickedButtons(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(buttonId);
+          return newSet;
+        });
+      }, 4000);
       return;
     }
 
     // Add to tracked items
+    const flexAskValue = Number(opportunity.flexAskAmount) || 0;
     const newItem = {
       id: `tracked-${Date.now()}-${opportunity.productId}-${opportunity.variantId}`,
       productId: opportunity.productId,
@@ -386,23 +409,69 @@ const StockXArbitrage: React.FC = () => {
       productName: opportunity.productName,
       size: opportunity.size,
       imageUrl: opportunity.imageUrl,
-      currentFlexAsk: opportunity.flexAskAmount || 0,
-      baselineFlexAsk: opportunity.flexAskAmount || 0,
+      currentFlexAsk: flexAskValue,
+      baselineFlexAsk: flexAskValue,
       lastChecked: new Date().toISOString(),
       alertThreshold: 20, // Default 20% threshold
       isActive: true,
       priceHistory: [{
-        price: opportunity.flexAskAmount || 0,
+        price: flexAskValue,
         timestamp: new Date().toISOString()
       }],
       stockxUrl: opportunity.stockxUrl
     };
 
+    console.log('🔔 New item to add:', newItem);
+
     trackedItems.push(newItem);
-    localStorage.setItem('flexAskTrackedItems', JSON.stringify(trackedItems));
+    console.log('🔔 Updated trackedItems array:', trackedItems);
     
-    setSuccessMessage(`Added ${opportunity.productName} (${opportunity.size}) to Flex Ask Monitor! Go to StockX > Flex Ask Monitor to configure alerts.`);
-    setTimeout(() => setSuccessMessage(null), 5000);
+    try {
+      localStorage.setItem('flexAskTrackedItems', JSON.stringify(trackedItems));
+      console.log('✅ Successfully saved to localStorage');
+      
+      // Verify the save
+      const verifyData = localStorage.getItem('flexAskTrackedItems');
+      console.log('🔍 Verification: localStorage now contains:', verifyData);
+      
+      // Dispatch custom event to notify Flex Ask Monitor
+      console.log('📡 Dispatching custom event: flexAskItemAdded');
+      const customEvent = new CustomEvent('flexAskItemAdded', { 
+        detail: { item: newItem, count: trackedItems.length } 
+      });
+      window.dispatchEvent(customEvent);
+      console.log('✅ Custom event dispatched successfully');
+      
+      // Also dispatch storage event manually for cross-tab sync
+      console.log('📡 Dispatching storage event manually');
+      const storageEvent = new StorageEvent('storage', {
+        key: 'flexAskTrackedItems',
+        newValue: JSON.stringify(trackedItems),
+        oldValue: existingItems,
+        storageArea: localStorage
+      });
+      window.dispatchEvent(storageEvent);
+      console.log('✅ Storage event dispatched successfully');
+      
+    } catch (error) {
+      console.error('❌ Error saving to localStorage:', error);
+      setTrackingMessage('❌ Error saving item to tracking list');
+      setTimeout(() => setTrackingMessage(null), 4000);
+      return;
+    }
+    
+    setTrackingMessage(`✅ Added ${opportunity.productName} (${opportunity.size}) to Flex Ask Monitor! Go to StockX > Flex Ask Monitor to configure alerts.`);
+    console.log('✅ Success message set');
+    
+    setTimeout(() => {
+      setTrackingMessage(null);
+      // Reset button state
+      setClickedButtons(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(buttonId);
+        return newSet;
+      });
+    }, 7000);
   };
 
   return (
@@ -558,7 +627,7 @@ const StockXArbitrage: React.FC = () => {
                 </button>
               </div>
               <div className="mt-1 text-xs text-gray-400">
-                Flex asks are faster-selling prices that may include additional fees
+                Flex asks are faster-selling prices that may include additional fees. When enabled, "Track Flex Ask" buttons will appear on items with flex pricing.
               </div>
             </div>
             <div className="flex items-end">
@@ -580,6 +649,16 @@ const StockXArbitrage: React.FC = () => {
             <div className="flex items-center gap-2">
               <CheckCircle className="w-5 h-5 text-green-400" />
               <p className="text-green-400">{successMessage}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Tracking Success Message - Separate from search progress */}
+        {trackingMessage && (
+          <div className="bg-emerald-900/20 border border-emerald-500 rounded-lg p-4 mb-6">
+            <div className="flex items-center gap-2">
+              <Bell className="w-5 h-5 text-emerald-400" />
+              <p className="text-emerald-400">{trackingMessage}</p>
             </div>
           </div>
         )}
@@ -813,15 +892,53 @@ const StockXArbitrage: React.FC = () => {
                     </p>
                   )}
                 </div>
-                <a
-                  href={opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                  View on StockX
-                </a>
+                <div className="flex items-center gap-2">
+                  {showFlexAsk && opportunity.flexAskAmount && (() => {
+                    const buttonId = `${opportunity.productId}-${opportunity.variantId}`;
+                    const isClicked = clickedButtons.has(buttonId);
+                    return (
+                      <button
+                        onClick={() => {
+                          console.log('🔔 Track Flex Ask button clicked!', opportunity);
+                          addToFlexAskMonitor(opportunity);
+                        }}
+                        className={`font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2 ${
+                          isClicked 
+                            ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white'
+                            : 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white'
+                        }`}
+                        disabled={isClicked}
+                      >
+                        {isClicked ? (
+                          <>
+                            <CheckCircle className="w-4 h-4" />
+                            Added!
+                          </>
+                        ) : (
+                          <>
+                            <Bell className="w-4 h-4" />
+                            Track Flex Ask
+                          </>
+                        )}
+                      </button>
+                    );
+                  })()}
+                  {/* Debug info - remove this later */}
+                  {process.env.NODE_ENV === 'development' && (
+                    <div className="text-xs text-gray-500">
+                      FlexAsk: {showFlexAsk ? 'ON' : 'OFF'} | Amount: {opportunity.flexAskAmount || 'none'}
+                    </div>
+                  )}
+                  <a
+                    href={opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    View on StockX
+                  </a>
+                </div>
               </div>
             </div>
           ))}

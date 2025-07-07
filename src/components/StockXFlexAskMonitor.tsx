@@ -49,29 +49,123 @@ const StockXFlexAskMonitor: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  // Helper function to safely convert price values to numbers
+  const safeToFixed = (value: any, decimals: number = 2): string => {
+    const numValue = typeof value === 'string' ? parseFloat(value) : Number(value);
+    return isNaN(numValue) ? '0.00' : numValue.toFixed(decimals);
+  };
+
+  // Computed values
+  const unreadAlerts = alerts.filter(alert => !alert.isRead);
+
   // Load tracked items from localStorage on component mount
   useEffect(() => {
-    const savedItems = localStorage.getItem('flexAskTrackedItems');
-    const savedAlerts = localStorage.getItem('flexAskAlerts');
-    const savedMonitoringState = localStorage.getItem('flexAskMonitoringActive');
-    const savedInterval = localStorage.getItem('flexAskCheckInterval');
-    const savedThreshold = localStorage.getItem('flexAskGlobalThreshold');
+    const loadData = () => {
+      console.log('🔍 FlexAskMonitor Loading Data - START');
+      const savedItems = localStorage.getItem('flexAskTrackedItems');
+      const savedAlerts = localStorage.getItem('flexAskAlerts');
+      const savedMonitoringState = localStorage.getItem('flexAskMonitoringActive');
+      const savedInterval = localStorage.getItem('flexAskCheckInterval');
+      const savedThreshold = localStorage.getItem('flexAskGlobalThreshold');
 
-    if (savedItems) {
-      setTrackedItems(JSON.parse(savedItems));
-    }
-    if (savedAlerts) {
-      setAlerts(JSON.parse(savedAlerts));
-    }
-    if (savedMonitoringState) {
-      setIsMonitoring(JSON.parse(savedMonitoringState));
-    }
-    if (savedInterval) {
-      setCheckInterval(parseInt(savedInterval));
-    }
-    if (savedThreshold) {
-      setGlobalAlertThreshold(parseInt(savedThreshold));
-    }
+      console.log('🔍 FlexAskMonitor Loading Data:');
+      console.log('📦 Raw savedItems:', savedItems);
+      console.log('🔔 Raw savedAlerts:', savedAlerts);
+      console.log('⚙️ Raw savedMonitoringState:', savedMonitoringState);
+      console.log('⏰ Raw savedInterval:', savedInterval);
+      console.log('🎯 Raw savedThreshold:', savedThreshold);
+
+      if (savedItems) {
+        try {
+          const parsedItems = JSON.parse(savedItems);
+          console.log('✅ Parsed Items:', parsedItems);
+          console.log('✅ Parsed Items count:', parsedItems.length);
+          console.log('✅ Setting trackedItems state with', parsedItems.length, 'items');
+          
+          // Ensure price values are numbers
+          const normalizedItems = parsedItems.map((item: any) => ({
+            ...item,
+            currentFlexAsk: Number(item.currentFlexAsk) || 0,
+            baselineFlexAsk: Number(item.baselineFlexAsk) || 0,
+            alertThreshold: Number(item.alertThreshold) || 20
+          }));
+          
+          console.log('✅ Normalized Items:', normalizedItems);
+          setTrackedItems(normalizedItems);
+          console.log('✅ trackedItems state updated successfully');
+        } catch (error) {
+          console.error('❌ Error parsing saved items:', error);
+          setTrackedItems([]);
+        }
+      } else {
+        console.log('❌ No saved items found - localStorage is empty or null');
+        setTrackedItems([]);
+      }
+      
+      if (savedAlerts) {
+        try {
+          console.log('🔔 Loading alerts...');
+          setAlerts(JSON.parse(savedAlerts));
+        } catch (error) {
+          console.error('❌ Error parsing saved alerts:', error);
+          setAlerts([]);
+        }
+      }
+      
+      if (savedMonitoringState) {
+        console.log('⚙️ Loading monitoring state...');
+        setIsMonitoring(JSON.parse(savedMonitoringState));
+      }
+      if (savedInterval) {
+        console.log('⏰ Loading check interval...');
+        setCheckInterval(parseInt(savedInterval));
+      }
+      if (savedThreshold) {
+        console.log('🎯 Loading global threshold...');
+        setGlobalAlertThreshold(parseInt(savedThreshold));
+      }
+      
+      console.log('🔍 FlexAskMonitor Loading Data - COMPLETE');
+    };
+
+    loadData();
+
+    // Also listen for storage events to sync across tabs
+    const handleStorageChange = (e: StorageEvent) => {
+      console.log('🔄 Storage event received:', e);
+      console.log('🔄 Storage event key:', e.key);
+      console.log('🔄 Storage event newValue:', e.newValue);
+      if (e.key === 'flexAskTrackedItems') {
+        console.log('🔄 Storage change detected for flexAskTrackedItems, reloading data...');
+        loadData();
+      }
+    };
+
+    // Listen for custom events when items are added
+    const handleItemAdded = (event: any) => {
+      console.log('🔄 Custom event received:', event);
+      console.log('🔄 Event detail:', event.detail);
+      console.log('🔄 Item added event detected, reloading data...');
+      setTimeout(() => {
+        console.log('🔄 Executing delayed loadData after custom event...');
+        loadData();
+      }, 100); // Small delay to ensure localStorage is updated
+    };
+
+    // Add debugging for component mount
+    console.log('🔄 FlexAskMonitor component mounting, setting up event listeners...');
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('flexAskItemAdded', handleItemAdded);
+    
+    console.log('✅ Event listeners added successfully');
+    console.log('✅ Initial data load starting...');
+    
+    return () => {
+      console.log('🔄 FlexAskMonitor unmounting, removing event listeners...');
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('flexAskItemAdded', handleItemAdded);
+    };
   }, []);
 
   // Save to localStorage whenever state changes
@@ -137,10 +231,12 @@ const StockXFlexAskMonitor: React.FC = () => {
       }
 
       const data = await response.json();
-      const newFlexAsk = data.flexLowestAskAmount;
+      const newFlexAsk = Number(data.flexLowestAskAmount) || 0;
+      const currentFlexAsk = Number(item.currentFlexAsk) || 0;
+      const baselineFlexAsk = Number(item.baselineFlexAsk) || 0;
 
-      if (newFlexAsk && newFlexAsk !== item.currentFlexAsk) {
-        const percentageChange = ((newFlexAsk - item.baselineFlexAsk) / item.baselineFlexAsk) * 100;
+      if (newFlexAsk && newFlexAsk !== currentFlexAsk) {
+        const percentageChange = ((newFlexAsk - baselineFlexAsk) / baselineFlexAsk) * 100;
         
         // Update item with new price
         const updatedItem: FlexAskItem = {
@@ -160,7 +256,7 @@ const StockXFlexAskMonitor: React.FC = () => {
             itemId: item.id,
             productName: item.productName,
             size: item.size,
-            oldPrice: item.currentFlexAsk,
+            oldPrice: currentFlexAsk,
             newPrice: newFlexAsk,
             percentageChange,
             timestamp: new Date().toISOString(),
@@ -191,6 +287,7 @@ const StockXFlexAskMonitor: React.FC = () => {
   };
 
   const addItemToTracking = (item: any) => {
+    const flexAskValue = Number(item.flexAskAmount) || 0;
     const newItem: FlexAskItem = {
       id: `tracked-${Date.now()}-${item.productId}-${item.variantId}`,
       productId: item.productId,
@@ -198,13 +295,13 @@ const StockXFlexAskMonitor: React.FC = () => {
       productName: item.productName || item.title,
       size: item.size,
       imageUrl: item.imageUrl,
-      currentFlexAsk: item.flexAskAmount || 0,
-      baselineFlexAsk: item.flexAskAmount || 0,
+      currentFlexAsk: flexAskValue,
+      baselineFlexAsk: flexAskValue,
       lastChecked: new Date().toISOString(),
       alertThreshold: globalAlertThreshold,
       isActive: true,
       priceHistory: [{
-        price: item.flexAskAmount || 0,
+        price: flexAskValue,
         timestamp: new Date().toISOString()
       }],
       stockxUrl: item.stockxUrl
@@ -279,22 +376,24 @@ const StockXFlexAskMonitor: React.FC = () => {
           }
 
           const data = await response.json();
-          const newFlexAsk = data.flexLowestAskAmount;
+          const newFlexAsk = Number(data.flexLowestAskAmount) || 0;
+          const currentFlexAsk = Number(item.currentFlexAsk) || 0;
+          const baselineFlexAsk = Number(item.baselineFlexAsk) || 0;
 
           if (newFlexAsk) {
-            const priceDifference = Math.abs(newFlexAsk - item.baselineFlexAsk);
-            const percentageChange = ((newFlexAsk - item.baselineFlexAsk) / item.baselineFlexAsk) * 100;
+            const priceDifference = Math.abs(newFlexAsk - baselineFlexAsk);
+            const percentageChange = ((newFlexAsk - baselineFlexAsk) / baselineFlexAsk) * 100;
             
-            console.log(`🧪 ${item.productName}: Current $${newFlexAsk}, Baseline $${item.baselineFlexAsk}, Diff: $${priceDifference.toFixed(2)} (${percentageChange.toFixed(2)}%)`);
+            console.log(`🧪 ${item.productName}: Current $${newFlexAsk}, Baseline $${baselineFlexAsk}, Diff: $${priceDifference.toFixed(2)} (${percentageChange.toFixed(2)}%)`);
             
             // Test with $1 threshold OR any price change
-            if (priceDifference >= 1 || newFlexAsk !== item.currentFlexAsk) {
+            if (priceDifference >= 1 || newFlexAsk !== currentFlexAsk) {
               const alert: PriceAlert = {
                 id: `test-alert-${Date.now()}-${item.id}`,
                 itemId: item.id,
                 productName: item.productName,
                 size: item.size,
-                oldPrice: item.currentFlexAsk,
+                oldPrice: currentFlexAsk,
                 newPrice: newFlexAsk,
                 percentageChange,
                 timestamp: new Date().toISOString(),
@@ -399,6 +498,7 @@ const StockXFlexAskMonitor: React.FC = () => {
       );
       
       if (!isAlreadyTracked) {
+        const flexAskValue = Number(item.flexAskAmount) || 0;
         const newItem = {
           id: `demo-${Date.now()}-${item.productId}-${item.variantId}`,
           productId: item.productId,
@@ -406,13 +506,13 @@ const StockXFlexAskMonitor: React.FC = () => {
           productName: item.productName,
           size: item.size,
           imageUrl: item.imageUrl,
-          currentFlexAsk: item.flexAskAmount,
-          baselineFlexAsk: item.flexAskAmount,
+          currentFlexAsk: flexAskValue,
+          baselineFlexAsk: flexAskValue,
           lastChecked: new Date().toISOString(),
           alertThreshold: 1, // Set very low threshold for testing
           isActive: true,
           priceHistory: [{
-            price: item.flexAskAmount,
+            price: flexAskValue,
             timestamp: new Date().toISOString()
           }],
           stockxUrl: `https://stockx.com/${item.productName.toLowerCase().replace(/\s+/g, '-')}`
@@ -432,8 +532,6 @@ const StockXFlexAskMonitor: React.FC = () => {
     setTimeout(() => setSuccessMessage(null), 5000);
   };
 
-  const unreadAlerts = alerts.filter(alert => !alert.isRead);
-
   return (
     <div className="p-4 sm:p-6 bg-gray-900 text-white min-h-screen">
       <div className="max-w-6xl mx-auto">
@@ -449,6 +547,23 @@ const StockXFlexAskMonitor: React.FC = () => {
             Track flex ask prices and get alerted when items drop below your threshold
           </p>
         </div>
+
+        {/* Debug Status - only show in development */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="bg-gray-700 rounded-lg p-3 mb-4 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-gray-300">🔧 Debug Status:</span>
+              <div className="flex gap-4 text-gray-400">
+                <span>State: {trackedItems.length} items</span>
+                <span>localStorage: {localStorage.getItem('flexAskTrackedItems') ? 
+                  `${JSON.parse(localStorage.getItem('flexAskTrackedItems') || '[]').length} items` : 
+                  'empty'
+                }</span>
+                <span>Last render: {new Date().toLocaleTimeString()}</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Success/Error Messages */}
         {successMessage && (
@@ -495,6 +610,62 @@ const StockXFlexAskMonitor: React.FC = () => {
               </button>
 
               <button
+                onClick={() => {
+                  console.log('🔍 DEBUG BUTTON CLICKED - Manual debug & reload initiated');
+                  console.log('🔍 DEBUG: Full component state check:');
+                  console.log('📦 Current trackedItems state:', trackedItems);
+                  console.log('📦 trackedItems.length:', trackedItems.length);
+                  console.log('📦 flexAskTrackedItems localStorage:', localStorage.getItem('flexAskTrackedItems'));
+                  
+                  const savedItems = localStorage.getItem('flexAskTrackedItems');
+                  if (savedItems) {
+                    try {
+                      const parsedItems = JSON.parse(savedItems);
+                      console.log('✅ Manual debug - Parsed items count:', parsedItems.length);
+                      console.log('✅ Manual debug - Parsed items:', parsedItems);
+                      
+                      // Ensure price values are numbers and force update the state
+                      const normalizedItems = parsedItems.map((item: any) => ({
+                        ...item,
+                        currentFlexAsk: Number(item.currentFlexAsk) || 0,
+                        baselineFlexAsk: Number(item.baselineFlexAsk) || 0,
+                        alertThreshold: Number(item.alertThreshold) || 20
+                      }));
+                      
+                      console.log('✅ Manual debug - Normalized items:', normalizedItems);
+                      setTrackedItems([...normalizedItems]); // Create new array reference to force re-render
+                      console.log('✅ Manual debug - State updated with normalized items');
+                      
+                      setSuccessMessage(`🔍 Debug: Found ${parsedItems.length} items in localStorage. Force reloaded component state.`);
+                    } catch (error) {
+                      console.error('❌ Manual debug - Error parsing localStorage data:', error);
+                      setErrorMessage('Error parsing localStorage data: ' + error.message);
+                    }
+                  } else {
+                    console.log('❌ Manual debug - No items found in localStorage');
+                    setTrackedItems([]);
+                    setErrorMessage('No items found in localStorage - localStorage is empty');
+                  }
+                  
+                  // Also test event dispatching
+                  console.log('📡 Manual debug - Testing custom event dispatch...');
+                  const testEvent = new CustomEvent('flexAskItemAdded', { 
+                    detail: { item: {test: 'data'}, count: 1 } 
+                  });
+                  window.dispatchEvent(testEvent);
+                  console.log('✅ Manual debug - Test event dispatched');
+                  
+                  setTimeout(() => {
+                    setSuccessMessage(null);
+                    setErrorMessage(null);
+                  }, 4000);
+                }}
+                className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-medium transition-all duration-200"
+              >
+                🔍 Debug & Reload
+              </button>
+
+              <button
                 onClick={requestNotificationPermission}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-all duration-200"
               >
@@ -514,6 +685,16 @@ const StockXFlexAskMonitor: React.FC = () => {
                 className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-all duration-200"
               >
                 Add Demo Items
+              </button>
+
+              <button
+                onClick={() => {
+                  console.log('🔄 Force refreshing page...');
+                  window.location.reload();
+                }}
+                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-all duration-200"
+              >
+                🔄 Refresh Page
               </button>
             </div>
 
@@ -627,15 +808,40 @@ const StockXFlexAskMonitor: React.FC = () => {
 
         {/* Tracked Items */}
         <div className="bg-gray-800 rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4">Tracked Items</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold">Tracked Items ({trackedItems.length})</h2>
+            <div className="text-sm text-gray-400">
+              {trackedItems.length > 0 ? (
+                <span>
+                  Active: {trackedItems.filter(item => item.isActive).length} | 
+                  Inactive: {trackedItems.filter(item => !item.isActive).length}
+                </span>
+              ) : (
+                <span className="text-yellow-400">
+                  🔍 State: {trackedItems.length} items | 
+                  LocalStorage: {localStorage.getItem('flexAskTrackedItems') ? 'HAS DATA' : 'EMPTY'}
+                </span>
+              )}
+            </div>
+          </div>
           
           {trackedItems.length === 0 ? (
             <div className="text-center py-8">
               <Bell className="w-16 h-16 text-gray-600 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-400 mb-2">No Items Being Tracked</h3>
-              <p className="text-gray-500">
+              <p className="text-gray-500 mb-4">
                 Go to the Arbitrage Finder and add items with flex ask prices to start monitoring
               </p>
+              <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4 text-left">
+                <h4 className="text-blue-300 font-medium mb-2">📝 How to Add Items:</h4>
+                <ol className="text-sm text-blue-200 space-y-1">
+                  <li>1. Go to <strong>StockX Integration → Arbitrage Finder</strong></li>
+                  <li>2. Search for products (e.g. "Denim Tears", "Fear of God")</li>
+                  <li>3. Enable "Show Flex Ask Prices" toggle</li>
+                  <li>4. Click green "Track Flex Ask" buttons on items with flex prices</li>
+                  <li>5. Return here to see your tracked items</li>
+                </ol>
+              </div>
             </div>
           ) : (
             <div className="space-y-4">
@@ -660,16 +866,16 @@ const StockXFlexAskMonitor: React.FC = () => {
                         <p className="text-sm text-gray-400">Size: {item.size}</p>
                         <div className="flex items-center gap-4 text-sm">
                           <span className="text-purple-400">
-                            Current: ${item.currentFlexAsk.toFixed(2)}
+                            Current: ${safeToFixed(item.currentFlexAsk, 2)}
                           </span>
                           <span className="text-gray-400">
-                            Baseline: ${item.baselineFlexAsk.toFixed(2)}
+                            Baseline: ${safeToFixed(item.baselineFlexAsk, 2)}
                           </span>
                           <span className={`${
-                            item.currentFlexAsk < item.baselineFlexAsk ? 'text-green-400' : 'text-red-400'
+                            Number(item.currentFlexAsk) < Number(item.baselineFlexAsk) ? 'text-green-400' : 'text-red-400'
                           }`}>
-                            {item.currentFlexAsk < item.baselineFlexAsk ? '↓' : '↑'}
-                            {Math.abs(((item.currentFlexAsk - item.baselineFlexAsk) / item.baselineFlexAsk) * 100).toFixed(1)}%
+                            {Number(item.currentFlexAsk) < Number(item.baselineFlexAsk) ? '↓' : '↑'}
+                            {Math.abs(((Number(item.currentFlexAsk) - Number(item.baselineFlexAsk)) / Number(item.baselineFlexAsk)) * 100).toFixed(1)}%
                           </span>
                         </div>
                       </div>

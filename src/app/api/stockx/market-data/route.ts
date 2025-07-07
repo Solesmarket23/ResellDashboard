@@ -10,68 +10,77 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const stockxApiKey = process.env.STOCKX_API_KEY;
-    if (!stockxApiKey) {
+    // Get access token from cookies (same as search route)
+    const accessToken = request.cookies.get('stockx_access_token')?.value;
+    const apiKey = process.env.STOCKX_API_KEY;
+
+    if (!accessToken) {
+      return NextResponse.json(
+        { 
+          error: 'No access token found', 
+          message: 'Please authenticate with StockX first',
+          authRequired: true
+        },
+        { status: 401 }
+      );
+    }
+
+    if (!apiKey) {
       return NextResponse.json({ error: 'StockX API key not configured' }, { status: 500 });
     }
 
-    const searchUrl = `https://api.stockx.com/v2/catalog/search`;
+    // Use the same endpoint structure as the working search route
+    const marketUrl = `https://api.stockx.com/v2/catalog/products/${productId}/market-data`;
+    console.log(`💰 Fetching market data: ${marketUrl}`);
     
-    const response = await fetch(searchUrl, {
-      method: 'POST',
+    const response = await fetch(marketUrl, {
+      method: 'GET',
       headers: {
-        'Authorization': `Bearer ${stockxApiKey}`,
+        'Authorization': `Bearer ${accessToken}`,
+        'X-API-Key': apiKey,
         'Content-Type': 'application/json',
-        'User-Agent': 'StockX/2.0'
-      },
-      body: JSON.stringify({
-        query: {
-          bool: {
-            must: [
-              {
-                term: {
-                  "product_id": productId
-                }
-              }
-            ]
-          }
-        },
-        size: 1
-      })
+        'Accept': 'application/json',
+        'User-Agent': 'FlipFlow/1.0'
+      }
     });
 
     if (!response.ok) {
       console.error('StockX API error:', response.status, response.statusText);
+      
+      if (response.status === 401) {
+        return NextResponse.json(
+          { 
+            error: 'Authentication failed', 
+            message: 'Please re-authenticate with StockX',
+            authRequired: true
+          },
+          { status: 401 }
+        );
+      }
+      
       return NextResponse.json({ error: 'Failed to fetch market data' }, { status: response.status });
     }
 
-    const searchData = await response.json();
+    const marketData = await response.json();
+    console.log(`✅ Market data response:`, marketData);
     
-    if (!searchData.hits || !searchData.hits.hits || searchData.hits.hits.length === 0) {
-      return NextResponse.json({ error: 'Product not found' }, { status: 404 });
-    }
+    // Find the specific variant data
+    const variantData = Array.isArray(marketData) 
+      ? marketData.find((item: any) => item.variantId === variantId)
+      : null;
 
-    const product = searchData.hits.hits[0]._source;
-    
-    // Get market data for the specific variant
-    if (!product.market_data || !product.market_data.variants) {
-      return NextResponse.json({ error: 'Market data not available' }, { status: 404 });
-    }
-
-    const variantData = product.market_data.variants.find((variant: any) => variant.id === variantId);
-    
     if (!variantData) {
-      return NextResponse.json({ error: 'Variant not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Variant not found in market data' }, { status: 404 });
     }
 
-    // Return the specific variant data
+    // Return the specific variant data in the expected format
     return NextResponse.json({
       productId: productId,
       variantId: variantId,
-      highestBidAmount: variantData.highest_bid_amount,
-      lowestAskAmount: variantData.lowest_ask_amount,
-      flexLowestAskAmount: variantData.flex_lowest_ask_amount,
-      currencyCode: variantData.currency_code || 'USD'
+      highestBidAmount: variantData.highestBidAmount,
+      lowestAskAmount: variantData.lowestAskAmount,
+      flexLowestAskAmount: variantData.flexLowestAskAmount,
+      currencyCode: variantData.currencyCode || 'USD'
     });
 
   } catch (error) {
