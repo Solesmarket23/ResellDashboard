@@ -15,14 +15,29 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'StockX API key not configured' }, { status: 500 });
     }
 
-    const marketDataUrl = `https://api.stockx.com/v2/catalog/products/${productId}/market-data`;
+    const searchUrl = `https://api.stockx.com/v2/catalog/search`;
     
-    const response = await fetch(marketDataUrl, {
+    const response = await fetch(searchUrl, {
+      method: 'POST',
       headers: {
         'Authorization': `Bearer ${stockxApiKey}`,
         'Content-Type': 'application/json',
         'User-Agent': 'StockX/2.0'
-      }
+      },
+      body: JSON.stringify({
+        query: {
+          bool: {
+            must: [
+              {
+                term: {
+                  "product_id": productId
+                }
+              }
+            ]
+          }
+        },
+        size: 1
+      })
     });
 
     if (!response.ok) {
@@ -30,10 +45,20 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch market data' }, { status: response.status });
     }
 
-    const marketData = await response.json();
+    const searchData = await response.json();
     
-    // Find the specific variant data
-    const variantData = marketData.find((item: any) => item.variantId === variantId);
+    if (!searchData.hits || !searchData.hits.hits || searchData.hits.hits.length === 0) {
+      return NextResponse.json({ error: 'Product not found' }, { status: 404 });
+    }
+
+    const product = searchData.hits.hits[0]._source;
+    
+    // Get market data for the specific variant
+    if (!product.market_data || !product.market_data.variants) {
+      return NextResponse.json({ error: 'Market data not available' }, { status: 404 });
+    }
+
+    const variantData = product.market_data.variants.find((variant: any) => variant.id === variantId);
     
     if (!variantData) {
       return NextResponse.json({ error: 'Variant not found' }, { status: 404 });
@@ -41,12 +66,12 @@ export async function GET(request: NextRequest) {
 
     // Return the specific variant data
     return NextResponse.json({
-      productId: variantData.productId,
-      variantId: variantData.variantId,
-      highestBidAmount: variantData.highestBidAmount,
-      lowestAskAmount: variantData.lowestAskAmount,
-      flexLowestAskAmount: variantData.flexLowestAskAmount,
-      currencyCode: variantData.currencyCode
+      productId: productId,
+      variantId: variantId,
+      highestBidAmount: variantData.highest_bid_amount,
+      lowestAskAmount: variantData.lowest_ask_amount,
+      flexLowestAskAmount: variantData.flex_lowest_ask_amount,
+      currencyCode: variantData.currency_code || 'USD'
     });
 
   } catch (error) {

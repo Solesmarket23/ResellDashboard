@@ -40,35 +40,59 @@ export async function POST(request: NextRequest) {
       const { productId, variantId } = product;
       
       try {
-        // Fetch market data for this specific product
-        const marketResponse = await fetch(`https://api.stockx.com/v2/catalog/products/${productId}/market-data`, {
-          method: 'GET',
+        // Fetch market data using catalog search
+        const searchResponse = await fetch(`https://api.stockx.com/v2/catalog/search`, {
+          method: 'POST',
           headers: {
             'Authorization': `Bearer ${accessToken}`,
             'x-api-key': apiKey,
             'Content-Type': 'application/json',
             'Accept': 'application/json',
             'User-Agent': 'FlipFlow/1.0'
-          }
+          },
+          body: JSON.stringify({
+            query: {
+              bool: {
+                must: [
+                  {
+                    term: {
+                      "product_id": productId
+                    }
+                  }
+                ]
+              }
+            },
+            size: 1
+          })
         });
 
-        if (!marketResponse.ok) {
-          console.error(`Market data failed for ${productId}:`, marketResponse.status);
+        if (!searchResponse.ok) {
+          console.error(`Search failed for ${productId}:`, searchResponse.status);
           continue;
         }
 
-        const marketData = await marketResponse.json();
+        const searchData = await searchResponse.json();
+        
+        if (!searchData.hits || !searchData.hits.hits || searchData.hits.hits.length === 0) {
+          console.error(`Product not found: ${productId}`);
+          continue;
+        }
+
+        const product = searchData.hits.hits[0]._source;
         
         // Find the specific variant's market data
-        const variantMarketData = marketData.find((v: any) => v.variantId === variantId);
+        let variantMarketData = null;
+        if (product.market_data && product.market_data.variants) {
+          variantMarketData = product.market_data.variants.find((v: any) => v.id === variantId);
+        }
         
         if (variantMarketData) {
           results.push({
             productId,
             variantId,
-            flexLowestAsk: variantMarketData.flexLowestAskAmount ? parseInt(variantMarketData.flexLowestAskAmount) : null,
-            lowestAsk: variantMarketData.lowestAskAmount ? parseInt(variantMarketData.lowestAskAmount) : null,
-            highestBid: variantMarketData.highestBidAmount ? parseInt(variantMarketData.highestBidAmount) : null,
+            flexLowestAsk: variantMarketData.flex_lowest_ask_amount ? parseInt(variantMarketData.flex_lowest_ask_amount) : null,
+            lowestAsk: variantMarketData.lowest_ask_amount ? parseInt(variantMarketData.lowest_ask_amount) : null,
+            highestBid: variantMarketData.highest_bid_amount ? parseInt(variantMarketData.highest_bid_amount) : null,
             timestamp: Date.now()
           });
         }
@@ -133,27 +157,42 @@ export async function GET(request: NextRequest) {
       }, { status: 500 });
     }
 
-    // First, get the market data for this specific variant
-    const marketDataUrl = `https://api.stockx.com/v2/catalog/products/${productId}/market-data?variants=${variantId}&currencyCode=USD`;
+    // Fetch market data using catalog search
+    const searchUrl = `https://api.stockx.com/v2/catalog/search`;
     
-    console.log(`💰 Fetching market data: ${marketDataUrl}`);
+    console.log(`💰 Fetching market data via search: ${searchUrl}`);
     
-    const marketResponse = await fetch(marketDataUrl, {
+    const searchResponse = await fetch(searchUrl, {
+      method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'X-API-Key': apiKey,
         'Content-Type': 'application/json',
-      }
+      },
+      body: JSON.stringify({
+        query: {
+          bool: {
+            must: [
+              {
+                term: {
+                  "product_id": productId
+                }
+              }
+            ]
+          }
+        },
+        size: 1
+      })
     });
 
-    console.log(`📊 Market data response status: ${marketResponse.status}`);
+    console.log(`📊 Search response status: ${searchResponse.status}`);
 
-    if (!marketResponse.ok) {
-      console.log('❌ Market data request failed:', marketResponse.status, marketResponse.statusText);
-      const errorText = await marketResponse.text();
+    if (!searchResponse.ok) {
+      console.log('❌ Search request failed:', searchResponse.status, searchResponse.statusText);
+      const errorText = await searchResponse.text();
       console.log('Error details:', errorText);
       
-      if (marketResponse.status === 401) {
+      if (searchResponse.status === 401) {
         return NextResponse.json({ 
           error: 'Authentication failed',
           needAuth: true 
@@ -161,22 +200,26 @@ export async function GET(request: NextRequest) {
       }
       
       return NextResponse.json({ 
-        error: `Market data request failed: ${marketResponse.status}`,
+        error: `Search request failed: ${searchResponse.status}`,
         details: errorText
-      }, { status: marketResponse.status });
+      }, { status: searchResponse.status });
     }
 
-    const marketData = await marketResponse.json();
-    console.log('✅ Market data response:', JSON.stringify(marketData, null, 2));
+    const searchData = await searchResponse.json();
+    console.log('✅ Search response:', JSON.stringify(searchData, null, 2));
 
     // Extract flex ask from market data
     let flexAsk = null;
     
-    if (marketData && Array.isArray(marketData) && marketData.length > 0) {
-      const variantData = marketData.find(item => item.variantId === variantId);
-      if (variantData) {
-        flexAsk = variantData.flexLowestAskAmount || variantData.lowestAskAmount;
-        console.log(`💰 Found flex ask for variant ${variantId}: $${flexAsk}`);
+    if (searchData.hits && searchData.hits.hits && searchData.hits.hits.length > 0) {
+      const product = searchData.hits.hits[0]._source;
+      
+      if (product.market_data && product.market_data.variants) {
+        const variantData = product.market_data.variants.find((item: any) => item.id === variantId);
+        if (variantData) {
+          flexAsk = variantData.flex_lowest_ask_amount || variantData.lowest_ask_amount;
+          console.log(`💰 Found flex ask for variant ${variantId}: $${flexAsk}`);
+        }
       }
     }
 
