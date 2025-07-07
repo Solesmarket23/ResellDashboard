@@ -254,6 +254,184 @@ const StockXFlexAskMonitor: React.FC = () => {
     }
   };
 
+  const testMonitor = async () => {
+    if (trackedItems.length === 0) {
+      setErrorMessage('No items to test! Add some items first.');
+      setTimeout(() => setErrorMessage(null), 3000);
+      return;
+    }
+
+    setIsLoading(true);
+    setSuccessMessage('🧪 Testing monitor... Checking all tracked items with $1 threshold');
+
+    try {
+      let testResults = 0;
+      let alertsGenerated = 0;
+
+      for (const item of trackedItems.filter(item => item.isActive)) {
+        try {
+          console.log(`🧪 Testing ${item.productName} (${item.size})`);
+          
+          const response = await fetch(`/api/stockx/market-data?productId=${item.productId}&variantId=${item.variantId}`);
+          if (!response.ok) {
+            console.error(`Test failed for ${item.productName}:`, response.status);
+            continue;
+          }
+
+          const data = await response.json();
+          const newFlexAsk = data.flexLowestAskAmount;
+
+          if (newFlexAsk) {
+            const priceDifference = Math.abs(newFlexAsk - item.baselineFlexAsk);
+            const percentageChange = ((newFlexAsk - item.baselineFlexAsk) / item.baselineFlexAsk) * 100;
+            
+            console.log(`🧪 ${item.productName}: Current $${newFlexAsk}, Baseline $${item.baselineFlexAsk}, Diff: $${priceDifference.toFixed(2)} (${percentageChange.toFixed(2)}%)`);
+            
+            // Test with $1 threshold OR any price change
+            if (priceDifference >= 1 || newFlexAsk !== item.currentFlexAsk) {
+              const alert: PriceAlert = {
+                id: `test-alert-${Date.now()}-${item.id}`,
+                itemId: item.id,
+                productName: item.productName,
+                size: item.size,
+                oldPrice: item.currentFlexAsk,
+                newPrice: newFlexAsk,
+                percentageChange,
+                timestamp: new Date().toISOString(),
+                isRead: false
+              };
+
+              setAlerts(prev => [alert, ...prev]);
+              alertsGenerated++;
+
+              // Show browser notification for test
+              if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification(`🧪 Test Alert: Flex Ask Monitor Working!`, {
+                  body: `${item.productName} (${item.size}) - Current: $${newFlexAsk} (${percentageChange > 0 ? '+' : ''}${percentageChange.toFixed(1)}%)`,
+                  icon: item.imageUrl
+                });
+              }
+
+              // Update the item with new price for testing
+              const updatedItem: FlexAskItem = {
+                ...item,
+                currentFlexAsk: newFlexAsk,
+                lastChecked: new Date().toISOString(),
+                priceHistory: [
+                  ...item.priceHistory,
+                  { price: newFlexAsk, timestamp: new Date().toISOString() }
+                ].slice(-50)
+              };
+
+              setTrackedItems(prev => 
+                prev.map(trackedItem => 
+                  trackedItem.id === item.id ? updatedItem : trackedItem
+                )
+              );
+            }
+            
+            testResults++;
+          }
+          
+          // Small delay between requests
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+        } catch (error) {
+          console.error(`Test error for ${item.productName}:`, error);
+        }
+      }
+
+      if (alertsGenerated > 0) {
+        setSuccessMessage(`✅ Monitor test complete! Generated ${alertsGenerated} test alerts from ${testResults} items. Check the alerts section above.`);
+      } else if (testResults > 0) {
+        setSuccessMessage(`✅ Monitor test complete! Checked ${testResults} items successfully. No price changes detected (prices are stable).`);
+      } else {
+        setErrorMessage('❌ Test failed - could not fetch price data for any items. Check your connection and authentication.');
+      }
+
+    } catch (error) {
+      console.error('Test monitor error:', error);
+      setErrorMessage('❌ Test failed with error. Check console for details.');
+    } finally {
+      setIsLoading(false);
+      setTimeout(() => {
+        setSuccessMessage(null);
+        setErrorMessage(null);
+      }, 8000);
+    }
+  };
+
+  const addDemoItems = () => {
+    // Add some demo items from your recent Denim Tears search for testing
+    const demoItems = [
+      {
+        productId: 'c54bdfe8-b581-463e-bd1a-899b2054e127',
+        variantId: '2f21dd38-995a-4ba6-9492-c3b197bfb5a2',
+        productName: 'Denim Tears The Cotton Wreath Sweatshirt Black',
+        size: 'M',
+        flexAskAmount: 500,
+        imageUrl: '/placeholder-shoe.png'
+      },
+      {
+        productId: '44d29094-a26d-4021-b3ab-8df473a96bb2',
+        variantId: 'a272d872-921e-4902-934e-9e2200c61d01',
+        productName: 'Denim Tears The Cotton Wreath Sweatpants Black',
+        size: 'XXL',
+        flexAskAmount: 399,
+        imageUrl: '/placeholder-shoe.png'
+      },
+      {
+        productId: '69a64445-e9b8-4239-8533-1c2e2d58d6f4',
+        variantId: '2cd4d330-f76a-44c7-acd6-74570f6f911f',
+        productName: 'Denim Tears The Cotton Wreath Shorts Black',
+        size: 'L',
+        flexAskAmount: 271,
+        imageUrl: '/placeholder-shoe.png'
+      }
+    ];
+
+    let addedCount = 0;
+    
+    demoItems.forEach(item => {
+      // Check if item is already being tracked
+      const isAlreadyTracked = trackedItems.some((trackedItem: any) => 
+        trackedItem.productId === item.productId && trackedItem.variantId === item.variantId
+      );
+      
+      if (!isAlreadyTracked) {
+        const newItem = {
+          id: `demo-${Date.now()}-${item.productId}-${item.variantId}`,
+          productId: item.productId,
+          variantId: item.variantId,
+          productName: item.productName,
+          size: item.size,
+          imageUrl: item.imageUrl,
+          currentFlexAsk: item.flexAskAmount,
+          baselineFlexAsk: item.flexAskAmount,
+          lastChecked: new Date().toISOString(),
+          alertThreshold: 1, // Set very low threshold for testing
+          isActive: true,
+          priceHistory: [{
+            price: item.flexAskAmount,
+            timestamp: new Date().toISOString()
+          }],
+          stockxUrl: `https://stockx.com/${item.productName.toLowerCase().replace(/\s+/g, '-')}`
+        };
+
+        setTrackedItems(prev => [...prev, newItem]);
+        addedCount++;
+      }
+    });
+
+    if (addedCount > 0) {
+      setSuccessMessage(`Added ${addedCount} demo items for testing! Set threshold to 1% and click "Test Monitor" to see it work.`);
+    } else {
+      setSuccessMessage('Demo items already added! Click "Test Monitor" to check if monitoring is working.');
+    }
+    
+    setTimeout(() => setSuccessMessage(null), 5000);
+  };
+
   const unreadAlerts = alerts.filter(alert => !alert.isRead);
 
   return (
@@ -322,6 +500,21 @@ const StockXFlexAskMonitor: React.FC = () => {
               >
                 Enable Notifications
               </button>
+
+              <button
+                onClick={testMonitor}
+                disabled={trackedItems.length === 0}
+                className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Test Monitor
+              </button>
+
+              <button
+                onClick={addDemoItems}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-all duration-200"
+              >
+                Add Demo Items
+              </button>
             </div>
 
             <div className="flex items-center gap-4">
@@ -366,9 +559,13 @@ const StockXFlexAskMonitor: React.FC = () => {
                     value={globalAlertThreshold}
                     onChange={(e) => setGlobalAlertThreshold(Number(e.target.value))}
                     className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white"
-                    min="5"
+                    min="1"
                     max="50"
+                    step="0.1"
                   />
+                  <div className="text-xs text-gray-400 mt-1">
+                    💡 For testing, try 1% or lower
+                  </div>
                 </div>
               </div>
             </div>
