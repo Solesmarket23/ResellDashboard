@@ -19,7 +19,13 @@ export { AuthContext };
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    // Return safe defaults instead of throwing error
+    return {
+      user: null,
+      loading: false,
+      signInWithGoogle: async () => {},
+      signOut: async () => {}
+    };
   }
   return context;
 };
