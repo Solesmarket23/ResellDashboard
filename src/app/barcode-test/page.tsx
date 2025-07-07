@@ -2,6 +2,9 @@
 
 import React, { useState } from 'react';
 import ScanPackageModal from '../../components/ScanPackageModal';
+
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
 import NativeBarcodeScanner from '../../components/NativeBarcodeScanner';
 import { Capacitor } from '@capacitor/core';
 

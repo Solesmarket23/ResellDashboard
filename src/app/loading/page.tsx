@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
 import Image from 'next/image';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { TrendingUp, BarChart3, DollarSign, Target, CheckCircle } from 'lucide-react';

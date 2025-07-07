@@ -8,9 +8,9 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  // Experimental features to help with Firebase
+  // Disable static optimization for Firebase compatibility
   experimental: {
-    esmExternals: true,
+    forceSwcTransforms: true,
   },
   images: {
     remotePatterns: [

@@ -2,6 +2,9 @@
 
 import { useState } from 'react';
 import { Menu } from 'lucide-react';
+
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
 import Sidebar from '../../components/Sidebar';
 import Dashboard from '../../components/Dashboard';
 import Purchases from '../../components/Purchases';
