@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { TrendingUp, DollarSign, ExternalLink, Search, AlertCircle, BarChart3, LogIn, CheckCircle } from 'lucide-react';
+import { useTheme } from '../lib/contexts/ThemeContext';
 
 // Enhanced placeholder component for StockX products since images aren't publicly accessible
 interface FallbackImageProps {
@@ -49,41 +50,56 @@ const FallbackImage: React.FC<FallbackImageProps> = ({ imageUrls, alt, className
 // Removed HistoricalSales interface - this data is not available from StockX API
 
 interface ArbitrageOpportunity {
+  id: string;
+  productName: string;
+  size: string;
+  imageUrl: string;
+  costPrice: number;
+  sellingPrice: number;
+  totalCost: number; // Including fees
+  profit: number;
+  profitMargin: number;
+  sku: string;
   productId: string;
   variantId: string;
-  title: string;
-  size: string;
-  highestBid: number; // Adjusted bid (includes fees/taxes)
-  lowestAsk: number; // Adjusted ask
-  rawBid?: number; // Raw bid amount from API
-  rawAsk?: number; // Raw ask amount from API
-  sellFasterAmount?: number | null; // Price to list at inclusive of duties/taxes
-  earnMoreAmount?: number | null; // Price to list at in your region (VAT/taxes)
-  flexLowestAskAmount?: number | null; // Flex program pricing
-  // Estimated buyer fees (since API doesn't provide exact fees)
-  estimatedProcessingFee?: number;
-  estimatedShippingFee?: number;
-  estimatedTotalBuyerCost?: number;
-  spread: number;
-  spreadPercent: number;
-  imageUrl: string;
-  imageUrls?: string[]; // Array of fallback image URLs
-  stockxUrl: string;
-  brand: string;
-  colorway: string;
-  releaseDate: string | null;
-  retailPrice: number | null;
+  bidAmount?: number;
+  askAmount?: number;
+  stockxUrl?: string; // Add the stockxUrl field
 }
 
 const StockXArbitrage: React.FC = () => {
+  const { currentTheme } = useTheme();
+  const isNeon = currentTheme.name === 'neon';
+  
   const [opportunities, setOpportunities] = useState<ArbitrageOpportunity[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [minSpreadPercentage, setMinSpreadPercentage] = useState(10);
+  const [excludedBrands, setExcludedBrands] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isAuthError, setIsAuthError] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false); // Track if user has performed a search attempt
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  // Check authentication status on component mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const response = await fetch('/api/stockx/test');
+        const data = await response.json();
+        setIsAuthenticated(response.ok && data.accessTokenPresent);
+      } catch (error) {
+        console.error('Auth check failed:', error);
+        setIsAuthenticated(false);
+      }
+    };
+    
+    checkAuth();
+  }, []);
 
   // Check for success message on component mount
   useEffect(() => {
@@ -160,16 +176,12 @@ const StockXArbitrage: React.FC = () => {
     }
   }, []);
 
+  // Helper function to generate StockX URL
   const generateStockXUrl = (productName: string, variantId: string) => {
-    // Convert product name to URL slug
-    const slug = productName
-      .toLowerCase()
+    const slug = productName.toLowerCase()
       .replace(/[^a-z0-9\s-]/g, '')
       .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .trim();
-    
-    // StockX URL format typically includes the variant/size in the URL path
+      .replace(/-+/g, '-');
     return `https://stockx.com/${slug}`;
   };
 
@@ -187,35 +199,49 @@ const StockXArbitrage: React.FC = () => {
     window.location.href = disconnectUrl;
   };
 
-  const searchArbitrageOpportunities = async () => {
+  const searchArbitrageOpportunities = async (loadMore = false) => {
     if (!searchQuery.trim()) {
       setErrorMessage('Please enter a search query');
       setIsAuthError(false);
       return;
     }
 
-    setIsLoading(true);
-    setErrorMessage(null);
-    setIsAuthError(false);
-    setSuccessMessage(null);
-    setOpportunities([]); // Clear previous results
+    if (loadMore) {
+      setIsLoadingMore(true);
+    } else {
+      setIsLoading(true);
+      setErrorMessage(null);
+      setIsAuthError(false);
+      setSuccessMessage(null);
+      setOpportunities([]); // Clear previous results
+      setCurrentPage(1);
+      setHasMore(false);
+    }
     setHasSearched(true);
 
     try {
+      const pageToLoad = loadMore ? currentPage + 1 : 1;
+      
       // Build query parameters for streaming
       const params = new URLSearchParams({
         query: searchQuery,
         limit: '50',
         arbitrageMode: 'true',
         minSpreadPercent: minSpreadPercentage.toString(),
-        streaming: 'true' // Enable streaming
+        streaming: 'true', // Enable streaming
+        page: pageToLoad.toString()
       });
+
+      // Add excluded brands if specified
+      if (excludedBrands.trim()) {
+        params.set('excludeBrands', excludedBrands.trim());
+      }
 
       // Use EventSource for streaming results
       const eventSource = new EventSource(`/api/stockx/search?${params.toString()}`);
       
-      let currentOpportunities: ArbitrageOpportunity[] = [];
-      let statusMessage = 'Searching...';
+      let currentOpportunities: ArbitrageOpportunity[] = loadMore ? [...opportunities] : [];
+      let statusMessage = loadMore ? 'Loading more results...' : 'Searching...';
       let progressMessage = '';
 
       eventSource.onmessage = (event) => {
@@ -236,30 +262,21 @@ const StockXArbitrage: React.FC = () => {
             case 'result':
               // Add new result to the list
               const newOpportunity: ArbitrageOpportunity = {
-                productId: data.data.productId,
-                variantId: data.data.variantId,
-                title: data.data.title,
-                size: data.data.size,
-                highestBid: data.data.highestBid,
-                lowestAsk: data.data.lowestAsk,
-                rawBid: data.data.rawBid,
-                rawAsk: data.data.rawAsk,
-                sellFasterAmount: data.data.sellFasterAmount,
-                earnMoreAmount: data.data.earnMoreAmount,
-                flexLowestAskAmount: data.data.flexLowestAskAmount,
-                // Include estimated buyer fees
-                estimatedProcessingFee: data.data.estimatedProcessingFee,
-                estimatedShippingFee: data.data.estimatedShippingFee,
-                estimatedTotalBuyerCost: data.data.estimatedTotalBuyerCost,
-                spread: data.data.spread,
-                spreadPercent: data.data.spreadPercent,
-                imageUrl: data.data.imageUrl,
-                imageUrls: data.data.imageUrls || [data.data.imageUrl], // Use fallback array or single URL
-                stockxUrl: data.data.stockxUrl,
-                brand: data.data.brand,
-                colorway: data.data.colorway,
-                releaseDate: data.data.releaseDate,
-                retailPrice: data.data.retailPrice
+                id: `${data.data.productId}-${data.data.variantId}`,
+                productName: data.data.title || '',
+                size: data.data.size || '',
+                imageUrl: data.data.imageUrl || '',
+                costPrice: data.data.rawBid || 0,
+                sellingPrice: data.data.lowestAsk || 0,
+                totalCost: data.data.estimatedTotalBuyerCost || 0,
+                profit: data.data.spread || 0,
+                profitMargin: data.data.spreadPercent || 0,
+                sku: data.data.productId || '',
+                productId: data.data.productId || '',
+                variantId: data.data.variantId || '',
+                bidAmount: data.data.highestBid,
+                askAmount: data.data.lowestAsk,
+                stockxUrl: data.data.stockxUrl || ''
               };
               
               currentOpportunities.push(newOpportunity);
@@ -268,15 +285,19 @@ const StockXArbitrage: React.FC = () => {
               break;
               
             case 'complete':
-              setSuccessMessage(`✅ Search complete! Found ${data.total} arbitrage opportunities.`);
+              setSuccessMessage(`✅ Search complete! Found ${data.totalResults} arbitrage opportunities.`);
               setIsLoading(false);
+              setIsLoadingMore(false);
+              setCurrentPage(data.page);
+              setHasMore(data.hasMore || false);
               eventSource.close();
               break;
               
             case 'error':
               setErrorMessage(data.message);
-              setIsAuthError(data.statusCode === 401);
+              setIsAuthError(data.statusCode === 401 || data.message.includes('authenticate') || data.message.includes('401'));
               setIsLoading(false);
+              setIsLoadingMore(false);
               setHasSearched(true);
               eventSource.close();
               break;
@@ -288,8 +309,10 @@ const StockXArbitrage: React.FC = () => {
 
       eventSource.onerror = (error) => {
         console.error('EventSource error:', error);
-        setErrorMessage('Connection error while searching');
+        setErrorMessage('Connection error while searching - You may need to authenticate with StockX first');
+        setIsAuthError(true); // Set this to true to show auth buttons
         setIsLoading(false);
+        setIsLoadingMore(false);
         setHasSearched(true);
         eventSource.close();
       };
@@ -298,6 +321,7 @@ const StockXArbitrage: React.FC = () => {
       const cleanup = () => {
         eventSource.close();
         setIsLoading(false);
+        setIsLoadingMore(false);
       };
 
       // Set a timeout to prevent indefinite loading
@@ -313,6 +337,7 @@ const StockXArbitrage: React.FC = () => {
       console.error('Search error:', error);
       setErrorMessage('An error occurred while searching for opportunities');
       setIsLoading(false);
+      setIsLoadingMore(false);
       setHasSearched(true);
     }
   };
@@ -417,6 +442,51 @@ const StockXArbitrage: React.FC = () => {
               </button>
             </div>
           </div>
+
+          {/* Secondary Filters Row */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Exclude Brands (optional)
+              </label>
+              <input
+                type="text"
+                value={excludedBrands}
+                onChange={(e) => setExcludedBrands(e.target.value)}
+                onKeyPress={handleKeyPress}
+                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                placeholder="e.g., Nike, Adidas, Jordan (comma-separated)"
+              />
+              <div className="mt-1 text-xs text-gray-400">
+                <span>💡 Example exclusions:</span>
+                <button
+                  type="button"
+                  onClick={() => setExcludedBrands('Nike, Jordan, Adidas')}
+                  className="ml-1 text-red-400 hover:text-red-300 underline"
+                >
+                  Major Sports Brands
+                </button>
+                <span className="mx-1">•</span>
+                <button
+                  type="button"
+                  onClick={() => setExcludedBrands('Supreme, Off-White, Yeezy')}
+                  className="text-red-400 hover:text-red-300 underline"
+                >
+                  Hype Brands
+                </button>
+              </div>
+            </div>
+            <div className="flex items-end">
+              <div className="text-sm text-gray-400">
+                <p className="mb-1">📊 Brand filtering helps you focus on:</p>
+                <ul className="text-xs space-y-0.5">
+                  <li>• Brands you're familiar with</li>
+                  <li>• Products with better profit margins</li>
+                  <li>• Items that are easier to resell</li>
+                </ul>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Success Message */}
@@ -459,6 +529,51 @@ const StockXArbitrage: React.FC = () => {
           </div>
         )}
 
+        {/* Authentication Status */}
+        <div className="mb-6">
+          <div className={`flex items-center justify-between p-4 rounded-lg border ${
+            isAuthenticated 
+              ? isNeon 
+                ? 'bg-green-500/10 border-green-500/30 text-green-400' 
+                : 'bg-green-50 border-green-200 text-green-800'
+              : isNeon 
+                ? 'bg-red-500/10 border-red-500/30 text-red-400' 
+                : 'bg-red-50 border-red-200 text-red-800'
+          }`}>
+            <div className="flex items-center">
+              <div className={`w-3 h-3 rounded-full mr-3 ${
+                isAuthenticated ? 'bg-green-500' : 'bg-red-500'
+              }`} />
+              <span className="font-medium">
+                {isAuthenticated ? '✅ StockX Connected' : '❌ StockX Authentication Required'}
+              </span>
+            </div>
+            {!isAuthenticated && (
+              <div className="flex gap-2">
+                <button
+                  onClick={async () => {
+                    try {
+                      // Clear old tokens first
+                      await fetch('/api/stockx/clear-tokens', { method: 'POST' });
+                      // Redirect to auth
+                      window.location.href = '/api/stockx/auth?returnTo=' + encodeURIComponent(window.location.href);
+                    } catch (error) {
+                      console.error('Auth error:', error);
+                    }
+                  }}
+                  className={`px-4 py-2 rounded font-medium transition-all duration-200 ${
+                    isNeon
+                      ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:from-blue-400 hover:to-cyan-400 shadow-lg shadow-blue-500/25'
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  }`}
+                >
+                  🔄 Re-authenticate
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Loading State */}
         {isLoading && (
           <div className="text-center py-12">
@@ -489,7 +604,7 @@ const StockXArbitrage: React.FC = () => {
                 <div>
                   <p className="text-gray-400 text-sm">Avg Profit Margin</p>
                   <p className="text-2xl font-bold text-emerald-400">
-                    {Math.round(opportunities.reduce((sum, opp) => sum + opp.spreadPercent, 0) / opportunities.length)}%
+                    {Math.round(opportunities.reduce((sum, opp) => sum + (opp.profitMargin || 0), 0) / opportunities.length)}%
                   </p>
                 </div>
                 <DollarSign className="w-8 h-8 text-emerald-400" />
@@ -500,7 +615,7 @@ const StockXArbitrage: React.FC = () => {
                 <div>
                   <p className="text-gray-400 text-sm">Total Potential Profit</p>
                   <p className="text-2xl font-bold text-green-400">
-                    ${opportunities.reduce((sum, opp) => sum + opp.spread, 0).toLocaleString()}
+                    ${opportunities.reduce((sum, opp) => sum + (opp.profit || 0), 0).toLocaleString()}
                   </p>
                 </div>
                 <TrendingUp className="w-8 h-8 text-green-400" />
@@ -515,9 +630,18 @@ const StockXArbitrage: React.FC = () => {
             <div className="bg-gray-800 rounded-lg p-8">
               <div className="text-6xl mb-4">🔍</div>
               <h3 className="text-xl font-semibold text-gray-300 mb-2">Ready to Find Arbitrage Opportunities</h3>
-              <p className="text-gray-400 max-w-md mx-auto">
+              <p className="text-gray-400 max-w-md mx-auto mb-4">
                 Search by popular brands like "Fear of God Essentials" or "Supreme", or paste StockX trending URLs like "https://stockx.com/category/apparel?sort=most-active" to discover what's currently hot on StockX. Set your minimum profit percentage to find profitable opportunities.
               </p>
+              <div className="flex justify-center gap-3">
+                <button
+                  onClick={handleStockXLogin}
+                  className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
+                >
+                  <LogIn className="w-4 h-4" />
+                  Login to StockX First
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -539,172 +663,38 @@ const StockXArbitrage: React.FC = () => {
         {/* Opportunities List */}
         <div className="space-y-4">
           {opportunities.map((opportunity) => (
-            <div key={opportunity.productId} className="bg-gray-800 rounded-lg p-4 sm:p-6">
+            <div key={opportunity.id} className="bg-gray-800 rounded-lg p-4 sm:p-6">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-4">
                 <div className="flex items-center gap-3 sm:gap-4">
                   <FallbackImage
-                    imageUrls={opportunity.imageUrls || [opportunity.imageUrl]}
-                    alt={opportunity.title}
+                    imageUrls={[opportunity.imageUrl]}
+                    alt={opportunity.productName}
                     className="w-12 h-12 sm:w-16 sm:h-16 rounded-lg flex-shrink-0"
-                    productTitle={opportunity.title}
-                    brand={opportunity.brand}
+                    productTitle={opportunity.productName}
                   />
                   <div className="min-w-0 flex-1">
-                    <h3 className="text-lg sm:text-xl font-semibold text-white truncate">{opportunity.title}</h3>
-                    <p className="text-gray-400 text-sm sm:text-base">{opportunity.brand} • {opportunity.size}</p>
+                    <h3 className="text-lg sm:text-xl font-semibold text-white truncate">{opportunity.productName}</h3>
+                    <p className="text-gray-400 text-sm sm:text-base">{opportunity.size}</p>
                   </div>
                 </div>
                 <div className="text-left sm:text-right">
                   <p className="text-xl sm:text-2xl font-bold text-green-400">
-                    +${opportunity.spread.toFixed(2)}
+                    +${(opportunity.profit || 0).toFixed(2)}
                   </p>
                   <p className="text-gray-400 text-sm">
-                    (+{opportunity.spreadPercent}% profit)
+                    (+{(opportunity.profitMargin || 0).toFixed(2)}% profit)
                   </p>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-4">
                 <div className="text-center p-3 bg-gray-700 rounded-lg">
-                  <p className="text-xs sm:text-sm text-gray-400 mb-1">Highest Bid</p>
-                  <p className="text-base sm:text-lg font-semibold text-green-400">${opportunity.rawBid || opportunity.highestBid}</p>
-                  {opportunity.estimatedTotalBuyerCost && (
-                    <div className="mt-2 text-xs text-gray-400">
-                      <p className="text-orange-400 font-semibold">Est. Total Cost: ${opportunity.estimatedTotalBuyerCost}</p>
-                      <p className="text-gray-500">
-                        Item: ${opportunity.rawBid || opportunity.highestBid} + 
-                        Fees: ${(opportunity.estimatedProcessingFee || 0) + (opportunity.estimatedShippingFee || 0)}
-                      </p>
-                    </div>
-                  )}
-                  <p className="text-xs text-gray-500 mt-1">Bid price + estimated fees</p>
+                  <p className="text-xs sm:text-sm text-gray-400 mb-1">Cost Price</p>
+                  <p className="text-base sm:text-lg font-semibold text-green-400">${(opportunity.costPrice || 0).toFixed(2)}</p>
                 </div>
                 <div className="text-center p-3 bg-gray-700 rounded-lg">
-                  <p className="text-xs sm:text-sm text-gray-400 mb-1">Lowest Ask</p>
-                  <p className="text-base sm:text-lg font-semibold text-cyan-400">${opportunity.lowestAsk}</p>
-                  {opportunity.rawAsk && opportunity.rawAsk !== opportunity.lowestAsk && (
-                    <p className="text-xs text-gray-500">Raw: ${opportunity.rawAsk}</p>
-                  )}
-                  <p className="text-xs text-gray-500">
-                    {opportunity.flexLowestAskAmount ? 'Flex pricing' : 'Potential sell price'}
-                  </p>
-                </div>
-              </div>
-
-              {/* Real StockX Market Data - No Historical Sales Available */}
-              <div className="mb-4 p-4 bg-gray-700/50 rounded-lg border border-gray-600">
-                <div className="flex items-center gap-2 mb-3">
-                  <BarChart3 className="w-5 h-5 text-blue-400" />
-                  <h4 className="text-lg font-semibold text-white">Live Market Data</h4>
-                  <span className="text-xs bg-green-900/20 text-green-400 px-2 py-1 rounded border border-green-500/30">
-                    Real StockX API
-                  </span>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  <div className="bg-gray-800 rounded-lg p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <TrendingUp className="w-4 h-4 text-green-400" />
-                      <span className="text-sm text-gray-400">Net Profit (After Fees)</span>
-                    </div>
-                    <p className="text-2xl font-bold text-green-400">
-                      +${opportunity.spread.toFixed(2)}
-                    </p>
-                    <p className="text-sm text-gray-500">Profit per sale</p>
-                  </div>
-                  
-                  <div className="bg-gray-800 rounded-lg p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <DollarSign className="w-4 h-4 text-blue-400" />
-                      <span className="text-sm text-gray-400">ROI (After Fees)</span>
-                    </div>
-                    <p className="text-2xl font-bold text-blue-400">
-                      +{opportunity.spreadPercent}%
-                    </p>
-                    <p className="text-sm text-gray-500">Return on total investment</p>
-                  </div>
-                </div>
-                
-                {/* Detailed Pricing Breakdown */}
-                <div className="bg-gray-800 rounded-lg p-4">
-                  <h5 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-                    <DollarSign className="w-4 h-4 text-yellow-400" />
-                    Buyer Cost Breakdown
-                  </h5>
-                  
-                  {/* Buyer Fee Breakdown */}
-                  {opportunity.estimatedTotalBuyerCost && (
-                    <div className="mb-4 p-3 bg-orange-900/20 rounded border border-orange-500/30">
-                      <p className="text-orange-300 text-sm font-semibold mb-2">Estimated Total Purchase Cost</p>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                        <div className="bg-gray-700/50 rounded p-2">
-                          <p className="text-gray-400">Item Price</p>
-                          <p className="text-white font-semibold">${opportunity.rawBid || opportunity.highestBid}</p>
-                        </div>
-                        <div className="bg-gray-700/50 rounded p-2">
-                          <p className="text-gray-400">Processing Fee (8%)</p>
-                          <p className="text-orange-400 font-semibold">${opportunity.estimatedProcessingFee}</p>
-                        </div>
-                        <div className="bg-gray-700/50 rounded p-2">
-                          <p className="text-gray-400">Shipping Fee ($14.95)</p>
-                          <p className="text-orange-400 font-semibold">${opportunity.estimatedShippingFee}</p>
-                        </div>
-                        <div className="bg-gray-700/50 rounded p-2 border border-orange-500/50">
-                          <p className="text-gray-400">Total Cost</p>
-                          <p className="text-orange-300 font-bold">${opportunity.estimatedTotalBuyerCost}</p>
-                        </div>
-                      </div>
-                      <p className="text-orange-200 text-xs mt-2">
-                        <strong>Note:</strong> Estimated fees: 8% processing + $14.95 shipping. Actual fees may vary.
-                      </p>
-                    </div>
-                  )}
-                  
-                  {/* Seller Pricing Information */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-                    {opportunity.rawBid && (
-                      <div className="bg-gray-700/50 rounded p-2">
-                        <p className="text-gray-400 text-xs">Raw Bid</p>
-                        <p className="text-white font-semibold">${opportunity.rawBid}</p>
-                      </div>
-                    )}
-                    {opportunity.sellFasterAmount && (
-                      <div className="bg-gray-700/50 rounded p-2">
-                        <p className="text-gray-400 text-xs">Sell Faster (w/ fees)</p>
-                        <p className="text-green-400 font-semibold">${opportunity.sellFasterAmount}</p>
-                      </div>
-                    )}
-                    {opportunity.earnMoreAmount && (
-                      <div className="bg-gray-700/50 rounded p-2">
-                        <p className="text-gray-400 text-xs">Earn More (w/ VAT)</p>
-                        <p className="text-blue-400 font-semibold">${opportunity.earnMoreAmount}</p>
-                      </div>
-                    )}
-                    {opportunity.flexLowestAskAmount && (
-                      <div className="bg-gray-700/50 rounded p-2">
-                        <p className="text-gray-400 text-xs">Flex Ask</p>
-                        <p className="text-purple-400 font-semibold">${opportunity.flexLowestAskAmount}</p>
-                      </div>
-                    )}
-                  </div>
-                  <div className="mt-3 p-2 bg-yellow-900/20 rounded border border-yellow-500/30">
-                    <p className="text-yellow-400 text-xs">
-                      <strong>Seller Note:</strong> "Sell Faster" includes duties/taxes for US buyers. "Earn More" accounts for VAT/taxes in your region.
-                    </p>
-                  </div>
-                </div>
-                
-                <div className="mt-4 p-3 bg-yellow-900/20 rounded-lg border border-yellow-500/30">
-                  <div className="flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 text-yellow-400" />
-                    <div className="text-sm text-yellow-400">
-                      <p><strong>Important:</strong> Profit calculations include estimated buyer fees.</p>
-                      <p className="mt-1 text-xs">• Buyer fees: 8% processing + $14.95 shipping = Total Cost</p>
-                      <p className="text-xs">• Profit = Ask Price - Total Cost (including all fees)</p>
-                      <p className="text-xs">• Only showing profitable opportunities meeting your threshold</p>
-                      <p className="text-xs">• StockX API provides market data only, not exact fees</p>
-                    </div>
-                  </div>
+                  <p className="text-xs sm:text-sm text-gray-400 mb-1">Selling Price</p>
+                  <p className="text-base sm:text-lg font-semibold text-cyan-400">${(opportunity.sellingPrice || 0).toFixed(2)}</p>
                 </div>
               </div>
 
@@ -714,7 +704,7 @@ const StockXArbitrage: React.FC = () => {
                   <p>Variant ID: {opportunity.variantId}</p>
                 </div>
                 <a
-                  href={opportunity.stockxUrl}
+                  href={opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
@@ -726,6 +716,31 @@ const StockXArbitrage: React.FC = () => {
             </div>
           ))}
         </div>
+
+        {/* Load More Button */}
+        {opportunities.length > 0 && hasMore && !isLoading && (
+          <div className="mt-8 text-center">
+            <button
+              onClick={() => searchArbitrageOpportunities(true)}
+              disabled={isLoadingMore}
+              className="bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2 mx-auto"
+            >
+              <Search className="w-5 h-5" />
+              {isLoadingMore ? 'Loading More...' : 'Load More Results'}
+            </button>
+            <p className="text-gray-400 text-sm mt-2">
+              Showing {opportunities.length} results - Page {currentPage}
+            </p>
+          </div>
+        )}
+
+        {/* Load More Loading State */}
+        {isLoadingMore && (
+          <div className="text-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500 mx-auto mb-4"></div>
+            <p className="text-gray-300">Loading more opportunities...</p>
+          </div>
+        )}
       </div>
     </div>
   );
