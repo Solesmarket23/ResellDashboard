@@ -19,16 +19,28 @@ import {
   LogOut,
   Settings,
   HelpCircle,
-  Zap
+  Zap,
+  Search,
+  Archive,
+  ArrowLeftRight,
+  Calendar,
+  Monitor,
+  LineChart,
+  Bell,
+  Activity,
+  X,
+  DollarSign
 } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 
 interface SidebarProps {
   activeItem: string;
   onItemClick: (item: string) => void;
+  isOpen: boolean;
+  onClose: () => void;
 }
 
-const Sidebar = ({ activeItem, onItemClick }: SidebarProps) => {
+const Sidebar = ({ activeItem, onItemClick, isOpen, onClose }: SidebarProps) => {
   const { currentTheme, setTheme, themes } = useTheme();
   const router = useRouter();
 
@@ -60,6 +72,22 @@ const Sidebar = ({ activeItem, onItemClick }: SidebarProps) => {
       ]
     },
     {
+      section: 'STOCKX INTEGRATION',
+      items: [
+        { id: 'stockx-market-research', label: 'Market Research', icon: Search },
+        { id: 'stockx-inventory', label: 'Inventory Manager', icon: Archive },
+        { id: 'stockx-arbitrage', label: 'Arbitrage Finder', icon: ArrowLeftRight },
+        { id: 'stockx-repricing', label: 'Automated Repricing', icon: Activity },
+        { id: 'stockx-sales', label: 'My Sales', icon: DollarSign },
+        { id: 'stockx-releases', label: 'Release Calendar', icon: Calendar },
+        { id: 'stockx-price-monitor', label: 'Price Monitor', icon: Monitor },
+        { id: 'stockx-flex-ask-monitor', label: 'Flex Ask Monitor', icon: Bell },
+        { id: 'stockx-profit-calc', label: 'Enhanced Profit Calc', icon: Calculator },
+        { id: 'stockx-trends', label: 'Market Trends', icon: LineChart },
+        { id: 'stockx-alerts', label: 'Alert System', icon: Bell },
+      ]
+    },
+    {
       section: 'SUPPORT',
       items: [
         { id: 'plans', label: 'Plans & Pricing', icon: CreditCard },
@@ -74,10 +102,36 @@ const Sidebar = ({ activeItem, onItemClick }: SidebarProps) => {
     router.push('/landing');
   };
 
+  const handleItemClick = (item: string) => {
+    onItemClick(item);
+    // Close sidebar on mobile after item click
+    if (window.innerWidth < 1024) {
+      onClose();
+    }
+  };
+
   return (
-    <div className={`w-72 ${currentTheme.colors.background} h-screen flex flex-col border-r border-gray-700/20`}>
+    <>
+      {/* Mobile Overlay */}
+      {isOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          onClick={onClose}
+        />
+      )}
+      
+      {/* Sidebar */}
+      <div className={`
+        fixed lg:static inset-y-0 left-0 z-50 w-64 xl:w-72 
+        ${currentTheme.colors.background} 
+        h-screen flex flex-col border-r border-gray-700/20 
+        transform transition-transform duration-300 ease-in-out
+        ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        lg:flex-shrink-0
+      `}>
       {/* Header */}
       <div className="p-6 border-b border-gray-700/20">
+          <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center">
             <Image
@@ -92,6 +146,15 @@ const Sidebar = ({ activeItem, onItemClick }: SidebarProps) => {
             <h1 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>Flip Flow</h1>
             <p className={`text-sm ${currentTheme.colors.textSecondary}`}>Revolutionary Analytics Suite</p>
           </div>
+            </div>
+            
+            {/* Mobile Close Button */}
+            <button
+              onClick={onClose}
+              className={`lg:hidden p-2 rounded-md hover:bg-white/10 ${currentTheme.colors.textSecondary} hover:text-white transition-colors`}
+            >
+              <X className="w-5 h-5" />
+            </button>
         </div>
       </div>
 
@@ -109,7 +172,7 @@ const Sidebar = ({ activeItem, onItemClick }: SidebarProps) => {
                 return (
                   <button
                     key={item.id}
-                    onClick={() => onItemClick(item.id)}
+                      onClick={() => handleItemClick(item.id)}
                     className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 whitespace-nowrap ${
                       isActive
                         ? currentTheme.name === 'Neon'
@@ -182,7 +245,7 @@ const Sidebar = ({ activeItem, onItemClick }: SidebarProps) => {
         {/* Action Buttons */}
         <div className="space-y-2">
           <button
-            onClick={() => onItemClick('profile')}
+              onClick={() => handleItemClick('profile')}
             className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
               activeItem === 'profile'
                 ? currentTheme.name === 'Neon'
@@ -191,20 +254,20 @@ const Sidebar = ({ activeItem, onItemClick }: SidebarProps) => {
                 : `${currentTheme.colors.textSecondary} hover:bg-white/5 hover:text-white`
             }`}
           >
-            <User className="w-4 h-4 mr-3" />
-            Profile Settings
+              <User className="w-4 h-4 mr-2" />
+              Profile
           </button>
-          
           <button
             onClick={handleLogout}
-            className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${currentTheme.colors.textSecondary} hover:bg-red-500/10 hover:text-red-400 group`}
+              className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${currentTheme.colors.textSecondary} hover:bg-red-500/10 hover:text-red-400`}
           >
-            <LogOut className="w-4 h-4 mr-3 group-hover:text-red-400" />
-            <span className="group-hover:text-red-400">Logout</span>
+              <LogOut className="w-4 h-4 mr-2" />
+              Logout
           </button>
         </div>
       </div>
     </div>
+    </>
   );
 };
 

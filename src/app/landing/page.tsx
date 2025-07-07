@@ -152,7 +152,9 @@ const LandingPage = () => {
               <ArrowRight className="w-5 h-5" />
             </button>
             
-            <button className={`px-8 py-4 rounded-xl font-bold text-lg leading-none transition-all duration-300 ${
+            <button 
+              onClick={() => alert('Demo video coming soon! Sign up to be notified when it\'s ready.')}
+              className={`px-8 py-4 rounded-xl font-bold text-lg leading-none transition-all duration-300 ${
               currentTheme.name === 'Neon'
                 ? 'border-2 border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/10'
                 : 'border-2 border-purple-500/50 text-purple-400 hover:bg-purple-500/10'

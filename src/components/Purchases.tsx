@@ -3,13 +3,17 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown, Edit, MoreHorizontal, Camera, RefreshCw, Mail, Trash2, Settings } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
-import ScanPackageModal from './ScanPackageModal';
+import NativeBarcodeScannerModal from './NativeBarcodeScannerModal';
+import ZXingScannerModal from './ZXingScannerModal';
+import RemoteScanModal from './RemoteScanModal';
 import GmailConnector from './GmailConnector';
 import EmailParsingSettings from './EmailParsingSettings';
 
 const Purchases = () => {
   const [sortBy, setSortBy] = useState('Purchase Date');
   const [showScanModal, setShowScanModal] = useState(false);
+  const [showZXingScanModal, setShowZXingScanModal] = useState(false);
+  const [showRemoteScanModal, setShowRemoteScanModal] = useState(false);
   const [gmailConnected, setGmailConnected] = useState(false);
   const [purchases, setPurchases] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -67,28 +71,45 @@ const Purchases = () => {
     document.addEventListener('mouseup', handleMouseUp);
   };
 
+  // Add debouncing to prevent rapid API calls
+  const [lastFetchTime, setLastFetchTime] = useState(0);
+  const FETCH_COOLDOWN = 5000; // 5 seconds cooldown between fetches
+
+  // Load mock data on component mount - NO AUTO API CALLS
   useEffect(() => {
-    if (gmailConnected) {
-      fetchPurchases();
-    } else {
+    if (!gmailConnected) {
       loadMockData();
     }
+  }, [gmailConnected]);
 
-    // Listen for email config updates and refresh purchases
+  // Separate useEffect for config updates with debouncing - REMOVED lastFetchTime dependency
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+
     const handleConfigUpdate = () => {
-      if (gmailConnected) {
-        fetchPurchases();
-      }
+      // Clear any existing timeout
+      clearTimeout(timeoutId);
+      
+      // Debounce the config update - but don't auto-fetch
+      timeoutId = setTimeout(() => {
+        console.log('Email config updated - manual refresh required');
+      }, 1000);
     };
 
     window.addEventListener('emailConfigUpdated', handleConfigUpdate);
     
     return () => {
+      clearTimeout(timeoutId);
       window.removeEventListener('emailConfigUpdated', handleConfigUpdate);
     };
   }, [gmailConnected]);
 
   const fetchPurchases = async () => {
+    // Prevent duplicate calls if already loading
+    if (loading) {
+      return;
+    }
+
     setLoading(true);
     try {
       // Get email parsing configuration from localStorage
@@ -201,7 +222,16 @@ const Purchases = () => {
 
   const refreshPurchases = () => {
     if (gmailConnected) {
+      const now = Date.now();
+      // Respect cooldown period
+      if (now - lastFetchTime >= FETCH_COOLDOWN) {
+        setLastFetchTime(now);
       fetchPurchases();
+      } else {
+        // Show user they need to wait
+        const remainingTime = Math.ceil((FETCH_COOLDOWN - (now - lastFetchTime)) / 1000);
+        alert(`Please wait ${remainingTime} seconds before refreshing again to prevent rate limiting.`);
+      }
     }
   };
 
@@ -295,17 +325,6 @@ const Purchases = () => {
                 <span>Sync Gmail</span>
               </button>
             )}
-            <button
-              onClick={() => setShowScanModal(true)}
-              className={`flex items-center space-x-2 ${
-                currentTheme.name === 'Neon' 
-                  ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 shadow-lg hover:shadow-emerald-500/25' 
-                  : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 shadow-lg hover:shadow-purple-500/25'
-              } text-white px-4 py-2 rounded-lg font-medium transition-all duration-200`}
-            >
-              <Camera className="w-5 h-5" />
-              <span>Scan Package</span>
-            </button>
             {totalCount > 0 && (
               <button
                 onClick={handleResetClick}
@@ -342,6 +361,33 @@ const Purchases = () => {
             </p>
           )}
         </div>
+      </div>
+
+      {/* Scanner Buttons */}
+      <div className="flex flex-wrap gap-3 mb-6">
+        <button
+          onClick={() => setShowScanModal(true)}
+          className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+        >
+          <Camera className="w-4 h-4" />
+          QuaggaJS Scanner
+        </button>
+        <button
+          onClick={() => setShowZXingScanModal(true)}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+        >
+          <Camera className="w-4 h-4" />
+          ZXing Scanner
+        </button>
+        <button
+          onClick={() => setShowRemoteScanModal(true)}
+          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+          </svg>
+          Remote Scan (Phone)
+        </button>
       </div>
 
       {/* Loading State */}
@@ -481,7 +527,7 @@ const Purchases = () => {
                             const target = e.target as HTMLImageElement;
                             target.style.display = 'none';
                             const parent = target.parentElement!;
-                            parent.innerHTML = `<div class="w-full h-full flex items-center justify-center text-white text-xs font-bold">${purchase.product.brand.split(' ')[0]}</div>`;
+                            parent.innerHTML = `<div class="w-full h-full flex items-center justify-center text-white text-xs font-bold">${purchase.product.brand.split(' ')[0]}</div>`
                           }}
                         />
                       </div>
@@ -511,9 +557,11 @@ const Purchases = () => {
                     </span>
                   </td>
                   <td className="px-6 py-2 align-middle">
-                    <a href="#" className={`${currentTheme.colors.accent} text-sm hover:underline transition-colors`}>
+                    <button 
+                      onClick={() => alert(`Tracking: ${purchase.tracking}\n\nTracking integration coming soon!`)}
+                      className={`${currentTheme.colors.accent} text-sm hover:underline transition-colors cursor-pointer`}>
                       {purchase.tracking}
-                    </a>
+                    </button>
                   </td>
                   <td className="px-6 py-2 align-middle">
                     <span className={`text-sm ${currentTheme.colors.textPrimary} font-medium`}>
@@ -558,10 +606,24 @@ const Purchases = () => {
         </div>
       </div>
 
-      {/* Scan Package Modal */}
-      <ScanPackageModal
+      {/* Native Barcode Scanner Modal */}
+      <NativeBarcodeScannerModal
         isOpen={showScanModal}
         onClose={() => setShowScanModal(false)}
+        onScanComplete={handleScanComplete}
+      />
+
+      {/* ZXing Scanner Modal */}
+      <ZXingScannerModal
+        isOpen={showZXingScanModal}
+        onClose={() => setShowZXingScanModal(false)}
+        onScanComplete={handleScanComplete}
+      />
+
+      {/* Remote Scan Modal */}
+      <RemoteScanModal
+        isOpen={showRemoteScanModal}
+        onClose={() => setShowRemoteScanModal(false)}
         onScanComplete={handleScanComplete}
       />
 

@@ -165,11 +165,7 @@ const FAQ = () => {
   };
 
   return (
-    <div className={`flex-1 p-8 ${
-      isNeon 
-        ? 'bg-slate-950' 
-        : currentTheme.colors.background
-    }`}>
+    <div className={`flex-1 p-8 ${currentTheme.colors.background}`}>
       {/* Header */}
       <div className="text-center mb-12">
         <div className="flex items-center justify-center mb-4">

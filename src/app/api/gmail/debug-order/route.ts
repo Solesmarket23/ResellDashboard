@@ -39,6 +39,8 @@ export async function GET(request: NextRequest) {
       console.log(`🔍 Searching through ${response.data.messages.length} emails for order ${orderNumber}`);
       
       for (const message of response.data.messages) {
+        if (!message.id) continue;
+        
         const emailData = await gmail.users.messages.get({
           userId: 'me',
           id: message.id,

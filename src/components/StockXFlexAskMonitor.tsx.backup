@@ -1,0 +1,1416 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useTheme } from '@/lib/contexts/ThemeContext';
+import { useAuth } from '@/lib/hooks/useAuth';
+import { db } from '@/lib/firebase/firebase';
+import { doc, setDoc, getDoc, onSnapshot } from 'firebase/firestore';
+import StockXAuth from './StockXAuth';
+
+interface FlexAskData {
+  timestamp: number;
+  price: number;
+  regularAsk: number;
+}
+
+interface ProductMonitor {
+  id: string;
+  name: string;
+  urlKey: string;
+  variantId: string;
+  size: string;
+  flexAskHistory: FlexAskData[];
+  currentFlexAsk: number | null;
+  currentRegularAsk: number | null;
+  averageFlexAsk: number;
+  alertThreshold: number; // percentage drop to trigger alert
+  isActive: boolean;
+  lastChecked: number;
+}
+
+interface FlexAskAlert {
+  id: string;
+  productId: string;
+  productName: string;
+  size: string;
+  currentPrice: number;
+  averagePrice: number;
+  dropPercentage: number;
+  timestamp: number;
+  isRead: boolean;
+}
+
+export default function StockXFlexAskMonitor() {
+  const { currentTheme } = useTheme();
+  const { user } = useAuth();
+  const [products, setProducts] = useState<ProductMonitor[]>([]);
+  const [alerts, setAlerts] = useState<FlexAskAlert[]>([]);
+  const [isMonitoring, setIsMonitoring] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [defaultThreshold, setDefaultThreshold] = useState(20);
+  const [monitoringInterval, setMonitoringInterval] = useState(5); // minutes
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authStatus, setAuthStatus] = useState('');
+  const [recentlyAdded, setRecentlyAdded] = useState<Set<string>>(new Set());
+  const [toastNotifications, setToastNotifications] = useState<Array<{
+    id: string;
+    message: string;
+    type: 'success' | 'error' | 'info';
+    timestamp: number;
+  }>>([]);
+  const [activeSection, setActiveSection] = useState<'add' | 'monitored'>('add');
+
+  const isNeon = currentTheme.name === 'Neon';
+
+  // Toast notification system
+  const addToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    const id = Math.random().toString(36).substr(2, 9);
+    const newToast = {
+      id,
+      message,
+      type,
+      timestamp: Date.now()
+    };
+    
+    setToastNotifications(prev => [...prev, newToast]);
+    
+    // Auto-remove after 4 seconds
+    setTimeout(() => {
+      setToastNotifications(prev => prev.filter(toast => toast.id !== id));
+    }, 4000);
+  };
+
+  const removeToast = (id: string) => {
+    setToastNotifications(prev => prev.filter(toast => toast.id !== id));
+  };
+
+  // Firebase persistence functions
+  const saveProductsToFirebase = async (productsData: ProductMonitor[]) => {
+    if (!user?.uid) return;
+    
+    try {
+      const userDocRef = doc(db, 'stockx-flex-monitor', user.uid);
+      await setDoc(userDocRef, {
+        products: productsData,
+        lastUpdated: new Date().toISOString()
+      }, { merge: true });
+      
+      console.log('📱 Saved products to Firebase:', productsData.length, 'products');
+    } catch (error) {
+      console.error('❌ Failed to save products to Firebase:', error);
+      addToast('Failed to save to cloud - data saved locally only', 'error');
+    }
+  };
+
+  const saveAlertsToFirebase = async (alertsData: FlexAskAlert[]) => {
+    if (!user?.uid) return;
+    
+    try {
+      const userDocRef = doc(db, 'stockx-flex-monitor', user.uid);
+      await setDoc(userDocRef, {
+        alerts: alertsData,
+        lastUpdated: new Date().toISOString()
+      }, { merge: true });
+      
+      console.log('🔔 Saved alerts to Firebase:', alertsData.length, 'alerts');
+    } catch (error) {
+      console.error('❌ Failed to save alerts to Firebase:', error);
+    }
+  };
+
+  const loadDataFromFirebase = async () => {
+    if (!user?.uid) return false;
+    
+    try {
+      const userDocRef = doc(db, 'stockx-flex-monitor', user.uid);
+      const docSnap = await getDoc(userDocRef);
+      
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        
+        if (data.products) {
+          setProducts(data.products);
+          localStorage.setItem('stockx-flex-monitor-products', JSON.stringify(data.products));
+          console.log('📱 Loaded products from Firebase:', data.products.length, 'products');
+        }
+        
+        if (data.alerts) {
+          setAlerts(data.alerts);
+          localStorage.setItem('stockx-flex-monitor-alerts', JSON.stringify(data.alerts));
+          console.log('🔔 Loaded alerts from Firebase:', data.alerts.length, 'alerts');
+        }
+        
+        addToast('✅ Data synced from cloud', 'success');
+        return true;
+      }
+    } catch (error) {
+      console.error('❌ Failed to load data from Firebase:', error);
+      addToast('Failed to sync from cloud - using local data', 'error');
+    }
+    
+    return false;
+  };
+
+  // Load data from Firebase first, then localStorage as fallback
+  useEffect(() => {
+    const loadData = async () => {
+      if (user?.uid) {
+        // Try to load from Firebase first
+        const firebaseLoaded = await loadDataFromFirebase();
+        
+        if (!firebaseLoaded) {
+          // Fallback to localStorage
+          const savedProducts = localStorage.getItem('stockx-flex-monitor-products');
+          const savedAlerts = localStorage.getItem('stockx-flex-monitor-alerts');
+          
+          if (savedProducts) {
+            setProducts(JSON.parse(savedProducts));
+          }
+          if (savedAlerts) {
+            setAlerts(JSON.parse(savedAlerts));
+          }
+        }
+      } else {
+        // User not logged in, use localStorage only
+        const savedProducts = localStorage.getItem('stockx-flex-monitor-products');
+        const savedAlerts = localStorage.getItem('stockx-flex-monitor-alerts');
+        
+        if (savedProducts) {
+          setProducts(JSON.parse(savedProducts));
+        }
+        if (savedAlerts) {
+          setAlerts(JSON.parse(savedAlerts));
+        }
+      }
+    };
+    
+    loadData();
+  }, [user?.uid]);
+
+  // Save data to both localStorage and Firebase whenever products change
+  useEffect(() => {
+    localStorage.setItem('stockx-flex-monitor-products', JSON.stringify(products));
+    
+    if (products.length > 0) {
+      saveProductsToFirebase(products);
+    }
+  }, [products, user?.uid]);
+
+  // Save data to both localStorage and Firebase whenever alerts change
+  useEffect(() => {
+    localStorage.setItem('stockx-flex-monitor-alerts', JSON.stringify(alerts));
+    
+    if (alerts.length > 0) {
+      saveAlertsToFirebase(alerts);
+    }
+  }, [alerts, user?.uid]);
+
+  // Authentication state will be handled by StockXAuth component
+  const handleAuthChange = (authenticated: boolean) => {
+    setIsAuthenticated(authenticated);
+    setAuthStatus(authenticated ? 'Connected to StockX' : 'Not connected to StockX');
+  };
+
+  // Search for products to add to monitoring
+  const searchProducts = async () => {
+    if (!searchQuery.trim()) return;
+    
+    setIsSearching(true);
+    try {
+      // Use the catalog search API that returns products with variants and pricing
+      const response = await fetch(`/api/stockx/catalog-search?query=${encodeURIComponent(searchQuery)}&limit=10`);
+      const data = await response.json();
+      
+      console.log('🔍 Search API response:', data);
+      console.log('🔍 Response status:', response.status);
+      
+      if (data.error) {
+        console.error('❌ API Error:', data.message);
+        
+        // Check if it's an auth error
+        if (data.authRequired) {
+          setIsAuthenticated(false);
+          setAuthStatus('Authentication expired - please reconnect');
+          // Re-check auth status
+          checkAuthStatus();
+          addToast(`Authentication required: ${data.message}`, 'error');
+        } else {
+          addToast(`Search failed: ${data.message}`, 'error');
+        }
+        return;
+      }
+      
+      console.log('🔍 Full API response:', data);
+      
+      // Transform the search response format to include variants
+      const rawProducts = data.products || [];
+      
+      console.log('🔍 Raw data keys:', Object.keys(data));
+      console.log('🔍 Raw products array (length:', rawProducts.length, '):', rawProducts);
+      
+      if (!Array.isArray(rawProducts)) {
+        console.error('❌ Products is not an array:', typeof rawProducts, rawProducts);
+        addToast('Invalid search response format', 'error');
+        return;
+      }
+      
+      if (rawProducts.length === 0) {
+        console.log('🔍 No products found in response');
+        setSearchResults([]);
+        addToast(`No products found for "${searchQuery}"`, 'info');
+        return;
+      }
+      
+      const transformedProducts = rawProducts.map((product: any, index: number) => {
+        console.log(`🔍 Processing product ${index + 1}:`, product);
+        
+        return {
+          id: product.productId || product.id || `product-${index}`,
+          name: product.title || product.name || product.displayName || 'Unknown Product',
+          urlKey: product.urlKey || '',
+          brand: product.brand || '',
+          // Include variants with size information
+          variants: product.variants || [],
+          productId: product.productId || product.id,
+          category: product.category,
+          description: product.description,
+          image: product.image
+        };
+      });
+      
+      console.log('🔍 Transformed products:', transformedProducts);
+      console.log('🔍 Number of products found:', transformedProducts.length);
+      
+      setSearchResults(transformedProducts);
+      
+      if (transformedProducts.length > 0) {
+        const totalVariants = transformedProducts.reduce((total, product) => total + (product.variants?.length || 0), 0);
+        addToast(`Found ${transformedProducts.length} products with ${totalVariants} size variants for "${searchQuery}"`, 'success');
+      }
+    } catch (error) {
+      console.error('Search error:', error);
+      alert('Search failed. Please try again.');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // Add all sizes of a product to monitoring
+  const addAllSizesToMonitoring = async (product: any) => {
+    const variants = product.variants || [];
+    
+    if (variants.length === 0) {
+      // No variants, add as single product
+      await addToMonitoring(product);
+      return;
+    }
+    
+    let addedCount = 0;
+    let skippedCount = 0;
+    
+    for (const variant of variants) {
+      const productId = `${product.productId || product.id}-${variant.id || 'default'}`;
+      
+      // Check if already monitoring
+      if (products.find(p => p.id === productId)) {
+        skippedCount++;
+        continue;
+      }
+      
+      // Add this variant
+      const newProduct: ProductMonitor = {
+        id: productId,
+        name: product.name,
+        urlKey: product.urlKey || '',
+        variantId: variant.id || 'default',
+        size: variant.size || 'Unknown',
+        flexAskHistory: [],
+        currentFlexAsk: variant.flexLowestAsk || null,
+        currentRegularAsk: variant.lowestAsk || null,
+        averageFlexAsk: 0,
+        alertThreshold: defaultThreshold,
+        isActive: true,
+        lastChecked: 0
+      };
+      
+      setProducts(prev => [...prev, newProduct]);
+      
+      // Add to recently added for visual feedback
+      setRecentlyAdded(prev => new Set([...prev, productId]));
+      
+      // Remove from recently added after 3 seconds
+      setTimeout(() => {
+        setRecentlyAdded(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(productId);
+          return newSet;
+        });
+      }, 3000);
+      
+      addedCount++;
+    }
+    
+    // Immediately fetch current market data for all added products
+    if (addedCount > 0) {
+      setTimeout(async () => {
+        try {
+          const newlyAdded = variants.slice(0, addedCount).map(variant => ({
+            productId: product.productId || product.id,
+            variantId: variant.id || 'default'
+          }));
+          
+          const response = await fetch('/api/stockx/flex-monitor', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ productIds: newlyAdded }),
+          });
+
+          const data = await response.json();
+          
+          if (!data.error && data.data && data.data.length > 0) {
+            // Update all the products with real market data
+            setProducts(prev => prev.map(p => {
+              const matchingResult = data.data.find((result: any) => 
+                p.id === `${result.productId}-${result.variantId}`
+              );
+              
+              if (matchingResult && matchingResult.flexLowestAsk > 0) {
+                const timestamp = Date.now();
+                const newFlexAskData: FlexAskData = {
+                  timestamp,
+                  price: matchingResult.flexLowestAsk,
+                  regularAsk: matchingResult.lowestAsk || 0
+                };
+                
+                return {
+                  ...p,
+                  flexAskHistory: [newFlexAskData],
+                  currentFlexAsk: matchingResult.flexLowestAsk,
+                  currentRegularAsk: matchingResult.lowestAsk,
+                  averageFlexAsk: matchingResult.flexLowestAsk,
+                  lastChecked: timestamp
+                };
+              }
+              return p;
+            }));
+            
+            console.log('✅ Updated all sizes with current market data');
+            
+            // Show updated pricing toast - single notification with pricing info
+            const loadedCount = data.data.filter((result: any) => result.flexLowestAsk > 0).length;
+            if (loadedCount > 0) {
+              if (addedCount > 0 && skippedCount > 0) {
+                addToast(`✅ Added ${addedCount} sizes to monitoring! (${skippedCount} already monitored) - Pricing loaded for ${loadedCount} sizes`, 'success');
+              } else if (addedCount > 0) {
+                addToast(`✅ Added all ${addedCount} sizes of "${product.name}" to monitoring! - Pricing loaded for ${loadedCount} sizes`, 'success');
+              }
+            } else {
+              // Show basic success message if no pricing data
+              if (addedCount > 0 && skippedCount > 0) {
+                addToast(`✅ Added ${addedCount} sizes to monitoring! (${skippedCount} already monitored)`, 'success');
+              } else if (addedCount > 0) {
+                addToast(`✅ Added all ${addedCount} sizes of "${product.name}" to monitoring!`, 'success');
+              }
+            }
+          } else {
+            // Show basic success message if no pricing data
+            if (addedCount > 0 && skippedCount > 0) {
+              addToast(`✅ Added ${addedCount} sizes to monitoring! (${skippedCount} already monitored)`, 'success');
+            } else if (addedCount > 0) {
+              addToast(`✅ Added all ${addedCount} sizes of "${product.name}" to monitoring!`, 'success');
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching initial market data for all sizes:', error);
+          // Still show success for the addition, even if price fetch failed
+          if (addedCount > 0 && skippedCount > 0) {
+            addToast(`✅ Added ${addedCount} sizes to monitoring! (${skippedCount} already monitored)`, 'success');
+          } else if (addedCount > 0) {
+            addToast(`✅ Added all ${addedCount} sizes of "${product.name}" to monitoring!`, 'success');
+          }
+        }
+      }, 500);
+    } else {
+      // No sizes were added
+      addToast(`All sizes of "${product.name}" are already being monitored!`, 'info');
+    }
+    
+    // Don't clear search results - let user stay in add mode to add more products
+  };
+
+  // Add product variant to monitoring
+  const addToMonitoring = async (product: any, variant?: any) => {
+    // If no variant provided, create a default one for the whole product
+    const actualVariant = variant || {
+      id: 'default',
+      size: 'One Size',
+      flexLowestAsk: null,
+      lowestAsk: null
+    };
+    
+    const productId = `${product.productId || product.id}-${actualVariant.id}`;
+    
+    // Check if already monitoring
+    if (products.find(p => p.id === productId)) {
+      addToast('This product is already being monitored!', 'info');
+      return;
+    }
+    
+    const newProduct: ProductMonitor = {
+      id: productId,
+      name: product.name,
+      urlKey: product.urlKey || '',
+      variantId: actualVariant.id,
+      size: actualVariant.size || 'One Size',
+      flexAskHistory: [],
+      currentFlexAsk: actualVariant.flexLowestAsk || null,
+      currentRegularAsk: actualVariant.lowestAsk || null,
+      averageFlexAsk: 0,
+      alertThreshold: defaultThreshold,
+      isActive: true,
+      lastChecked: 0
+    };
+    
+    console.log('📝 Adding product to monitoring:', newProduct);
+    
+    setProducts(prev => [...prev, newProduct]);
+    
+    // Immediately fetch current market data for this product
+    setTimeout(async () => {
+      try {
+        const response = await fetch('/api/stockx/flex-monitor', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ 
+            productIds: [{ 
+              productId: product.productId || product.id, 
+              variantId: actualVariant.id 
+            }] 
+          }),
+        });
+
+        const data = await response.json();
+        
+        if (!data.error && data.data && data.data.length > 0) {
+          const result = data.data[0];
+          const currentFlexAsk = result.flexLowestAsk;
+          const currentRegularAsk = result.lowestAsk;
+          
+          if (currentFlexAsk && currentFlexAsk > 0) {
+            const timestamp = Date.now();
+            const newFlexAskData: FlexAskData = {
+              timestamp,
+              price: currentFlexAsk,
+              regularAsk: currentRegularAsk || 0
+            };
+            
+            // Update the product with real market data
+            setProducts(prev => prev.map(p => {
+              if (p.id === productId) {
+                return {
+                  ...p,
+                  flexAskHistory: [newFlexAskData],
+                  currentFlexAsk,
+                  currentRegularAsk,
+                  averageFlexAsk: currentFlexAsk,
+                  lastChecked: timestamp
+                };
+              }
+              return p;
+            }));
+            
+            console.log('✅ Updated product with current market data:', {
+              productId,
+              flexAsk: currentFlexAsk,
+              regularAsk: currentRegularAsk
+            });
+            
+            // Show updated pricing toast - only one notification per addition
+            addToast(`✅ Added "${product.name}" to monitoring! Current flex ask: $${currentFlexAsk}`, 'success');
+          } else {
+            // If no price data, show basic success message
+            addToast(`✅ Added "${product.name}" to monitoring!`, 'success');
+          }
+        } else {
+          // If no price data, show basic success message
+          addToast(`✅ Added "${product.name}" to monitoring!`, 'success');
+        }
+      } catch (error) {
+        console.error('Error fetching initial market data:', error);
+        // Still show success for the addition, even if price fetch failed
+        addToast(`✅ Added "${product.name}" to monitoring!`, 'success');
+      }
+    }, 500); // Small delay to ensure the product is added first
+    
+    // Add to recently added for visual feedback
+    setRecentlyAdded(prev => new Set([...prev, productId]));
+    
+    // Remove from recently added after 3 seconds
+    setTimeout(() => {
+      setRecentlyAdded(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(productId);
+        return newSet;
+      });
+    }, 3000);
+    
+    // Don't show toast here - it will be shown after price data loads
+    
+    // Don't clear search results - let user stay in add mode to add more products
+  };
+
+  // Remove product from monitoring
+  const removeFromMonitoring = (productId: string) => {
+    setProducts(prev => prev.filter(p => p.id !== productId));
+    setAlerts(prev => prev.filter(a => a.productId !== productId));
+  };
+
+  // Toggle monitoring for a product
+  const toggleMonitoring = (productId: string) => {
+    setProducts(prev => prev.map(p => 
+      p.id === productId ? { ...p, isActive: !p.isActive } : p
+    ));
+  };
+
+  // Update alert threshold for a product
+  const updateThreshold = (productId: string, threshold: number) => {
+    setProducts(prev => prev.map(p => 
+      p.id === productId ? { ...p, alertThreshold: threshold } : p
+    ));
+  };
+
+  // Check prices for all active products
+  const checkPrices = async () => {
+    const activeProducts = products.filter(p => p.isActive);
+    if (activeProducts.length === 0) return;
+
+    console.log(`🔍 Checking prices for ${activeProducts.length} products...`);
+    
+    try {
+      // Prepare product IDs for batch processing
+      const productIds = activeProducts.map(p => {
+        // Extract productId and variantId from the composite ID
+        const [productId, variantId] = p.id.split('-');
+        return { productId, variantId };
+      });
+
+      // Fetch market data for all products in batch
+      const response = await fetch('/api/stockx/flex-monitor', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ productIds }),
+      });
+
+      const data = await response.json();
+      
+      if (data.error) {
+        console.error('Error fetching flex ask data:', data.message);
+        return;
+      }
+
+      // Process results and update products
+      data.data.forEach((result: any) => {
+        const product = activeProducts.find(p => p.id === `${result.productId}-${result.variantId}`);
+        if (!product) return;
+
+        const currentFlexAsk = result.flexLowestAsk;
+        const currentRegularAsk = result.lowestAsk;
+        
+        if (currentFlexAsk && currentFlexAsk > 0) {
+          const timestamp = result.timestamp;
+          const newFlexAskData: FlexAskData = {
+            timestamp,
+            price: currentFlexAsk,
+            regularAsk: currentRegularAsk || 0
+          };
+          
+          // Update product with new data
+          setProducts(prev => prev.map(p => {
+            if (p.id === product.id) {
+              const updatedHistory = [...p.flexAskHistory, newFlexAskData].slice(-50); // Keep last 50 entries
+              const averageFlexAsk = updatedHistory.reduce((sum, item) => sum + item.price, 0) / updatedHistory.length;
+              
+              // Check if we should trigger an alert
+              if (updatedHistory.length >= 5) { // Need at least 5 data points
+                const dropPercentage = ((averageFlexAsk - currentFlexAsk) / averageFlexAsk) * 100;
+                
+                if (dropPercentage >= p.alertThreshold) {
+                  // Create alert
+                  const alert: FlexAskAlert = {
+                    id: `${p.id}-${timestamp}`,
+                    productId: p.id,
+                    productName: p.name,
+                    size: p.size,
+                    currentPrice: currentFlexAsk,
+                    averagePrice: averageFlexAsk,
+                    dropPercentage,
+                    timestamp,
+                    isRead: false
+                  };
+                  
+                  setAlerts(prev => [alert, ...prev]);
+                  
+                  // Browser notification
+                  if (Notification.permission === 'granted') {
+                    new Notification('StockX Flex Ask Alert!', {
+                      body: `${p.name} (${p.size}) flex ask dropped ${dropPercentage.toFixed(1)}% to $${currentFlexAsk}`,
+                      icon: '/favicon.ico'
+                    });
+                  }
+                }
+              }
+              
+              return {
+                ...p,
+                flexAskHistory: updatedHistory,
+                currentFlexAsk,
+                currentRegularAsk,
+                averageFlexAsk,
+                lastChecked: timestamp
+              };
+            }
+            return p;
+          }));
+        }
+      });
+      
+    } catch (error) {
+      console.error('Error checking flex ask prices:', error);
+    }
+  };
+
+  // Start/stop monitoring
+  const toggleGlobalMonitoring = () => {
+    setIsMonitoring(!isMonitoring);
+  };
+
+  // Monitor prices at regular intervals
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    
+    if (isMonitoring && isAuthenticated) {
+      // Request notification permission
+      if (Notification.permission !== 'granted') {
+        Notification.requestPermission();
+      }
+      
+      // Run initial check
+      checkPrices();
+      
+      // Set up interval
+      interval = setInterval(checkPrices, monitoringInterval * 60 * 1000);
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isMonitoring, monitoringInterval, products, isAuthenticated]);
+
+  // Mark alert as read
+  const markAlertAsRead = (alertId: string) => {
+    setAlerts(prev => prev.map(a => 
+      a.id === alertId ? { ...a, isRead: true } : a
+    ));
+  };
+
+  // Clear all alerts
+  const clearAllAlerts = () => {
+    setAlerts([]);
+  };
+
+  const unreadAlerts = alerts.filter(a => !a.isRead);
+
+  return (
+    <div className={`p-6 max-w-6xl mx-auto ${currentTheme.colors.background} min-h-screen`}>
+      <div className="mb-6">
+        <h2 className={`text-2xl font-bold mb-4 ${
+          isNeon 
+            ? 'bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent' 
+            : currentTheme.colors.textPrimary
+        }`}>StockX Flex Ask Monitor</h2>
+        <p className={`mb-4 ${
+          isNeon ? 'text-slate-300' : 'text-gray-600'
+        }`}>
+          Monitor flex ask prices and get alerts when they drop significantly below their historical average.
+        </p>
+        
+        {/* StockX Authentication */}
+        <StockXAuth onAuthChange={handleAuthChange} />
+        
+        {isAuthenticated && (
+          <>
+            {/* Status */}
+            <div className="flex items-center gap-4 mb-4">
+              <span className={`px-3 py-1 rounded-full text-sm ${
+                isAuthenticated 
+                  ? isNeon 
+                    ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
+                    : 'bg-green-100 text-green-800'
+                  : isNeon 
+                    ? 'bg-red-500/20 text-red-400 border border-red-500/30' 
+                    : 'bg-red-100 text-red-800'
+              }`}>
+                {authStatus}
+              </span>
+              <span className={`px-3 py-1 rounded-full text-sm ${
+                isMonitoring 
+                  ? isNeon 
+                    ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' 
+                    : 'bg-blue-100 text-blue-800'
+                  : isNeon 
+                    ? 'bg-gray-500/20 text-gray-400 border border-gray-500/30' 
+                    : 'bg-gray-100 text-gray-800'
+              }`}>
+                {isMonitoring ? 'Monitoring Active' : 'Monitoring Stopped'}
+              </span>
+              {unreadAlerts.length > 0 && (
+                <span className={`px-3 py-1 rounded-full text-sm ${
+                  isNeon 
+                    ? 'bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse' 
+                    : 'bg-red-100 text-red-800'
+                }`}>
+                  {unreadAlerts.length} New Alert{unreadAlerts.length !== 1 ? 's' : ''}
+                </span>
+              )}
+              {user?.uid && (
+                <span className={`px-3 py-1 rounded-full text-sm ${
+                  isNeon 
+                    ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' 
+                    : 'bg-cyan-100 text-cyan-800'
+                }`}>
+                  ☁️ Cloud Sync Enabled
+                </span>
+              )}
+            </div>
+
+            {/* Controls */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div>
+                <label className={`block text-sm font-medium mb-2 ${
+                  isNeon ? 'text-slate-300' : 'text-gray-700'
+                }`}>Default Alert Threshold</label>
+                <select
+                  value={defaultThreshold}
+                  onChange={(e) => setDefaultThreshold(Number(e.target.value))}
+                  className={`w-full p-2 rounded transition-all duration-200 ${
+                    isNeon
+                      ? 'bg-slate-800/50 border border-slate-600/50 text-white backdrop-blur-sm focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20'
+                      : 'bg-white border border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20'
+                  }`}
+                >
+                  <option value={10}>10% drop</option>
+                  <option value={15}>15% drop</option>
+                  <option value={20}>20% drop</option>
+                  <option value={25}>25% drop</option>
+                  <option value={30}>30% drop</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className={`block text-sm font-medium mb-2 ${
+                  isNeon ? 'text-slate-300' : 'text-gray-700'
+                }`}>Check Interval</label>
+                <select
+                  value={monitoringInterval}
+                  onChange={(e) => setMonitoringInterval(Number(e.target.value))}
+                  className={`w-full p-2 rounded transition-all duration-200 ${
+                    isNeon
+                      ? 'bg-slate-800/50 border border-slate-600/50 text-white backdrop-blur-sm focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20'
+                      : 'bg-white border border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20'
+                  }`}
+                >
+                  <option value={1}>1 minute</option>
+                  <option value={5}>5 minutes</option>
+                  <option value={10}>10 minutes</option>
+                  <option value={15}>15 minutes</option>
+                  <option value={30}>30 minutes</option>
+                  <option value={60}>1 hour</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className={`block text-sm font-medium mb-2 ${
+                  isNeon ? 'text-slate-300' : 'text-gray-700'
+                }`}>Monitoring Control</label>
+                <button
+                  onClick={toggleGlobalMonitoring}
+                  className={`w-full p-2 rounded font-medium transition-all duration-200 ${
+                    isMonitoring 
+                      ? isNeon
+                        ? 'bg-gradient-to-r from-red-500 to-pink-500 text-white hover:from-red-400 hover:to-pink-400 shadow-lg shadow-red-500/25'
+                        : 'bg-red-600 text-white hover:bg-red-700'
+                      : isNeon
+                        ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white hover:from-green-400 hover:to-emerald-400 shadow-lg shadow-green-500/25'
+                        : 'bg-green-600 text-white hover:bg-green-700'
+                  }`}
+                >
+                  {isMonitoring ? 'Stop Monitoring' : 'Start Monitoring'}
+                </button>
+              </div>
+            </div>
+
+            {/* Section Toggle Buttons */}
+            <div className="flex gap-2 mb-6">
+              <button
+                onClick={() => setActiveSection('add')}
+                className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all duration-200 ${
+                  activeSection === 'add'
+                    ? isNeon
+                      ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg shadow-blue-500/25'
+                      : 'bg-blue-600 text-white'
+                    : isNeon
+                      ? 'bg-slate-800/50 border border-slate-600/50 text-slate-300 hover:bg-slate-700/50 backdrop-blur-sm'
+                      : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <span className="mr-2">🔍</span>
+                Add Products
+              </button>
+              <button
+                onClick={() => setActiveSection('monitored')}
+                className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all duration-200 ${
+                  activeSection === 'monitored'
+                    ? isNeon
+                      ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg shadow-purple-500/25'
+                      : 'bg-purple-600 text-white'
+                    : isNeon
+                      ? 'bg-slate-800/50 border border-slate-600/50 text-slate-300 hover:bg-slate-700/50 backdrop-blur-sm'
+                      : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <span className="mr-2">👁️</span>
+                Monitored Products ({products.length})
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Add Products Section */}
+      {activeSection === 'add' && (
+        <div className={`rounded-lg shadow-sm border p-6 mb-6 ${
+          isNeon
+            ? 'bg-slate-800/30 border-slate-600/30 backdrop-blur-sm'
+            : 'bg-white border-gray-200'
+        }`}>
+          <h3 className={`text-lg font-semibold mb-4 ${
+            isNeon ? 'text-cyan-400' : 'text-gray-900'
+          }`}>Add Products to Monitor</h3>
+        
+        <div className="flex gap-2 mb-4">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && searchProducts()}
+            placeholder="Search for sneakers (e.g., Jordan 1, Dunk Low, Yeezy 350)..."
+            className={`flex-1 p-3 rounded-lg transition-all duration-200 ${
+              isNeon
+                ? 'bg-slate-800/50 border border-slate-600/50 text-white placeholder-slate-400 backdrop-blur-sm focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20'
+                : 'bg-white border border-gray-300 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20'
+            }`}
+          />
+          <button
+            onClick={searchProducts}
+            disabled={isSearching}
+            className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
+              isNeon
+                ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:from-blue-400 hover:to-cyan-400 disabled:from-gray-600 disabled:to-gray-700 shadow-lg shadow-blue-500/25'
+                : 'bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-400'
+            }`}
+          >
+            {isSearching ? 'Searching...' : 'Search'}
+          </button>
+          {(searchResults.length > 0 || searchQuery.trim()) && (
+            <button
+              onClick={() => {
+                setSearchResults([]);
+                setSearchQuery('');
+              }}
+              className={`px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
+                isNeon
+                  ? 'bg-slate-700/50 border border-slate-600/50 text-slate-300 hover:bg-slate-600/50 backdrop-blur-sm'
+                  : 'bg-gray-100 border border-gray-300 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+        
+        {/* Quick search suggestions */}
+        <div className="flex flex-wrap gap-2 mb-4">
+          <span className={`text-sm ${
+            isNeon ? 'text-slate-400' : 'text-gray-600'
+          }`}>Quick searches:</span>
+          {['Jordan 1', 'Dunk Low', 'Yeezy 350', 'Air Force 1', 'Travis Scott'].map((term) => (
+            <button
+              key={term}
+              onClick={() => {
+                setSearchQuery(term);
+                // Auto-search after setting query
+                setTimeout(() => searchProducts(), 100);
+              }}
+              className={`px-2 py-1 rounded text-xs transition-all duration-200 ${
+                isNeon
+                  ? 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50 border border-slate-600/30'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
+              }`}
+            >
+              {term}
+            </button>
+          ))}
+        </div>
+
+        {/* Search Results */}
+        {searchResults.length > 0 && (
+          <div className="space-y-4">
+            {searchResults.map((product: any) => (
+              <div key={product.id} className={`border rounded-lg p-4 ${
+                isNeon
+                  ? 'border-slate-600/50 bg-slate-800/20 backdrop-blur-sm'
+                  : 'border-gray-200 bg-gray-50'
+              }`}>
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className={`font-medium ${
+                    isNeon ? 'text-white' : 'text-gray-900'
+                  }`}>{product.name}</h4>
+                  
+                  {/* Add All Sizes Button (only show if product has variants) */}
+                  {product.variants && product.variants.length > 0 && (
+                    <button
+                      onClick={() => addAllSizesToMonitoring(product)}
+                      className={`px-3 py-1 rounded text-sm transition-all duration-200 ${
+                        isNeon
+                          ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:from-purple-400 hover:to-pink-400 shadow-lg shadow-purple-500/25'
+                          : 'bg-purple-600 text-white hover:bg-purple-700'
+                      }`}
+                    >
+                      <span className="mr-1">🔄</span>
+                      Add All Sizes
+                    </button>
+                  )}
+                </div>
+                
+                {/* Show basic add button if no variants */}
+                {(!product.variants || product.variants.length === 0) && (
+                  <div className="mb-4">
+                    {(() => {
+                      const productId = `${product.productId || product.id}-default`;
+                      const isRecentlyAdded = recentlyAdded.has(productId);
+                      const isAlreadyMonitoring = products.find(p => p.id === productId);
+                      
+                      return (
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => addToMonitoring(product, { 
+                              id: 'default', 
+                              size: 'One Size', 
+                              flexLowestAsk: product.flexLowestAsk || null,
+                              lowestAsk: product.lowestAsk || null 
+                            })}
+                            disabled={isAlreadyMonitoring || isRecentlyAdded}
+                            className={`px-4 py-2 rounded transition-all duration-200 ${
+                              isRecentlyAdded
+                                ? isNeon
+                                  ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/25'
+                                  : 'bg-cyan-600 text-white'
+                                : isAlreadyMonitoring
+                                  ? isNeon
+                                    ? 'bg-gray-600/50 text-gray-400 cursor-not-allowed'
+                                    : 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                                  : isNeon
+                                    ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white hover:from-green-400 hover:to-emerald-400 shadow-lg shadow-green-500/25'
+                                    : 'bg-green-600 text-white hover:bg-green-700'
+                            }`}
+                          >
+                            {isRecentlyAdded ? (
+                              <>
+                                <span className="mr-2">✅</span>
+                                Added!
+                              </>
+                            ) : isAlreadyMonitoring ? (
+                              <>
+                                <span className="mr-2">👁️</span>
+                                Monitoring
+                              </>
+                            ) : (
+                              'Add to Monitor'
+                            )}
+                            {!isRecentlyAdded && !isAlreadyMonitoring && product.flexLowestAsk && (
+                              <span className={`ml-2 ${
+                                isNeon ? 'text-purple-200' : 'text-purple-200'
+                              }`}>
+                                (Flex: ${product.flexLowestAsk})
+                              </span>
+                            )}
+                          </button>
+                          
+                          {isRecentlyAdded && (
+                            <div className={`flex items-center text-sm ${
+                              isNeon ? 'text-cyan-400' : 'text-cyan-600'
+                            }`}>
+                              <span className="animate-pulse">● Monitoring started</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+                
+                {/* Show variants if available */}
+                {product.variants && product.variants.length > 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {product.variants.map((variant: any, index: number) => (
+                      <div key={variant.id || index} className={`flex items-center justify-between p-2 rounded ${
+                        isNeon 
+                          ? 'bg-slate-700/30 backdrop-blur-sm border border-slate-600/30' 
+                          : 'bg-gray-50'
+                      }`}>
+                        <div>
+                          <span className={`font-medium ${
+                            isNeon ? 'text-white' : 'text-gray-900'
+                          }`}>{variant.size || 'N/A'}</span>
+                          {variant.flexLowestAsk && (
+                            <span className={`ml-2 ${
+                              isNeon ? 'text-purple-400' : 'text-purple-600'
+                            }`}>
+                              Flex: ${variant.flexLowestAsk}
+                            </span>
+                          )}
+                          {variant.lowestAsk && (
+                            <span className={`ml-2 ${
+                              isNeon ? 'text-cyan-400' : 'text-cyan-600'
+                            }`}>
+                              Ask: ${variant.lowestAsk}
+                            </span>
+                          )}
+                        </div>
+                        {(() => {
+                          const variantId = `${product.productId || product.id}-${variant.id || index}`;
+                          const isRecentlyAdded = recentlyAdded.has(variantId);
+                          const isAlreadyMonitoring = products.find(p => p.id === variantId);
+                          
+                          return (
+                            <button
+                              onClick={() => addToMonitoring(product, variant)}
+                              disabled={isAlreadyMonitoring || isRecentlyAdded}
+                              className={`px-3 py-1 rounded text-sm transition-all duration-200 ${
+                                isRecentlyAdded
+                                  ? isNeon
+                                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/25'
+                                    : 'bg-cyan-600 text-white'
+                                  : isAlreadyMonitoring
+                                    ? isNeon
+                                      ? 'bg-gray-600/50 text-gray-400 cursor-not-allowed'
+                                      : 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                                    : isNeon
+                                      ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white hover:from-green-400 hover:to-emerald-400 shadow-lg shadow-green-500/25'
+                                      : 'bg-green-600 text-white hover:bg-green-700'
+                              }`}
+                            >
+                              {isRecentlyAdded ? '✅' : isAlreadyMonitoring ? '👁️' : 'Add'}
+                            </button>
+                          );
+                        })()}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        
+        {/* Only show help message when no search has been performed */}
+        {searchResults.length === 0 && !isSearching && !searchQuery.trim() && (
+          <div className={`mt-4 p-3 rounded-lg ${
+            isNeon
+              ? 'bg-blue-500/10 border border-blue-500/30 text-blue-400'
+              : 'bg-blue-50 border border-blue-200 text-blue-700'
+          }`}>
+            <p className="text-sm">
+              💡 Search for products to monitor their flex ask prices. Try "Jordan 1", "Dunk Low", "Yeezy", or "Denim Tears".
+            </p>
+          </div>
+        )}
+        </div>
+      )}
+
+      {/* Alerts Section */}
+      {alerts.length > 0 && (
+        <div className={`rounded-lg shadow-sm border p-6 mb-6 ${
+          isNeon
+            ? 'bg-slate-800/30 border-slate-600/30 backdrop-blur-sm'
+            : 'bg-white border-gray-200'
+        }`}>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className={`text-lg font-semibold ${
+              isNeon ? 'text-cyan-400' : 'text-gray-900'
+            }`}>Price Drop Alerts</h3>
+            <button
+              onClick={clearAllAlerts}
+              className={`text-sm transition-colors ${
+                isNeon 
+                  ? 'text-red-400 hover:text-red-300' 
+                  : 'text-red-600 hover:text-red-800'
+              }`}
+            >
+              Clear All
+            </button>
+          </div>
+          
+          <div className="space-y-2">
+            {alerts.slice(0, 10).map((alert) => (
+              <div
+                key={alert.id}
+                className={`p-3 rounded-lg border-l-4 cursor-pointer transition-all duration-200 ${
+                  alert.isRead 
+                    ? isNeon
+                      ? 'bg-slate-700/20 border-slate-500 backdrop-blur-sm'
+                      : 'bg-gray-50 border-gray-300'
+                    : isNeon
+                      ? 'bg-red-500/10 border-red-400 backdrop-blur-sm hover:bg-red-500/20'
+                      : 'bg-red-50 border-red-400 hover:bg-red-100'
+                }`}
+                onClick={() => markAlertAsRead(alert.id)}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className={`font-medium ${
+                      isNeon ? 'text-white' : 'text-gray-900'
+                    }`}>{alert.productName} ({alert.size})</p>
+                    <p className={`text-sm ${
+                      isNeon ? 'text-slate-300' : 'text-gray-600'
+                    }`}>
+                      Flex ask dropped {alert.dropPercentage.toFixed(1)}% to ${alert.currentPrice}
+                      <span className={`ml-2 ${
+                        isNeon ? 'text-slate-400' : 'text-gray-500'
+                      }`}>
+                        (avg: ${alert.averagePrice.toFixed(2)})
+                      </span>
+                    </p>
+                  </div>
+                  <span className={`text-xs ${
+                    isNeon ? 'text-slate-400' : 'text-gray-500'
+                  }`}>
+                    {new Date(alert.timestamp).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Monitored Products Section */}
+      {activeSection === 'monitored' && (
+        <div className={`rounded-lg shadow-sm border p-6 ${
+          isNeon
+            ? 'bg-slate-800/30 border-slate-600/30 backdrop-blur-sm'
+            : 'bg-white border-gray-200'
+        }`}>
+          <h3 className={`text-lg font-semibold mb-4 ${
+            isNeon ? 'text-cyan-400' : 'text-gray-900'
+          }`}>
+            Monitored Products ({products.length})
+          </h3>
+          
+          {products.length === 0 ? (
+            <p className={`text-center py-8 ${
+              isNeon ? 'text-slate-400' : 'text-gray-500'
+            }`}>
+              No products being monitored. Search and add products above to get started.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {products.map((product) => (
+                <div key={product.id} className={`border rounded-lg p-4 ${
+                  isNeon
+                    ? 'border-slate-600/50 bg-slate-800/20 backdrop-blur-sm'
+                    : 'border-gray-200 bg-gray-50'
+                }`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex-1">
+                      <h4 className={`font-medium ${
+                        isNeon ? 'text-white' : 'text-gray-900'
+                      }`}>{product.name}</h4>
+                      <p className={`text-sm ${
+                        isNeon ? 'text-slate-300' : 'text-gray-600'
+                      }`}>Size: {product.size}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => toggleMonitoring(product.id)}
+                        className={`px-3 py-1 rounded text-sm transition-all duration-200 ${
+                          product.isActive 
+                            ? isNeon
+                              ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                              : 'bg-green-100 text-green-800'
+                            : isNeon
+                              ? 'bg-gray-500/20 text-gray-400 border border-gray-500/30'
+                              : 'bg-gray-100 text-gray-800'
+                        }`}
+                      >
+                        {product.isActive ? 'Active' : 'Paused'}
+                      </button>
+                      <button
+                        onClick={() => removeFromMonitoring(product.id)}
+                        className={`text-sm transition-colors ${
+                          isNeon 
+                            ? 'text-red-400 hover:text-red-300' 
+                            : 'text-red-600 hover:text-red-800'
+                        }`}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <p className={isNeon ? 'text-slate-400' : 'text-gray-600'}>Current Flex Ask</p>
+                      <p className={`font-medium ${
+                        isNeon ? 'text-purple-400' : 'text-purple-600'
+                      }`}>
+                        {product.currentFlexAsk ? `$${product.currentFlexAsk}` : 'N/A'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className={isNeon ? 'text-slate-400' : 'text-gray-600'}>Average Flex Ask</p>
+                      <p className={`font-medium ${
+                        isNeon ? 'text-white' : 'text-gray-900'
+                      }`}>
+                        {product.averageFlexAsk ? `$${product.averageFlexAsk.toFixed(2)}` : 'N/A'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className={isNeon ? 'text-slate-400' : 'text-gray-600'}>Alert Threshold</p>
+                      <select
+                        value={product.alertThreshold}
+                        onChange={(e) => updateThreshold(product.id, Number(e.target.value))}
+                        className={`w-full p-1 rounded text-sm transition-all duration-200 ${
+                          isNeon
+                            ? 'bg-slate-800/50 border border-slate-600/50 text-white focus:border-cyan-500/50'
+                            : 'bg-white border border-gray-300 text-gray-900 focus:border-blue-500'
+                        }`}
+                      >
+                        <option value={10}>10%</option>
+                        <option value={15}>15%</option>
+                        <option value={20}>20%</option>
+                        <option value={25}>25%</option>
+                        <option value={30}>30%</option>
+                      </select>
+                    </div>
+                    <div>
+                      <p className={isNeon ? 'text-slate-400' : 'text-gray-600'}>Data Points</p>
+                      <p className={`font-medium ${
+                        isNeon ? 'text-white' : 'text-gray-900'
+                      }`}>{product.flexAskHistory.length}</p>
+                    </div>
+                  </div>
+                  
+                  {product.lastChecked > 0 && (
+                    <p className={`text-xs mt-2 ${
+                      isNeon ? 'text-slate-500' : 'text-gray-500'
+                    }`}>
+                      Last checked: {new Date(product.lastChecked).toLocaleString()}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Toast Notifications */}
+      <div className="fixed top-4 right-4 z-50 space-y-2">
+        {toastNotifications.map((toast) => (
+          <div
+            key={toast.id}
+            className={`
+              transform transition-all duration-300 ease-in-out
+              animate-slide-in-right
+              max-w-sm w-full shadow-lg rounded-lg p-4 border
+              ${toast.type === 'success' 
+                ? isNeon 
+                  ? 'bg-gradient-to-r from-green-500/90 to-emerald-500/90 border-green-400 text-white shadow-green-500/25' 
+                  : 'bg-green-50 border-green-200 text-green-800'
+                : toast.type === 'error'
+                  ? isNeon
+                    ? 'bg-gradient-to-r from-red-500/90 to-pink-500/90 border-red-400 text-white shadow-red-500/25'
+                    : 'bg-red-50 border-red-200 text-red-800'
+                  : isNeon
+                    ? 'bg-gradient-to-r from-blue-500/90 to-cyan-500/90 border-blue-400 text-white shadow-blue-500/25'
+                    : 'bg-blue-50 border-blue-200 text-blue-800'
+              }
+              ${isNeon ? 'backdrop-blur-sm' : ''}
+            `}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  {toast.type === 'success' ? (
+                    <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
+                      isNeon ? 'bg-white/20' : 'bg-green-100'
+                    }`}>
+                      <span className={`text-xs ${isNeon ? 'text-white' : 'text-green-600'}`}>✓</span>
+                    </div>
+                  ) : toast.type === 'error' ? (
+                    <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
+                      isNeon ? 'bg-white/20' : 'bg-red-100'
+                    }`}>
+                      <span className={`text-xs ${isNeon ? 'text-white' : 'text-red-600'}`}>✕</span>
+                    </div>
+                  ) : (
+                    <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
+                      isNeon ? 'bg-white/20' : 'bg-blue-100'
+                    }`}>
+                      <span className={`text-xs ${isNeon ? 'text-white' : 'text-blue-600'}`}>i</span>
+                    </div>
+                  )}
+                </div>
+                <div className="ml-3">
+                  <p className={`text-sm font-medium ${
+                    isNeon ? 'text-white' : ''
+                  }`}>
+                    {toast.message}
+                  </p>
+                </div>
+              </div>
+              <div className="ml-4 flex-shrink-0">
+                <button
+                  className={`inline-flex rounded-md p-1.5 focus:outline-none transition-colors ${
+                    isNeon 
+                      ? 'text-white/70 hover:text-white hover:bg-white/10' 
+                      : toast.type === 'success'
+                        ? 'text-green-500 hover:bg-green-100'
+                        : toast.type === 'error'
+                          ? 'text-red-500 hover:bg-red-100'
+                          : 'text-blue-500 hover:bg-blue-100'
+                  }`}
+                  onClick={() => removeToast(toast.id)}
+                >
+                  <span className="sr-only">Dismiss</span>
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
