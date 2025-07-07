@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Edit, MoreHorizontal, Camera, RefreshCw, Mail, Trash2, Settings } from 'lucide-react';
+import { ChevronDown, Edit, MoreHorizontal, Camera, RefreshCw, Mail, Trash2, Settings, Plus } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
+import { useAuth } from '../lib/contexts/AuthContext';
+import { addDocument, getDocuments, updateDocument, deleteDocument } from '../lib/firebase/firebaseUtils';
 import NativeBarcodeScannerModal from './NativeBarcodeScannerModal';
 import ZXingScannerModal from './ZXingScannerModal';
 import RemoteScanModal from './RemoteScanModal';
@@ -16,12 +18,15 @@ const Purchases = () => {
   const [showRemoteScanModal, setShowRemoteScanModal] = useState(false);
   const [gmailConnected, setGmailConnected] = useState(false);
   const [purchases, setPurchases] = useState<any[]>([]);
+  const [manualPurchases, setManualPurchases] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [totalValue, setTotalValue] = useState('$0.00');
   const [totalCount, setTotalCount] = useState(0);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showEmailSettings, setShowEmailSettings] = useState(false);
+  const [showAddPurchaseModal, setShowAddPurchaseModal] = useState(false);
   const { currentTheme } = useTheme();
+  const { user } = useAuth();
   
   // Column width state
   const [columnWidths, setColumnWidths] = useState({
@@ -75,12 +80,16 @@ const Purchases = () => {
   const [lastFetchTime, setLastFetchTime] = useState(0);
   const FETCH_COOLDOWN = 5000; // 5 seconds cooldown between fetches
 
-  // Load mock data on component mount - NO AUTO API CALLS
+  // Load data on component mount
   useEffect(() => {
     if (!gmailConnected) {
       loadMockData();
     }
-  }, [gmailConnected]);
+    // Always load manual purchases from Firebase
+    if (user) {
+      loadManualPurchasesFromFirebase();
+    }
+  }, [gmailConnected, user]);
 
   // Separate useEffect for config updates with debouncing - REMOVED lastFetchTime dependency
   useEffect(() => {
@@ -124,8 +133,12 @@ const Purchases = () => {
       
       if (response.ok) {
         const data = await response.json();
-        setPurchases(data.purchases || []);
-        calculateTotals(data.purchases || []);
+        const gmailPurchases = data.purchases || [];
+        setPurchases(gmailPurchases);
+        
+        // Combine with manual purchases for display
+        const combinedPurchases = [...gmailPurchases, ...manualPurchases];
+        calculateTotals(combinedPurchases);
       } else {
         console.error('Failed to fetch purchases');
         loadMockData();
@@ -220,6 +233,66 @@ const Purchases = () => {
     setTotalCount(purchaseList.length);
   };
 
+  // Firebase functions for manual purchases
+  const saveManualPurchaseToFirebase = async (purchase: any) => {
+    if (!user) {
+      console.warn('User not authenticated - cannot save to Firebase');
+      return;
+    }
+
+    try {
+      const purchaseData = {
+        ...purchase,
+        userId: user.uid,
+        createdAt: new Date().toISOString(),
+        type: 'manual' // Distinguish from Gmail imports
+      };
+      
+      await addDocument('purchases', purchaseData);
+      console.log('✅ Purchase saved to Firebase');
+    } catch (error) {
+      console.error('❌ Error saving purchase to Firebase:', error);
+    }
+  };
+
+  const loadManualPurchasesFromFirebase = async () => {
+    if (!user) return;
+
+    try {
+      setLoading(true);
+      const allPurchases = await getDocuments('purchases');
+      
+      // Filter to only show purchases for this user
+      const userPurchases = allPurchases.filter(
+        (purchase: any) => purchase.userId === user.uid && purchase.type === 'manual'
+      );
+      
+      setManualPurchases(userPurchases);
+      
+      // Combine with Gmail purchases for display
+      const combinedPurchases = [...purchases, ...userPurchases];
+      calculateTotals(combinedPurchases);
+      
+      console.log('✅ Loaded manual purchases from Firebase:', userPurchases.length);
+    } catch (error) {
+      console.error('❌ Error loading purchases from Firebase:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteManualPurchaseFromFirebase = async (purchaseId: string) => {
+    if (!user) return;
+
+    try {
+      await deleteDocument('purchases', purchaseId);
+      await loadManualPurchasesFromFirebase(); // Refresh the list
+      console.log('✅ Purchase deleted from Firebase');
+    } catch (error) {
+      console.error('❌ Error deleting purchase from Firebase:', error);
+    }
+  };
+
   const refreshPurchases = () => {
     if (gmailConnected) {
       const now = Date.now();
@@ -239,11 +312,34 @@ const Purchases = () => {
     setShowResetConfirm(true);
   };
 
-  const confirmReset = () => {
+  const confirmReset = async () => {
     setPurchases([]);
+    setManualPurchases([]);
     setTotalValue('$0');
     setTotalCount(0);
     setShowResetConfirm(false);
+    
+    // Clear Firebase data for this user
+    if (user) {
+      try {
+        const allPurchases = await getDocuments('purchases');
+        const userPurchases = allPurchases.filter(
+          (purchase: any) => purchase.userId === user.uid && purchase.type === 'manual'
+        );
+        
+        // Delete all manual purchases for this user
+        for (const purchase of userPurchases) {
+          if (purchase.id) {
+            await deleteDocument('purchases', purchase.id);
+          }
+        }
+        console.log('✅ All manual purchases cleared from Firebase');
+      } catch (error) {
+        console.error('❌ Error clearing purchases from Firebase:', error);
+      }
+    }
+    
+    loadMockData();
   };
 
   const cancelReset = () => {
@@ -338,6 +434,17 @@ const Purchases = () => {
                 <span>Reset</span>
               </button>
             )}
+            <button
+              onClick={() => setShowAddPurchaseModal(true)}
+              className={`flex items-center space-x-2 ${
+                currentTheme.name === 'Neon' 
+                  ? 'bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 shadow-lg hover:shadow-blue-500/25' 
+                  : 'bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 shadow-lg hover:shadow-green-500/25'
+              } text-white px-4 py-2 rounded-lg font-medium transition-all duration-200`}
+            >
+              <Plus className="w-5 h-5" />
+              <span>Add Purchase</span>
+            </button>
             <button
               onClick={() => setShowEmailSettings(true)}
               className={`flex items-center space-x-2 ${
@@ -508,7 +615,7 @@ const Purchases = () => {
             <tbody className={`${currentTheme.colors.cardBackground} ${
               currentTheme.name === 'Neon' ? 'divide-y divide-white/10' : 'divide-y divide-gray-100'
             }`}>
-              {purchases.map((purchase) => (
+              {[...purchases, ...manualPurchases].map((purchase) => (
                 <tr key={purchase.id} className={`${
                   currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-50'
                 } transition-colors`}>
@@ -672,6 +779,289 @@ const Purchases = () => {
         isOpen={showEmailSettings}
         onClose={() => setShowEmailSettings(false)}
       />
+
+      {/* Add Purchase Modal */}
+      {showAddPurchaseModal && <AddPurchaseModal />}
+    </div>
+  );
+};
+
+// Add Purchase Modal Component
+const AddPurchaseModal = () => {
+  const { currentTheme } = useTheme();
+  const { user } = useAuth();
+  const [showAddPurchaseModal, setShowAddPurchaseModal] = useState(true);
+  const [formData, setFormData] = useState({
+    productName: '',
+    brand: '',
+    size: '',
+    orderNumber: '',
+    status: 'Pending',
+    tracking: '',
+    market: 'Manual',
+    price: '',
+    purchaseDate: '',
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!user) {
+      alert('Please sign in to add purchases');
+      return;
+    }
+
+    // Create purchase object
+    const newPurchase = {
+      id: Date.now(), // Simple ID generation
+      product: {
+        name: formData.productName,
+        brand: formData.brand,
+        size: formData.size,
+        image: "https://picsum.photos/200/200?random=" + Date.now(),
+        bgColor: "bg-gray-900",
+        color: "gray"
+      },
+      orderNumber: formData.orderNumber,
+      status: formData.status,
+      statusColor: formData.status === 'Delivered' ? 'green' : formData.status === 'Shipped' ? 'blue' : 'orange',
+      tracking: formData.tracking,
+      market: formData.market,
+      price: `$${formData.price}`,
+      originalPrice: `$${formData.price} + $0.00`,
+      purchaseDate: new Date(formData.purchaseDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      dateAdded: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + '\n' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+      verified: 'pending',
+      verifiedColor: 'orange'
+    };
+
+    try {
+      const purchaseData = {
+        ...newPurchase,
+        userId: user.uid,
+        createdAt: new Date().toISOString(),
+        type: 'manual'
+      };
+      
+      await addDocument('purchases', purchaseData);
+      alert('✅ Purchase added successfully!');
+      setShowAddPurchaseModal(false);
+      
+      // Refresh the page to show new purchase
+      window.location.reload();
+    } catch (error) {
+      console.error('Error adding purchase:', error);
+      alert('❌ Error adding purchase. Please try again.');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className={`${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto`}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>Add Purchase</h3>
+          <button
+            onClick={() => setShowAddPurchaseModal(false)}
+            className={`${currentTheme.colors.textSecondary} hover:${currentTheme.colors.textPrimary}`}
+          >
+            ✕
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className={`block text-sm font-medium ${currentTheme.colors.textPrimary} mb-1`}>
+              Product Name *
+            </label>
+            <input
+              type="text"
+              required
+              value={formData.productName}
+              onChange={(e) => setFormData({ ...formData, productName: e.target.value })}
+              className={`w-full px-3 py-2 border rounded-lg ${currentTheme.colors.textPrimary} ${
+                currentTheme.name === 'Neon' 
+                  ? 'bg-black/20 border-white/20 focus:border-cyan-500' 
+                  : 'bg-white border-gray-300 focus:border-blue-500'
+              } focus:outline-none`}
+              placeholder="e.g., Nike Air Jordan 1 High OG"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={`block text-sm font-medium ${currentTheme.colors.textPrimary} mb-1`}>
+                Brand *
+              </label>
+              <input
+                type="text"
+                required
+                value={formData.brand}
+                onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
+                className={`w-full px-3 py-2 border rounded-lg ${currentTheme.colors.textPrimary} ${
+                  currentTheme.name === 'Neon' 
+                    ? 'bg-black/20 border-white/20 focus:border-cyan-500' 
+                    : 'bg-white border-gray-300 focus:border-blue-500'
+                } focus:outline-none`}
+                placeholder="e.g., Nike"
+              />
+            </div>
+            <div>
+              <label className={`block text-sm font-medium ${currentTheme.colors.textPrimary} mb-1`}>
+                Size *
+              </label>
+              <input
+                type="text"
+                required
+                value={formData.size}
+                onChange={(e) => setFormData({ ...formData, size: e.target.value })}
+                className={`w-full px-3 py-2 border rounded-lg ${currentTheme.colors.textPrimary} ${
+                  currentTheme.name === 'Neon' 
+                    ? 'bg-black/20 border-white/20 focus:border-cyan-500' 
+                    : 'bg-white border-gray-300 focus:border-blue-500'
+                } focus:outline-none`}
+                placeholder="e.g., US 10"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={`block text-sm font-medium ${currentTheme.colors.textPrimary} mb-1`}>
+                Price *
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                required
+                value={formData.price}
+                onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                className={`w-full px-3 py-2 border rounded-lg ${currentTheme.colors.textPrimary} ${
+                  currentTheme.name === 'Neon' 
+                    ? 'bg-black/20 border-white/20 focus:border-cyan-500' 
+                    : 'bg-white border-gray-300 focus:border-blue-500'
+                } focus:outline-none`}
+                placeholder="0.00"
+              />
+            </div>
+            <div>
+              <label className={`block text-sm font-medium ${currentTheme.colors.textPrimary} mb-1`}>
+                Purchase Date *
+              </label>
+              <input
+                type="date"
+                required
+                value={formData.purchaseDate}
+                onChange={(e) => setFormData({ ...formData, purchaseDate: e.target.value })}
+                className={`w-full px-3 py-2 border rounded-lg ${currentTheme.colors.textPrimary} ${
+                  currentTheme.name === 'Neon' 
+                    ? 'bg-black/20 border-white/20 focus:border-cyan-500' 
+                    : 'bg-white border-gray-300 focus:border-blue-500'
+                } focus:outline-none`}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={`block text-sm font-medium ${currentTheme.colors.textPrimary} mb-1`}>
+                Order Number
+              </label>
+              <input
+                type="text"
+                value={formData.orderNumber}
+                onChange={(e) => setFormData({ ...formData, orderNumber: e.target.value })}
+                className={`w-full px-3 py-2 border rounded-lg ${currentTheme.colors.textPrimary} ${
+                  currentTheme.name === 'Neon' 
+                    ? 'bg-black/20 border-white/20 focus:border-cyan-500' 
+                    : 'bg-white border-gray-300 focus:border-blue-500'
+                } focus:outline-none`}
+                placeholder="Optional"
+              />
+            </div>
+            <div>
+              <label className={`block text-sm font-medium ${currentTheme.colors.textPrimary} mb-1`}>
+                Tracking Number
+              </label>
+              <input
+                type="text"
+                value={formData.tracking}
+                onChange={(e) => setFormData({ ...formData, tracking: e.target.value })}
+                className={`w-full px-3 py-2 border rounded-lg ${currentTheme.colors.textPrimary} ${
+                  currentTheme.name === 'Neon' 
+                    ? 'bg-black/20 border-white/20 focus:border-cyan-500' 
+                    : 'bg-white border-gray-300 focus:border-blue-500'
+                } focus:outline-none`}
+                placeholder="Optional"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={`block text-sm font-medium ${currentTheme.colors.textPrimary} mb-1`}>
+                Status
+              </label>
+              <select
+                value={formData.status}
+                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                className={`w-full px-3 py-2 border rounded-lg ${currentTheme.colors.textPrimary} ${
+                  currentTheme.name === 'Neon' 
+                    ? 'bg-black/20 border-white/20 focus:border-cyan-500' 
+                    : 'bg-white border-gray-300 focus:border-blue-500'
+                } focus:outline-none`}
+              >
+                <option value="Pending">Pending</option>
+                <option value="Shipped">Shipped</option>
+                <option value="Delivered">Delivered</option>
+              </select>
+            </div>
+            <div>
+              <label className={`block text-sm font-medium ${currentTheme.colors.textPrimary} mb-1`}>
+                Market
+              </label>
+              <select
+                value={formData.market}
+                onChange={(e) => setFormData({ ...formData, market: e.target.value })}
+                className={`w-full px-3 py-2 border rounded-lg ${currentTheme.colors.textPrimary} ${
+                  currentTheme.name === 'Neon' 
+                    ? 'bg-black/20 border-white/20 focus:border-cyan-500' 
+                    : 'bg-white border-gray-300 focus:border-blue-500'
+                } focus:outline-none`}
+              >
+                <option value="Manual">Manual</option>
+                <option value="StockX">StockX</option>
+                <option value="GOAT">GOAT</option>
+                <option value="eBay">eBay</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex justify-end space-x-3 pt-4">
+            <button
+              type="button"
+              onClick={() => setShowAddPurchaseModal(false)}
+              className={`px-4 py-2 ${
+                currentTheme.name === 'Neon' 
+                  ? 'bg-white/10 hover:bg-white/20 text-gray-300 border border-white/20' 
+                  : 'text-gray-700 bg-gray-100 hover:bg-gray-200'
+              } rounded-lg font-medium transition-colors`}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className={`px-4 py-2 ${
+                currentTheme.name === 'Neon' 
+                  ? 'bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600' 
+                  : 'bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600'
+              } text-white rounded-lg font-medium transition-all duration-200`}
+            >
+              Add Purchase
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 };
