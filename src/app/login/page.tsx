@@ -85,10 +85,8 @@ const LoginPage = () => {
         setSuccessMessage('🎉 Account Created Successfully! 🎉');
         setIsLoading(false);
         
-        // Navigate after showing success message
-        setTimeout(() => {
-          router.push('/loading');
-        }, 4000);
+        // Keep success message visible until user clicks button
+        // No automatic navigation
       }
     } catch (error: any) {
       console.error('Email/password authentication failed:', error);
@@ -117,14 +115,51 @@ const LoginPage = () => {
     setErrorMessage(''); // Clear any previous errors
     setSuccessMessage(''); // Clear any previous success messages
     
+    let authCompleted = false;
+    
     try {
-      // Actually call Firebase authentication
-      await signInWithGoogle();
+      // Create a timeout promise that rejects after 10 seconds
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => {
+          if (!authCompleted) {
+            reject(new Error('Authentication timeout - popup may have been closed'));
+          }
+        }, 10000); // 10 seconds timeout
+      });
       
-      // Only navigate if authentication succeeded
+      // Create a window focus detection promise
+      const focusPromise = new Promise((_, reject) => {
+        const handleFocus = () => {
+          // Wait a bit after focus to see if auth completes
+          setTimeout(() => {
+            if (!authCompleted) {
+              window.removeEventListener('focus', handleFocus);
+              reject(new Error('Authentication cancelled - popup closed'));
+            }
+          }, 1000); // Wait 1 second after focus
+        };
+        
+        window.addEventListener('focus', handleFocus);
+        
+        // Clean up listener after timeout
+        setTimeout(() => {
+          window.removeEventListener('focus', handleFocus);
+        }, 10000);
+      });
+      
+      // Race the authentication against timeout and focus detection
+      await Promise.race([
+        signInWithGoogle().then(() => { authCompleted = true; }),
+        timeoutPromise,
+        focusPromise
+      ]);
+      
+      // Only navigate if authentication succeeded (keep loading state active during navigation)
       router.push('/loading');
     } catch (error: any) {
       console.error('Google sign-in failed:', error);
+      
+      // Reset loading state on any error
       setIsLoading(false);
       
       // Show user-friendly error message
@@ -133,10 +168,21 @@ const LoginPage = () => {
         errorText = 'Sign-in was cancelled. Please try again.';
       } else if (error.code === 'auth/popup-blocked') {
         errorText = 'Popup was blocked. Please enable popups and try again.';
+      } else if (error.code === 'auth/cancelled-popup-request') {
+        errorText = 'Sign-in was cancelled. Please try again.';
+      } else if (error.message === 'Authentication timeout - popup may have been closed') {
+        errorText = 'Sign-in timed out. Please try again.';
+      } else if (error.message === 'Authentication cancelled - popup closed') {
+        errorText = 'Sign-in was cancelled. Please try again.';
       }
       
       setErrorMessage(errorText);
     }
+  };
+
+  const handleGoToDashboard = () => {
+    setSuccessMessage(''); // Clear success message
+    router.push('/dashboard');
   };
 
   return (
@@ -155,37 +201,36 @@ const LoginPage = () => {
         }`}></div>
       </div>
 
-      <div className="relative w-full max-w-md">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <button 
-            onClick={() => handleNavigation('/landing')}
-            className={`flex items-center space-x-2 ${currentTheme.colors.textSecondary} hover:${currentTheme.colors.textPrimary} transition-colors`}
-          >
-            <ArrowLeft className="w-5 h-5" />
-            <span>Back</span>
-          </button>
-          
-          {/* Theme Selector */}
-          <div className="flex items-center space-x-2">
-            <span className={`text-sm font-medium ${currentTheme.colors.textSecondary}`}>Theme:</span>
-            <div className="flex items-center space-x-1 p-1 rounded-lg bg-black/20 backdrop-blur-sm">
-              {Object.values(themes).map((theme, index) => (
-                <button
-                  key={theme.name}
-                  onClick={() => setTheme(theme.name)}
-                  className={`w-6 h-6 rounded text-xs font-bold transition-all duration-200 ${
-                    currentTheme.name === theme.name 
-                      ? 'bg-gradient-to-r from-cyan-500 to-purple-500 text-white shadow-lg scale-105' 
-                      : 'text-gray-400 hover:text-white hover:bg-white/10'
-                  }`}
-                >
-                  {index + 1}
-                </button>
-              ))}
-            </div>
-          </div>
+      {/* Back Button - Top Left */}
+      <button 
+        onClick={() => handleNavigation('/landing')}
+        className={`absolute top-6 left-6 flex items-center space-x-2 ${currentTheme.colors.textSecondary} hover:${currentTheme.colors.textPrimary} transition-colors z-10`}
+      >
+        <ArrowLeft className="w-5 h-5" />
+        <span>Back</span>
+      </button>
+
+      {/* Theme Selector - Top Right */}
+      <div className="absolute top-6 right-6 flex items-center space-x-2 z-10">
+        <span className={`text-sm font-medium ${currentTheme.colors.textSecondary}`}>Theme:</span>
+        <div className="flex items-center space-x-1 p-1 rounded-lg bg-black/20 backdrop-blur-sm">
+          {Object.values(themes).map((theme, index) => (
+            <button
+              key={theme.name}
+              onClick={() => setTheme(theme.name)}
+              className={`w-6 h-6 rounded text-xs font-bold transition-all duration-200 ${
+                currentTheme.name === theme.name 
+                  ? 'bg-gradient-to-r from-cyan-500 to-purple-500 text-white shadow-lg scale-105' 
+                  : 'text-gray-400 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              {index + 1}
+            </button>
+          ))}
         </div>
+      </div>
+
+      <div className="relative w-full max-w-md">
 
         {/* Logo & Title */}
         <div className="text-center mb-8">
@@ -272,49 +317,49 @@ const LoginPage = () => {
             </div>
           )}
 
-          {/* Success Message */}
+          {/* Success Modal */}
           {successMessage && (
-            <div className="relative">
-              {/* Celebration Particles */}
-              <div className="celebration-container">
-                <div className="confetti-piece confetti-1"></div>
-                <div className="confetti-piece confetti-2"></div>
-                <div className="confetti-piece confetti-3"></div>
-                <div className="confetti-piece confetti-4"></div>
-                <div className="confetti-piece confetti-5"></div>
-                <div className="confetti-piece confetti-6"></div>
-                <div className="sparkle sparkle-1"></div>
-                <div className="sparkle sparkle-2"></div>
-                <div className="sparkle sparkle-3"></div>
-                <div className="sparkle sparkle-4"></div>
-                <div className="floating-emoji emoji-1">🎉</div>
-                <div className="floating-emoji emoji-2">✨</div>
-                <div className="floating-emoji emoji-3">🚀</div>
-              </div>
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              {/* Backdrop */}
+              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
               
-              <div className={`mb-6 p-6 rounded-xl border-l-8 success-notification ${
-                currentTheme.name === 'Neon' 
-                  ? 'neon bg-gradient-to-r from-emerald-500/15 to-cyan-500/15 border-emerald-400 text-emerald-300 backdrop-blur-sm shadow-2xl shadow-emerald-500/30' 
-                  : 'bg-gradient-to-r from-emerald-500/15 to-green-500/15 border-emerald-400 text-emerald-300 shadow-xl'
-              }`}>
-                <div className="flex items-center space-x-4">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                    currentTheme.name === 'Neon' 
-                      ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 shadow-2xl shadow-emerald-500/60' 
-                      : 'bg-gradient-to-r from-emerald-500 to-green-500 shadow-xl'
-                  }`}>
-                    <svg className="w-6 h-6 text-white success-checkmark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-lg font-bold mb-1">{successMessage}</p>
-                    <p className={`text-sm ${
+              {/* Modal */}
+              <div className="relative">
+                <div className={`w-full max-w-md mx-auto p-8 rounded-2xl success-notification ${
+                  currentTheme.name === 'Neon' 
+                    ? 'neon bg-gradient-to-br from-slate-800/95 to-slate-900/95 border border-emerald-400/30 text-emerald-300 backdrop-blur-lg shadow-2xl shadow-emerald-500/30' 
+                    : 'bg-gradient-to-br from-gray-800/95 to-gray-900/95 border border-emerald-400/30 text-emerald-300 backdrop-blur-lg shadow-2xl'
+                }`}>
+                  {/* Header */}
+                  <div className="text-center mb-6">
+                    <div className={`w-20 h-20 mx-auto rounded-full flex items-center justify-center mb-4 ${
+                      currentTheme.name === 'Neon' 
+                        ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 shadow-2xl shadow-emerald-500/60' 
+                        : 'bg-gradient-to-r from-emerald-500 to-green-500 shadow-2xl'
+                    }`}>
+                      <svg className="w-10 h-10 text-white success-checkmark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <h2 className="text-2xl font-bold mb-2">{successMessage}</h2>
+                    <p className={`text-base ${
                       currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-emerald-400'
                     }`}>
-                      Redirecting to your dashboard in a moment...
+                      Welcome to Flip Flow! Your account is ready to go.
                     </p>
                   </div>
+
+                  {/* Action Button */}
+                  <button
+                    onClick={handleGoToDashboard}
+                    className={`w-full py-4 rounded-xl font-bold text-lg transition-all duration-300 transform hover:scale-105 ${
+                      currentTheme.name === 'Neon'
+                        ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white hover:shadow-xl hover:shadow-cyan-500/30'
+                        : 'bg-gradient-to-r from-emerald-500 to-green-500 text-white hover:shadow-xl hover:shadow-emerald-500/30'
+                    }`}
+                  >
+                    Let's Go!
+                  </button>
                 </div>
               </div>
             </div>
@@ -333,9 +378,9 @@ const LoginPage = () => {
                     onChange={handleInputChange}
                     className={`w-full pl-10 pr-4 py-3 rounded-lg ${
                       currentTheme.name === 'Neon'
-                        ? 'bg-slate-800 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500 focus:bg-slate-800'
-                        : 'bg-gray-800 border border-gray-600 text-white placeholder-gray-400 focus:border-purple-500 focus:bg-gray-800'
-                    } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 autofill:bg-slate-800 autofill:text-white`}
+                        ? 'bg-slate-700 text-white placeholder-gray-400 focus:bg-slate-700 [&:not(:placeholder-shown)]:bg-slate-700 [&:placeholder-shown]:bg-slate-700 [&:empty]:bg-slate-700 autofill:bg-slate-700'
+                        : 'bg-gray-700 text-white placeholder-gray-400 focus:bg-gray-700 [&:not(:placeholder-shown)]:bg-gray-700 [&:placeholder-shown]:bg-gray-700 [&:empty]:bg-gray-700 autofill:bg-gray-700'
+                    } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 autofill:text-white`}
                     required={!isLogin}
                   />
                 </div>
@@ -349,9 +394,9 @@ const LoginPage = () => {
                     onChange={handleInputChange}
                     className={`w-full pl-10 pr-4 py-3 rounded-lg ${
                       currentTheme.name === 'Neon'
-                        ? 'bg-slate-800 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500 focus:bg-slate-800'
-                        : 'bg-gray-800 border border-gray-600 text-white placeholder-gray-400 focus:border-purple-500 focus:bg-gray-800'
-                    } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 autofill:bg-slate-800 autofill:text-white`}
+                        ? 'bg-slate-700 text-white placeholder-gray-400 focus:bg-slate-700 [&:not(:placeholder-shown)]:bg-slate-700 [&:placeholder-shown]:bg-slate-700 [&:empty]:bg-slate-700 autofill:bg-slate-700'
+                        : 'bg-gray-700 text-white placeholder-gray-400 focus:bg-gray-700 [&:not(:placeholder-shown)]:bg-gray-700 [&:placeholder-shown]:bg-gray-700 [&:empty]:bg-gray-700 autofill:bg-gray-700'
+                    } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 autofill:text-white`}
                     required={!isLogin}
                   />
                 </div>
@@ -368,9 +413,9 @@ const LoginPage = () => {
                 onChange={handleInputChange}
                 className={`w-full pl-10 pr-4 py-3 rounded-lg ${
                   currentTheme.name === 'Neon'
-                    ? 'bg-slate-800 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500 focus:bg-slate-800'
-                    : 'bg-gray-800 border border-gray-600 text-white placeholder-gray-400 focus:border-purple-500 focus:bg-gray-800'
-                } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 autofill:bg-slate-800 autofill:text-white`}
+                    ? 'bg-slate-700 text-white placeholder-gray-400 focus:bg-slate-700 [&:not(:placeholder-shown)]:bg-slate-700 [&:placeholder-shown]:bg-slate-700 [&:empty]:bg-slate-700 autofill:bg-slate-700'
+                    : 'bg-gray-700 text-white placeholder-gray-400 focus:bg-gray-700 [&:not(:placeholder-shown)]:bg-gray-700 [&:placeholder-shown]:bg-gray-700 [&:empty]:bg-gray-700 autofill:bg-gray-700'
+                } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 autofill:text-white`}
                 required
               />
             </div>
@@ -385,9 +430,9 @@ const LoginPage = () => {
                 onChange={handleInputChange}
                 className={`w-full pl-10 pr-12 py-3 rounded-lg ${
                   currentTheme.name === 'Neon'
-                    ? 'bg-slate-800 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500 focus:bg-slate-800'
-                    : 'bg-gray-800 border border-gray-600 text-white placeholder-gray-400 focus:border-purple-500 focus:bg-gray-800'
-                } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 autofill:bg-slate-800 autofill:text-white`}
+                    ? 'bg-slate-700 text-white placeholder-gray-400 focus:bg-slate-700 [&:not(:placeholder-shown)]:bg-slate-700 [&:placeholder-shown]:bg-slate-700 [&:empty]:bg-slate-700 autofill:bg-slate-700'
+                    : 'bg-gray-700 text-white placeholder-gray-400 focus:bg-gray-700 [&:not(:placeholder-shown)]:bg-gray-700 [&:placeholder-shown]:bg-gray-700 [&:empty]:bg-gray-700 autofill:bg-gray-700'
+                } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 autofill:text-white`}
                 required
               />
               <button
@@ -410,9 +455,9 @@ const LoginPage = () => {
                   onChange={handleInputChange}
                   className={`w-full pl-10 pr-4 py-3 rounded-lg ${
                     currentTheme.name === 'Neon'
-                      ? 'bg-slate-800 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500 focus:bg-slate-800'
-                      : 'bg-gray-800 border border-gray-600 text-white placeholder-gray-400 focus:border-purple-500 focus:bg-gray-800'
-                  } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 autofill:bg-slate-800 autofill:text-white`}
+                      ? 'bg-slate-700 text-white placeholder-gray-400 focus:bg-slate-700 [&:not(:placeholder-shown)]:bg-slate-700 [&:placeholder-shown]:bg-slate-700 [&:empty]:bg-slate-700 autofill:bg-slate-700'
+                      : 'bg-gray-700 text-white placeholder-gray-400 focus:bg-gray-700 [&:not(:placeholder-shown)]:bg-gray-700 [&:placeholder-shown]:bg-gray-700 [&:empty]:bg-gray-700 autofill:bg-gray-700'
+                  } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 autofill:text-white`}
                   required={!isLogin}
                 />
               </div>
