@@ -82,13 +82,13 @@ const LoginPage = () => {
         await createUserWithEmailAndPassword(auth, formData.email, formData.password);
         
         // Show success message for account creation
-        setSuccessMessage('Account created successfully! Welcome to Flip Flow! 🎉');
+        setSuccessMessage('🎉 Account Created Successfully! 🎉');
         setIsLoading(false);
         
         // Navigate after showing success message
         setTimeout(() => {
           router.push('/loading');
-        }, 2000);
+        }, 4000);
       }
     } catch (error: any) {
       console.error('Email/password authentication failed:', error);
@@ -274,22 +274,29 @@ const LoginPage = () => {
 
           {/* Success Message */}
           {successMessage && (
-            <div className={`mb-4 p-4 rounded-lg border-l-4 success-notification ${
+            <div className={`mb-6 p-6 rounded-xl border-l-8 success-notification ${
               currentTheme.name === 'Neon' 
-                ? 'neon bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 border-emerald-500 text-emerald-400 backdrop-blur-sm shadow-lg shadow-emerald-500/20' 
-                : 'bg-gradient-to-r from-emerald-500/10 to-green-500/10 border-emerald-500 text-emerald-400'
+                ? 'neon bg-gradient-to-r from-emerald-500/15 to-cyan-500/15 border-emerald-400 text-emerald-300 backdrop-blur-sm shadow-2xl shadow-emerald-500/30' 
+                : 'bg-gradient-to-r from-emerald-500/15 to-green-500/15 border-emerald-400 text-emerald-300 shadow-xl'
             }`}>
-              <div className="flex items-center space-x-3">
-                <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
+              <div className="flex items-center space-x-4">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
                   currentTheme.name === 'Neon' 
-                    ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 shadow-lg shadow-emerald-500/50' 
-                    : 'bg-gradient-to-r from-emerald-500 to-green-500'
+                    ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 shadow-2xl shadow-emerald-500/60' 
+                    : 'bg-gradient-to-r from-emerald-500 to-green-500 shadow-xl'
                 }`}>
-                  <svg className="w-4 h-4 text-white success-checkmark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  <svg className="w-6 h-6 text-white success-checkmark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
-                <p className="text-sm font-medium">{successMessage}</p>
+                <div className="flex-1">
+                  <p className="text-lg font-bold mb-1">{successMessage}</p>
+                  <p className={`text-sm ${
+                    currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-emerald-400'
+                  }`}>
+                    Redirecting to your dashboard in a moment...
+                  </p>
+                </div>
               </div>
             </div>
           )}

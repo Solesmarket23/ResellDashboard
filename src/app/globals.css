@@ -453,7 +453,7 @@ input[type="password"]:autofill {
 @keyframes successSlideIn {
   from {
     opacity: 0;
-    transform: translateY(-10px) scale(0.95);
+    transform: translateY(-20px) scale(0.9);
   }
   to {
     opacity: 1;
@@ -463,30 +463,44 @@ input[type="password"]:autofill {
 
 @keyframes successGlow {
   0%, 100% {
-    box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+    box-shadow: 0 0 30px rgba(16, 185, 129, 0.4), 0 0 60px rgba(6, 182, 212, 0.2);
   }
   50% {
-    box-shadow: 0 0 40px rgba(16, 185, 129, 0.6), 0 0 60px rgba(6, 182, 212, 0.3);
+    box-shadow: 0 0 50px rgba(16, 185, 129, 0.8), 0 0 100px rgba(6, 182, 212, 0.4);
   }
 }
 
 @keyframes checkmarkDraw {
   0% {
-    stroke-dasharray: 0 20;
+    stroke-dasharray: 0 30;
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
   }
   100% {
-    stroke-dasharray: 20 0;
+    stroke-dasharray: 30 0;
+    opacity: 1;
+  }
+}
+
+@keyframes celebrateScale {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
   }
 }
 
 .success-notification {
-  animation: successSlideIn 0.5s ease-out;
+  animation: successSlideIn 0.7s ease-out, celebrateScale 2s ease-in-out infinite;
 }
 
 .success-notification.neon {
-  animation: successSlideIn 0.5s ease-out, successGlow 2s ease-in-out infinite;
+  animation: successSlideIn 0.7s ease-out, successGlow 3s ease-in-out infinite, celebrateScale 2s ease-in-out infinite;
 }
 
 .success-checkmark {
-  animation: checkmarkDraw 0.5s ease-out 0.2s both;
+  animation: checkmarkDraw 0.8s ease-out 0.3s both;
 }
