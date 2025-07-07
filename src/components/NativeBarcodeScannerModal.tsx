@@ -367,7 +367,7 @@ const NativeBarcodeScannerModal = ({ isOpen, onClose, onScanComplete }: NativeBa
               isHighQuality,
               length: code.length 
             });
-            
+    
             // Show detection feedback
             setScanStatus('detected');
             setTimeout(() => setScanStatus('scanning'), 800);
@@ -430,10 +430,10 @@ const NativeBarcodeScannerModal = ({ isOpen, onClose, onScanComplete }: NativeBa
       setDetectionProgress(null);
       
       // Trigger haptic feedback if available
-      if ('vibrate' in navigator) {
+    if ('vibrate' in navigator) {
         navigator.vibrate([200, 100, 200]);
-      }
-      
+    }
+    
       console.log('✅ Barcode accepted:', barcode);
     setScannedResult(barcode);
     stopScanning();

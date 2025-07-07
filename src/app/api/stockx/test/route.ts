@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
         responseData = JSON.parse(responseText);
       } catch {
         responseData = responseText;
-      }
+  }
 
       results.push({
         endpoint: endpoint.name,

@@ -132,17 +132,18 @@ function parseStockXUrl(url: string): {
 }
 
 // Helper function to get search query based on category or regular search
-function getSearchQuery(query: string): { searchQuery: string; isUrlSearch: boolean; categoryInfo?: any } {
+function getSearchQuery(query: string, pageNumber: number = 1): { searchQuery: string; isUrlSearch: boolean; categoryInfo?: any } {
   // Check if query looks like a URL
   if (query.includes('stockx.com') || query.startsWith('http')) {
     const urlInfo = parseStockXUrl(query);
     
     if (urlInfo.isStockXUrl && urlInfo.searchTerms?.length) {
-      // Use the first search term for the category
-      const searchQuery = urlInfo.searchTerms[0];
+      // Rotate through different search terms based on page number for variety
+      const searchTermIndex = (pageNumber - 1) % urlInfo.searchTerms.length;
+      const searchQuery = urlInfo.searchTerms[searchTermIndex];
       console.log(`🔗 Detected StockX URL: ${query}`);
       console.log(`📂 Category: ${urlInfo.category}, Sort: ${urlInfo.sortBy || 'none'}`);
-      console.log(`🔍 Using search term: ${searchQuery} (${urlInfo.searchTerms.length} terms available)`);
+      console.log(`🔍 Using search term: ${searchQuery} (${searchTermIndex + 1}/${urlInfo.searchTerms.length} - Page ${pageNumber})`);
       
       return {
         searchQuery,
@@ -167,16 +168,16 @@ async function fetchProductVariants(productId: string, accessToken: string, apiK
     
     const response = await fetch(variantsUrl, {
       method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'x-api-key': apiKey,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'User-Agent': 'FlipFlow/1.0'
-      }
-    });
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        'X-API-Key': apiKey,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'FlipFlow/1.0'
+        }
+      });
 
-    if (response.ok) {
+      if (response.ok) {
       const data = await response.json();
       console.log(`✅ Variants response for ${productId}:`, data.length > 0 ? `${data.length} variants` : 'no variants');
       return Array.isArray(data) ? data : (data.variants || []);
@@ -184,11 +185,11 @@ async function fetchProductVariants(productId: string, accessToken: string, apiK
       console.log(`⚠️ Variants rate limited, retrying in 2 seconds... (${retries} retries left)`);
       await new Promise(resolve => setTimeout(resolve, 2000));
       return await fetchProductVariants(productId, accessToken, apiKey, retries - 1);
-    } else {
+      } else {
       console.log(`❌ Variants failed: ${response.status}`);
       return [];
-    }
-  } catch (error) {
+      }
+    } catch (error) {
     console.log(`❌ Variants error:`, error);
     return [];
   }
@@ -204,7 +205,7 @@ async function fetchMarketData(productId: string, accessToken: string, apiKey: s
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
-        'x-api-key': apiKey,
+        'X-API-Key': apiKey,
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'User-Agent': 'FlipFlow/1.0'
@@ -235,9 +236,17 @@ export async function GET(request: NextRequest) {
   const rawQuery = searchParams.get('query') || '';
   const limit = searchParams.get('limit') || '10';
   const streaming = searchParams.get('streaming') === 'true';
+  const excludeBrands = searchParams.get('excludeBrands') || '';
+  
+  // Parse excluded brands into array for filtering
+  const excludedBrandsList = excludeBrands
+    .split(',')
+    .map(brand => brand.trim().toLowerCase())
+    .filter(brand => brand.length > 0);
   
   // Parse the query to handle StockX URLs
-  const { searchQuery: query, isUrlSearch, categoryInfo } = getSearchQuery(rawQuery);
+  const pageNumber = parseInt(searchParams.get('page') || '1');
+  const { searchQuery: query, isUrlSearch, categoryInfo } = getSearchQuery(rawQuery, pageNumber);
 
   // Get access token from cookies
   const accessToken = request.cookies.get('stockx_access_token')?.value;
@@ -270,19 +279,19 @@ export async function GET(request: NextRequest) {
         try {
           // Send initial status
           const statusMessage = isUrlSearch 
-            ? `Searching StockX ${categoryInfo?.category || 'category'} for ${query}...`
-            : 'Searching StockX catalog...';
+            ? `Searching StockX ${categoryInfo?.category || 'category'} for ${query}${excludedBrandsList.length > 0 ? ` (excluding ${excludedBrandsList.join(', ')})` : ''}...`
+            : `Searching StockX catalog${excludedBrandsList.length > 0 ? ` (excluding ${excludedBrandsList.join(', ')})` : ''}...`;
           
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
             type: 'status', 
             message: statusMessage,
             searchType: isUrlSearch ? 'url' : 'text',
             category: categoryInfo?.category,
-            originalQuery: rawQuery
+            originalQuery: rawQuery,
+            excludedBrands: excludedBrandsList
           })}\n\n`));
 
           // Step 1: Search for products
-          const pageNumber = 1;
           const pageSize = Math.min(parseInt(limit), 20); // Reduce limit since we'll make more API calls
           
           const searchApiParams = new URLSearchParams({
@@ -298,7 +307,7 @@ export async function GET(request: NextRequest) {
             method: 'GET',
             headers: {
               'Authorization': `Bearer ${accessToken}`,
-              'x-api-key': apiKey,
+              'X-API-Key': apiKey,
               'Content-Type': 'application/json',
               'Accept': 'application/json',
               'User-Agent': 'FlipFlow/1.0'
@@ -307,24 +316,52 @@ export async function GET(request: NextRequest) {
 
           if (!searchResponse.ok) {
             const errorText = await searchResponse.text();
-            console.log(`❌ Search failed:`, errorText);
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-              type: 'error', 
-              message: 'Failed to search StockX',
-              statusCode: searchResponse.status
-            })}\n\n`));
+            console.log(`❌ Search failed with status ${searchResponse.status}:`, errorText);
+            
+            // Add specific handling for 401 errors
+            if (searchResponse.status === 401) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                type: 'error', 
+                message: 'Authentication failed - please re-authenticate with StockX',
+                statusCode: searchResponse.status,
+                authRequired: true
+              })}\n\n`));
+            } else {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                type: 'error', 
+                message: `Failed to search StockX (Status: ${searchResponse.status})`,
+                statusCode: searchResponse.status,
+                details: errorText
+              })}\n\n`));
+            }
             controller.close();
             return;
           }
 
           const searchData = await searchResponse.json();
-          const products = searchData.products || [];
+          let products = searchData.products || [];
           
           console.log(`✅ Found ${products.length} products in search`);
           
+          // Filter out excluded brands if specified
+          if (excludedBrandsList.length > 0) {
+            const originalCount = products.length;
+            products = products.filter(product => {
+              const productBrand = (product.brand || '').toLowerCase();
+              const isExcluded = excludedBrandsList.some(excludedBrand => 
+                productBrand.includes(excludedBrand) || excludedBrand.includes(productBrand)
+              );
+              if (isExcluded) {
+                console.log(`🚫 Excluding ${product.title} (brand: ${product.brand})`);
+              }
+              return !isExcluded;
+            });
+            console.log(`🔍 Brand filtering: ${originalCount} → ${products.length} products (excluded ${originalCount - products.length} products)`);
+          }
+          
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
             type: 'status', 
-            message: `Found ${products.length} products, fetching pricing data...` 
+            message: `Found ${products.length} products${excludedBrandsList.length > 0 ? ` (after brand filtering)` : ''}, fetching pricing data...` 
           })}\n\n`));
 
           // Process each product and fetch its market data
@@ -363,6 +400,10 @@ export async function GET(request: NextRequest) {
                 
                 // Process each market data entry - each contains variantId, bid, and ask
                 marketData.forEach(marketEntry => {
+                  // Get size from variant mapping (move this outside the conditional)
+                  const variantInfo = variantMap.get(marketEntry.variantId);
+                  const size = variantInfo?.size || 'Unknown';
+                  
                   // Use best available pricing for arbitrage calculations
                   const rawBid = parseInt(marketEntry.highestBidAmount) || 0;
                   const standardAsk = parseInt(marketEntry.lowestAskAmount) || 0;
@@ -390,9 +431,6 @@ export async function GET(request: NextRequest) {
                   }
                   
                   if (bid > 0 && ask > 0) {
-                    // Get size from variant mapping
-                    const variantInfo = variantMap.get(marketEntry.variantId);
-                    const size = variantInfo?.size || 'Unknown';
                     
                     // Estimate buyer fees based on typical StockX fee structure
                     const estimatedProcessingFee = Math.round(rawBid * 0.08); // 8% processing fee
@@ -416,7 +454,7 @@ export async function GET(request: NextRequest) {
                         title: product.title, // Changed from productTitle to title
                         brand: product.brand,
                         size: size, // Now using actual size from variants
-                        imageUrl: getProductImageUrl(product),
+                          imageUrl: getProductImageUrl(product),
                         imageUrls: getProductImageUrlWithFallbacks(product), // Array of fallback image URLs
                         highestBid: bid, // Using adjusted bid that includes fees
                         lowestAsk: ask, // Using adjusted ask 
@@ -454,7 +492,7 @@ export async function GET(request: NextRequest) {
                 });
                 
                 console.log(`✅ Created ${productOpportunities} opportunities for ${product.title}`);
-              } else {
+                } else {
                 console.log(`⚠️ No market data found for ${product.title}`);
               }
               
@@ -476,7 +514,9 @@ export async function GET(request: NextRequest) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
             type: 'complete', 
             totalResults: opportunities.length,
-            message: `Found ${opportunities.length} profitable opportunities with ${minSpreadPercent}%+ profit margin (after fees)`
+            page: pageNumber,
+            hasMore: products.length >= pageSize, // If we got a full page, there might be more
+            message: `Found ${opportunities.length} profitable opportunities with ${minSpreadPercent}%+ profit margin${excludedBrandsList.length > 0 ? ` (excluding ${excludedBrandsList.join(', ')})` : ''}${products.length >= pageSize ? ' - Load more to see additional results' : ''}`
           })}\n\n`));
           
           controller.close();
@@ -503,10 +543,10 @@ export async function GET(request: NextRequest) {
   }
 
   // Non-streaming response (fallback)
-  return NextResponse.json({ 
+  return NextResponse.json({
     message: 'Please use streaming mode for real-time results. Add streaming=true to your request.',
     opportunities: [],
     totalCount: 0,
     searchQuery: query
   });
-}
+} 

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, DollarSign, ExternalLink, Search, AlertCircle, BarChart3, LogIn, CheckCircle } from 'lucide-react';
+import { TrendingUp, DollarSign, ExternalLink, Search, AlertCircle, BarChart3, LogIn, CheckCircle, Bell } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 
 // Enhanced placeholder component for StockX products since images aren't publicly accessible
@@ -349,6 +349,60 @@ const StockXArbitrage: React.FC = () => {
     if (e.key === 'Enter') {
       searchArbitrageOpportunities();
     }
+  };
+
+  const addToFlexAskMonitor = (opportunity: ArbitrageOpportunity) => {
+    const flexAskItem = {
+      productId: opportunity.productId,
+      variantId: opportunity.variantId,
+      productName: opportunity.productName,
+      size: opportunity.size,
+      imageUrl: opportunity.imageUrl,
+      flexAskAmount: opportunity.flexAskAmount,
+      stockxUrl: opportunity.stockxUrl,
+      title: opportunity.productName
+    };
+
+    // Get existing tracked items
+    const existingItems = localStorage.getItem('flexAskTrackedItems');
+    const trackedItems = existingItems ? JSON.parse(existingItems) : [];
+    
+    // Check if item is already being tracked
+    const isAlreadyTracked = trackedItems.some((item: any) => 
+      item.productId === opportunity.productId && item.variantId === opportunity.variantId
+    );
+    
+    if (isAlreadyTracked) {
+      setErrorMessage('This item is already being tracked in your Flex Ask Monitor');
+      setTimeout(() => setErrorMessage(null), 3000);
+      return;
+    }
+
+    // Add to tracked items
+    const newItem = {
+      id: `tracked-${Date.now()}-${opportunity.productId}-${opportunity.variantId}`,
+      productId: opportunity.productId,
+      variantId: opportunity.variantId,
+      productName: opportunity.productName,
+      size: opportunity.size,
+      imageUrl: opportunity.imageUrl,
+      currentFlexAsk: opportunity.flexAskAmount || 0,
+      baselineFlexAsk: opportunity.flexAskAmount || 0,
+      lastChecked: new Date().toISOString(),
+      alertThreshold: 20, // Default 20% threshold
+      isActive: true,
+      priceHistory: [{
+        price: opportunity.flexAskAmount || 0,
+        timestamp: new Date().toISOString()
+      }],
+      stockxUrl: opportunity.stockxUrl
+    };
+
+    trackedItems.push(newItem);
+    localStorage.setItem('flexAskTrackedItems', JSON.stringify(trackedItems));
+    
+    setSuccessMessage(`Added ${opportunity.productName} (${opportunity.size}) to Flex Ask Monitor! Go to StockX > Flex Ask Monitor to configure alerts.`);
+    setTimeout(() => setSuccessMessage(null), 5000);
   };
 
   return (

@@ -202,9 +202,9 @@ const ScanPackageModal = ({ isOpen, onClose, onScanComplete }: ScanPackageModalP
       setCameraStatus('active');
       setErrorMessage('');
       setDebugInfo(['🎯 Starting QuaggaJS...', 'Initializing camera', 'Preparing barcode detection']);
-
+      
       console.log('🎯 Starting QuaggaJS with container:', scannerElementRef.current);
-
+      
       // QuaggaJS configuration optimized for shipping labels and product barcodes
       const config = {
         inputStream: {
@@ -277,14 +277,14 @@ const ScanPackageModal = ({ isOpen, onClose, onScanComplete }: ScanPackageModalP
           const format = result.codeResult.format;
           
           console.log('✅ Barcode detected:', { code, format });
-          
-          // Trigger feedback
-          triggerHapticFeedback();
-          
-          // Stop scanning
-          stopScanning();
-          
-          // Handle the scanned result
+        
+        // Trigger feedback
+        triggerHapticFeedback();
+        
+        // Stop scanning
+        stopScanning();
+        
+        // Handle the scanned result
           handleScannedCode(code);
           
           setDebugInfo([
@@ -297,13 +297,13 @@ const ScanPackageModal = ({ isOpen, onClose, onScanComplete }: ScanPackageModalP
 
       console.log('✅ QuaggaJS setup completed');
       
-          } catch (error: any) {
+    } catch (error: any) {
         console.error('❌ QuaggaJS setup error:', error);
         setErrorMessage(`Scanner setup failed. Please try manual entry.`);
-        setCameraStatus('error');
-        setIsScanning(false);
+      setCameraStatus('error');
+      setIsScanning(false);
         setDebugInfo(['❌ Setup failed', 'Please try manual entry', 'Camera may be busy']);
-      }
+    }
   };
 
   const stopScanning = () => {
@@ -319,8 +319,8 @@ const ScanPackageModal = ({ isOpen, onClose, onScanComplete }: ScanPackageModalP
       console.error('Error stopping Quagga:', error);
     }
     
-    setIsScanning(false);
-    setCameraStatus('ready');
+      setIsScanning(false);
+      setCameraStatus('ready');
     setDebugInfo(['📱 Scanner stopped', 'Ready to scan again', 'Click Start to begin']);
   };
 

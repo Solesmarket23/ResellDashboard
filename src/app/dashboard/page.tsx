@@ -21,6 +21,7 @@ import StockXRepricing from '../../components/StockXRepricing';
 import StockXSales from '../../components/StockXSales';
 import StockXReleases from '../../components/StockXReleases';
 import StockXPriceMonitor from '../../components/StockXPriceMonitor';
+import StockXFlexAskMonitor from '../../components/StockXFlexAskMonitor';
 import StockXProfitCalc from '../../components/StockXProfitCalc';
 import StockXTrends from '../../components/StockXTrends';
 import StockXAlerts from '../../components/StockXAlerts';
@@ -136,6 +137,8 @@ export default function DashboardPage() {
         return <StockXReleases />;
       case 'stockx-price-monitor':
         return <StockXPriceMonitor />;
+      case 'stockx-flex-ask-monitor':
+        return <StockXFlexAskMonitor />;
       case 'stockx-profit-calc':
         return <StockXProfitCalc />;
       case 'stockx-trends':
@@ -185,8 +188,8 @@ export default function DashboardPage() {
         </div>
         
         {/* Content */}
-        <div className="flex-1 overflow-auto">
-          {renderContent()}
+      <div className="flex-1 overflow-auto">
+        {renderContent()}
         </div>
       </div>
     </div>

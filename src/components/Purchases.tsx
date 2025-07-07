@@ -226,7 +226,7 @@ const Purchases = () => {
       // Respect cooldown period
       if (now - lastFetchTime >= FETCH_COOLDOWN) {
         setLastFetchTime(now);
-        fetchPurchases();
+      fetchPurchases();
       } else {
         // Show user they need to wait
         const remainingTime = Math.ceil((FETCH_COOLDOWN - (now - lastFetchTime)) / 1000);
@@ -676,4 +676,4 @@ const Purchases = () => {
   );
 };
 
-export default Purchases;
+export default Purchases; 
