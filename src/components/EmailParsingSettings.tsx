@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { Plus, Trash2, Save, RotateCcw, Mail, Settings, X, Info } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
+import { useAuth } from '../lib/contexts/AuthContext';
+import { saveUserEmailConfig, getUserEmailConfig } from '../lib/firebase/userDataUtils';
 
 interface EmailCategory {
   name: string;
@@ -142,31 +144,47 @@ const EmailParsingSettings = ({ isOpen, onClose }: EmailParsingSettingsProps) =>
   const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const { currentTheme } = useTheme();
+  const { user } = useAuth();
 
   // Theme-dependent styling
   const isNeon = currentTheme.name === 'Neon';
 
   useEffect(() => {
-    // Load saved config from localStorage
-    const savedConfig = localStorage.getItem('emailParsingConfig');
-    if (savedConfig) {
-      try {
-        setConfig(JSON.parse(savedConfig));
-      } catch (error) {
-        console.error('Error loading email parsing config:', error);
+    // Load saved config from Firebase
+    const loadConfig = async () => {
+      if (user) {
+        try {
+          const savedConfig = await getUserEmailConfig(user.uid);
+          if (savedConfig) {
+            setConfig(savedConfig);
+          }
+        } catch (error) {
+          console.error('Error loading email parsing config:', error);
+        }
       }
-    }
-  }, []);
+    };
+
+    loadConfig();
+  }, [user]);
 
   const saveConfig = async () => {
+    if (!user) {
+      alert('Please sign in to save settings');
+      return;
+    }
+
     setIsSaving(true);
-    // Simulate save delay for better UX
-    await new Promise(resolve => setTimeout(resolve, 500));
-    localStorage.setItem('emailParsingConfig', JSON.stringify(config));
-    setHasChanges(false);
-    setIsSaving(false);
-    // Trigger a custom event to notify other components
-    window.dispatchEvent(new CustomEvent('emailConfigUpdated', { detail: config }));
+    try {
+      await saveUserEmailConfig(user.uid, config);
+      setHasChanges(false);
+      // Trigger a custom event to notify other components
+      window.dispatchEvent(new CustomEvent('emailConfigUpdated', { detail: config }));
+    } catch (error) {
+      console.error('Error saving email config:', error);
+      alert('Error saving settings. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const resetToDefaults = () => {

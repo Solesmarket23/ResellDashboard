@@ -3,11 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import { DollarSign, TrendingUp, Package, ShoppingCart, BarChart3, Calculator, Calendar, X, Palette } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
+import { useAuth } from '../lib/contexts/AuthContext';
+import { saveUserDashboardSettings, getUserDashboardSettings } from '../lib/firebase/userDataUtils';
 import DatePicker from './DatePicker';
 import MarketAlerts from './MarketAlerts';
 
 const Dashboard = () => {
   const { currentTheme, setTheme, themes } = useTheme();
+  const { user } = useAuth();
   const [activeTimePeriod, setActiveTimePeriod] = useState('This Month');
   const [showThemeSelector, setShowThemeSelector] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -17,6 +20,55 @@ const Dashboard = () => {
   const [showBackground, setShowBackground] = useState(true);
   
   const timePeriods = ['Today', 'Yesterday', 'This Month', 'This Year', 'Custom Range'];
+
+  // Load dashboard settings from Firebase
+  useEffect(() => {
+    const loadDashboardSettings = async () => {
+      if (user) {
+        try {
+          const settings = await getUserDashboardSettings(user.uid);
+          if (settings) {
+            setActiveTimePeriod(settings.activeTimePeriod);
+            setStartDate(settings.customDateRange.startDate);
+            setEndDate(settings.customDateRange.endDate);
+            setShowBackground(settings.preferences.showBackground);
+          }
+        } catch (error) {
+          console.error('Error loading dashboard settings:', error);
+        }
+      }
+    };
+
+    loadDashboardSettings();
+  }, [user]);
+
+  // Save dashboard settings to Firebase
+  const saveDashboardSettings = async () => {
+    if (user) {
+      try {
+        await saveUserDashboardSettings(user.uid, {
+          activeTimePeriod,
+          customDateRange: {
+            startDate,
+            endDate
+          },
+          preferences: {
+            showBackground,
+            defaultView: 'dashboard'
+          }
+        });
+      } catch (error) {
+        console.error('Error saving dashboard settings:', error);
+      }
+    }
+  };
+
+  // Save settings when they change
+  useEffect(() => {
+    if (user) {
+      saveDashboardSettings();
+    }
+  }, [activeTimePeriod, startDate, endDate, showBackground, user]);
   
   // Calculate realistic profits based on actual sales data
   const dailyProfitData = [

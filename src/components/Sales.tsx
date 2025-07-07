@@ -3,11 +3,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { Search, Calendar, TrendingUp, ArrowUp, ExternalLink, Plus, Sparkles, Trash2, X, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
+import { useAuth } from '../lib/contexts/AuthContext';
+import { saveUserSale, getUserSales, deleteUserSale, clearAllUserSales } from '../lib/firebase/userDataUtils';
 import confetti from 'canvas-confetti';
 
 const Sales = () => {
   const [activeFilter, setActiveFilter] = useState('All Time');
   const { currentTheme } = useTheme();
+  const { user } = useAuth();
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; sale: any }>({
     isOpen: false,
     sale: null
@@ -32,6 +35,36 @@ const Sales = () => {
   // Refs for dropdowns
   const marketplaceDropdownRef = useRef<HTMLDivElement>(null);
   const datePickerRef = useRef<HTMLDivElement>(null);
+
+  // Load user sales from Firebase
+  useEffect(() => {
+    const loadUserSales = async () => {
+      if (user) {
+        try {
+          const userSales = await getUserSales(user.uid);
+          const formattedSales = userSales.map(sale => ({
+            id: sale.id,
+            product: sale.product,
+            brand: sale.brand,
+            orderNumber: sale.orderNumber,
+            size: sale.size,
+            market: sale.market,
+            salePrice: sale.salePrice,
+            fees: sale.fees,
+            payout: sale.payout,
+            profit: sale.profit,
+            date: sale.date,
+            isTest: sale.isTest
+          }));
+          setSalesData(formattedSales);
+        } catch (error) {
+          console.error('Error loading user sales:', error);
+        }
+      }
+    };
+
+    loadUserSales();
+  }, [user]);
   
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -331,10 +364,21 @@ const Sales = () => {
   };
 
   // Function to confirm delete
-  const confirmDelete = () => {
-    if (deleteModal.sale) {
-      setSalesData(salesData.filter(sale => sale.id !== deleteModal.sale.id));
-      closeDeleteModal();
+  const confirmDelete = async () => {
+    if (deleteModal.sale && user) {
+      try {
+        // If it's a Firebase sale (has a Firebase document ID), delete from Firebase
+        if (deleteModal.sale.firebaseId) {
+          await deleteUserSale(user.uid, deleteModal.sale.firebaseId);
+        }
+        
+        // Update local state
+        setSalesData(salesData.filter(sale => sale.id !== deleteModal.sale.id));
+        closeDeleteModal();
+      } catch (error) {
+        console.error('Error deleting sale:', error);
+        alert('Error deleting sale. Please try again.');
+      }
     }
   };
 
@@ -345,9 +389,17 @@ const Sales = () => {
   };
 
   // Function to confirm clear all sales
-  const confirmClearAllSales = () => {
-    setSalesData([]);
-    setClearAllModal(false);
+  const confirmClearAllSales = async () => {
+    if (user) {
+      try {
+        await clearAllUserSales(user.uid);
+        setSalesData([]);
+        setClearAllModal(false);
+      } catch (error) {
+        console.error('Error clearing all sales:', error);
+        alert('Error clearing sales. Please try again.');
+      }
+    }
   };
 
   // Function to open record sale modal
@@ -426,15 +478,22 @@ const Sales = () => {
   };
 
   // Function to submit new sale
-  const submitNewSale = () => {
+  const submitNewSale = async () => {
+    if (!user) {
+      alert('Please sign in to save sales');
+      return;
+    }
+
     const salePrice = parseFloat(newSale.salePrice);
     const purchasePrice = parseFloat(newSale.purchasePrice);
     const fees = newSale.fees ? parseFloat(newSale.fees) : calculateFees(salePrice);
     const payout = salePrice - fees;
     const profit = payout - purchasePrice;
 
+    const saleId = Math.max(...salesData.map(s => s.id), 0) + 1;
+    
     const sale = {
-      id: Math.max(...salesData.map(s => s.id), 0) + 1,
+      id: saleId,
       product: newSale.product,
       brand: newSale.brand,
       orderNumber: `MANUAL-${Date.now()}`,
@@ -448,8 +507,30 @@ const Sales = () => {
       isTest: false
     };
 
-    setSalesData([sale, ...salesData]);
-    closeRecordSaleModal();
+    try {
+      // Save to Firebase
+      await saveUserSale(user.uid, {
+        id: saleId,
+        product: newSale.product,
+        brand: newSale.brand,
+        orderNumber: `MANUAL-${Date.now()}`,
+        size: newSale.size,
+        market: newSale.market,
+        salePrice: salePrice,
+        fees: -fees,
+        payout: payout,
+        profit: profit,
+        date: new Date(newSale.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        isTest: false
+      });
+
+      // Update local state
+      setSalesData([sale, ...salesData]);
+      closeRecordSaleModal();
+    } catch (error) {
+      console.error('Error saving sale:', error);
+      alert('Error saving sale. Please try again.');
+    }
   };
 
   // Function to handle test sale + confetti

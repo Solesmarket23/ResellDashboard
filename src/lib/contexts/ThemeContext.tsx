@@ -1,6 +1,8 @@
 'use client';
 
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { useAuth } from './AuthContext';
+import { saveUserTheme, getUserTheme } from '../firebase/userDataUtils';
 
 export interface ThemeColors {
   primary: string;
@@ -76,14 +78,50 @@ interface ThemeProviderProps {
 
 export const ThemeProvider = ({ children }: ThemeProviderProps) => {
   const [currentTheme, setCurrentTheme] = useState<Theme>(themes.Neon);
+  const [isLoading, setIsLoading] = useState(true);
+  const { user } = useAuth();
 
-  const setTheme = (themeName: string) => {
+  // Load user's theme preference from Firebase
+  useEffect(() => {
+    const loadUserTheme = async () => {
+      if (user) {
+        try {
+          const savedTheme = await getUserTheme(user.uid);
+          if (savedTheme && themes[savedTheme]) {
+            setCurrentTheme(themes[savedTheme]);
+            // Update body class to match theme
+            if (typeof document !== 'undefined') {
+              document.body.className = document.body.className.replace(/theme-\w+/g, '');
+              document.body.classList.add(themes[savedTheme].colors.bodyClass);
+            }
+          }
+        } catch (error) {
+          console.error('Error loading user theme:', error);
+        }
+      }
+      setIsLoading(false);
+    };
+
+    loadUserTheme();
+  }, [user]);
+
+  const setTheme = async (themeName: string) => {
     if (themes[themeName]) {
       setCurrentTheme(themes[themeName]);
+      
       // Update body class to match theme
       if (typeof document !== 'undefined') {
         document.body.className = document.body.className.replace(/theme-\w+/g, '');
         document.body.classList.add(themes[themeName].colors.bodyClass);
+      }
+
+      // Save to Firebase if user is authenticated
+      if (user) {
+        try {
+          await saveUserTheme(user.uid, themeName);
+        } catch (error) {
+          console.error('Error saving theme preference:', error);
+        }
       }
     }
   };
