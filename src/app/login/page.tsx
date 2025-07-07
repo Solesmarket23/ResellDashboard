@@ -8,10 +8,12 @@ export const dynamic = 'force-dynamic';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useTheme } from '@/lib/contexts/ThemeContext';
+import { useAuth } from '@/lib/contexts/AuthContext';
 import { Mail, Lock, User, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 
 const LoginPage = () => {
   const { currentTheme, setTheme, themes } = useTheme();
+  const { signInWithGoogle } = useAuth();
   const router = useRouter();
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
@@ -57,11 +59,20 @@ const LoginPage = () => {
     }, 1500);
   };
 
-  const handleGoogleAuth = () => {
+  const handleGoogleAuth = async () => {
     setIsLoading(true);
-    setTimeout(() => {
+    
+    try {
+      // Actually call Firebase authentication
+      await signInWithGoogle();
+      
+      // Only navigate if authentication succeeded
       router.push('/loading');
-    }, 1000);
+    } catch (error) {
+      console.error('Google sign-in failed:', error);
+      setIsLoading(false);
+      // You could show an error message here
+    }
   };
 
   return (
