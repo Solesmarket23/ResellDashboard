@@ -274,28 +274,47 @@ const LoginPage = () => {
 
           {/* Success Message */}
           {successMessage && (
-            <div className={`mb-6 p-6 rounded-xl border-l-8 success-notification ${
-              currentTheme.name === 'Neon' 
-                ? 'neon bg-gradient-to-r from-emerald-500/15 to-cyan-500/15 border-emerald-400 text-emerald-300 backdrop-blur-sm shadow-2xl shadow-emerald-500/30' 
-                : 'bg-gradient-to-r from-emerald-500/15 to-green-500/15 border-emerald-400 text-emerald-300 shadow-xl'
-            }`}>
-              <div className="flex items-center space-x-4">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                  currentTheme.name === 'Neon' 
-                    ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 shadow-2xl shadow-emerald-500/60' 
-                    : 'bg-gradient-to-r from-emerald-500 to-green-500 shadow-xl'
-                }`}>
-                  <svg className="w-6 h-6 text-white success-checkmark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <p className="text-lg font-bold mb-1">{successMessage}</p>
-                  <p className={`text-sm ${
-                    currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-emerald-400'
+            <div className="relative">
+              {/* Celebration Particles */}
+              <div className="celebration-container">
+                <div className="confetti-piece confetti-1"></div>
+                <div className="confetti-piece confetti-2"></div>
+                <div className="confetti-piece confetti-3"></div>
+                <div className="confetti-piece confetti-4"></div>
+                <div className="confetti-piece confetti-5"></div>
+                <div className="confetti-piece confetti-6"></div>
+                <div className="sparkle sparkle-1"></div>
+                <div className="sparkle sparkle-2"></div>
+                <div className="sparkle sparkle-3"></div>
+                <div className="sparkle sparkle-4"></div>
+                <div className="floating-emoji emoji-1">🎉</div>
+                <div className="floating-emoji emoji-2">✨</div>
+                <div className="floating-emoji emoji-3">🚀</div>
+              </div>
+              
+              <div className={`mb-6 p-6 rounded-xl border-l-8 success-notification ${
+                currentTheme.name === 'Neon' 
+                  ? 'neon bg-gradient-to-r from-emerald-500/15 to-cyan-500/15 border-emerald-400 text-emerald-300 backdrop-blur-sm shadow-2xl shadow-emerald-500/30' 
+                  : 'bg-gradient-to-r from-emerald-500/15 to-green-500/15 border-emerald-400 text-emerald-300 shadow-xl'
+              }`}>
+                <div className="flex items-center space-x-4">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                    currentTheme.name === 'Neon' 
+                      ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 shadow-2xl shadow-emerald-500/60' 
+                      : 'bg-gradient-to-r from-emerald-500 to-green-500 shadow-xl'
                   }`}>
-                    Redirecting to your dashboard in a moment...
-                  </p>
+                    <svg className="w-6 h-6 text-white success-checkmark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-lg font-bold mb-1">{successMessage}</p>
+                    <p className={`text-sm ${
+                      currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-emerald-400'
+                    }`}>
+                      Redirecting to your dashboard in a moment...
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
