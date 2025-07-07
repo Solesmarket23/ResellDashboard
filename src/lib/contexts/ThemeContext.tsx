@@ -84,6 +84,12 @@ export const ThemeProvider = ({ children }: ThemeProviderProps) => {
   // Load user's theme preference from Firebase
   useEffect(() => {
     const loadUserTheme = async () => {
+      // Only run on client-side
+      if (typeof window === 'undefined') {
+        setIsLoading(false);
+        return;
+      }
+
       if (user) {
         try {
           const savedTheme = await getUserTheme(user.uid);

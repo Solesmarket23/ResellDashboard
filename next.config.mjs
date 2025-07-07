@@ -8,6 +8,10 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // Experimental features to help with Firebase
+  experimental: {
+    esmExternals: true,
+  },
   images: {
     remotePatterns: [
       {

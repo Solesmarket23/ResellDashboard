@@ -29,6 +29,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Only run on client-side
+    if (typeof window === 'undefined') {
+      setLoading(false);
+      return;
+    }
+
     if (!auth) {
       // Firebase not configured, set to demo mode
       setLoading(false);

@@ -1,5 +1,8 @@
 import { addDocument, getDocuments, updateDocument, deleteDocument } from './firebaseUtils';
 
+// Safety check for server-side rendering
+const isClientSide = typeof window !== 'undefined';
+
 // User Data Types
 export interface UserThemePreference {
   userId: string;
@@ -106,6 +109,11 @@ export const saveUserTheme = async (userId: string, themeName: string) => {
 };
 
 export const getUserTheme = async (userId: string): Promise<string | null> => {
+  // Skip Firebase calls during server-side rendering
+  if (!isClientSide) {
+    return null;
+  }
+
   try {
     const themes = await getDocuments(COLLECTIONS.THEMES);
     const userTheme = themes.find((theme: any) => theme.userId === userId);

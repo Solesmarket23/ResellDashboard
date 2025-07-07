@@ -12,21 +12,27 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:123456789:web:demo",
 };
 
-// Only initialize Firebase if we have real config values
+// Only initialize Firebase if we have real config values and we're in the browser
 const hasValidConfig = process.env.NEXT_PUBLIC_FIREBASE_API_KEY && 
                       process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
 
+const isClientSide = typeof window !== 'undefined';
+
 let app, auth, db, storage;
 
-if (hasValidConfig) {
-  // Initialize Firebase with real config
+if (hasValidConfig && isClientSide) {
+  // Initialize Firebase with real config (client-side only)
   app = getApps().length ? getApp() : initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
   storage = getStorage(app);
 } else {
-  // Use mock/demo Firebase for development
-  console.log("🔧 Firebase not configured - using demo mode");
+  // Use mock/demo Firebase for development or server-side rendering
+  if (!isClientSide) {
+    console.log("🔧 Firebase not initialized - server-side rendering");
+  } else {
+    console.log("🔧 Firebase not configured - using demo mode");
+  }
   app = null;
   auth = null;
   db = null;
