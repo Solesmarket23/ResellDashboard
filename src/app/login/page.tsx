@@ -10,6 +10,8 @@ import Image from 'next/image';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { Mail, Lock, User, Eye, EyeOff, ArrowLeft } from 'lucide-react';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '@/lib/firebase/firebase';
 
 const LoginPage = () => {
   const { currentTheme, setTheme, themes } = useTheme();
@@ -53,10 +55,42 @@ const LoginPage = () => {
     e.preventDefault();
     setIsLoading(true);
     
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      if (isLogin) {
+        // Sign in existing user
+        await signInWithEmailAndPassword(auth, formData.email, formData.password);
+      } else {
+        // Create new user account
+        if (formData.password !== formData.confirmPassword) {
+          alert('Passwords do not match!');
+          setIsLoading(false);
+          return;
+        }
+        await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+      }
+      
+      // Only navigate if authentication succeeded
       router.push('/loading');
-    }, 1500);
+    } catch (error: any) {
+      console.error('Email/password authentication failed:', error);
+      setIsLoading(false);
+      
+      // Show user-friendly error messages
+      let errorMessage = 'Authentication failed. Please try again.';
+      if (error.code === 'auth/user-not-found') {
+        errorMessage = 'No account found with this email address.';
+      } else if (error.code === 'auth/wrong-password') {
+        errorMessage = 'Incorrect password.';
+      } else if (error.code === 'auth/email-already-in-use') {
+        errorMessage = 'An account with this email already exists.';
+      } else if (error.code === 'auth/weak-password') {
+        errorMessage = 'Password should be at least 6 characters.';
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = 'Please enter a valid email address.';
+      }
+      
+      alert(errorMessage);
+    }
   };
 
   const handleGoogleAuth = async () => {
