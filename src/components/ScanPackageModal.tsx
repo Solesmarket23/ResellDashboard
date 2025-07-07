@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Camera, Smartphone, CheckCircle, AlertTriangle } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
+import { Capacitor } from '@capacitor/core';
+import NativeBarcodeScanner from './NativeBarcodeScanner';
 
 // QuaggaJS types
 interface QuaggaResult {
@@ -23,9 +25,10 @@ interface ScanPackageModalProps {
 
 const ScanPackageModal = ({ isOpen, onClose, onScanComplete }: ScanPackageModalProps) => {
   const { currentTheme } = useTheme();
-  const [activeMode, setActiveMode] = useState<'camera' | 'manual'>('manual');
+  const [activeMode, setActiveMode] = useState<'camera' | 'manual' | 'native'>('manual');
   const [manualInput, setManualInput] = useState('');
   const [isScanning, setIsScanning] = useState(false);
+  const [showNativeScanner, setShowNativeScanner] = useState(false);
   const [cameraStatus, setCameraStatus] = useState<'ready' | 'active' | 'error' | 'permission-denied'>('ready');
   const [errorMessage, setErrorMessage] = useState('');
   const [searchResults, setSearchResults] = useState<any>(null);
@@ -382,6 +385,18 @@ const ScanPackageModal = ({ isOpen, onClose, onScanComplete }: ScanPackageModalP
     }
   };
 
+  const handleNativeBarcodeScanned = (barcode: string) => {
+    console.log('🔔 Native barcode scanned:', barcode);
+    setShowNativeScanner(false);
+    handleScannedCode(barcode);
+  };
+
+  const handleNativeScannerClose = () => {
+    console.log('🔔 Native scanner closed');
+    setShowNativeScanner(false);
+    setActiveMode('manual');
+  };
+
   // Cleanup when modal closes
   useEffect(() => {
     if (!isOpen) {
@@ -492,6 +507,31 @@ const ScanPackageModal = ({ isOpen, onClose, onScanComplete }: ScanPackageModalP
               <Camera className="w-5 h-5" />
               <span>Camera (Beta)</span>
             </button>
+            {Capacitor.isNativePlatform() && (
+              <button
+                onClick={() => {
+                  console.log('Switching to native scanner mode');
+                  stopScanning();
+                  setActiveMode('native');
+                  setSearchResults(null);
+                  setShowNativeScanner(true);
+                }}
+                className={`flex-1 flex items-center justify-center space-x-2 py-3 px-4 rounded-xl font-medium transition-all duration-200 ${
+                  activeMode === 'native' 
+                    ? currentTheme.name === 'Neon'
+                      ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-[0_0_20px_rgba(168,85,247,0.3)]'
+                      : 'bg-white text-gray-900 shadow-sm'
+                    : currentTheme.name === 'Neon'
+                      ? 'text-gray-300 hover:text-white hover:bg-white/10'
+                      : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <div className="w-5 h-5 border-2 border-current rounded relative">
+                  <div className="absolute top-0.5 left-0.5 w-1 h-1 bg-current rounded-full"></div>
+                </div>
+                <span>Native</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -929,6 +969,14 @@ const ScanPackageModal = ({ isOpen, onClose, onScanComplete }: ScanPackageModalP
         </div>
       </div>
     </div>
+    
+    {/* Native Barcode Scanner */}
+    {showNativeScanner && (
+      <NativeBarcodeScanner
+        onClose={handleNativeScannerClose}
+        onBarcodeScanned={handleNativeBarcodeScanned}
+      />
+    )}
     </div>
   );
 };
