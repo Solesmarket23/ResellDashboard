@@ -22,6 +22,7 @@ const LoginPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -50,9 +51,12 @@ const LoginPage = () => {
       ...prev,
       [e.target.name]: e.target.value
     }));
-    // Clear error message when user starts typing
+    // Clear error and success messages when user starts typing
     if (errorMessage) {
       setErrorMessage('');
+    }
+    if (successMessage) {
+      setSuccessMessage('');
     }
   };
 
@@ -60,11 +64,14 @@ const LoginPage = () => {
     e.preventDefault();
     setIsLoading(true);
     setErrorMessage(''); // Clear any previous errors
+    setSuccessMessage(''); // Clear any previous success messages
     
     try {
       if (isLogin) {
         // Sign in existing user
         await signInWithEmailAndPassword(auth, formData.email, formData.password);
+        // Navigate immediately for login
+        router.push('/loading');
       } else {
         // Create new user account
         if (formData.password !== formData.confirmPassword) {
@@ -73,10 +80,16 @@ const LoginPage = () => {
           return;
         }
         await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+        
+        // Show success message for account creation
+        setSuccessMessage('Account created successfully! Welcome to Flip Flow! 🎉');
+        setIsLoading(false);
+        
+        // Navigate after showing success message
+        setTimeout(() => {
+          router.push('/loading');
+        }, 2000);
       }
-      
-      // Only navigate if authentication succeeded
-      router.push('/loading');
     } catch (error: any) {
       console.error('Email/password authentication failed:', error);
       setIsLoading(false);
@@ -102,6 +115,7 @@ const LoginPage = () => {
   const handleGoogleAuth = async () => {
     setIsLoading(true);
     setErrorMessage(''); // Clear any previous errors
+    setSuccessMessage(''); // Clear any previous success messages
     
     try {
       // Actually call Firebase authentication
@@ -212,6 +226,7 @@ const LoginPage = () => {
               onClick={() => {
                 setIsLogin(true);
                 setErrorMessage(''); // Clear error when switching modes
+                setSuccessMessage(''); // Clear success when switching modes
               }}
               className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all duration-200 ${
                 isLogin 
@@ -227,6 +242,7 @@ const LoginPage = () => {
               onClick={() => {
                 setIsLogin(false);
                 setErrorMessage(''); // Clear error when switching modes
+                setSuccessMessage(''); // Clear success when switching modes
               }}
               className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all duration-200 ${
                 !isLogin 
@@ -252,6 +268,28 @@ const LoginPage = () => {
                   <span className="text-white text-xs font-bold">!</span>
                 </div>
                 <p className="text-sm font-medium">{errorMessage}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Success Message */}
+          {successMessage && (
+            <div className={`mb-4 p-4 rounded-lg border-l-4 success-notification ${
+              currentTheme.name === 'Neon' 
+                ? 'neon bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 border-emerald-500 text-emerald-400 backdrop-blur-sm shadow-lg shadow-emerald-500/20' 
+                : 'bg-gradient-to-r from-emerald-500/10 to-green-500/10 border-emerald-500 text-emerald-400'
+            }`}>
+              <div className="flex items-center space-x-3">
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
+                  currentTheme.name === 'Neon' 
+                    ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 shadow-lg shadow-emerald-500/50' 
+                    : 'bg-gradient-to-r from-emerald-500 to-green-500'
+                }`}>
+                  <svg className="w-4 h-4 text-white success-checkmark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <p className="text-sm font-medium">{successMessage}</p>
               </div>
             </div>
           )}

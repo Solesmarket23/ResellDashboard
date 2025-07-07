@@ -448,3 +448,45 @@ input[type="password"]:autofill {
   background-color: #1e293b !important;
   color: white !important;
 }
+
+/* Success notification animations */
+@keyframes successSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes successGlow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(16, 185, 129, 0.6), 0 0 60px rgba(6, 182, 212, 0.3);
+  }
+}
+
+@keyframes checkmarkDraw {
+  0% {
+    stroke-dasharray: 0 20;
+  }
+  100% {
+    stroke-dasharray: 20 0;
+  }
+}
+
+.success-notification {
+  animation: successSlideIn 0.5s ease-out;
+}
+
+.success-notification.neon {
+  animation: successSlideIn 0.5s ease-out, successGlow 2s ease-in-out infinite;
+}
+
+.success-checkmark {
+  animation: checkmarkDraw 0.5s ease-out 0.2s both;
+}
