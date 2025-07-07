@@ -21,6 +21,7 @@ const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -49,11 +50,16 @@ const LoginPage = () => {
       ...prev,
       [e.target.name]: e.target.value
     }));
+    // Clear error message when user starts typing
+    if (errorMessage) {
+      setErrorMessage('');
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setErrorMessage(''); // Clear any previous errors
     
     try {
       if (isLogin) {
@@ -62,7 +68,7 @@ const LoginPage = () => {
       } else {
         // Create new user account
         if (formData.password !== formData.confirmPassword) {
-          alert('Passwords do not match!');
+          setErrorMessage('Passwords do not match!');
           setIsLoading(false);
           return;
         }
@@ -76,25 +82,26 @@ const LoginPage = () => {
       setIsLoading(false);
       
       // Show user-friendly error messages
-      let errorMessage = 'Authentication failed. Please try again.';
+      let errorText = 'Authentication failed. Please try again.';
       if (error.code === 'auth/user-not-found') {
-        errorMessage = 'No account found with this email address.';
+        errorText = 'No account found with this email address.';
       } else if (error.code === 'auth/wrong-password') {
-        errorMessage = 'Incorrect password.';
+        errorText = 'Incorrect password.';
       } else if (error.code === 'auth/email-already-in-use') {
-        errorMessage = 'An account with this email already exists.';
+        errorText = 'An account with this email already exists.';
       } else if (error.code === 'auth/weak-password') {
-        errorMessage = 'Password should be at least 6 characters.';
+        errorText = 'Password should be at least 6 characters.';
       } else if (error.code === 'auth/invalid-email') {
-        errorMessage = 'Please enter a valid email address.';
+        errorText = 'Please enter a valid email address.';
       }
       
-      alert(errorMessage);
+      setErrorMessage(errorText);
     }
   };
 
   const handleGoogleAuth = async () => {
     setIsLoading(true);
+    setErrorMessage(''); // Clear any previous errors
     
     try {
       // Actually call Firebase authentication
@@ -102,10 +109,19 @@ const LoginPage = () => {
       
       // Only navigate if authentication succeeded
       router.push('/loading');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Google sign-in failed:', error);
       setIsLoading(false);
-      // You could show an error message here
+      
+      // Show user-friendly error message
+      let errorText = 'Google sign-in failed. Please try again.';
+      if (error.code === 'auth/popup-closed-by-user') {
+        errorText = 'Sign-in was cancelled. Please try again.';
+      } else if (error.code === 'auth/popup-blocked') {
+        errorText = 'Popup was blocked. Please enable popups and try again.';
+      }
+      
+      setErrorMessage(errorText);
     }
   };
 
@@ -193,7 +209,10 @@ const LoginPage = () => {
             currentTheme.name === 'Neon' ? 'bg-white/10' : 'bg-gray-100'
           }`}>
             <button
-              onClick={() => setIsLogin(true)}
+              onClick={() => {
+                setIsLogin(true);
+                setErrorMessage(''); // Clear error when switching modes
+              }}
               className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all duration-200 ${
                 isLogin 
                   ? currentTheme.name === 'Neon'
@@ -205,7 +224,10 @@ const LoginPage = () => {
               Sign In
             </button>
             <button
-              onClick={() => setIsLogin(false)}
+              onClick={() => {
+                setIsLogin(false);
+                setErrorMessage(''); // Clear error when switching modes
+              }}
               className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all duration-200 ${
                 !isLogin 
                   ? currentTheme.name === 'Neon'
@@ -217,6 +239,22 @@ const LoginPage = () => {
               Sign Up
             </button>
           </div>
+
+          {/* Error Message */}
+          {errorMessage && (
+            <div className={`mb-4 p-4 rounded-lg border-l-4 ${
+              currentTheme.name === 'Neon' 
+                ? 'bg-red-500/10 border-red-500 text-red-400 backdrop-blur-sm' 
+                : 'bg-red-500/10 border-red-500 text-red-400'
+            } animate-pulse`}>
+              <div className="flex items-center space-x-2">
+                <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center">
+                  <span className="text-white text-xs font-bold">!</span>
+                </div>
+                <p className="text-sm font-medium">{errorMessage}</p>
+              </div>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {!isLogin && (
