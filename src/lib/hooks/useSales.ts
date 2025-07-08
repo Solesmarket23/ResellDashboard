@@ -148,14 +148,16 @@ export const useSales = () => {
 
     try {
       setIsDeleting(true);
-      console.log('🗑️ useSales: Deleting sale:', saleId);
+      console.log('🗑️ useSales: Deleting sale with Firebase doc ID:', saleId);
       
       await deleteDocument('sales', saleId);
+      
+      console.log('✅ useSales: Sale deleted from Firebase');
       
       // Refresh data after deletion
       await loadSalesData(false);
       
-      console.log('✅ useSales: Sale deleted successfully');
+      console.log('✅ useSales: Sale deleted successfully and data refreshed');
       return true;
       
     } catch (err) {

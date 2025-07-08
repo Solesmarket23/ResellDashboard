@@ -32,12 +32,25 @@ export const signInWithGoogle = async () => {
 export const addDocument = (collectionName: string, data: any) =>
   addDoc(collection(db, collectionName), data);
 
-export const getDocuments = async (collectionName: string) => {
-  const querySnapshot = await getDocs(collection(db, collectionName));
-  return querySnapshot.docs.map(doc => ({
-    id: doc.id,
-    ...doc.data()
-  }));
+export const getDocuments = async (collectionName: string): Promise<any[]> => {
+  if (!db) {
+    console.warn('🔧 Firebase not initialized - returning empty array');
+    return [];
+  }
+  
+  try {
+    const querySnapshot = await getDocs(collection(db, collectionName));
+    const documents = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    
+    console.log(`📄 getDocuments: Loaded ${documents.length} documents from ${collectionName}`);
+    return documents;
+  } catch (error) {
+    console.error(`❌ Error loading documents from ${collectionName}:`, error);
+    throw error;
+  }
 };
 
 export const updateDocument = (collectionName: string, id: string, data: any) =>

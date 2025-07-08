@@ -1,17 +1,29 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { DollarSign, TrendingUp, Package, ShoppingCart, BarChart3, Calculator, Calendar, X, Palette, Trash2, RotateCcw, RefreshCw } from 'lucide-react';
+import { DollarSign, TrendingUp, Package, ShoppingCart, BarChart3, Calculator, Calendar, X, Palette, Trash2, RotateCcw, RefreshCw, Wifi, WifiOff, AlertCircle } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
-import { saveUserDashboardSettings, getUserDashboardSettings, getUserSales, clearAllUserData } from '../lib/firebase/userDataUtils';
+import { saveUserDashboardSettings, getUserDashboardSettings, clearAllUserData } from '../lib/firebase/userDataUtils';
 import { getDocuments } from '../lib/firebase/firebaseUtils';
+import { useSales } from '../lib/hooks/useSales';
 import DatePicker from './DatePicker';
 import MarketAlerts from './MarketAlerts';
 
 const Dashboard = () => {
   const { currentTheme, setTheme, themes } = useTheme();
   const { user } = useAuth();
+  
+  // Use the new useSales hook for real-time sales data
+  const { 
+    sales, 
+    metrics: salesMetrics, 
+    loading: salesLoading, 
+    error: salesError,
+    connectionState,
+    forceRefresh: refreshSales 
+  } = useSales();
+  
   const [activeTimePeriod, setActiveTimePeriod] = useState('This Month');
   const [showThemeSelector, setShowThemeSelector] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -22,10 +34,9 @@ const Dashboard = () => {
   const [customRangeLabel, setCustomRangeLabel] = useState('Custom Range');
   const [showBackground, setShowBackground] = useState(true);
   
-  // Real user data state
+  // Other data state (purchases, etc.)
   const [userPurchases, setUserPurchases] = useState<any[]>([]);
-  const [userSales, setUserSales] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [purchasesLoading, setPurchasesLoading] = useState(true);
   const [realMetrics, setRealMetrics] = useState({
     totalProfit: 0,
     totalRevenue: 0,
@@ -48,7 +59,6 @@ const Dashboard = () => {
       
       // Reset local state
       setUserPurchases([]);
-      setUserSales([]);
       setRealMetrics({
         totalProfit: 0,
         totalRevenue: 0,
@@ -58,6 +68,9 @@ const Dashboard = () => {
         avgProfitPerSale: 0,
         recentSales: []
       });
+      
+      // Refresh sales data through the hook
+      refreshSales();
       
       // Reset theme to default
       setTheme('Default');
@@ -100,17 +113,17 @@ const Dashboard = () => {
     }
   };
 
-  // Load real user data function (extracted for reuse)
-  const loadUserData = async () => {
+  // Load purchases data (sales are handled by useSales hook)
+  const loadPurchasesData = async () => {
     if (!user) {
-      console.log('📊 Dashboard: No user found, skipping data load');
-      setLoading(false);
+      console.log('📊 Dashboard: No user found, skipping purchases load');
+      setPurchasesLoading(false);
       return;
     }
 
     try {
-      console.log('📊 Dashboard: Starting data load for user:', user.uid);
-      setLoading(true);
+      console.log('📊 Dashboard: Starting purchases load for user:', user.uid);
+      setPurchasesLoading(true);
       
       // Load purchases from Firebase
       console.log('📊 Dashboard: Loading purchases...');
@@ -120,60 +133,44 @@ const Dashboard = () => {
       );
       console.log('📊 Dashboard: Found', userPurchasesData.length, 'purchases');
       
-      // Load sales from Firebase
-      console.log('📊 Dashboard: Loading sales...');
-      const userSalesData = await getUserSales(user.uid);
-      console.log('📊 Dashboard: Found', userSalesData.length, 'sales');
-      
       setUserPurchases(userPurchasesData);
-      setUserSales(userSalesData);
-      
-      // Calculate real metrics
-      console.log('📊 Dashboard: Calculating metrics...');
-      calculateRealMetrics(userPurchasesData, userSalesData);
-      console.log('📊 Dashboard: Data load completed successfully');
+      console.log('📊 Dashboard: Purchases load completed successfully');
       
     } catch (error) {
-      console.error('❌ Dashboard: Error loading user data:', error);
+      console.error('❌ Dashboard: Error loading purchases:', error);
     } finally {
-      setLoading(false);
+      setPurchasesLoading(false);
     }
   };
 
-  // Load data on mount and when user changes
+  // Load purchases data on mount and when user changes
   useEffect(() => {
-    loadUserData();
+    loadPurchasesData();
   }, [user]);
 
-  // Check for refresh parameter in URL (indicates redirect from sales page)
+  // Calculate combined metrics when sales or purchases change
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const refreshParam = urlParams.get('refresh');
-    
-    if (refreshParam && user) {
-      console.log('📡 Dashboard: Detected refresh parameter - forcing data reload');
-      // Clear the URL parameter
-      window.history.replaceState({}, '', '/dashboard');
-      // Force a fresh data load
-      setTimeout(() => {
-        loadUserData();
-      }, 100);
+    if (!salesLoading && !purchasesLoading) {
+      console.log('📊 Dashboard: Calculating combined metrics...');
+      calculateRealMetrics(userPurchases, sales);
     }
-  }, [user]);
+  }, [sales, userPurchases, salesLoading, purchasesLoading]);
 
-  // Force data refresh when returning to dashboard (e.g., after deleting sales)
+
+
+  // Force purchases refresh when returning to dashboard
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (!document.hidden && user) {
-        console.log('📡 Dashboard: Page became visible - refreshing data');
-        loadUserData();
+        console.log('📡 Dashboard: Page became visible - refreshing purchases');
+        loadPurchasesData();
       }
     };
 
     const handleFocus = () => {
       if (user) {
-        console.log('📡 Dashboard: Window focused - refreshing data');
-        loadUserData();
+        console.log('📡 Dashboard: Window focused - refreshing purchases');
+        loadPurchasesData();
       }
     };
 
@@ -186,55 +183,22 @@ const Dashboard = () => {
     };
   }, [user]);
 
-  // Add periodic refresh to catch changes made in other components
+  // Add periodic refresh for purchases data
   useEffect(() => {
     if (!user) return;
 
-    // Refresh data every 30 seconds when user is active
+    // Refresh purchases data every 30 seconds when user is active
     const interval = setInterval(() => {
       // Only refresh if the document is visible (user is actively using the app)
       if (!document.hidden) {
-        console.log('🔄 Auto-refresh triggered (30s interval)');
-        loadUserData();
+        console.log('🔄 Auto-refresh triggered (30s interval) - refreshing purchases');
+        loadPurchasesData();
       }
     }, 30000); // 30 seconds
 
-    // Listen for sales data changes from other components
-    const handleSalesDataChanged = (event: Event) => {
-      console.log('📡 Dashboard: Sales data changed event received - refreshing dashboard...');
-      console.log('📡 Dashboard: Event details:', event);
-      console.log('📡 Dashboard: Current user:', user?.uid);
-      console.log('📡 Dashboard: Loading state:', loading);
-      
-      // Add a longer delay to ensure Firebase operations complete and cache is cleared
-      setTimeout(() => {
-        console.log('📡 Dashboard: Executing delayed refresh with cache clearing...');
-        // Force a more aggressive refresh by clearing local state first
-        setUserSales([]);
-        setRealMetrics({
-          totalProfit: 0,
-          totalRevenue: 0,
-          totalSpend: 0,
-          inventoryCount: 0,
-          inventoryValue: 0,
-          avgProfitPerSale: 0,
-          recentSales: []
-        });
-        loadUserData();
-      }, 750);
-    };
-
-    // Remove any existing listeners first
-    window.removeEventListener('salesDataChanged', handleSalesDataChanged);
-    // Add the new listener
-    window.addEventListener('salesDataChanged', handleSalesDataChanged);
-    
-    console.log('📡 Dashboard: Event listener registered for salesDataChanged');
-
     return () => {
-      console.log('📡 Dashboard: Cleaning up event listener and interval');
+      console.log('📡 Dashboard: Cleaning up interval');
       clearInterval(interval);
-      window.removeEventListener('salesDataChanged', handleSalesDataChanged);
     };
   }, [user]);
 
@@ -443,18 +407,24 @@ const Dashboard = () => {
     : 0;
 
   // Show loading state
-  if (loading) {
+  if (salesLoading || purchasesLoading) {
     return (
       <div className={`flex-1 ${currentTheme.colors.background} p-8`}>
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
             <p className={`${currentTheme.colors.textSecondary}`}>Loading your dashboard...</p>
+            <div className="mt-4 text-sm text-gray-500">
+              {salesLoading && "Loading sales data..."}
+              {purchasesLoading && "Loading purchases data..."}
+            </div>
           </div>
         </div>
       </div>
     );
   }
+
+
 
   // Show empty state for new users
   if (!user) {
@@ -501,6 +471,34 @@ const Dashboard = () => {
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center">
           <h1 className={`text-3xl font-bold ${currentTheme.colors.textPrimary} mr-8`}>Dashboard</h1>
+          
+          {/* Connection State Indicator */}
+          <div className="flex items-center space-x-2 text-sm">
+            {connectionState.status === 'connected' && (
+              <div className="flex items-center space-x-1 text-green-500">
+                <Wifi className="w-4 h-4" />
+                <span>Connected</span>
+              </div>
+            )}
+            {connectionState.status === 'connecting' && (
+              <div className="flex items-center space-x-1 text-yellow-500">
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                <span>Connecting...</span>
+              </div>
+            )}
+            {connectionState.status === 'error' && (
+              <div className="flex items-center space-x-1 text-red-500">
+                <AlertCircle className="w-4 h-4" />
+                <span>Error</span>
+              </div>
+            )}
+            {connectionState.status === 'disconnected' && (
+              <div className="flex items-center space-x-1 text-gray-500">
+                <WifiOff className="w-4 h-4" />
+                <span>Offline</span>
+              </div>
+            )}
+          </div>
           <div className="relative flex items-center space-x-2">
             {timePeriods.map((period) => (
               <button
@@ -529,9 +527,10 @@ const Dashboard = () => {
           <button
             onClick={() => {
               console.log('🔄 Manual refresh button clicked');
-              loadUserData();
+              loadPurchasesData();
+              refreshSales();
             }}
-            disabled={loading}
+            disabled={salesLoading || purchasesLoading}
             className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
               currentTheme.name === 'Neon'
                 ? 'bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/30 disabled:opacity-50'
@@ -539,7 +538,7 @@ const Dashboard = () => {
             }`}
             title="Refresh dashboard data"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${(salesLoading || purchasesLoading) ? 'animate-spin' : ''}`} />
             <span>Refresh</span>
           </button>
 
@@ -762,6 +761,32 @@ const Dashboard = () => {
           </div>
         </div>
       )}
+
+      {/* Debug Info Section - Remove in production */}
+      <div className="mb-6 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm">
+        <div className="flex items-center justify-between mb-2">
+          <span className="font-semibold">Debug Info</span>
+          <div className="flex items-center space-x-4">
+            <span>Sales: {sales.length}</span>
+            <span>Purchases: {userPurchases.length}</span>
+            <span>Connection: {connectionState.status}</span>
+            {connectionState.lastSync && (
+              <span>Last sync: {connectionState.lastSync.toLocaleTimeString()}</span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center space-x-4 text-xs text-gray-600">
+          <span>From cache: {connectionState.fromCache ? 'Yes' : 'No'}</span>
+          <span>Pending writes: {connectionState.hasPendingWrites ? 'Yes' : 'No'}</span>
+          {salesError && <span className="text-red-500">Error: {salesError}</span>}
+          <button
+            onClick={refreshSales}
+            className="px-2 py-1 bg-blue-500 text-white rounded text-xs hover:bg-blue-600"
+          >
+            Force Refresh Sales
+          </button>
+        </div>
+      </div>
 
       {/* Metrics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">

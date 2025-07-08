@@ -163,6 +163,9 @@ export const getUserProfile = async (userId: string): Promise<UserProfileData | 
 // Sales Persistence
 export const saveUserSale = async (userId: string, saleData: Partial<UserSaleData>) => {
   try {
+    console.log('💾 saveUserSale: Saving sale for user:', userId);
+    console.log('💾 saveUserSale: Sale data:', saleData);
+    
     const sale: UserSaleData = {
       userId,
       ...saleData,
@@ -170,8 +173,10 @@ export const saveUserSale = async (userId: string, saleData: Partial<UserSaleDat
       createdAt: new Date().toISOString()
     } as UserSaleData;
 
-    await addDocument(COLLECTIONS.SALES, sale);
-    console.log('✅ Sale saved to Firebase');
+    const docRef = await addDocument(COLLECTIONS.SALES, sale);
+    console.log('✅ Sale saved to Firebase with doc ID:', docRef.id);
+    
+    return docRef;
   } catch (error) {
     console.error('❌ Error saving sale:', error);
     throw error;

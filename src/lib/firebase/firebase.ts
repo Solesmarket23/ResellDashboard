@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, enableNetwork, disableNetwork, connectFirestoreEmulator } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
@@ -28,6 +28,11 @@ if (hasValidConfig && isClientSide) {
     db = getFirestore(app);
     storage = getStorage(app);
     
+    // Enable network on initialization for proper sync
+    enableNetwork(db).catch(err => {
+      console.warn("⚠️ Firebase network enable failed:", err);
+    });
+    
     console.log("✅ Firebase initialized successfully");
   } catch (error) {
     console.error("❌ Firebase initialization failed:", error);
@@ -48,6 +53,29 @@ if (hasValidConfig && isClientSide) {
   db = null;
   storage = null;
 }
+
+// Connection state monitoring
+export const enableFirebaseNetwork = async () => {
+  if (db) {
+    try {
+      await enableNetwork(db);
+      console.log("🌐 Firebase network enabled");
+    } catch (error) {
+      console.error("❌ Failed to enable Firebase network:", error);
+    }
+  }
+};
+
+export const disableFirebaseNetwork = async () => {
+  if (db) {
+    try {
+      await disableNetwork(db);
+      console.log("🔌 Firebase network disabled");
+    } catch (error) {
+      console.error("❌ Failed to disable Firebase network:", error);
+    }
+  }
+};
 
 // 🚨 FIREBASE AUTH DOMAIN ERROR FIX:
 // If you're getting "auth/unauthorized-domain" errors, follow these steps:

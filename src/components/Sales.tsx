@@ -263,28 +263,47 @@ const Sales = () => {
   };
 
   // Function to confirm delete
-  const confirmDelete = async () => {
-    if (deleteModal.sale && user) {
-      try {
-        console.log('🗑️ Attempting to delete sale:', deleteModal.sale);
-        
-        if (!deleteModal.sale.id) {
-          console.error('❌ Sale missing ID:', deleteModal.sale);
-          alert('Error: Sale is missing an ID and cannot be deleted.');
-          return;
-        }
+  const confirmDelete = async (event?: React.MouseEvent<HTMLButtonElement>) => {
+    // Prevent any default form submission behavior
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    
+    if (!deleteModal.sale || !user) {
+      console.error('❌ Missing sale or user for deletion');
+      alert('Error: Missing sale or user information');
+      return;
+    }
 
-        // Use the enhanced delete function from useSales hook
-        await deleteSale(deleteModal.sale.id);
-        
-        console.log('✅ Sale deleted successfully');
-      } catch (error) {
-        console.error('❌ Error deleting sale:', error);
-        console.error('Sale data:', deleteModal.sale);
-        alert(`Error deleting sale: ${error.message}. Please try again.`);
-      } finally {
-        closeDeleteModal();
+    try {
+      console.log('🗑️ Attempting to delete sale:', deleteModal.sale);
+      
+      if (!deleteModal.sale.id) {
+        console.error('❌ Sale missing Firebase document ID:', deleteModal.sale);
+        alert('Error: Sale is missing a document ID and cannot be deleted.');
+        return;
       }
+
+      console.log('🔥 Calling deleteSale with Firebase doc ID:', deleteModal.sale.id);
+      
+      // Use the enhanced delete function from useSales hook
+      const deleteSuccess = await deleteSale(deleteModal.sale.id);
+      
+      if (deleteSuccess) {
+        console.log('✅ Sale deleted successfully');
+        closeDeleteModal();
+        // Optional: Show success message
+        // alert('Sale deleted successfully!');
+      } else {
+        console.error('❌ Delete operation failed');
+        alert('Failed to delete sale. Please try again.');
+      }
+      
+    } catch (error) {
+      console.error('❌ Error in confirmDelete:', error);
+      console.error('Sale data:', deleteModal.sale);
+      alert(`Error deleting sale: ${error.message}. Please try again.`);
     }
   };
 
@@ -971,6 +990,7 @@ const Sales = () => {
                 {/* Modal Actions */}
                 <div className="flex items-center space-x-3">
                   <button
+                    type="button"
                     onClick={closeDeleteModal}
                     className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
                       isNeon 
@@ -981,7 +1001,8 @@ const Sales = () => {
                     Cancel
                   </button>
                   <button
-                    onClick={confirmDelete}
+                    type="button"
+                    onClick={(event) => confirmDelete(event)}
                     disabled={isDeleting}
                     className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
                       isNeon 
@@ -1097,6 +1118,7 @@ const Sales = () => {
                 {/* Modal Actions */}
                 <div className="flex items-center space-x-3">
                   <button
+                    type="button"
                     onClick={() => setClearAllModal(false)}
                     className={`flex-1 px-4 py-3 rounded-lg font-medium transition-colors ${
                       isNeon 
@@ -1107,6 +1129,7 @@ const Sales = () => {
                     Cancel
                   </button>
                   <button
+                    type="button"
                     onClick={confirmClearAllSales}
                     className={`flex-1 px-4 py-3 rounded-lg font-medium transition-colors ${
                       isNeon 
