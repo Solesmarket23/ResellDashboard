@@ -495,15 +495,24 @@ const Sales = () => {
       // Show success message immediately
       alert('Sale recorded successfully!');
       
-      // Wait a moment for Firebase to fully process the document
-      console.log('⏳ Waiting for Firebase to process...');
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Wait a shorter time for Firebase to fully process the document
+      console.log('⏳ Waiting for Firebase to process (500ms)...');
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       // Force refresh to show the new sale
       console.log('🔄 Refreshing sales data...');
       await forceRefresh();
       
       console.log('✅ Sales data refreshed - new sale should now be visible');
+      
+      // Double-check that the sale appears in the UI
+      setTimeout(() => {
+        if (salesData.length === 0) {
+          console.warn('⚠️ No sales showing in UI after refresh - this indicates a problem');
+        } else {
+          console.log('✅ Sales UI updated - currently showing', salesData.length, 'sales');
+        }
+      }, 1000);
       
     } catch (error) {
       console.error('❌ Error saving sale:', error);

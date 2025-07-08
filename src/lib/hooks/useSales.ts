@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { getDocuments, deleteDocument } from '../firebase/firebaseUtils';
-import { clearAllUserSales } from '../firebase/userDataUtils';
+import { clearAllUserSales, getUserSales } from '../firebase/userDataUtils';
 
 export interface SaleMetrics {
   totalProfit: number;
@@ -105,10 +105,11 @@ export const useSales = () => {
 
       console.log('🔄 useSales: Loading sales data for user:', user.uid);
       
-      const allSales = await getDocuments('sales');
-      const userSalesData = allSales.filter((sale: any) => sale.userId === user.uid);
+      // Use the dedicated getUserSales function instead of manual filtering
+      const userSalesData = await getUserSales(user.uid);
       
       console.log('🔄 useSales: Found', userSalesData.length, 'sales');
+      console.log('🔄 useSales: Sales data preview:', userSalesData.slice(0, 3));
       
       if (mountedRef.current) {
         setSales(userSalesData);

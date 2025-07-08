@@ -164,8 +164,8 @@ export const getUserProfile = async (userId: string): Promise<UserProfileData | 
 // Sales Persistence
 export const saveUserSale = async (userId: string, saleData: Partial<UserSaleData>) => {
   try {
-    console.log('💾 saveUserSale: Saving sale for user:', userId);
-    console.log('💾 saveUserSale: Sale data:', saleData);
+    console.log('💾 saveUserSale: Starting save process for user:', userId);
+    console.log('💾 saveUserSale: Input sale data:', saleData);
     
     const sale: UserSaleData = {
       userId,
@@ -173,13 +173,26 @@ export const saveUserSale = async (userId: string, saleData: Partial<UserSaleDat
       type: 'manual',
       createdAt: new Date().toISOString()
     } as UserSaleData;
+    
+    console.log('💾 saveUserSale: Processed sale data before saving:', sale);
+    console.log('💾 saveUserSale: Sale data keys:', Object.keys(sale));
 
     const docRef = await addDocument(COLLECTIONS.SALES, sale);
     console.log('✅ Sale saved to Firebase with doc ID:', docRef.id);
     
+    // Verify the save by immediately reading it back
+    const savedSale = await getDocuments(COLLECTIONS.SALES);
+    const justSavedSale = savedSale.find((s: any) => s.id === docRef.id);
+    console.log('🔍 Verification - Just saved sale:', justSavedSale);
+    
     return docRef;
   } catch (error) {
     console.error('❌ Error saving sale:', error);
+    console.error('❌ Error details:', {
+      userId,
+      saleData,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
     throw error;
   }
 };
@@ -221,7 +234,7 @@ export const deleteUserSale = async (userId: string, saleId: string | number) =>
   }
 };
 
-export const clearAllUserSales = async (userId: string) => {
+export const clearAllUserSales = async (userId: string): Promise<{success: boolean, error?: string}> => {
   try {
     console.log('🔄 Starting clearAllUserSales for user:', userId);
     
@@ -233,7 +246,7 @@ export const clearAllUserSales = async (userId: string) => {
     
     if (userSales.length === 0) {
       console.log('ℹ️ No sales found for user - nothing to delete');
-      return;
+      return { success: true };
     }
     
     console.log('🗑️ Deleting sales:', userSales.map(s => ({ id: s.id, product: s.product })));
@@ -249,10 +262,12 @@ export const clearAllUserSales = async (userId: string) => {
     }
     
     console.log('✅ All sales cleared from Firebase');
+    return { success: true };
   } catch (error) {
     console.error('❌ Error clearing sales:', error);
     console.error('Error details:', error);
-    throw error;
+    const errorMessage = error instanceof Error ? error.message : 'Failed to clear all sales';
+    return { success: false, error: errorMessage };
   }
 };
 
