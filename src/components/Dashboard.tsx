@@ -65,8 +65,16 @@ const Dashboard = () => {
       // Reset time period
       setActiveTimePeriod('This Month');
       
-      console.log('🎉 Account successfully reset to fresh state!');
-      alert(`🎉 Account Reset Complete!\n\nCleared:\n• ${result.cleared.purchases} purchases\n• ${result.cleared.themes} theme settings\n• ${result.cleared.profiles} profile data\n• ${result.cleared.emailConfigs} email configs\n• All sales and dashboard settings\n\nYour account is now fresh!`);
+      // Handle both success and partial success
+      if (result.success) {
+        console.log('🎉 Account successfully reset to fresh state!');
+        alert(`🎉 Account Reset Complete!\n\nCleared:\n• ${result.cleared.purchases} purchases\n• ${result.cleared.sales} sales\n• ${result.cleared.themes} theme settings\n• ${result.cleared.profiles} profile data\n• ${result.cleared.emailConfigs} email configs\n• ${result.cleared.dashboardSettings} dashboard settings\n\nYour account is now fresh!`);
+      } else {
+        // Partial success
+        console.log('⚠️ Account partially reset with some errors');
+        const totalCleared = Object.values(result.cleared).reduce((sum: number, count: number) => sum + count, 0);
+        alert(`⚠️ Account Partially Reset\n\nCleared ${totalCleared} items:\n• ${result.cleared.purchases} purchases\n• ${result.cleared.sales} sales\n• ${result.cleared.themes} theme settings\n• ${result.cleared.profiles} profile data\n• ${result.cleared.emailConfigs} email configs\n• ${result.cleared.dashboardSettings} dashboard settings\n\nSome errors occurred but your account has been mostly cleared.\nError: ${result.error || 'Unknown error'}`);
+      }
       
     } catch (error) {
       console.error('❌ Error resetting account:', error);
@@ -80,6 +88,8 @@ const Dashboard = () => {
           errorMessage = '❌ Permission denied. Please make sure you\'re logged in and try again.';
         } else if (error.message.includes('network')) {
           errorMessage = '❌ Network error. Please check your internet connection and try again.';
+        } else {
+          errorMessage = `❌ Error resetting account: ${error.message}`;
         }
       }
       
