@@ -43,8 +43,17 @@ export const getDocuments = async (collectionName: string) => {
 export const updateDocument = (collectionName: string, id: string, data: any) =>
   updateDoc(doc(db, collectionName, id), data);
 
-export const deleteDocument = (collectionName: string, id: string) =>
-  deleteDoc(doc(db, collectionName, id));
+export const deleteDocument = async (collectionName: string, id: string) => {
+  try {
+    console.log(`🔥 Deleting document from ${collectionName} with ID: ${id}`);
+    await deleteDoc(doc(db, collectionName, id));
+    console.log(`✅ Document deleted successfully from ${collectionName}`);
+  } catch (error) {
+    console.error(`❌ Error deleting document from ${collectionName}:`, error);
+    console.error('Document ID:', id, 'Type:', typeof id);
+    throw error;
+  }
+};
 
 // Storage functions
 export const uploadFile = async (file: File, path: string) => {

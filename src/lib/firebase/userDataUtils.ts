@@ -189,12 +189,17 @@ export const getUserSales = async (userId: string): Promise<UserSaleData[]> => {
   }
 };
 
-export const deleteUserSale = async (userId: string, saleId: string) => {
+export const deleteUserSale = async (userId: string, saleId: string | number) => {
   try {
-    await deleteDocument(COLLECTIONS.SALES, saleId);
+    // Ensure saleId is a string (Firebase document ID)
+    const docId = String(saleId);
+    
+    console.log('🔥 Attempting to delete sale with doc ID:', docId);
+    await deleteDocument(COLLECTIONS.SALES, docId);
     console.log('✅ Sale deleted from Firebase');
   } catch (error) {
     console.error('❌ Error deleting sale:', error);
+    console.error('Sale ID:', saleId, 'Type:', typeof saleId);
     throw error;
   }
 };

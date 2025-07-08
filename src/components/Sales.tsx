@@ -268,10 +268,14 @@ const Sales = () => {
   const confirmDelete = async () => {
     if (deleteModal.sale && user) {
       try {
-        // Delete from Firebase using the document ID
-        await deleteUserSale(user.uid, deleteModal.sale.id);
+        // Delete from Firebase using the Firebase document ID
+        // The Firebase document ID is stored in the 'id' field from getDocuments
+        const firebaseDocId = deleteModal.sale.id;
         
-        // Update local state
+        console.log('🗑️ Deleting sale with Firebase doc ID:', firebaseDocId);
+        await deleteUserSale(user.uid, firebaseDocId);
+        
+        // Update local state - filter by the same Firebase document ID
         setSalesData(salesData.filter(sale => sale.id !== deleteModal.sale.id));
         closeDeleteModal();
         
@@ -280,7 +284,8 @@ const Sales = () => {
         
         console.log('✅ Sale deleted successfully');
       } catch (error) {
-        console.error('Error deleting sale:', error);
+        console.error('❌ Error deleting sale:', error);
+        console.error('Sale data:', deleteModal.sale);
         alert('Error deleting sale. Please try again.');
       }
     }
