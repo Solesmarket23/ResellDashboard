@@ -245,6 +245,9 @@ const Sales = () => {
       
       // Then update local state
       setSalesData([newSale, ...salesData]);
+      
+      // Notify other components that sales data has changed
+      window.dispatchEvent(new CustomEvent('salesDataChanged'));
     } catch (error) {
       console.error('Error saving test sale:', error);
       alert('Error saving test sale. Please try again.');
@@ -265,14 +268,17 @@ const Sales = () => {
   const confirmDelete = async () => {
     if (deleteModal.sale && user) {
       try {
-        // If it's a Firebase sale (has a Firebase document ID), delete from Firebase
-        if (deleteModal.sale.firebaseId) {
-          await deleteUserSale(user.uid, deleteModal.sale.firebaseId);
-        }
+        // Delete from Firebase using the document ID
+        await deleteUserSale(user.uid, deleteModal.sale.id);
         
         // Update local state
         setSalesData(salesData.filter(sale => sale.id !== deleteModal.sale.id));
         closeDeleteModal();
+        
+        // Notify other components that sales data has changed
+        window.dispatchEvent(new CustomEvent('salesDataChanged'));
+        
+        console.log('✅ Sale deleted successfully');
       } catch (error) {
         console.error('Error deleting sale:', error);
         alert('Error deleting sale. Please try again.');
@@ -293,6 +299,9 @@ const Sales = () => {
         await clearAllUserSales(user.uid);
         setSalesData([]);
         setClearAllModal(false);
+        
+        // Notify other components that sales data has changed
+        window.dispatchEvent(new CustomEvent('salesDataChanged'));
       } catch (error) {
         console.error('Error clearing all sales:', error);
         alert('Error clearing sales. Please try again.');
@@ -425,6 +434,9 @@ const Sales = () => {
       // Update local state
       setSalesData([sale, ...salesData]);
       closeRecordSaleModal();
+      
+      // Notify other components that sales data has changed
+      window.dispatchEvent(new CustomEvent('salesDataChanged'));
     } catch (error) {
       console.error('Error saving sale:', error);
       alert('Error saving sale. Please try again.');

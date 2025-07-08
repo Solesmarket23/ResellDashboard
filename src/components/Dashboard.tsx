@@ -149,7 +149,18 @@ const Dashboard = () => {
       }
     }, 30000); // 30 seconds
 
-    return () => clearInterval(interval);
+    // Listen for sales data changes from other components
+    const handleSalesDataChanged = () => {
+      console.log('📡 Sales data changed event received - refreshing dashboard...');
+      loadUserData();
+    };
+
+    window.addEventListener('salesDataChanged', handleSalesDataChanged);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('salesDataChanged', handleSalesDataChanged);
+    };
   }, [user]);
 
   // Calculate real metrics from user data
