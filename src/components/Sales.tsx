@@ -760,7 +760,7 @@ const Sales = () => {
                       }`}>${sale.salePrice.toFixed(2)}</td>
                                       <td className={`px-6 py-4 whitespace-nowrap text-sm ${
                   isNeon ? 'text-red-400' : 'text-red-600'
-                }`}>($${Math.abs(sale.fees).toFixed(2)})</td>
+                }`}>(${Math.abs(sale.fees).toFixed(2)})</td>
                       <td className={`px-6 py-4 whitespace-nowrap text-sm ${
                         isNeon ? 'text-gray-300' : 'text-gray-900'
                       }`}>${sale.payout.toFixed(2)}</td>
@@ -1430,7 +1430,7 @@ const Sales = () => {
                         <div>
                           <span className={isNeon ? 'text-gray-300' : 'text-gray-600'}>Fees:</span>
                           <span className={`ml-2 font-medium ${isNeon ? 'text-red-400' : 'text-red-600'}`}>
-                            ($${newSale.fees ? parseFloat(newSale.fees).toFixed(2) : calculateFees(parseFloat(newSale.salePrice)).toFixed(2)})
+                            (${newSale.fees ? parseFloat(newSale.fees).toFixed(2) : calculateFees(parseFloat(newSale.salePrice)).toFixed(2)})
                           </span>
                         </div>
                         <div>
