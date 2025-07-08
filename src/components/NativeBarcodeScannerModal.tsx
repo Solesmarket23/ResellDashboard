@@ -18,12 +18,7 @@ interface QuaggaResult {
 // Store the library reference
 let Quagga: any = null;
 
-// Add mobile console types
-declare global {
-  interface Window {
-    eruda?: any;
-  }
-}
+// Remove mobile console types - no longer needed
 
 interface NativeBarcodeScannerModalProps {
   isOpen: boolean;
@@ -49,22 +44,11 @@ const NativeBarcodeScannerModal = ({ isOpen, onClose, onScanComplete }: NativeBa
   const scannerElementRef = useRef<HTMLDivElement>(null);
   const isQuaggaInitialized = useRef(false);
 
-  // Initialize QuaggaJS library and mobile console
+  // Initialize QuaggaJS library
   useEffect(() => {
     const loadQuagga = async () => {
       try {
         if (typeof window !== 'undefined' && !Quagga) {
-          // Load mobile console for debugging
-          const script = document.createElement('script');
-          script.src = 'https://cdn.jsdelivr.net/npm/eruda';
-          script.onload = () => {
-            if (window.eruda) {
-              window.eruda.init();
-              console.log('📱 Mobile console loaded - tap floating button to open');
-            }
-          };
-          document.head.appendChild(script);
-          
           // Dynamic import of QuaggaJS
           const QuaggaModule = await import('quagga');
           Quagga = QuaggaModule.default;

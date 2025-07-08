@@ -206,18 +206,35 @@ export const deleteUserSale = async (userId: string, saleId: string | number) =>
 
 export const clearAllUserSales = async (userId: string) => {
   try {
+    console.log('🔄 Starting clearAllUserSales for user:', userId);
+    
     const sales = await getDocuments(COLLECTIONS.SALES);
+    console.log('📊 Total sales in database:', sales.length);
+    
     const userSales = sales.filter((sale: any) => sale.userId === userId);
+    console.log('📊 User sales found:', userSales.length);
+    
+    if (userSales.length === 0) {
+      console.log('ℹ️ No sales found for user - nothing to delete');
+      return;
+    }
+    
+    console.log('🗑️ Deleting sales:', userSales.map(s => ({ id: s.id, product: s.product })));
     
     for (const sale of userSales) {
       if (sale.id) {
+        console.log('🔥 Deleting sale:', sale.id);
         await deleteDocument(COLLECTIONS.SALES, sale.id);
+        console.log('✅ Deleted sale:', sale.id);
+      } else {
+        console.warn('⚠️ Sale missing ID:', sale);
       }
     }
     
     console.log('✅ All sales cleared from Firebase');
   } catch (error) {
     console.error('❌ Error clearing sales:', error);
+    console.error('Error details:', error);
     throw error;
   }
 };

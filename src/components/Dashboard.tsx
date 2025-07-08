@@ -103,30 +103,38 @@ const Dashboard = () => {
   // Load real user data function (extracted for reuse)
   const loadUserData = async () => {
     if (!user) {
+      console.log('📊 Dashboard: No user found, skipping data load');
       setLoading(false);
       return;
     }
 
     try {
+      console.log('📊 Dashboard: Starting data load for user:', user.uid);
       setLoading(true);
       
       // Load purchases from Firebase
+      console.log('📊 Dashboard: Loading purchases...');
       const allPurchases = await getDocuments('purchases');
       const userPurchasesData = allPurchases.filter(
         (purchase: any) => purchase.userId === user.uid
       );
+      console.log('📊 Dashboard: Found', userPurchasesData.length, 'purchases');
       
       // Load sales from Firebase
+      console.log('📊 Dashboard: Loading sales...');
       const userSalesData = await getUserSales(user.uid);
+      console.log('📊 Dashboard: Found', userSalesData.length, 'sales');
       
       setUserPurchases(userPurchasesData);
       setUserSales(userSalesData);
       
       // Calculate real metrics
+      console.log('📊 Dashboard: Calculating metrics...');
       calculateRealMetrics(userPurchasesData, userSalesData);
+      console.log('📊 Dashboard: Data load completed successfully');
       
     } catch (error) {
-      console.error('Error loading user data:', error);
+      console.error('❌ Dashboard: Error loading user data:', error);
     } finally {
       setLoading(false);
     }
@@ -145,19 +153,34 @@ const Dashboard = () => {
     const interval = setInterval(() => {
       // Only refresh if the document is visible (user is actively using the app)
       if (!document.hidden) {
+        console.log('🔄 Auto-refresh triggered (30s interval)');
         loadUserData();
       }
     }, 30000); // 30 seconds
 
     // Listen for sales data changes from other components
-    const handleSalesDataChanged = () => {
-      console.log('📡 Sales data changed event received - refreshing dashboard...');
-      loadUserData();
+    const handleSalesDataChanged = (event: Event) => {
+      console.log('📡 Dashboard: Sales data changed event received - refreshing dashboard...');
+      console.log('📡 Dashboard: Event details:', event);
+      console.log('📡 Dashboard: Current user:', user?.uid);
+      console.log('📡 Dashboard: Loading state:', loading);
+      
+      // Add a small delay to ensure the sales component has finished its operations
+      setTimeout(() => {
+        console.log('📡 Dashboard: Executing delayed refresh...');
+        loadUserData();
+      }, 100);
     };
 
+    // Remove any existing listeners first
+    window.removeEventListener('salesDataChanged', handleSalesDataChanged);
+    // Add the new listener
     window.addEventListener('salesDataChanged', handleSalesDataChanged);
+    
+    console.log('📡 Dashboard: Event listener registered for salesDataChanged');
 
     return () => {
+      console.log('📡 Dashboard: Cleaning up event listener and interval');
       clearInterval(interval);
       window.removeEventListener('salesDataChanged', handleSalesDataChanged);
     };
@@ -165,6 +188,8 @@ const Dashboard = () => {
 
   // Calculate real metrics from user data
   const calculateRealMetrics = (purchases: any[], sales: any[]) => {
+    console.log('📊 Dashboard: Calculating metrics with', purchases.length, 'purchases and', sales.length, 'sales');
+    
     // Calculate total spend from purchases
     const totalSpend = purchases.reduce((sum, purchase) => {
       const price = parseFloat(purchase.price?.replace(/[$,]/g, '')) || 0;
@@ -188,7 +213,7 @@ const Dashboard = () => {
       .sort((a, b) => b.profit - a.profit)
       .slice(0, 5);
 
-    setRealMetrics({
+    const newMetrics = {
       totalProfit,
       totalRevenue,
       totalSpend,
@@ -196,7 +221,10 @@ const Dashboard = () => {
       inventoryValue,
       avgProfitPerSale,
       recentSales
-    });
+    };
+
+    console.log('📊 Dashboard: New metrics calculated:', newMetrics);
+    setRealMetrics(newMetrics);
   };
 
   // Load dashboard settings from Firebase
@@ -447,7 +475,10 @@ const Dashboard = () => {
         <div className="flex items-center space-x-4">
           {/* Refresh Data Button */}
           <button
-            onClick={loadUserData}
+            onClick={() => {
+              console.log('🔄 Manual refresh button clicked');
+              loadUserData();
+            }}
             disabled={loading}
             className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
               currentTheme.name === 'Neon'
@@ -458,6 +489,23 @@ const Dashboard = () => {
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             <span>Refresh</span>
+          </button>
+
+          {/* Test Event Button - Remove this after testing */}
+          <button
+            onClick={() => {
+              console.log('🧪 Test: Dispatching salesDataChanged event manually');
+              window.dispatchEvent(new CustomEvent('salesDataChanged'));
+            }}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+              currentTheme.name === 'Neon'
+                ? 'bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 border border-yellow-500/30'
+                : 'bg-yellow-100 hover:bg-yellow-200 text-yellow-700 border border-yellow-300'
+            }`}
+            title="Test event communication"
+          >
+            <span>🧪</span>
+            <span>Test Event</span>
           </button>
 
           {/* Reset All Data Button */}

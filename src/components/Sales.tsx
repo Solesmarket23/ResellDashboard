@@ -280,7 +280,16 @@ const Sales = () => {
         closeDeleteModal();
         
         // Notify other components that sales data has changed
+        console.log('📡 Sales: Dispatching salesDataChanged event after individual delete');
         window.dispatchEvent(new CustomEvent('salesDataChanged'));
+        
+        // If this was the last sale, redirect to Dashboard to show zero state
+        if (salesData.length === 1) {
+          console.log('📡 Sales: Last sale deleted, redirecting to Dashboard...');
+          setTimeout(() => {
+            window.location.href = '/dashboard';
+          }, 1000);
+        }
         
         console.log('✅ Sale deleted successfully');
       } catch (error) {
@@ -299,18 +308,38 @@ const Sales = () => {
 
   // Function to confirm clear all sales
   const confirmClearAllSales = async () => {
-    if (user) {
-      try {
-        await clearAllUserSales(user.uid);
-        setSalesData([]);
-        setClearAllModal(false);
-        
-        // Notify other components that sales data has changed
-        window.dispatchEvent(new CustomEvent('salesDataChanged'));
-      } catch (error) {
-        console.error('Error clearing all sales:', error);
-        alert('Error clearing sales. Please try again.');
-      }
+    if (!user) {
+      console.error('❌ No user found when trying to clear sales');
+      alert('Please sign in to clear sales.');
+      return;
+    }
+
+    try {
+      console.log('🔄 Starting clear all sales process for user:', user.uid);
+      console.log('📊 Current sales data length:', salesData.length);
+      
+      await clearAllUserSales(user.uid);
+      
+      console.log('✅ Sales cleared from Firebase, updating local state');
+      setSalesData([]);
+      setClearAllModal(false);
+      
+      // Notify other components that sales data has changed
+      console.log('📡 Sales: Dispatching salesDataChanged event after clear all');
+      window.dispatchEvent(new CustomEvent('salesDataChanged'));
+      
+      // Redirect to Dashboard after clearing all sales to show updated metrics
+      console.log('📡 Sales: Redirecting to Dashboard to show updated metrics...');
+      setTimeout(() => {
+        window.location.href = '/dashboard';
+      }, 1000);
+      
+    } catch (error) {
+      console.error('❌ Error clearing all sales:', error);
+      console.error('Error details:', error);
+      console.error('User ID:', user?.uid);
+      console.error('Sales data length:', salesData.length);
+      alert('Error clearing sales. Please try again.');
     }
   };
 
@@ -523,6 +552,22 @@ const Sales = () => {
               <Sparkles className="w-4 h-4 mr-2" />
             )}
             {isAddingTestSale ? 'Adding...' : 'Test Sale + Confetti'}
+          </button>
+          <button 
+            onClick={() => {
+              console.log('🔍 DEBUG: Current sales data:', salesData);
+              console.log('🔍 DEBUG: User ID:', user?.uid);
+              console.log('🔍 DEBUG: Sales with userId:', salesData.filter(sale => sale.userId === user?.uid));
+              console.log('🔍 DEBUG: Sales without userId:', salesData.filter(sale => !sale.userId));
+            }}
+            className={`flex items-center px-2 py-1 rounded text-xs font-medium transition-all duration-200 ${
+              isNeon
+                ? 'bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 border border-yellow-500/30'
+                : 'bg-yellow-100 hover:bg-yellow-200 text-yellow-700 border border-yellow-300'
+            }`}
+            title="Debug sales data"
+          >
+            🔍 Debug
           </button>
           <button 
             onClick={handleClearAllSales}
