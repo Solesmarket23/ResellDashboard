@@ -211,14 +211,9 @@ const Sales = () => {
     const fees = Math.round(randomSneaker.price * 0.1); // 10% fees
     const payout = randomSneaker.price - fees;
     const profit = payout - randomSneaker.cost;
-    
-    // Generate safe saleId
-    const saleId = salesData.length > 0 
-      ? Math.max(...salesData.map(s => s.id || 0)) + 1 
-      : 1;
       
     const newSale = {
-      // Don't include id field - let Firebase generate the document ID
+      // Remove internal ID generation - Firebase will provide the document ID
       product: randomSneaker.name,
       brand: randomSneaker.brand,
       orderNumber: `TEST-${Date.now()}${Math.floor(Math.random() * 1000)}`,
@@ -465,7 +460,7 @@ const Sales = () => {
     });
 
     const saleData = {
-      // Don't include id field - let Firebase generate the document ID
+      // Remove internal ID generation - Firebase will provide the document ID
       product: newSale.product,
       brand: newSale.brand,
       orderNumber: `MANUAL-${Date.now()}`,
