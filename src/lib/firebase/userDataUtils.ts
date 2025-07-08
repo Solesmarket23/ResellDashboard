@@ -37,13 +37,14 @@ export interface UserProfileData {
 
 export interface UserSaleData {
   userId: string;
-  id: number;
+  id: string; // Firebase document ID is a string
   product: string;
   brand: string;
   orderNumber: string;
   size: string;
   market: string;
   salePrice: number;
+  purchasePrice: number; // Add missing purchasePrice field
   fees: number;
   payout: number;
   profit: number;

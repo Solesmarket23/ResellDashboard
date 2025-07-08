@@ -218,7 +218,7 @@ const Sales = () => {
       : 1;
       
     const newSale = {
-      id: saleId,
+      // Don't include id field - let Firebase generate the document ID
       product: randomSneaker.name,
       brand: randomSneaker.brand,
       orderNumber: `TEST-${Date.now()}${Math.floor(Math.random() * 1000)}`,
@@ -230,18 +230,24 @@ const Sales = () => {
       payout: payout,
       profit: profit,
       date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      isTest: true
+      isTest: true,
+      type: 'manual'
     };
 
     try {
       console.log('🧪 Adding test sale:', newSale);
       
       // Save to Firebase first
-      await saveUserSale(user.uid, newSale);
+      const docRef = await saveUserSale(user.uid, newSale);
       
-      console.log('✅ Test sale saved to Firebase');
+      console.log('✅ Test sale saved to Firebase with doc ID:', docRef?.id);
+      
+      // Wait a moment for Firebase to fully process the document
+      console.log('⏳ Waiting for Firebase to process test sale...');
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
       // Force refresh to immediately show the new sale
+      console.log('🔄 Refreshing sales data after test sale...');
       await forceRefresh();
       
       console.log('✅ Test sale added and refreshed successfully');
@@ -459,7 +465,7 @@ const Sales = () => {
     });
 
     const saleData = {
-      id: saleId,
+      // Don't include id field - let Firebase generate the document ID
       product: newSale.product,
       brand: newSale.brand,
       orderNumber: `MANUAL-${Date.now()}`,
@@ -471,28 +477,33 @@ const Sales = () => {
       payout: payout,
       profit: profit,
       date: new Date(newSale.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      isTest: false
+      isTest: false,
+      type: 'manual'
     };
 
     try {
       console.log('💾 Saving sale to Firebase...');
       
       // Save to Firebase
-      await saveUserSale(user.uid, saleData);
+      const docRef = await saveUserSale(user.uid, saleData);
       
-      console.log('✅ Sale saved successfully to Firebase');
+      console.log('✅ Sale saved successfully to Firebase with doc ID:', docRef?.id);
       
-      // Force refresh to immediately show the new sale
+      // Close modal first for better UX
+      closeRecordSaleModal();
+      
+      // Show success message immediately
+      alert('Sale recorded successfully!');
+      
+      // Wait a moment for Firebase to fully process the document
+      console.log('⏳ Waiting for Firebase to process...');
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      // Force refresh to show the new sale
       console.log('🔄 Refreshing sales data...');
       await forceRefresh();
       
-      console.log('✅ Sales data refreshed');
-
-      // Close modal
-      closeRecordSaleModal();
-      
-      // Show success message
-      alert('Sale recorded successfully!');
+      console.log('✅ Sales data refreshed - new sale should now be visible');
       
     } catch (error) {
       console.error('❌ Error saving sale:', error);
