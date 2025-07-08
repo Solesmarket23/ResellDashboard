@@ -13,12 +13,5 @@ export default function Home() {
     router.push('/landing');
   }, [router]);
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-900">
-      <div className="text-center">
-        <div className="w-8 h-8 border-2 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin mx-auto mb-4"></div>
-        <p className="text-gray-400">Redirecting...</p>
-      </div>
-    </div>
-  );
+  return null; // No loading spinner - instant redirect
 }

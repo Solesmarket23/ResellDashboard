@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Menu } from 'lucide-react';
+import { useTheme } from '../../lib/contexts/ThemeContext';
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
@@ -28,18 +29,64 @@ import StockXFlexAskMonitor from '../../components/StockXFlexAskMonitor';
 import StockXProfitCalc from '../../components/StockXProfitCalc';
 import StockXTrends from '../../components/StockXTrends';
 import StockXAlerts from '../../components/StockXAlerts';
-import { useTheme } from '../../lib/contexts/ThemeContext';
 
 export default function DashboardPage() {
-  const [activeItem, setActiveItem] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [currentSection, setCurrentSection] = useState('dashboard');
+  const [isClient, setIsClient] = useState(false);
   const { currentTheme } = useTheme();
   
   // Dynamic theme detection for consistent background
   const isNeon = currentTheme.name === 'Neon';
 
+  // Ensure we're on the client side before accessing window
+  useEffect(() => {
+    setIsClient(true);
+    
+    // Get section from URL on mount
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const section = urlParams.get('section');
+      if (section) {
+        setCurrentSection(section);
+      } else {
+        // Set default section in URL
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.set('section', 'dashboard');
+        window.history.replaceState({}, '', newUrl.toString());
+      }
+    }
+  }, []);
+
+  // Handle browser back/forward buttons
+  useEffect(() => {
+    if (!isClient) return;
+
+    const handlePopState = () => {
+      if (typeof window !== 'undefined') {
+        const urlParams = new URLSearchParams(window.location.search);
+        const section = urlParams.get('section') || 'dashboard';
+        setCurrentSection(section);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [isClient]);
+
   const handleItemClick = (item: string) => {
-    setActiveItem(item);
+    // Convert section name to URL-friendly format (e.g., "Market Research" -> "market-research")
+    const urlSection = item.toLowerCase().replace(/\s+/g, '-');
+    
+    // Update URL only if we're on the client
+    if (typeof window !== 'undefined') {
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.set('section', urlSection);
+      window.history.pushState({}, '', newUrl.toString());
+    }
+    
+    // Update state
+    setCurrentSection(urlSection);
   };
 
   const toggleSidebar = () => {
@@ -50,8 +97,16 @@ export default function DashboardPage() {
     setSidebarOpen(false);
   };
 
+  // Helper function to format section name for display
+  const formatSectionName = (sectionName: string) => {
+    return sectionName
+      .split('-')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  };
+
   const renderContent = () => {
-    switch (activeItem) {
+    switch (currentSection) {
       case 'dashboard':
         return <Dashboard />;
       case 'inventory':
@@ -154,7 +209,7 @@ export default function DashboardPage() {
             <h1 className={`text-2xl sm:text-3xl font-bold ${
               isNeon ? 'text-white' : 'text-gray-900'
             }`}>
-              {activeItem.charAt(0).toUpperCase() + activeItem.slice(1).replace('-', ' ')}
+              {formatSectionName(currentSection)}
             </h1>
             <p className={`mt-4 ${
               isNeon ? 'text-slate-400' : 'text-gray-600'
@@ -164,11 +219,24 @@ export default function DashboardPage() {
     }
   };
 
+  // Don't render until client-side hydration is complete
+  if (!isClient) {
+    return (
+      <div className={`flex h-screen overflow-hidden ${currentTheme.colors.background}`}>
+        <div className="flex-1 flex items-center justify-center">
+          <div className={`text-lg ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+            Loading...
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`flex h-screen overflow-hidden ${currentTheme.colors.background}`}>
       {/* Sidebar */}
       <Sidebar 
-        activeItem={activeItem} 
+        activeItem={currentSection}
         onItemClick={handleItemClick}
         isOpen={sidebarOpen}
         onClose={closeSidebar}
@@ -185,14 +253,14 @@ export default function DashboardPage() {
             <Menu className="w-6 h-6" />
           </button>
           <h1 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>
-            {activeItem.charAt(0).toUpperCase() + activeItem.slice(1).replace('-', ' ')}
+            {formatSectionName(currentSection)}
           </h1>
           <div className="w-10"></div> {/* Spacer for center alignment */}
         </div>
         
         {/* Content */}
-      <div className="flex-1 overflow-auto">
-        {renderContent()}
+        <div className="flex-1 overflow-auto">
+          {renderContent()}
         </div>
       </div>
     </div>

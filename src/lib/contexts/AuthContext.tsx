@@ -8,8 +8,10 @@ import { auth } from "../firebase/firebase";
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  error: string | null;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
+  clearError: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -23,8 +25,10 @@ export const useAuth = () => {
     return {
       user: null,
       loading: false,
+      error: null,
       signInWithGoogle: async () => {},
-      signOut: async () => {}
+      signOut: async () => {},
+      clearError: () => {}
     };
   }
   return context;
@@ -33,6 +37,7 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     // Only run on client-side
@@ -58,11 +63,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const signInWithGoogle = async () => {
     if (!auth) {
       console.log("🔧 Firebase not configured - demo sign in");
+      setError("Firebase not configured. Please check your environment variables.");
       return;
     }
 
-    const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
+    try {
+      setError(null);
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (error: any) {
+      console.error("Google sign-in error:", error);
+      
+      // Handle specific Firebase auth errors
+      if (error.code === 'auth/unauthorized-domain') {
+        setError("This domain is not authorized for Firebase authentication. Please contact support.");
+      } else if (error.code === 'auth/popup-closed-by-user') {
+        setError("Sign-in cancelled. Please try again.");
+      } else if (error.code === 'auth/popup-blocked') {
+        setError("Pop-up blocked. Please allow pop-ups for this site and try again.");
+      } else {
+        setError("Sign-in failed. Please try again.");
+      }
+    }
   };
 
   const signOut = async () => {
@@ -71,14 +93,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
 
-    await firebaseSignOut(auth);
+    try {
+      setError(null);
+      await firebaseSignOut(auth);
+    } catch (error: any) {
+      console.error("Sign-out error:", error);
+      setError("Sign-out failed. Please try again.");
+    }
+  };
+
+  const clearError = () => {
+    setError(null);
   };
 
   const value = {
     user,
     loading,
+    error,
     signInWithGoogle,
     signOut,
+    clearError,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

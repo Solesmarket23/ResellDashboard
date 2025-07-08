@@ -25,6 +25,7 @@ const Purchases = () => {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showEmailSettings, setShowEmailSettings] = useState(false);
   const [showAddPurchaseModal, setShowAddPurchaseModal] = useState(false);
+  const [hasBeenReset, setHasBeenReset] = useState(false);
   const { currentTheme } = useTheme();
   const { user } = useAuth();
   
@@ -82,14 +83,14 @@ const Purchases = () => {
 
   // Load data on component mount
   useEffect(() => {
-    if (!gmailConnected) {
+    if (!gmailConnected && !hasBeenReset) {
       loadMockData();
     }
     // Always load manual purchases from Firebase
     if (user) {
       loadManualPurchasesFromFirebase();
     }
-  }, [gmailConnected, user]);
+  }, [gmailConnected, user, hasBeenReset]);
 
   // Separate useEffect for config updates with debouncing - REMOVED lastFetchTime dependency
   useEffect(() => {
@@ -146,11 +147,15 @@ const Purchases = () => {
         calculateTotals(combinedPurchases);
       } else {
         console.error('Failed to fetch purchases');
-        loadMockData();
+        if (!hasBeenReset) {
+          loadMockData();
+        }
       }
     } catch (error) {
       console.error('Error fetching purchases:', error);
-      loadMockData();
+      if (!hasBeenReset) {
+        loadMockData();
+      }
     } finally {
       setLoading(false);
     }
@@ -384,9 +389,10 @@ const Purchases = () => {
   const confirmReset = async () => {
     setPurchases([]);
     setManualPurchases([]);
-    setTotalValue('$0');
+    setTotalValue('$0.00');
     setTotalCount(0);
     setShowResetConfirm(false);
+    setHasBeenReset(true); // Mark that user has reset - prevents mock data from loading
     
     // Clear Firebase data for this user
     if (user) {
@@ -412,7 +418,8 @@ const Purchases = () => {
       }
     }
     
-    loadMockData();
+    // Don't load mock data after reset - keep it truly empty
+    // User can manually add purchases or sync with Gmail if needed
   };
 
   const cancelReset = () => {
@@ -458,6 +465,7 @@ const Purchases = () => {
 
   const handleScanComplete = (trackingNumber: string) => {
     console.log('Scanned tracking number:', trackingNumber);
+    setHasBeenReset(false); // Reset flag when user adds data
   };
 
   return (
@@ -466,7 +474,12 @@ const Purchases = () => {
       <div className="mb-6">
                     <GmailConnector 
               key={currentTheme.name} 
-              onConnectionChange={setGmailConnected} 
+              onConnectionChange={(connected) => {
+                setGmailConnected(connected);
+                if (connected) {
+                  setHasBeenReset(false); // Reset flag when Gmail connects
+                }
+              }} 
             />
       </div>
 

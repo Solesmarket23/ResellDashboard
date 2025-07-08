@@ -294,7 +294,12 @@ export const clearAllUserData = async (userId: string) => {
   try {
     console.log('🧹 Starting complete data wipe for user:', userId);
     
+    if (!userId) {
+      throw new Error('User ID is required for data clearing');
+    }
+    
     // Clear themes
+    console.log('🔄 Clearing theme preferences...');
     const themes = await getDocuments(COLLECTIONS.THEMES);
     const userThemes = themes.filter((theme: any) => theme.userId === userId);
     for (const theme of userThemes) {
@@ -303,6 +308,7 @@ export const clearAllUserData = async (userId: string) => {
     console.log(`✅ Cleared ${userThemes.length} theme preferences`);
 
     // Clear profiles
+    console.log('🔄 Clearing profile records...');
     const profiles = await getDocuments(COLLECTIONS.PROFILES);
     const userProfiles = profiles.filter((profile: any) => profile.userId === userId);
     for (const profile of userProfiles) {
@@ -311,10 +317,12 @@ export const clearAllUserData = async (userId: string) => {
     console.log(`✅ Cleared ${userProfiles.length} profile records`);
 
     // Clear sales
+    console.log('🔄 Clearing sales data...');
     await clearAllUserSales(userId);
     console.log('✅ Cleared all sales data');
 
     // 🔥 NEW: Clear purchases (both manual and Gmail)
+    console.log('🔄 Clearing purchase records...');
     const allPurchases = await getDocuments('purchases');
     const userPurchases = allPurchases.filter((purchase: any) => purchase.userId === userId);
     let deletedPurchases = 0;
@@ -327,6 +335,7 @@ export const clearAllUserData = async (userId: string) => {
     console.log(`✅ Cleared ${deletedPurchases} purchase records`);
 
     // Clear email configs
+    console.log('🔄 Clearing email configurations...');
     const configs = await getDocuments(COLLECTIONS.EMAIL_CONFIGS);
     const userConfigs = configs.filter((config: any) => config.userId === userId);
     for (const config of userConfigs) {
@@ -335,6 +344,7 @@ export const clearAllUserData = async (userId: string) => {
     console.log(`✅ Cleared ${userConfigs.length} email configurations`);
 
     // Clear dashboard settings
+    console.log('🔄 Clearing dashboard settings...');
     const settings = await getDocuments(COLLECTIONS.DASHBOARD_SETTINGS);
     const userSettings = settings.filter((setting: any) => setting.userId === userId);
     for (const setting of userSettings) {
@@ -342,24 +352,33 @@ export const clearAllUserData = async (userId: string) => {
     }
     console.log(`✅ Cleared ${userSettings.length} dashboard settings`);
 
-    // 🔥 NEW: Clear localStorage data for extra clean slate
-    if (typeof window !== 'undefined') {
-      // Clear theme preference
-      localStorage.removeItem('selectedTheme');
-      
-      // Clear email parsing config
-      localStorage.removeItem('emailParsingConfig');
-      
-      // Clear any cached data
-      const keysToRemove = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && (key.includes('resell') || key.includes('dashboard') || key.includes('user'))) {
-          keysToRemove.push(key);
+    // 🔥 NEW: Clear localStorage data for extra clean slate (client-side only)
+    let clearedLocalStorageItems = 0;
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        // Clear theme preference
+        localStorage.removeItem('selectedTheme');
+        
+        // Clear email parsing config
+        localStorage.removeItem('emailParsingConfig');
+        
+        // Clear any cached data
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.includes('resell') || key.includes('dashboard') || key.includes('user'))) {
+            keysToRemove.push(key);
+          }
         }
+        keysToRemove.forEach(key => localStorage.removeItem(key));
+        clearedLocalStorageItems = keysToRemove.length + 2; // +2 for theme and email config
+        console.log(`✅ Cleared ${clearedLocalStorageItems} localStorage items`);
+      } else {
+        console.log('⚠️ localStorage not available (server-side) - skipping browser storage cleanup');
       }
-      keysToRemove.forEach(key => localStorage.removeItem(key));
-      console.log(`✅ Cleared ${keysToRemove.length} localStorage items`);
+    } catch (localStorageError) {
+      console.warn('⚠️ Error clearing localStorage:', localStorageError);
+      // Don't throw error - localStorage cleanup is not critical
     }
 
     console.log('🎉 COMPLETE DATA WIPE SUCCESSFUL - Account is now fresh!');

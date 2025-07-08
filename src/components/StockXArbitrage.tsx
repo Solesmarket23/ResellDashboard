@@ -856,7 +856,7 @@ const StockXArbitrage: React.FC = () => {
                 </div>
                 <div className="text-left sm:text-right">
                   <p className="text-xl sm:text-2xl font-bold text-green-400">
-                    +${(opportunity.profit || 0).toFixed(2)}
+                                                ${(opportunity.profit || 0).toFixed(2)}
                   </p>
                   <p className="text-gray-400 text-sm">
                     (+{(opportunity.profitMargin || 0).toFixed(2)}% profit)

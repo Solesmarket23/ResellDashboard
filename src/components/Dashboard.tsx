@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { DollarSign, TrendingUp, Package, ShoppingCart, BarChart3, Calculator, Calendar, X, Palette, Trash2, RotateCcw } from 'lucide-react';
+import { DollarSign, TrendingUp, Package, ShoppingCart, BarChart3, Calculator, Calendar, X, Palette, Trash2, RotateCcw, RefreshCw } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
 import { saveUserDashboardSettings, getUserDashboardSettings, getUserSales, clearAllUserData } from '../lib/firebase/userDataUtils';
@@ -70,47 +70,76 @@ const Dashboard = () => {
       
     } catch (error) {
       console.error('❌ Error resetting account:', error);
-      alert('❌ Error resetting account. Please try again.');
+      
+      // Provide more specific error message
+      let errorMessage = '❌ Error resetting account. Please try again.';
+      if (error instanceof Error) {
+        if (error.message.includes('Firebase')) {
+          errorMessage = '❌ Database error occurred. Please check your internet connection and try again.';
+        } else if (error.message.includes('permission')) {
+          errorMessage = '❌ Permission denied. Please make sure you\'re logged in and try again.';
+        } else if (error.message.includes('network')) {
+          errorMessage = '❌ Network error. Please check your internet connection and try again.';
+        }
+      }
+      
+      alert(errorMessage);
     } finally {
       setResetLoading(false);
       setShowResetConfirm(false);
     }
   };
 
-  // Load real user data
+  // Load real user data function (extracted for reuse)
+  const loadUserData = async () => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      // Load purchases from Firebase
+      const allPurchases = await getDocuments('purchases');
+      const userPurchasesData = allPurchases.filter(
+        (purchase: any) => purchase.userId === user.uid
+      );
+      
+      // Load sales from Firebase
+      const userSalesData = await getUserSales(user.uid);
+      
+      setUserPurchases(userPurchasesData);
+      setUserSales(userSalesData);
+      
+      // Calculate real metrics
+      calculateRealMetrics(userPurchasesData, userSalesData);
+      
+    } catch (error) {
+      console.error('Error loading user data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load data on mount and when user changes
   useEffect(() => {
-    const loadUserData = async () => {
-      if (!user) {
-        setLoading(false);
-        return;
-      }
-
-      try {
-        setLoading(true);
-        
-        // Load purchases from Firebase
-        const allPurchases = await getDocuments('purchases');
-        const userPurchasesData = allPurchases.filter(
-          (purchase: any) => purchase.userId === user.uid
-        );
-        
-        // Load sales from Firebase
-        const userSalesData = await getUserSales(user.uid);
-        
-        setUserPurchases(userPurchasesData);
-        setUserSales(userSalesData);
-        
-        // Calculate real metrics
-        calculateRealMetrics(userPurchasesData, userSalesData);
-        
-      } catch (error) {
-        console.error('Error loading user data:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     loadUserData();
+  }, [user]);
+
+  // Add periodic refresh to catch changes made in other components
+  useEffect(() => {
+    if (!user) return;
+
+    // Refresh data every 30 seconds when user is active
+    const interval = setInterval(() => {
+      // Only refresh if the document is visible (user is actively using the app)
+      if (!document.hidden) {
+        loadUserData();
+      }
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(interval);
   }, [user]);
 
   // Calculate real metrics from user data
@@ -339,6 +368,26 @@ const Dashboard = () => {
             <p className={`${currentTheme.colors.textSecondary} mb-4`}>
               Sign in to start tracking your reselling business
             </p>
+            
+            {/* Add Sign In Button */}
+            <div className="mt-6">
+              <button
+                onClick={() => window.location.href = '/login'}
+                className={`inline-flex items-center space-x-2 px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
+                  currentTheme.name === 'Neon'
+                    ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white shadow-lg hover:shadow-cyan-500/25'
+                    : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white shadow-lg hover:shadow-purple-500/25'
+                }`}
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24">
+                  <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                  <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                </svg>
+                <span>Sign in with Google</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -373,8 +422,23 @@ const Dashboard = () => {
           </div>
         </div>
         
-        {/* Reset Data & Theme Selector */}
+        {/* Refresh, Reset Data & Theme Selector */}
         <div className="flex items-center space-x-4">
+          {/* Refresh Data Button */}
+          <button
+            onClick={loadUserData}
+            disabled={loading}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+              currentTheme.name === 'Neon'
+                ? 'bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/30 disabled:opacity-50'
+                : 'bg-blue-100 hover:bg-blue-200 text-blue-700 border border-blue-300 disabled:opacity-50'
+            }`}
+            title="Refresh dashboard data"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
+
           {/* Reset All Data Button */}
           <button
             onClick={() => setShowResetConfirm(true)}

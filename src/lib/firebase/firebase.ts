@@ -21,17 +21,21 @@ const isClientSide = typeof window !== 'undefined';
 let app, auth, db, storage;
 
 if (hasValidConfig && isClientSide) {
-  // Initialize Firebase with real config (client-side only)
-  app = getApps().length ? getApp() : initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
-  storage = getStorage(app);
-  
-  // 🔧 IMPORTANT: If you get "auth/unauthorized-domain" errors:
-  // 1. Go to Firebase Console → Authentication → Settings → Authorized domains
-  // 2. Add your deployment domain (e.g., your-app.vercel.app)
-  // 3. Add localhost and 127.0.0.1 for development
-  
+  try {
+    // Initialize Firebase with real config (client-side only)
+    app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+    storage = getStorage(app);
+    
+    console.log("✅ Firebase initialized successfully");
+  } catch (error) {
+    console.error("❌ Firebase initialization failed:", error);
+    app = null;
+    auth = null;
+    db = null;
+    storage = null;
+  }
 } else {
   // Use mock/demo Firebase for development or server-side rendering
   if (!isClientSide) {
@@ -44,5 +48,18 @@ if (hasValidConfig && isClientSide) {
   db = null;
   storage = null;
 }
+
+// 🚨 FIREBASE AUTH DOMAIN ERROR FIX:
+// If you're getting "auth/unauthorized-domain" errors, follow these steps:
+// 
+// 1. Go to Firebase Console: https://console.firebase.google.com/
+// 2. Select your project: flip-flow-4d55c
+// 3. Go to Authentication → Settings → Authorized domains
+// 4. Add these domains:
+//    - resell-dashboard-rkmlvtc8g-michaels-projects-d8c652ad.vercel.app
+//    - localhost (for development)
+//    - 127.0.0.1 (for development)
+//
+// 5. Save changes and redeploy your app
 
 export { app, auth, db, storage };

@@ -113,7 +113,7 @@ const ProfitCalculator = () => {
             <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
               <span className="text-sm font-medium text-gray-700">Total Fees</span>
               <span className="text-lg font-semibold text-red-600">
-                -{formatCurrency(results.totalFees)}
+                (${results.totalFees.toFixed(2)})
               </span>
             </div>
             
