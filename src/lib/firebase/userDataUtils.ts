@@ -167,15 +167,17 @@ export const saveUserSale = async (userId: string, saleData: Partial<UserSaleDat
     console.log('💾 saveUserSale: Starting save process for user:', userId);
     console.log('💾 saveUserSale: Input sale data:', saleData);
     
-    const sale: UserSaleData = {
-      userId,
+    // Be more explicit about the data structure to ensure userId is always saved
+    const sale = {
       ...saleData,
+      userId: userId, // Explicitly set userId last to ensure it's not overridden
       type: 'manual',
       createdAt: new Date().toISOString()
-    } as UserSaleData;
+    };
     
     console.log('💾 saveUserSale: Processed sale data before saving:', sale);
     console.log('💾 saveUserSale: Sale data keys:', Object.keys(sale));
+    console.log('💾 saveUserSale: userId field value:', sale.userId);
 
     const docRef = await addDocument(COLLECTIONS.SALES, sale);
     console.log('✅ Sale saved to Firebase with doc ID:', docRef.id);
@@ -184,6 +186,7 @@ export const saveUserSale = async (userId: string, saleData: Partial<UserSaleDat
     const savedSale = await getDocuments(COLLECTIONS.SALES);
     const justSavedSale = savedSale.find((s: any) => s.id === docRef.id);
     console.log('🔍 Verification - Just saved sale:', justSavedSale);
+    console.log('🔍 Verification - userId in saved sale:', justSavedSale?.userId);
     
     return docRef;
   } catch (error) {
