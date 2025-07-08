@@ -1,16 +1,30 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Search, Calendar, TrendingUp, ArrowUp, ExternalLink, Plus, Sparkles, Trash2, X, ChevronDown, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Search, Calendar, TrendingUp, ArrowUp, ExternalLink, Plus, Sparkles, Trash2, X, ChevronDown, ChevronLeft, ChevronRight, Loader2, Wifi, WifiOff, AlertCircle, RefreshCw } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
-import { saveUserSale, getUserSales, deleteUserSale, clearAllUserSales } from '../lib/firebase/userDataUtils';
+import { saveUserSale } from '../lib/firebase/userDataUtils';
+import { useSales } from '../lib/hooks/useSales';
 import confetti from 'canvas-confetti';
 
 const Sales = () => {
   const [activeFilter, setActiveFilter] = useState('All Time');
   const { currentTheme } = useTheme();
   const { user } = useAuth();
+  
+  // Use the enhanced useSales hook for real-time data
+  const { 
+    sales: salesData, 
+    metrics, 
+    loading: isLoading, 
+    error: salesError,
+    isDeleting,
+    connectionState,
+    deleteSale,
+    clearAllSales,
+    forceRefresh 
+  } = useSales();
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; sale: any }>({
     isOpen: false,
     sale: null
@@ -36,34 +50,9 @@ const Sales = () => {
   const marketplaceDropdownRef = useRef<HTMLDivElement>(null);
   const datePickerRef = useRef<HTMLDivElement>(null);
 
-  // State for managing sales data
-  const [salesData, setSalesData] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [isAddingTestSale, setIsAddingTestSale] = useState(false);
 
-  // Load sales data from Firebase on component mount
-  useEffect(() => {
-    const loadSalesData = async () => {
-      if (!user) {
-        setSalesData([]);
-        setIsLoading(false);
-        return;
-      }
-
-      try {
-        setIsLoading(true);
-        const userSales = await getUserSales(user.uid);
-        setSalesData(userSales);
-      } catch (error) {
-        console.error('Error loading sales:', error);
-        alert('Error loading your sales. Please try refreshing the page.');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadSalesData();
-  }, [user]);
+  // Sales data is now handled by the useSales hook automatically
   
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -223,7 +212,11 @@ const Sales = () => {
     const payout = randomSneaker.price - fees;
     const profit = payout - randomSneaker.cost;
     
-    const saleId = Math.max(...salesData.map(s => s.id), 0) + 1;
+    // Generate safe saleId
+    const saleId = salesData.length > 0 
+      ? Math.max(...salesData.map(s => s.id || 0)) + 1 
+      : 1;
+      
     const newSale = {
       id: saleId,
       product: randomSneaker.name,
@@ -232,6 +225,7 @@ const Sales = () => {
       size: ['8', '8.5', '9', '9.5', '10', '10.5', '11', '11.5', '12'][Math.floor(Math.random() * 9)],
       market: ['StockX', 'GOAT', 'eBay'][Math.floor(Math.random() * 3)],
       salePrice: randomSneaker.price,
+      purchasePrice: randomSneaker.cost,
       fees: -fees,
       payout: payout,
       profit: profit,
@@ -240,16 +234,20 @@ const Sales = () => {
     };
 
     try {
+      console.log('🧪 Adding test sale:', newSale);
+      
       // Save to Firebase first
       await saveUserSale(user.uid, newSale);
       
-      // Then update local state
-      setSalesData([newSale, ...salesData]);
+      console.log('✅ Test sale saved to Firebase');
       
-      // Notify other components that sales data has changed
-      window.dispatchEvent(new CustomEvent('salesDataChanged'));
+      // Force refresh to immediately show the new sale
+      await forceRefresh();
+      
+      console.log('✅ Test sale added and refreshed successfully');
+      
     } catch (error) {
-      console.error('Error saving test sale:', error);
+      console.error('❌ Error saving test sale:', error);
       alert('Error saving test sale. Please try again.');
     }
   };
@@ -268,28 +266,24 @@ const Sales = () => {
   const confirmDelete = async () => {
     if (deleteModal.sale && user) {
       try {
-        // Delete from Firebase using the Firebase document ID
-        // The Firebase document ID is stored in the 'id' field from getDocuments
-        const firebaseDocId = deleteModal.sale.id;
+        console.log('🗑️ Attempting to delete sale:', deleteModal.sale);
         
-        console.log('🗑️ Deleting sale with Firebase doc ID:', firebaseDocId);
-        await deleteUserSale(user.uid, firebaseDocId);
-        
-        // Update local state - filter by the same Firebase document ID
-        setSalesData(salesData.filter(sale => sale.id !== deleteModal.sale.id));
-        closeDeleteModal();
-        
-        // FORCE IMMEDIATE DASHBOARD UPDATE - redirect to dashboard to ensure fresh data
-        console.log('📡 Sales: Sale deleted - forcing immediate dashboard refresh via redirect');
-        setTimeout(() => {
-          window.location.href = '/dashboard?refresh=' + Date.now();
-        }, 500);
+        if (!deleteModal.sale.id) {
+          console.error('❌ Sale missing ID:', deleteModal.sale);
+          alert('Error: Sale is missing an ID and cannot be deleted.');
+          return;
+        }
+
+        // Use the enhanced delete function from useSales hook
+        await deleteSale(deleteModal.sale.id);
         
         console.log('✅ Sale deleted successfully');
       } catch (error) {
         console.error('❌ Error deleting sale:', error);
         console.error('Sale data:', deleteModal.sale);
-        alert('Error deleting sale. Please try again.');
+        alert(`Error deleting sale: ${error.message}. Please try again.`);
+      } finally {
+        closeDeleteModal();
       }
     }
   };
@@ -312,24 +306,19 @@ const Sales = () => {
       console.log('🔄 Starting clear all sales process for user:', user.uid);
       console.log('📊 Current sales data length:', salesData.length);
       
-      await clearAllUserSales(user.uid);
+      // Use the enhanced clear function from useSales hook
+      await clearAllSales();
       
-      console.log('✅ Sales cleared from Firebase, updating local state');
-      setSalesData([]);
       setClearAllModal(false);
       
-              // FORCE IMMEDIATE DASHBOARD UPDATE - redirect to dashboard to ensure fresh data
-        console.log('📡 Sales: All sales cleared - forcing immediate dashboard refresh via redirect');
-        setTimeout(() => {
-          window.location.href = '/dashboard?refresh=' + Date.now();
-        }, 500);
+      console.log('✅ All sales cleared successfully - data refreshed');
       
     } catch (error) {
       console.error('❌ Error clearing all sales:', error);
       console.error('Error details:', error);
       console.error('User ID:', user?.uid);
       console.error('Sales data length:', salesData.length);
-      alert('Error clearing sales. Please try again.');
+      alert(`Error clearing sales: ${error.message}. Please try again.`);
     }
   };
 
@@ -415,15 +404,42 @@ const Sales = () => {
       return;
     }
 
+    // Basic validation
+    if (!newSale.product || !newSale.brand || !newSale.size || !newSale.salePrice || !newSale.purchasePrice) {
+      alert('Please fill in all required fields');
+      return;
+    }
+
     const salePrice = parseFloat(newSale.salePrice);
     const purchasePrice = parseFloat(newSale.purchasePrice);
+    
+    if (isNaN(salePrice) || isNaN(purchasePrice)) {
+      alert('Please enter valid numbers for sale price and purchase price');
+      return;
+    }
+
     const fees = newSale.fees ? parseFloat(newSale.fees) : calculateFees(salePrice);
     const payout = salePrice - fees;
     const profit = payout - purchasePrice;
 
-    const saleId = Math.max(...salesData.map(s => s.id), 0) + 1;
-    
-    const sale = {
+    // Generate safe saleId
+    const saleId = salesData.length > 0 
+      ? Math.max(...salesData.map(s => s.id || 0)) + 1 
+      : 1;
+
+    console.log('📝 Submitting new sale:', {
+      saleId,
+      product: newSale.product,
+      brand: newSale.brand,
+      size: newSale.size,
+      salePrice,
+      purchasePrice,
+      fees,
+      payout,
+      profit
+    });
+
+    const saleData = {
       id: saleId,
       product: newSale.product,
       brand: newSale.brand,
@@ -431,6 +447,7 @@ const Sales = () => {
       size: newSale.size,
       market: newSale.market,
       salePrice: salePrice,
+      purchasePrice: purchasePrice,
       fees: -fees,
       payout: payout,
       profit: profit,
@@ -439,31 +456,34 @@ const Sales = () => {
     };
 
     try {
+      console.log('💾 Saving sale to Firebase...');
+      
       // Save to Firebase
-      await saveUserSale(user.uid, {
-        id: saleId,
-        product: newSale.product,
-        brand: newSale.brand,
-        orderNumber: `MANUAL-${Date.now()}`,
-        size: newSale.size,
-        market: newSale.market,
-        salePrice: salePrice,
-        fees: -fees,
-        payout: payout,
-        profit: profit,
-        date: new Date(newSale.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        isTest: false
-      });
+      await saveUserSale(user.uid, saleData);
+      
+      console.log('✅ Sale saved successfully to Firebase');
+      
+      // Force refresh to immediately show the new sale
+      console.log('🔄 Refreshing sales data...');
+      await forceRefresh();
+      
+      console.log('✅ Sales data refreshed');
 
-      // Update local state
-      setSalesData([sale, ...salesData]);
+      // Close modal
       closeRecordSaleModal();
       
-      // Notify other components that sales data has changed
-      window.dispatchEvent(new CustomEvent('salesDataChanged'));
+      // Show success message
+      alert('Sale recorded successfully!');
+      
     } catch (error) {
-      console.error('Error saving sale:', error);
-      alert('Error saving sale. Please try again.');
+      console.error('❌ Error saving sale:', error);
+      console.error('Error details:', {
+        message: error.message,
+        stack: error.stack,
+        saleData,
+        userId: user.uid
+      });
+      alert(`Error saving sale: ${error.message}. Please try again.`);
     }
   };
 
@@ -484,7 +504,7 @@ const Sales = () => {
   const totalProfit = salesData.reduce((sum, sale) => sum + sale.profit, 0);
   const avgProfit = totalSales > 0 ? Math.round(totalProfit / totalSales) : 0;
 
-  const metrics = [
+  const metricsDisplay = [
     {
       title: 'Total Sales',
       value: totalSales.toString(),
@@ -575,6 +595,38 @@ const Sales = () => {
         </div>
       </div>
 
+      {/* Debug Info Section - Remove in production */}
+      <div className="mb-6 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm">
+        <div className="flex items-center justify-between mb-2">
+          <span className="font-semibold">Sales Debug Info</span>
+          <div className="flex items-center space-x-4">
+            <span>Sales: {salesData.length}</span>
+            <span>Connection: {connectionState.status}</span>
+            {connectionState.lastSync && (
+              <span>Last sync: {connectionState.lastSync.toLocaleTimeString()}</span>
+            )}
+            <div className="flex items-center space-x-1">
+              {connectionState.status === 'connected' && <Wifi className="w-4 h-4 text-green-500" />}
+              {connectionState.status === 'connecting' && <RefreshCw className="w-4 h-4 text-yellow-500 animate-spin" />}
+              {connectionState.status === 'error' && <AlertCircle className="w-4 h-4 text-red-500" />}
+              {connectionState.status === 'disconnected' && <WifiOff className="w-4 h-4 text-gray-500" />}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center space-x-4 text-xs text-gray-600">
+          <span>From cache: {connectionState.fromCache ? 'Yes' : 'No'}</span>
+          <span>Pending writes: {connectionState.hasPendingWrites ? 'Yes' : 'No'}</span>
+          <span>Deleting: {isDeleting ? 'Yes' : 'No'}</span>
+          {salesError && <span className="text-red-500">Error: {salesError}</span>}
+          <button
+            onClick={forceRefresh}
+            className="px-2 py-1 bg-blue-500 text-white rounded text-xs hover:bg-blue-600"
+          >
+            Force Refresh
+          </button>
+        </div>
+      </div>
+
       {/* Loading State */}
       {isLoading ? (
         <div className="flex flex-col items-center justify-center py-12">
@@ -626,7 +678,7 @@ const Sales = () => {
 
           {/* Metrics Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-            {metrics.map((metric, index) => {
+            {metricsDisplay.map((metric, index) => {
               const Icon = metric.icon;
               return (
                 <div key={index} className={`${
@@ -811,11 +863,12 @@ const Sales = () => {
                           </button>
                           <button 
                             onClick={() => openDeleteModal(sale)}
+                            disabled={isDeleting}
                             className={`${
                               isNeon 
                                 ? 'text-gray-400 hover:text-red-400' 
                                 : 'text-gray-400 hover:text-red-600'
-                            } transition-colors`}
+                            } transition-colors ${isDeleting ? 'opacity-50 cursor-not-allowed' : ''}`}
                             title="Delete Sale"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -929,13 +982,21 @@ const Sales = () => {
                   </button>
                   <button
                     onClick={confirmDelete}
+                    disabled={isDeleting}
                     className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
                       isNeon 
                         ? 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 shadow-lg shadow-red-500/25' 
                         : 'bg-red-600 hover:bg-red-700'
-                    } text-white`}
+                    } text-white ${isDeleting ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    Delete Sale
+                    {isDeleting ? (
+                      <div className="flex items-center justify-center space-x-2">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Deleting...</span>
+                      </div>
+                    ) : (
+                      'Delete Sale'
+                    )}
                   </button>
                 </div>
               </div>
