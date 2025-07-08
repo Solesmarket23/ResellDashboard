@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Edit, MoreHorizontal, Camera, RefreshCw, Mail, Trash2, Settings, Plus } from 'lucide-react';
+import { ChevronDown, Edit, MoreHorizontal, Camera, RefreshCw, Mail, Trash2, Settings, Plus, Shield } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
 import { addDocument, getDocuments, updateDocument, deleteDocument } from '../lib/firebase/firebaseUtils';
@@ -136,6 +136,11 @@ const Purchases = () => {
         const gmailPurchases = data.purchases || [];
         setPurchases(gmailPurchases);
         
+        // 🔥 NEW: Save Gmail purchases to Firebase
+        if (user && gmailPurchases.length > 0) {
+          await saveGmailPurchasesToFirebase(gmailPurchases);
+        }
+        
         // Combine with manual purchases for display
         const combinedPurchases = [...gmailPurchases, ...manualPurchases];
         calculateTotals(combinedPurchases);
@@ -148,6 +153,55 @@ const Purchases = () => {
       loadMockData();
     } finally {
       setLoading(false);
+    }
+  };
+
+  // 🔥 NEW: Function to save Gmail purchases to Firebase
+  const saveGmailPurchasesToFirebase = async (gmailPurchases: any[]) => {
+    if (!user) {
+      console.warn('User not authenticated - cannot save Gmail purchases to Firebase');
+      return;
+    }
+
+    try {
+      console.log(`📧 Saving ${gmailPurchases.length} Gmail purchases to Firebase...`);
+      
+      // Get existing Gmail purchases to avoid duplicates
+      const existingPurchases = await getDocuments('purchases');
+      const existingGmailPurchases = existingPurchases.filter(
+        (purchase: any) => purchase.userId === user.uid && purchase.type === 'gmail'
+      );
+      
+      // Create a Set of existing order numbers for quick lookup
+      const existingOrderNumbers = new Set(
+        existingGmailPurchases.map(p => p.orderNumber)
+      );
+      
+      let savedCount = 0;
+      let skippedCount = 0;
+      
+      for (const purchase of gmailPurchases) {
+        // Skip if already exists
+        if (existingOrderNumbers.has(purchase.orderNumber)) {
+          skippedCount++;
+          continue;
+        }
+        
+        const purchaseData = {
+          ...purchase,
+          userId: user.uid,
+          createdAt: new Date().toISOString(),
+          type: 'gmail' // Mark as Gmail import
+        };
+        
+        await addDocument('purchases', purchaseData);
+        savedCount++;
+      }
+      
+      console.log(`✅ Gmail purchases saved to Firebase: ${savedCount} new, ${skippedCount} skipped (already exist)`);
+      
+    } catch (error) {
+      console.error('❌ Error saving Gmail purchases to Firebase:', error);
     }
   };
 
@@ -264,16 +318,31 @@ const Purchases = () => {
       
       // Filter to only show purchases for this user
       const userPurchases = allPurchases.filter(
-        (purchase: any) => purchase.userId === user.uid && purchase.type === 'manual'
+        (purchase: any) => purchase.userId === user.uid
       );
       
-      setManualPurchases(userPurchases);
+      // Separate manual and Gmail purchases
+      const manualPurchases = userPurchases.filter(p => p.type === 'manual');
+      const gmailPurchases = userPurchases.filter(p => p.type === 'gmail');
       
-      // Combine with Gmail purchases for display
-      const combinedPurchases = [...purchases, ...userPurchases];
+      setManualPurchases(manualPurchases);
+      
+      // 🔥 NEW: If Gmail is connected, load Gmail purchases from Firebase
+      if (gmailConnected && gmailPurchases.length > 0) {
+        setPurchases(gmailPurchases);
+        console.log(`✅ Loaded ${gmailPurchases.length} Gmail purchases from Firebase`);
+      }
+      
+      // Combine all purchases for display
+      const combinedPurchases = [...gmailPurchases, ...manualPurchases];
       calculateTotals(combinedPurchases);
       
-      console.log('✅ Loaded manual purchases from Firebase:', userPurchases.length);
+      console.log('✅ Loaded purchases from Firebase:', {
+        manual: manualPurchases.length,
+        gmail: gmailPurchases.length,
+        total: combinedPurchases.length
+      });
+      
     } catch (error) {
       console.error('❌ Error loading purchases from Firebase:', error);
     } finally {
@@ -324,16 +393,20 @@ const Purchases = () => {
       try {
         const allPurchases = await getDocuments('purchases');
         const userPurchases = allPurchases.filter(
-          (purchase: any) => purchase.userId === user.uid && purchase.type === 'manual'
+          (purchase: any) => purchase.userId === user.uid
         );
         
-        // Delete all manual purchases for this user
+        // Delete all purchases for this user (both manual and Gmail)
+        let deletedCount = 0;
         for (const purchase of userPurchases) {
           if (purchase.id) {
             await deleteDocument('purchases', purchase.id);
+            deletedCount++;
           }
         }
-        console.log('✅ All manual purchases cleared from Firebase');
+        
+        console.log(`✅ All purchases cleared from Firebase: ${deletedCount} deleted`);
+        
       } catch (error) {
         console.error('❌ Error clearing purchases from Firebase:', error);
       }
@@ -391,7 +464,10 @@ const Purchases = () => {
     <div className={`flex-1 ${currentTheme.colors.background} p-8`}>
       {/* Gmail Connection Status */}
       <div className="mb-6">
-        <GmailConnector onConnectionChange={setGmailConnected} />
+                    <GmailConnector 
+              key={currentTheme.name} 
+              onConnectionChange={setGmailConnected} 
+            />
       </div>
 
       {/* Header */}
@@ -432,6 +508,93 @@ const Purchases = () => {
               >
                 <Trash2 className="w-5 h-5" />
                 <span>Reset</span>
+              </button>
+            )}
+            
+            {/* 🔥 NEW: Debug button to verify Firebase data */}
+            {user && (
+              <button
+                onClick={async () => {
+                  try {
+                    const response = await fetch(`/api/debug/firebase-purchases?userId=${user.uid}`);
+                    const data = await response.json();
+                    console.log('🔍 Firebase Debug Data:', data);
+                    alert(`Firebase Data:\nTotal: ${data.data.total}\nManual: ${data.data.manual}\nGmail: ${data.data.gmail}\n\nCheck console for full details.`);
+                  } catch (error) {
+                    console.error('Debug fetch error:', error);
+                    alert('Error fetching debug data');
+                  }
+                }}
+                className={`flex items-center space-x-2 ${
+                  currentTheme.name === 'Neon' 
+                    ? 'bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/30' 
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                } px-4 py-2 rounded-lg font-medium transition-all duration-200`}
+              >
+                <span>🔍</span>
+                <span>Debug Firebase</span>
+              </button>
+            )}
+            
+            {/* 🔥 NEW: Data strategy analysis button */}
+            {user && (
+              <button
+                onClick={async () => {
+                  try {
+                    const response = await fetch('/api/debug/data-strategy');
+                    const data = await response.json();
+                    console.log('📊 Data Strategy Analysis:', data);
+                    
+                    const summary = data.report.summary;
+                    const needsWork = data.currentStatus.needsImprovement.length;
+                    const wellDone = data.currentStatus.wellImplemented.length;
+                    
+                    alert(`Data Strategy Analysis:\n\n✅ Well Implemented: ${wellDone}\n⚠️ Needs Improvement: ${needsWork}\n\nFirebase: ${summary.firebaseItems} items\nLocal Storage: ${summary.localStorageItems} items\nMemory Only: ${summary.memoryItems} items\n\nEstimated cost: ${data.report.costEstimate.estimatedMonthlyCost}\n\nCheck console for detailed breakdown.`);
+                  } catch (error) {
+                    console.error('Strategy analysis error:', error);
+                    alert('Error fetching strategy analysis');
+                  }
+                }}
+                className={`flex items-center space-x-2 ${
+                  currentTheme.name === 'Neon' 
+                    ? 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 border border-purple-500/30' 
+                    : 'bg-purple-600 hover:bg-purple-700 text-white'
+                } px-4 py-2 rounded-lg font-medium transition-all duration-200`}
+              >
+                <span>📊</span>
+                <span>Data Strategy</span>
+              </button>
+            )}
+
+            {/* 🔐 NEW: Authentication Data Audit */}
+            {user && (
+              <button
+                onClick={async () => {
+                  try {
+                    const response = await fetch(`/api/debug/auth-data-audit?userId=${user.uid}`);
+                    const data = await response.json();
+                    console.log('🔐 Authentication Data Audit:', data);
+                    
+                    const audit = data.audit;
+                    alert(`Authentication Data Audit:\n\n` +
+                      `🔒 Firebase Auth: Secure (passwords, tokens)\n` +
+                      `🏠 Firestore: ${audit.summary.collectionsWithUserData.length} collections\n` +
+                      `📊 Purchases: ${audit.firestoreData.businessData.purchases.count} total\n` +
+                      `👤 Profile: ${audit.firestoreData.userProfile.exists ? 'Configured' : 'Not configured'}\n\n` +
+                      `Check console for full details.`);
+                  } catch (error) {
+                    console.error('Auth data audit error:', error);
+                    alert('Error running auth data audit');
+                  }
+                }}
+                className={`flex items-center space-x-2 ${
+                  currentTheme.name === 'Neon' 
+                    ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30' 
+                    : 'bg-amber-600 hover:bg-amber-700 text-white'
+                } px-4 py-2 rounded-lg font-medium transition-all duration-200`}
+              >
+                                 <Shield className="w-5 h-5" />
+                 <span>Auth Audit</span>
               </button>
             )}
             <button

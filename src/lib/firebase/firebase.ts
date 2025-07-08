@@ -26,6 +26,12 @@ if (hasValidConfig && isClientSide) {
   auth = getAuth(app);
   db = getFirestore(app);
   storage = getStorage(app);
+  
+  // 🔧 IMPORTANT: If you get "auth/unauthorized-domain" errors:
+  // 1. Go to Firebase Console → Authentication → Settings → Authorized domains
+  // 2. Add your deployment domain (e.g., your-app.vercel.app)
+  // 3. Add localhost and 127.0.0.1 for development
+  
 } else {
   // Use mock/demo Firebase for development or server-side rendering
   if (!isClientSide) {

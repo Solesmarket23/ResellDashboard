@@ -292,12 +292,15 @@ export const getUserDashboardSettings = async (userId: string): Promise<UserDash
 // Utility function to clear all user data
 export const clearAllUserData = async (userId: string) => {
   try {
+    console.log('🧹 Starting complete data wipe for user:', userId);
+    
     // Clear themes
     const themes = await getDocuments(COLLECTIONS.THEMES);
     const userThemes = themes.filter((theme: any) => theme.userId === userId);
     for (const theme of userThemes) {
       if (theme.id) await deleteDocument(COLLECTIONS.THEMES, theme.id);
     }
+    console.log(`✅ Cleared ${userThemes.length} theme preferences`);
 
     // Clear profiles
     const profiles = await getDocuments(COLLECTIONS.PROFILES);
@@ -305,9 +308,23 @@ export const clearAllUserData = async (userId: string) => {
     for (const profile of userProfiles) {
       if (profile.id) await deleteDocument(COLLECTIONS.PROFILES, profile.id);
     }
+    console.log(`✅ Cleared ${userProfiles.length} profile records`);
 
     // Clear sales
     await clearAllUserSales(userId);
+    console.log('✅ Cleared all sales data');
+
+    // 🔥 NEW: Clear purchases (both manual and Gmail)
+    const allPurchases = await getDocuments('purchases');
+    const userPurchases = allPurchases.filter((purchase: any) => purchase.userId === userId);
+    let deletedPurchases = 0;
+    for (const purchase of userPurchases) {
+      if (purchase.id) {
+        await deleteDocument('purchases', purchase.id);
+        deletedPurchases++;
+      }
+    }
+    console.log(`✅ Cleared ${deletedPurchases} purchase records`);
 
     // Clear email configs
     const configs = await getDocuments(COLLECTIONS.EMAIL_CONFIGS);
@@ -315,6 +332,7 @@ export const clearAllUserData = async (userId: string) => {
     for (const config of userConfigs) {
       if (config.id) await deleteDocument(COLLECTIONS.EMAIL_CONFIGS, config.id);
     }
+    console.log(`✅ Cleared ${userConfigs.length} email configurations`);
 
     // Clear dashboard settings
     const settings = await getDocuments(COLLECTIONS.DASHBOARD_SETTINGS);
@@ -322,10 +340,44 @@ export const clearAllUserData = async (userId: string) => {
     for (const setting of userSettings) {
       if (setting.id) await deleteDocument(COLLECTIONS.DASHBOARD_SETTINGS, setting.id);
     }
+    console.log(`✅ Cleared ${userSettings.length} dashboard settings`);
 
-    console.log('✅ All user data cleared from Firebase');
+    // 🔥 NEW: Clear localStorage data for extra clean slate
+    if (typeof window !== 'undefined') {
+      // Clear theme preference
+      localStorage.removeItem('selectedTheme');
+      
+      // Clear email parsing config
+      localStorage.removeItem('emailParsingConfig');
+      
+      // Clear any cached data
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.includes('resell') || key.includes('dashboard') || key.includes('user'))) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(key => localStorage.removeItem(key));
+      console.log(`✅ Cleared ${keysToRemove.length} localStorage items`);
+    }
+
+    console.log('🎉 COMPLETE DATA WIPE SUCCESSFUL - Account is now fresh!');
+    
+    return {
+      success: true,
+      cleared: {
+        themes: userThemes.length,
+        profiles: userProfiles.length,
+        purchases: deletedPurchases,
+        sales: 'all',
+        emailConfigs: userConfigs.length,
+        dashboardSettings: userSettings.length
+      }
+    };
+    
   } catch (error) {
-    console.error('❌ Error clearing all user data:', error);
+    console.error('❌ Error during complete data wipe:', error);
     throw error;
   }
 }; 
