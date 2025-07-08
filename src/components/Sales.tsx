@@ -279,17 +279,11 @@ const Sales = () => {
         setSalesData(salesData.filter(sale => sale.id !== deleteModal.sale.id));
         closeDeleteModal();
         
-        // Notify other components that sales data has changed
-        console.log('📡 Sales: Dispatching salesDataChanged event after individual delete');
-        window.dispatchEvent(new CustomEvent('salesDataChanged'));
-        
-        // If this was the last sale, redirect to Dashboard to show zero state
-        if (salesData.length === 1) {
-          console.log('📡 Sales: Last sale deleted, redirecting to Dashboard...');
-          setTimeout(() => {
-            window.location.href = '/dashboard';
-          }, 1000);
-        }
+        // FORCE IMMEDIATE DASHBOARD UPDATE - redirect to dashboard to ensure fresh data
+        console.log('📡 Sales: Sale deleted - forcing immediate dashboard refresh via redirect');
+        setTimeout(() => {
+          window.location.href = '/dashboard?refresh=' + Date.now();
+        }, 500);
         
         console.log('✅ Sale deleted successfully');
       } catch (error) {
@@ -324,15 +318,11 @@ const Sales = () => {
       setSalesData([]);
       setClearAllModal(false);
       
-      // Notify other components that sales data has changed
-      console.log('📡 Sales: Dispatching salesDataChanged event after clear all');
-      window.dispatchEvent(new CustomEvent('salesDataChanged'));
-      
-      // Redirect to Dashboard after clearing all sales to show updated metrics
-      console.log('📡 Sales: Redirecting to Dashboard to show updated metrics...');
-      setTimeout(() => {
-        window.location.href = '/dashboard';
-      }, 1000);
+              // FORCE IMMEDIATE DASHBOARD UPDATE - redirect to dashboard to ensure fresh data
+        console.log('📡 Sales: All sales cleared - forcing immediate dashboard refresh via redirect');
+        setTimeout(() => {
+          window.location.href = '/dashboard?refresh=' + Date.now();
+        }, 500);
       
     } catch (error) {
       console.error('❌ Error clearing all sales:', error);
@@ -553,22 +543,7 @@ const Sales = () => {
             )}
             {isAddingTestSale ? 'Adding...' : 'Test Sale + Confetti'}
           </button>
-          <button 
-            onClick={() => {
-              console.log('🔍 DEBUG: Current sales data:', salesData);
-              console.log('🔍 DEBUG: User ID:', user?.uid);
-              console.log('🔍 DEBUG: Sales with userId:', salesData.filter(sale => sale.userId === user?.uid));
-              console.log('🔍 DEBUG: Sales without userId:', salesData.filter(sale => !sale.userId));
-            }}
-            className={`flex items-center px-2 py-1 rounded text-xs font-medium transition-all duration-200 ${
-              isNeon
-                ? 'bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 border border-yellow-500/30'
-                : 'bg-yellow-100 hover:bg-yellow-200 text-yellow-700 border border-yellow-300'
-            }`}
-            title="Debug sales data"
-          >
-            🔍 Debug
-          </button>
+
           <button 
             onClick={handleClearAllSales}
             disabled={isLoading}

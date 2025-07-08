@@ -180,8 +180,19 @@ export const saveUserSale = async (userId: string, saleData: Partial<UserSaleDat
 
 export const getUserSales = async (userId: string): Promise<UserSaleData[]> => {
   try {
+    console.log('🔄 getUserSales: Loading sales for user:', userId);
+    
+    // Force a fresh fetch from Firebase by adding a cache-busting timestamp
+    const timestamp = Date.now();
+    console.log('🔄 getUserSales: Cache-busting timestamp:', timestamp);
+    
     const sales = await getDocuments(COLLECTIONS.SALES);
+    console.log('📊 getUserSales: Total sales in database:', sales.length);
+    
     const userSales = sales.filter((sale: any) => sale.userId === userId);
+    console.log('📊 getUserSales: User sales found:', userSales.length);
+    console.log('📊 getUserSales: User sales:', userSales.map(s => ({ id: s.id, product: s.product, profit: s.profit })));
+    
     return userSales;
   } catch (error) {
     console.error('❌ Error loading sales:', error);

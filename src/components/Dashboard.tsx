@@ -145,6 +145,47 @@ const Dashboard = () => {
     loadUserData();
   }, [user]);
 
+  // Check for refresh parameter in URL (indicates redirect from sales page)
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const refreshParam = urlParams.get('refresh');
+    
+    if (refreshParam && user) {
+      console.log('📡 Dashboard: Detected refresh parameter - forcing data reload');
+      // Clear the URL parameter
+      window.history.replaceState({}, '', '/dashboard');
+      // Force a fresh data load
+      setTimeout(() => {
+        loadUserData();
+      }, 100);
+    }
+  }, [user]);
+
+  // Force data refresh when returning to dashboard (e.g., after deleting sales)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && user) {
+        console.log('📡 Dashboard: Page became visible - refreshing data');
+        loadUserData();
+      }
+    };
+
+    const handleFocus = () => {
+      if (user) {
+        console.log('📡 Dashboard: Window focused - refreshing data');
+        loadUserData();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [user]);
+
   // Add periodic refresh to catch changes made in other components
   useEffect(() => {
     if (!user) return;
@@ -165,11 +206,22 @@ const Dashboard = () => {
       console.log('📡 Dashboard: Current user:', user?.uid);
       console.log('📡 Dashboard: Loading state:', loading);
       
-      // Add a small delay to ensure the sales component has finished its operations
+      // Add a longer delay to ensure Firebase operations complete and cache is cleared
       setTimeout(() => {
-        console.log('📡 Dashboard: Executing delayed refresh...');
+        console.log('📡 Dashboard: Executing delayed refresh with cache clearing...');
+        // Force a more aggressive refresh by clearing local state first
+        setUserSales([]);
+        setRealMetrics({
+          totalProfit: 0,
+          totalRevenue: 0,
+          totalSpend: 0,
+          inventoryCount: 0,
+          inventoryValue: 0,
+          avgProfitPerSale: 0,
+          recentSales: []
+        });
         loadUserData();
-      }, 100);
+      }, 750);
     };
 
     // Remove any existing listeners first
