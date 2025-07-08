@@ -149,7 +149,13 @@ export const useSales = () => {
 
     try {
       setIsDeleting(true);
-      console.log('🗑️ useSales: Deleting sale with Firebase doc ID:', saleId);
+      console.log('🗑️ useSales: Deleting sale with ID:', saleId, 'Type:', typeof saleId);
+      
+      // Ensure saleId is a string
+      if (typeof saleId !== 'string') {
+        console.error('❌ useSales: Sale ID is not a string:', saleId, typeof saleId);
+        throw new Error(`Invalid sale ID type: ${typeof saleId}. Expected string.`);
+      }
       
       await deleteDocument('sales', saleId);
       

@@ -279,6 +279,7 @@ const Sales = () => {
 
     try {
       console.log('🗑️ Attempting to delete sale:', deleteModal.sale);
+      console.log('🗑️ Sale ID value:', deleteModal.sale.id, 'Type:', typeof deleteModal.sale.id);
       
       if (!deleteModal.sale.id) {
         console.error('❌ Sale missing Firebase document ID:', deleteModal.sale);
@@ -286,10 +287,12 @@ const Sales = () => {
         return;
       }
 
-      console.log('🔥 Calling deleteSale with Firebase doc ID:', deleteModal.sale.id);
+      // Ensure we're passing a string ID
+      const saleId = String(deleteModal.sale.id);
+      console.log('🔥 Calling deleteSale with converted ID:', saleId, 'Type:', typeof saleId);
       
       // Use the enhanced delete function from useSales hook
-      const deleteSuccess = await deleteSale(deleteModal.sale.id);
+      const deleteSuccess = await deleteSale(saleId);
       
       if (deleteSuccess) {
         console.log('✅ Sale deleted successfully');

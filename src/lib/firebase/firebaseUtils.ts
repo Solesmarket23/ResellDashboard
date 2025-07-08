@@ -40,10 +40,17 @@ export const getDocuments = async (collectionName: string): Promise<any[]> => {
   
   try {
     const querySnapshot = await getDocs(collection(db, collectionName));
-    const documents = querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    const documents = querySnapshot.docs.map(doc => {
+      const data = doc.data();
+      // Remove any internal 'id' field from the document data to prevent conflicts
+      const { id: internalId, ...cleanData } = data;
+      
+      // Always use Firebase document ID, never the internal id field
+      return {
+        ...cleanData,
+        id: doc.id, // Firebase document ID always takes precedence
+      };
+    });
     
     console.log(`📄 getDocuments: Loaded ${documents.length} documents from ${collectionName}`);
     return documents;
@@ -58,12 +65,19 @@ export const updateDocument = (collectionName: string, id: string, data: any) =>
 
 export const deleteDocument = async (collectionName: string, id: string) => {
   try {
-    console.log(`🔥 Deleting document from ${collectionName} with ID: ${id}`);
+    // Ensure ID is a string and not empty
+    if (!id || typeof id !== 'string') {
+      throw new Error(`Invalid document ID: ${id} (type: ${typeof id}). Must be a non-empty string.`);
+    }
+    
+    console.log(`🔥 Deleting document from ${collectionName} with ID: "${id}" (type: ${typeof id})`);
+    
     await deleteDoc(doc(db, collectionName, id));
     console.log(`✅ Document deleted successfully from ${collectionName}`);
   } catch (error) {
     console.error(`❌ Error deleting document from ${collectionName}:`, error);
     console.error('Document ID:', id, 'Type:', typeof id);
+    console.error('Collection:', collectionName);
     throw error;
   }
 };
