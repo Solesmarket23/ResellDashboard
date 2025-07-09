@@ -22,6 +22,7 @@ function getDefaultConfig() {
         status: "Shipped", 
         statusColor: "blue",
         subjectPatterns: [
+          "Order Verified & Shipped:",
           "Order Shipped:",
           "Xpress Order Shipped:",
           "Your order has shipped"
@@ -145,7 +146,9 @@ function generateQueries(config: any) {
   
   // Add specific subject-based queries
   queries.push('subject:"Order Confirmed"');
+  queries.push('subject:"Order Verified & Shipped:"');
   queries.push('subject:"Order Shipped"');
+  queries.push('subject:"Xpress Order Shipped:"');
   queries.push('subject:"Encountered a Delay"');
   queries.push('subject:"Refund Issued:"');
   
@@ -545,6 +548,11 @@ function parsePurchaseEmail(email: any, config: any) {
 
     // Categorize email based on subject line and configuration
     const category = categorizeEmail(subjectHeader, config);
+
+    // Log if we found a shipped order
+    if (category.status === 'Shipped') {
+      console.log(`📦 SHIPPED ORDER FOUND: ${orderInfo.order_number} - "${subjectHeader}"`);
+    }
 
     // Log if we found a delayed order
     if (category.status === 'Delayed') {
