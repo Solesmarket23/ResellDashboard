@@ -320,17 +320,49 @@ export async function GET(request: NextRequest) {
 
     // Generate dynamic queries based on configuration
     const queries = generateQueries(config);
-    console.log(`Gmail API: Generated ${queries.length} search queries:`, queries);
+    console.log(`🔍 SEARCH DEBUG: Generated ${queries.length} search queries:`, queries);
+    console.log(`🔍 SEARCH DEBUG: First few queries:`, queries.slice(0, 5));
 
     const allPurchases: any[] = [];
 
+    // Test basic Gmail API access first
+    try {
+      console.log(`🔍 TESTING: Basic Gmail API access...`);
+      const testResponse = await gmail.users.messages.list({
+        userId: 'me',
+        q: '',
+        maxResults: 5
+      });
+      console.log(`🔍 BASIC TEST: Found ${testResponse.data.messages?.length || 0} total emails in account`);
+    } catch (testError) {
+      console.error(`🔍 BASIC TEST FAILED:`, testError);
+    }
+
+    // Test specific StockX query since user confirmed 50+ emails exist
+    try {
+      console.log(`🔍 TESTING: Specific StockX query...`);
+      const stockxResponse = await gmail.users.messages.list({
+        userId: 'me',
+        q: 'from:noreply@stockx.com',
+        maxResults: 10
+      });
+      console.log(`🔍 STOCKX TEST: Found ${stockxResponse.data.messages?.length || 0} emails from noreply@stockx.com`);
+      if (stockxResponse.data.messages && stockxResponse.data.messages.length > 0) {
+        console.log(`🔍 STOCKX TEST: First email ID:`, stockxResponse.data.messages[0].id);
+      }
+    } catch (stockxError) {
+      console.error(`🔍 STOCKX TEST FAILED:`, stockxError);
+    }
+
     for (const query of queries) {
       try {
+        console.log(`🔍 EXECUTING QUERY: "${query}" with limit ${limit}`);
         const response = await gmail.users.messages.list({
           userId: 'me',
           q: query,
           maxResults: limit
         });
+        console.log(`🔍 QUERY RESULT: ${response.data.messages?.length || 0} messages found for "${query}"`);
 
         if (response.data.messages) {
           console.log(`Gmail API: Found ${response.data.messages.length} emails for query: ${query}`);
