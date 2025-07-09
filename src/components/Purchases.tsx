@@ -440,14 +440,16 @@ const Purchases = () => {
       const colorClasses = {
         green: "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30",
         orange: "bg-orange-500/20 text-orange-400 border border-orange-500/30",
-        blue: "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
+        blue: "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30",
+        red: "bg-red-500/20 text-red-400 border border-red-500/30"
       };
       return `${baseClasses} ${colorClasses[color as keyof typeof colorClasses]}`;
     } else {
       const colorClasses = {
         green: "bg-green-100 text-green-800",
         orange: "bg-orange-100 text-orange-800",
-        blue: "bg-blue-100 text-blue-800"
+        blue: "bg-blue-100 text-blue-800",
+        red: "bg-red-100 text-red-800"
       };
       return `${baseClasses} ${colorClasses[color as keyof typeof colorClasses]}`;
     }
