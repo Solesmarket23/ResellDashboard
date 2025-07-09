@@ -38,7 +38,7 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
 
   const checkConnectionStatus = async () => {
     try {
-      const response = await fetch('/api/gmail/purchases');
+      const response = await fetch('/api/gmail/purchases/');
       setIsConnected(response.status !== 401);
       onConnectionChange?.(response.status !== 401);
     } catch (error) {

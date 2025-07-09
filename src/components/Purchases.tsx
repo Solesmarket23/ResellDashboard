@@ -125,7 +125,7 @@ const Purchases = () => {
       // Get email parsing configuration from localStorage
       const emailConfig = localStorage.getItem('emailParsingConfig');
       
-      const response = await fetch('/api/gmail/purchases', {
+      const response = await fetch('/api/gmail/purchases/', {
         headers: {
           'Content-Type': 'application/json',
           ...(emailConfig ? { 'email-config': emailConfig } : {})
