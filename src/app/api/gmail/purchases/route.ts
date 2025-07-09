@@ -141,6 +141,13 @@ function generateQueries(config: any) {
   queries.push('from:stockx.com');
   queries.push('from:noreply@stockx.com'); 
   queries.push('from:orders@stockx.com');
+  queries.push('from:notifications@stockx.com');
+  queries.push('from:team@stockx.com');
+  
+  // Add even broader queries to catch any StockX emails
+  queries.push('stockx');
+  queries.push('order confirmed');
+  queries.push('order shipped');
   
   // Add fallback queries for subject patterns
   const fallbackQueries = [];
@@ -335,11 +342,21 @@ export async function GET(request: NextRequest) {
               format: 'full'
             });
             
+            // Log email details for debugging
+            const fromHeader = emailData.data.payload?.headers?.find((h: any) => h.name === 'From')?.value || '';
+            const subjectHeader = emailData.data.payload?.headers?.find((h: any) => h.name === 'Subject')?.value || '';
+            console.log(`📧 Found email: From="${fromHeader}", Subject="${subjectHeader}"`);
+            
             const purchase = parsePurchaseEmail(emailData.data, config);
             if (purchase) {
+              console.log(`✅ Parsed purchase: ${purchase.product.name} - ${purchase.orderNumber}`);
               allPurchases.push(purchase);
+            } else {
+              console.log(`❌ Email filtered out or failed to parse`);
             }
           }
+        } else {
+          console.log(`Gmail API: No messages found for query: ${query}`);
         }
       } catch (error) {
         console.error(`Error fetching emails for query "${query}":`, error);
@@ -412,6 +429,8 @@ function parsePurchaseEmail(email: any, config: any) {
     const subjectHeader = email.payload.headers.find((h: any) => h.name === 'Subject')?.value || '';
     const market = identifyMarket(fromHeader);
 
+    console.log(`🔍 Parsing email: "${subjectHeader}" from ${fromHeader}`);
+
     // FILTER OUT SALES-RELATED EMAILS (these are for items being sold TO marketplaces, not purchased FROM them)
     const salesRelatedPatterns = [
       'Order Shipped To StockX',
@@ -431,13 +450,52 @@ function parsePurchaseEmail(email: any, config: any) {
       }
     }
 
+    console.log(`🔧 Attempting to parse order data...`);
     // Use the new OrderConfirmationParser
     const orderInfo = parseGmailApiMessage(email);
+    console.log(`📊 Parsed order info:`, {
+      product_name: orderInfo.product_name,
+      order_number: orderInfo.order_number,
+      total_amount: orderInfo.total_amount,
+      purchase_price: orderInfo.purchase_price
+    });
     
-    // If no order data was extracted, return null
-    if (!orderInfo.product_name && !orderInfo.order_number) {
+    // If no order data was extracted, return null (temporarily more lenient)
+    if (!orderInfo.product_name && !orderInfo.order_number && !subjectHeader.toLowerCase().includes('stockx')) {
       console.log(`⚠️ No order data extracted from email: ${subjectHeader}`);
       return null;
+    }
+    
+    // If it's a StockX email but no data extracted, create a basic entry for debugging
+    if ((!orderInfo.product_name && !orderInfo.order_number) && subjectHeader.toLowerCase().includes('stockx')) {
+      console.log(`🔧 Creating debug entry for StockX email: ${subjectHeader}`);
+      return {
+        id: email.id,
+        orderNumber: 'DEBUG-' + email.id.substring(0, 8),
+        product: {
+          name: `[Debug] ${subjectHeader}`,
+          brand: 'StockX',
+          size: 'Unknown',
+          image: 'https://picsum.photos/200/200?random=debug',
+          bgColor: 'bg-red-500'
+        },
+        status: 'Debug',
+        statusColor: 'red',
+        priority: 1,
+        tracking: 'Debug mode',
+        market: 'StockX',
+        price: '$0.00',
+        originalPrice: '$0.00 + $0.00',
+        purchasePrice: 0,
+        totalPayment: 0,
+        purchaseDate: 'Debug',
+        dateAdded: 'Debug',
+        verified: 'pending',
+        verifiedColor: 'orange',
+        emailId: email.id,
+        subject: subjectHeader,
+        fromEmail: fromHeader
+      };
     }
 
     // Categorize email based on subject line and configuration
