@@ -137,17 +137,13 @@ function generateQueries(config: any) {
     }
   }
 
-  // Add broader StockX search queries to catch historical emails
-  queries.push('from:stockx.com');
+  // Add focused StockX search queries to catch historical emails
   queries.push('from:noreply@stockx.com'); 
-  queries.push('from:orders@stockx.com');
-  queries.push('from:notifications@stockx.com');
-  queries.push('from:team@stockx.com');
+  queries.push('from:stockx.com');
   
-  // Add even broader queries to catch any StockX emails
-  queries.push('stockx');
-  queries.push('order confirmed');
-  queries.push('order shipped');
+  // Add specific subject-based queries
+  queries.push('subject:"Order Confirmed"');
+  queries.push('subject:"Order Shipped"');
   
   // Add fallback queries for subject patterns
   const fallbackQueries = [];
@@ -313,8 +309,8 @@ export async function GET(request: NextRequest) {
     const configHeader = request.headers.get('email-config');
     const config = configHeader ? JSON.parse(configHeader) : getDefaultConfig();
 
-    // Get limit parameter for controlled testing (default to 500 for historical search)
-    const limit = parseInt(url.searchParams.get('limit') || '500');
+    // Get limit parameter for controlled testing (default to 50 to prevent timeouts)
+    const limit = parseInt(url.searchParams.get('limit') || '50');
 
     console.log(`Gmail API: Fetching up to ${limit} emails per query`);
 
@@ -325,14 +321,24 @@ export async function GET(request: NextRequest) {
 
     const allPurchases: any[] = [];
 
+    // Create timeout helper function
+    const withTimeout = (promise: Promise<any>, seconds: number) => {
+      return Promise.race([
+        promise,
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error(`Gmail API timeout after ${seconds} seconds`)), seconds * 1000)
+        )
+      ]);
+    };
+
     // Test basic Gmail API access first
     try {
       console.log(`🔍 TESTING: Basic Gmail API access...`);
-      const testResponse = await gmail.users.messages.list({
+      const testResponse = await withTimeout(gmail.users.messages.list({
         userId: 'me',
         q: '',
         maxResults: 5
-      });
+      }), 10); // 10 second timeout
       console.log(`🔍 BASIC TEST: Found ${testResponse.data.messages?.length || 0} total emails in account`);
     } catch (testError) {
       console.error(`🔍 BASIC TEST FAILED:`, testError);
@@ -341,11 +347,11 @@ export async function GET(request: NextRequest) {
     // Test specific StockX query since user confirmed 50+ emails exist
     try {
       console.log(`🔍 TESTING: Specific StockX query...`);
-      const stockxResponse = await gmail.users.messages.list({
+      const stockxResponse = await withTimeout(gmail.users.messages.list({
         userId: 'me',
         q: 'from:noreply@stockx.com',
         maxResults: 10
-      });
+      }), 10); // 10 second timeout
       console.log(`🔍 STOCKX TEST: Found ${stockxResponse.data.messages?.length || 0} emails from noreply@stockx.com`);
       if (stockxResponse.data.messages && stockxResponse.data.messages.length > 0) {
         console.log(`🔍 STOCKX TEST: First email ID:`, stockxResponse.data.messages[0].id);
@@ -357,22 +363,22 @@ export async function GET(request: NextRequest) {
     for (const query of queries) {
       try {
         console.log(`🔍 EXECUTING QUERY: "${query}" with limit ${limit}`);
-        const response = await gmail.users.messages.list({
+        const response = await withTimeout(gmail.users.messages.list({
           userId: 'me',
           q: query,
           maxResults: limit
-        });
+        }), 15); // 15 second timeout for message list
         console.log(`🔍 QUERY RESULT: ${response.data.messages?.length || 0} messages found for "${query}"`);
 
         if (response.data.messages) {
           console.log(`Gmail API: Found ${response.data.messages.length} emails for query: ${query}`);
           
           for (const message of response.data.messages) {
-            const emailData = await gmail.users.messages.get({
+            const emailData = await withTimeout(gmail.users.messages.get({
               userId: 'me',
               id: message.id,
               format: 'full'
-            });
+            }), 10); // 10 second timeout for each email
             
             // Log email details for debugging
             const fromHeader = emailData.data.payload?.headers?.find((h: any) => h.name === 'From')?.value || '';
@@ -386,6 +392,9 @@ export async function GET(request: NextRequest) {
             } else {
               console.log(`❌ Email filtered out or failed to parse`);
             }
+            
+            // Add small delay to avoid overwhelming Gmail API
+            await new Promise(resolve => setTimeout(resolve, 100));
           }
         } else {
           console.log(`Gmail API: No messages found for query: ${query}`);
