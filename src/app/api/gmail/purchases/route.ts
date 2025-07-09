@@ -51,7 +51,8 @@ function getDefaultConfig() {
         status: "Canceled",
         statusColor: "red",
         subjectPatterns: [
-          "Order canceled"
+          "Order canceled",
+          "Refund Issued:"
         ]
       }
     },
@@ -146,6 +147,7 @@ function generateQueries(config: any) {
   queries.push('subject:"Order Confirmed"');
   queries.push('subject:"Order Shipped"');
   queries.push('subject:"Encountered a Delay"');
+  queries.push('subject:"Refund Issued:"');
   
   // Add fallback queries for subject patterns
   const fallbackQueries = [];
@@ -547,6 +549,11 @@ function parsePurchaseEmail(email: any, config: any) {
     // Log if we found a delayed order
     if (category.status === 'Delayed') {
       console.log(`⚠️ DELAYED ORDER FOUND: ${orderInfo.order_number} - "${subjectHeader}"`);
+    }
+
+    // Log if we found a refunded/cancelled order
+    if (category.status === 'Canceled') {
+      console.log(`❌ REFUNDED ORDER FOUND: ${orderInfo.order_number} - "${subjectHeader}"`);
     }
 
     // Extract brand from product name
