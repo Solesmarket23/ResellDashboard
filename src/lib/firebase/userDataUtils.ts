@@ -1,4 +1,5 @@
 import { addDocument, getDocuments, updateDocument, deleteDocument } from './firebaseUtils';
+import { OrderInfo } from '../email/orderConfirmationParser';
 
 // Safety check for server-side rendering
 const isClientSide = typeof window !== 'undefined';
@@ -54,6 +55,53 @@ export interface UserSaleData {
   createdAt: string;
 }
 
+// New interface for purchase data from OrderInfo parser
+export interface UserPurchaseData {
+  userId: string;
+  id: string; // Firebase document ID is a string
+  
+  // Order details
+  orderNumber: string;
+  orderType: string; // "regular", "xpress", etc.
+  merchant: string; // "StockX", "GOAT", etc.
+  
+  // Product details
+  productName: string;
+  productVariant: string; // color, style, etc.
+  size: string;
+  condition: string;
+  styleId: string;
+  
+  // Product image
+  productImageUrl: string;
+  productImageAlt: string;
+  
+  // Pricing breakdown
+  purchasePrice: number;
+  processingFee: number;
+  shippingFee: number;
+  shippingType: string; // "Shipping", "Xpress Shipping"
+  totalAmount: number;
+  currency: string;
+  
+  // Delivery information
+  estimatedDeliveryStart: string;
+  estimatedDeliveryEnd: string;
+  
+  // Purchase information
+  purchaseDate: string; // When the order was placed
+  
+  // Email metadata
+  emailSubject: string;
+  emailDate: string;
+  sender: string;
+  
+  // System metadata
+  isTest: boolean;
+  type: 'manual' | 'imported';
+  createdAt: string;
+}
+
 export interface UserEmailConfig {
   userId: string;
   config: any; // Email parsing configuration
@@ -79,6 +127,7 @@ const COLLECTIONS = {
   THEMES: 'user_themes',
   PROFILES: 'user_profiles',
   SALES: 'user_sales',
+  PURCHASES: 'user_purchases', // New collection for purchases
   EMAIL_CONFIGS: 'user_email_configs',
   DASHBOARD_SETTINGS: 'user_dashboard_settings'
 };
@@ -274,6 +323,139 @@ export const clearAllUserSales = async (userId: string): Promise<{success: boole
   }
 };
 
+// New Purchase Persistence Functions
+export const saveUserPurchase = async (userId: string, orderInfo: OrderInfo): Promise<any> => {
+  try {
+    console.log('💾 saveUserPurchase: Starting save process for user:', userId);
+    console.log('💾 saveUserPurchase: Input order info:', orderInfo);
+    
+    // Convert OrderInfo to UserPurchaseData
+    const purchaseData: UserPurchaseData = {
+      userId,
+      id: '', // Will be set by Firebase
+      orderNumber: orderInfo.order_number,
+      orderType: orderInfo.order_type,
+      merchant: orderInfo.merchant,
+      productName: orderInfo.product_name,
+      productVariant: orderInfo.product_variant,
+      size: orderInfo.size,
+      condition: orderInfo.condition,
+      styleId: orderInfo.style_id,
+      productImageUrl: orderInfo.product_image_url,
+      productImageAlt: orderInfo.product_image_alt,
+      purchasePrice: orderInfo.purchase_price,
+      processingFee: orderInfo.processing_fee,
+      shippingFee: orderInfo.shipping_fee,
+      shippingType: orderInfo.shipping_type,
+      totalAmount: orderInfo.total_amount,
+      currency: orderInfo.currency,
+      estimatedDeliveryStart: orderInfo.estimated_delivery_start,
+      estimatedDeliveryEnd: orderInfo.estimated_delivery_end,
+      purchaseDate: orderInfo.purchase_date,
+      emailSubject: orderInfo.email_subject,
+      emailDate: orderInfo.email_date,
+      sender: orderInfo.sender,
+      isTest: false,
+      type: 'imported',
+      createdAt: new Date().toISOString()
+    };
+    
+    console.log('💾 saveUserPurchase: Processed purchase data:', purchaseData);
+    
+    const docRef = await addDocument(COLLECTIONS.PURCHASES, purchaseData);
+    console.log('✅ Purchase saved to Firebase with doc ID:', docRef.id);
+    
+    // Verify the save by immediately reading it back
+    const savedPurchases = await getDocuments(COLLECTIONS.PURCHASES);
+    const justSavedPurchase = savedPurchases.find((p: any) => p.id === docRef.id);
+    console.log('🔍 Verification - Just saved purchase:', justSavedPurchase);
+    
+    return docRef;
+  } catch (error) {
+    console.error('❌ Error saving purchase:', error);
+    console.error('❌ Error details:', {
+      userId,
+      orderInfo,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+    throw error;
+  }
+};
+
+export const getUserPurchases = async (userId: string): Promise<UserPurchaseData[]> => {
+  try {
+    console.log('🔄 getUserPurchases: Loading purchases for user:', userId);
+    
+    const purchases = await getDocuments(COLLECTIONS.PURCHASES);
+    console.log('📊 getUserPurchases: Total purchases in database:', purchases.length);
+    
+    const userPurchases = purchases.filter((purchase: any) => purchase.userId === userId);
+    console.log('📊 getUserPurchases: User purchases found:', userPurchases.length);
+    console.log('📊 getUserPurchases: User purchases:', userPurchases.map(p => ({ 
+      id: p.id, 
+      product: p.productName, 
+      orderNumber: p.orderNumber 
+    })));
+    
+    return userPurchases;
+  } catch (error) {
+    console.error('❌ Error loading purchases:', error);
+    return [];
+  }
+};
+
+export const deleteUserPurchase = async (userId: string, purchaseId: string | number) => {
+  try {
+    // Ensure purchaseId is a string (Firebase document ID)
+    const docId = String(purchaseId);
+    
+    console.log('🔥 Attempting to delete purchase with doc ID:', docId);
+    await deleteDocument(COLLECTIONS.PURCHASES, docId);
+    console.log('✅ Purchase deleted from Firebase');
+  } catch (error) {
+    console.error('❌ Error deleting purchase:', error);
+    console.error('Purchase ID:', purchaseId, 'Type:', typeof purchaseId);
+    throw error;
+  }
+};
+
+export const clearAllUserPurchases = async (userId: string): Promise<{success: boolean, error?: string}> => {
+  try {
+    console.log('🔄 Starting clearAllUserPurchases for user:', userId);
+    
+    const purchases = await getDocuments(COLLECTIONS.PURCHASES);
+    console.log('📊 Total purchases in database:', purchases.length);
+    
+    const userPurchases = purchases.filter((purchase: any) => purchase.userId === userId);
+    console.log('📊 User purchases found:', userPurchases.length);
+    
+    if (userPurchases.length === 0) {
+      console.log('ℹ️ No purchases found for user - nothing to delete');
+      return { success: true };
+    }
+    
+    console.log('🗑️ Deleting purchases:', userPurchases.map(p => ({ id: p.id, product: p.productName })));
+    
+    for (const purchase of userPurchases) {
+      if (purchase.id) {
+        console.log('🔥 Deleting purchase:', purchase.id);
+        await deleteDocument(COLLECTIONS.PURCHASES, purchase.id);
+        console.log('✅ Deleted purchase:', purchase.id);
+      } else {
+        console.warn('⚠️ Purchase missing ID:', purchase);
+      }
+    }
+    
+    console.log('✅ All purchases cleared from Firebase');
+    return { success: true };
+  } catch (error) {
+    console.error('❌ Error clearing purchases:', error);
+    console.error('Error details:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Failed to clear all purchases';
+    return { success: false, error: errorMessage };
+  }
+};
+
 // Email Config Persistence
 export const saveUserEmailConfig = async (userId: string, config: any) => {
   try {
@@ -415,11 +597,11 @@ export const clearAllUserData = async (userId: string) => {
     // Clear purchases (with error handling)
     try {
       console.log('🔄 Clearing purchase records...');
-      const allPurchases = await getDocuments('purchases');
+      const allPurchases = await getDocuments(COLLECTIONS.PURCHASES);
       const userPurchases = allPurchases.filter((purchase: any) => purchase.userId === userId);
       for (const purchase of userPurchases) {
         if (purchase.id) {
-          await deleteDocument('purchases', purchase.id);
+          await deleteDocument(COLLECTIONS.PURCHASES, purchase.id);
           clearedCounts.purchases++;
         }
       }
@@ -513,3 +695,31 @@ export const clearAllUserData = async (userId: string) => {
     throw error;
   }
 }; 
+
+// Helper function to convert OrderInfo to purchase data for backward compatibility
+export const convertOrderInfoToPurchaseData = (orderInfo: OrderInfo): Partial<UserSaleData> => {
+  return {
+    product: orderInfo.product_name,
+    brand: extractBrandFromProduct(orderInfo.product_name),
+    orderNumber: orderInfo.order_number,
+    size: orderInfo.size,
+    market: orderInfo.merchant,
+    purchasePrice: orderInfo.purchase_price,
+    date: orderInfo.purchase_date || new Date().toISOString()
+  };
+};
+
+// Helper function to extract brand from product name
+function extractBrandFromProduct(productName: string): string {
+  if (productName.toLowerCase().includes('jordan')) return 'Jordan';
+  if (productName.toLowerCase().includes('nike')) return 'Nike';
+  if (productName.toLowerCase().includes('adidas')) return 'Adidas';
+  if (productName.toLowerCase().includes('yeezy')) return 'Yeezy';
+  if (productName.toLowerCase().includes('travis scott')) return 'Travis Scott';
+  if (productName.toLowerCase().includes('off-white')) return 'Off-White';
+  if (productName.toLowerCase().includes('dior')) return 'Dior';
+  if (productName.toLowerCase().includes('denim tears')) return 'Denim Tears';
+  if (productName.toLowerCase().includes('sp5der')) return 'Sp5der';
+  if (productName.toLowerCase().includes('ugg')) return 'UGG';
+  return 'Unknown Brand';
+} 
