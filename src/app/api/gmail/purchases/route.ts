@@ -137,8 +137,16 @@ function generateQueries(config: any) {
     }
   }
 
+  // Add broader StockX search queries to catch historical emails
+  queries.push('from:stockx.com');
+  queries.push('from:noreply@stockx.com'); 
+  queries.push('from:orders@stockx.com');
+  
+  // Add fallback queries for subject patterns
+  const fallbackQueries = [];
+  
   // If no marketplace-specific queries were generated, create fallback queries
-  if (queries.length === 0) {
+  if (queries.length <= 3) { // Only the StockX queries above
     const subjectPatterns = [];
     for (const [categoryKey, category] of Object.entries(config.emailCategories)) {
       const cat = category as any;
@@ -147,10 +155,13 @@ function generateQueries(config: any) {
     
     if (subjectPatterns.length > 0) {
       for (const pattern of subjectPatterns) {
-        queries.push(`subject:"${pattern}"`);
+        fallbackQueries.push(`subject:"${pattern}"`);
       }
     }
   }
+  
+  // Add fallback queries to main queries array
+  queries.push(...fallbackQueries);
   
   return queries;
 }
@@ -295,13 +306,14 @@ export async function GET(request: NextRequest) {
     const configHeader = request.headers.get('email-config');
     const config = configHeader ? JSON.parse(configHeader) : getDefaultConfig();
 
-    // Get limit parameter for controlled testing (default to 10 if not specified)
-    const limit = parseInt(url.searchParams.get('limit') || '10');
+    // Get limit parameter for controlled testing (default to 500 for historical search)
+    const limit = parseInt(url.searchParams.get('limit') || '500');
 
     console.log(`Gmail API: Fetching up to ${limit} emails per query`);
 
     // Generate dynamic queries based on configuration
     const queries = generateQueries(config);
+    console.log(`Gmail API: Generated ${queries.length} search queries:`, queries);
 
     const allPurchases: any[] = [];
 
