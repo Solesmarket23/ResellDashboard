@@ -41,7 +41,7 @@ function getDefaultConfig() {
       orderDelayed: {
         name: "Order Delayed",
         status: "Delayed",
-        statusColor: "orange",
+        statusColor: "yellow",
         subjectPatterns: [
           "Order delayed",
           "Encountered a Delay"
