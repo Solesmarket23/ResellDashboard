@@ -38,10 +38,20 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
 
   const checkConnectionStatus = async () => {
     try {
+      console.log('🔍 Checking Gmail connection status...');
       const response = await fetch('/api/gmail/purchases/');
-      setIsConnected(response.status !== 401);
-      onConnectionChange?.(response.status !== 401);
+      const isConnected = response.status !== 401;
+      console.log(`📋 Gmail connection check: Status ${response.status}, Connected: ${isConnected}`);
+      
+      if (response.status === 401) {
+        const errorData = await response.json().catch(() => ({}));
+        console.log('🔐 Gmail authentication needed:', errorData);
+      }
+      
+      setIsConnected(isConnected);
+      onConnectionChange?.(isConnected);
     } catch (error) {
+      console.error('❌ Gmail connection check failed:', error);
       setIsConnected(false);
       onConnectionChange?.(false);
     }

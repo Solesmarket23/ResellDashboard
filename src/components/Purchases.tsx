@@ -134,6 +134,7 @@ const Purchases = () => {
       
       if (response.ok) {
         const data = await response.json();
+        console.log('📧 Gmail API Response:', data);
         const gmailPurchases = data.purchases || [];
         setPurchases(gmailPurchases);
         
@@ -145,14 +146,21 @@ const Purchases = () => {
         // Combine with manual purchases for display
         const combinedPurchases = [...gmailPurchases, ...manualPurchases];
         calculateTotals(combinedPurchases);
+        
+        // Show success message
+        console.log(`✅ Gmail sync complete: Found ${gmailPurchases.length} purchases`);
       } else {
-        console.error('Failed to fetch purchases');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('❌ Gmail API Error:', response.status, errorData);
+        alert(`Gmail sync failed: ${errorData.error || 'Unknown error'}\n\nStatus: ${response.status}\n\nTry disconnecting and reconnecting Gmail.`);
+        
         if (!hasBeenReset) {
           loadMockData();
         }
       }
     } catch (error) {
-      console.error('Error fetching purchases:', error);
+      console.error('❌ Gmail fetch error:', error);
+      alert(`Gmail sync error: ${error.message || 'Network error'}\n\nCheck console for details. Try refreshing the page.`);
       if (!hasBeenReset) {
         loadMockData();
       }
