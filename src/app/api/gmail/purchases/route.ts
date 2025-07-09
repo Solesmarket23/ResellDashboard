@@ -42,7 +42,8 @@ function getDefaultConfig() {
         status: "Delayed",
         statusColor: "orange",
         subjectPatterns: [
-          "Order delayed"
+          "Order delayed",
+          "Encountered a Delay"
         ]
       },
       orderCanceled: {
@@ -144,6 +145,7 @@ function generateQueries(config: any) {
   // Add specific subject-based queries
   queries.push('subject:"Order Confirmed"');
   queries.push('subject:"Order Shipped"');
+  queries.push('subject:"Encountered a Delay"');
   
   // Add fallback queries for subject patterns
   const fallbackQueries = [];
@@ -541,6 +543,11 @@ function parsePurchaseEmail(email: any, config: any) {
 
     // Categorize email based on subject line and configuration
     const category = categorizeEmail(subjectHeader, config);
+
+    // Log if we found a delayed order
+    if (category.status === 'Delayed') {
+      console.log(`⚠️ DELAYED ORDER FOUND: ${orderInfo.order_number} - "${subjectHeader}"`);
+    }
 
     // Extract brand from product name
     const brand = extractBrand(orderInfo.product_name);
