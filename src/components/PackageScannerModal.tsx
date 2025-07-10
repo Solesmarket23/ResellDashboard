@@ -459,7 +459,7 @@ const PackageScannerModal = ({ isOpen, onClose, onScanComplete, purchases }: Pac
                 {packageType} • {scannedResult}
               </p>
               <p className={`text-xs ${currentTheme.colors.textSecondary}`}>
-                This tracking number doesn't match any orders
+                This tracking number doesn&apos;t match any orders
               </p>
             </div>
           )}
