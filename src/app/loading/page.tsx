@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 export const dynamic = 'force-dynamic';
 import Image from 'next/image';
 import { useTheme } from '@/lib/contexts/ThemeContext';
-import { TrendingUp, BarChart3, DollarSign, Target, CheckCircle } from 'lucide-react';
+import { TrendingUp, BarChart3, DollarSign, Target, CheckCircle, Mail } from 'lucide-react';
 
 const LoadingPage = () => {
   const { currentTheme } = useTheme();
@@ -16,12 +16,28 @@ const LoadingPage = () => {
   const [currentStep, setCurrentStep] = useState(0);
   const [isVisible, setIsVisible] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [gmailSyncStatus, setGmailSyncStatus] = useState<'checking' | 'syncing' | 'completed' | 'skipped'>('checking');
+
+  const getGmailStepText = () => {
+    switch (gmailSyncStatus) {
+      case 'checking': return "Checking Gmail connection...";
+      case 'syncing': return "Syncing latest purchase emails...";
+      case 'completed': return "Gmail sync completed!";
+      case 'skipped': return "Gmail sync skipped (not connected)";
+      default: return "Checking email sync...";
+    }
+  };
 
   const loadingSteps = [
     { 
       icon: TrendingUp, 
       text: "Initializing analytics engine...", 
       color: currentTheme.name === 'Neon' ? 'text-emerald-400' : 'text-purple-400' 
+    },
+    { 
+      icon: Mail, 
+      text: getGmailStepText(), 
+      color: currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-400' 
     },
     { 
       icon: BarChart3, 
@@ -78,9 +94,65 @@ const LoadingPage = () => {
     return () => clearInterval(interval);
   }, [router]);
 
+  // Gmail sync logic when we reach step 1 (Gmail step)
+  useEffect(() => {
+    if (currentStep === 1) {
+      performGmailSync();
+    }
+  }, [currentStep]);
+
+  const performGmailSync = async () => {
+    try {
+      setGmailSyncStatus('checking');
+      
+      // First check if Gmail is connected
+      const statusResponse = await fetch('/api/gmail/status');
+      
+      if (statusResponse.ok) {
+        const statusData = await statusResponse.json();
+        
+        if (statusData.connected && !statusData.needsReconnect) {
+          setGmailSyncStatus('syncing');
+          console.log('🔄 LOADING: Starting Gmail sync during startup...');
+          
+          // Trigger Gmail sync
+          const syncResponse = await fetch('/api/gmail/purchases?limit=50', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          });
+          
+          if (syncResponse.ok) {
+            const syncData = await syncResponse.json();
+            console.log(`✅ LOADING: Gmail sync completed - found ${syncData.purchases?.length || 0} purchases`);
+            setGmailSyncStatus('completed');
+          } else {
+            console.log('⚠️ LOADING: Gmail sync failed, but continuing...');
+            setGmailSyncStatus('skipped');
+          }
+        } else {
+          console.log('📭 LOADING: Gmail not connected, skipping sync');
+          setGmailSyncStatus('skipped');
+        }
+      } else {
+        console.log('📭 LOADING: Gmail status check failed, skipping sync');
+        setGmailSyncStatus('skipped');
+      }
+    } catch (error) {
+      console.error('❌ LOADING: Gmail sync error:', error);
+      setGmailSyncStatus('skipped');
+    }
+  };
+
   useEffect(() => {
     const stepInterval = setInterval(() => {
       setCurrentStep(prev => {
+        // Special handling for Gmail step - wait for sync to complete
+        if (prev === 1 && gmailSyncStatus === 'syncing') {
+          return prev; // Stay on Gmail step while syncing
+        }
+        
         if (prev >= loadingSteps.length - 1) {
           clearInterval(stepInterval);
           return prev;
@@ -90,7 +162,7 @@ const LoadingPage = () => {
     }, 1000);
 
     return () => clearInterval(stepInterval);
-  }, [loadingSteps.length]);
+  }, [loadingSteps.length, gmailSyncStatus]);
 
   return (
     <div className={`min-h-screen ${currentTheme.colors.background} ${currentTheme.colors.bodyClass} flex items-center justify-center p-4 transition-all duration-500 ease-out ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
