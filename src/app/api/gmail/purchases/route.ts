@@ -143,22 +143,22 @@ function generateQueries(config: any) {
     }
   }
 
-  // Add focused StockX search queries to catch historical emails
-  queries.push('from:noreply@stockx.com'); 
-  queries.push('from:stockx.com');
+  // Add focused StockX search queries to catch historical emails (past 2 years)
+  queries.push('from:noreply@stockx.com after:2022/1/1'); 
+  queries.push('from:stockx.com after:2022/1/1');
   
-  // Add focused subject-based queries (simplified to prevent timeout)
-  queries.push('subject:"Order Confirmed"');
-  queries.push('subject:"Order Shipped"');
-  queries.push('subject:"Encountered a Delay"');
-  queries.push('subject:"Refund Issued:"');
+  // Add focused subject-based queries (simplified to prevent timeout) - past 2 years
+  queries.push('subject:"Order Confirmed" after:2022/1/1');
+  queries.push('subject:"Order Shipped" after:2022/1/1');
+  queries.push('subject:"Encountered a Delay" after:2022/1/1');
+  queries.push('subject:"Refund Issued:" after:2022/1/1');
   
-  // Enhanced delivery-focused queries
-  queries.push('subject:"Xpress Ship Order Delivered:"');
-  queries.push('subject:"Order Delivered:"');
-  queries.push('subject:"Xpress Order Delivered:"');
-  queries.push('from:stockx.com AND subject:"delivered"');
-  queries.push('from:noreply@stockx.com AND subject:"delivered"');
+  // Enhanced delivery-focused queries - past 2 years  
+  queries.push('subject:"Xpress Ship Order Delivered:" after:2022/1/1');
+  queries.push('subject:"Order Delivered:" after:2022/1/1');
+  queries.push('subject:"Xpress Order Delivered:" after:2022/1/1');
+  queries.push('from:stockx.com AND subject:"delivered" after:2022/1/1');
+  queries.push('from:noreply@stockx.com AND subject:"delivered" after:2022/1/1');
   
   // Add fallback queries for subject patterns
   const fallbackQueries = [];
@@ -364,8 +364,8 @@ export async function GET(request: NextRequest) {
     const configHeader = request.headers.get('email-config');
     const config = configHeader ? JSON.parse(configHeader) : getDefaultConfig();
 
-    // Get limit parameter for controlled testing (default to 10 to prevent timeouts)
-    const limit = parseInt(url.searchParams.get('limit') || '10');
+    // Get limit parameter for controlled testing (default to 100 to capture more historical emails)
+    const limit = parseInt(url.searchParams.get('limit') || '100');
 
     console.log(`Gmail API: Fetching up to ${limit} emails per query`);
 
