@@ -154,7 +154,7 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
             currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'
           }`} />
           <span className={`font-medium text-sm ${currentTheme.colors.textPrimary}`}>
-            Auto Email Sync
+            🔄 Auto Email Sync
           </span>
         </div>
         
