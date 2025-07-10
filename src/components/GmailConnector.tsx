@@ -39,7 +39,20 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
   const checkConnectionStatus = async () => {
     try {
       console.log('🔍 Checking Gmail connection status...');
-      const response = await fetch('/api/gmail/purchases/');
+      
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Connection check timeout')), 10000)
+      );
+      
+      const fetchPromise = fetch('/api/gmail/status', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      const response = await Promise.race([fetchPromise, timeoutPromise]) as Response;
       const isConnected = response.status !== 401;
       console.log(`📋 Gmail connection check: Status ${response.status}, Connected: ${isConnected}`);
       
@@ -52,8 +65,17 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
       onConnectionChange?.(isConnected);
     } catch (error) {
       console.error('❌ Gmail connection check failed:', error);
-      setIsConnected(false);
-      onConnectionChange?.(false);
+      
+      // If it's a timeout, assume not connected and don't show error
+      if (error instanceof Error && error.message.includes('timeout')) {
+        console.log('⏰ Connection check timed out - assuming not connected');
+        setIsConnected(false);
+        onConnectionChange?.(false);
+      } else {
+        setIsConnected(false);
+        onConnectionChange?.(false);
+        setError('Connection check failed');
+      }
     }
   };
 

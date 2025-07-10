@@ -144,13 +144,10 @@ function generateQueries(config: any) {
   queries.push('from:noreply@stockx.com'); 
   queries.push('from:stockx.com');
   
-  // Add specific subject-based queries
+  // Add focused subject-based queries (simplified to prevent timeout)
   queries.push('subject:"Order Confirmed"');
-  queries.push('subject:"Order Verified & Shipped:"');
   queries.push('subject:"Order Shipped"');
-  queries.push('subject:"Xpress Order Shipped:"');
   queries.push('subject:"Encountered a Delay"');
-  queries.push('subject:"Refund Issued:"');
   
   // Add fallback queries for subject patterns
   const fallbackQueries = [];
@@ -316,8 +313,8 @@ export async function GET(request: NextRequest) {
     const configHeader = request.headers.get('email-config');
     const config = configHeader ? JSON.parse(configHeader) : getDefaultConfig();
 
-    // Get limit parameter for controlled testing (default to 50 to prevent timeouts)
-    const limit = parseInt(url.searchParams.get('limit') || '50');
+    // Get limit parameter for controlled testing (default to 10 to prevent timeouts)
+    const limit = parseInt(url.searchParams.get('limit') || '10');
 
     console.log(`Gmail API: Fetching up to ${limit} emails per query`);
 

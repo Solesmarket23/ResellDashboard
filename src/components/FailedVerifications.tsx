@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Search, Plus, AlertTriangle, Calendar, ChevronDown, RotateCcw, CheckCircle, DollarSign } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
+import { generateGmailSearchUrl } from '../lib/utils/orderNumberUtils';
 
 const FailedVerifications = () => {
   const [timeFilter, setTimeFilter] = useState('Monthly');
@@ -493,7 +494,7 @@ const FailedVerifications = () => {
                   }`}>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <a 
-                        href={`https://mail.google.com/mail/u/0/#search/"${encodeURIComponent(failure.orderNumber)}"`}
+                        href={generateGmailSearchUrl(failure.orderNumber)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className={`text-sm font-medium transition-colors duration-200 ${

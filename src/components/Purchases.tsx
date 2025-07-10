@@ -5,6 +5,7 @@ import { ChevronDown, Edit, MoreHorizontal, Camera, RefreshCw, Mail, Trash2, Set
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
 import { addDocument, getDocuments, updateDocument, deleteDocument } from '../lib/firebase/firebaseUtils';
+import { generateGmailSearchUrl } from '../lib/utils/orderNumberUtils';
 import NativeBarcodeScannerModal from './NativeBarcodeScannerModal';
 import ZXingScannerModal from './ZXingScannerModal';
 import RemoteScanModal from './RemoteScanModal';
@@ -20,6 +21,8 @@ const Purchases = () => {
   const [purchases, setPurchases] = useState<any[]>([]);
   const [manualPurchases, setManualPurchases] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState({ found: 0, stage: 'Connecting...' });
+  const [loadingTimeouts, setLoadingTimeouts] = useState<NodeJS.Timeout[]>([]);
   const [totalValue, setTotalValue] = useState('$0.00');
   const [totalCount, setTotalCount] = useState(0);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -121,21 +124,47 @@ const Purchases = () => {
     }
 
     setLoading(true);
+    setLoadingProgress({ found: 0, stage: 'Connecting to Gmail...' });
+    
+    // Clear any existing timeouts
+    loadingTimeouts.forEach(timeout => clearTimeout(timeout));
+    
     try {
+      // Simulate progress stages for better UX
+      const timeouts = [
+        setTimeout(() => setLoadingProgress({ found: 0, stage: 'Searching emails...' }), 500),
+        setTimeout(() => setLoadingProgress({ found: 0, stage: 'Parsing order data...' }), 1500),
+        setTimeout(() => setLoadingProgress({ found: 5, stage: 'Analyzing purchases...' }), 2000),
+        setTimeout(() => setLoadingProgress({ found: 15, stage: 'Extracting details...' }), 2500),
+        setTimeout(() => setLoadingProgress({ found: 25, stage: 'Processing orders...' }), 3000)
+      ];
+      setLoadingTimeouts(timeouts);
+      
       // Get email parsing configuration from localStorage
       const emailConfig = localStorage.getItem('emailParsingConfig');
       
-      const response = await fetch('/api/gmail/purchases/', {
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Gmail sync timeout')), 60000) // 60 second timeout
+      );
+      
+      const fetchPromise = fetch('/api/gmail/purchases/', {
         headers: {
           'Content-Type': 'application/json',
           ...(emailConfig ? { 'email-config': emailConfig } : {})
         }
       });
       
+      const response = await Promise.race([fetchPromise, timeoutPromise]) as Response;
+      
       if (response.ok) {
         const data = await response.json();
         console.log('📧 Gmail API Response:', data);
         const gmailPurchases = data.purchases || [];
+        
+        // Update progress with final count
+        setLoadingProgress({ found: gmailPurchases.length, stage: 'Finalizing...' });
+        
         setPurchases(gmailPurchases);
         
         // 🔥 NEW: Save Gmail purchases to Firebase
@@ -160,11 +189,22 @@ const Purchases = () => {
       }
     } catch (error) {
       console.error('❌ Gmail fetch error:', error);
-      alert(`Gmail sync error: ${error.message || 'Network error'}\n\nCheck console for details. Try refreshing the page.`);
+      
+      // Handle timeout specifically
+      if (error instanceof Error && error.message.includes('timeout')) {
+        console.log('⏰ Gmail sync timed out - loading mock data');
+        alert('Gmail sync timed out. This can happen when processing many emails. Please try again or check your connection.');
+      } else {
+        alert(`Gmail sync error: ${error.message || 'Network error'}\n\nCheck console for details. Try refreshing the page.`);
+      }
+      
       if (!hasBeenReset) {
         loadMockData();
       }
     } finally {
+      // Clear any remaining timeouts
+      loadingTimeouts.forEach(timeout => clearTimeout(timeout));
+      setLoadingTimeouts([]);
       setLoading(false);
     }
   };
@@ -838,7 +878,7 @@ const Purchases = () => {
                   </td>
                   <td className="px-6 py-2 align-middle">
                     <a 
-                      href={`https://mail.google.com/mail/u/0/#search/"${encodeURIComponent(purchase.orderNumber)}"`}
+                      href={generateGmailSearchUrl(purchase.orderNumber)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className={`${currentTheme.colors.accent} text-sm font-medium hover:underline whitespace-nowrap transition-colors`}
@@ -970,6 +1010,93 @@ const Purchases = () => {
 
       {/* Add Purchase Modal */}
       {showAddPurchaseModal && <AddPurchaseModal />}
+
+      {/* Loading Modal with Progress Counter */}
+      {loading && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className={`${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border rounded-lg p-8 max-w-md w-full mx-4 relative overflow-hidden`}>
+            {/* Neon glow effect */}
+            {currentTheme.name === 'Neon' && (
+              <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/20 to-purple-500/20 rounded-lg blur-sm"></div>
+            )}
+            
+            <div className="relative">
+              {/* Loading Icon */}
+              <div className="flex justify-center mb-6">
+                <div className={`w-16 h-16 rounded-full border-4 ${
+                  currentTheme.name === 'Neon' 
+                    ? 'border-cyan-500/30 border-t-cyan-500' 
+                    : 'border-gray-300 border-t-blue-500'
+                } animate-spin`}></div>
+              </div>
+              
+              {/* Progress Counter */}
+              <div className="text-center mb-4">
+                <div className={`text-3xl font-bold ${
+                  currentTheme.name === 'Neon' 
+                    ? 'text-cyan-400 bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent' 
+                    : 'text-blue-600'
+                }`}>
+                  {loadingProgress.found > 0 ? loadingProgress.found : '...'}
+                </div>
+                <div className={`text-sm ${
+                  currentTheme.name === 'Neon' 
+                    ? 'text-cyan-300' 
+                    : 'text-blue-500'
+                } font-medium`}>
+                  {loadingProgress.found > 0 ? 'Purchases Found' : 'Searching...'}
+                </div>
+              </div>
+              
+              {/* Status Text */}
+              <div className="text-center">
+                <div className={`text-lg font-semibold ${
+                  currentTheme.name === 'Neon' 
+                    ? 'text-white' 
+                    : 'text-gray-900'
+                } mb-2`}>
+                  Gmail Sync in Progress
+                </div>
+                <div className={`text-sm ${
+                  currentTheme.name === 'Neon' 
+                    ? 'text-gray-300' 
+                    : 'text-gray-600'
+                }`}>
+                  {loadingProgress.stage}
+                </div>
+              </div>
+              
+              {/* Animated Progress Bar */}
+              <div className="mt-6">
+                <div className={`h-2 ${
+                  currentTheme.name === 'Neon' 
+                    ? 'bg-white/10' 
+                    : 'bg-gray-200'
+                } rounded-full overflow-hidden`}>
+                  <div className={`h-full ${
+                    currentTheme.name === 'Neon' 
+                      ? 'bg-gradient-to-r from-cyan-500 to-purple-500' 
+                      : 'bg-gradient-to-r from-blue-500 to-green-500'
+                  } rounded-full animate-pulse`} style={{
+                    width: loadingProgress.found > 0 ? '90%' : '45%',
+                    transition: 'width 0.5s ease-in-out'
+                  }}></div>
+                </div>
+              </div>
+              
+              {/* Particles Effect for Neon Theme */}
+              {currentTheme.name === 'Neon' && (
+                <div className="absolute inset-0 pointer-events-none">
+                  <div className="absolute top-4 left-4 w-1 h-1 bg-cyan-400 rounded-full animate-ping"></div>
+                  <div className="absolute top-8 right-6 w-1 h-1 bg-purple-400 rounded-full animate-ping animation-delay-200"></div>
+                  <div className="absolute bottom-6 left-8 w-1 h-1 bg-cyan-400 rounded-full animate-ping animation-delay-400"></div>
+                  <div className="absolute bottom-4 right-4 w-1 h-1 bg-purple-400 rounded-full animate-ping animation-delay-600"></div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

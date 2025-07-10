@@ -201,20 +201,116 @@ export class OrderConfirmationParser {
       }
     }
     
-    // Extract size
+    // Extract size with enhanced patterns for StockX emails
+    console.log('🔍 SIZE EXTRACTION DEBUG - Product:', orderInfo.product_name);
+    console.log('🔍 SIZE EXTRACTION DEBUG - HTML Content Sample:', htmlContent.substring(0, 500) + '...');
+    console.warn('🔍 SIZE EXTRACTION DEBUG - Product:', orderInfo.product_name); // Use console.warn for visibility
+    
     const sizePatterns = [
+      // Standard patterns
       /Size:\s*US\s*([XSMLW]*\s*\d+(?:\.\d+)?)/i,
       /Size:\s*([XSMLW]+)/i,
-      /<li[^>]*>Size:\s*([^<]+)<\/li>/i
+      /<li[^>]*>Size:\s*([^<]+)<\/li>/i,
+      
+      // Enhanced patterns for StockX emails
+      /Size\s*US\s*([XSMLW]*\s*\d+(?:\.\d+)?)/i,
+      /Size\s*([XSMLW]*\s*\d+(?:\.\d+)?)/i,
+      /Size\s*([XSMLW]+)/i,
+      
+      // Subject line patterns (common in StockX emails)
+      /\(Size\s*US?\s*([XSMLW]*\s*\d+(?:\.\d+)?)\)/i,
+      /\(Size\s*([XSMLW]+)\)/i,
+      
+      // HTML table patterns
+      /<td[^>]*>Size[^<]*<\/td>\s*<td[^>]*>\s*US\s*([XSMLW]*\s*\d+(?:\.\d+)?)/i,
+      /<td[^>]*>Size[^<]*<\/td>\s*<td[^>]*>\s*([XSMLW]*\s*\d+(?:\.\d+)?)/i,
+      /<td[^>]*>Size[^<]*<\/td>\s*<td[^>]*>\s*([XSMLW]+)/i,
+      
+      // Flexible patterns for various formats
+      /Size[:\s]+US[:\s]+([XSMLW]*\s*\d+(?:\.\d+)?)/i,
+      /Size[:\s]+([XSMLW]*\s*\d+(?:\.\d+)?)/i,
+      /Size[:\s]+([XSMLW]+)/i,
+      
+      // Women's size patterns
+      /Size\s*US\s*([XSMLW]*\s*\d+(?:\.\d+)?)\s*\(Women's\)/i,
+      /Size\s*([XSMLW]*\s*\d+(?:\.\d+)?)\s*\(Women's\)/i,
+      
+      // Alternative formats
+      /\bUS\s*([XSMLW]*\s*\d+(?:\.\d+)?)\b/i,
+      /\b([XSMLW]{1,3})\s*(?:Size|US)\b/i
     ];
     
-    for (const pattern of sizePatterns) {
+    let sizeFound = false;
+    for (let i = 0; i < sizePatterns.length; i++) {
+      const pattern = sizePatterns[i];
       const match = htmlContent.match(pattern);
       if (match) {
-        orderInfo.size = match[1].trim();
+        console.log(`🎯 SIZE FOUND with pattern ${i}:`, match[0]);
+        console.log(`🎯 SIZE EXTRACTED:`, match[1]);
+        
+        let size = match[1].trim();
+        
+        // Clean up size format
+        if (size.match(/^\d+(?:\.\d+)?$/)) {
+          size = `US ${size}`;
+        } else if (size.match(/^[XSMLW]{1,3}$/)) {
+          size = `US ${size}`;
+        }
+        
+        orderInfo.size = size;
+        sizeFound = true;
         break;
       }
     }
+    
+    if (!sizeFound) {
+      console.log('❌ SIZE NOT FOUND - No patterns matched');
+      // Log some key parts of the content for debugging
+      const sizeReferences = htmlContent.match(/[Ss]ize[^<\n]{0,50}/g) || [];
+      console.log('🔍 SIZE REFERENCES FOUND:', sizeReferences);
+    }
+    
+    // If no size found, try extracting from subject line or email content
+    if (!orderInfo.size) {
+      console.log('🔍 FALLBACK SIZE EXTRACTION from text content');
+      console.log('🔍 TEXT CONTENT Sample:', textContent.substring(0, 500) + '...');
+      
+      const textSizePatterns = [
+        /\(Size\s*([^)]+)\)/i,
+        /Size\s*([XSMLW]*\s*\d+(?:\.\d+)?)/i,
+        /Size\s*([XSMLW]+)/i
+      ];
+      
+      let textSizeFound = false;
+      for (let i = 0; i < textSizePatterns.length; i++) {
+        const pattern = textSizePatterns[i];
+        const match = textContent.match(pattern);
+        if (match) {
+          console.log(`🎯 FALLBACK SIZE FOUND with pattern ${i}:`, match[0]);
+          console.log(`🎯 FALLBACK SIZE EXTRACTED:`, match[1]);
+          
+          let size = match[1].trim();
+          if (size.match(/^\d+(?:\.\d+)?$/)) {
+            size = `US ${size}`;
+          } else if (size.match(/^[XSMLW]{1,3}$/)) {
+            size = `US ${size}`;
+          }
+          orderInfo.size = size;
+          textSizeFound = true;
+          break;
+        }
+      }
+      
+              if (!textSizeFound) {
+          console.log('❌ FALLBACK SIZE NOT FOUND - No text patterns matched');
+          // Log some key parts of the text content for debugging
+          const textSizeReferences = textContent.match(/[Ss]ize[^<\n]{0,50}/g) || [];
+          console.log('🔍 TEXT SIZE REFERENCES FOUND:', textSizeReferences);
+        }
+      }
+      
+      console.log('🎯 FINAL SIZE RESULT:', orderInfo.size || 'Unknown Size');
+      console.warn('🎯 FINAL SIZE RESULT:', orderInfo.size || 'Unknown Size'); // Use console.warn for visibility
     
     // Extract condition
     const conditionMatch = htmlContent.match(/Condition:\s*([^<\n]+)/i);
