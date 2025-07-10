@@ -207,26 +207,26 @@ export class OrderConfirmationParser {
     console.warn('🔍 SIZE EXTRACTION DEBUG - Product:', orderInfo.product_name); // Use console.warn for visibility
     
     const sizePatterns = [
-      // Standard patterns
+      // Basic size patterns
       /Size:\s*US\s*([XSMLW]*\s*\d+(?:\.\d+)?)/i,
+      /Size:\s*([XSMLW]*\s*\d+(?:\.\d+)?)/i,
       /Size:\s*([XSMLW]+)/i,
-      /<li[^>]*>Size:\s*([^<]+)<\/li>/i,
       
-      // Enhanced patterns for StockX emails
-      /Size\s*US\s*([XSMLW]*\s*\d+(?:\.\d+)?)/i,
-      /Size\s*([XSMLW]*\s*\d+(?:\.\d+)?)/i,
-      /Size\s*([XSMLW]+)/i,
+      // HTML table patterns (improved to handle whitespace and newlines)
+      /<td[^>]*>Size[^<]*<\/td>[\s\n]*<td[^>]*>[\s\n]*US[\s\n]*([XSMLW]*\s*\d+(?:\.\d+)?)/i,
+      /<td[^>]*>Size[^<]*<\/td>[\s\n]*<td[^>]*>[\s\n]*([XSMLW]*\s*\d+(?:\.\d+)?)/i,
+      /<td[^>]*>Size[^<]*<\/td>[\s\n]*<td[^>]*>[\s\n]*([XSMLW]+)/i,
+      
+      // List item patterns (improved to handle whitespace and newlines)
+      /<li[^>]*>Size:[\s\n]*US[\s\n]*([XSMLW]*\s*\d+(?:\.\d+)?)<\/li>/i,
+      /<li[^>]*>Size:[\s\n]*([XSMLW]*\s*\d+(?:\.\d+)?)<\/li>/i,
+      /<li[^>]*>Size:[\s\n]*([XSMLW]+)<\/li>/i,
       
       // Subject line patterns (common in StockX emails)
       /\(Size\s*US?\s*([XSMLW]*\s*\d+(?:\.\d+)?)\)/i,
       /\(Size\s*([XSMLW]+)\)/i,
       
-      // HTML table patterns
-      /<td[^>]*>Size[^<]*<\/td>\s*<td[^>]*>\s*US\s*([XSMLW]*\s*\d+(?:\.\d+)?)/i,
-      /<td[^>]*>Size[^<]*<\/td>\s*<td[^>]*>\s*([XSMLW]*\s*\d+(?:\.\d+)?)/i,
-      /<td[^>]*>Size[^<]*<\/td>\s*<td[^>]*>\s*([XSMLW]+)/i,
-      
-      // Flexible patterns for various formats
+      // Alternative formats
       /Size[:\s]+US[:\s]+([XSMLW]*\s*\d+(?:\.\d+)?)/i,
       /Size[:\s]+([XSMLW]*\s*\d+(?:\.\d+)?)/i,
       /Size[:\s]+([XSMLW]+)/i,
@@ -235,9 +235,30 @@ export class OrderConfirmationParser {
       /Size\s*US\s*([XSMLW]*\s*\d+(?:\.\d+)?)\s*\(Women's\)/i,
       /Size\s*([XSMLW]*\s*\d+(?:\.\d+)?)\s*\(Women's\)/i,
       
-      // Alternative formats
+      // Direct size display patterns
+      /<td[^>]*style[^>]*font-weight:\s*600[^>]*>([XSMLW]*\s*\d+(?:\.\d+)?)<\/td>/i,
+      /<td[^>]*>([XSMLW]*\s*\d+(?:\.\d+)?)<\/td>/i,
+      
+      // Flexible patterns for various formats
       /\bUS\s*([XSMLW]*\s*\d+(?:\.\d+)?)\b/i,
-      /\b([XSMLW]{1,3})\s*(?:Size|US)\b/i
+      /\b([XSMLW]{1,3})\s*(?:Size|US)\b/i,
+      
+      // Span and div patterns
+      /<span[^>]*>Size:\s*US\s*([XSMLW]*\s*\d+(?:\.\d+)?)<\/span>/i,
+      /<span[^>]*>Size:\s*([XSMLW]*\s*\d+(?:\.\d+)?)<\/span>/i,
+      /<div[^>]*>Size:\s*US\s*([XSMLW]*\s*\d+(?:\.\d+)?)<\/div>/i,
+      /<div[^>]*>Size:\s*([XSMLW]*\s*\d+(?:\.\d+)?)<\/div>/i,
+      
+      // More comprehensive patterns for table cells with any content
+      /<td[^>]*>[\s\n]*([XSMLW]{1,4})[\s\n]*<\/td>/i,
+      /<td[^>]*>[\s\n]*US[\s\n]+([XSMLW]{1,4})[\s\n]*<\/td>/i,
+      /<td[^>]*>[\s\n]*US[\s\n]+(\d+(?:\.\d+)?)[\s\n]*<\/td>/i,
+      
+      // Direct list patterns for simple cases
+      /<li[^>]*>[\s\n]*Size:[\s\n]*US[\s\n]*([XSMLW]+)[\s\n]*<\/li>/i,
+      
+      // Legacy patterns for backwards compatibility
+      /<li[^>]*>Size:\s*([^<]+)<\/li>/i
     ];
     
     let sizeFound = false;
@@ -255,6 +276,12 @@ export class OrderConfirmationParser {
           size = `US ${size}`;
         } else if (size.match(/^[XSMLW]{1,3}$/)) {
           size = `US ${size}`;
+        }
+        
+        // Skip if size is "15" as this is often a parsing error
+        if (size === "15" || size === "US 15") {
+          console.log(`⚠️ Skipping size "15" as it's likely a parsing error`);
+          continue;
         }
         
         orderInfo.size = size;
@@ -295,6 +322,13 @@ export class OrderConfirmationParser {
           } else if (size.match(/^[XSMLW]{1,3}$/)) {
             size = `US ${size}`;
           }
+          
+          // Skip if size is "15" as this is often a parsing error
+          if (size === "15" || size === "US 15") {
+            console.log(`⚠️ Skipping fallback size "15" as it's likely a parsing error`);
+            continue;
+          }
+          
           orderInfo.size = size;
           textSizeFound = true;
           break;
