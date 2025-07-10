@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Camera, Package, CheckCircle, AlertTriangle, RotateCcw, Volume2 } from 'lucide-react';
-import { BrowserMultiFormatReader, NotFoundException } from '@zxing/library';
+import { X, Camera, Package, CheckCircle, AlertTriangle, RotateCcw, Volume2, Loader } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 
 interface PackageScannerModalProps {
@@ -11,6 +10,9 @@ interface PackageScannerModalProps {
   onScanComplete: (trackingNumber: string, packageType: 'UPS' | 'FedEx' | 'Other') => void;
   purchases: any[];
 }
+
+// Store the library reference
+let Quagga: any = null;
 
 const PackageScannerModal = ({ isOpen, onClose, onScanComplete, purchases }: PackageScannerModalProps) => {
   const { currentTheme } = useTheme();
@@ -23,14 +25,38 @@ const PackageScannerModal = ({ isOpen, onClose, onScanComplete, purchases }: Pac
   const [matchedPurchase, setMatchedPurchase] = useState<any | null>(null);
   const [packageType, setPackageType] = useState<'UPS' | 'FedEx' | 'Other'>('Other');
   const [audioEnabled, setAudioEnabled] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [manualInput, setManualInput] = useState('');
+  const [showManualInput, setShowManualInput] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const scannerElementRef = useRef<HTMLDivElement>(null);
   const cameraStream = useRef<MediaStream | null>(null);
-  const zxingReader = useRef<BrowserMultiFormatReader | null>(null);
+  const isQuaggaInitialized = useRef(false);
   const detectionHashRef = useRef<{ [key: string]: number }>({});
   const scanningRef = useRef(false);
   
-  const REQUIRED_DETECTIONS = 2; // Reduce for faster scanning
+  const REQUIRED_DETECTIONS = 2;
+
+  // Initialize QuaggaJS library
+  useEffect(() => {
+    const loadQuagga = async () => {
+      try {
+        if (typeof window !== 'undefined' && !Quagga) {
+          const QuaggaModule = await import('quagga');
+          Quagga = QuaggaModule.default;
+          console.log('📚 QuaggaJS loaded successfully');
+        }
+      } catch (error) {
+        console.error('Failed to load QuaggaJS:', error);
+      }
+    };
+
+    if (isOpen) {
+      loadQuagga();
+    }
+  }, [isOpen]);
 
   // Audio feedback
   const playSound = (type: 'scan' | 'success' | 'error') => {
@@ -94,78 +120,169 @@ const PackageScannerModal = ({ isOpen, onClose, onScanComplete, purchases }: Pac
     });
   };
 
-  // Initialize camera and scanner
-  const startScanning = async () => {
+  // Initialize camera with better error handling
+  const initializeCamera = async () => {
     try {
       setPermissionState('requesting');
       setError('');
-      setScanStatus('scanning');
-      setScannedResult(null);
-      setMatchedPurchase(null);
-      detectionHashRef.current = {};
+      setIsLoading(true);
 
-      // Get camera stream with mobile-optimized constraints
-      const stream = await navigator.mediaDevices.getUserMedia({
+      console.log('📷 Requesting camera access...');
+
+      // Try different camera constraints for better mobile compatibility
+      const constraints = {
         video: {
-          facingMode: 'environment', // Use back camera on mobile
-          width: { ideal: 1280, max: 1920 },
-          height: { ideal: 720, max: 1080 },
-          frameRate: { ideal: 30, max: 60 }
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280, min: 640, max: 1920 },
+          height: { ideal: 720, min: 480, max: 1080 },
+          frameRate: { ideal: 30, min: 15, max: 60 }
         }
-      });
+      };
+
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (error) {
+        console.warn('Failed with ideal constraints, trying fallback...');
+        // Fallback to simpler constraints
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'environment',
+            width: { min: 320, ideal: 640, max: 1280 },
+            height: { min: 240, ideal: 480, max: 720 }
+          }
+        });
+      }
 
       cameraStream.current = stream;
       setPermissionState('granted');
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-        setIsScanning(true);
-        scanningRef.current = true;
-        startZXingScanning();
+        
+        // Wait for video to load
+        videoRef.current.onloadedmetadata = () => {
+          console.log('📷 Video metadata loaded');
+          if (videoRef.current) {
+            videoRef.current.play().then(() => {
+              console.log('📷 Video playing');
+              setIsScanning(true);
+              setIsLoading(false);
+              startQuaggaScanning();
+            }).catch(error => {
+              console.error('Video play error:', error);
+              setError('Failed to start video playback');
+              setIsLoading(false);
+            });
+          }
+        };
+
+        videoRef.current.onerror = (error) => {
+          console.error('Video error:', error);
+          setError('Video stream error');
+          setIsLoading(false);
+        };
       }
     } catch (error) {
-      console.error('Camera error:', error);
+      console.error('Camera initialization error:', error);
       setPermissionState('denied');
-      setError('Camera access denied. Please enable camera permissions and try again.');
+      setIsLoading(false);
+      
+      if (error.name === 'NotAllowedError') {
+        setError('Camera access denied. Please enable camera permissions and try again.');
+      } else if (error.name === 'NotFoundError') {
+        setError('No camera found. Please check your device has a camera.');
+      } else {
+        setError('Camera access failed. Please try again or use manual input.');
+      }
+      
       playSound('error');
     }
   };
 
-  // ZXing scanning logic
-  const startZXingScanning = () => {
-    if (!zxingReader.current || !videoRef.current || !scanningRef.current) return;
+  // Start QuaggaJS scanning
+  const startQuaggaScanning = async () => {
+    if (!Quagga || !videoRef.current || !scannerElementRef.current) {
+      console.error('QuaggaJS not ready');
+      return;
+    }
 
-    const scanFrame = async () => {
-      if (!scanningRef.current || !videoRef.current) return;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        Quagga.init({
+          inputStream: {
+            name: "Live",
+            type: "LiveStream",
+            target: scannerElementRef.current,
+            constraints: {
+              video: {
+                facingMode: "environment",
+                width: { min: 320, ideal: 640, max: 1280 },
+                height: { min: 240, ideal: 480, max: 720 }
+              }
+            }
+          },
+          decoder: {
+            readers: [
+              "code_128_reader",
+              "ean_reader",
+              "ean_8_reader",
+              "code_39_reader",
+              "code_39_vin_reader",
+              "codabar_reader",
+              "upc_reader",
+              "upc_e_reader",
+              "i2of5_reader"
+            ]
+          },
+          locate: true,
+          locator: {
+            patchSize: "medium",
+            halfSample: true
+          },
+          numOfWorkers: 2,
+          frequency: 10,
+          debug: false
+        }, (err) => {
+          if (err) {
+            console.error('QuaggaJS init error:', err);
+            reject(err);
+          } else {
+            console.log('✅ QuaggaJS initialized');
+            resolve();
+          }
+        });
+      });
 
-      try {
-        const result = await zxingReader.current!.decodeOnceFromVideoDevice(
-          undefined,
-          videoRef.current
-        );
-
-        if (result && result.getText()) {
-          const scannedCode = result.getText().trim();
-          handleBarcodeDetection(scannedCode);
+      scanningRef.current = true;
+      isQuaggaInitialized.current = true;
+      
+      Quagga.start();
+      
+      // Set up detection handler
+      Quagga.onDetected((result: any) => {
+        if (result && result.codeResult && result.codeResult.code) {
+          const code = result.codeResult.code.trim();
+          const confidence = result.codeResult.startInfo?.error || 0;
+          
+          // Only process high-confidence results
+          if (confidence < 0.5) {
+            handleBarcodeDetection(code);
+          }
         }
-      } catch (error) {
-        if (!(error instanceof NotFoundException)) {
-          console.warn('ZXing scan error:', error);
-        }
-      }
+      });
 
-      if (scanningRef.current) {
-        setTimeout(scanFrame, 100); // Scan every 100ms
-      }
-    };
-
-    scanFrame();
+    } catch (error) {
+      console.error('QuaggaJS setup error:', error);
+      setError('Scanner initialization failed. Please try again.');
+    }
   };
 
   // Handle barcode detection with confidence tracking
   const handleBarcodeDetection = (code: string) => {
     if (!scanningRef.current || scannedResult) return;
+
+    console.log('🔍 Barcode detected:', code);
 
     // Update detection count
     detectionHashRef.current[code] = (detectionHashRef.current[code] || 0) + 1;
@@ -179,6 +296,12 @@ const PackageScannerModal = ({ isOpen, onClose, onScanComplete, purchases }: Pac
       setScannedResult(code);
       setScanStatus('detected');
       playSound('scan');
+
+      // Stop scanning
+      if (isQuaggaInitialized.current && Quagga) {
+        Quagga.stop();
+        isQuaggaInitialized.current = false;
+      }
 
       // Detect package type
       const type = detectPackageType(code);
@@ -204,19 +327,25 @@ const PackageScannerModal = ({ isOpen, onClose, onScanComplete, purchases }: Pac
 
   // Stop scanning
   const stopScanning = () => {
+    console.log('🛑 Stopping scanner...');
     scanningRef.current = false;
     setIsScanning(false);
 
     if (cameraStream.current) {
-      cameraStream.current.getTracks().forEach(track => track.stop());
+      cameraStream.current.getTracks().forEach(track => {
+        track.stop();
+        console.log('📷 Camera track stopped');
+      });
       cameraStream.current = null;
     }
 
-    if (zxingReader.current) {
+    if (isQuaggaInitialized.current && Quagga) {
       try {
-        zxingReader.current.reset();
+        Quagga.stop();
+        isQuaggaInitialized.current = false;
+        console.log('📚 QuaggaJS stopped');
       } catch (error) {
-        console.warn('ZXing reset error:', error);
+        console.warn('QuaggaJS stop error:', error);
       }
     }
   };
@@ -237,6 +366,9 @@ const PackageScannerModal = ({ isOpen, onClose, onScanComplete, purchases }: Pac
     setScanStatus('scanning');
     setDetectionProgress(null);
     setError('');
+    setIsLoading(false);
+    setShowManualInput(false);
+    setManualInput('');
     onClose();
   };
 
@@ -248,31 +380,47 @@ const PackageScannerModal = ({ isOpen, onClose, onScanComplete, purchases }: Pac
     setScanStatus('scanning');
     setDetectionProgress(null);
     setError('');
+    setIsLoading(false);
     detectionHashRef.current = {};
     
     // Restart scanning
     setTimeout(() => {
-      startScanning();
+      initializeCamera();
     }, 500);
+  };
+
+  // Handle manual input
+  const handleManualSubmit = () => {
+    if (!manualInput.trim()) return;
+
+    const code = manualInput.trim();
+    setScannedResult(code);
+    setScanStatus('detected');
+    
+    const type = detectPackageType(code);
+    setPackageType(type);
+    
+    const match = findMatchingPurchase(code);
+    setMatchedPurchase(match);
+    
+    if (match) {
+      setScanStatus('success');
+      playSound('success');
+    } else {
+      setScanStatus('no-match');
+    }
+    
+    setShowManualInput(false);
   };
 
   // Initialize on open
   useEffect(() => {
     if (isOpen) {
-      zxingReader.current = new BrowserMultiFormatReader();
-      startScanning();
+      initializeCamera();
     }
 
     return () => {
       stopScanning();
-      if (zxingReader.current) {
-        try {
-          zxingReader.current.reset();
-          zxingReader.current = null;
-        } catch (error) {
-          console.warn('Cleanup error:', error);
-        }
-      }
     };
   }, [isOpen]);
 
@@ -322,45 +470,77 @@ const PackageScannerModal = ({ isOpen, onClose, onScanComplete, purchases }: Pac
           </div>
         </div>
 
-        {/* Camera View */}
-        <div className="flex-1 relative bg-black">
-          {permissionState === 'requesting' && (
+        {/* Camera/Scanner Area */}
+        <div className="flex-1 relative bg-black overflow-hidden">
+          {/* Loading State */}
+          {isLoading && (
             <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <Camera className="w-12 h-12 text-white mx-auto mb-4 animate-pulse" />
-                <p className="text-white">Requesting camera access...</p>
+              <div className="text-center text-white">
+                <Loader className="w-12 h-12 mx-auto mb-4 animate-spin" />
+                <p>Starting camera...</p>
               </div>
             </div>
           )}
 
+          {/* Permission Requesting */}
+          {permissionState === 'requesting' && !isLoading && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center text-white">
+                <Camera className="w-12 h-12 mx-auto mb-4 animate-pulse" />
+                <p>Requesting camera access...</p>
+              </div>
+            </div>
+          )}
+
+          {/* Permission Denied */}
           {permissionState === 'denied' && (
             <div className="absolute inset-0 flex items-center justify-center p-6">
               <div className="text-center text-white">
                 <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-red-400" />
                 <p className="mb-4">{error}</p>
-                <button
-                  onClick={startScanning}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-                >
-                  Try Again
-                </button>
+                <div className="space-y-2">
+                  <button
+                    onClick={initializeCamera}
+                    className="block w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                  >
+                    Try Again
+                  </button>
+                  <button
+                    onClick={() => setShowManualInput(true)}
+                    className="block w-full px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg transition-colors"
+                  >
+                    Enter Manually
+                  </button>
+                </div>
               </div>
             </div>
           )}
 
-          {isScanning && (
+          {/* Scanner Elements */}
+          <div className="absolute inset-0">
             <video
               ref={videoRef}
               className="w-full h-full object-cover"
               autoPlay
               playsInline
               muted
+              style={{ display: isScanning ? 'block' : 'none' }}
             />
-          )}
+            <div 
+              ref={scannerElementRef}
+              className="absolute inset-0"
+              style={{ display: isScanning ? 'block' : 'none' }}
+            />
+            <canvas
+              ref={canvasRef}
+              className="absolute inset-0 w-full h-full"
+              style={{ display: 'none' }}
+            />
+          </div>
 
           {/* Scanning Overlay */}
           {isScanning && (
-            <div className="absolute inset-0">
+            <div className="absolute inset-0 pointer-events-none">
               {/* Scanner frame */}
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="relative">
@@ -401,6 +581,51 @@ const PackageScannerModal = ({ isOpen, onClose, onScanComplete, purchases }: Pac
               </div>
             </div>
           )}
+
+          {/* Manual Input Modal */}
+          {showManualInput && (
+            <div className="absolute inset-0 bg-black bg-opacity-80 flex items-center justify-center p-4">
+              <div className={`${currentTheme.colors.cardBackground} rounded-lg p-6 w-full max-w-sm`}>
+                <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary} mb-4`}>
+                  Enter Tracking Number
+                </h3>
+                <input
+                  type="text"
+                  value={manualInput}
+                  onChange={(e) => setManualInput(e.target.value)}
+                  placeholder="1Z123456789012345 or 1234567890"
+                  className={`w-full p-3 border rounded-lg mb-4 ${
+                    currentTheme.name === 'Neon' 
+                      ? 'bg-black/20 border-white/20 text-white' 
+                      : 'bg-white border-gray-300 text-gray-900'
+                  }`}
+                  autoFocus
+                />
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => setShowManualInput(false)}
+                    className={`flex-1 py-2 px-4 rounded-lg transition-colors ${
+                      currentTheme.name === 'Neon' 
+                        ? 'bg-white/10 hover:bg-white/20 text-gray-300' 
+                        : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                    }`}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleManualSubmit}
+                    className={`flex-1 py-2 px-4 rounded-lg transition-colors ${
+                      currentTheme.name === 'Neon' 
+                        ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600' 
+                        : 'bg-gradient-to-r from-blue-500 to-green-500 hover:from-blue-600 hover:to-green-600'
+                    } text-white font-medium`}
+                  >
+                    Submit
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Status Bar */}
@@ -409,7 +634,7 @@ const PackageScannerModal = ({ isOpen, onClose, onScanComplete, purchases }: Pac
             ? 'bg-black/20 border-t border-white/10' 
             : 'bg-gray-50 border-t border-gray-200'
         }`}>
-          {scanStatus === 'scanning' && (
+          {scanStatus === 'scanning' && !isLoading && (
             <div className="text-center">
               <p className={`${currentTheme.colors.textPrimary} mb-2`}>
                 Point camera at package barcode
@@ -419,6 +644,12 @@ const PackageScannerModal = ({ isOpen, onClose, onScanComplete, purchases }: Pac
                   Detecting: {detectionProgress.code} ({detectionProgress.count}/{REQUIRED_DETECTIONS})
                 </p>
               )}
+              <button
+                onClick={() => setShowManualInput(true)}
+                className={`mt-2 text-sm ${currentTheme.colors.accent} hover:underline`}
+              >
+                Enter manually instead
+              </button>
             </div>
           )}
 
