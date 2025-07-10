@@ -105,11 +105,22 @@ const LoadingPage = () => {
     try {
       setGmailSyncStatus('checking');
       
+      // Debug: Check what cookies we have
+      console.log('🍪 LOADING: Checking available cookies...');
+      if (typeof document !== 'undefined') {
+        const cookies = document.cookie;
+        console.log('🍪 LOADING: Browser cookies:', cookies);
+        console.log('🍪 LOADING: Gmail connected cookie:', cookies.includes('gmail_connected=true'));
+        console.log('🍪 LOADING: Has access token:', cookies.includes('gmail_access_token'));
+      }
+      
       // First check if Gmail is connected
+      console.log('🔍 LOADING: Checking Gmail status...');
       const statusResponse = await fetch('/api/gmail/status');
       
       if (statusResponse.ok) {
         const statusData = await statusResponse.json();
+        console.log('📊 LOADING: Gmail status response:', statusData);
         
         if (statusData.connected && !statusData.needsReconnect) {
           setGmailSyncStatus('syncing');
@@ -137,6 +148,7 @@ const LoadingPage = () => {
         }
       } else {
         console.log('📭 LOADING: Gmail status check failed, skipping sync');
+        console.log('📭 LOADING: Status response:', statusResponse.status, statusResponse.statusText);
         setGmailSyncStatus('skipped');
       }
     } catch (error) {

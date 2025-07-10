@@ -39,10 +39,13 @@ export async function GET(request: NextRequest) {
     const redirectUrl = new URL('/dashboard?gmail_connected=true', baseUrl);
     const response = NextResponse.redirect(redirectUrl);
     
+    // Determine if we're in production (Vercel) or development
+    const isProduction = baseUrl.includes('vercel.app') || baseUrl.includes('resell-dashboard');
+    
     // Set cookies with extended duration for better user experience
     const cookieOptions = {
-      httpOnly: false, // Allow client-side access for debugging in development
-      secure: false, // Allow localhost (non-HTTPS)
+      httpOnly: false, // Allow client-side access for status checking
+      secure: isProduction, // Use secure cookies in production
       sameSite: 'lax' as const,
       path: '/',
       maxAge: 7 * 24 * 60 * 60, // 7 days for access token
@@ -64,7 +67,7 @@ export async function GET(request: NextRequest) {
     // Also store in a more accessible format for immediate use
     response.cookies.set('gmail_connected', 'true', {
       httpOnly: false,
-      secure: false,
+      secure: isProduction,
       sameSite: 'lax',
       path: '/',
       maxAge: 7 * 24 * 60 * 60 // 7 days to match access token
@@ -73,7 +76,7 @@ export async function GET(request: NextRequest) {
     // Store connection timestamp for 7-day expiry tracking
     response.cookies.set('gmail_connected_at', Date.now().toString(), {
       httpOnly: false,
-      secure: false,
+      secure: isProduction,
       sameSite: 'lax',
       path: '/',
       maxAge: 7 * 24 * 60 * 60 // 7 days
@@ -81,6 +84,14 @@ export async function GET(request: NextRequest) {
 
     console.log('✅ Gmail tokens stored in response cookies');
     console.log('🔄 Redirecting to:', redirectUrl.toString());
+    
+    // Debug: Log cookie details for troubleshooting
+    console.log('🍪 CALLBACK: Cookie details:', {
+      isProduction,
+      baseUrl,
+      cookieOptions,
+      hasRefreshToken: !!tokens.refresh_token
+    });
 
     return response;
     
