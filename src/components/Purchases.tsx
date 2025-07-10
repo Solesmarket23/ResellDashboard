@@ -13,6 +13,7 @@ import PackageScannerModal from './PackageScannerModal';
 import GmailConnector from './GmailConnector';
 import EmailParsingSettings from './EmailParsingSettings';
 import ImagePreviewModal from './ImagePreviewModal';
+import AutoEmailSync from './AutoEmailSync';
 
 const Purchases = () => {
   const [sortBy, setSortBy] = useState('Purchase Date');
@@ -685,16 +686,28 @@ const Purchases = () => {
   return (
     <div className={`flex-1 ${currentTheme.colors.background} p-8`}>
       {/* Gmail Connection Status */}
-      <div className="mb-6">
-                    <GmailConnector 
-              key={currentTheme.name} 
-              onConnectionChange={(connected) => {
-                setGmailConnected(connected);
-                if (connected) {
-                  setHasBeenReset(false); // Reset flag when Gmail connects
-                }
-              }} 
-            />
+      <div className="mb-6 space-y-4">
+        <GmailConnector 
+          key={currentTheme.name} 
+          onConnectionChange={(connected) => {
+            setGmailConnected(connected);
+            if (connected) {
+              setHasBeenReset(false); // Reset flag when Gmail connects
+            }
+          }} 
+        />
+        
+        {/* Auto Email Sync */}
+        <AutoEmailSync 
+          isGmailConnected={gmailConnected}
+          onNewPurchases={(count) => {
+            console.log(`🎉 Auto-sync found ${count} purchases`);
+            // Optionally refresh the purchases list
+            if (count > 0) {
+              // Could trigger a refresh here
+            }
+          }}
+        />
       </div>
 
       {/* Header */}
