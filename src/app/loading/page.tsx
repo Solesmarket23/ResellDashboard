@@ -126,9 +126,9 @@ const LoadingPage = () => {
           setGmailSyncStatus('syncing');
           console.log('🔄 LOADING: Starting Gmail sync during startup...');
           
-          // Trigger Gmail sync
+          // Trigger Gmail sync (using GET method)
           const syncResponse = await fetch('/api/gmail/purchases?limit=50', {
-            method: 'POST',
+            method: 'GET',
             headers: {
               'Content-Type': 'application/json',
             },
