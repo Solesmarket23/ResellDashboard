@@ -485,7 +485,11 @@ function parsePurchaseEmail(email: any, config: any) {
       'You Sold Your Flex Item',
       'An Update Regarding Your Sale',
       'Your Sale is Confirmed',
-      'Your Payout is Ready'
+      'Your Payout is Ready',
+      'Reminder: Ship your StockX Order',
+      'Ship your StockX Order',
+      'Time to Ship',
+      'Ship Your Item'
     ];
     
     for (const pattern of salesRelatedPatterns) {
