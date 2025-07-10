@@ -149,6 +149,8 @@ function generateQueries(config: any) {
   queries.push('subject:"Order Shipped"');
   queries.push('subject:"Encountered a Delay"');
   queries.push('subject:"Refund Issued:"');
+  queries.push('subject:"Xpress Ship Order Delivered:"');
+  queries.push('subject:"Order Delivered:"');
   
   // Add fallback queries for subject patterns
   const fallbackQueries = [];
@@ -185,18 +187,24 @@ const STATUS_PRIORITIES = {
 
 // Determine email category and status based on subject line
 function categorizeEmail(subject: string, config: any) {
+  console.log(`🎯 CATEGORIZATION DEBUG: Processing subject "${subject}"`);
+  
   for (const [categoryKey, category] of Object.entries(config.emailCategories)) {
     for (const pattern of (category as any).subjectPatterns) {
+      console.log(`🔍 CATEGORIZATION DEBUG: Checking pattern "${pattern}" against "${subject}"`);
       if (subject.toLowerCase().includes(pattern.toLowerCase())) {
-        return {
+        const result = {
           status: (category as any).status,
           statusColor: (category as any).statusColor,
           priority: STATUS_PRIORITIES[(category as any).status] || 1
         };
+        console.log(`✅ CATEGORIZATION DEBUG: MATCH! Pattern "${pattern}" -> Status: ${result.status} (priority ${result.priority})`);
+        return result;
       }
     }
   }
   // Default if no match found
+  console.log(`❌ CATEGORIZATION DEBUG: No patterns matched for "${subject}" - defaulting to Ordered`);
   return {
     status: 'Ordered',
     statusColor: 'orange',
@@ -228,6 +236,15 @@ function consolidateOrderEmails(purchases: any[]) {
   for (const [orderNumber, orderEmails] of orderMap.entries()) {
     console.log(`📦 CONSOLIDATION DEBUG: Order ${orderNumber} has ${orderEmails.length} emails`);
     
+    // Special debugging for the specific order user mentioned
+    if (orderNumber === '01-3KF7CE560J') {
+      console.log(`🚨 SPECIAL DEBUG: Order 01-3KF7CE560J - This should be DELIVERED!`);
+      orderEmails.forEach((email, idx) => {
+        const priority = STATUS_PRIORITIES[email.status] || 1;
+        console.log(`  🔍 Email ${idx}: "${email.subject}" -> Status: ${email.status} (priority ${priority})`);
+      });
+    }
+    
     if (orderEmails.length === 1) {
       consolidatedPurchases.push(orderEmails[0]);
       console.log(`✅ Single email for order ${orderNumber}: ${orderEmails[0].status}`);
@@ -253,6 +270,11 @@ function consolidateOrderEmails(purchases: any[]) {
       
       console.log(`🎯 Selected highest priority: ${primaryEmail.status} (priority ${STATUS_PRIORITIES[primaryEmail.status] || 1})`);
       console.log(`📋 All statuses for order ${orderNumber}:`, primaryEmail.allStatuses);
+      
+      // Special debugging for the specific order user mentioned
+      if (orderNumber === '01-3KF7CE560J') {
+        console.log(`🚨 FINAL STATUS for 01-3KF7CE560J: ${primaryEmail.status} - This should be DELIVERED!`);
+      }
       
       consolidatedPurchases.push(primaryEmail);
     }
