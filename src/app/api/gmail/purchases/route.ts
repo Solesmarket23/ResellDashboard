@@ -35,7 +35,10 @@ function getDefaultConfig() {
         subjectPatterns: [
           "Order Delivered:",
           "Xpress Ship Order Delivered:",
-          "Order delivered"
+          "Order delivered",
+          "Xpress Order Delivered:",
+          "Your order has been delivered",
+          "Package delivered"
         ]
       },
       orderDelayed: {
@@ -149,8 +152,13 @@ function generateQueries(config: any) {
   queries.push('subject:"Order Shipped"');
   queries.push('subject:"Encountered a Delay"');
   queries.push('subject:"Refund Issued:"');
+  
+  // Enhanced delivery-focused queries
   queries.push('subject:"Xpress Ship Order Delivered:"');
   queries.push('subject:"Order Delivered:"');
+  queries.push('subject:"Xpress Order Delivered:"');
+  queries.push('from:stockx.com AND subject:"delivered"');
+  queries.push('from:noreply@stockx.com AND subject:"delivered"');
   
   // Add fallback queries for subject patterns
   const fallbackQueries = [];
@@ -591,12 +599,23 @@ function parsePurchaseEmail(email: any, config: any) {
     }
 
     // SPECIAL OVERRIDE: StockX Delivery Status Rule
-    // IF email is from "noreply@stockx.com" AND subject contains delivery keywords
+    // IF email is from StockX AND subject contains delivery keywords
     // THEN force status to "Delivered" (this overrides all other logic)
     let category;
-    if (fromHeader.includes('noreply@stockx.com') && 
-        (subjectHeader.includes('Xpress Ship Order Delivered:') || 
-         subjectHeader.includes('Order Delivered:'))) {
+    const isStockXEmail = fromHeader.includes('stockx.com') || fromHeader.includes('noreply@stockx.com');
+    const deliveryKeywords = [
+      'Xpress Ship Order Delivered:',
+      'Order Delivered:',
+      'Xpress Order Delivered:',
+      'has been delivered',
+      'package delivered'
+    ];
+    
+    const isDeliveryEmail = deliveryKeywords.some(keyword => 
+      subjectHeader.toLowerCase().includes(keyword.toLowerCase())
+    );
+    
+    if (isStockXEmail && isDeliveryEmail) {
       console.log(`🚚 DELIVERY OVERRIDE: StockX delivery email detected - forcing Delivered status`);
       console.log(`🚚 Email: "${subjectHeader}" from ${fromHeader}`);
       console.log(`🚚 Order Number: ${orderInfo.order_number}`);
@@ -615,6 +634,17 @@ function parsePurchaseEmail(email: any, config: any) {
     } else {
       // Use normal categorization for non-delivery emails
       category = categorizeEmail(subjectHeader, config);
+      
+      // Additional debugging for the specific order
+      if (orderInfo.order_number === '01-3KF7CE560J') {
+        console.log(`🎯 SPECIAL DEBUG for 01-3KF7CE560J:`);
+        console.log(`  - Subject: "${subjectHeader}"`);
+        console.log(`  - From: "${fromHeader}"`);
+        console.log(`  - Is StockX: ${isStockXEmail}`);
+        console.log(`  - Is Delivery: ${isDeliveryEmail}`);
+        console.log(`  - Category Status: ${category.status}`);
+        console.log(`  - Category Priority: ${category.priority}`);
+      }
     }
 
     // Log if we found a shipped order
