@@ -148,6 +148,7 @@ function generateQueries(config: any) {
   queries.push('subject:"Order Confirmed"');
   queries.push('subject:"Order Shipped"');
   queries.push('subject:"Encountered a Delay"');
+  queries.push('subject:"Refund Issued:"');
   
   // Add fallback queries for subject patterns
   const fallbackQueries = [];
@@ -207,21 +208,37 @@ function categorizeEmail(subject: string, config: any) {
 function consolidateOrderEmails(purchases: any[]) {
   const orderMap = new Map();
   
+  console.log('🔄 CONSOLIDATION DEBUG: Starting consolidation with', purchases.length, 'purchases');
+  
   // Group emails by order number
-  purchases.forEach(purchase => {
+  purchases.forEach((purchase, index) => {
     const orderNumber = purchase.orderNumber;
+    console.log(`📧 CONSOLIDATION DEBUG [${index}]: Order ${orderNumber} - Status: ${purchase.status} - Subject: ${purchase.subject}`);
+    
     if (!orderMap.has(orderNumber)) {
       orderMap.set(orderNumber, []);
     }
     orderMap.get(orderNumber).push(purchase);
   });
   
+  console.log('🗂️ CONSOLIDATION DEBUG: Grouped into', orderMap.size, 'unique orders');
+  
   // For each order, select the email with highest priority status
   const consolidatedPurchases = [];
   for (const [orderNumber, orderEmails] of orderMap.entries()) {
+    console.log(`📦 CONSOLIDATION DEBUG: Order ${orderNumber} has ${orderEmails.length} emails`);
+    
     if (orderEmails.length === 1) {
       consolidatedPurchases.push(orderEmails[0]);
+      console.log(`✅ Single email for order ${orderNumber}: ${orderEmails[0].status}`);
     } else {
+      // Log all emails for this order
+      console.log(`🔄 Multiple emails for order ${orderNumber}:`);
+      orderEmails.forEach((email, idx) => {
+        const priority = STATUS_PRIORITIES[email.status] || 1;
+        console.log(`  [${idx}] ${email.status} (priority ${priority}) - ${email.subject}`);
+      });
+      
       // Sort by priority (highest first) and take the first one
       const sortedEmails = orderEmails.sort((a, b) => {
         const priorityA = STATUS_PRIORITIES[a.status] || 1;
@@ -234,10 +251,14 @@ function consolidateOrderEmails(purchases: any[]) {
       primaryEmail.consolidatedFrom = sortedEmails.length;
       primaryEmail.allStatuses = sortedEmails.map(e => e.status);
       
+      console.log(`🎯 Selected highest priority: ${primaryEmail.status} (priority ${STATUS_PRIORITIES[primaryEmail.status] || 1})`);
+      console.log(`📋 All statuses for order ${orderNumber}:`, primaryEmail.allStatuses);
+      
       consolidatedPurchases.push(primaryEmail);
     }
   }
   
+  console.log('✅ CONSOLIDATION DEBUG: Final result -', consolidatedPurchases.length, 'consolidated purchases');
   return consolidatedPurchases;
 }
 
@@ -564,6 +585,37 @@ function parsePurchaseEmail(email: any, config: any) {
     if (category.status === 'Canceled') {
       console.log(`❌ REFUNDED ORDER FOUND: ${orderInfo.order_number} - "${subjectHeader}"`);
     }
+    
+    // SPECIAL DEBUG: Log order number extraction for all emails
+    console.log(`🔍 ORDER NUMBER DEBUG: "${subjectHeader}" -> Order Number: "${orderInfo.order_number}"`);
+    
+    // Enhanced order number extraction for refund emails
+    if (subjectHeader.toLowerCase().includes('refund issued:') && !orderInfo.order_number) {
+      console.log(`🔍 REFUND EMAIL: Attempting enhanced order number extraction...`);
+      
+      // Try to extract order number from email body or other patterns
+      const emailBody = getEmailBody(email);
+      const orderNumberPatterns = [
+        /Order[:\s#]*([0-9\-]+)/i,
+        /Order Number[:\s]*([0-9\-]+)/i,
+        /Order ID[:\s]*([0-9\-]+)/i,
+        /([0-9]{8}-[0-9]{8})/i, // StockX format
+        /([0-9]{8})/i // Single number format
+      ];
+      
+      for (const pattern of orderNumberPatterns) {
+        const match = emailBody.match(pattern);
+        if (match) {
+          orderInfo.order_number = match[1];
+          console.log(`🎯 REFUND EMAIL: Found order number in body: ${orderInfo.order_number}`);
+          break;
+        }
+      }
+      
+      if (!orderInfo.order_number) {
+        console.log(`❌ REFUND EMAIL: Could not extract order number from body`);
+      }
+    }
 
     // Extract brand from product name
     const brand = extractBrand(orderInfo.product_name);
@@ -668,6 +720,30 @@ function getBrandColor(brand: string): string {
     'Sp5der': 'bg-pink-600'
   };
   return brandColors[brand] || 'bg-gray-400';
+}
+
+// Helper function to extract email body content
+function getEmailBody(email: any): string {
+  try {
+    let bodyContent = '';
+    
+    if (email.payload?.parts) {
+      for (const part of email.payload.parts) {
+        if (part.mimeType === 'text/html' || part.mimeType === 'text/plain') {
+          if (part.body?.data) {
+            bodyContent += Buffer.from(part.body.data, 'base64').toString('utf8');
+          }
+        }
+      }
+    } else if (email.payload?.body?.data) {
+      bodyContent = Buffer.from(email.payload.body.data, 'base64').toString('utf8');
+    }
+    
+    return bodyContent;
+  } catch (error) {
+    console.error('Error extracting email body:', error);
+    return '';
+  }
 }
 
 // The old extractPurchaseDetails function has been replaced by the new OrderConfirmationParser
