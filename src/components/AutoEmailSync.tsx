@@ -14,6 +14,8 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
   onNewPurchases 
 }) => {
   const { currentTheme } = useTheme();
+  
+  console.log('🔄 AutoEmailSync component loaded', { isGmailConnected });
   const [isEnabled, setIsEnabled] = useState(false);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [nextSync, setNextSync] = useState<Date | null>(null);

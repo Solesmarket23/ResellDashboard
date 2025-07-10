@@ -698,6 +698,7 @@ const Purchases = () => {
         />
         
         {/* Auto Email Sync */}
+        {console.log('🔄 Rendering AutoEmailSync component', { gmailConnected })}
         <AutoEmailSync 
           isGmailConnected={gmailConnected}
           onNewPurchases={(count) => {
