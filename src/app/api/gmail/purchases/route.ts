@@ -440,7 +440,7 @@ export async function GET(request: NextRequest) {
             const subjectHeader = emailData.data.payload?.headers?.find((h: any) => h.name === 'Subject')?.value || '';
             console.log(`📧 Found email: From="${fromHeader}", Subject="${subjectHeader}"`);
             
-            const purchase = parsePurchaseEmail(emailData.data, config);
+            const purchase = await parsePurchaseEmail(emailData.data, config, gmail);
             if (purchase) {
               console.log(`✅ Parsed purchase: ${purchase.product.name} - ${purchase.orderNumber}`);
               allPurchases.push(purchase);
@@ -519,7 +519,7 @@ export async function GET(request: NextRequest) {
 }
 
 // Replace the old parsePurchaseEmail function with the new implementation
-function parsePurchaseEmail(email: any, config: any) {
+async function parsePurchaseEmail(email: any, config: any, gmail: any) {
   try {
     const fromHeader = email.payload.headers.find((h: any) => h.name === 'From')?.value || '';
     const subjectHeader = email.payload.headers.find((h: any) => h.name === 'Subject')?.value || '';
