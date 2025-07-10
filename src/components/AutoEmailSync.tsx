@@ -138,9 +138,7 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
     return `${diffMins} minutes`;
   };
 
-  if (!isGmailConnected) {
-    return null; // Don't show if Gmail not connected
-  }
+  // Always show the component, but disable it when Gmail not connected
 
   return (
     <div className={`p-4 rounded-lg border ${
@@ -160,21 +158,32 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
         
         <button
           onClick={handleToggle}
+          disabled={!isGmailConnected}
           className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-            isEnabled 
+            !isGmailConnected
               ? currentTheme.name === 'Neon'
-                ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                : 'bg-green-100 text-green-800'
-              : currentTheme.name === 'Neon'
-                ? 'bg-white/10 text-gray-300 border border-white/20'
-                : 'bg-gray-100 text-gray-600'
+                ? 'bg-red-500/20 text-red-400 border border-red-500/30 opacity-50'
+                : 'bg-red-100 text-red-600 opacity-50'
+              : isEnabled 
+                ? currentTheme.name === 'Neon'
+                  ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                  : 'bg-green-100 text-green-800'
+                : currentTheme.name === 'Neon'
+                  ? 'bg-white/10 text-gray-300 border border-white/20'
+                  : 'bg-gray-100 text-gray-600'
           }`}
         >
-          {isEnabled ? 'Enabled' : 'Disabled'}
+          {!isGmailConnected ? 'Gmail Required' : isEnabled ? 'Enabled' : 'Disabled'}
         </button>
       </div>
 
-      {isEnabled && (
+      {!isGmailConnected && (
+        <div className={`text-xs ${currentTheme.colors.textSecondary} mt-2`}>
+          Connect Gmail above to enable automatic email syncing
+        </div>
+      )}
+
+      {isEnabled && isGmailConnected && (
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <span className={`text-xs ${currentTheme.colors.textSecondary}`}>
