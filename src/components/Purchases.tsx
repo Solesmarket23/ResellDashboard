@@ -927,107 +927,248 @@ const Purchases = () => {
 
       {/* Table */}
       <div className={`${currentTheme.colors.cardBackground} rounded-lg shadow-sm ${currentTheme.colors.border} border overflow-hidden`}>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto max-h-[70vh]">
           <table ref={tableRef} className="w-full" style={{ tableLayout: 'fixed' }}>
-            <thead className={`${
+            <thead className={`${{
               currentTheme.name === 'Neon' 
                 ? 'bg-white/5 border-b border-white/10' 
                 : 'bg-gray-50 border-b border-gray-200'
-            }`}>
+            }} sticky top-0 z-10`}>
               <tr className="h-10">
-                <th className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`} style={{ width: `${columnWidths.product}px` }}>
-                  Product
-                  <div 
-                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize ${
-                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50' : 'hover:bg-blue-300'
-                    } opacity-0 hover:opacity-100 transition-opacity`}
-                    onMouseDown={(e) => handleMouseDown(e, 'product')}
-                  />
-                </th>
-                <th className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`} style={{ width: `${columnWidths.orderNumber}px` }}>
-                  Order #
-                  <div 
-                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize ${
-                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50' : 'hover:bg-blue-300'
-                    } opacity-0 hover:opacity-100 transition-opacity`}
-                    onMouseDown={(e) => handleMouseDown(e, 'orderNumber')}
-                  />
-                </th>
-                <th className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`} style={{ width: `${columnWidths.status}px` }}>
-                  Status / Delivery
-                  <div 
-                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize ${
-                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50' : 'hover:bg-blue-300'
-                    } opacity-0 hover:opacity-100 transition-opacity`}
-                    onMouseDown={(e) => handleMouseDown(e, 'status')}
-                  />
-                </th>
-                <th className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`} style={{ width: `${columnWidths.tracking}px` }}>
-                  Tracking
-                  <div 
-                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize ${
-                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50' : 'hover:bg-blue-300'
-                    } opacity-0 hover:opacity-100 transition-opacity`}
-                    onMouseDown={(e) => handleMouseDown(e, 'tracking')}
-                  />
-                </th>
-                <th className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`} style={{ width: `${columnWidths.market}px` }}>
-                  Market
-                  <div 
-                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize ${
-                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50' : 'hover:bg-blue-300'
-                    } opacity-0 hover:opacity-100 transition-opacity`}
-                    onMouseDown={(e) => handleMouseDown(e, 'market')}
-                  />
-                </th>
-                <th className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`} style={{ width: `${columnWidths.price}px` }}>
-                  Price
-                  <div 
-                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize ${
-                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50' : 'hover:bg-blue-300'
-                    } opacity-0 hover:opacity-100 transition-opacity`}
-                    onMouseDown={(e) => handleMouseDown(e, 'price')}
-                  />
-                </th>
-                <th className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer ${
-                  currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
-                }`} style={{ width: `${columnWidths.purchaseDate}px` }}>
-                  <div className="flex items-center h-10">
-                    Purchase Date
-                    <ChevronDown className="w-4 h-4 ml-1" />
+                <th 
+                  className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                  } transition-colors`} 
+                  style={{ width: `${columnWidths.product}px` }}
+                  onClick={() => handleSort('product')}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      Product
+                      <SortIcon column="product" />
+                    </div>
                   </div>
                   <div 
-                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize ${
-                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50' : 'hover:bg-blue-300'
-                    } opacity-0 hover:opacity-100 transition-opacity`}
-                    onMouseDown={(e) => handleMouseDown(e, 'purchaseDate')}
+                    className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                    } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      handleMouseDown(e, 'product');
+                    }}
+                    title="Drag to resize column"
                   />
                 </th>
-                <th className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`} style={{ width: `${columnWidths.dateAdded}px` }}>
-                  Date Added
+                <th 
+                  className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                  } transition-colors`} 
+                  style={{ width: `${columnWidths.orderNumber}px` }}
+                  onClick={() => handleSort('orderNumber')}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      Order #
+                      <SortIcon column="orderNumber" />
+                    </div>
+                  </div>
                   <div 
-                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize ${
-                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50' : 'hover:bg-blue-300'
-                    } opacity-0 hover:opacity-100 transition-opacity`}
-                    onMouseDown={(e) => handleMouseDown(e, 'dateAdded')}
+                    className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                    } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      handleMouseDown(e, 'orderNumber');
+                    }}
+                    title="Drag to resize column"
                   />
                 </th>
-                <th className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`} style={{ width: `${columnWidths.verified}px` }}>
-                  Verified
+                <th 
+                  className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                  } transition-colors`} 
+                  style={{ width: `${columnWidths.status}px` }}
+                  onClick={() => handleSort('status')}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      Status / Delivery
+                      <SortIcon column="status" />
+                    </div>
+                  </div>
                   <div 
-                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize ${
-                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50' : 'hover:bg-blue-300'
-                    } opacity-0 hover:opacity-100 transition-opacity`}
-                    onMouseDown={(e) => handleMouseDown(e, 'verified')}
+                    className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                    } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      handleMouseDown(e, 'status');
+                    }}
+                    title="Drag to resize column"
                   />
                 </th>
-                <th className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`} style={{ width: `${columnWidths.edit}px` }}>
-                  Edit
+                <th 
+                  className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                  } transition-colors`} 
+                  style={{ width: `${columnWidths.tracking}px` }}
+                  onClick={() => handleSort('tracking')}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      Tracking
+                      <SortIcon column="tracking" />
+                    </div>
+                  </div>
                   <div 
-                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize ${
-                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50' : 'hover:bg-blue-300'
-                    } opacity-0 hover:opacity-100 transition-opacity`}
-                    onMouseDown={(e) => handleMouseDown(e, 'edit')}
+                    className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                    } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      handleMouseDown(e, 'tracking');
+                    }}
+                    title="Drag to resize column"
+                  />
+                </th>
+                <th 
+                  className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                  } transition-colors`} 
+                  style={{ width: `${columnWidths.market}px` }}
+                  onClick={() => handleSort('market')}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      Market
+                      <SortIcon column="market" />
+                    </div>
+                  </div>
+                  <div 
+                    className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                    } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      handleMouseDown(e, 'market');
+                    }}
+                    title="Drag to resize column"
+                  />
+                </th>
+                <th 
+                  className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                  } transition-colors`} 
+                  style={{ width: `${columnWidths.price}px` }}
+                  onClick={() => handleSort('price')}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      Price
+                      <SortIcon column="price" />
+                    </div>
+                  </div>
+                  <div 
+                    className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                    } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      handleMouseDown(e, 'price');
+                    }}
+                    title="Drag to resize column"
+                  />
+                </th>
+                <th 
+                  className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                  } transition-colors`} 
+                  style={{ width: `${columnWidths.purchaseDate}px` }}
+                  onClick={() => handleSort('purchaseDate')}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      Purchase Date
+                      <SortIcon column="purchaseDate" />
+                    </div>
+                  </div>
+                  <div 
+                    className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                    } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      handleMouseDown(e, 'purchaseDate');
+                    }}
+                    title="Drag to resize column"
+                  />
+                </th>
+                <th 
+                  className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                  } transition-colors`} 
+                  style={{ width: `${columnWidths.dateAdded}px` }}
+                  onClick={() => handleSort('dateAdded')}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      Date Added
+                      <SortIcon column="dateAdded" />
+                    </div>
+                  </div>
+                  <div 
+                    className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                    } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      handleMouseDown(e, 'dateAdded');
+                    }}
+                    title="Drag to resize column"
+                  />
+                </th>
+                <th 
+                  className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                  } transition-colors`} 
+                  style={{ width: `${columnWidths.verified}px` }}
+                  onClick={() => handleSort('verified')}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      Verified
+                      <SortIcon column="verified" />
+                    </div>
+                  </div>
+                  <div 
+                    className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                    } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      handleMouseDown(e, 'verified');
+                    }}
+                    title="Drag to resize column"
+                  />
+                </th>
+                <th 
+                  className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`} 
+                  style={{ width: `${columnWidths.edit}px` }}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      Edit
+                    </div>
+                  </div>
+                  <div 
+                    className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                    } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      handleMouseDown(e, 'edit');
+                    }}
+                    title="Drag to resize column"
                   />
                 </th>
               </tr>
@@ -1035,7 +1176,7 @@ const Purchases = () => {
             <tbody className={`${currentTheme.colors.cardBackground} ${
               currentTheme.name === 'Neon' ? 'divide-y divide-white/10' : 'divide-y divide-gray-100'
             }`}>
-              {[...purchases, ...manualPurchases].map((purchase) => (
+              {getSortedPurchases().map((purchase) => (
                 <tr 
                   key={purchase.id} 
                   data-purchase-id={purchase.id}
