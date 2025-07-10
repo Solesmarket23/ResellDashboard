@@ -364,17 +364,20 @@ export async function GET(request: NextRequest) {
     const configHeader = request.headers.get('email-config');
     const config = configHeader ? JSON.parse(configHeader) : getDefaultConfig();
 
-    // Get limit parameter for controlled testing (default to 100 to capture more historical emails)
-    const limit = parseInt(url.searchParams.get('limit') || '100');
+    // Get limit parameter for controlled testing (default to 50 to balance coverage vs performance)
+    const limit = parseInt(url.searchParams.get('limit') || '50');
 
     console.log(`Gmail API: Fetching up to ${limit} emails per query`);
 
     // Generate dynamic queries based on configuration
-    const queries = generateQueries(config);
-    console.log(`🔍 SEARCH DEBUG: Generated ${queries.length} search queries:`, queries);
-    console.log(`🔍 SEARCH DEBUG: First few queries:`, queries.slice(0, 5));
+    const allQueries = generateQueries(config);
+    // Limit to first 8 queries to prevent timeout (prioritize most important ones)
+    const queries = allQueries.slice(0, 8);
+    console.log(`🔍 SEARCH DEBUG: Generated ${allQueries.length} search queries, using first ${queries.length}:`, queries);
 
     const allPurchases: any[] = [];
+    let totalProcessedEmails = 0;
+    const maxTotalEmails = 200; // Limit total emails processed across all queries
 
     // Create timeout helper function
     const withTimeout = (promise: Promise<any>, seconds: number) => {
@@ -416,6 +419,12 @@ export async function GET(request: NextRequest) {
     }
 
     for (const query of queries) {
+      // Check if we've reached the limit before starting next query
+      if (totalProcessedEmails >= maxTotalEmails) {
+        console.log(`🛑 Reached maximum email processing limit (${maxTotalEmails}). Stopping all queries.`);
+        break;
+      }
+      
       try {
         console.log(`🔍 EXECUTING QUERY: "${query}" with limit ${limit}`);
         const response = await withTimeout(gmail.users.messages.list({
@@ -429,6 +438,13 @@ export async function GET(request: NextRequest) {
           console.log(`Gmail API: Found ${response.data.messages.length} emails for query: ${query}`);
           
           for (const message of response.data.messages) {
+            // Check if we've processed too many emails
+            if (totalProcessedEmails >= maxTotalEmails) {
+              console.log(`🛑 Reached maximum email processing limit (${maxTotalEmails}). Stopping.`);
+              break;
+            }
+            
+            totalProcessedEmails++;
             const emailData = await withTimeout(gmail.users.messages.get({
               userId: 'me',
               id: message.id,
@@ -728,7 +744,7 @@ async function parsePurchaseEmail(email: any, config: any, gmail: any) {
       status: category.status,
       statusColor: category.statusColor,
       priority: category.priority,
-      tracking: await extractTrackingNumber(orderInfo.order_number, gmail) || 'No tracking',
+      tracking: 'No tracking', // Temporarily disable tracking extraction to prevent timeouts
       market,
       price,
       originalPrice: `${price} + $0.00`,
