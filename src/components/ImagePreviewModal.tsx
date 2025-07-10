@@ -26,6 +26,7 @@ const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
   const [imageError, setImageError] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
+  const [loadingTimeout, setLoadingTimeout] = useState<NodeJS.Timeout | null>(null);
 
   // Reset state when modal opens/closes
   useEffect(() => {
@@ -34,8 +35,35 @@ const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
       setImageError(false);
       setZoom(1);
       setRotation(0);
+      
+      // Clear any existing timeout
+      if (loadingTimeout) {
+        clearTimeout(loadingTimeout);
+      }
+      
+      // Set a timeout to show error if image takes too long to load
+      const timeout = setTimeout(() => {
+        console.log('🖼️ Image loading timeout - showing error state');
+        setImageError(true);
+      }, 10000); // 10 second timeout
+      
+      setLoadingTimeout(timeout);
+    } else {
+      // Clear timeout when modal closes
+      if (loadingTimeout) {
+        clearTimeout(loadingTimeout);
+        setLoadingTimeout(null);
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, imageUrl]); // Remove imageLoaded and loadingTimeout from dependencies
+
+  // Clear timeout when image loads successfully
+  useEffect(() => {
+    if (imageLoaded && loadingTimeout) {
+      clearTimeout(loadingTimeout);
+      setLoadingTimeout(null);
+    }
+  }, [imageLoaded, loadingTimeout]);
 
   // Handle escape key
   useEffect(() => {
@@ -156,15 +184,41 @@ const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
               <div className="flex flex-col items-center space-y-4">
                 <div className={`w-8 h-8 border-2 border-transparent border-t-current rounded-full animate-spin ${currentTheme.colors.accent}`}></div>
                 <p className={`text-sm ${currentTheme.colors.textSecondary}`}>Loading image...</p>
+                <p className={`text-xs ${currentTheme.colors.textSecondary} opacity-60`}>
+                  Using placeholder image service
+                </p>
               </div>
             )}
             
             {imageError && (
               <div className="flex flex-col items-center space-y-4">
-                <div className={`w-16 h-16 rounded-lg bg-gray-200 flex items-center justify-center ${currentTheme.colors.textSecondary}`}>
-                  <span className="text-2xl">📷</span>
+                <div className={`w-32 h-32 rounded-lg ${
+                  currentTheme.name === 'Neon' ? 'bg-white/10' : 'bg-gray-200'
+                } flex items-center justify-center ${currentTheme.colors.textSecondary}`}>
+                  <span className="text-4xl">👟</span>
                 </div>
-                <p className={`text-sm ${currentTheme.colors.textSecondary}`}>Failed to load image</p>
+                <div className="text-center">
+                  <p className={`text-sm ${currentTheme.colors.textSecondary} mb-2`}>
+                    Image not available
+                  </p>
+                  <p className={`text-xs ${currentTheme.colors.textSecondary} opacity-60`}>
+                    The placeholder image service may be temporarily unavailable
+                  </p>
+                  <button
+                    onClick={() => {
+                      setImageError(false);
+                      setImageLoaded(false);
+                      console.log('🔄 Retrying image load:', imageUrl);
+                    }}
+                    className={`mt-3 px-4 py-2 text-xs rounded-lg ${
+                      currentTheme.name === 'Neon' 
+                        ? 'bg-white/10 hover:bg-white/20 text-cyan-400' 
+                        : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                    } transition-colors`}
+                  >
+                    Try Again
+                  </button>
+                </div>
               </div>
             )}
             
@@ -178,8 +232,23 @@ const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
                   transformOrigin: 'center center'
                 }}
                 draggable={false}
-                onLoad={() => setImageLoaded(true)}
-                onError={() => setImageError(true)}
+              />
+            )}
+            
+            {/* Hidden preload image to trigger loading states */}
+            {isOpen && !imageLoaded && !imageError && (
+              <img
+                src={imageUrl}
+                alt=""
+                className="absolute inset-0 w-0 h-0 opacity-0 pointer-events-none"
+                onLoad={() => {
+                  console.log('🖼️ Image loaded successfully');
+                  setImageLoaded(true);
+                }}
+                onError={() => {
+                  console.log('🖼️ Image failed to load');
+                  setImageError(true);
+                }}
               />
             )}
           </div>
