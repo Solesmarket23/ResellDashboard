@@ -929,11 +929,11 @@ const Purchases = () => {
       <div className={`${currentTheme.colors.cardBackground} rounded-lg shadow-sm ${currentTheme.colors.border} border overflow-hidden`}>
         <div className="overflow-x-auto max-h-[70vh]">
           <table ref={tableRef} className="w-full" style={{ tableLayout: 'fixed' }}>
-            <thead className={`${{
+            <thead className={`${
               currentTheme.name === 'Neon' 
                 ? 'bg-white/5 border-b border-white/10' 
                 : 'bg-gray-50 border-b border-gray-200'
-            }} sticky top-0 z-10`}>
+            } sticky top-0 z-10`}>
               <tr className="h-10">
                 <th 
                   className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
