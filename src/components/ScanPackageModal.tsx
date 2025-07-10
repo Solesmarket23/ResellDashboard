@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { X, Camera, Smartphone, CheckCircle, AlertTriangle } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { Capacitor } from '@capacitor/core';
+import { formatOrderNumberForDisplay } from '../lib/utils/orderNumberUtils';
 import NativeBarcodeScanner from './NativeBarcodeScanner';
 
 // QuaggaJS types
@@ -623,7 +624,7 @@ const ScanPackageModal = ({ isOpen, onClose, onScanComplete }: ScanPackageModalP
                           {searchResults.purchase.product.name}
                         </div>
                         <div className={`text-sm mt-1 ${currentTheme.colors.textSecondary}`}>
-                          Order: {searchResults.purchase.orderNumber}
+                          Order: {formatOrderNumberForDisplay(searchResults.purchase.orderNumber)}
                         </div>
                         <div className={`text-sm ${currentTheme.colors.textSecondary}`}>
                           Status: {searchResults.purchase.status}

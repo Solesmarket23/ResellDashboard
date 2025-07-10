@@ -6,6 +6,7 @@ import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
 import { saveUserSale } from '../lib/firebase/userDataUtils';
 import { useSales } from '../lib/hooks/useSales';
+import { formatOrderNumberForDisplay } from '../lib/utils/orderNumberUtils';
 import confetti from 'canvas-confetti';
 
 const Sales = () => {
@@ -855,7 +856,7 @@ const Sales = () => {
                             isNeon ? 'text-cyan-400 hover:text-cyan-300' : 'text-blue-600 hover:text-blue-700'
                           } hover:underline cursor-pointer transition-colors`}
                         >
-                          {sale.orderNumber}
+                          {formatOrderNumberForDisplay(sale.orderNumber)}
                         </button>
                       </td>
                       <td className={`px-6 py-4 whitespace-nowrap text-sm ${
@@ -986,7 +987,7 @@ const Sales = () => {
                           }`}>Order:</span>
                           <span className={`text-sm ${
                             isNeon ? 'text-white' : 'text-gray-900'
-                          }`}>{deleteModal.sale.orderNumber}</span>
+                          }`}>{formatOrderNumberForDisplay(deleteModal.sale.orderNumber)}</span>
                         </div>
                         <div className="flex justify-between items-center">
                           <span className={`text-sm font-medium ${

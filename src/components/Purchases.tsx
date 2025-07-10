@@ -5,7 +5,7 @@ import { ChevronDown, Edit, MoreHorizontal, Camera, RefreshCw, Mail, Trash2, Set
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
 import { addDocument, getDocuments, updateDocument, deleteDocument } from '../lib/firebase/firebaseUtils';
-import { generateGmailSearchUrl } from '../lib/utils/orderNumberUtils';
+import { generateGmailSearchUrl, formatOrderNumberForDisplay } from '../lib/utils/orderNumberUtils';
 import NativeBarcodeScannerModal from './NativeBarcodeScannerModal';
 import ZXingScannerModal from './ZXingScannerModal';
 import RemoteScanModal from './RemoteScanModal';
@@ -883,7 +883,7 @@ const Purchases = () => {
                       rel="noopener noreferrer"
                       className={`${currentTheme.colors.accent} text-sm font-medium hover:underline whitespace-nowrap transition-colors`}
                     >
-                      {purchase.orderNumber}
+                      {formatOrderNumberForDisplay(purchase.orderNumber)}
                     </a>
                   </td>
                   <td className="px-6 py-2 align-middle">

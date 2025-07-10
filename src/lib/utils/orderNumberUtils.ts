@@ -64,4 +64,23 @@ export function isStandardOrderNumber(orderNumber: string): boolean {
   
   // Standard orders have format like "73258261-73158020" (both parts numeric)
   return /^\d+$/.test(parts[0]) && /^\d+$/.test(parts[1]);
+}
+
+/**
+ * Format order number for display in the UI
+ * @param orderNumber - The full order number from the system
+ * @returns The properly formatted order number for display
+ */
+export function formatOrderNumberForDisplay(orderNumber: string): string {
+  if (!orderNumber) return orderNumber;
+  
+  // Check if it's a standard order format (numeric-numeric)
+  if (isStandardOrderNumber(orderNumber)) {
+    const parts = orderNumber.split('-');
+    // For standard orders, display only the second half (8 characters)
+    return parts[1];
+  }
+  
+  // For Xpress orders (01-GNHWJCZS95) or any other format, display the full order number
+  return orderNumber;
 } 

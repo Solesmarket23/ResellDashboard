@@ -7,6 +7,7 @@ import { useAuth } from '../lib/contexts/AuthContext';
 import { saveUserDashboardSettings, getUserDashboardSettings, clearAllUserData } from '../lib/firebase/userDataUtils';
 import { getDocuments } from '../lib/firebase/firebaseUtils';
 import { useSales } from '../lib/hooks/useSales';
+import { formatOrderNumberForDisplay } from '../lib/utils/orderNumberUtils';
 import DatePicker from './DatePicker';
 import MarketAlerts from './MarketAlerts';
 
@@ -930,7 +931,7 @@ const Dashboard = () => {
                     <div className="flex-1">
                       <div className="flex items-center space-x-2">
                         <span className={`text-sm font-medium ${currentTheme.colors.textSecondary}`}>
-                          #{flip.orderNumber || `Sale ${index + 1}`}
+                          #{flip.orderNumber ? formatOrderNumberForDisplay(flip.orderNumber) : `Sale ${index + 1}`}
                         </span>
                         <span className={`text-xs px-2 py-1 rounded-full ${
                           currentTheme.name === 'Neon' 

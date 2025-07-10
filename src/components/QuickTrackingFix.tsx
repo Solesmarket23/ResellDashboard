@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { db } from '../lib/firebase/firebase';
 import { collection, query, where, getDocs, updateDoc, doc } from 'firebase/firestore';
+import { formatOrderNumberForDisplay } from '../lib/utils/orderNumberUtils';
 
 // All the tracking fixes we identified
 const TRACKING_FIXES = [
@@ -113,7 +114,7 @@ const QuickTrackingFix = () => {
         <h4 className="font-medium text-gray-800 mb-2">Orders to fix:</h4>
         {TRACKING_FIXES.map((fix, index) => (
           <div key={fix.orderNumber} className="mb-2 pl-2 border-l-2 border-gray-200">
-            <div className="font-medium text-gray-700">{fix.orderNumber} - {fix.productName}</div>
+            <div className="font-medium text-gray-700">{formatOrderNumberForDisplay(fix.orderNumber)} - {fix.productName}</div>
             <div className="text-gray-600 text-xs">
               {fix.currentTracking} → {fix.correctTracking}
             </div>
@@ -140,7 +141,7 @@ const QuickTrackingFix = () => {
           <h4 className="font-medium text-gray-800 mb-2">Results:</h4>
           {results.map((result, index) => (
             <div key={result.orderNumber} className="mb-1 flex items-center justify-between">
-              <span className="font-medium">{result.orderNumber}</span>
+              <span className="font-medium">{formatOrderNumberForDisplay(result.orderNumber)}</span>
               <span className={result.success ? 'text-green-600' : 'text-red-600'}>
                 {result.status}
               </span>
