@@ -66,6 +66,7 @@ const navigationItems = [
   {
     section: 'STOCKX INTEGRATION',
     items: [
+      { id: 'stockx-order-management', label: 'Order Management', icon: Package },
       { id: 'stockx-market-research', label: 'Market Research', icon: Search },
       { id: 'stockx-inventory', label: 'Inventory Manager', icon: Archive },
       { id: 'stockx-arbitrage', label: 'Arbitrage Finder', icon: ArrowLeftRight },

@@ -19,6 +19,7 @@ import Plans from '../../components/Plans';
 import Profile from '../../components/Profile';
 import FAQ from '../../components/FAQ';
 import FeatureRequests from '../../components/FeatureRequests';
+import StockXOrderManagement from '../../components/StockXOrderManagement';
 import StockXMarketResearch from '../../components/StockXMarketResearch';
 import StockXInventory from '../../components/StockXInventory';
 import StockXArbitrage from '../../components/StockXArbitrage';
@@ -184,6 +185,8 @@ export default function DashboardPage() {
         return <FeatureRequests />;
       case 'faq':
         return <FAQ />;
+      case 'stockx-order-management':
+        return <StockXOrderManagement />;
       case 'stockx-market-research':
         return <StockXMarketResearch />;
       case 'stockx-inventory':
