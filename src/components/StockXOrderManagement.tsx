@@ -17,6 +17,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
+import StockXAuth from './StockXAuth';
 
 interface StockXOrder {
   id: string;
@@ -47,6 +48,7 @@ const StockXOrderManagement: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
   const [activeTab, setActiveTab] = useState<'active' | 'completed' | 'history'>('active');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   // Load orders data
   useEffect(() => {
@@ -244,6 +246,17 @@ const StockXOrderManagement: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* StockX Authentication */}
+      <StockXAuth 
+        onAuthChange={(authenticated) => {
+          setIsAuthenticated(authenticated);
+          if (authenticated) {
+            loadOrders(); // Reload orders when authentication changes
+          }
+        }}
+        showInstructions={true}
+      />
 
       {/* Tabs */}
       <div className="flex space-x-1 mb-6">
