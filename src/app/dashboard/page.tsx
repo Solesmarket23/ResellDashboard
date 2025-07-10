@@ -9,6 +9,7 @@ export const dynamic = 'force-dynamic';
 import Sidebar from '../../components/Sidebar';
 import Dashboard from '../../components/Dashboard';
 import Purchases from '../../components/Purchases';
+import Deliveries from '../../components/Deliveries';
 import Sales from '../../components/Sales';
 import FailedVerifications from '../../components/FailedVerifications';
 import ProfitCalculator from '../../components/ProfitCalculator';
@@ -122,6 +123,8 @@ export default function DashboardPage() {
         );
       case 'purchases':
         return <Purchases />;
+      case 'deliveries':
+        return <Deliveries />;
       case 'sales':
         return <Sales />;
       case 'failed-verifications':

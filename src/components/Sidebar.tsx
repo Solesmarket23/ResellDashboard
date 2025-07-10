@@ -23,7 +23,8 @@ import {
   LineChart,
   Bell,
   Activity,
-  DollarSign
+  DollarSign,
+  Truck
 } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 
@@ -40,6 +41,7 @@ const navigationItems = [
     items: [
       { id: 'dashboard', label: 'Dashboard', icon: Home },
       { id: 'purchases', label: 'Purchases', icon: ShoppingCart },
+      { id: 'deliveries', label: 'Deliveries', icon: Truck },
       { id: 'sales', label: 'Sales', icon: TrendingUp },
       { id: 'profit-calculator', label: 'Profit Calculator', icon: Calculator },
     ]
