@@ -13,6 +13,8 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
+  const [needsReconnect, setNeedsReconnect] = useState(false);
 
   // Check if neon theme is active
   const isNeonTheme = currentTheme?.name === 'Neon';
@@ -53,16 +55,27 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
       });
       
       const response = await Promise.race([fetchPromise, timeoutPromise]) as Response;
-      const isConnected = response.status !== 401;
-      console.log(`📋 Gmail connection check: Status ${response.status}, Connected: ${isConnected}`);
+      const data = await response.json().catch(() => ({}));
       
-      if (response.status === 401) {
-        const errorData = await response.json().catch(() => ({}));
-        console.log('🔐 Gmail authentication needed:', errorData);
+      console.log(`📋 Gmail connection check: Status ${response.status}`, data);
+      
+      if (response.status === 401 || data.needsReconnect) {
+        console.log('🔐 Gmail authentication needed:', data);
+        setIsConnected(false);
+        setNeedsReconnect(true);
+        setDaysRemaining(null);
+        onConnectionChange?.(false);
+        
+        if (data.reason?.includes('7 days')) {
+          setError(`Gmail connection expired after 7 days. Please reconnect.`);
+        }
+      } else {
+        setIsConnected(true);
+        setNeedsReconnect(false);
+        setDaysRemaining(data.daysRemaining || null);
+        onConnectionChange?.(true);
+        setError(null);
       }
-      
-      setIsConnected(isConnected);
-      onConnectionChange?.(isConnected);
     } catch (error) {
       console.error('❌ Gmail connection check failed:', error);
       
@@ -129,7 +142,16 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
             isNeonTheme 
               ? 'text-green-400/70' 
               : 'text-green-600'
-          }`}>Purchase emails will be automatically imported</div>
+          }`}>
+            Purchase emails will be automatically imported
+            {daysRemaining !== null && (
+              <span className="block mt-1">
+                {daysRemaining > 1 ? `Expires in ${daysRemaining} days` : 
+                 daysRemaining === 1 ? 'Expires tomorrow' : 
+                 'Expires today'}
+              </span>
+            )}
+          </div>
         </div>
         <button
           onClick={disconnectFromGmail}

@@ -39,13 +39,13 @@ export async function GET(request: NextRequest) {
     const redirectUrl = new URL('/dashboard?gmail_connected=true', baseUrl);
     const response = NextResponse.redirect(redirectUrl);
     
-    // Set cookies with relaxed security for localhost development
+    // Set cookies with extended duration for better user experience
     const cookieOptions = {
       httpOnly: false, // Allow client-side access for debugging in development
       secure: false, // Allow localhost (non-HTTPS)
       sameSite: 'lax' as const,
       path: '/',
-      maxAge: 24 * 60 * 60, // 24 hours
+      maxAge: 7 * 24 * 60 * 60, // 7 days for access token
       domain: undefined // Let browser handle domain automatically
     };
     
@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
     if (tokens.refresh_token) {
       response.cookies.set('gmail_refresh_token', tokens.refresh_token, {
         ...cookieOptions,
-        maxAge: 30 * 24 * 60 * 60 // 30 days for refresh token
+        maxAge: 90 * 24 * 60 * 60 // 90 days for refresh token
       });
     }
     
@@ -67,7 +67,16 @@ export async function GET(request: NextRequest) {
       secure: false,
       sameSite: 'lax',
       path: '/',
-      maxAge: 24 * 60 * 60
+      maxAge: 7 * 24 * 60 * 60 // 7 days to match access token
+    });
+    
+    // Store connection timestamp for 7-day expiry tracking
+    response.cookies.set('gmail_connected_at', Date.now().toString(), {
+      httpOnly: false,
+      secure: false,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 7 * 24 * 60 * 60 // 7 days
     });
 
     console.log('✅ Gmail tokens stored in response cookies');
