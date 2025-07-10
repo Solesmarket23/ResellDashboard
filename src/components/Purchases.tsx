@@ -14,6 +14,7 @@ import GmailConnector from './GmailConnector';
 import EmailParsingSettings from './EmailParsingSettings';
 import ImagePreviewModal from './ImagePreviewModal';
 import AutoEmailSync from './AutoEmailSync';
+import SimpleAutoSync from './SimpleAutoSync';
 
 const Purchases = () => {
   const [sortBy, setSortBy] = useState('Purchase Date');
@@ -697,18 +698,9 @@ const Purchases = () => {
           }} 
         />
         
-        {/* Auto Email Sync */}
-        {console.log('🔄 Rendering AutoEmailSync component', { gmailConnected })}
-        <AutoEmailSync 
-          isGmailConnected={gmailConnected}
-          onNewPurchases={(count) => {
-            console.log(`🎉 Auto-sync found ${count} purchases`);
-            // Optionally refresh the purchases list
-            if (count > 0) {
-              // Could trigger a refresh here
-            }
-          }}
-        />
+        {/* Auto Email Sync - TEST VERSION */}
+        {console.log('🔄 Rendering SimpleAutoSync component', { gmailConnected })}
+        <SimpleAutoSync isGmailConnected={gmailConnected} />
       </div>
 
       {/* Header */}
