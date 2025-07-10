@@ -964,7 +964,7 @@ const Purchases = () => {
 
       {/* Reset Confirmation Modal */}
       {showResetConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
           <div className={`${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border rounded-lg p-6 max-w-md w-full mx-4`}>
             <div className="flex items-center mb-4">
               <Trash2 className={`w-6 h-6 ${
@@ -1013,7 +1013,7 @@ const Purchases = () => {
 
       {/* Loading Modal with Progress Counter */}
       {loading && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
           <div className={`${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border rounded-lg p-8 max-w-md w-full mx-4 relative overflow-hidden`}>
             {/* Neon glow effect */}
             {currentTheme.name === 'Neon' && (
@@ -1171,7 +1171,7 @@ const AddPurchaseModal = () => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
       <div className={`${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto`}>
         <div className="flex items-center justify-between mb-4">
           <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>Add Purchase</h3>
