@@ -36,6 +36,16 @@ const Deliveries: React.FC = () => {
   // Mock data - in real app, this would come from API
   useEffect(() => {
     setTimeout(() => {
+      const today = new Date();
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const dayAfterTomorrow = new Date(today);
+      dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
+      const nextWeek = new Date(today);
+      nextWeek.setDate(nextWeek.getDate() + 5);
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      
       setDeliveries([
         {
           id: '1',
@@ -45,15 +55,15 @@ const Deliveries: React.FC = () => {
           productBrand: 'Nike',
           productSize: '10.5',
           status: 'delivered',
-          estimatedDelivery: '2024-01-15',
-          actualDelivery: '2024-01-14',
+          estimatedDelivery: yesterday.toISOString().split('T')[0],
+          actualDelivery: yesterday.toISOString().split('T')[0],
           origin: 'Memphis, TN',
           destination: 'New York, NY',
-          lastUpdate: '2024-01-14T14:30:00Z',
+          lastUpdate: yesterday.toISOString(),
           updates: [
-            { timestamp: '2024-01-14T14:30:00Z', location: 'New York, NY', status: 'Delivered', description: 'Package delivered to front door' },
-            { timestamp: '2024-01-14T09:15:00Z', location: 'New York, NY', status: 'Out for Delivery', description: 'Package is out for delivery' },
-            { timestamp: '2024-01-13T19:45:00Z', location: 'Queens, NY', status: 'In Transit', description: 'Package arrived at local facility' }
+            { timestamp: yesterday.toISOString(), location: 'New York, NY', status: 'Delivered', description: 'Package delivered to front door' },
+            { timestamp: yesterday.toISOString(), location: 'New York, NY', status: 'Out for Delivery', description: 'Package is out for delivery' },
+            { timestamp: yesterday.toISOString(), location: 'Queens, NY', status: 'In Transit', description: 'Package arrived at local facility' }
           ]
         },
         {
@@ -64,14 +74,14 @@ const Deliveries: React.FC = () => {
           productBrand: 'Adidas',
           productSize: '9',
           status: 'out_for_delivery',
-          estimatedDelivery: '2024-01-16',
+          estimatedDelivery: today.toISOString().split('T')[0],
           origin: 'Indianapolis, IN',
           destination: 'New York, NY',
-          lastUpdate: '2024-01-16T08:00:00Z',
+          lastUpdate: today.toISOString(),
           updates: [
-            { timestamp: '2024-01-16T08:00:00Z', location: 'New York, NY', status: 'Out for Delivery', description: 'Package is out for delivery' },
-            { timestamp: '2024-01-15T22:30:00Z', location: 'Bronx, NY', status: 'In Transit', description: 'Package arrived at destination facility' },
-            { timestamp: '2024-01-15T14:20:00Z', location: 'Newark, NJ', status: 'In Transit', description: 'Package in transit' }
+            { timestamp: today.toISOString(), location: 'New York, NY', status: 'Out for Delivery', description: 'Package is out for delivery' },
+            { timestamp: yesterday.toISOString(), location: 'Bronx, NY', status: 'In Transit', description: 'Package arrived at destination facility' },
+            { timestamp: yesterday.toISOString(), location: 'Newark, NJ', status: 'In Transit', description: 'Package in transit' }
           ]
         },
         {
@@ -82,14 +92,47 @@ const Deliveries: React.FC = () => {
           productBrand: 'Nike',
           productSize: '11',
           status: 'in_transit',
-          estimatedDelivery: '2024-01-18',
+          estimatedDelivery: tomorrow.toISOString().split('T')[0],
           origin: 'Los Angeles, CA',
           destination: 'New York, NY',
-          lastUpdate: '2024-01-15T16:45:00Z',
+          lastUpdate: today.toISOString(),
           updates: [
-            { timestamp: '2024-01-15T16:45:00Z', location: 'Chicago, IL', status: 'In Transit', description: 'Package in transit to next facility' },
-            { timestamp: '2024-01-14T11:20:00Z', location: 'Phoenix, AZ', status: 'In Transit', description: 'Package departed facility' },
-            { timestamp: '2024-01-13T09:30:00Z', location: 'Los Angeles, CA', status: 'Shipped', description: 'Package picked up by carrier' }
+            { timestamp: today.toISOString(), location: 'Chicago, IL', status: 'In Transit', description: 'Package in transit to next facility' },
+            { timestamp: yesterday.toISOString(), location: 'Phoenix, AZ', status: 'In Transit', description: 'Package departed facility' },
+            { timestamp: yesterday.toISOString(), location: 'Los Angeles, CA', status: 'Shipped', description: 'Package picked up by carrier' }
+          ]
+        },
+        {
+          id: '4',
+          trackingNumber: '1Z999AA1234567891',
+          carrier: 'UPS',
+          productName: 'Air Force 1 Low',
+          productBrand: 'Nike',
+          productSize: '10',
+          status: 'in_transit',
+          estimatedDelivery: dayAfterTomorrow.toISOString().split('T')[0],
+          origin: 'Atlanta, GA',
+          destination: 'New York, NY',
+          lastUpdate: today.toISOString(),
+          updates: [
+            { timestamp: today.toISOString(), location: 'Philadelphia, PA', status: 'In Transit', description: 'Package in transit' },
+            { timestamp: yesterday.toISOString(), location: 'Atlanta, GA', status: 'Shipped', description: 'Package picked up by carrier' }
+          ]
+        },
+        {
+          id: '5',
+          trackingNumber: '773039582966',
+          carrier: 'FedEx',
+          productName: 'Jordan 4 Retro',
+          productBrand: 'Nike',
+          productSize: '9.5',
+          status: 'shipped',
+          estimatedDelivery: nextWeek.toISOString().split('T')[0],
+          origin: 'Chicago, IL',
+          destination: 'New York, NY',
+          lastUpdate: today.toISOString(),
+          updates: [
+            { timestamp: today.toISOString(), location: 'Chicago, IL', status: 'Shipped', description: 'Package picked up by carrier' }
           ]
         }
       ]);
@@ -142,10 +185,43 @@ const Deliveries: React.FC = () => {
     return matchesSearch && matchesStatus && matchesCarrier;
   });
 
-  const statusCounts = deliveries.reduce((acc, delivery) => {
-    acc[delivery.status] = (acc[delivery.status] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
+  const getDeliveryTimingCounts = () => {
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const oneWeekFromNow = new Date(today);
+    oneWeekFromNow.setDate(oneWeekFromNow.getDate() + 7);
+    
+    const counts = {
+      today: 0,
+      tomorrow: 0,
+      thisWeek: 0,
+      delivered: 0
+    };
+    
+    deliveries.forEach(delivery => {
+      if (delivery.status === 'delivered') {
+        counts.delivered++;
+      } else {
+        const deliveryDate = new Date(delivery.estimatedDelivery);
+        const todayStr = today.toDateString();
+        const tomorrowStr = tomorrow.toDateString();
+        const deliveryStr = deliveryDate.toDateString();
+        
+        if (deliveryStr === todayStr) {
+          counts.today++;
+        } else if (deliveryStr === tomorrowStr) {
+          counts.tomorrow++;
+        } else if (deliveryDate <= oneWeekFromNow) {
+          counts.thisWeek++;
+        }
+      }
+    });
+    
+    return counts;
+  };
+
+  const timingCounts = getDeliveryTimingCounts();
 
   if (loading) {
     return (
@@ -174,30 +250,36 @@ const Deliveries: React.FC = () => {
         <div className={`${currentTheme.colors.cardBackground} rounded-lg p-6 border ${currentTheme.colors.border}`}>
           <div className="flex items-center justify-between">
             <div>
-              <p className={`text-sm font-medium ${currentTheme.colors.textSecondary}`}>Total Deliveries</p>
-              <p className={`text-2xl font-bold ${currentTheme.colors.textPrimary}`}>{deliveries.length}</p>
+              <p className={`text-sm font-medium ${currentTheme.colors.textSecondary}`}>Arriving Today</p>
+              <p className={`text-2xl font-bold ${currentTheme.colors.textPrimary}`}>{timingCounts.today}</p>
             </div>
-            <Package className={`w-8 h-8 ${currentTheme.colors.accent}`} />
+            <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center">
+              <span className="text-white text-sm font-bold">📦</span>
+            </div>
           </div>
         </div>
 
         <div className={`${currentTheme.colors.cardBackground} rounded-lg p-6 border ${currentTheme.colors.border}`}>
           <div className="flex items-center justify-between">
             <div>
-              <p className={`text-sm font-medium ${currentTheme.colors.textSecondary}`}>In Transit</p>
-              <p className={`text-2xl font-bold ${currentTheme.colors.textPrimary}`}>{statusCounts.in_transit || 0}</p>
+              <p className={`text-sm font-medium ${currentTheme.colors.textSecondary}`}>Arriving Tomorrow</p>
+              <p className={`text-2xl font-bold ${currentTheme.colors.textPrimary}`}>{timingCounts.tomorrow}</p>
             </div>
-            <Truck className="w-8 h-8 text-orange-500" />
+            <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
+              <span className="text-white text-sm font-bold">📅</span>
+            </div>
           </div>
         </div>
 
         <div className={`${currentTheme.colors.cardBackground} rounded-lg p-6 border ${currentTheme.colors.border}`}>
           <div className="flex items-center justify-between">
             <div>
-              <p className={`text-sm font-medium ${currentTheme.colors.textSecondary}`}>Out for Delivery</p>
-              <p className={`text-2xl font-bold ${currentTheme.colors.textPrimary}`}>{statusCounts.out_for_delivery || 0}</p>
+              <p className={`text-sm font-medium ${currentTheme.colors.textSecondary}`}>Arriving This Week</p>
+              <p className={`text-2xl font-bold ${currentTheme.colors.textPrimary}`}>{timingCounts.thisWeek}</p>
             </div>
-            <MapPin className="w-8 h-8 text-purple-500" />
+            <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+              <span className="text-white text-sm font-bold">📈</span>
+            </div>
           </div>
         </div>
 
@@ -205,7 +287,7 @@ const Deliveries: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className={`text-sm font-medium ${currentTheme.colors.textSecondary}`}>Delivered</p>
-              <p className={`text-2xl font-bold ${currentTheme.colors.textPrimary}`}>{statusCounts.delivered || 0}</p>
+              <p className={`text-2xl font-bold ${currentTheme.colors.textPrimary}`}>{timingCounts.delivered}</p>
             </div>
             <CheckCircle className="w-8 h-8 text-green-500" />
           </div>
