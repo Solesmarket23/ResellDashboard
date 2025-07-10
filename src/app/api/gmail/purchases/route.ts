@@ -590,8 +590,32 @@ function parsePurchaseEmail(email: any, config: any) {
       };
     }
 
-    // Categorize email based on subject line and configuration
-    const category = categorizeEmail(subjectHeader, config);
+    // SPECIAL OVERRIDE: StockX Delivery Status Rule
+    // IF email is from "noreply@stockx.com" AND subject contains delivery keywords
+    // THEN force status to "Delivered" (this overrides all other logic)
+    let category;
+    if (fromHeader.includes('noreply@stockx.com') && 
+        (subjectHeader.includes('Xpress Ship Order Delivered:') || 
+         subjectHeader.includes('Order Delivered:'))) {
+      console.log(`🚚 DELIVERY OVERRIDE: StockX delivery email detected - forcing Delivered status`);
+      console.log(`🚚 Email: "${subjectHeader}" from ${fromHeader}`);
+      console.log(`🚚 Order Number: ${orderInfo.order_number}`);
+      
+      // Special debug for the specific order user mentioned
+      if (orderInfo.order_number === '01-3KF7CE560J') {
+        console.log(`🎯🚚 SPECIAL: Order 01-3KF7CE560J DELIVERY OVERRIDE TRIGGERED!`);
+        console.log(`🎯🚚 This order should now be DELIVERED status!`);
+      }
+      
+      category = {
+        status: 'Delivered',
+        statusColor: 'green',
+        priority: 4
+      };
+    } else {
+      // Use normal categorization for non-delivery emails
+      category = categorizeEmail(subjectHeader, config);
+    }
 
     // Log if we found a shipped order
     if (category.status === 'Shipped') {
@@ -606,6 +630,11 @@ function parsePurchaseEmail(email: any, config: any) {
     // Log if we found a refunded/cancelled order
     if (category.status === 'Canceled') {
       console.log(`❌ REFUNDED ORDER FOUND: ${orderInfo.order_number} - "${subjectHeader}"`);
+    }
+    
+    // Log if we found a delivered order
+    if (category.status === 'Delivered') {
+      console.log(`🚚 DELIVERED ORDER FOUND: ${orderInfo.order_number} - "${subjectHeader}"`);
     }
     
     // SPECIAL DEBUG: Log order number extraction for all emails
