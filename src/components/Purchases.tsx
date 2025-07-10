@@ -9,6 +9,7 @@ import { generateGmailSearchUrl, formatOrderNumberForDisplay } from '../lib/util
 import NativeBarcodeScannerModal from './NativeBarcodeScannerModal';
 import ZXingScannerModal from './ZXingScannerModal';
 import RemoteScanModal from './RemoteScanModal';
+import PackageScannerModal from './PackageScannerModal';
 import GmailConnector from './GmailConnector';
 import EmailParsingSettings from './EmailParsingSettings';
 
@@ -17,6 +18,7 @@ const Purchases = () => {
   const [showScanModal, setShowScanModal] = useState(false);
   const [showZXingScanModal, setShowZXingScanModal] = useState(false);
   const [showRemoteScanModal, setShowRemoteScanModal] = useState(false);
+  const [showPackageScanModal, setShowPackageScanModal] = useState(false);
   const [gmailConnected, setGmailConnected] = useState(false);
   const [purchases, setPurchases] = useState<any[]>([]);
   const [manualPurchases, setManualPurchases] = useState<any[]>([]);
@@ -520,6 +522,45 @@ const Purchases = () => {
     setHasBeenReset(false); // Reset flag when user adds data
   };
 
+  const handlePackageScanComplete = (trackingNumber: string, packageType: 'UPS' | 'FedEx' | 'Other') => {
+    console.log('📦 Package scanned:', { trackingNumber, packageType });
+    
+    // Find matching purchase
+    const allPurchases = [...purchases, ...manualPurchases];
+    const matchedPurchase = allPurchases.find(purchase => {
+      if (!purchase.tracking) return false;
+      const cleanScanned = trackingNumber.replace(/\s+/g, '').toLowerCase();
+      const cleanPurchase = purchase.tracking.replace(/\s+/g, '').toLowerCase();
+      return cleanPurchase === cleanScanned;
+    });
+
+    if (matchedPurchase) {
+      // Highlight the matched purchase in the table
+      const tableElement = tableRef.current;
+      if (tableElement) {
+        const purchaseRow = tableElement.querySelector(`[data-purchase-id="${matchedPurchase.id}"]`);
+        if (purchaseRow) {
+          purchaseRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          purchaseRow.classList.add('bg-yellow-100', 'animate-pulse');
+          setTimeout(() => {
+            purchaseRow.classList.remove('bg-yellow-100', 'animate-pulse');
+          }, 3000);
+        }
+      }
+      
+      alert(`📦 Package found!\n\n${packageType} Package: ${trackingNumber}\nProduct: ${matchedPurchase.product.name}\nOrder: ${matchedPurchase.orderNumber}\nStatus: ${matchedPurchase.status}`);
+    } else {
+      // Show option to add as note or create new purchase
+      const shouldAddNote = confirm(`Package not found in your orders.\n\n${packageType} Package: ${trackingNumber}\n\nWould you like to add this as a note to an existing purchase?`);
+      
+      if (shouldAddNote) {
+        alert('Note: This feature will allow you to add tracking numbers to existing purchases. Coming soon!');
+      }
+    }
+    
+    setHasBeenReset(false);
+  };
+
   return (
     <div className={`flex-1 ${currentTheme.colors.background} p-8`}>
       {/* Gmail Connection Status */}
@@ -662,6 +703,19 @@ const Purchases = () => {
                  <span>Auth Audit</span>
               </button>
             )}
+            {/* 📦 NEW: Scan Package Button - Prominent placement */}
+            <button
+              onClick={() => setShowPackageScanModal(true)}
+              className={`flex items-center space-x-2 ${
+                currentTheme.name === 'Neon' 
+                  ? 'bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 shadow-lg hover:shadow-green-500/25' 
+                  : 'bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 shadow-lg hover:shadow-orange-500/25'
+              } text-white px-6 py-3 rounded-lg font-medium transition-all duration-200 text-lg`}
+            >
+              <Camera className="w-6 h-6" />
+              <span>Scan Package</span>
+            </button>
+            
             <button
               onClick={() => setShowAddPurchaseModal(true)}
               className={`flex items-center space-x-2 ${
@@ -698,32 +752,49 @@ const Purchases = () => {
         </div>
       </div>
 
-      {/* Scanner Buttons */}
-      <div className="flex flex-wrap gap-3 mb-6">
-        <button
-          onClick={() => setShowScanModal(true)}
-          className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
-        >
-          <Camera className="w-4 h-4" />
-          QuaggaJS Scanner
-        </button>
-        <button
-          onClick={() => setShowZXingScanModal(true)}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
-        >
-          <Camera className="w-4 h-4" />
-          ZXing Scanner
-        </button>
-        <button
-          onClick={() => setShowRemoteScanModal(true)}
-          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-          </svg>
-          Remote Scan (Phone)
-        </button>
-      </div>
+      {/* Advanced Scanner Options */}
+      <details className="mb-6">
+        <summary className={`cursor-pointer ${currentTheme.colors.textSecondary} text-sm font-medium mb-3 hover:${currentTheme.colors.textPrimary} transition-colors`}>
+          Advanced Scanner Options
+        </summary>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => setShowScanModal(true)}
+            className={`px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1 ${
+              currentTheme.name === 'Neon' 
+                ? 'bg-white/10 hover:bg-white/20 text-gray-300' 
+                : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+            }`}
+          >
+            <Camera className="w-3 h-3" />
+            QuaggaJS
+          </button>
+          <button
+            onClick={() => setShowZXingScanModal(true)}
+            className={`px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1 ${
+              currentTheme.name === 'Neon' 
+                ? 'bg-white/10 hover:bg-white/20 text-gray-300' 
+                : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+            }`}
+          >
+            <Camera className="w-3 h-3" />
+            ZXing
+          </button>
+          <button
+            onClick={() => setShowRemoteScanModal(true)}
+            className={`px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1 ${
+              currentTheme.name === 'Neon' 
+                ? 'bg-white/10 hover:bg-white/20 text-gray-300' 
+                : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+            }`}
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+            Remote
+          </button>
+        </div>
+      </details>
 
       {/* Loading State */}
       {loading && (
@@ -844,9 +915,13 @@ const Purchases = () => {
               currentTheme.name === 'Neon' ? 'divide-y divide-white/10' : 'divide-y divide-gray-100'
             }`}>
               {[...purchases, ...manualPurchases].map((purchase) => (
-                <tr key={purchase.id} className={`${
-                  currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-50'
-                } transition-colors`}>
+                <tr 
+                  key={purchase.id} 
+                  data-purchase-id={purchase.id}
+                  className={`${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-50'
+                  } transition-colors`}
+                >
                   <td className="px-6 py-2">
                     <div className="flex items-start gap-3 min-h-12">
                       <div className={`w-8 h-8 rounded-lg flex-shrink-0 overflow-hidden ${purchase.product.bgColor} flex items-center justify-center shadow-sm mt-1`}>
@@ -960,6 +1035,14 @@ const Purchases = () => {
         isOpen={showRemoteScanModal}
         onClose={() => setShowRemoteScanModal(false)}
         onScanComplete={handleScanComplete}
+      />
+
+      {/* 📦 NEW: Package Scanner Modal */}
+      <PackageScannerModal
+        isOpen={showPackageScanModal}
+        onClose={() => setShowPackageScanModal(false)}
+        onScanComplete={handlePackageScanComplete}
+        purchases={[...purchases, ...manualPurchases]}
       />
 
       {/* Reset Confirmation Modal */}

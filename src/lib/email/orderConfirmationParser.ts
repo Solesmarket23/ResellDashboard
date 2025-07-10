@@ -201,150 +201,22 @@ export class OrderConfirmationParser {
       }
     }
     
-    // Extract size with enhanced patterns for StockX emails
-    console.log('🔍 SIZE EXTRACTION DEBUG - Product:', orderInfo.product_name);
-    console.log('🔍 SIZE EXTRACTION DEBUG - HTML Content Sample:', htmlContent.substring(0, 500) + '...');
-    console.warn('🔍 SIZE EXTRACTION DEBUG - Product:', orderInfo.product_name); // Use console.warn for visibility
-    
+    // Extract size - simple patterns that work reliably
     const sizePatterns = [
-      // Basic size patterns
-      /Size:\s*US\s*([XSMLW]*\s*\d+(?:\.\d+)?)/i,
+      // Common StockX patterns
+      /<li[^>]*>Size:\s*([^<]+)<\/li>/i,
+      /\(Size\s*([^)]+)\)/i,
       /Size:\s*([XSMLW]*\s*\d+(?:\.\d+)?)/i,
-      /Size:\s*([XSMLW]+)/i,
-      
-      // HTML table patterns (improved to handle whitespace and newlines)
-      /<td[^>]*>Size[^<]*<\/td>[\s\n]*<td[^>]*>[\s\n]*US[\s\n]*([XSMLW]*\s*\d+(?:\.\d+)?)/i,
-      /<td[^>]*>Size[^<]*<\/td>[\s\n]*<td[^>]*>[\s\n]*([XSMLW]*\s*\d+(?:\.\d+)?)/i,
-      /<td[^>]*>Size[^<]*<\/td>[\s\n]*<td[^>]*>[\s\n]*([XSMLW]+)/i,
-      
-      // List item patterns (improved to handle whitespace and newlines)
-      /<li[^>]*>Size:[\s\n]*US[\s\n]*([XSMLW]*\s*\d+(?:\.\d+)?)<\/li>/i,
-      /<li[^>]*>Size:[\s\n]*([XSMLW]*\s*\d+(?:\.\d+)?)<\/li>/i,
-      /<li[^>]*>Size:[\s\n]*([XSMLW]+)<\/li>/i,
-      
-      // Subject line patterns (common in StockX emails)
-      /\(Size\s*US?\s*([XSMLW]*\s*\d+(?:\.\d+)?)\)/i,
-      /\(Size\s*([XSMLW]+)\)/i,
-      
-      // Alternative formats
-      /Size[:\s]+US[:\s]+([XSMLW]*\s*\d+(?:\.\d+)?)/i,
-      /Size[:\s]+([XSMLW]*\s*\d+(?:\.\d+)?)/i,
-      /Size[:\s]+([XSMLW]+)/i,
-      
-      // Women's size patterns
-      /Size\s*US\s*([XSMLW]*\s*\d+(?:\.\d+)?)\s*\(Women's\)/i,
-      /Size\s*([XSMLW]*\s*\d+(?:\.\d+)?)\s*\(Women's\)/i,
-      
-      // Direct size display patterns
-      /<td[^>]*style[^>]*font-weight:\s*600[^>]*>([XSMLW]*\s*\d+(?:\.\d+)?)<\/td>/i,
-      /<td[^>]*>([XSMLW]*\s*\d+(?:\.\d+)?)<\/td>/i,
-      
-      // Flexible patterns for various formats
-      /\bUS\s*([XSMLW]*\s*\d+(?:\.\d+)?)\b/i,
-      /\b([XSMLW]{1,3})\s*(?:Size|US)\b/i,
-      
-      // Span and div patterns
-      /<span[^>]*>Size:\s*US\s*([XSMLW]*\s*\d+(?:\.\d+)?)<\/span>/i,
-      /<span[^>]*>Size:\s*([XSMLW]*\s*\d+(?:\.\d+)?)<\/span>/i,
-      /<div[^>]*>Size:\s*US\s*([XSMLW]*\s*\d+(?:\.\d+)?)<\/div>/i,
-      /<div[^>]*>Size:\s*([XSMLW]*\s*\d+(?:\.\d+)?)<\/div>/i,
-      
-      // More comprehensive patterns for table cells with any content
-      /<td[^>]*>[\s\n]*([XSMLW]{1,4})[\s\n]*<\/td>/i,
-      /<td[^>]*>[\s\n]*US[\s\n]+([XSMLW]{1,4})[\s\n]*<\/td>/i,
-      /<td[^>]*>[\s\n]*US[\s\n]+(\d+(?:\.\d+)?)[\s\n]*<\/td>/i,
-      
-      // Direct list patterns for simple cases
-      /<li[^>]*>[\s\n]*Size:[\s\n]*US[\s\n]*([XSMLW]+)[\s\n]*<\/li>/i,
-      
-      // Legacy patterns for backwards compatibility
-      /<li[^>]*>Size:\s*([^<]+)<\/li>/i
+      /Size:\s*([XSMLW]+)/i
     ];
     
-    let sizeFound = false;
-    for (let i = 0; i < sizePatterns.length; i++) {
-      const pattern = sizePatterns[i];
+    for (const pattern of sizePatterns) {
       const match = htmlContent.match(pattern);
       if (match) {
-        console.log(`🎯 SIZE FOUND with pattern ${i}:`, match[0]);
-        console.log(`🎯 SIZE EXTRACTED:`, match[1]);
-        
-        let size = match[1].trim();
-        
-        // Clean up size format
-        if (size.match(/^\d+(?:\.\d+)?$/)) {
-          size = `US ${size}`;
-        } else if (size.match(/^[XSMLW]{1,3}$/)) {
-          size = `US ${size}`;
-        }
-        
-        // Skip if size is "15" as this is often a parsing error
-        if (size === "15" || size === "US 15") {
-          console.log(`⚠️ Skipping size "15" as it's likely a parsing error`);
-          continue;
-        }
-        
-        orderInfo.size = size;
-        sizeFound = true;
+        orderInfo.size = match[1].trim();
         break;
       }
     }
-    
-    if (!sizeFound) {
-      console.log('❌ SIZE NOT FOUND - No patterns matched');
-      // Log some key parts of the content for debugging
-      const sizeReferences = htmlContent.match(/[Ss]ize[^<\n]{0,50}/g) || [];
-      console.log('🔍 SIZE REFERENCES FOUND:', sizeReferences);
-    }
-    
-    // If no size found, try extracting from subject line or email content
-    if (!orderInfo.size) {
-      console.log('🔍 FALLBACK SIZE EXTRACTION from text content');
-      console.log('🔍 TEXT CONTENT Sample:', textContent.substring(0, 500) + '...');
-      
-      const textSizePatterns = [
-        /\(Size\s*([^)]+)\)/i,
-        /Size\s*([XSMLW]*\s*\d+(?:\.\d+)?)/i,
-        /Size\s*([XSMLW]+)/i
-      ];
-      
-      let textSizeFound = false;
-      for (let i = 0; i < textSizePatterns.length; i++) {
-        const pattern = textSizePatterns[i];
-        const match = textContent.match(pattern);
-        if (match) {
-          console.log(`🎯 FALLBACK SIZE FOUND with pattern ${i}:`, match[0]);
-          console.log(`🎯 FALLBACK SIZE EXTRACTED:`, match[1]);
-          
-          let size = match[1].trim();
-          if (size.match(/^\d+(?:\.\d+)?$/)) {
-            size = `US ${size}`;
-          } else if (size.match(/^[XSMLW]{1,3}$/)) {
-            size = `US ${size}`;
-          }
-          
-          // Skip if size is "15" as this is often a parsing error
-          if (size === "15" || size === "US 15") {
-            console.log(`⚠️ Skipping fallback size "15" as it's likely a parsing error`);
-            continue;
-          }
-          
-          orderInfo.size = size;
-          textSizeFound = true;
-          break;
-        }
-      }
-      
-              if (!textSizeFound) {
-          console.log('❌ FALLBACK SIZE NOT FOUND - No text patterns matched');
-          // Log some key parts of the text content for debugging
-          const textSizeReferences = textContent.match(/[Ss]ize[^<\n]{0,50}/g) || [];
-          console.log('🔍 TEXT SIZE REFERENCES FOUND:', textSizeReferences);
-        }
-      }
-      
-      console.log('🎯 FINAL SIZE RESULT:', orderInfo.size || 'Unknown Size');
-      console.warn('🎯 FINAL SIZE RESULT:', orderInfo.size || 'Unknown Size'); // Use console.warn for visibility
     
     // Extract condition
     const conditionMatch = htmlContent.match(/Condition:\s*([^<\n]+)/i);
