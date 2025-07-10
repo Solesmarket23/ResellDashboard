@@ -12,9 +12,11 @@ import RemoteScanModal from './RemoteScanModal';
 import PackageScannerModal from './PackageScannerModal';
 import GmailConnector from './GmailConnector';
 import EmailParsingSettings from './EmailParsingSettings';
+import ImagePreviewModal from './ImagePreviewModal';
 
 const Purchases = () => {
   const [sortBy, setSortBy] = useState('Purchase Date');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [showScanModal, setShowScanModal] = useState(false);
   const [showZXingScanModal, setShowZXingScanModal] = useState(false);
   const [showRemoteScanModal, setShowRemoteScanModal] = useState(false);
@@ -31,6 +33,19 @@ const Purchases = () => {
   const [showEmailSettings, setShowEmailSettings] = useState(false);
   const [showAddPurchaseModal, setShowAddPurchaseModal] = useState(false);
   const [hasBeenReset, setHasBeenReset] = useState(false);
+  const [imagePreview, setImagePreview] = useState<{
+    isOpen: boolean;
+    imageUrl: string;
+    productName: string;
+    productBrand: string;
+    productSize: string;
+  }>({
+    isOpen: false,
+    imageUrl: '',
+    productName: '',
+    productBrand: '',
+    productSize: ''
+  });
   const { currentTheme } = useTheme();
   const { user } = useAuth();
   
@@ -51,6 +66,98 @@ const Purchases = () => {
   const [isResizing, setIsResizing] = useState(false);
   const [resizingColumn, setResizingColumn] = useState<string | null>(null);
   const tableRef = useRef<HTMLTableElement>(null);
+  
+  // Helper function to sort purchases
+  const sortPurchases = (purchases: any[], sortKey: string, direction: 'asc' | 'desc') => {
+    return [...purchases].sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+      
+      switch (sortKey) {
+        case 'product':
+          aValue = a.product.name.toLowerCase();
+          bValue = b.product.name.toLowerCase();
+          break;
+        case 'orderNumber':
+          aValue = a.orderNumber.toLowerCase();
+          bValue = b.orderNumber.toLowerCase();
+          break;
+        case 'status':
+          aValue = a.status.toLowerCase();
+          bValue = b.status.toLowerCase();
+          break;
+        case 'tracking':
+          aValue = a.tracking ? a.tracking.toLowerCase() : '';
+          bValue = b.tracking ? b.tracking.toLowerCase() : '';
+          break;
+        case 'market':
+          aValue = a.market.toLowerCase();
+          bValue = b.market.toLowerCase();
+          break;
+        case 'price':
+          aValue = parseFloat(a.price.replace('$', '').replace(',', ''));
+          bValue = parseFloat(b.price.replace('$', '').replace(',', ''));
+          break;
+        case 'purchaseDate':
+          aValue = new Date(a.purchaseDate + ', 2024').getTime();
+          bValue = new Date(b.purchaseDate + ', 2024').getTime();
+          break;
+        case 'dateAdded':
+          aValue = new Date(a.dateAdded.replace('\n', ' ') + ', 2024').getTime();
+          bValue = new Date(b.dateAdded.replace('\n', ' ') + ', 2024').getTime();
+          break;
+        case 'verified':
+          aValue = a.verified.toLowerCase();
+          bValue = b.verified.toLowerCase();
+          break;
+        default:
+          aValue = a[sortKey];
+          bValue = b[sortKey];
+      }
+      
+      if (typeof aValue === 'number' && typeof bValue === 'number') {
+        return direction === 'asc' ? aValue - bValue : bValue - aValue;
+      }
+      
+      const comparison = String(aValue).localeCompare(String(bValue));
+      return direction === 'asc' ? comparison : -comparison;
+    });
+  };
+  
+  // Handle column header click for sorting
+  const handleSort = (column: string) => {
+    if (sortBy === column) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(column);
+      setSortDirection('asc');
+    }
+  };
+  
+  // Get sorted purchases
+  const getSortedPurchases = () => {
+    const allPurchases = [...purchases, ...manualPurchases];
+    return sortPurchases(allPurchases, sortBy, sortDirection);
+  };
+  
+  // Sort icon component
+  const SortIcon = ({ column }: { column: string }) => {
+    if (sortBy !== column) {
+      return (
+        <div className="flex flex-col ml-1 opacity-30">
+          <div className="w-0 h-0 border-l-2 border-r-2 border-b-2 border-transparent border-b-current transform -translate-y-px"></div>
+          <div className="w-0 h-0 border-l-2 border-r-2 border-t-2 border-transparent border-t-current transform translate-y-px"></div>
+        </div>
+      );
+    }
+    
+    return (
+      <div className="flex flex-col ml-1">
+        <div className={`w-0 h-0 border-l-2 border-r-2 border-b-2 border-transparent ${sortDirection === 'asc' ? 'border-b-current' : 'border-b-current opacity-30'} transform -translate-y-px`}></div>
+        <div className={`w-0 h-0 border-l-2 border-r-2 border-t-2 border-transparent ${sortDirection === 'desc' ? 'border-t-current' : 'border-t-current opacity-30'} transform translate-y-px`}></div>
+      </div>
+    );
+  };
   
   // Handle mouse down on resize handle
   const handleMouseDown = (e: React.MouseEvent, columnKey: string) => {
@@ -474,6 +581,20 @@ const Purchases = () => {
 
   const cancelReset = () => {
     setShowResetConfirm(false);
+  };
+
+  const handleImageClick = (purchase: any) => {
+    setImagePreview({
+      isOpen: true,
+      imageUrl: purchase.product.image,
+      productName: purchase.product.name,
+      productBrand: purchase.product.brand,
+      productSize: purchase.product.size
+    });
+  };
+
+  const closeImagePreview = () => {
+    setImagePreview(prev => ({ ...prev, isOpen: false }));
   };
 
   const getStatusBadge = (status: string, color: string) => {
@@ -924,7 +1045,13 @@ const Purchases = () => {
                 >
                   <td className="px-6 py-2">
                     <div className="flex items-start gap-3 min-h-12">
-                      <div className={`w-8 h-8 rounded-lg flex-shrink-0 overflow-hidden ${purchase.product.bgColor} flex items-center justify-center shadow-sm mt-1`}>
+                      <div 
+                        className={`w-8 h-8 rounded-lg flex-shrink-0 overflow-hidden ${purchase.product.bgColor} flex items-center justify-center shadow-sm mt-1 cursor-pointer hover:ring-2 hover:ring-offset-1 ${
+                          currentTheme.name === 'Neon' ? 'hover:ring-cyan-400' : 'hover:ring-blue-400'
+                        } transition-all duration-200`}
+                        onClick={() => handleImageClick(purchase)}
+                        title="Click to preview image"
+                      >
                         <img 
                           src={purchase.product.image} 
                           alt={purchase.product.name}
@@ -1089,6 +1216,16 @@ const Purchases = () => {
       <EmailParsingSettings
         isOpen={showEmailSettings}
         onClose={() => setShowEmailSettings(false)}
+      />
+
+      {/* Image Preview Modal */}
+      <ImagePreviewModal
+        isOpen={imagePreview.isOpen}
+        onClose={closeImagePreview}
+        imageUrl={imagePreview.imageUrl}
+        productName={imagePreview.productName}
+        productBrand={imagePreview.productBrand}
+        productSize={imagePreview.productSize}
       />
 
       {/* Add Purchase Modal */}

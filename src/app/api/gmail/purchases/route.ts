@@ -728,7 +728,7 @@ function parsePurchaseEmail(email: any, config: any) {
       status: category.status,
       statusColor: category.statusColor,
       priority: category.priority,
-      tracking: 'No tracking', // Will be handled by existing tracking extraction logic
+      tracking: await extractTrackingNumber(orderInfo.order_number, gmail) || 'No tracking',
       market,
       price,
       originalPrice: `${price} + $0.00`,
@@ -824,6 +824,155 @@ function getEmailBody(email: any): string {
   } catch (error) {
     console.error('Error extracting email body:', error);
     return '';
+  }
+}
+
+// Enhanced tracking number extraction function
+async function extractTrackingNumber(orderNumber: string, gmail: any): Promise<string | null> {
+  if (!orderNumber || !gmail) return null;
+  
+  try {
+    console.log(`🔍 TRACKING: Searching for tracking number for order ${orderNumber}`);
+    
+    // Search for shipping emails containing this order number
+    const shippingQueries = [
+      `from:noreply@stockx.com AND subject:"Order Verified & Shipped:" AND "${orderNumber}"`,
+      `from:noreply@stockx.com AND subject:"Order Shipped:" AND "${orderNumber}"`,
+      `from:noreply@stockx.com AND subject:"Xpress Order Shipped:" AND "${orderNumber}"`,
+      `from:stockx.com AND subject:"shipped" AND "${orderNumber}"`
+    ];
+
+    for (const query of shippingQueries) {
+      try {
+        const response = await gmail.users.messages.list({
+          userId: 'me',
+          q: query,
+          maxResults: 5
+        });
+
+        if (response.data.messages && response.data.messages.length > 0) {
+          console.log(`📧 TRACKING: Found ${response.data.messages.length} shipping emails for order ${orderNumber}`);
+          
+          // Get the first shipping email
+          const emailData = await gmail.users.messages.get({
+            userId: 'me',
+            id: response.data.messages[0].id,
+            format: 'full'
+          });
+
+          const subject = emailData.data.payload?.headers?.find((h: any) => h.name === 'Subject')?.value || '';
+          console.log(`📧 TRACKING: Processing shipping email: "${subject}"`);
+
+          // Extract tracking number from email content
+          const trackingNumber = extractTrackingFromShippingEmail(emailData.data);
+          
+          if (trackingNumber) {
+            console.log(`✅ TRACKING: Found tracking number ${trackingNumber} for order ${orderNumber}`);
+            return trackingNumber;
+          }
+        }
+      } catch (error) {
+        console.error(`TRACKING: Error searching with query "${query}":`, error);
+      }
+    }
+
+    console.log(`❌ TRACKING: No tracking number found for order ${orderNumber}`);
+    return null;
+  } catch (error) {
+    console.error(`TRACKING: Error extracting tracking for order ${orderNumber}:`, error);
+    return null;
+  }
+}
+
+// Extract tracking number from shipping email content
+function extractTrackingFromShippingEmail(email: any): string | null {
+  try {
+    // Get email body content
+    let bodyContent = '';
+    if (email.payload?.parts) {
+      for (const part of email.payload.parts) {
+        if (part.mimeType === 'text/html' || part.mimeType === 'text/plain') {
+          if (part.body?.data) {
+            bodyContent += Buffer.from(part.body.data, 'base64').toString('utf8');
+          }
+        }
+      }
+    } else if (email.payload?.body?.data) {
+      bodyContent = Buffer.from(email.payload.body.data, 'base64').toString('utf8');
+    }
+
+    // Enhanced tracking patterns optimized for StockX emails
+    const trackingPatterns = [
+      { 
+        name: 'UPS Tracking', 
+        regex: /(1Z[0-9A-Z]{16})/gi,
+        validator: (match: string) => /^1Z[0-9A-Z]{16}$/i.test(match)
+      },
+      { 
+        name: 'FedEx 12-digit', 
+        regex: /(?:tracking.*?|number.*?|track.*?)([0-9]{12})\b/gi,
+        validator: (match: string) => /^[0-9]{12}$/.test(match) && !isCommonExclusion(match)
+      },
+      { 
+        name: 'FedEx 14-digit', 
+        regex: /(?:tracking.*?|number.*?|track.*?)([0-9]{14})\b/gi,
+        validator: (match: string) => /^[0-9]{14}$/.test(match) && !isCommonExclusion(match)
+      },
+      { 
+        name: 'USPS Priority', 
+        regex: /(9[0-9]{21})\b/gi,
+        validator: (match: string) => /^9[0-9]{21}$/.test(match)
+      },
+      { 
+        name: 'USPS Standard', 
+        regex: /(9[0-9]{19})\b/gi,
+        validator: (match: string) => /^9[0-9]{19}$/.test(match)
+      },
+      { 
+        name: 'Generic Long Numbers', 
+        regex: /\b([0-9]{10,22})\b/gi,
+        validator: (match: string) => match.length >= 10 && !isCommonExclusion(match)
+      }
+    ];
+
+    // Helper function to exclude common non-tracking numbers
+    function isCommonExclusion(num: string): boolean {
+      const excluded = [
+        // Price-related
+        /^(150|173|14|8|00|000)/, 
+        // Dates/years
+        /^20[0-9]{2}$/, 
+        // Common patterns
+        /^[0-9]{5}$/, // ZIP codes
+        /^[0-9]{10}$/, // Phone numbers
+        /^0+$/, // All zeros
+        /^1+$/, // All ones
+        // StockX order number patterns
+        /^[0-9]{2}-/,
+        /^[0-9]{8}-[0-9]{8}$/
+      ];
+      
+      return excluded.some(pattern => pattern.test(num));
+    }
+
+    // Try patterns in priority order
+    for (const pattern of trackingPatterns) {
+      const matches = bodyContent.match(pattern.regex) || [];
+      
+      for (const match of matches) {
+        const cleanMatch = match.replace(/[<>]/g, '').trim();
+        
+        if (pattern.validator(cleanMatch)) {
+          console.log(`✅ TRACKING: Found ${pattern.name}: ${cleanMatch}`);
+          return cleanMatch;
+        }
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error('TRACKING: Error extracting from email:', error);
+    return null;
   }
 }
 
