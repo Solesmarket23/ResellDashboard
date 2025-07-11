@@ -54,15 +54,17 @@ function extractOrderNumber(emailData: any): string | null {
   
   // Try to extract order number from subject and HTML
   const orderPatterns = [
-    // Standard single order numbers
+    // For refund emails with compound order numbers - extract the second part (the purchase order) FIRST
+    /Order number:\s*\d+-(\d+)/i,
+    /Order Number:\s*\d+-(\d+)/i,
+    /order number:\s*\d+-(\d+)/i,
+    // Specific pattern for the format we see: "75573966-75473725"
+    /(\d{8})-(\d{8})/i,  // This will capture both parts, we want the second
+    // Standard single order numbers (these come after compound patterns)
     /Order number:\s*([A-Z0-9-]+)/i,
     /Order Number:\s*([A-Z0-9-]+)/i,
     /Order:\s*([A-Z0-9-]+)/i,
     /#([A-Z0-9-]+)/i,
-    // For refund emails with compound order numbers - extract the second part (the purchase order)
-    /Order number:\s*\d+-(\d+)/i,
-    /Order Number:\s*\d+-(\d+)/i,
-    /order number:\s*\d+-(\d+)/i,
     // Additional patterns for HTML content
     /Order number:\s*([0-9]{8})/i,  // 8-digit order numbers
     /order:\s*([0-9]{8})/i
@@ -71,8 +73,14 @@ function extractOrderNumber(emailData: any): string | null {
   for (const pattern of orderPatterns) {
     const match = subjectHeader.match(pattern);
     if (match) {
-      console.log(`🎯 Subject match found: pattern=${pattern.toString()}, result="${match[1].trim()}"`);
-      return match[1].trim();
+      // For compound order pattern like "75573966-75473725", we want the second part
+      if (pattern.toString().includes('(\\d{8})-(\\d{8})') && match[2]) {
+        console.log(`🎯 Subject compound match: pattern=${pattern.toString()}, first="${match[1]}", second="${match[2]}"`);
+        return match[2].trim(); // Return the second order number (purchase order)
+      } else {
+        console.log(`🎯 Subject match found: pattern=${pattern.toString()}, result="${match[1].trim()}"`);
+        return match[1].trim();
+      }
     }
   }
   
@@ -104,8 +112,14 @@ function extractOrderNumber(emailData: any): string | null {
     for (const pattern of orderPatterns) {
       const match = htmlContent.match(pattern);
       if (match) {
-        console.log(`🎯 HTML match found: pattern=${pattern.toString()}, result="${match[1].trim()}"`);
-        return match[1].trim();
+        // For compound order pattern like "75573966-75473725", we want the second part
+        if (pattern.toString().includes('(\\d{8})-(\\d{8})') && match[2]) {
+          console.log(`🎯 HTML compound match: pattern=${pattern.toString()}, first="${match[1]}", second="${match[2]}"`);
+          return match[2].trim(); // Return the second order number (purchase order)
+        } else {
+          console.log(`🎯 HTML match found: pattern=${pattern.toString()}, result="${match[1].trim()}"`);
+          return match[1].trim();
+        }
       }
     }
     console.log(`❌ No order number patterns matched in HTML`);
