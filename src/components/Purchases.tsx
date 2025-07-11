@@ -868,7 +868,7 @@ const Purchases = () => {
           <table ref={tableRef} className="w-full" style={{ tableLayout: 'fixed' }}>
             <thead className={`${
               currentTheme.name === 'Neon' 
-                ? 'bg-white/5 border-b border-white/10' 
+                ? 'bg-gray-900 border-b border-white/10' 
                 : 'bg-gray-50 border-b border-gray-200'
             } sticky top-0 z-10`}>
               <tr className="h-10">
