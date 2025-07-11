@@ -24,12 +24,13 @@ function getDefaultConfig() {
   return {
     emailCategories: {
       orderPlaced: {
-        name: "Order Placed",
+        name: "Order Placed", 
         status: "Ordered",
         statusColor: "orange",
         subjectPatterns: [
-          "Order Confirmation:",
+          "Order Confirmed:",
           "Xpress Order Confirmed:",
+          "Order Confirmation:",
           "Order Confirmation",
           "Purchase Confirmed"
         ]
@@ -188,8 +189,8 @@ export async function GET(request: NextRequest) {
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     const config = getDefaultConfig();
 
-    // Use primary StockX query for purchases only (exclude sales)
-    const primaryQuery = 'from:noreply@stockx.com -subject:"You Sold" -subject:"Sale" -subject:"Payout" -subject:"Ship" -subject:"Ask was matched"';
+    // Use primary StockX query for purchases only - prioritize Order Confirmed emails which have size info
+    const primaryQuery = 'from:noreply@stockx.com (subject:"Order Confirmed" OR subject:"Xpress Order Confirmed") -subject:"You Sold" -subject:"Sale" -subject:"Payout" -subject:"Ship your"';
     
     console.log(`📦 BATCH ${batchIndex}: Searching with query: ${primaryQuery}`);
 
