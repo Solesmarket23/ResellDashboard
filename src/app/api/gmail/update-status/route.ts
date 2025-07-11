@@ -31,6 +31,17 @@ function getStatusUpdateConfig() {
           "Xpress Order Shipped:",
           "Your order has shipped"
         ]
+      },
+      orderCanceled: {
+        status: "Canceled",
+        statusColor: "red",
+        priority: 6,
+        subjectPatterns: [
+          "Refund Issued:",
+          "Order canceled",
+          "Order Canceled",
+          "Refund processed"
+        ]
       }
     }
   };
@@ -46,7 +57,10 @@ function extractOrderNumber(emailData: any): string | null {
     /Order number:\s*([A-Z0-9-]+)/i,
     /Order Number:\s*([A-Z0-9-]+)/i,
     /Order:\s*([A-Z0-9-]+)/i,
-    /#([A-Z0-9-]+)/i
+    /#([A-Z0-9-]+)/i,
+    // For refund emails, extract the second part of compound order numbers
+    /Order number:\s*\d+-(\d+)/i,
+    /Order Number:\s*\d+-(\d+)/i
   ];
   
   for (const pattern of orderPatterns) {
@@ -146,8 +160,8 @@ export async function POST(request: NextRequest) {
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     const config = getStatusUpdateConfig();
 
-    // Query for status update emails only
-    const statusQuery = 'from:noreply@stockx.com (subject:"Order Delivered" OR subject:"Xpress Ship Order Delivered" OR subject:"Order Shipped") -subject:"You Sold" -subject:"Sale" -subject:"Payout"';
+    // Query for status update emails only  
+    const statusQuery = 'from:noreply@stockx.com (subject:"Order Delivered" OR subject:"Xpress Ship Order Delivered" OR subject:"Order Shipped" OR subject:"Refund Issued") -subject:"You Sold" -subject:"Sale" -subject:"Payout"';
     
     console.log(`📧 STATUS QUERY: ${statusQuery}`);
 
