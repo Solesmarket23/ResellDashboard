@@ -534,13 +534,15 @@ const Purchases = () => {
 
   // Handle checkbox selection
   const handleSelectPurchase = (purchaseId: string) => {
-    const newSelectedPurchases = new Set(selectedPurchases);
-    if (newSelectedPurchases.has(purchaseId)) {
-      newSelectedPurchases.delete(purchaseId);
-    } else {
-      newSelectedPurchases.add(purchaseId);
-    }
-    setSelectedPurchases(newSelectedPurchases);
+    setSelectedPurchases(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(purchaseId)) {
+        newSet.delete(purchaseId);
+      } else {
+        newSet.add(purchaseId);
+      }
+      return newSet;
+    });
   };
 
   // Handle select all
@@ -566,10 +568,17 @@ const Purchases = () => {
       let deletedCount = 0;
       
       for (const purchaseId of selectedPurchases) {
-        const purchase = allPurchases.find(p => p.id.toString() === purchaseId);
-        if (purchase && purchase.id) {
-          await deleteDocument('purchases', purchase.id.toString());
-          deletedCount++;
+        const purchase = allPurchases.find(p => {
+          // Handle both string and number IDs
+          return p.id?.toString() === purchaseId;
+        });
+        
+        if (purchase?.id) {
+          // Only delete from Firebase if it has a Firebase document ID (not mock data)
+          if (typeof purchase.id === 'string' && purchase.id.length > 10) {
+            await deleteDocument('purchases', purchase.id);
+            deletedCount++;
+          }
         }
       }
       
@@ -579,6 +588,11 @@ const Purchases = () => {
       // Reload purchases
       if (user) {
         await loadManualPurchasesFromFirebase();
+      } else {
+        // If not logged in, just filter out the selected items from mock data
+        const remainingPurchases = purchases.filter(p => !selectedPurchases.has(p.id?.toString()));
+        setPurchases(remainingPurchases);
+        calculateTotals([...remainingPurchases, ...manualPurchases]);
       }
     } catch (error) {
       console.error('❌ Error deleting selected purchases:', error);
@@ -703,6 +717,19 @@ const Purchases = () => {
             </p>
           </div>
           <div className="flex items-center space-x-2">
+            {selectedPurchases.size > 0 && (
+              <button
+                onClick={handleDeleteSelected}
+                className={`flex items-center space-x-2 ${
+                  currentTheme.name === 'Neon' 
+                    ? 'bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30' 
+                    : 'bg-red-600 hover:bg-red-700 text-white'
+                } px-4 py-2 rounded-lg font-medium transition-all duration-200`}
+              >
+                <Trash2 className="w-5 h-5" />
+                <span>Delete Selected ({selectedPurchases.size})</span>
+              </button>
+            )}
             {gmailConnected && (
               <button
                 onClick={refreshPurchases}
@@ -938,19 +965,6 @@ const Purchases = () => {
                     onChange={handleSelectAll}
                     className={`rounded ${currentTheme.name === 'Neon' ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-300'} cursor-pointer`}
                   />
-                  {selectedPurchases.size > 0 && (
-                    <button
-                      onClick={handleDeleteSelected}
-                      className={`absolute -top-12 left-0 flex items-center space-x-1 px-3 py-1.5 rounded-md text-sm font-medium ${
-                        currentTheme.name === 'Neon' 
-                          ? 'bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30' 
-                          : 'bg-red-600 hover:bg-red-700 text-white'
-                      } transition-all duration-200`}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      <span>Delete ({selectedPurchases.size})</span>
-                    </button>
-                  )}
                 </th>
                 <th 
                   className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
@@ -1195,7 +1209,7 @@ const Purchases = () => {
             }`}>
               {getSortedPurchases().map((purchase) => (
                 <tr 
-                  key={purchase.id} 
+                  key={purchase.id?.toString() || Math.random()} 
                   data-purchase-id={purchase.id}
                   className={`${
                     currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-50'
@@ -1204,8 +1218,8 @@ const Purchases = () => {
                   <td className="px-3 py-2 text-center">
                     <input
                       type="checkbox"
-                      checked={selectedPurchases.has(purchase.id.toString())}
-                      onChange={() => handleSelectPurchase(purchase.id.toString())}
+                      checked={selectedPurchases.has(purchase.id?.toString() || '')}
+                      onChange={() => handleSelectPurchase(purchase.id?.toString() || '')}
                       className={`rounded ${currentTheme.name === 'Neon' ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-300'} cursor-pointer`}
                     />
                   </td>

@@ -139,33 +139,13 @@ function consolidateOrderEmails(purchases: any[]) {
     if (orderEmails.length === 1) {
       consolidatedPurchases.push(orderEmails[0]);
     } else {
-      // Sort by status priority for final status
       const sortedEmails = orderEmails.sort((a, b) => {
         const priorityA = STATUS_PRIORITIES[a.status] || 1;
         const priorityB = STATUS_PRIORITIES[b.status] || 1;
         return priorityB - priorityA;
       });
       
-      // Get the highest priority status
       const primaryEmail = sortedEmails[0];
-      
-      // But preserve size info from Order Confirmed emails if available
-      const confirmedEmail = orderEmails.find(email => 
-        email.subject && (
-          email.subject.includes('Order Confirmed') || 
-          email.subject.includes('Xpress Order Confirmed')
-        ) && 
-        email.product && 
-        email.product.size && 
-        email.product.size !== 'Unknown Size'
-      );
-      
-      if (confirmedEmail && confirmedEmail.product.size !== 'Unknown Size') {
-        // Keep status from primary email but size from confirmed email
-        primaryEmail.product.size = confirmedEmail.product.size;
-        console.log(`🔄 CONSOLIDATED: Using status "${primaryEmail.status}" from ${primaryEmail.subject} but size "${confirmedEmail.product.size}" from confirmed email`);
-      }
-      
       primaryEmail.consolidatedFrom = sortedEmails.length;
       primaryEmail.allStatuses = sortedEmails.map(e => e.status);
       consolidatedPurchases.push(primaryEmail);
@@ -211,8 +191,8 @@ export async function GET(request: NextRequest) {
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     const config = getDefaultConfig();
 
-    // Use primary StockX query for purchases only - include both confirmed and status update emails
-    const primaryQuery = 'from:noreply@stockx.com (subject:"Order Confirmed" OR subject:"Xpress Order Confirmed" OR subject:"Order Delivered" OR subject:"Xpress Ship Order Delivered" OR subject:"Order Shipped") -subject:"You Sold" -subject:"Sale" -subject:"Payout" -subject:"Ship your"';
+    // Use primary StockX query for purchases only - ONLY Order Confirmed emails for size info
+    const primaryQuery = 'from:noreply@stockx.com (subject:"Order Confirmed" OR subject:"Xpress Order Confirmed") -subject:"You Sold" -subject:"Sale" -subject:"Payout" -subject:"Ship your"';
     
     console.log(`📦 BATCH ${batchIndex}: Searching with query: ${primaryQuery}`);
 
