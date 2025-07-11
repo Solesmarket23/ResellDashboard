@@ -352,8 +352,8 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
     // Categorize the email based on subject
     const category = categorizeEmail(subjectHeader, config);
     
-    // Extract brand and market info
-    const brand = orderInfo.merchant || 'StockX';
+    // Extract actual brand from product name
+    const brand = extractBrandFromProductName(orderInfo.product_name || '');
     const market = 'StockX';
     
     // Format pricing
@@ -374,9 +374,17 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
     // Get product image
     const productImage = orderInfo.product_image_url || 'https://picsum.photos/200/200?random=' + orderInfo.order_number;
 
+    console.log(`🔍 PARSED ORDER INFO:`, {
+      order_number: orderInfo.order_number,
+      product_name: orderInfo.product_name,
+      extracted_brand: brand,
+      size: orderInfo.size,
+      total_amount: orderInfo.total_amount
+    });
+
     // Return in the expected UI format
     return {
-      id: orderInfo.order_number,
+      id: orderInfo.order_number || `email-${emailData.id}`,
       product: {
         name: orderInfo.product_name || 'Unknown Product',
         brand,
@@ -384,7 +392,7 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
         image: productImage,
         bgColor: getBrandColor(brand)
       },
-      orderNumber: orderInfo.order_number,
+      orderNumber: orderInfo.order_number || 'No Order Number',
       status: category.status,
       statusColor: category.statusColor,
       priority: category.priority,
@@ -431,13 +439,57 @@ function categorizeEmail(subject: string, config: any) {
   };
 }
 
+// Extract brand from product name
+function extractBrandFromProductName(productName: string): string {
+  if (!productName) return 'Unknown';
+  
+  const brandPatterns = [
+    // Specific brand patterns
+    { pattern: /^(Nike|Air Jordan|Jordan)\b/i, brand: 'Nike' },
+    { pattern: /^(Adidas|Yeezy)\b/i, brand: 'Adidas' },
+    { pattern: /^(New Balance)\b/i, brand: 'New Balance' },
+    { pattern: /^(Converse)\b/i, brand: 'Converse' },
+    { pattern: /^(Vans)\b/i, brand: 'Vans' },
+    { pattern: /^(Puma)\b/i, brand: 'Puma' },
+    { pattern: /^(UGG)\b/i, brand: 'UGG' },
+    { pattern: /^(Denim Tears)\b/i, brand: 'Denim Tears' },
+    { pattern: /^(Off-White|Off White)\b/i, brand: 'Off-White' },
+    { pattern: /^(Supreme)\b/i, brand: 'Supreme' },
+    { pattern: /^(Balenciaga)\b/i, brand: 'Balenciaga' },
+    { pattern: /^(Louis Vuitton|LV)\b/i, brand: 'Louis Vuitton' },
+    { pattern: /^(Gucci)\b/i, brand: 'Gucci' },
+    { pattern: /^(Fear of God|FOG)\b/i, brand: 'Fear of God' },
+    { pattern: /^(Stone Island)\b/i, brand: 'Stone Island' },
+    { pattern: /^(Travis Scott)\b/i, brand: 'Travis Scott' },
+    { pattern: /^(Kaws)\b/i, brand: 'Kaws' }
+  ];
+  
+  // Check each pattern
+  for (const { pattern, brand } of brandPatterns) {
+    if (pattern.test(productName)) {
+      return brand;
+    }
+  }
+  
+  // Fallback: take first word if no brand matched
+  const firstWord = productName.split(' ')[0];
+  return firstWord || 'Unknown';
+}
+
 // Get brand color for UI
 function getBrandColor(brand: string) {
   const brandColors: Record<string, string> = {
-    'StockX': 'bg-green-600',
     'Nike': 'bg-black',
     'Adidas': 'bg-blue-600',
-    'Jordan': 'bg-red-600'
+    'Jordan': 'bg-red-600',
+    'New Balance': 'bg-gray-700',
+    'UGG': 'bg-amber-700',
+    'Denim Tears': 'bg-indigo-600',
+    'Off-White': 'bg-gray-800',
+    'Supreme': 'bg-red-700',
+    'Balenciaga': 'bg-purple-600',
+    'Fear of God': 'bg-gray-600',
+    'Travis Scott': 'bg-amber-600'
   };
   
   return brandColors[brand] || 'bg-gray-600';
