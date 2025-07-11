@@ -201,40 +201,53 @@ export class OrderConfirmationParser {
       }
     }
     
-    // Extract size - comprehensive patterns for StockX emails
+    // Extract size - comprehensive patterns for StockX emails (avoiding CSS matches)
     const sizePatterns = [
-      // HTML list items
-      /<li[^>]*class="attributes"[^>]*>.*?Size[^:]*:\s*([^<]+)<\/li>/i,
-      /<li[^>]*>.*?Size[^:]*:\s*([^<]+)<\/li>/i,
-      /<li[^>]*>([^<]*Size[^<]*)<\/li>/i,
+      // HTML list items with size information (most specific first)
+      /<li[^>]*class="attributes"[^>]*>.*?(?:U\.S\.\s*)?(?:Men's|Women's)\s*Size:\s*([^<\n\r!]+?)<\/li>/i,
+      /<li[^>]*class="attributes"[^>]*>.*?Size:\s*([^<\n\r!]+?)<\/li>/i,
+      /<li[^>]*>.*?(?:U\.S\.\s*)?(?:Men's|Women's)\s*Size:\s*([^<\n\r!]+?)<\/li>/i,
+      /<li[^>]*>.*?Size:\s*([^<\n\r!]+?)<\/li>/i,
       
-      // US Men's/Women's size patterns
-      /U\.S\.\s*(?:Men's|Women's)\s*Size:\s*([^<\n\r]+)/i,
-      /US\s*(?:Men's|Women's)\s*Size:\s*([^<\n\r]+)/i,
-      /(?:Men's|Women's)\s*Size:\s*([^<\n\r]+)/i,
+      // Text content patterns (not in HTML tags or CSS)
+      /(?:^|\n)\s*(?:U\.S\.\s*)?(?:Men's|Women's)\s*Size:\s*([^\n\r!;{}]+?)(?:\n|$)/im,
+      /(?:^|\n)\s*Size:\s*([^\n\r!;{}]+?)(?:\n|$)/im,
       
-      // General size patterns
-      /\bSize[^:]*:\s*([^<\n\r,]+)/i,
-      /\(Size\s*([^)]+)\)/i,
+      // Product title size extraction (avoid CSS)
+      /Size\s+US\s+([A-Z0-9\.]+)(?:\s|$)/i,
+      /Size\s+([XSML]{1,3})(?:\s|$)/i,
+      /Size\s+(\d+(?:\.\d+)?[WC]?)(?:\s|$)/i,
       
-      // Product title size extraction (like "Size US 10")
-      /Size\s+US\s+([^<\n\r,\s]+)/i,
-      /Size\s+([XSML]{1,3}|\d+(?:\.\d+)?[WC]?)/i,
-      
-      // Fallback patterns
-      /Size:\s*([XSMLW]*\s*\d+(?:\.\d+)?)/i,
-      /Size:\s*([XSMLW]+)/i
+      // Parenthetical size (common in product names)
+      /\(Size\s*([^)!;{}]+)\)/i
     ];
     
     for (const pattern of sizePatterns) {
       const match = htmlContent.match(pattern);
       if (match) {
         let size = match[1].trim();
+        
+        // Skip if this looks like CSS or code
+        if (size.includes('!important') || 
+            size.includes('webkit') || 
+            size.includes('font-family') ||
+            size.includes(';') ||
+            size.includes('{') ||
+            size.includes('}') ||
+            size.includes('%') ||
+            size.length > 20) {
+          console.log(`🚫 SKIPPING CSS-like match: "${size}"`);
+          continue;
+        }
+        
         // Clean up the size string
         size = size.replace(/^(Size|US|Men's|Women's)[\s:]*/, '').trim();
-        if (size && size !== 'Size' && size.length > 0) {
+        size = size.replace(/[,;].*$/, '').trim(); // Remove anything after comma or semicolon
+        
+        // Validate it looks like a real size
+        if (size && size !== 'Size' && size.length > 0 && size.length <= 10) {
           orderInfo.size = size;
-          console.log(`🔍 SIZE EXTRACTED: "${size}" using pattern: ${pattern}`);
+          console.log(`✅ SIZE EXTRACTED: "${size}" using pattern: ${pattern}`);
           break;
         }
       }
@@ -243,15 +256,26 @@ export class OrderConfirmationParser {
     // If no size found, try to extract from product name patterns
     if (!orderInfo.size || orderInfo.size === '15') { // '15' seems to be a default fallback
       const productSizePatterns = [
-        /\(Size\s*([^)]+)\)/i,
-        /Size\s*([XSML]+|\d+(?:\.\d+)?[WC]?)/i
+        /\(Size\s*([^)!;{}]+)\)/i,
+        /Size\s*([XSML]+)(?:\s|$)/i,
+        /Size\s*(\d+(?:\.\d+)?[WC]?)(?:\s|$)/i
       ];
       
       for (const pattern of productSizePatterns) {
         const match = orderInfo.product_name.match(pattern);
         if (match) {
-          orderInfo.size = match[1].trim();
-          console.log(`🔍 SIZE FROM PRODUCT NAME: "${match[1].trim()}"`);
+          let size = match[1].trim();
+          
+          // Skip if this looks like CSS or is too long
+          if (size.includes('!important') || 
+              size.includes('webkit') || 
+              size.includes(';') ||
+              size.length > 10) {
+            continue;
+          }
+          
+          orderInfo.size = size;
+          console.log(`🔍 SIZE FROM PRODUCT NAME: "${size}"`);
           break;
         }
       }
