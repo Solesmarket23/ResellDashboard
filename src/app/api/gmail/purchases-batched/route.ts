@@ -4,8 +4,8 @@ import { cookies } from 'next/headers';
 import { parseGmailApiMessage, orderInfoToDict, OrderInfo } from '../../../../lib/email/orderConfirmationParser';
 
 // Batch configuration
-const BATCH_SIZE = 15; // Process 15 emails per batch
-const MAX_BATCHES_PER_REQUEST = 3; // Max 3 batches per API call (45 emails)
+const BATCH_SIZE = 20; // Process 20 emails per batch
+const MAX_BATCHES_PER_REQUEST = 1; // Max 1 batch per API call (20 emails)
 const TIMEOUT_PER_EMAIL = 8000; // 8 seconds per email
 
 interface BatchProgress {

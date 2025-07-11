@@ -67,7 +67,9 @@ function extractOrderNumber(emailData: any): string | null {
     /#([A-Z0-9-]+)/i,
     // Additional patterns for HTML content
     /Order number:\s*([0-9]{8})/i,  // 8-digit order numbers
-    /order:\s*([0-9]{8})/i
+    /order:\s*([0-9]{8})/i,
+    // Standalone 8-digit numbers (could be order numbers)
+    /\b(\d{8})\b/i
   ];
   
   for (const pattern of orderPatterns) {
@@ -184,7 +186,7 @@ export async function POST(request: NextRequest) {
     const config = getStatusUpdateConfig();
 
     // Query for status update emails only  
-    const statusQuery = 'from:noreply@stockx.com (subject:"Order Delivered" OR subject:"Xpress Ship Order Delivered" OR subject:"Order Shipped" OR subject:"Refund Issued") -subject:"You Sold" -subject:"Sale" -subject:"Payout"';
+    const statusQuery = 'from:noreply@stockx.com (subject:"Order Delivered" OR subject:"Xpress Ship Order Delivered" OR subject:"Order Shipped" OR subject:"Refund Issued:") -subject:"You Sold" -subject:"Sale" -subject:"Payout"';
     
     console.log(`📧 STATUS QUERY: ${statusQuery}`);
 

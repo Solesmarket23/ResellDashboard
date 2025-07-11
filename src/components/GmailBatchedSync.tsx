@@ -51,7 +51,7 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
     let allCollectedPurchases: any[] = [];
     let hasMore = true;
 
-    while (hasMore && batchIndex < 20) { // Safety limit of 20 batches
+    while (hasMore && batchIndex < 1) { // Limit to 1 batch (20 emails)
       try {
         console.log(`🚀 Starting batch ${batchIndex + 1}...`);
         

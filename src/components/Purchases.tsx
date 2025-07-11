@@ -202,14 +202,11 @@ const Purchases = () => {
 
   // Load data on component mount
   useEffect(() => {
-    if (!gmailConnected && !hasBeenReset) {
-      loadMockData();
-    }
-    // Always load manual purchases from Firebase
+    // Always load purchases from Firebase when user is available
     if (user) {
       loadManualPurchasesFromFirebase();
     }
-  }, [gmailConnected, user, hasBeenReset]);
+  }, [user]);
 
   // Separate useEffect for config updates with debouncing - REMOVED lastFetchTime dependency
   useEffect(() => {
@@ -234,9 +231,23 @@ const Purchases = () => {
   }, [gmailConnected]);
 
   // Handle batched Gmail sync updates
-  const handleBatchedPurchasesUpdate = (allPurchases: any[]) => {
+  const handleBatchedPurchasesUpdate = async (allPurchases: any[]) => {
     console.log(`📧 Batched sync update: ${allPurchases.length} total purchases`);
+    console.log(`🔍 DEBUG - user available:`, !!user, `user.uid:`, user?.uid);
     setPurchases(allPurchases);
+    
+    // Save to Firebase immediately when purchases are updated
+    if (user && allPurchases.length > 0) {
+      console.log(`🔄 Attempting to save ${allPurchases.length} purchases to Firebase...`);
+      try {
+        await saveGmailPurchasesToFirebase(allPurchases);
+        console.log(`💾 Gmail purchases auto-saved to Firebase`);
+      } catch (error) {
+        console.error(`❌ Failed to save Gmail purchases to Firebase:`, error);
+      }
+    } else {
+      console.warn(`⚠️ Cannot save to Firebase - user: ${!!user}, purchases: ${allPurchases.length}`);
+    }
     
     // Combine with manual purchases for totals
     const combinedPurchases = [...allPurchases, ...manualPurchases];
@@ -247,9 +258,10 @@ const Purchases = () => {
   const handleBatchedSyncComplete = async (totalPurchases: number) => {
     console.log(`✅ Batched Gmail sync complete: Found ${totalPurchases} purchases`);
     
-    // Save Gmail purchases to Firebase
+    // Save Gmail purchases to Firebase - use the latest purchases from state
     if (user && purchases.length > 0) {
       await saveGmailPurchasesToFirebase(purchases);
+      console.log(`💾 Gmail purchases persisted to Firebase for future refreshes`);
     }
   };
 
@@ -263,39 +275,40 @@ const Purchases = () => {
     try {
       console.log(`📧 Saving ${gmailPurchases.length} Gmail purchases to Firebase...`);
       
-      // Get existing Gmail purchases to avoid duplicates
+      // Clear existing Gmail purchases for this user first
       const existingPurchases = await getDocuments('purchases');
       const existingGmailPurchases = existingPurchases.filter(
         (purchase: any) => purchase.userId === user.uid && purchase.type === 'gmail'
       );
       
-      // Create a Set of existing order numbers for quick lookup
-      const existingOrderNumbers = new Set(
-        existingGmailPurchases.map(p => p.orderNumber)
-      );
+      // Delete old Gmail purchases
+      for (const oldPurchase of existingGmailPurchases) {
+        try {
+          await deleteDocument('purchases', oldPurchase.id);
+        } catch (error) {
+          console.warn(`⚠️ Could not delete old purchase ${oldPurchase.id}:`, error);
+        }
+      }
       
+      console.log(`🗑️ Cleared ${existingGmailPurchases.length} old Gmail purchases`);
+      
+      // Save all current Gmail purchases
       let savedCount = 0;
-      let skippedCount = 0;
       
       for (const purchase of gmailPurchases) {
-        // Skip if already exists
-        if (existingOrderNumbers.has(purchase.orderNumber)) {
-          skippedCount++;
-          continue;
-        }
-        
         const purchaseData = {
           ...purchase,
           userId: user.uid,
           createdAt: new Date().toISOString(),
-          type: 'gmail' // Mark as Gmail import
+          type: 'gmail', // Mark as Gmail import
+          syncedAt: new Date().toISOString()
         };
         
         await addDocument('purchases', purchaseData);
         savedCount++;
       }
       
-      console.log(`✅ Gmail purchases saved to Firebase: ${savedCount} new, ${skippedCount} skipped (already exist)`);
+      console.log(`✅ Gmail purchases saved to Firebase: ${savedCount} purchases`);
       
     } catch (error) {
       console.error('❌ Error saving Gmail purchases to Firebase:', error);
@@ -424,8 +437,8 @@ const Purchases = () => {
       
       setManualPurchases(manualPurchases);
       
-      // 🔥 NEW: If Gmail is connected, load Gmail purchases from Firebase
-      if (gmailConnected && gmailPurchases.length > 0) {
+      // 🔥 Load Gmail purchases from Firebase if they exist
+      if (gmailPurchases.length > 0) {
         setPurchases(gmailPurchases);
         console.log(`✅ Loaded ${gmailPurchases.length} Gmail purchases from Firebase`);
       }
@@ -732,6 +745,13 @@ const Purchases = () => {
 
       // Update each modified purchase in Firebase
       for (const purchase of modifiedPurchases) {
+        // Only update if the purchase has a valid Firebase document ID
+        // Firebase IDs are auto-generated and don't start with order number patterns
+        if (!purchase.id || purchase.id.startsWith('75-') || purchase.id.match(/^\d{8}/)) {
+          console.log(`⏭️ Skipping Firebase update for ${purchase.orderNumber} - no valid document ID (id: ${purchase.id})`);
+          continue;
+        }
+        
         try {
           await updateDocument('purchases', purchase.id, {
             status: purchase.status,
