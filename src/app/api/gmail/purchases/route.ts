@@ -143,9 +143,9 @@ function generateQueries(config: any) {
     }
   }
 
-  // Add focused StockX search queries to catch historical emails (past 2 years)
-  queries.push('from:noreply@stockx.com after:2022/1/1'); 
-  queries.push('from:stockx.com after:2022/1/1');
+  // Add focused StockX search queries for PURCHASES only (exclude sales) (past 2 years)
+  queries.push('from:noreply@stockx.com after:2022/1/1 -subject:"You Sold" -subject:"Sale" -subject:"Payout" -subject:"Ship" -subject:"Ask was matched"'); 
+  queries.push('from:stockx.com after:2022/1/1 -subject:"You Sold" -subject:"Sale" -subject:"Payout" -subject:"Ship" -subject:"Ask was matched"');
   
   // Add focused subject-based queries (simplified to prevent timeout) - past 2 years
   queries.push('subject:"Order Confirmed" after:2022/1/1');

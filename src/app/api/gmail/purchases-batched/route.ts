@@ -30,7 +30,8 @@ function getDefaultConfig() {
         subjectPatterns: [
           "Order Confirmation:",
           "Xpress Order Confirmed:",
-          "Order Confirmation"
+          "Order Confirmation",
+          "Purchase Confirmed"
         ]
       },
       orderShipped: {
@@ -187,8 +188,8 @@ export async function GET(request: NextRequest) {
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     const config = getDefaultConfig();
 
-    // Use primary StockX query for batching
-    const primaryQuery = 'from:noreply@stockx.com';
+    // Use primary StockX query for purchases only (exclude sales)
+    const primaryQuery = 'from:noreply@stockx.com -subject:"You Sold" -subject:"Sale" -subject:"Payout" -subject:"Ship" -subject:"Ask was matched"';
     
     console.log(`📦 BATCH ${batchIndex}: Searching with query: ${primaryQuery}`);
 
@@ -328,6 +329,17 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
 
     // Filter by marketplace - only process StockX emails
     if (!fromHeader.includes('stockx.com')) {
+      return null;
+    }
+
+    // Additional filtering for sales emails in subject/content
+    if (subjectHeader.toLowerCase().includes('you sold') ||
+        subjectHeader.toLowerCase().includes('sale price') ||
+        subjectHeader.toLowerCase().includes('payout') ||
+        subjectHeader.toLowerCase().includes('ship your') ||
+        subjectHeader.toLowerCase().includes('ask was matched') ||
+        subjectHeader.toLowerCase().includes('shipping label')) {
+      console.log(`🚫 Filtering out sales email: ${subjectHeader}`);
       return null;
     }
 
