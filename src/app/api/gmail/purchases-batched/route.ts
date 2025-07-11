@@ -139,13 +139,33 @@ function consolidateOrderEmails(purchases: any[]) {
     if (orderEmails.length === 1) {
       consolidatedPurchases.push(orderEmails[0]);
     } else {
+      // Sort by status priority for final status
       const sortedEmails = orderEmails.sort((a, b) => {
         const priorityA = STATUS_PRIORITIES[a.status] || 1;
         const priorityB = STATUS_PRIORITIES[b.status] || 1;
         return priorityB - priorityA;
       });
       
+      // Get the highest priority status
       const primaryEmail = sortedEmails[0];
+      
+      // But preserve size info from Order Confirmed emails if available
+      const confirmedEmail = orderEmails.find(email => 
+        email.subject && (
+          email.subject.includes('Order Confirmed') || 
+          email.subject.includes('Xpress Order Confirmed')
+        ) && 
+        email.product && 
+        email.product.size && 
+        email.product.size !== 'Unknown Size'
+      );
+      
+      if (confirmedEmail && confirmedEmail.product.size !== 'Unknown Size') {
+        // Keep status from primary email but size from confirmed email
+        primaryEmail.product.size = confirmedEmail.product.size;
+        console.log(`🔄 CONSOLIDATED: Using status "${primaryEmail.status}" from ${primaryEmail.subject} but size "${confirmedEmail.product.size}" from confirmed email`);
+      }
+      
       primaryEmail.consolidatedFrom = sortedEmails.length;
       primaryEmail.allStatuses = sortedEmails.map(e => e.status);
       consolidatedPurchases.push(primaryEmail);
