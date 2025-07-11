@@ -379,7 +379,9 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
       product_name: orderInfo.product_name,
       extracted_brand: brand,
       size: orderInfo.size,
-      total_amount: orderInfo.total_amount
+      total_amount: orderInfo.total_amount,
+      subject: subjectHeader,
+      email_id: emailData.id
     });
 
     // Return in the expected UI format

@@ -201,11 +201,27 @@ export class OrderConfirmationParser {
       }
     }
     
-    // Extract size - simple patterns that work reliably
+    // Extract size - comprehensive patterns for StockX emails
     const sizePatterns = [
-      // Common StockX patterns
-      /<li[^>]*>Size:\s*([^<]+)<\/li>/i,
+      // HTML list items
+      /<li[^>]*class="attributes"[^>]*>.*?Size[^:]*:\s*([^<]+)<\/li>/i,
+      /<li[^>]*>.*?Size[^:]*:\s*([^<]+)<\/li>/i,
+      /<li[^>]*>([^<]*Size[^<]*)<\/li>/i,
+      
+      // US Men's/Women's size patterns
+      /U\.S\.\s*(?:Men's|Women's)\s*Size:\s*([^<\n\r]+)/i,
+      /US\s*(?:Men's|Women's)\s*Size:\s*([^<\n\r]+)/i,
+      /(?:Men's|Women's)\s*Size:\s*([^<\n\r]+)/i,
+      
+      // General size patterns
+      /\bSize[^:]*:\s*([^<\n\r,]+)/i,
       /\(Size\s*([^)]+)\)/i,
+      
+      // Product title size extraction (like "Size US 10")
+      /Size\s+US\s+([^<\n\r,\s]+)/i,
+      /Size\s+([XSML]{1,3}|\d+(?:\.\d+)?[WC]?)/i,
+      
+      // Fallback patterns
       /Size:\s*([XSMLW]*\s*\d+(?:\.\d+)?)/i,
       /Size:\s*([XSMLW]+)/i
     ];
@@ -213,8 +229,31 @@ export class OrderConfirmationParser {
     for (const pattern of sizePatterns) {
       const match = htmlContent.match(pattern);
       if (match) {
-        orderInfo.size = match[1].trim();
-        break;
+        let size = match[1].trim();
+        // Clean up the size string
+        size = size.replace(/^(Size|US|Men's|Women's)[\s:]*/, '').trim();
+        if (size && size !== 'Size' && size.length > 0) {
+          orderInfo.size = size;
+          console.log(`🔍 SIZE EXTRACTED: "${size}" using pattern: ${pattern}`);
+          break;
+        }
+      }
+    }
+    
+    // If no size found, try to extract from product name patterns
+    if (!orderInfo.size || orderInfo.size === '15') { // '15' seems to be a default fallback
+      const productSizePatterns = [
+        /\(Size\s*([^)]+)\)/i,
+        /Size\s*([XSML]+|\d+(?:\.\d+)?[WC]?)/i
+      ];
+      
+      for (const pattern of productSizePatterns) {
+        const match = orderInfo.product_name.match(pattern);
+        if (match) {
+          orderInfo.size = match[1].trim();
+          console.log(`🔍 SIZE FROM PRODUCT NAME: "${match[1].trim()}"`);
+          break;
+        }
       }
     }
     
