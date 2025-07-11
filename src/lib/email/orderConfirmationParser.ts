@@ -203,18 +203,24 @@ export class OrderConfirmationParser {
     
     // Extract size - comprehensive patterns for StockX emails (avoiding CSS matches)
     const sizePatterns = [
-      // HTML list items with size information (most specific first)
-      /<li[^>]*class="attributes"[^>]*>.*?(?:U\.S\.\s*)?(?:Men's|Women's)\s*Size:\s*([^<\n\r!]+?)<\/li>/i,
+      // StockX specific patterns from the provided email format
+      /<li[^>]*class="attributes"[^>]*style="[^"]*">.*?Size:\s*([^<\n\r!]+?)<\/li>/i,
       /<li[^>]*class="attributes"[^>]*>.*?Size:\s*([^<\n\r!]+?)<\/li>/i,
+      
+      // HTML list items with size information (most specific first)
       /<li[^>]*>.*?(?:U\.S\.\s*)?(?:Men's|Women's)\s*Size:\s*([^<\n\r!]+?)<\/li>/i,
       /<li[^>]*>.*?Size:\s*([^<\n\r!]+?)<\/li>/i,
       
-      // Text content patterns (not in HTML tags or CSS)
+      // Text content patterns (not in HTML tags or CSS) - more specific for US sizing
+      /(?:^|\n|\s)Size:\s*(US\s+[MWF]?\s*\d+(?:\.\d+)?[WC]?)(?:\n|\s|$)/im,
+      /(?:^|\n|\s)Size:\s*([^\n\r!;{}\s]+(?:\s+[MWF]?\s*\d+(?:\.\d+)?[WC]?)?)(?:\n|\s|$)/im,
+      
+      // Generic text patterns
       /(?:^|\n)\s*(?:U\.S\.\s*)?(?:Men's|Women's)\s*Size:\s*([^\n\r!;{}]+?)(?:\n|$)/im,
       /(?:^|\n)\s*Size:\s*([^\n\r!;{}]+?)(?:\n|$)/im,
       
       // Product title size extraction (avoid CSS)
-      /Size\s+US\s+([A-Z0-9\.]+)(?:\s|$)/i,
+      /Size\s+US\s+([A-Z0-9\.\s]+?)(?:\s*[,;\n]|$)/i,
       /Size\s+([XSML]{1,3})(?:\s|$)/i,
       /Size\s+(\d+(?:\.\d+)?[WC]?)(?:\s|$)/i,
       
@@ -241,11 +247,11 @@ export class OrderConfirmationParser {
         }
         
         // Clean up the size string
-        size = size.replace(/^(Size|US|Men's|Women's)[\s:]*/, '').trim();
+        size = size.replace(/^(Size|Men's|Women's)[\s:]*/, '').trim();
         size = size.replace(/[,;].*$/, '').trim(); // Remove anything after comma or semicolon
         
-        // Validate it looks like a real size
-        if (size && size !== 'Size' && size.length > 0 && size.length <= 10) {
+        // Validate it looks like a real size (allow up to 15 chars for "US M 10" format)
+        if (size && size !== 'Size' && size.length > 0 && size.length <= 15) {
           orderInfo.size = size;
           console.log(`✅ SIZE EXTRACTED: "${size}" using pattern: ${pattern}`);
           break;
