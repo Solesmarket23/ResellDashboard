@@ -139,37 +139,11 @@ function consolidateOrderEmails(purchases: any[]) {
     if (orderEmails.length === 1) {
       consolidatedPurchases.push(orderEmails[0]);
     } else {
-      console.log(`📧 CONSOLIDATING ${orderEmails.length} emails for order ${orderNumber}`);
-      
-      // Find the Order Confirmed email (has size info)
-      const confirmedEmail = orderEmails.find(email => 
-        email.subject && (
-          email.subject.includes('Order Confirmed') || 
-          email.subject.includes('Xpress Order Confirmed')
-        )
-      );
-      
-      // Find the highest priority status email
-      const sortedEmails = orderEmails.sort((a, b) => {
-        const priorityA = STATUS_PRIORITIES[a.status] || 1;
-        const priorityB = STATUS_PRIORITIES[b.status] || 1;
-        return priorityB - priorityA;
-      });
-      const statusEmail = sortedEmails[0];
-      
-      // Start with the confirmed email (for size/product info)
-      const finalEmail = confirmedEmail || statusEmail;
-      
-      // But update status from the highest priority email
-      if (statusEmail && statusEmail !== finalEmail) {
-        finalEmail.status = statusEmail.status;
-        finalEmail.statusColor = statusEmail.statusColor;
-        console.log(`✅ MERGED: Using size "${finalEmail.product?.size}" from confirmed email but status "${statusEmail.status}" from ${statusEmail.subject}`);
-      }
-      
-      finalEmail.consolidatedFrom = orderEmails.length;
-      finalEmail.allStatuses = sortedEmails.map(e => e.status);
-      consolidatedPurchases.push(finalEmail);
+      // Simple: just take the first one since they're all Order Confirmed emails
+      const primaryEmail = orderEmails[0];
+      primaryEmail.consolidatedFrom = orderEmails.length;
+      consolidatedPurchases.push(primaryEmail);
+      console.log(`🔄 Multiple confirmed emails for ${orderNumber}, using first one with size: ${primaryEmail.product?.size}`);
     }
   }
   
@@ -212,8 +186,8 @@ export async function GET(request: NextRequest) {
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     const config = getDefaultConfig();
 
-    // Two-pass system: get Order Confirmed for sizes, then status updates for accurate status
-    const primaryQuery = 'from:noreply@stockx.com (subject:"Order Confirmed" OR subject:"Xpress Order Confirmed" OR subject:"Order Delivered" OR subject:"Xpress Ship Order Delivered" OR subject:"Order Shipped") -subject:"You Sold" -subject:"Sale" -subject:"Payout" -subject:"Ship your"';
+    // ONLY Order Confirmed emails - these have size info and we'll handle status separately
+    const primaryQuery = 'from:noreply@stockx.com (subject:"Order Confirmed" OR subject:"Xpress Order Confirmed") -subject:"You Sold" -subject:"Sale" -subject:"Payout" -subject:"Ship your"';
     
     console.log(`📦 BATCH ${batchIndex}: Searching with query: ${primaryQuery}`);
 
