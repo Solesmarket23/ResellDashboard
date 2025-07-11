@@ -255,7 +255,7 @@ export async function GET(request: NextRequest) {
         
         console.log(`📧 BATCH ${batchIndex}: Email from="${fromHeader}", subject="${subjectHeader}"`);
         
-        const purchase = await parseGmailApiMessage(emailData.data, config, gmail);
+        const purchase = await parseEmailMessage(emailData.data, config, gmail);
         if (purchase) {
           console.log(`✅ BATCH ${batchIndex}: Parsed purchase: ${purchase.product.name} - ${purchase.orderNumber}`);
           batchPurchases.push(purchase);
@@ -323,41 +323,11 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// Import the parseGmailApiMessage function
-async function parseGmailApiMessage(emailData: any, config: any, gmail: any) {
+// Custom email parsing function for batch processing
+async function parseEmailMessage(emailData: any, config: any, gmail: any) {
   try {
-    // Get headers
-    const headers = emailData.payload?.headers || [];
-    const fromHeader = headers.find((h: any) => h.name === 'From')?.value || '';
-    const subjectHeader = headers.find((h: any) => h.name === 'Subject')?.value || '';
-    const dateHeader = headers.find((h: any) => h.name === 'Date')?.value || '';
-
-    // Filter by marketplace
-    const enabledMarketplaces = Object.entries(config.marketplaces)
-      .filter(([key, marketplace]) => (marketplace as any).enabled && (marketplace as any).available);
-
-    const isFromEnabledMarketplace = enabledMarketplaces.some(([key, marketplace]) => 
-      fromHeader.includes((marketplace as any).emailDomain)
-    );
-
-    if (!isFromEnabledMarketplace) {
-      return null;
-    }
-
-    // Get email body
-    let body = '';
-    if (emailData.payload?.body?.data) {
-      body = Buffer.from(emailData.payload.body.data, 'base64').toString();
-    } else if (emailData.payload?.parts) {
-      for (const part of emailData.payload.parts) {
-        if (part.mimeType === 'text/plain' && part.body?.data) {
-          body += Buffer.from(part.body.data, 'base64').toString();
-        }
-      }
-    }
-
-    // Parse with the existing parser
-    const orderInfo = parseGmailApiMessage(emailData, config, gmail);
+    // Use the imported parseGmailApiMessage function
+    const orderInfo = await parseGmailApiMessage(emailData, config, gmail);
     if (orderInfo) {
       return orderInfoToDict(orderInfo);
     }
