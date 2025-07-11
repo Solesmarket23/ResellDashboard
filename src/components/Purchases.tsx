@@ -16,6 +16,7 @@ import ImagePreviewModal from './ImagePreviewModal';
 import AutoEmailSync from './AutoEmailSync';
 import SimpleAutoSync from './SimpleAutoSync';
 import GmailBatchedSync from './GmailBatchedSync';
+import StatusUpdater from './StatusUpdater';
 
 const Purchases = () => {
   const [sortBy, setSortBy] = useState('Purchase Date');
@@ -685,6 +686,71 @@ const Purchases = () => {
     setHasBeenReset(false);
   };
 
+  // Handler for status updates from StatusUpdater component
+  const handleStatusUpdate = async (statusUpdates: any[]) => {
+    console.log('🔄 Applying status updates:', statusUpdates);
+    
+    if (!user) return;
+
+    try {
+      // Update purchases in state
+      const updatedPurchases = purchases.map(purchase => {
+        const statusUpdate = statusUpdates.find(update => update.orderNumber === purchase.orderNumber);
+        if (statusUpdate) {
+          console.log(`✅ Updating status for ${purchase.orderNumber}: ${purchase.status} → ${statusUpdate.status}`);
+          return {
+            ...purchase,
+            status: statusUpdate.status,
+            statusColor: statusUpdate.statusColor
+          };
+        }
+        return purchase;
+      });
+
+      const updatedManualPurchases = manualPurchases.map(purchase => {
+        const statusUpdate = statusUpdates.find(update => update.orderNumber === purchase.orderNumber);
+        if (statusUpdate) {
+          console.log(`✅ Updating status for ${purchase.orderNumber}: ${purchase.status} → ${statusUpdate.status}`);
+          return {
+            ...purchase,
+            status: statusUpdate.status,
+            statusColor: statusUpdate.statusColor
+          };
+        }
+        return purchase;
+      });
+
+      // Update state immediately for UI responsiveness
+      setPurchases(updatedPurchases);
+      setManualPurchases(updatedManualPurchases);
+
+      // Update Firebase for purchases that were modified
+      const allUpdated = [...updatedPurchases, ...updatedManualPurchases];
+      const modifiedPurchases = allUpdated.filter(purchase => 
+        statusUpdates.find(update => update.orderNumber === purchase.orderNumber)
+      );
+
+      // Update each modified purchase in Firebase
+      for (const purchase of modifiedPurchases) {
+        try {
+          await updateDocument('purchases', purchase.id, {
+            status: purchase.status,
+            statusColor: purchase.statusColor,
+            userId: user.uid
+          });
+          console.log(`💾 Firebase updated for ${purchase.orderNumber}`);
+        } catch (error) {
+          console.error(`❌ Firebase update failed for ${purchase.orderNumber}:`, error);
+        }
+      }
+
+      console.log(`✅ Status update complete: ${modifiedPurchases.length} purchases updated`);
+      
+    } catch (error) {
+      console.error('❌ Error applying status updates:', error);
+    }
+  };
+
   return (
     <div className={`flex-1 ${currentTheme.colors.background} p-8`}>
       {/* Gmail Connection Status */}
@@ -743,6 +809,12 @@ const Purchases = () => {
                 <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
                 <span>Sync Gmail</span>
               </button>
+            )}
+            {gmailConnected && totalCount > 0 && (
+              <StatusUpdater 
+                purchases={[...purchases, ...manualPurchases]}
+                onStatusUpdate={handleStatusUpdate}
+              />
             )}
             {totalCount > 0 && (
               <button
