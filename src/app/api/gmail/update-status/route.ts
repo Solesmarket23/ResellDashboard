@@ -52,20 +52,26 @@ function extractOrderNumber(emailData: any): string | null {
   const headers = emailData.payload?.headers || [];
   const subjectHeader = headers.find((h: any) => h.name === 'Subject')?.value || '';
   
-  // Try to extract order number from subject
+  // Try to extract order number from subject and HTML
   const orderPatterns = [
+    // Standard single order numbers
     /Order number:\s*([A-Z0-9-]+)/i,
     /Order Number:\s*([A-Z0-9-]+)/i,
     /Order:\s*([A-Z0-9-]+)/i,
     /#([A-Z0-9-]+)/i,
-    // For refund emails, extract the second part of compound order numbers
+    // For refund emails with compound order numbers - extract the second part (the purchase order)
     /Order number:\s*\d+-(\d+)/i,
-    /Order Number:\s*\d+-(\d+)/i
+    /Order Number:\s*\d+-(\d+)/i,
+    /order number:\s*\d+-(\d+)/i,
+    // Additional patterns for HTML content
+    /Order number:\s*([0-9]{8})/i,  // 8-digit order numbers
+    /order:\s*([0-9]{8})/i
   ];
   
   for (const pattern of orderPatterns) {
     const match = subjectHeader.match(pattern);
     if (match) {
+      console.log(`🎯 Subject match found: pattern=${pattern.toString()}, result="${match[1].trim()}"`);
       return match[1].trim();
     }
   }
@@ -94,12 +100,15 @@ function extractOrderNumber(emailData: any): string | null {
   }
   
   if (htmlContent) {
+    console.log(`🔍 Searching HTML content for order number...`);
     for (const pattern of orderPatterns) {
       const match = htmlContent.match(pattern);
       if (match) {
+        console.log(`🎯 HTML match found: pattern=${pattern.toString()}, result="${match[1].trim()}"`);
         return match[1].trim();
       }
     }
+    console.log(`❌ No order number patterns matched in HTML`);
   }
   
   return null;
@@ -192,10 +201,21 @@ export async function POST(request: NextRequest) {
         
         // Extract order number
         const orderNumber = extractOrderNumber(emailData.data);
-        if (!orderNumber) continue;
+        console.log(`📧 Processing: ${subjectHeader}`);
+        console.log(`🔍 Extracted order number: "${orderNumber}" from email`);
+        
+        if (!orderNumber) {
+          console.log(`❌ No order number found in: ${subjectHeader}`);
+          continue;
+        }
         
         // Only process if it's one of the requested order numbers
-        if (!orderNumbers.includes(orderNumber)) continue;
+        if (!orderNumbers.includes(orderNumber)) {
+          console.log(`⏭️ Order ${orderNumber} not in requested list:`, orderNumbers);
+          continue;
+        }
+        
+        console.log(`✅ Processing status update for order: ${orderNumber}`);
         
         // Categorize the email
         const statusInfo = categorizeStatusEmail(subjectHeader, config);
