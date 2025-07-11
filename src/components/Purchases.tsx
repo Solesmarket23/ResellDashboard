@@ -231,12 +231,12 @@ const Purchases = () => {
   }, [gmailConnected]);
 
   // Handle batched Gmail sync updates
-  const handleBatchedPurchasesUpdate = (newPurchases: any[]) => {
-    console.log(`📧 Batched sync update: ${newPurchases.length} purchases`);
-    setPurchases(newPurchases);
+  const handleBatchedPurchasesUpdate = (allPurchases: any[]) => {
+    console.log(`📧 Batched sync update: ${allPurchases.length} total purchases`);
+    setPurchases(allPurchases);
     
     // Combine with manual purchases for totals
-    const combinedPurchases = [...newPurchases, ...manualPurchases];
+    const combinedPurchases = [...allPurchases, ...manualPurchases];
     calculateTotals(combinedPurchases);
   };
 

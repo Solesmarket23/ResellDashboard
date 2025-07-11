@@ -196,7 +196,7 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
                   <span className={`text-sm ${currentTheme.colors.textSecondary}`}>
-                    Batch {currentBatch} of {progress.totalBatches || '?'}
+                    Batch {currentBatch}{progress.hasMore ? '+' : ''} of {progress.totalBatches || '?'}
                   </span>
                   <span className={`text-sm font-medium ${currentTheme.colors.textPrimary}`}>
                     {getProgressPercentage()}%

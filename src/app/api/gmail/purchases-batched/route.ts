@@ -196,7 +196,7 @@ export async function GET(request: NextRequest) {
     const response = await gmail.users.messages.list({
       userId: 'me',
       q: primaryQuery,
-      maxResults: BATCH_SIZE * MAX_BATCHES_PER_REQUEST, // Get enough for multiple batches
+      maxResults: BATCH_SIZE, // Just get one batch worth of emails
       pageToken: pageToken
     });
 
@@ -221,12 +221,10 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Calculate batch boundaries
-    const startIndex = 0; // Always start from 0 since we're using pagination
-    const endIndex = Math.min(BATCH_SIZE, totalFound);
-    const batchMessages = allMessages.slice(startIndex, endIndex);
+    // Process all messages from this batch (no slicing needed since we only requested BATCH_SIZE)
+    const batchMessages = allMessages;
     
-    console.log(`📦 BATCH ${batchIndex}: Processing emails ${startIndex} to ${endIndex - 1}`);
+    console.log(`📦 BATCH ${batchIndex}: Processing ${batchMessages.length} emails`);
 
     const batchPurchases: any[] = [];
     let processedInBatch = 0;
@@ -281,17 +279,15 @@ export async function GET(request: NextRequest) {
     console.log(`📦 BATCH ${batchIndex}: Completed! Processed ${processedInBatch}/${batchMessages.length} emails, found ${consolidatedPurchases.length} purchases`);
 
     // Calculate if there are more batches
-    const hasMoreInPage = endIndex < totalFound;
-    const hasNextPage = !!response.data.nextPageToken;
-    const hasMore = hasMoreInPage || hasNextPage;
+    const hasMore = !!response.data.nextPageToken;
 
     const progress: BatchProgress = {
       batchIndex,
-      totalBatches: Math.ceil(totalFound / BATCH_SIZE),
+      totalBatches: hasMore ? batchIndex + 2 : batchIndex + 1, // Estimate: current + 1, or current + 1 more if hasMore
       currentBatchSize: batchMessages.length,
       processedInBatch,
       totalProcessed: (batchIndex * BATCH_SIZE) + processedInBatch,
-      totalFound,
+      totalFound: (batchIndex * BATCH_SIZE) + totalFound, // Cumulative estimate
       hasMore,
       nextPageToken: response.data.nextPageToken
     };
@@ -302,8 +298,6 @@ export async function GET(request: NextRequest) {
       isComplete: !hasMore,
       debug: {
         batchIndex,
-        startIndex,
-        endIndex,
         totalMessages: totalFound,
         processedInBatch,
         foundPurchases: consolidatedPurchases.length,
@@ -326,15 +320,113 @@ export async function GET(request: NextRequest) {
 // Custom email parsing function for batch processing
 async function parseEmailMessage(emailData: any, config: any, gmail: any) {
   try {
-    // Use the imported parseGmailApiMessage function
-    const orderInfo = await parseGmailApiMessage(emailData, config, gmail);
-    if (orderInfo) {
-      return orderInfoToDict(orderInfo);
+    // Get headers
+    const headers = emailData.payload?.headers || [];
+    const fromHeader = headers.find((h: any) => h.name === 'From')?.value || '';
+    const subjectHeader = headers.find((h: any) => h.name === 'Subject')?.value || '';
+    const dateHeader = headers.find((h: any) => h.name === 'Date')?.value || '';
+
+    // Filter by marketplace - only process StockX emails
+    if (!fromHeader.includes('stockx.com')) {
+      return null;
     }
 
-    return null;
+    // Use the imported parseGmailApiMessage function
+    const orderInfo = parseGmailApiMessage(emailData);
+    if (!orderInfo || !orderInfo.order_number) {
+      return null;
+    }
+
+    // Categorize the email based on subject
+    const category = categorizeEmail(subjectHeader, config);
+    
+    // Extract brand and market info
+    const brand = orderInfo.merchant || 'StockX';
+    const market = 'StockX';
+    
+    // Format pricing
+    const price = `$${(orderInfo.total_amount || 0).toFixed(2)}`;
+    
+    // Format dates
+    const emailDate = new Date(dateHeader);
+    const purchaseDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const dateAdded = emailDate.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric'
+    }) + '\\n' + emailDate.toLocaleTimeString('en-US', { 
+      hour: 'numeric', 
+      minute: '2-digit', 
+      hour12: true 
+    });
+
+    // Get product image
+    const productImage = orderInfo.product_image_url || 'https://picsum.photos/200/200?random=' + orderInfo.order_number;
+
+    // Return in the expected UI format
+    return {
+      id: orderInfo.order_number,
+      product: {
+        name: orderInfo.product_name || 'Unknown Product',
+        brand,
+        size: orderInfo.size || 'Unknown Size',
+        image: productImage,
+        bgColor: getBrandColor(brand)
+      },
+      orderNumber: orderInfo.order_number,
+      status: category.status,
+      statusColor: category.statusColor,
+      priority: category.priority,
+      tracking: 'No tracking',
+      market,
+      price,
+      originalPrice: `${price} + $0.00`,
+      purchasePrice: orderInfo.purchase_price || 0,
+      totalPayment: orderInfo.total_amount || 0,
+      purchaseDate,
+      dateAdded,
+      verified: 'pending',
+      verifiedColor: 'orange',
+      emailId: emailData.id,
+      subject: subjectHeader,
+      sender: fromHeader,
+      emailDate: dateHeader
+    };
+
   } catch (error) {
     console.error('Error parsing email:', error);
     return null;
   }
+}
+
+// Categorize emails based on subject patterns
+function categorizeEmail(subject: string, config: any) {
+  for (const [categoryKey, category] of Object.entries(config.emailCategories)) {
+    for (const pattern of (category as any).subjectPatterns) {
+      if (subject.toLowerCase().includes(pattern.toLowerCase())) {
+        return {
+          status: (category as any).status,
+          statusColor: (category as any).statusColor,
+          priority: STATUS_PRIORITIES[(category as any).status] || 1
+        };
+      }
+    }
+  }
+  
+  return {
+    status: 'Ordered',
+    statusColor: 'orange',
+    priority: 1
+  };
+}
+
+// Get brand color for UI
+function getBrandColor(brand: string) {
+  const brandColors: Record<string, string> = {
+    'StockX': 'bg-green-600',
+    'Nike': 'bg-black',
+    'Adidas': 'bg-blue-600',
+    'Jordan': 'bg-red-600'
+  };
+  
+  return brandColors[brand] || 'bg-gray-600';
 }
