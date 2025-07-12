@@ -185,8 +185,8 @@ export async function POST(request: NextRequest) {
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     const config = getStatusUpdateConfig();
 
-    // Query for status update emails only  
-    const statusQuery = 'from:noreply@stockx.com (subject:"Order Delivered" OR subject:"Xpress Ship Order Delivered" OR subject:"Order Shipped" OR subject:"Refund Issued:") -subject:"You Sold" -subject:"Sale" -subject:"Payout"';
+    // Query for status update emails only - include emoji prefixes and partial matches
+    const statusQuery = 'from:noreply@stockx.com (subject:"Order Delivered" OR subject:"Xpress Ship Order Delivered" OR subject:"🎉 Xpress Ship Order Delivered" OR subject:"Order Shipped" OR subject:"Refund Issued:") -subject:"You Sold" -subject:"Sale" -subject:"Payout"';
     
     console.log(`📧 STATUS QUERY: ${statusQuery}`);
 

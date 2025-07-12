@@ -39,6 +39,8 @@ const Purchases = () => {
   const [hasBeenReset, setHasBeenReset] = useState(false);
   const [showBatchedSync, setShowBatchedSync] = useState(false);
   const [selectedPurchases, setSelectedPurchases] = useState<Set<string>>(new Set());
+  const [isAutoStatusEnabled, setIsAutoStatusEnabled] = useState(false);
+  const [lastAutoStatusUpdate, setLastAutoStatusUpdate] = useState<Date | null>(null);
   const [imagePreview, setImagePreview] = useState<{
     isOpen: boolean;
     imageUrl: string;
@@ -785,9 +787,21 @@ const Purchases = () => {
           }} 
         />
         
-        {/* Auto Email Sync - TEST VERSION */}
-        {console.log('🔄 Rendering SimpleAutoSync component', { gmailConnected })}
-        <SimpleAutoSync isGmailConnected={gmailConnected} />
+        {/* Auto Monitoring - Enhanced Version */}
+        <AutoEmailSync 
+          isGmailConnected={gmailConnected}
+          purchases={purchases}
+          onNewPurchases={(count) => {
+            console.log(`🎉 Auto sync found ${count} new purchases`);
+            // Trigger a refresh of the purchases list
+            loadManualPurchasesFromFirebase();
+          }}
+          onStatusUpdate={handleStatusUpdate}
+          onAutoStatusChange={(enabled, lastUpdate) => {
+            setIsAutoStatusEnabled(enabled);
+            setLastAutoStatusUpdate(lastUpdate);
+          }}
+        />
       </div>
 
       {/* Header */}
@@ -834,6 +848,8 @@ const Purchases = () => {
               <StatusUpdater 
                 purchases={[...purchases, ...manualPurchases]}
                 onStatusUpdate={handleStatusUpdate}
+                isAutoEnabled={isAutoStatusEnabled}
+                lastAutoUpdate={lastAutoStatusUpdate}
               />
             )}
             {totalCount > 0 && (

@@ -8,9 +8,11 @@ interface StatusUpdaterProps {
   purchases: any[];
   onStatusUpdate: (updates: any[]) => void;
   className?: string;
+  isAutoEnabled?: boolean;
+  lastAutoUpdate?: Date | null;
 }
 
-const StatusUpdater = ({ purchases, onStatusUpdate, className = '' }: StatusUpdaterProps) => {
+const StatusUpdater = ({ purchases, onStatusUpdate, className = '', isAutoEnabled = false, lastAutoUpdate }: StatusUpdaterProps) => {
   const [isUpdating, setIsUpdating] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<string>('');
   const { currentTheme } = useTheme();
@@ -84,6 +86,19 @@ const StatusUpdater = ({ purchases, onStatusUpdate, className = '' }: StatusUpda
         }`}>
           {lastUpdate}
         </span>
+      )}
+      
+      {/* Auto-update indicator */}
+      {isAutoEnabled && (
+        <div className="flex items-center space-x-1 text-xs">
+          <div className={`w-2 h-2 rounded-full animate-pulse ${
+            currentTheme.name === 'Neon' ? 'bg-yellow-400' : 'bg-yellow-500'
+          }`} />
+          <span className={currentTheme.colors.textSecondary}>
+            Auto-monitoring active
+            {lastAutoUpdate && ` (Last: ${lastAutoUpdate.toLocaleTimeString()})`}
+          </span>
+        </div>
       )}
     </div>
   );
