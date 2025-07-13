@@ -40,11 +40,20 @@ const StatusUpdater = ({ purchases, onStatusUpdate, className = '', isAutoEnable
       
       if (data.success) {
         console.log(`✅ Status update complete:`, data.summary);
+        console.log(`🔍 Updated orders:`, data.updatedOrders);
         
         // Apply status updates to purchases
         onStatusUpdate(data.updatedOrders);
         
         setLastUpdate(`Updated ${data.summary.updated}/${data.summary.requested} orders`);
+        
+        // If no orders were updated, force a page refresh to sync data
+        if (data.summary.updated === 0) {
+          console.log(`🔄 No status changes detected - forcing page refresh to sync data`);
+          setTimeout(() => {
+            window.location.reload();
+          }, 1000);
+        }
         
         // Clear message after 5 seconds
         setTimeout(() => setLastUpdate(''), 5000);

@@ -52,7 +52,11 @@ function extractOrderNumber(emailData: any): string | null {
   const headers = emailData.payload?.headers || [];
   const subjectHeader = headers.find((h: any) => h.name === 'Subject')?.value || '';
   
-  // Try to extract order number from subject and HTML
+  // Clean subject by removing emoji prefixes
+  const cleanSubject = subjectHeader.replace(/^[🎉🚚📦💰❌]+\s*/, '');
+  console.log(`🧹 Cleaned subject: "${subjectHeader}" → "${cleanSubject}"`);
+  
+  // Try to extract order number from cleaned subject first
   const orderPatterns = [
     // For refund emails with compound order numbers - extract the second part (the purchase order) FIRST
     /Order number:\s*\d+-(\d+)/i,
@@ -60,6 +64,11 @@ function extractOrderNumber(emailData: any): string | null {
     /order number:\s*\d+-(\d+)/i,
     // Specific pattern for the format we see: "75573966-75473725"
     /(\d{8})-(\d{8})/i,  // This will capture both parts, we want the second
+    // StockX format with alphanumeric prefix (e.g., "01-3KF7CE560J")
+    /Order number:\s*([0-9]{2}-[A-Z0-9]+)/i,
+    /Order Number:\s*([0-9]{2}-[A-Z0-9]+)/i,
+    /order:\s*([0-9]{2}-[A-Z0-9]+)/i,
+    /#([0-9]{2}-[A-Z0-9]+)/i,
     // Standard single order numbers (these come after compound patterns)
     /Order number:\s*([A-Z0-9-]+)/i,
     /Order Number:\s*([A-Z0-9-]+)/i,
@@ -69,9 +78,26 @@ function extractOrderNumber(emailData: any): string | null {
     /Order number:\s*([0-9]{8})/i,  // 8-digit order numbers
     /order:\s*([0-9]{8})/i,
     // Standalone 8-digit numbers (could be order numbers)
-    /\b(\d{8})\b/i
+    /\b(\d{8})\b/i,
+    // StockX alphanumeric patterns without "Order" prefix
+    /\b([0-9]{2}-[A-Z0-9]{10})\b/i
   ];
   
+  // Try cleaned subject first
+  for (const pattern of orderPatterns) {
+    const match = cleanSubject.match(pattern);
+    if (match) {
+      console.log(`🎯 Cleaned subject match: pattern=${pattern.toString()}, result="${match[1]}"`);
+      // For compound order pattern like "75573966-75473725", we want the second part
+      if (pattern.toString().includes('(\\d{8})-(\\d{8})') && match[2]) {
+        return match[2].trim(); // Return the second order number (purchase order)
+      } else {
+        return match[1].trim();
+      }
+    }
+  }
+  
+  // If no match in cleaned subject, try original subject
   for (const pattern of orderPatterns) {
     const match = subjectHeader.match(pattern);
     if (match) {
@@ -186,19 +212,55 @@ export async function POST(request: NextRequest) {
     const config = getStatusUpdateConfig();
 
     // Query for status update emails only - include emoji prefixes and partial matches
-    const statusQuery = 'from:noreply@stockx.com (subject:"Order Delivered" OR subject:"Xpress Ship Order Delivered" OR subject:"🎉 Xpress Ship Order Delivered" OR subject:"Order Shipped" OR subject:"Refund Issued:") -subject:"You Sold" -subject:"Sale" -subject:"Payout"';
+    // Use multiple queries to ensure we catch all variations
+    const statusQueries = [
+      // Delivery emails - use partial matches to catch emoji prefixes and product suffixes
+      'from:noreply@stockx.com "Xpress Ship Order Delivered"',
+      'from:noreply@stockx.com "Order Delivered"',
+      'from:noreply@stockx.com "Xpress Order Delivered"',
+      // Shipping emails
+      'from:noreply@stockx.com "Order Verified & Shipped"',
+      'from:noreply@stockx.com "Order Shipped"',
+      'from:noreply@stockx.com "Xpress Order Shipped"',
+      // Refund emails
+      'from:noreply@stockx.com "Refund Issued"',
+      // Broader catch-all searches
+      'from:noreply@stockx.com delivered',
+      'from:noreply@stockx.com shipped'
+    ];
     
-    console.log(`📧 STATUS QUERY: ${statusQuery}`);
+    console.log(`📧 STATUS QUERIES: ${statusQueries.length} queries to check`);
 
-    // Get status emails
-    const response = await gmail.users.messages.list({
-      userId: 'me',
-      q: statusQuery,
-      maxResults: 100 // Get recent status emails
-    });
-
-    const statusMessages = response.data.messages || [];
-    console.log(`📧 Found ${statusMessages.length} status emails`);
+    // Get status emails using multiple queries
+    const allStatusMessages: any[] = [];
+    const messageIds = new Set<string>(); // To avoid duplicates
+    
+    for (const query of statusQueries) {
+      try {
+        console.log(`🔍 Checking: "${query}"`);
+        const response = await gmail.users.messages.list({
+          userId: 'me',
+          q: query,
+          maxResults: 50 // Limit per query to avoid timeout
+        });
+        
+        const messages = response.data.messages || [];
+        console.log(`📧 Found ${messages.length} emails for: "${query}"`);
+        
+        // Add unique messages
+        for (const message of messages) {
+          if (!messageIds.has(message.id!)) {
+            messageIds.add(message.id!);
+            allStatusMessages.push(message);
+          }
+        }
+      } catch (error) {
+        console.error(`❌ Error with query "${query}":`, error);
+      }
+    }
+    
+    const statusMessages = allStatusMessages;
+    console.log(`📧 Total unique status emails found: ${statusMessages.length}`);
 
     const statusUpdates: Record<string, any> = {};
 
@@ -225,11 +287,28 @@ export async function POST(request: NextRequest) {
           continue;
         }
         
-        // Only process if it's one of the requested order numbers
-        if (!orderNumbers.includes(orderNumber)) {
+        // Check if order number matches any of the requested orders
+        // Need to check both exact match and potential variations
+        const matchesRequested = orderNumbers.some(reqOrder => {
+          // Exact match
+          if (reqOrder === orderNumber) return true;
+          // Check if one contains the other (for partial matches)
+          if (reqOrder.includes(orderNumber) || orderNumber.includes(reqOrder)) return true;
+          // Check if they're the same without prefix (e.g., "01-ABC" vs "ABC")
+          const reqParts = reqOrder.split('-');
+          const orderParts = orderNumber.split('-');
+          if (reqParts.length > 1 && orderParts.length > 1) {
+            return reqParts[1] === orderParts[1];
+          }
+          return false;
+        });
+        
+        if (!matchesRequested) {
           console.log(`⏭️ Order ${orderNumber} not in requested list:`, orderNumbers);
           continue;
         }
+        
+        console.log(`✅ Order ${orderNumber} matches requested list`);
         
         console.log(`✅ Processing status update for order: ${orderNumber}`);
         
@@ -259,7 +338,8 @@ export async function POST(request: NextRequest) {
 
     const updatedOrders = Object.values(statusUpdates);
     
-    console.log(`📊 STATUS SUMMARY: Updated ${updatedOrders.length} out of ${orderNumbers.length} requested orders`);
+    console.log(`📊 STATUS SUMMARY: Found ${updatedOrders.length} status updates out of ${orderNumbers.length} requested orders`);
+    console.log(`📊 STATUS DETAILS:`, updatedOrders.map(order => `${order.orderNumber}: ${order.status}`));
 
     return NextResponse.json({
       success: true,

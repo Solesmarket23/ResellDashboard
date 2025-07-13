@@ -708,15 +708,16 @@ const Purchases = () => {
     if (!user) return;
 
     try {
-      // Update purchases in state
+      // Update purchases in state - force update even if status appears the same
       const updatedPurchases = purchases.map(purchase => {
         const statusUpdate = statusUpdates.find(update => update.orderNumber === purchase.orderNumber);
         if (statusUpdate) {
-          console.log(`✅ Updating status for ${purchase.orderNumber}: ${purchase.status} → ${statusUpdate.status}`);
+          console.log(`🔄 FORCE UPDATING status for ${purchase.orderNumber}: ${purchase.status} → ${statusUpdate.status}`);
           return {
             ...purchase,
             status: statusUpdate.status,
-            statusColor: statusUpdate.statusColor
+            statusColor: statusUpdate.statusColor,
+            lastUpdated: new Date().toISOString() // Add timestamp to force re-render
           };
         }
         return purchase;
@@ -725,11 +726,12 @@ const Purchases = () => {
       const updatedManualPurchases = manualPurchases.map(purchase => {
         const statusUpdate = statusUpdates.find(update => update.orderNumber === purchase.orderNumber);
         if (statusUpdate) {
-          console.log(`✅ Updating status for ${purchase.orderNumber}: ${purchase.status} → ${statusUpdate.status}`);
+          console.log(`🔄 FORCE UPDATING status for ${purchase.orderNumber}: ${purchase.status} → ${statusUpdate.status}`);
           return {
             ...purchase,
             status: statusUpdate.status,
-            statusColor: statusUpdate.statusColor
+            statusColor: statusUpdate.statusColor,
+            lastUpdated: new Date().toISOString() // Add timestamp to force re-render
           };
         }
         return purchase;
@@ -748,9 +750,13 @@ const Purchases = () => {
       // Update each modified purchase in Firebase
       for (const purchase of modifiedPurchases) {
         // Only update if the purchase has a valid Firebase document ID
-        // Firebase IDs are auto-generated and don't start with order number patterns
-        if (!purchase.id || purchase.id.startsWith('75-') || purchase.id.match(/^\d{8}/)) {
-          console.log(`⏭️ Skipping Firebase update for ${purchase.orderNumber} - no valid document ID (id: ${purchase.id})`);
+        // Firebase IDs are auto-generated strings, not order numbers
+        // Skip if: no ID, looks like order number (75-XXXXX), or is just numbers/dashes
+        if (!purchase.id || 
+            purchase.id.startsWith('75-') || 
+            purchase.id.match(/^[\d-]+$/) ||
+            purchase.id.length < 15) { // Firebase IDs are typically 20+ characters
+          console.log(`⏭️ Skipping Firebase update for ${purchase.orderNumber} - no valid Firebase document ID (id: ${purchase.id})`);
           continue;
         }
         
@@ -767,6 +773,9 @@ const Purchases = () => {
       }
 
       console.log(`✅ Status update complete: ${modifiedPurchases.length} purchases updated`);
+      
+      // Force recalculate totals to trigger UI refresh
+      calculateTotals([...updatedPurchases, ...updatedManualPurchases]);
       
     } catch (error) {
       console.error('❌ Error applying status updates:', error);
