@@ -81,6 +81,51 @@ const FailedVerifications = () => {
     }
   };
 
+  // Function to group failures by month
+  const groupFailuresByMonth = (failures: any[]) => {
+    const monthGroups: { [key: string]: number } = {};
+    
+    failures.forEach(failure => {
+      let date: Date;
+      
+      // Handle different date formats
+      if (failure.emailDate) {
+        // Scanned results have emailDate in ISO format
+        date = new Date(failure.emailDate);
+      } else if (failure.date) {
+        // Manual entries have date in "M/D/YY" format
+        const [month, day, year] = failure.date.split('/');
+        date = new Date(2000 + parseInt(year), parseInt(month) - 1, parseInt(day));
+      } else if (failure.createdAt) {
+        // Fallback to createdAt
+        date = new Date(failure.createdAt);
+      } else {
+        // Skip if no valid date
+        return;
+      }
+      
+      // Format as "Mon YYYY"
+      const monthKey = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+      monthGroups[monthKey] = (monthGroups[monthKey] || 0) + 1;
+    });
+    
+    // Convert to array and sort by date (newest first)
+    return Object.entries(monthGroups)
+      .map(([month, count]) => ({
+        month,
+        failed: count,
+        date: new Date(month)
+      }))
+      .sort((a, b) => b.date.getTime() - a.date.getTime())
+      .map(({ month, failed }) => ({
+        month,
+        failed,
+        rate: '--',
+        total: '--',
+        status: `${failed} failure${failed !== 1 ? 's' : ''}`
+      }));
+  };
+
   const handleScanClick = async () => {
     console.log('🔍 Scan button clicked');
     setIsScanning(true);
@@ -119,14 +164,21 @@ const FailedVerifications = () => {
     }
   };
 
-  const monthlyData = [
-    { month: 'Jan 2025', rate: '0.0%', failed: 0, total: 0, status: 'No sales' },
-    { month: 'Feb 2025', rate: '0.0%', failed: 0, total: 0, status: 'No sales' },
-    { month: 'Mar 2025', rate: '0.0%', failed: 0, total: 0, status: 'No sales' },
-    { month: 'Apr 2025', rate: '0.0%', failed: 0, total: 0, status: 'No sales' }
+  const allFailures = [...scanResults, ...manualFailures];
+  const totalFailures = allFailures.length;
+  
+  // Calculate monthly breakdown dynamically
+  const monthlyData = groupFailuresByMonth(allFailures);
+  
+  // If no data, show placeholder
+  const displayMonthlyData = monthlyData.length > 0 ? monthlyData : [
+    { month: 'No data', rate: '--', failed: 0, total: '--', status: 'No failures recorded' }
   ];
-
-  const totalFailures = scanResults.length + manualFailures.length;
+  
+  // Get current month failures
+  const currentMonth = new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  const currentMonthData = monthlyData.find(m => m.month === currentMonth);
+  const currentMonthFailures = currentMonthData ? currentMonthData.failed : 0;
   
   const statusCards = [
     {
@@ -299,15 +351,17 @@ const FailedVerifications = () => {
         }`}>
           <div>
             <div className={`text-2xl font-bold ${
-              isNeon ? 'text-white' : 'text-gray-900'
-            }`}>--</div>
+              currentMonthFailures > 0
+                ? isNeon ? 'text-red-400' : 'text-red-600'
+                : isNeon ? 'text-white' : 'text-gray-900'
+            }`}>{currentMonthFailures}</div>
             <div className={`text-sm ${
               isNeon ? 'text-slate-400' : 'text-gray-500'
-            }`}>Current month rate</div>
+            }`}>Current month failures</div>
           </div>
           <div className={`text-sm ${
             isNeon ? 'text-slate-400' : 'text-gray-500'
-          }`}>--</div>
+          }`}>{currentMonth}</div>
         </div>
       </div>
 
@@ -327,7 +381,7 @@ const FailedVerifications = () => {
         </div>
 
         <div className="space-y-4">
-          {monthlyData.map((month, index) => (
+          {displayMonthlyData.map((month, index) => (
             <div key={index} className={`flex items-center justify-between py-3 border-b last:border-b-0 ${
               isNeon ? 'border-slate-700/50' : 'border-gray-100'
             }`}>
@@ -337,15 +391,17 @@ const FailedVerifications = () => {
                 }`}>{month.month}</div>
                 <div className={`text-sm ${
                   isNeon ? 'text-slate-400' : 'text-gray-500'
-                }`}>{month.failed} of {month.total} sales failed</div>
+                }`}>{month.status}</div>
               </div>
               <div className="text-right">
                 <div className={`text-lg font-bold ${
-                  isNeon ? 'text-emerald-400' : 'text-green-600'
-                }`}>{month.rate}</div>
+                  month.failed > 0 
+                    ? isNeon ? 'text-red-400' : 'text-red-600'
+                    : isNeon ? 'text-slate-400' : 'text-gray-400'
+                }`}>{month.failed}</div>
                 <div className={`text-sm ${
                   isNeon ? 'text-slate-400' : 'text-gray-500'
-                }`}>{month.status}</div>
+                }`}>failures</div>
               </div>
             </div>
           ))}
