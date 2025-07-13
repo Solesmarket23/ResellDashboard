@@ -114,34 +114,38 @@ const StatusUpdater = ({ purchases, onStatusUpdate, className = '', isAutoEnable
     setIsRobustSearching(true);
     
     try {
-      console.log(`🔄 Resetting all incorrect status updates...`);
+      console.log(`🔄 Restoring original statuses for all orders...`);
       
-      const response = await fetch('/api/gmail/reset-status', {
+      // Get all order numbers that need to be restored to "Ordered"
+      const orderNumbers = purchases.map(p => p.orderNumber).filter(Boolean);
+      
+      const response = await fetch('/api/gmail/restore-original-status', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-        }
+        },
+        body: JSON.stringify({ orderNumbers })
       });
 
       const data = await response.json();
       
       if (data.success) {
-        console.log(`✅ Status reset complete`);
+        console.log(`✅ Original statuses restored:`, data.summary);
         
-        // Force page reload to restore original data
-        setLastUpdate('Status reset - refreshing page...');
-        setTimeout(() => {
-          window.location.reload();
-        }, 1000);
+        // Apply the restore updates (this will set everything back to "Ordered")
+        onStatusUpdate(data.updatedOrders);
+        
+        setLastUpdate(`Restored ${data.summary.updated} orders to original status`);
+        setTimeout(() => setLastUpdate(''), 5000);
         
       } else {
-        console.error('❌ Reset failed:', data.error);
-        setLastUpdate('Reset failed');
+        console.error('❌ Restore failed:', data.error);
+        setLastUpdate('Restore failed');
         setTimeout(() => setLastUpdate(''), 5000);
       }
     } catch (error) {
-      console.error('❌ Reset error:', error);
-      setLastUpdate('Reset error');
+      console.error('❌ Restore error:', error);
+      setLastUpdate('Restore error');
       setTimeout(() => setLastUpdate(''), 5000);
     } finally {
       setIsRobustSearching(false);
