@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Search, Plus, AlertTriangle, Calendar, ChevronDown, RotateCcw, CheckCircle, DollarSign } from 'lucide-react';
+import { Search, Plus, AlertTriangle, Calendar, ChevronDown, RotateCcw, CheckCircle, DollarSign, X } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { generateGmailSearchUrl } from '../lib/utils/orderNumberUtils';
 
@@ -42,6 +42,8 @@ const FailedVerifications = () => {
 
   const [scanResults, setScanResults] = useState<any[]>([]);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [manualFailures, setManualFailures] = useState<any[]>([]);
 
   const handleScanClick = async () => {
     console.log('🔍 Scan button clicked');
@@ -149,7 +151,9 @@ const FailedVerifications = () => {
             <Search className="w-4 h-4 mr-2" />
             {isScanning ? 'Scanning...' : 'Scan for Verification Failures'}
           </button>
-          <button className={`flex items-center px-4 py-2 text-white rounded-lg transition-all duration-300 ${
+          <button 
+            onClick={() => setShowAddModal(true)}
+            className={`flex items-center px-4 py-2 text-white rounded-lg transition-all duration-300 ${
             isNeon
               ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 shadow-lg shadow-emerald-500/25 hover:shadow-xl hover:shadow-emerald-500/40'
               : 'bg-blue-600 hover:bg-blue-700'
@@ -478,7 +482,7 @@ const FailedVerifications = () => {
       )}
 
       {/* StockX Verification Failures Table */}
-      {showScanResult && !scanError && scanResults.length > 0 && (
+      {(showScanResult && !scanError && scanResults.length > 0) || manualFailures.length > 0 ? (
         <div className={`rounded-lg overflow-hidden ${
           isNeon
             ? 'dark-neon-card border border-slate-700/50'
@@ -494,7 +498,7 @@ const FailedVerifications = () => {
               }`} />
               <h3 className={`text-lg font-semibold ${
                 isNeon ? 'text-white' : 'text-gray-900'
-              }`}>StockX Verification Failures ({scanResults.length})</h3>
+              }`}>StockX Verification Failures ({scanResults.length + manualFailures.length})</h3>
             </div>
             <p className={`text-sm ${
               isNeon ? 'text-slate-400' : 'text-gray-500'
@@ -542,7 +546,7 @@ const FailedVerifications = () => {
                   ? 'divide-slate-700/50' 
                   : `${currentTheme.colors.cardBackground} divide-gray-200`
               }`}>
-                {scanResults.map((failure, index) => (
+                {[...scanResults, ...manualFailures].map((failure, index) => (
                   <tr key={index} className={`transition-colors duration-200 ${
                     isNeon ? 'hover:bg-slate-800/50' : 'hover:bg-gray-50'
                   }`}>
@@ -599,6 +603,136 @@ const FailedVerifications = () => {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Add Failed Verification Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className={`rounded-lg p-6 max-w-md w-full mx-4 ${
+            isNeon
+              ? 'dark-neon-card border border-slate-700/50'
+              : 'bg-white shadow-xl'
+          }`}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className={`text-xl font-semibold ${
+                isNeon ? 'text-white' : 'text-gray-900'
+              }`}>Add Failed Verification</h2>
+              <button
+                onClick={() => setShowAddModal(false)}
+                className={`p-1 rounded-lg transition-colors ${
+                  isNeon
+                    ? 'hover:bg-slate-800/50 text-slate-400 hover:text-white'
+                    : 'hover:bg-gray-100 text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              const newFailure = {
+                id: Date.now().toString(),
+                orderNumber: formData.get('orderNumber'),
+                productName: formData.get('productName'),
+                failureReason: formData.get('failureReason'),
+                date: new Date().toLocaleDateString('en-US', { 
+                  month: 'numeric', 
+                  day: 'numeric', 
+                  year: '2-digit' 
+                }),
+                status: 'Needs Review',
+                subject: 'Manual Entry',
+                fromEmail: 'manual@entry.com'
+              };
+              setManualFailures([...manualFailures, newFailure]);
+              setShowAddModal(false);
+              e.currentTarget.reset();
+            }}>
+              <div className="space-y-4">
+                <div>
+                  <label className={`block text-sm font-medium mb-1 ${
+                    isNeon ? 'text-slate-300' : 'text-gray-700'
+                  }`}>Order Number</label>
+                  <input
+                    type="text"
+                    name="orderNumber"
+                    required
+                    placeholder="e.g. 75553904-75453663"
+                    className={`w-full px-3 py-2 rounded-lg focus:outline-none focus:ring-2 ${
+                      isNeon
+                        ? 'input-premium text-white placeholder-slate-400 border-slate-600/50 focus:ring-cyan-500'
+                        : 'border border-gray-300 focus:ring-blue-500 focus:border-blue-500'
+                    }`}
+                  />
+                </div>
+                
+                <div>
+                  <label className={`block text-sm font-medium mb-1 ${
+                    isNeon ? 'text-slate-300' : 'text-gray-700'
+                  }`}>Product Name</label>
+                  <input
+                    type="text"
+                    name="productName"
+                    required
+                    placeholder="e.g. Jordan 4 Retro Black Cat"
+                    className={`w-full px-3 py-2 rounded-lg focus:outline-none focus:ring-2 ${
+                      isNeon
+                        ? 'input-premium text-white placeholder-slate-400 border-slate-600/50 focus:ring-cyan-500'
+                        : 'border border-gray-300 focus:ring-blue-500 focus:border-blue-500'
+                    }`}
+                  />
+                </div>
+                
+                <div>
+                  <label className={`block text-sm font-medium mb-1 ${
+                    isNeon ? 'text-slate-300' : 'text-gray-700'
+                  }`}>Failure Reason</label>
+                  <select
+                    name="failureReason"
+                    required
+                    className={`w-full px-3 py-2 rounded-lg focus:outline-none focus:ring-2 ${
+                      isNeon
+                        ? 'input-premium text-white border-slate-600/50 focus:ring-cyan-500 bg-slate-800'
+                        : 'border border-gray-300 focus:ring-blue-500 focus:border-blue-500 bg-white'
+                    }`}
+                  >
+                    <option value="Did not pass verification">Did not pass verification</option>
+                    <option value="Damaged box">Damaged box</option>
+                    <option value="Wrong size">Wrong size</option>
+                    <option value="Fake/Replica">Fake/Replica</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className={`px-4 py-2 rounded-lg transition-colors ${
+                    isNeon
+                      ? 'bg-slate-800/50 text-slate-300 hover:bg-slate-700/50 hover:text-white border border-slate-600/50'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className={`px-4 py-2 rounded-lg text-white transition-all ${
+                    isNeon
+                      ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 shadow-lg shadow-cyan-500/25'
+                      : 'bg-blue-600 hover:bg-blue-700'
+                  }`}
+                >
+                  Add Failure
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
