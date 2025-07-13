@@ -3,6 +3,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { RefreshCw, Clock, CheckCircle } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
+import { useAuth } from '../lib/contexts/AuthContext';
+import { db } from '../lib/firebase/firebase';
+import { doc, updateDoc, getDoc } from 'firebase/firestore';
 
 interface AutoEmailSyncProps {
   isGmailConnected: boolean;
@@ -20,6 +23,7 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
   onAutoStatusChange
 }) => {
   const { currentTheme } = useTheme();
+  const { user } = useAuth();
   
   console.log('🔄 AutoEmailSync component loaded', { isGmailConnected });
   const [isEnabled, setIsEnabled] = useState(false);
@@ -32,12 +36,92 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
   const [syncInterval, setSyncInterval] = useState(15); // minutes
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const nextSyncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Clear intervals on unmount
+  // Load settings from Firebase on component mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      if (!user?.uid) return;
+      
+      try {
+        const userRef = doc(db, 'users', user.uid);
+        const userDoc = await getDoc(userRef);
+        
+        if (userDoc.exists()) {
+          const data = userDoc.data();
+          const autoMonitoring = data.autoMonitoring || {};
+          
+          // Load saved preferences
+          if (autoMonitoring.isEnabled !== undefined) {
+            setIsEnabled(autoMonitoring.isEnabled);
+          }
+          if (autoMonitoring.isStatusEnabled !== undefined) {
+            setIsStatusEnabled(autoMonitoring.isStatusEnabled);
+          }
+          if (autoMonitoring.syncInterval !== undefined) {
+            setSyncInterval(autoMonitoring.syncInterval);
+          }
+          if (autoMonitoring.lastSync) {
+            setLastSync(new Date(autoMonitoring.lastSync));
+          }
+          if (autoMonitoring.lastStatusUpdate) {
+            setLastStatusUpdate(new Date(autoMonitoring.lastStatusUpdate));
+          }
+          
+          console.log('Auto monitoring settings loaded from Firebase', autoMonitoring);
+        }
+      } catch (error) {
+        console.error('Error loading auto monitoring settings:', error);
+      }
+    };
+    
+    loadSettings();
+  }, [user]);
+
+  // Save settings to Firebase when they change (with debouncing)
+  const saveSettings = useRef(
+    async (settings: {
+      isEnabled: boolean;
+      isStatusEnabled: boolean;
+      syncInterval: number;
+      lastSync: Date | null;
+      lastStatusUpdate: Date | null;
+    }) => {
+      if (!user?.uid) return;
+      
+      // Clear existing save timeout
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+      
+      // Debounce saves to avoid too many writes
+      saveTimeoutRef.current = setTimeout(async () => {
+        try {
+          const userRef = doc(db, 'users', user.uid);
+          await updateDoc(userRef, {
+            autoMonitoring: {
+              isEnabled: settings.isEnabled,
+              isStatusEnabled: settings.isStatusEnabled,
+              syncInterval: settings.syncInterval,
+              lastSync: settings.lastSync?.toISOString() || null,
+              lastStatusUpdate: settings.lastStatusUpdate?.toISOString() || null,
+              updatedAt: new Date().toISOString()
+            }
+          });
+          console.log('Auto monitoring settings saved to Firebase');
+        } catch (error) {
+          console.error('Error saving auto monitoring settings:', error);
+        }
+      }, 1000); // 1 second debounce
+    }
+  ).current;
+
+  // Clear intervals and timeouts on unmount
   useEffect(() => {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (nextSyncTimeoutRef.current) clearTimeout(nextSyncTimeoutRef.current);
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
   }, []);
 
@@ -130,8 +214,16 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
         const newCount = data.purchases?.length || 0;
         
         console.log(`✅ AUTO-SYNC: Found ${newCount} purchases`);
-        setLastSync(new Date());
+        const syncTime = new Date();
+        setLastSync(syncTime);
         onNewPurchases?.(newCount);
+        saveSettings({
+          isEnabled,
+          isStatusEnabled,
+          syncInterval,
+          lastSync: syncTime,
+          lastStatusUpdate
+        });
         
         // Show brief notification if new purchases found
         if (newCount > 0) {
@@ -173,6 +265,13 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
           setLastStatusUpdate(updateTime);
           onStatusUpdate?.(data.updatedOrders);
           onAutoStatusChange?.(isStatusEnabled, updateTime);
+          saveSettings({
+            isEnabled,
+            isStatusEnabled,
+            syncInterval,
+            lastSync,
+            lastStatusUpdate: updateTime
+          });
           
           console.log(`🎉 AUTO-STATUS: ${data.updatedOrders.length} status updates applied`);
         } else {
@@ -180,6 +279,13 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
           const updateTime = new Date();
           setLastStatusUpdate(updateTime);
           onAutoStatusChange?.(isStatusEnabled, updateTime);
+          saveSettings({
+            isEnabled,
+            isStatusEnabled,
+            syncInterval,
+            lastSync,
+            lastStatusUpdate: updateTime
+          });
         }
       } else {
         console.error('❌ AUTO-STATUS: Status update failed with status:', response.status);
@@ -192,17 +298,39 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
   };
 
   const handleToggle = () => {
-    setIsEnabled(!isEnabled);
+    const newEnabled = !isEnabled;
+    setIsEnabled(newEnabled);
+    saveSettings({
+      isEnabled: newEnabled,
+      isStatusEnabled,
+      syncInterval,
+      lastSync,
+      lastStatusUpdate
+    });
   };
 
   const handleStatusToggle = () => {
     const newStatusEnabled = !isStatusEnabled;
     setIsStatusEnabled(newStatusEnabled);
     onAutoStatusChange?.(newStatusEnabled, lastStatusUpdate);
+    saveSettings({
+      isEnabled,
+      isStatusEnabled: newStatusEnabled,
+      syncInterval,
+      lastSync,
+      lastStatusUpdate
+    });
   };
 
   const handleIntervalChange = (newInterval: number) => {
     setSyncInterval(newInterval);
+    saveSettings({
+      isEnabled,
+      isStatusEnabled,
+      syncInterval: newInterval,
+      lastSync,
+      lastStatusUpdate
+    });
   };
 
   const formatTimeUntilNext = () => {
@@ -231,7 +359,7 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
             currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'
           }`} />
           <span className={`font-medium text-sm ${currentTheme.colors.textPrimary}`}>
-            🔄 Auto Monitoring
+            Auto Monitoring
           </span>
         </div>
         
@@ -253,7 +381,7 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
           {/* Email Sync Toggle */}
           <div className="flex items-center justify-between">
             <span className={`text-xs ${currentTheme.colors.textSecondary}`}>
-              📧 Auto Email Sync
+              Auto Email Sync
             </span>
             <button
               onClick={handleToggle}
@@ -274,7 +402,7 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
           {/* Status Monitoring Toggle */}
           <div className="flex items-center justify-between">
             <span className={`text-xs ${currentTheme.colors.textSecondary}`}>
-              📊 Auto Status Updates
+              Auto Status Updates
             </span>
             <button
               onClick={handleStatusToggle}
@@ -324,7 +452,7 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
               {/* Email Sync Status */}
               {isEnabled && (
                 <div className="flex items-center justify-between">
-                  <span className={currentTheme.colors.textSecondary}>📧 Email Sync:</span>
+                  <span className={currentTheme.colors.textSecondary}>Email Sync:</span>
                   <div className="flex items-center space-x-1">
                     {isSyncing ? (
                       <>
@@ -348,7 +476,7 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
               {/* Status Update Status */}
               {isStatusEnabled && (
                 <div className="flex items-center justify-between">
-                  <span className={currentTheme.colors.textSecondary}>📊 Status Check:</span>
+                  <span className={currentTheme.colors.textSecondary}>Status Check:</span>
                   <div className="flex items-center space-x-1">
                     {isUpdatingStatus ? (
                       <>
@@ -372,7 +500,7 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
               {/* Next Run Time */}
               {nextSync && !(isSyncing || isUpdatingStatus) && (
                 <div className="flex items-center justify-between">
-                  <span className={currentTheme.colors.textSecondary}>⏰ Next check:</span>
+                  <span className={currentTheme.colors.textSecondary}>Next check:</span>
                   <div className="flex items-center space-x-1">
                     <Clock className="w-3 h-3" />
                     <span className={currentTheme.colors.textSecondary}>
