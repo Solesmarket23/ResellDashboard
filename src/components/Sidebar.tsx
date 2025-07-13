@@ -146,12 +146,12 @@ const Sidebar = ({ activeItem, onItemClick, isOpen, onClose }: SidebarProps) => 
                     <button
                       key={item.id}
                       onClick={() => handleItemClick(item.id)}
-                      className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 whitespace-nowrap ${
+                      className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg whitespace-nowrap ${
                         isActive
                           ? currentTheme.name === 'Neon'
-                            ? 'bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 text-cyan-400 border border-cyan-500/30'
-                            : `${currentTheme.colors.primary} text-white`
-                          : `${currentTheme.colors.textSecondary} hover:bg-white/5 hover:text-white`
+                            ? 'bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 text-cyan-400 border border-cyan-500/30 transition-colors duration-200'
+                            : `${currentTheme.colors.primary} text-white transition-colors duration-200`
+                          : `${currentTheme.colors.textSecondary} hover:bg-white/5 hover:text-white transition-colors duration-150`
                       }`}
                     >
                       <Icon className="w-5 h-5 mr-3 flex-shrink-0" />
@@ -198,12 +198,12 @@ const Sidebar = ({ activeItem, onItemClick, isOpen, onClose }: SidebarProps) => 
               <div className="space-y-2">
                 <button
                   onClick={() => handleItemClick('profile')}
-                  className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                  className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg ${
                     activeItem === 'profile'
                       ? currentTheme.name === 'Neon'
-                        ? 'bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 text-cyan-400 border border-cyan-500/30'
-                        : `${currentTheme.colors.primary} text-white`
-                      : `${currentTheme.colors.textSecondary} hover:bg-white/5 hover:text-white`
+                        ? 'bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 text-cyan-400 border border-cyan-500/30 transition-colors duration-200'
+                        : `${currentTheme.colors.primary} text-white transition-colors duration-200`
+                      : `${currentTheme.colors.textSecondary} hover:bg-white/5 hover:text-white transition-colors duration-150`
                   }`}
                 >
                   <User className="w-4 h-4 mr-2" />
