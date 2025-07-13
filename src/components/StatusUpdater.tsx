@@ -15,7 +15,51 @@ interface StatusUpdaterProps {
 const StatusUpdater = ({ purchases, onStatusUpdate, className = '', isAutoEnabled = false, lastAutoUpdate }: StatusUpdaterProps) => {
   const [isUpdating, setIsUpdating] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<string>('');
+  const [isForcing, setIsForcing] = useState(false);
   const { currentTheme } = useTheme();
+
+  const forceDeliveryStatus = async () => {
+    if (isForcing) return;
+
+    setIsForcing(true);
+    
+    try {
+      console.log(`🚀 Forcing delivery status for order 01-3KF7CE560J...`);
+      
+      const response = await fetch('/api/gmail/force-delivery-status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ orderNumber: '01-3KF7CE560J' })
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        console.log(`✅ Force delivery complete:`, data.summary);
+        console.log(`🔍 Forced update:`, data.updatedOrders);
+        
+        // Apply forced status update
+        onStatusUpdate(data.updatedOrders);
+        
+        setLastUpdate(`Forced delivery status for 01-3KF7CE560J`);
+        
+        // Clear message after 5 seconds
+        setTimeout(() => setLastUpdate(''), 5000);
+      } else {
+        console.error('❌ Force delivery failed:', data.error);
+        setLastUpdate('Force failed');
+        setTimeout(() => setLastUpdate(''), 5000);
+      }
+    } catch (error) {
+      console.error('❌ Force delivery error:', error);
+      setLastUpdate('Force error');
+      setTimeout(() => setLastUpdate(''), 5000);
+    } finally {
+      setIsForcing(false);
+    }
+  };
 
   const updateStatuses = async () => {
     if (isUpdating || purchases.length === 0) return;
@@ -85,6 +129,19 @@ const StatusUpdater = ({ purchases, onStatusUpdate, className = '', isAutoEnable
       >
         <RefreshCw className={`w-5 h-5 ${isUpdating ? 'animate-spin' : ''}`} />
         <span>{isUpdating ? 'Updating...' : 'Update Status'}</span>
+      </button>
+      
+      <button
+        onClick={forceDeliveryStatus}
+        disabled={isForcing}
+        className={`flex items-center space-x-2 ${
+          currentTheme.name === 'Neon' 
+            ? 'bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30' 
+            : 'bg-red-600 hover:bg-red-700 text-white'
+        } disabled:opacity-50 px-3 py-2 rounded-lg font-medium transition-all duration-200`}
+        title="Force delivery status for order 01-3KF7CE560J"
+      >
+        <span className="text-sm">{isForcing ? 'Forcing...' : 'Force 3KF7CE560J'}</span>
       </button>
       
       {lastUpdate && (
