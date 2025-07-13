@@ -779,7 +779,6 @@ const Profile = () => {
                 </div>
               </div>
 
-              <div className="grid lg:grid-cols-2 gap-8">
               {/* Data Export */}
               <div className={`p-6 rounded-2xl ${
                 currentTheme.name === 'Neon'

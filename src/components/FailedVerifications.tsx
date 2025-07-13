@@ -74,8 +74,6 @@ const FailedVerifications = () => {
     return () => unsubscribe();
   }, [user]);
 
-  const allFailures = [...scanResults, ...manualFailures];
-
   // Load user's community insights preference and data
   useEffect(() => {
     const loadCommunityInsights = async () => {
@@ -106,26 +104,6 @@ const FailedVerifications = () => {
     loadCommunityInsights();
   }, [user]);
 
-  // Contribute data when failures change (if opted in)
-  useEffect(() => {
-    if (!user || !communityInsightsEnabled) return;
-
-    const contributeData = async () => {
-      const currentMonth = new Date().toISOString().slice(0, 7);
-      const monthlyFailures = groupFailuresByMonth(allFailures);
-      const currentMonthData = monthlyFailures.find(m => {
-        const monthDate = new Date(m.month);
-        const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`;
-        return monthKey === currentMonth;
-      });
-
-      if (currentMonthData) {
-        await contributeFailureData(user.uid, currentMonth, currentMonthData.failed);
-      }
-    };
-
-    contributeData();
-  }, [user, communityInsightsEnabled, scanResults, manualFailures]);
 
   const handleDeleteFailure = async (failureId: string) => {
     try {
@@ -262,6 +240,27 @@ const FailedVerifications = () => {
       valueColor: 'text-red-600'
     }
   ];
+
+  // Contribute data when failures change (if opted in)
+  useEffect(() => {
+    if (!user || !communityInsightsEnabled) return;
+
+    const contributeData = async () => {
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const monthlyFailures = groupFailuresByMonth(allFailures);
+      const currentMonthData = monthlyFailures.find(m => {
+        const monthDate = new Date(m.month);
+        const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`;
+        return monthKey === currentMonth;
+      });
+
+      if (currentMonthData) {
+        await contributeFailureData(user.uid, currentMonth, currentMonthData.failed);
+      }
+    };
+
+    contributeData();
+  }, [user, communityInsightsEnabled, scanResults, manualFailures]);
 
   return (
     <div className={`flex-1 p-8 ${

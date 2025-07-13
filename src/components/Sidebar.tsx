@@ -24,9 +24,12 @@ import {
   Bell,
   Activity,
   DollarSign,
-  Truck
+  Truck,
+  User,
+  LogOut
 } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
+import { useAuth } from '../lib/contexts/AuthContext';
 
 interface SidebarProps {
   activeItem: string;
@@ -92,6 +95,7 @@ const navigationItems = [
 
 const Sidebar = ({ activeItem, onItemClick, isOpen, onClose }: SidebarProps) => {
   const { currentTheme } = useTheme();
+  const { user, signOut } = useAuth();
 
   const handleItemClick = (item: string) => {
     // Call the parent's click handler
@@ -103,9 +107,14 @@ const Sidebar = ({ activeItem, onItemClick, isOpen, onClose }: SidebarProps) => 
     }
   };
 
-  const handleLogout = () => {
-    if (typeof window !== 'undefined') {
-      window.location.href = '/landing';
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      if (typeof window !== 'undefined') {
+        window.location.href = '/landing';
+      }
+    } catch (error) {
+      console.error('Error signing out:', error);
     }
   };
 
@@ -158,14 +167,66 @@ const Sidebar = ({ activeItem, onItemClick, isOpen, onClose }: SidebarProps) => 
           ))}
         </div>
 
-        {/* Theme Selector and Logout */}
+        {/* User Profile Section */}
         <div className="p-4 border-t border-gray-800">
-          <button
-            onClick={handleLogout}
-            className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors ${currentTheme.colors.textSecondary} hover:bg-white/5 hover:text-white`}
-          >
-            <span>Logout</span>
-          </button>
+          {user ? (
+            <div className="space-y-3">
+              {/* User Info */}
+              <div className="flex items-center space-x-3">
+                {user.photoURL ? (
+                  <img
+                    src={user.photoURL}
+                    alt={user.displayName || 'User'}
+                    className="w-10 h-10 rounded-full"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center">
+                    <User className="w-6 h-6 text-gray-400" />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-white truncate">
+                    {user.displayName || 'User'}
+                  </p>
+                  <p className="text-xs text-gray-400 truncate">
+                    Pro Member
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="space-y-2">
+                <button
+                  onClick={() => handleItemClick('profile')}
+                  className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                    activeItem === 'profile'
+                      ? currentTheme.name === 'Neon'
+                        ? 'bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+                        : `${currentTheme.colors.primary} text-white`
+                      : `${currentTheme.colors.textSecondary} hover:bg-white/5 hover:text-white`
+                  }`}
+                >
+                  <User className="w-4 h-4 mr-2" />
+                  Profile
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors ${currentTheme.colors.textSecondary} hover:bg-white/5 hover:text-white`}
+                >
+                  <LogOut className="w-4 h-4 mr-2" />
+                  Logout
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={handleLogout}
+              className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors ${currentTheme.colors.textSecondary} hover:bg-white/5 hover:text-white`}
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              <span>Logout</span>
+            </button>
+          )}
         </div>
       </div>
     </>
