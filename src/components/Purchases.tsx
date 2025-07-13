@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Edit, MoreHorizontal, Camera, RefreshCw, Mail, Trash2, Settings, Plus, Shield } from 'lucide-react';
+import { ChevronDown, Edit, MoreHorizontal, Camera, RefreshCw, Mail, Trash2, Settings, Plus, Shield, Wrench } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
 import { addDocument, getDocuments, updateDocument, deleteDocument } from '../lib/firebase/firebaseUtils';
@@ -17,6 +17,7 @@ import AutoEmailSync from './AutoEmailSync';
 import SimpleAutoSync from './SimpleAutoSync';
 import GmailBatchedSync from './GmailBatchedSync';
 import StatusUpdater from './StatusUpdater';
+import FixItemProducts from './FixItemProducts';
 
 const Purchases = () => {
   const [sortBy, setSortBy] = useState('Purchase Date');
@@ -41,6 +42,7 @@ const Purchases = () => {
   const [selectedPurchases, setSelectedPurchases] = useState<Set<string>>(new Set());
   const [isAutoStatusEnabled, setIsAutoStatusEnabled] = useState(false);
   const [lastAutoStatusUpdate, setLastAutoStatusUpdate] = useState<Date | null>(null);
+  const [showFixItemProducts, setShowFixItemProducts] = useState(false);
   const [imagePreview, setImagePreview] = useState<{
     isOpen: boolean;
     imageUrl: string;
@@ -981,6 +983,17 @@ const Purchases = () => {
               <Settings className="w-5 h-5" />
               <span>Settings</span>
             </button>
+            <button
+              onClick={() => setShowFixItemProducts(true)}
+              className={`flex items-center space-x-2 ${
+                currentTheme.name === 'Neon' 
+                  ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30' 
+                  : 'bg-amber-600 hover:bg-amber-700 text-white'
+              } px-4 py-2 rounded-lg font-medium transition-all duration-200`}
+            >
+              <Wrench className="w-5 h-5" />
+              <span>Fix Items</span>
+            </button>
           </div>
         </div>
         <div className="text-right">
@@ -1498,6 +1511,16 @@ const Purchases = () => {
       <EmailParsingSettings
         isOpen={showEmailSettings}
         onClose={() => setShowEmailSettings(false)}
+      />
+
+      {/* Fix Item Products Modal */}
+      <FixItemProducts
+        isOpen={showFixItemProducts}
+        onClose={() => setShowFixItemProducts(false)}
+        onComplete={() => {
+          setShowFixItemProducts(false);
+          loadPurchases(); // Refresh purchases after fixing
+        }}
       />
 
       {/* Image Preview Modal */}
