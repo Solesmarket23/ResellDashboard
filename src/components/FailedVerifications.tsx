@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Search, Plus, AlertTriangle, Calendar, ChevronDown, RotateCcw, CheckCircle, DollarSign, X, Trash2 } from 'lucide-react';
+import { Search, Plus, AlertTriangle, Calendar, ChevronDown, RotateCcw, CheckCircle, DollarSign, X, Trash2, Users, TrendingUp, TrendingDown } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { generateGmailSearchUrl } from '../lib/utils/orderNumberUtils';
 import { useAuth } from '../lib/contexts/AuthContext';
 import { db } from '../lib/firebase/firebase';
-import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc } from 'firebase/firestore';
+import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, getDoc } from 'firebase/firestore';
+import { getCommunityAggregates, calculateUserPercentile, contributeFailureData } from '../lib/firebase/communityInsights';
 
 const FailedVerifications = () => {
   const [timeFilter, setTimeFilter] = useState('Monthly');
@@ -15,6 +16,13 @@ const FailedVerifications = () => {
   const [showScanResult, setShowScanResult] = useState(false);
   const [timeDropdownOpen, setTimeDropdownOpen] = useState(false);
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
+  const [scanResults, setScanResults] = useState<any[]>([]);
+  const [manualFailures, setManualFailures] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [communityInsightsEnabled, setCommunityInsightsEnabled] = useState(false);
+  const [communityData, setCommunityData] = useState<any>(null);
   const { currentTheme } = useTheme();
   const { user } = useAuth();
   
@@ -66,11 +74,58 @@ const FailedVerifications = () => {
     return () => unsubscribe();
   }, [user]);
 
-  const [scanResults, setScanResults] = useState<any[]>([]);
-  const [scanError, setScanError] = useState<string | null>(null);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [manualFailures, setManualFailures] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const allFailures = [...scanResults, ...manualFailures];
+
+  // Load user's community insights preference and data
+  useEffect(() => {
+    const loadCommunityInsights = async () => {
+      if (!user) return;
+
+      try {
+        // Check if user has opted in
+        const userRef = doc(db, 'users', user.uid);
+        const userDoc = await getDoc(userRef);
+        
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          const isOptedIn = userData.communityInsights?.shareData || false;
+          setCommunityInsightsEnabled(isOptedIn);
+          
+          if (isOptedIn) {
+            // Load current month's community data
+            const currentMonth = new Date().toISOString().slice(0, 7); // "YYYY-MM"
+            const aggregates = await getCommunityAggregates(currentMonth);
+            setCommunityData(aggregates);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading community insights:', error);
+      }
+    };
+
+    loadCommunityInsights();
+  }, [user]);
+
+  // Contribute data when failures change (if opted in)
+  useEffect(() => {
+    if (!user || !communityInsightsEnabled) return;
+
+    const contributeData = async () => {
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const monthlyFailures = groupFailuresByMonth(allFailures);
+      const currentMonthData = monthlyFailures.find(m => {
+        const monthDate = new Date(m.month);
+        const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`;
+        return monthKey === currentMonth;
+      });
+
+      if (currentMonthData) {
+        await contributeFailureData(user.uid, currentMonth, currentMonthData.failed);
+      }
+    };
+
+    contributeData();
+  }, [user, communityInsightsEnabled, scanResults, manualFailures]);
 
   const handleDeleteFailure = async (failureId: string) => {
     try {
@@ -407,6 +462,125 @@ const FailedVerifications = () => {
           ))}
         </div>
       </div>
+
+      {/* Community Insights Card */}
+      {communityInsightsEnabled && communityData && (
+        <div className={`rounded-lg p-6 mb-6 ${
+          isNeon
+            ? 'dark-neon-card border border-slate-700/50'
+            : `${currentTheme.colors.cardBackground} shadow-sm border border-gray-200`
+        }`}>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center">
+              <Users className={`w-5 h-5 mr-2 ${
+                isNeon ? 'text-cyan-400' : 'text-blue-600'
+              }`} />
+              <h3 className={`text-lg font-semibold ${
+                isNeon ? 'text-white' : 'text-gray-900'
+              }`}>Community Insights</h3>
+            </div>
+            <div className={`text-sm ${
+              isNeon ? 'text-slate-400' : 'text-gray-500'
+            }`}>
+              {communityData.totalUsers} users contributing
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Community Average */}
+            <div className={`p-4 rounded-lg ${
+              isNeon 
+                ? 'bg-slate-800/50 border border-slate-700/50' 
+                : 'bg-gray-50 border border-gray-200'
+            }`}>
+              <div className={`text-sm font-medium mb-2 ${
+                isNeon ? 'text-slate-300' : 'text-gray-600'
+              }`}>Community Average</div>
+              <div className={`text-2xl font-bold ${
+                isNeon ? 'text-white' : 'text-gray-900'
+              }`}>
+                {communityData.avgFailureRate ? `${communityData.avgFailureRate.toFixed(1)}%` : '--'}
+              </div>
+              <div className={`text-sm mt-1 ${
+                isNeon ? 'text-slate-400' : 'text-gray-500'
+              }`}>failure rate</div>
+            </div>
+
+            {/* Your Percentile */}
+            <div className={`p-4 rounded-lg ${
+              isNeon 
+                ? 'bg-slate-800/50 border border-slate-700/50' 
+                : 'bg-gray-50 border border-gray-200'
+            }`}>
+              <div className={`text-sm font-medium mb-2 ${
+                isNeon ? 'text-slate-300' : 'text-gray-600'
+              }`}>Your Performance</div>
+              <div className="flex items-center">
+                <div className={`text-2xl font-bold mr-2 ${
+                  isNeon ? 'text-white' : 'text-gray-900'
+                }`}>
+                  {(() => {
+                    const currentRate = totalFailures > 0 ? 0 : 0; // Calculate actual rate when sales data is available
+                    const percentile = calculateUserPercentile(currentRate, communityData);
+                    return `Top ${percentile}%`;
+                  })()}
+                </div>
+                {(() => {
+                  const currentRate = totalFailures > 0 ? 0 : 0;
+                  const isAboveAverage = currentRate < (communityData.avgFailureRate || 0);
+                  return isAboveAverage ? (
+                    <TrendingUp className={`w-5 h-5 ${
+                      isNeon ? 'text-emerald-400' : 'text-green-600'
+                    }`} />
+                  ) : (
+                    <TrendingDown className={`w-5 h-5 ${
+                      isNeon ? 'text-red-400' : 'text-red-600'
+                    }`} />
+                  );
+                })()}
+              </div>
+              <div className={`text-sm mt-1 ${
+                isNeon ? 'text-slate-400' : 'text-gray-500'
+              }`}>
+                {(() => {
+                  const currentRate = totalFailures > 0 ? 0 : 0;
+                  const isAboveAverage = currentRate < (communityData.avgFailureRate || 0);
+                  return isAboveAverage ? 'Better than average' : 'Below average';
+                })()}
+              </div>
+            </div>
+
+            {/* Median Rate */}
+            <div className={`p-4 rounded-lg ${
+              isNeon 
+                ? 'bg-slate-800/50 border border-slate-700/50' 
+                : 'bg-gray-50 border border-gray-200'
+            }`}>
+              <div className={`text-sm font-medium mb-2 ${
+                isNeon ? 'text-slate-300' : 'text-gray-600'
+              }`}>Median Rate</div>
+              <div className={`text-2xl font-bold ${
+                isNeon ? 'text-white' : 'text-gray-900'
+              }`}>
+                {communityData.medianFailureRate ? `${communityData.medianFailureRate.toFixed(1)}%` : '--'}
+              </div>
+              <div className={`text-sm mt-1 ${
+                isNeon ? 'text-slate-400' : 'text-gray-500'
+              }`}>50th percentile</div>
+            </div>
+          </div>
+
+          <div className={`mt-4 pt-4 border-t ${
+            isNeon ? 'border-slate-700/50' : 'border-gray-200'
+          }`}>
+            <p className={`text-sm ${
+              isNeon ? 'text-slate-400' : 'text-gray-500'
+            }`}>
+              <span className="font-medium">Note:</span> Community data is aggregated anonymously from users who opt-in to share their metrics. Your individual data remains private.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Status Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">

@@ -1,7 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
+import { useAuth } from '@/lib/contexts/AuthContext';
+import { db } from '@/lib/firebase/firebase';
+import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { 
   User, 
   Mail, 
@@ -25,11 +28,14 @@ import {
   Globe,
   Lock,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  BarChart3,
+  Users
 } from 'lucide-react';
 
 const Profile = () => {
   const { currentTheme, setTheme, themes } = useTheme();
+  const { user } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [activeTab, setActiveTab] = useState('personal');
@@ -60,6 +66,11 @@ const Profile = () => {
     deviceTracking: true
   });
 
+  const [communityInsights, setCommunityInsights] = useState({
+    shareData: false,
+    showBenchmarks: false
+  });
+
   const tabs = [
     { id: 'personal', label: 'Personal Info', icon: User },
     { id: 'security', label: 'Security', icon: Shield },
@@ -80,10 +91,52 @@ const Profile = () => {
     setSecurity(prev => ({ ...prev, [field]: value }));
   };
 
+  const handleCommunityInsightsChange = async (field: string, value: boolean) => {
+    setCommunityInsights(prev => ({ ...prev, [field]: value }));
+    
+    // Save to Firebase
+    if (user) {
+      try {
+        const userRef = doc(db, 'users', user.uid);
+        await updateDoc(userRef, {
+          communityInsights: {
+            ...communityInsights,
+            [field]: value
+          }
+        });
+        console.log('Community insights preference saved');
+      } catch (error) {
+        console.error('Error saving community insights preference:', error);
+      }
+    }
+  };
+
   const handleSave = () => {
     // Save logic here
     setIsEditing(false);
   };
+
+  // Load user preferences from Firebase
+  useEffect(() => {
+    const loadUserPreferences = async () => {
+      if (user) {
+        try {
+          const userRef = doc(db, 'users', user.uid);
+          const userDoc = await getDoc(userRef);
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            if (data.communityInsights) {
+              setCommunityInsights(data.communityInsights);
+            }
+          }
+        } catch (error) {
+          console.error('Error loading user preferences:', error);
+        }
+      }
+    };
+
+    loadUserPreferences();
+  }, [user]);
 
   return (
     <div className={`flex-1 overflow-y-auto ${
@@ -638,7 +691,95 @@ const Profile = () => {
           )}
 
           {activeTab === 'data' && (
-            <div className="grid lg:grid-cols-2 gap-8">
+            <div className="space-y-8">
+              {/* Community Insights Section */}
+              <div className={`p-6 rounded-2xl ${
+                currentTheme.name === 'Neon'
+                  ? 'bg-white/5 border border-cyan-500/20'
+                  : `${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border`
+              }`}>
+                <div className="flex items-center mb-4">
+                  <Users className={`w-6 h-6 mr-3 ${
+                    currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-purple-600'
+                  }`} />
+                  <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>
+                    Community Insights
+                  </h3>
+                  <span className={`ml-auto px-3 py-1 rounded-full text-xs font-medium ${
+                    currentTheme.name === 'Neon'
+                      ? 'bg-gradient-to-r from-cyan-500/20 to-emerald-500/20 text-cyan-300 border border-cyan-500/30'
+                      : 'bg-purple-100 text-purple-700'
+                  }`}>
+                    Beta
+                  </span>
+                </div>
+                
+                <p className={`text-sm ${currentTheme.colors.textSecondary} mb-6`}>
+                  Opt in to share anonymous data and see how your verification failure rates compare to the community average.
+                </p>
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className={`font-medium ${currentTheme.colors.textPrimary}`}>
+                        Share Anonymous Data
+                      </p>
+                      <p className={`text-sm ${currentTheme.colors.textSecondary}`}>
+                        Contribute your failure rates to help the community
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleCommunityInsightsChange('shareData', !communityInsights.shareData)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        communityInsights.shareData
+                          ? currentTheme.name === 'Neon' ? 'bg-emerald-500' : 'bg-purple-500'
+                          : 'bg-gray-400'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          communityInsights.shareData ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {communityInsights.shareData && (
+                    <div className={`p-4 rounded-lg ${
+                      currentTheme.name === 'Neon'
+                        ? 'bg-emerald-500/10 border border-emerald-500/30'
+                        : 'bg-purple-50 border border-purple-200'
+                    }`}>
+                      <h4 className={`font-medium mb-2 ${
+                        currentTheme.name === 'Neon' ? 'text-emerald-300' : 'text-purple-700'
+                      }`}>
+                        What we share:
+                      </h4>
+                      <ul className={`text-sm space-y-1 ${
+                        currentTheme.name === 'Neon' ? 'text-emerald-200' : 'text-purple-600'
+                      }`}>
+                        <li>• Monthly verification failure counts (anonymized)</li>
+                        <li>• Failure rates by marketplace</li>
+                        <li>• No personal information or order details</li>
+                      </ul>
+                      <h4 className={`font-medium mt-3 mb-2 ${
+                        currentTheme.name === 'Neon' ? 'text-emerald-300' : 'text-purple-700'
+                      }`}>
+                        What you get:
+                      </h4>
+                      <ul className={`text-sm space-y-1 ${
+                        currentTheme.name === 'Neon' ? 'text-emerald-200' : 'text-purple-600'
+                      }`}>
+                        <li>• Community average failure rates</li>
+                        <li>• Your percentile ranking</li>
+                        <li>• Industry trend insights</li>
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid lg:grid-cols-2 gap-8">
               {/* Data Export */}
               <div className={`p-6 rounded-2xl ${
                 currentTheme.name === 'Neon'
