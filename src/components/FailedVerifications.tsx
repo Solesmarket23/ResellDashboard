@@ -40,15 +40,37 @@ const FailedVerifications = () => {
     };
   }, []);
 
-  const handleScanClick = () => {
+  const [scanResults, setScanResults] = useState<any[]>([]);
+  const [scanError, setScanError] = useState<string | null>(null);
+
+  const handleScanClick = async () => {
     setIsScanning(true);
     setShowScanResult(false);
+    setScanError(null);
+    setScanResults([]);
     
-    // Simulate scanning process
-    setTimeout(() => {
-      setIsScanning(false);
+    try {
+      // Call the API with a higher limit (increased from default 10)
+      const response = await fetch('/api/gmail/verification-failures?limit=100');
+      
+      if (!response.ok) {
+        throw new Error('Failed to scan verification failures');
+      }
+      
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      
+      setScanResults(data.failures || []);
       setShowScanResult(true);
-    }, 3000); // 3 second scan simulation
+    } catch (error) {
+      console.error('Error scanning verification failures:', error);
+      setScanError(error instanceof Error ? error.message : 'Failed to scan');
+    } finally {
+      setIsScanning(false);
+    }
   };
 
   const monthlyData = [
@@ -381,8 +403,41 @@ const FailedVerifications = () => {
         </div>
       </div>
 
+      {/* Error Notification */}
+      {scanError && (
+        <div className={`rounded-lg p-6 mb-6 ${
+          isNeon
+            ? 'dark-neon-card border border-red-500/30 shadow-lg shadow-red-500/10'
+            : `${currentTheme.colors.cardBackground} shadow-sm border border-red-200 bg-red-50`
+        }`}>
+          <div className="flex items-start space-x-3">
+            <div className="flex-shrink-0">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                isNeon
+                  ? 'bg-gradient-to-br from-red-500/20 to-orange-500/20 border border-red-500/30'
+                  : 'bg-red-100'
+              }`}>
+                <AlertTriangle className={`w-4 h-4 ${
+                  isNeon ? 'text-red-400' : 'text-red-600'
+                }`} />
+              </div>
+            </div>
+            <div className="flex-1">
+              <h3 className={`text-lg font-semibold mb-2 ${
+                isNeon ? 'text-white' : 'text-gray-900'
+              }`}>
+                Scan Failed
+              </h3>
+              <p className={isNeon ? 'text-slate-300' : 'text-gray-600'}>
+                {scanError}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Scan Result Notification */}
-      {showScanResult && (
+      {showScanResult && !scanError && (
         <div className={`rounded-lg p-6 mb-6 ${
           isNeon
             ? 'dark-neon-card border border-cyan-500/30 shadow-lg shadow-cyan-500/10'
@@ -404,7 +459,7 @@ const FailedVerifications = () => {
               <h3 className={`text-lg font-semibold mb-2 ${
                 isNeon ? 'text-white' : 'text-gray-900'
               }`}>
-                Found 10 verification failure emails
+                Found {scanResults.length} verification failure emails
               </h3>
               <p className={isNeon ? 'text-slate-300' : 'text-gray-600'}>
                 Order numbers and failure reasons extracted from StockX emails.
@@ -415,7 +470,7 @@ const FailedVerifications = () => {
       )}
 
       {/* StockX Verification Failures Table */}
-      {showScanResult && (
+      {showScanResult && !scanError && scanResults.length > 0 && (
         <div className={`rounded-lg overflow-hidden ${
           isNeon
             ? 'dark-neon-card border border-slate-700/50'
@@ -431,7 +486,7 @@ const FailedVerifications = () => {
               }`} />
               <h3 className={`text-lg font-semibold ${
                 isNeon ? 'text-white' : 'text-gray-900'
-              }`}>StockX Verification Failures (10)</h3>
+              }`}>StockX Verification Failures ({scanResults.length})</h3>
             </div>
             <p className={`text-sm ${
               isNeon ? 'text-slate-400' : 'text-gray-500'
@@ -479,16 +534,7 @@ const FailedVerifications = () => {
                   ? 'divide-slate-700/50' 
                   : `${currentTheme.colors.cardBackground} divide-gray-200`
               }`}>
-                {[
-                  { orderNumber: '75553904-75453663', date: '6/24/2025' },
-                  { orderNumber: '75570179-75469938', date: '6/23/2025' },
-                  { orderNumber: '75449709-75349468', date: '6/23/2025' },
-                  { orderNumber: '75494025-75393784', date: '6/20/2025' },
-                  { orderNumber: '75467374-75367133', date: '6/18/2025' },
-                  { orderNumber: '75458113-75357872', date: '6/17/2025' },
-                  { orderNumber: '75437800-75337559', date: '6/17/2025' },
-                  { orderNumber: '75064475-74964234', date: '5/30/2025' }
-                ].map((failure, index) => (
+                {scanResults.map((failure, index) => (
                   <tr key={index} className={`transition-colors duration-200 ${
                     isNeon ? 'hover:bg-slate-800/50' : 'hover:bg-gray-50'
                   }`}>
@@ -510,10 +556,10 @@ const FailedVerifications = () => {
                       <div>
                         <div className={`text-sm font-medium ${
                           isNeon ? 'text-white' : 'text-gray-900'
-                        }`}>StockX Item</div>
+                        }`}>{failure.productName || 'StockX Item'}</div>
                         <div className={`text-sm ${
                           isNeon ? 'text-slate-400' : 'text-gray-500'
-                        }`}>An Update Regarding Your Sale</div>
+                        }`}>{failure.subject || 'An Update Regarding Your Sale'}</div>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -523,7 +569,7 @@ const FailedVerifications = () => {
                           : 'bg-red-100 text-red-800'
                       }`}>
                         <AlertTriangle className="w-4 h-4 mr-1" />
-                        Did not pass verification
+                        {failure.failureReason || 'Did not pass verification'}
                       </span>
                     </td>
                     <td className={`px-6 py-4 whitespace-nowrap text-sm ${
