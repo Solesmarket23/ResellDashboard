@@ -73,12 +73,12 @@ const StatusUpdater = ({ purchases, onStatusUpdate, className = '', isAutoEnable
       
       console.log(`🔍 Running robust search for ${orderNumbers.length} orders...`);
       
-      const response = await fetch('/api/gmail/robust-status-update', {
+      const response = await fetch('/api/gmail/quick-robust-search', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ orders: orderNumbers })
+        body: JSON.stringify({ orderNumbers })
       });
 
       const data = await response.json();
