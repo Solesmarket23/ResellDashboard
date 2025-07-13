@@ -78,7 +78,7 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
     loadSettings();
   }, [user]);
 
-  // Save settings to Firebase when they change (with debouncing)
+  // Save settings to Firebase when they change
   const saveSettings = useRef(
     async (settings: {
       isEnabled: boolean;
@@ -86,16 +86,10 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
       syncInterval: number;
       lastSync: Date | null;
       lastStatusUpdate: Date | null;
-    }) => {
+    }, immediate = false) => {
       if (!user?.uid) return;
       
-      // Clear existing save timeout
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-      
-      // Debounce saves to avoid too many writes
-      saveTimeoutRef.current = setTimeout(async () => {
+      const doSave = async () => {
         try {
           const userRef = doc(db, 'users', user.uid);
           await updateDoc(userRef, {
@@ -112,18 +106,67 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
         } catch (error) {
           console.error('Error saving auto monitoring settings:', error);
         }
-      }, 1000); // 1 second debounce
+      };
+      
+      if (immediate) {
+        // Save immediately for critical actions
+        await doSave();
+      } else {
+        // Clear existing save timeout
+        if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+        }
+        
+        // Debounce saves to avoid too many writes
+        saveTimeoutRef.current = setTimeout(doSave, 500); // 500ms debounce
+      }
     }
   ).current;
 
-  // Clear intervals and timeouts on unmount
+  // Save current state on unmount
+  const currentStateRef = useRef({
+    isEnabled,
+    isStatusEnabled,
+    syncInterval,
+    lastSync,
+    lastStatusUpdate
+  });
+
+  // Update ref when state changes
+  useEffect(() => {
+    currentStateRef.current = {
+      isEnabled,
+      isStatusEnabled,
+      syncInterval,
+      lastSync,
+      lastStatusUpdate
+    };
+  }, [isEnabled, isStatusEnabled, syncInterval, lastSync, lastStatusUpdate]);
+
+  // Clear intervals and timeouts on unmount, and save final state
   useEffect(() => {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (nextSyncTimeoutRef.current) clearTimeout(nextSyncTimeoutRef.current);
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        // Save immediately on unmount
+        if (user?.uid) {
+          const userRef = doc(db, 'users', user.uid);
+          updateDoc(userRef, {
+            autoMonitoring: {
+              isEnabled: currentStateRef.current.isEnabled,
+              isStatusEnabled: currentStateRef.current.isStatusEnabled,
+              syncInterval: currentStateRef.current.syncInterval,
+              lastSync: currentStateRef.current.lastSync?.toISOString() || null,
+              lastStatusUpdate: currentStateRef.current.lastStatusUpdate?.toISOString() || null,
+              updatedAt: new Date().toISOString()
+            }
+          }).catch(error => console.error('Error saving on unmount:', error));
+        }
+      }
     };
-  }, []);
+  }, [user]);
 
   // Auto-sync logic
   useEffect(() => {
@@ -306,7 +349,7 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
       syncInterval,
       lastSync,
       lastStatusUpdate
-    });
+    }, true); // Save immediately
   };
 
   const handleStatusToggle = () => {
@@ -319,7 +362,7 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
       syncInterval,
       lastSync,
       lastStatusUpdate
-    });
+    }, true); // Save immediately
   };
 
   const handleIntervalChange = (newInterval: number) => {
@@ -330,7 +373,7 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
       syncInterval: newInterval,
       lastSync,
       lastStatusUpdate
-    });
+    }, true); // Save immediately
   };
 
   const formatTimeUntilNext = () => {
