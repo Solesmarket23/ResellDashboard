@@ -108,6 +108,46 @@ const StatusUpdater = ({ purchases, onStatusUpdate, className = '', isAutoEnable
     }
   };
 
+  const resetStatus = async () => {
+    if (isRobustSearching) return;
+
+    setIsRobustSearching(true);
+    
+    try {
+      console.log(`🔄 Resetting all incorrect status updates...`);
+      
+      const response = await fetch('/api/gmail/reset-status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        console.log(`✅ Status reset complete`);
+        
+        // Force page reload to restore original data
+        setLastUpdate('Status reset - refreshing page...');
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
+        
+      } else {
+        console.error('❌ Reset failed:', data.error);
+        setLastUpdate('Reset failed');
+        setTimeout(() => setLastUpdate(''), 5000);
+      }
+    } catch (error) {
+      console.error('❌ Reset error:', error);
+      setLastUpdate('Reset error');
+      setTimeout(() => setLastUpdate(''), 5000);
+    } finally {
+      setIsRobustSearching(false);
+    }
+  };
+
   const updateStatuses = async () => {
     if (isUpdating || purchases.length === 0) return;
 
@@ -179,17 +219,16 @@ const StatusUpdater = ({ purchases, onStatusUpdate, className = '', isAutoEnable
       </button>
       
       <button
-        onClick={robustSearch}
-        disabled={isRobustSearching || purchases.length === 0}
+        onClick={resetStatus}
+        disabled={isRobustSearching}
         className={`flex items-center space-x-2 ${
           currentTheme.name === 'Neon' 
-            ? 'bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/30' 
-            : 'bg-blue-600 hover:bg-blue-700 text-white'
+            ? 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 border border-orange-500/30' 
+            : 'bg-orange-600 hover:bg-orange-700 text-white'
         } disabled:opacity-50 px-3 py-2 rounded-lg font-medium transition-all duration-200`}
-        title="Deep search with multiple Gmail strategies to find all delivery emails"
+        title="Reset all incorrect status updates and restore original statuses"
       >
-        <RefreshCw className={`w-4 h-4 ${isRobustSearching ? 'animate-spin' : ''}`} />
-        <span className="text-sm">{isRobustSearching ? 'Searching...' : 'Robust Search'}</span>
+        <span className="text-sm">Reset Status</span>
       </button>
       
       <button
