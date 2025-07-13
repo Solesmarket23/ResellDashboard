@@ -16,6 +16,7 @@ const StatusUpdater = ({ purchases, onStatusUpdate, className = '', isAutoEnable
   const [isUpdating, setIsUpdating] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<string>('');
   const [isForcing, setIsForcing] = useState(false);
+  const [isRobustSearching, setIsRobustSearching] = useState(false);
   const { currentTheme } = useTheme();
 
   const forceDeliveryStatus = async () => {
@@ -58,6 +59,52 @@ const StatusUpdater = ({ purchases, onStatusUpdate, className = '', isAutoEnable
       setTimeout(() => setLastUpdate(''), 5000);
     } finally {
       setIsForcing(false);
+    }
+  };
+
+  const robustSearch = async () => {
+    if (isRobustSearching || purchases.length === 0) return;
+
+    setIsRobustSearching(true);
+    
+    try {
+      // Extract order numbers from purchases
+      const orderNumbers = purchases.map(p => p.orderNumber).filter(Boolean);
+      
+      console.log(`🔍 Running robust search for ${orderNumbers.length} orders...`);
+      
+      const response = await fetch('/api/gmail/robust-status-update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ orders: orderNumbers })
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        console.log(`✅ Robust search complete:`, data.summary);
+        console.log(`🔍 Updated orders:`, data.updatedOrders);
+        
+        // Apply status updates to purchases
+        onStatusUpdate(data.updatedOrders);
+        
+        setLastUpdate(`Robust search: Updated ${data.summary.updated}/${data.summary.totalOrders} orders`);
+        
+        // Clear message after 8 seconds
+        setTimeout(() => setLastUpdate(''), 8000);
+      } else {
+        console.error('❌ Robust search failed:', data.error);
+        setLastUpdate('Robust search failed');
+        setTimeout(() => setLastUpdate(''), 5000);
+      }
+    } catch (error) {
+      console.error('❌ Robust search error:', error);
+      setLastUpdate('Robust search error');
+      setTimeout(() => setLastUpdate(''), 5000);
+    } finally {
+      setIsRobustSearching(false);
     }
   };
 
@@ -129,6 +176,20 @@ const StatusUpdater = ({ purchases, onStatusUpdate, className = '', isAutoEnable
       >
         <RefreshCw className={`w-5 h-5 ${isUpdating ? 'animate-spin' : ''}`} />
         <span>{isUpdating ? 'Updating...' : 'Update Status'}</span>
+      </button>
+      
+      <button
+        onClick={robustSearch}
+        disabled={isRobustSearching || purchases.length === 0}
+        className={`flex items-center space-x-2 ${
+          currentTheme.name === 'Neon' 
+            ? 'bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/30' 
+            : 'bg-blue-600 hover:bg-blue-700 text-white'
+        } disabled:opacity-50 px-3 py-2 rounded-lg font-medium transition-all duration-200`}
+        title="Deep search with multiple Gmail strategies to find all delivery emails"
+      >
+        <RefreshCw className={`w-4 h-4 ${isRobustSearching ? 'animate-spin' : ''}`} />
+        <span className="text-sm">{isRobustSearching ? 'Searching...' : 'Robust Search'}</span>
       </button>
       
       <button
