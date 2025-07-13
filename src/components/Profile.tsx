@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { db } from '@/lib/firebase/firebase';
-import { doc, updateDoc, getDoc } from 'firebase/firestore';
+import { doc, updateDoc, getDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
+import AutoEmailSync from './AutoEmailSync';
 import { 
   User, 
   Mail, 
@@ -30,7 +31,8 @@ import {
   Trash2,
   AlertTriangle,
   BarChart3,
-  Users
+  Users,
+  RefreshCw
 } from 'lucide-react';
 
 const Profile = () => {
@@ -70,6 +72,9 @@ const Profile = () => {
     shareData: false,
     showBenchmarks: false
   });
+
+  const [gmailConnected, setGmailConnected] = useState(false);
+  const [purchases, setPurchases] = useState<any[]>([]);
 
   const tabs = [
     { id: 'personal', label: 'Personal Info', icon: User },
@@ -136,6 +141,35 @@ const Profile = () => {
     };
 
     loadUserPreferences();
+    
+    // Check Gmail connection status
+    const checkGmailStatus = async () => {
+      try {
+        const response = await fetch('/api/gmail/status');
+        const data = await response.json();
+        setGmailConnected(data.connected);
+      } catch (error) {
+        console.error('Error checking Gmail status:', error);
+      }
+    };
+    
+    checkGmailStatus();
+    
+    // Load purchases if user is logged in
+    if (user) {
+      const purchasesRef = collection(db, 'purchases');
+      const q = query(purchasesRef, where('userId', '==', user.uid));
+      
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const purchaseData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setPurchases(purchaseData);
+      });
+      
+      return () => unsubscribe();
+    }
   }, [user]);
 
   return (
@@ -692,6 +726,36 @@ const Profile = () => {
 
           {activeTab === 'data' && (
             <div className="space-y-8">
+              {/* Auto Monitoring Section */}
+              <div className={`p-6 rounded-2xl ${
+                currentTheme.name === 'Neon'
+                  ? 'bg-white/5 border border-cyan-500/20'
+                  : `${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border`
+              }`}>
+                <div className="mb-4">
+                  <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary} mb-2`}>
+                    Auto Monitoring Settings
+                  </h3>
+                  <p className={`text-sm ${currentTheme.colors.textSecondary}`}>
+                    Configure automatic email sync and status monitoring
+                  </p>
+                </div>
+                
+                <AutoEmailSync 
+                  isGmailConnected={gmailConnected}
+                  purchases={purchases}
+                  onNewPurchases={(count) => {
+                    console.log(`🎉 Auto sync found ${count} new purchases`);
+                  }}
+                  onStatusUpdate={(updates) => {
+                    console.log('Status updates:', updates);
+                  }}
+                  onAutoStatusChange={(enabled, lastUpdate) => {
+                    console.log('Auto status changed:', enabled, lastUpdate);
+                  }}
+                />
+              </div>
+
               {/* Community Insights Section */}
               <div className={`p-6 rounded-2xl ${
                 currentTheme.name === 'Neon'

@@ -796,21 +796,6 @@ const Purchases = () => {
           }} 
         />
         
-        {/* Auto Monitoring - Enhanced Version */}
-        <AutoEmailSync 
-          isGmailConnected={gmailConnected}
-          purchases={purchases}
-          onNewPurchases={(count) => {
-            console.log(`🎉 Auto sync found ${count} new purchases`);
-            // Trigger a refresh of the purchases list
-            loadManualPurchasesFromFirebase();
-          }}
-          onStatusUpdate={handleStatusUpdate}
-          onAutoStatusChange={(enabled, lastUpdate) => {
-            setIsAutoStatusEnabled(enabled);
-            setLastAutoStatusUpdate(lastUpdate);
-          }}
-        />
       </div>
 
       {/* Header */}
