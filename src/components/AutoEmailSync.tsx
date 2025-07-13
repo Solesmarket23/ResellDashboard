@@ -5,7 +5,7 @@ import { RefreshCw, Clock, CheckCircle } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
 import { db } from '../lib/firebase/firebase';
-import { doc, updateDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 
 interface AutoEmailSyncProps {
   isGmailConnected: boolean;
@@ -41,7 +41,10 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
   // Load settings from Firebase on component mount
   useEffect(() => {
     const loadSettings = async () => {
-      if (!user?.uid) return;
+      if (!user?.uid) {
+      console.warn('No user ID available, skipping settings load');
+      return;
+    }
       
       try {
         const userRef = doc(db, 'users', user.uid);
@@ -70,8 +73,13 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
           
           console.log('Auto monitoring settings loaded from Firebase', autoMonitoring);
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error loading auto monitoring settings:', error);
+        console.error('Error details:', {
+          code: error?.code,
+          message: error?.message,
+          userId: user?.uid
+        });
       }
     };
     
@@ -87,12 +95,15 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
       lastSync: Date | null;
       lastStatusUpdate: Date | null;
     }, immediate = false) => {
-      if (!user?.uid) return;
+      if (!user?.uid) {
+        console.warn('No user ID available, skipping save');
+        return;
+      }
       
       const doSave = async () => {
         try {
           const userRef = doc(db, 'users', user.uid);
-          await updateDoc(userRef, {
+          await setDoc(userRef, {
             autoMonitoring: {
               isEnabled: settings.isEnabled,
               isStatusEnabled: settings.isStatusEnabled,
@@ -101,10 +112,18 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
               lastStatusUpdate: settings.lastStatusUpdate?.toISOString() || null,
               updatedAt: new Date().toISOString()
             }
+          }, { merge: true });
+          console.log('Auto monitoring settings saved to Firebase', {
+            settings,
+            userId: user.uid
           });
-          console.log('Auto monitoring settings saved to Firebase');
-        } catch (error) {
+        } catch (error: any) {
           console.error('Error saving auto monitoring settings:', error);
+          console.error('Error details:', {
+            code: error?.code,
+            message: error?.message,
+            userId: user?.uid
+          });
         }
       };
       
@@ -123,6 +142,9 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
     }
   ).current;
 
+  // Track if component is mounted
+  const isMountedRef = useRef(true);
+  
   // Save current state on unmount
   const currentStateRef = useRef({
     isEnabled,
@@ -132,7 +154,7 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
     lastStatusUpdate
   });
 
-  // Update ref when state changes
+  // Update ref when state changes and save to Firebase
   useEffect(() => {
     currentStateRef.current = {
       isEnabled,
@@ -141,19 +163,30 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
       lastSync,
       lastStatusUpdate
     };
-  }, [isEnabled, isStatusEnabled, syncInterval, lastSync, lastStatusUpdate]);
+    
+    // Only save if user is authenticated and component is mounted
+    if (user?.uid && isMountedRef.current) {
+      // Skip saving on initial mount (when loading from Firebase)
+      const isInitialMount = lastSync === null && lastStatusUpdate === null;
+      if (!isInitialMount) {
+        saveSettings(currentStateRef.current);
+      }
+    }
+  }, [isEnabled, isStatusEnabled, syncInterval, lastSync, lastStatusUpdate, user, saveSettings]);
 
   // Clear intervals and timeouts on unmount, and save final state
   useEffect(() => {
     return () => {
+      isMountedRef.current = false;
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (nextSyncTimeoutRef.current) clearTimeout(nextSyncTimeoutRef.current);
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
         // Save immediately on unmount
         if (user?.uid) {
+          console.log('Saving settings on unmount...');
           const userRef = doc(db, 'users', user.uid);
-          updateDoc(userRef, {
+          setDoc(userRef, {
             autoMonitoring: {
               isEnabled: currentStateRef.current.isEnabled,
               isStatusEnabled: currentStateRef.current.isStatusEnabled,
@@ -162,7 +195,7 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
               lastStatusUpdate: currentStateRef.current.lastStatusUpdate?.toISOString() || null,
               updatedAt: new Date().toISOString()
             }
-          }).catch(error => console.error('Error saving on unmount:', error));
+          }, { merge: true }).catch(error => console.error('Error saving on unmount:', error));
         }
       }
     };
