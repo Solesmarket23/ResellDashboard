@@ -44,20 +44,27 @@ const FailedVerifications = () => {
   const [scanError, setScanError] = useState<string | null>(null);
 
   const handleScanClick = async () => {
+    console.log('🔍 Scan button clicked');
     setIsScanning(true);
     setShowScanResult(false);
     setScanError(null);
     setScanResults([]);
     
     try {
+      console.log('🔍 Calling API...');
       // Call the API with a higher limit (increased from default 10)
       const response = await fetch('/api/gmail/verification-failures?limit=100');
       
+      console.log('🔍 API Response status:', response.status);
+      
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('🔍 API Error response:', errorText);
         throw new Error('Failed to scan verification failures');
       }
       
       const data = await response.json();
+      console.log('🔍 API Response data:', data);
       
       if (data.error) {
         throw new Error(data.error);
@@ -65,8 +72,9 @@ const FailedVerifications = () => {
       
       setScanResults(data.failures || []);
       setShowScanResult(true);
+      console.log('🔍 Scan complete, found', data.failures?.length || 0, 'results');
     } catch (error) {
-      console.error('Error scanning verification failures:', error);
+      console.error('🔍 Error scanning verification failures:', error);
       setScanError(error instanceof Error ? error.message : 'Failed to scan');
     } finally {
       setIsScanning(false);
