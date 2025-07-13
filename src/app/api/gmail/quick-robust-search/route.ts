@@ -92,24 +92,63 @@ export async function POST(request: NextRequest) {
               const subject = headers.find((h: any) => h.name === 'Subject')?.value || '';
               const content = getEmailContent(fullMessage.data);
 
-              // Check for each target order
+              // Check for each target order with STRICT matching
               for (const targetOrder of orderNumbers) {
-                if (content.includes(targetOrder) || subject.includes(targetOrder)) {
-                  const isDelivery = subject.includes('Delivered') || subject.includes('🎉') || content.includes('delivered');
+                const hasOrderInSubject = subject.includes(targetOrder);
+                const hasOrderInContent = content.includes(targetOrder);
+                
+                if (hasOrderInSubject || hasOrderInContent) {
+                  // Check if this is a delivery email
+                  const isDeliveryEmail = subject.includes('Delivered') || subject.includes('🎉') || content.includes('Order Delivered');
                   
-                  if (!foundOrders[targetOrder] || isDelivery) {
-                    foundOrders[targetOrder] = {
-                      orderNumber: targetOrder,
-                      status: isDelivery ? 'Delivered' : 'Found',
-                      statusColor: isDelivery ? 'green' : 'blue',
-                      priority: isDelivery ? 5 : 3,
-                      subject: subject,
-                      date: headers.find((h: any) => h.name === 'Date')?.value || '',
-                      emailId: message.id,
-                      strategy: `quick_${i + 1}`,
-                      isDelivery
-                    };
-                    console.log(`✅ QUICK FIND: ${targetOrder} → ${isDelivery ? 'Delivered' : 'Found'} (${subject.substring(0, 50)}...)`);
+                  if (isDeliveryEmail) {
+                    // STRICT CHECK: Only mark as delivered if this email is specifically about this order
+                    // Check for proper order number context
+                    const orderNumberPatterns = [
+                      `Order number: ${targetOrder}`,
+                      `Order number:${targetOrder}`, 
+                      `Order: ${targetOrder}`,
+                      `#${targetOrder}`,
+                      // For subject line matches in delivery emails
+                      hasOrderInSubject && subject.includes('Delivered')
+                    ];
+                    
+                    const isSpecificToThisOrder = orderNumberPatterns.some(pattern => 
+                      typeof pattern === 'string' ? (content.includes(pattern) || subject.includes(pattern)) : pattern
+                    );
+                    
+                    if (isSpecificToThisOrder) {
+                      foundOrders[targetOrder] = {
+                        orderNumber: targetOrder,
+                        status: 'Delivered',
+                        statusColor: 'green',
+                        priority: 5,
+                        subject: subject,
+                        date: headers.find((h: any) => h.name === 'Date')?.value || '',
+                        emailId: message.id,
+                        strategy: `quick_${i + 1}`,
+                        isDelivery: true
+                      };
+                      console.log(`✅ STRICT MATCH: ${targetOrder} → Delivered (verified in proper context)`);
+                    } else {
+                      console.log(`⚠️ ORDER FOUND BUT NOT SPECIFIC: ${targetOrder} found in delivery email but not in proper context`);
+                    }
+                  } else {
+                    // Non-delivery email, only record if we don't have a result yet
+                    if (!foundOrders[targetOrder]) {
+                      foundOrders[targetOrder] = {
+                        orderNumber: targetOrder,
+                        status: 'Found',
+                        statusColor: 'blue',
+                        priority: 3,
+                        subject: subject,
+                        date: headers.find((h: any) => h.name === 'Date')?.value || '',
+                        emailId: message.id,
+                        strategy: `quick_${i + 1}`,
+                        isDelivery: false
+                      };
+                      console.log(`📧 FOUND: ${targetOrder} in non-delivery email`);
+                    }
                   }
                 }
               }
