@@ -270,7 +270,7 @@ const FailedVerifications = () => {
           <div className="text-center">
             <div className={`text-4xl font-bold mb-2 ${
               isNeon ? 'text-red-400' : 'text-red-600'
-            }`}>0.0%</div>
+            }`}>--</div>
             <div className={`text-sm ${
               isNeon ? 'text-slate-400' : 'text-gray-500'
             }`}>Overall Rate</div>
@@ -286,7 +286,7 @@ const FailedVerifications = () => {
           <div className="text-center">
             <div className={`text-4xl font-bold mb-2 ${
               isNeon ? 'text-white' : 'text-gray-900'
-            }`}>10</div>
+            }`}>--</div>
             <div className={`text-sm ${
               isNeon ? 'text-slate-400' : 'text-gray-500'
             }`}>Total Sales</div>
@@ -300,14 +300,14 @@ const FailedVerifications = () => {
           <div>
             <div className={`text-2xl font-bold ${
               isNeon ? 'text-white' : 'text-gray-900'
-            }`}>0.0%</div>
+            }`}>--</div>
             <div className={`text-sm ${
               isNeon ? 'text-slate-400' : 'text-gray-500'
             }`}>Current month rate</div>
           </div>
           <div className={`text-sm ${
             isNeon ? 'text-slate-400' : 'text-gray-500'
-          }`}>No change</div>
+          }`}>--</div>
         </div>
       </div>
 
