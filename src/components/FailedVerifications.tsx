@@ -1,9 +1,12 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Search, Plus, AlertTriangle, Calendar, ChevronDown, RotateCcw, CheckCircle, DollarSign, X } from 'lucide-react';
+import { Search, Plus, AlertTriangle, Calendar, ChevronDown, RotateCcw, CheckCircle, DollarSign, X, Trash2 } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { generateGmailSearchUrl } from '../lib/utils/orderNumberUtils';
+import { useAuth } from '../lib/contexts/AuthContext';
+import { db } from '../lib/firebase/firebase';
+import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc } from 'firebase/firestore';
 
 const FailedVerifications = () => {
   const [timeFilter, setTimeFilter] = useState('Monthly');
@@ -13,6 +16,7 @@ const FailedVerifications = () => {
   const [timeDropdownOpen, setTimeDropdownOpen] = useState(false);
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const { currentTheme } = useTheme();
+  const { user } = useAuth();
   
   // Dynamic theme detection for consistent neon styling
   const isNeon = currentTheme.name === 'Neon';
@@ -40,10 +44,42 @@ const FailedVerifications = () => {
     };
   }, []);
 
+  // Load failed verifications from Firebase
+  useEffect(() => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    const failedVerificationsRef = collection(db, 'failedVerifications');
+    const q = query(failedVerificationsRef, where('userId', '==', user.uid));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const failures = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setManualFailures(failures);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
   const [scanResults, setScanResults] = useState<any[]>([]);
   const [scanError, setScanError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [manualFailures, setManualFailures] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const handleDeleteFailure = async (failureId: string) => {
+    try {
+      await deleteDoc(doc(db, 'failedVerifications', failureId));
+    } catch (error) {
+      console.error('Error deleting failed verification:', error);
+      alert('Failed to delete verification failure.');
+    }
+  };
 
   const handleScanClick = async () => {
     console.log('🔍 Scan button clicked');
@@ -90,16 +126,18 @@ const FailedVerifications = () => {
     { month: 'Apr 2025', rate: '0.0%', failed: 0, total: 0, status: 'No sales' }
   ];
 
+  const totalFailures = scanResults.length + manualFailures.length;
+  
   const statusCards = [
     {
       title: 'Total Failed',
-      value: '0',
+      value: totalFailures.toString(),
       icon: AlertTriangle,
       iconColor: 'text-red-600'
     },
     {
       title: 'Pending Returns',
-      value: '0',
+      value: totalFailures.toString(),
       icon: RotateCcw,
       iconColor: 'text-orange-600'
     },
@@ -240,7 +278,7 @@ const FailedVerifications = () => {
           <div className="text-center">
             <div className={`text-4xl font-bold mb-2 ${
               isNeon ? 'text-white' : 'text-gray-900'
-            }`}>0</div>
+            }`}>{totalFailures}</div>
             <div className={`text-sm ${
               isNeon ? 'text-slate-400' : 'text-gray-500'
             }`}>Total Failures</div>
@@ -539,6 +577,11 @@ const FailedVerifications = () => {
                   }`}>
                     Status
                   </th>
+                  <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
+                    isNeon ? 'text-slate-300' : 'text-gray-500'
+                  }`}>
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className={`divide-y ${
@@ -599,6 +642,25 @@ const FailedVerifications = () => {
                         Needs Review
                       </span>
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {failure.userId ? (
+                        <button
+                          onClick={() => handleDeleteFailure(failure.id)}
+                          className={`p-1.5 rounded-lg transition-colors ${
+                            isNeon
+                              ? 'hover:bg-red-900/30 text-red-400 hover:text-red-300'
+                              : 'hover:bg-red-100 text-red-600 hover:text-red-700'
+                          }`}
+                          title="Delete failed verification"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      ) : (
+                        <span className={`text-sm ${
+                          isNeon ? 'text-slate-500' : 'text-gray-400'
+                        }`}>Scanned</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -631,11 +693,16 @@ const FailedVerifications = () => {
               </button>
             </div>
 
-            <form onSubmit={(e) => {
+            <form onSubmit={async (e) => {
               e.preventDefault();
+              if (!user) {
+                alert('Please sign in to add failed verifications');
+                return;
+              }
+              
               const formData = new FormData(e.currentTarget);
               const newFailure = {
-                id: Date.now().toString(),
+                userId: user.uid,
                 orderNumber: formData.get('orderNumber'),
                 productName: formData.get('productName'),
                 failureReason: formData.get('failureReason'),
@@ -646,11 +713,18 @@ const FailedVerifications = () => {
                 }),
                 status: 'Needs Review',
                 subject: 'Manual Entry',
-                fromEmail: 'manual@entry.com'
+                fromEmail: 'manual@entry.com',
+                createdAt: new Date().toISOString()
               };
-              setManualFailures([...manualFailures, newFailure]);
-              setShowAddModal(false);
-              e.currentTarget.reset();
+              
+              try {
+                await addDoc(collection(db, 'failedVerifications'), newFailure);
+                setShowAddModal(false);
+                e.currentTarget.reset();
+              } catch (error) {
+                console.error('Error adding failed verification:', error);
+                alert('Failed to save verification failure. Please try again.');
+              }
             }}>
               <div className="space-y-4">
                 <div>
