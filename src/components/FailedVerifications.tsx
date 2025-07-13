@@ -255,12 +255,12 @@ const FailedVerifications = () => {
       </div>
 
       {/* Main Metrics Section */}
-      <div className={`rounded-lg p-8 mb-6 ${
+      <div className={`rounded-lg p-8 mb-6 overflow-visible ${
         isNeon
           ? 'dark-neon-card border border-slate-700/50'
           : `${currentTheme.colors.cardBackground} shadow-sm border border-gray-200`
       }`}
-      style={{ overflow: 'visible' }}>
+      style={{ minHeight: '280px' }}>
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center">
             <AlertTriangle className={`w-6 h-6 mr-3 ${
@@ -270,7 +270,7 @@ const FailedVerifications = () => {
               isNeon ? 'text-white' : 'text-gray-900'
             }`}>Verification Failure Rate</h2>
           </div>
-          <div className="relative" ref={timeDropdownRef} style={{ zIndex: 1 }}>
+          <div className="relative" ref={timeDropdownRef}>
             <button
               onClick={() => setTimeDropdownOpen(!timeDropdownOpen)}
               className={`flex items-center justify-between rounded-lg px-4 py-2 pr-8 text-sm font-medium focus:outline-none focus:ring-2 focus:border-opacity-50 transition-all duration-200 ${
