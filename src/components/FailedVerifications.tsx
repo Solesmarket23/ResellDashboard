@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Search, Plus, AlertTriangle, Calendar, ChevronDown, RotateCcw, CheckCircle, DollarSign, X, Trash2, Users, TrendingUp, TrendingDown } from 'lucide-react';
+import { Search, Plus, AlertTriangle, Calendar, ChevronDown, RotateCcw, CheckCircle, DollarSign, X, Trash2, Users, TrendingUp, TrendingDown, RefreshCw } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { generateGmailSearchUrl } from '../lib/utils/orderNumberUtils';
 import { useAuth } from '../lib/contexts/AuthContext';
@@ -23,6 +23,7 @@ const FailedVerifications = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [communityInsightsEnabled, setCommunityInsightsEnabled] = useState(false);
   const [communityData, setCommunityData] = useState<any>(null);
+  const [isRescanning, setIsRescanning] = useState(false);
   const { currentTheme } = useTheme();
   const { user } = useAuth();
   
@@ -197,6 +198,43 @@ const FailedVerifications = () => {
     }
   };
 
+  const handleRescanClick = async () => {
+    if (!user) {
+      alert('Please sign in to rescan failures');
+      return;
+    }
+
+    setIsRescanning(true);
+    try {
+      console.log('🔄 Starting rescan of all failures...');
+      const response = await fetch('/api/gmail/rescan-failures', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId: user.uid }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to rescan failures');
+      }
+
+      const data = await response.json();
+      console.log('✅ Rescan complete:', data);
+      
+      if (data.updatedCount > 0) {
+        alert(`Successfully updated ${data.updatedCount} of ${data.totalScanned} verification failures with correct reasons.`);
+      } else {
+        alert('No updates were needed. All failure reasons are already up to date.');
+      }
+    } catch (error) {
+      console.error('❌ Error rescanning failures:', error);
+      alert('Failed to rescan verification failures. Please try again.');
+    } finally {
+      setIsRescanning(false);
+    }
+  };
+
   const allFailures = [...scanResults, ...manualFailures];
   const totalFailures = allFailures.length;
   
@@ -295,6 +333,25 @@ const FailedVerifications = () => {
             <Search className="w-4 h-4 mr-2" />
             {isScanning ? 'Scanning...' : 'Scan for Verification Failures'}
           </button>
+          {totalFailures > 0 && (
+            <button 
+              onClick={handleRescanClick}
+              disabled={isRescanning}
+              className={`flex items-center px-4 py-2 text-white rounded-lg transition-all duration-300 ${
+                isNeon
+                  ? isRescanning 
+                    ? 'bg-gradient-to-r from-purple-500/50 to-pink-500/50 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 shadow-lg shadow-purple-500/25 hover:shadow-xl hover:shadow-purple-500/40'
+                  : isRescanning 
+                    ? 'bg-purple-500 cursor-not-allowed' 
+                    : 'bg-purple-600 hover:bg-purple-700'
+              }`}
+              title="Re-scan all existing failures to update their failure reasons"
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${isRescanning ? 'animate-spin' : ''}`} />
+              {isRescanning ? 'Updating...' : 'Update Failure Reasons'}
+            </button>
+          )}
           <button 
             onClick={() => setShowAddModal(true)}
             className={`flex items-center px-4 py-2 text-white rounded-lg transition-all duration-300 ${
@@ -1003,10 +1060,14 @@ const FailedVerifications = () => {
                         : 'border border-gray-300 focus:ring-blue-500 focus:border-blue-500 bg-white'
                     }`}
                   >
-                    <option value="Did not pass verification">Did not pass verification</option>
-                    <option value="Damaged box">Damaged box</option>
-                    <option value="Wrong size">Wrong size</option>
-                    <option value="Fake/Replica">Fake/Replica</option>
+                    <option value="">Select a reason</option>
+                    <option value="Manufacturing Defect">Manufacturing Defect</option>
+                    <option value="Suspected Inauthentic">Suspected Inauthentic</option>
+                    <option value="Used/Product Damage">Used/Product Damage</option>
+                    <option value="Incorrect Sizing">Incorrect Sizing</option>
+                    <option value="Used">Used</option>
+                    <option value="Box Damage">Box Damage</option>
+                    <option value="Incorrect Product">Incorrect Product</option>
                     <option value="Other">Other</option>
                   </select>
                 </div>

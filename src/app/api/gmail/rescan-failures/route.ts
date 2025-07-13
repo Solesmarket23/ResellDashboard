@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { google } from 'googleapis';
 import { cookies } from 'next/headers';
+import { db } from '@/lib/firebase/firebase';
+import { collection, query, where, getDocs, updateDoc, doc } from 'firebase/firestore';
 
-export async function GET(request: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
     const cookieStore = cookies();
     const accessToken = cookieStore.get('gmail_access_token')?.value;
@@ -10,6 +12,11 @@ export async function GET(request: NextRequest) {
 
     if (!accessToken) {
       return NextResponse.json({ error: 'Gmail not connected' }, { status: 401 });
+    }
+
+    const { userId } = await request.json();
+    if (!userId) {
+      return NextResponse.json({ error: 'User ID required' }, { status: 400 });
     }
 
     const url = new URL(request.url);
@@ -29,77 +36,72 @@ export async function GET(request: NextRequest) {
 
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
-    // Get limit from query params - default to 50 instead of 10
-    const limit = parseInt(url.searchParams.get('limit') || '50');
+    console.log('🔄 Starting re-scan of all verification failures...');
 
-    console.log(`🔍 Scanning for verification failures with limit: ${limit}`);
+    // Get all existing failures from Firebase
+    const failuresRef = collection(db, 'failedVerifications');
+    const q = query(failuresRef, where('userId', '==', userId));
+    const snapshot = await getDocs(q);
 
-    // Search specifically for StockX verification failure emails
-    // Add date filter to start from January 1, 2024
-    const dateFilter = `after:2024/1/1`;
-    
-    // Only search for "An Update Regarding Your Sale" emails
-    const queries = [
-      `from:noreply@stockx.com subject:"An Update Regarding Your Sale" ${dateFilter}`,
-      `from:stockx.com subject:"An Update Regarding Your Sale" ${dateFilter}`
-    ];
+    let updatedCount = 0;
+    const errors = [];
 
-    const allFailures = [];
+    for (const docSnapshot of snapshot.docs) {
+      const failure = docSnapshot.data();
+      const orderNumber = failure.orderNumber;
 
-    for (const query of queries) {
       try {
-        console.log(`🔍 Executing query: "${query}"`);
+        console.log(`🔍 Re-scanning order: ${orderNumber}`);
+
+        // Search for the specific order email
+        const searchQuery = `from:stockx.com "${orderNumber}"`;
         const response = await gmail.users.messages.list({
           userId: 'me',
-          q: query,
-          maxResults: limit,
-          // Order by internal date descending to get most recent first
-          orderBy: 'internalDate desc'
+          q: searchQuery,
+          maxResults: 5
         });
 
-        if (response.data.messages) {
-          console.log(`📧 Found ${response.data.messages.length} messages for query: ${query}`);
-          
-          for (const message of response.data.messages) {
-            const emailData = await gmail.users.messages.get({
-              userId: 'me',
-              id: message.id,
-              format: 'full'
-            });
+        if (response.data.messages && response.data.messages.length > 0) {
+          // Get the first matching email
+          const emailData = await gmail.users.messages.get({
+            userId: 'me',
+            id: response.data.messages[0].id,
+            format: 'full'
+          });
 
-            const parsedFailure = parseVerificationFailure(emailData.data);
-            if (parsedFailure) {
-              allFailures.push(parsedFailure);
-            }
+          const updatedData = parseVerificationFailure(emailData.data);
+          
+          if (updatedData && updatedData.failureReason !== failure.failureReason) {
+            // Update the document with new failure reason
+            await updateDoc(doc(db, 'failedVerifications', docSnapshot.id), {
+              failureReason: updatedData.failureReason,
+              productName: updatedData.productName,
+              additionalNotes: updatedData.additionalNotes || '',
+              lastScanned: new Date().toISOString()
+            });
+            
+            updatedCount++;
+            console.log(`✅ Updated ${orderNumber}: ${updatedData.failureReason}`);
           }
         }
       } catch (error) {
-        console.error(`Error with query "${query}":`, error);
+        console.error(`❌ Error updating ${orderNumber}:`, error);
+        errors.push({ orderNumber, error: error.message });
       }
     }
 
-    // Remove duplicates based on order number
-    const uniqueFailures = Array.from(
-      new Map(allFailures.map(item => [item.orderNumber, item])).values()
-    );
-
-    // Sort by date (most recent first)
-    uniqueFailures.sort((a, b) => {
-      const dateA = new Date(a.emailDate || 0);
-      const dateB = new Date(b.emailDate || 0);
-      return dateB.getTime() - dateA.getTime();
-    });
-
-    console.log(`✅ Found ${uniqueFailures.length} unique verification failures`);
+    console.log(`✅ Re-scan complete. Updated ${updatedCount} of ${snapshot.size} failures`);
 
     return NextResponse.json({ 
-      failures: uniqueFailures,
-      totalFound: uniqueFailures.length
+      success: true,
+      totalScanned: snapshot.size,
+      updatedCount,
+      errors
     });
 
   } catch (error) {
-    console.error('Error fetching verification failures:', error);
-    return NextResponse.json({ error: 'Failed to fetch verification failures' }, { status: 500 });
+    console.error('Error re-scanning failures:', error);
+    return NextResponse.json({ error: 'Failed to re-scan failures' }, { status: 500 });
   }
 }
 
@@ -109,11 +111,19 @@ function parseVerificationFailure(email: any) {
     const subjectHeader = email.payload.headers.find((h: any) => h.name === 'Subject')?.value || '';
     const dateHeader = email.payload.headers.find((h: any) => h.name === 'Date')?.value || '';
 
-    // Extract order number from subject or body
-    let orderNumber = extractOrderNumber(email);
-    
-    if (!orderNumber) {
-      return null;
+    // Extract order number
+    let orderNumber = '';
+    const orderPatterns = [
+      /Order[:\s#]*([0-9]{8}-[0-9]{8})/i,
+      /\b([0-9]{8}-[0-9]{8})\b/,
+    ];
+
+    for (const pattern of orderPatterns) {
+      const match = subjectHeader.match(pattern) || email.snippet?.match(pattern);
+      if (match) {
+        orderNumber = match[1];
+        break;
+      }
     }
 
     // Extract email body content
@@ -184,90 +194,17 @@ function parseVerificationFailure(email: any) {
     const notesMatch = bodyContent.match(/Additional Notes from Verification:\s*([^<]+)/i);
     if (notesMatch) {
       additionalNotes = notesMatch[1].trim();
-      // If we have additional notes and generic failure reason, prepend the notes
-      if (additionalNotes && failureReason === 'Did not pass verification') {
-        failureReason = `${failureReason} - ${additionalNotes.substring(0, 100)}...`;
-      }
     }
 
-    // Parse date
-    const date = new Date(dateHeader);
-    const formattedDate = date.toLocaleDateString('en-US', { 
-      month: 'numeric', 
-      day: 'numeric', 
-      year: '2-digit' 
-    });
-
-    // Also get the email internal date for sorting
-    const emailDate = email.internalDate ? new Date(parseInt(email.internalDate)) : date;
-
     return {
-      id: email.id,
       orderNumber,
       productName,
       failureReason,
-      date: formattedDate,
-      emailDate: emailDate.toISOString(),
-      status: 'Needs Review',
-      subject: subjectHeader,
-      fromEmail: fromHeader,
       additionalNotes
     };
 
   } catch (error) {
     console.error('Error parsing verification failure:', error);
-    return null;
-  }
-}
-
-function extractOrderNumber(email: any): string | null {
-  try {
-    // First check subject line
-    const subjectHeader = email.payload.headers.find((h: any) => h.name === 'Subject')?.value || '';
-    
-    // Common order number patterns in StockX emails
-    const patterns = [
-      /Order[:\s#]*([0-9]{8}-[0-9]{8})/i,
-      /\b([0-9]{8}-[0-9]{8})\b/,
-      /Order Number[:\s]*([0-9\-]+)/i,
-      /Order ID[:\s]*([0-9\-]+)/i,
-    ];
-
-    // Check subject first
-    for (const pattern of patterns) {
-      const match = subjectHeader.match(pattern);
-      if (match) {
-        return match[1];
-      }
-    }
-
-    // If not in subject, check body
-    let bodyContent = '';
-    if (email.payload?.parts) {
-      for (const part of email.payload.parts) {
-        if (part.mimeType === 'text/html' || part.mimeType === 'text/plain') {
-          if (part.body?.data) {
-            bodyContent += Buffer.from(part.body.data, 'base64').toString('utf8');
-          }
-        }
-      }
-    } else if (email.payload?.body?.data) {
-      bodyContent = Buffer.from(email.payload.body.data, 'base64').toString('utf8');
-    }
-
-    // Search body for order number
-    for (const pattern of patterns) {
-      const match = bodyContent.match(pattern);
-      if (match) {
-        return match[1];
-      }
-    }
-
-    // If still no match, generate a placeholder
-    return `UNKNOWN-${email.id.substring(0, 8)}`;
-
-  } catch (error) {
-    console.error('Error extracting order number:', error);
     return null;
   }
 }
