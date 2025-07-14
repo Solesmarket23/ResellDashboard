@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { db } from '@/lib/firebase/firebase';
-import { doc, updateDoc, getDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
+import { doc, updateDoc, getDoc, setDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import AutoEmailSync from './AutoEmailSync';
 import { 
   User, 
@@ -41,14 +41,27 @@ const Profile = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [activeTab, setActiveTab] = useState('personal');
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   
   const [profileData, setProfileData] = useState({
-    firstName: 'Mike',
-    lastName: 'Milburn',
-    email: 'mike@example.com',
-    phone: '+1 (555) 123-4567',
-    address: 'San Francisco, CA',
-    dateJoined: '2024-01-15',
+    firstName: '',
+    lastName: '',
+    email: user?.email || '',
+    phone: '',
+    address: '',
+    dateJoined: user?.metadata?.creationTime || new Date().toISOString(),
+    timezone: 'PST',
+    language: 'English'
+  });
+
+  const [originalProfileData, setOriginalProfileData] = useState({
+    firstName: '',
+    lastName: '',
+    email: user?.email || '',
+    phone: '',
+    address: '',
+    dateJoined: user?.metadata?.creationTime || new Date().toISOString(),
     timezone: 'PST',
     language: 'English'
   });
@@ -116,9 +129,33 @@ const Profile = () => {
     }
   };
 
-  const handleSave = () => {
-    // Save logic here
-    setIsEditing(false);
+  const handleSave = async () => {
+    if (!user) return;
+    
+    setIsSavingProfile(true);
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      
+      // Update the user document with profile data
+      await setDoc(userRef, {
+        profile: {
+          firstName: profileData.firstName,
+          lastName: profileData.lastName,
+          email: profileData.email,
+          phone: profileData.phone,
+          address: profileData.address,
+          updatedAt: new Date().toISOString()
+        }
+      }, { merge: true });
+      
+      setIsEditing(false);
+      setOriginalProfileData(profileData); // Update original data after successful save
+      console.log('Profile saved successfully');
+    } catch (error) {
+      console.error('Error saving profile:', error);
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
   // Load user preferences from Firebase
@@ -130,13 +167,72 @@ const Profile = () => {
           const userDoc = await getDoc(userRef);
           if (userDoc.exists()) {
             const data = userDoc.data();
+            
+            // Load profile data
+            if (data.profile) {
+              const loadedProfile = {
+                firstName: data.profile.firstName || '',
+                lastName: data.profile.lastName || '',
+                email: data.profile.email || user.email || '',
+                phone: data.profile.phone || '',
+                address: data.profile.address || '',
+                dateJoined: user.metadata?.creationTime || new Date().toISOString(),
+                timezone: 'PST',
+                language: 'English'
+              };
+              setProfileData(loadedProfile);
+              setOriginalProfileData(loadedProfile);
+            } else {
+              // If no profile exists, at least set the email from auth
+              const defaultProfile = {
+                firstName: '',
+                lastName: '',
+                email: user.email || '',
+                phone: '',
+                address: '',
+                dateJoined: user.metadata?.creationTime || new Date().toISOString(),
+                timezone: 'PST',
+                language: 'English'
+              };
+              setProfileData(defaultProfile);
+              setOriginalProfileData(defaultProfile);
+            }
+            
+            // Load community insights
             if (data.communityInsights) {
               setCommunityInsights(data.communityInsights);
             }
+          } else {
+            // If user document doesn't exist, create it with initial data
+            const userRef = doc(db, 'users', user.uid);
+            await setDoc(userRef, {
+              profile: {
+                email: user.email || '',
+                createdAt: new Date().toISOString()
+              }
+            }, { merge: true });
+            
+            // Update local state with email
+            const defaultProfile = {
+              firstName: '',
+              lastName: '',
+              email: user.email || '',
+              phone: '',
+              address: '',
+              dateJoined: user.metadata?.creationTime || new Date().toISOString(),
+              timezone: 'PST',
+              language: 'English'
+            };
+            setProfileData(defaultProfile);
+            setOriginalProfileData(defaultProfile);
           }
         } catch (error) {
           console.error('Error loading user preferences:', error);
+        } finally {
+          setIsLoadingProfile(false);
         }
+      } else {
+        setIsLoadingProfile(false);
       }
     };
 
@@ -195,22 +291,36 @@ const Profile = () => {
                 <>
                   <button
                     onClick={handleSave}
+                    disabled={isSavingProfile}
                     className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
                       currentTheme.name === 'Neon'
                         ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white hover:shadow-lg hover:shadow-cyan-500/25'
                         : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:shadow-lg hover:shadow-purple-500/25'
-                    }`}
+                    } ${isSavingProfile ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    <Check className="w-4 h-4 mr-2 inline" />
-                    Save Changes
+                    {isSavingProfile ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 mr-2 inline animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4 mr-2 inline" />
+                        Save Changes
+                      </>
+                    )}
                   </button>
                   <button
-                    onClick={() => setIsEditing(false)}
+                    onClick={() => {
+                      setProfileData(originalProfileData);
+                      setIsEditing(false);
+                    }}
+                    disabled={isSavingProfile}
                     className={`px-4 py-2 rounded-lg border transition-all duration-200 ${
                       currentTheme.name === 'Neon'
                         ? 'border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10'
                         : 'border-purple-500/30 text-purple-600 hover:bg-purple-500/10'
-                    }`}
+                    } ${isSavingProfile ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <X className="w-4 h-4 mr-2 inline" />
                     Cancel
@@ -302,6 +412,33 @@ const Profile = () => {
                 <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary} mb-4`}>
                   Personal Information
                 </h3>
+                {isLoadingProfile ? (
+                  <div className="space-y-4">
+                    {/* Loading skeleton */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <div className="h-4 w-20 bg-gray-300 dark:bg-gray-700 rounded mb-2 animate-pulse"></div>
+                        <div className="h-10 bg-gray-200 dark:bg-gray-800 rounded animate-pulse"></div>
+                      </div>
+                      <div>
+                        <div className="h-4 w-20 bg-gray-300 dark:bg-gray-700 rounded mb-2 animate-pulse"></div>
+                        <div className="h-10 bg-gray-200 dark:bg-gray-800 rounded animate-pulse"></div>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="h-4 w-24 bg-gray-300 dark:bg-gray-700 rounded mb-2 animate-pulse"></div>
+                      <div className="h-10 bg-gray-200 dark:bg-gray-800 rounded animate-pulse"></div>
+                    </div>
+                    <div>
+                      <div className="h-4 w-24 bg-gray-300 dark:bg-gray-700 rounded mb-2 animate-pulse"></div>
+                      <div className="h-10 bg-gray-200 dark:bg-gray-800 rounded animate-pulse"></div>
+                    </div>
+                    <div>
+                      <div className="h-4 w-20 bg-gray-300 dark:bg-gray-700 rounded mb-2 animate-pulse"></div>
+                      <div className="h-10 bg-gray-200 dark:bg-gray-800 rounded animate-pulse"></div>
+                    </div>
+                  </div>
+                ) : (
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -312,7 +449,7 @@ const Profile = () => {
                         type="text"
                         value={profileData.firstName}
                         onChange={(e) => handleInputChange('firstName', e.target.value)}
-                        disabled={!isEditing}
+                        disabled={!isEditing || isSavingProfile}
                         className={`w-full px-3 py-2 rounded-lg ${
                           currentTheme.name === 'Neon'
                             ? 'bg-white/10 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500'
@@ -328,7 +465,7 @@ const Profile = () => {
                         type="text"
                         value={profileData.lastName}
                         onChange={(e) => handleInputChange('lastName', e.target.value)}
-                        disabled={!isEditing}
+                        disabled={!isEditing || isSavingProfile}
                         className={`w-full px-3 py-2 rounded-lg ${
                           currentTheme.name === 'Neon'
                             ? 'bg-white/10 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500'
@@ -389,6 +526,7 @@ const Profile = () => {
                     />
                   </div>
                 </div>
+                )}
               </div>
             </div>
           )}
