@@ -58,8 +58,9 @@ const StockXTest = () => {
   }, []);
 
   const startOAuthFlow = () => {
-    // Redirect to StockX OAuth
-    window.location.href = '/api/stockx/auth';
+    // Redirect to StockX OAuth with return URL
+    const returnUrl = '/dashboard?section=stockx-test';
+    window.location.href = `/api/stockx/auth?returnTo=${encodeURIComponent(returnUrl)}`;
   };
 
   const testConnection = async () => {

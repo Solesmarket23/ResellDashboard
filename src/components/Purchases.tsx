@@ -870,17 +870,6 @@ const Purchases = () => {
               <Settings className="w-5 h-5" />
               <span>Settings</span>
             </button>
-            <button
-              onClick={() => setShowFixItemProducts(true)}
-              className={`flex items-center space-x-2 ${
-                currentTheme.name === 'Neon' 
-                  ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30' 
-                  : 'bg-amber-600 hover:bg-amber-700 text-white'
-              } px-4 py-2 rounded-lg font-medium transition-all duration-200`}
-            >
-              <Wrench className="w-5 h-5" />
-              <span>Fix Items</span>
-            </button>
           </div>
         </div>
         <div className="text-right">

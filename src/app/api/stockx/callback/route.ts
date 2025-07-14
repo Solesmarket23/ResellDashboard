@@ -37,15 +37,19 @@ export async function GET(request: NextRequest) {
     error
   });
 
-  // Handle OAuth errors
-  if (error) {
-    console.log('OAuth error:', error);
-    return NextResponse.redirect(`${baseUrl}/dashboard?view=stockx-arbitrage&error=oauth_error&message=${encodeURIComponent(error)}`);
-  }
-
   // Get stored state and return URL from cookies
   const storedState = request.cookies.get('stockx_state')?.value;
   const returnTo = request.cookies.get('stockx_return_to')?.value;
+  
+  // Default return URL if none specified
+  const defaultReturn = '/dashboard?section=stockx-market-research';
+
+  // Handle OAuth errors
+  if (error) {
+    console.log('OAuth error:', error);
+    const redirectUrl = returnTo || defaultReturn;
+    return NextResponse.redirect(`${baseUrl}${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}error=oauth_error&message=${encodeURIComponent(error)}`);
+  }
 
   console.log('State validation:', { state, storedState });
 
@@ -57,7 +61,8 @@ export async function GET(request: NextRequest) {
     // Validate state for security
     if (state !== storedState) {
       console.log('❌ State mismatch - security issue detected');
-      return NextResponse.redirect(`${baseUrl}/dashboard?view=stockx-arbitrage&error=state_mismatch`);
+      const redirectUrl = returnTo || defaultReturn;
+      return NextResponse.redirect(`${baseUrl}${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}error=state_mismatch`);
     }
 
     // Exchange the new authorization code for fresh tokens
@@ -69,7 +74,8 @@ export async function GET(request: NextRequest) {
       
       if (!clientId || !clientSecret) {
         console.error('❌ Missing OAuth credentials');
-        return NextResponse.redirect(`${baseUrl}/dashboard?view=stockx-arbitrage&error=missing_credentials`);
+        const redirectUrl = returnTo || defaultReturn;
+        return NextResponse.redirect(`${baseUrl}${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}error=missing_credentials`);
       }
       
       const tokenResponse = await fetch('https://accounts.stockx.com/oauth/token', {
@@ -92,7 +98,8 @@ export async function GET(request: NextRequest) {
       if (!tokenResponse.ok) {
         const errorText = await tokenResponse.text();
         console.error('❌ Token exchange failed:', errorText);
-        return NextResponse.redirect(`${baseUrl}/dashboard?view=stockx-arbitrage&error=token_exchange_failed`);
+        const redirectUrl = returnTo || defaultReturn;
+        return NextResponse.redirect(`${baseUrl}${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}error=token_exchange_failed`);
       }
 
       const tokens = await tokenResponse.json();
@@ -110,7 +117,7 @@ export async function GET(request: NextRequest) {
         path: '/',
       };
 
-      const finalRedirect = returnTo || `${baseUrl}/dashboard?view=stockx-arbitrage`;
+      const finalRedirect = returnTo ? `${baseUrl}${returnTo}` : `${baseUrl}${defaultReturn}`;
       const response = NextResponse.redirect(`${finalRedirect}${finalRedirect.includes('?') ? '&' : '?'}success=true&note=fresh_login`);
 
       // Clear any existing tokens and set fresh ones
@@ -128,7 +135,8 @@ export async function GET(request: NextRequest) {
 
     } catch (error) {
       console.error('❌ Token exchange error:', error);
-      return NextResponse.redirect(`${baseUrl}/dashboard?view=stockx-arbitrage&error=token_exchange_error`);
+      const redirectUrl = returnTo || defaultReturn;
+      return NextResponse.redirect(`${baseUrl}${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}error=token_exchange_error`);
     }
   }
 
@@ -146,15 +154,17 @@ export async function GET(request: NextRequest) {
     
     if (tokensValid) {
       console.log('✅ Existing tokens are valid');
-      const finalRedirect = returnTo || `${baseUrl}/dashboard?view=stockx-arbitrage`;
+      const finalRedirect = returnTo ? `${baseUrl}${returnTo}` : `${baseUrl}${defaultReturn}`;
       return NextResponse.redirect(`${finalRedirect}${finalRedirect.includes('?') ? '&' : '?'}success=true&note=existing_valid`);
     } else {
       console.log('❌ Existing tokens are invalid - need fresh login');
-      return NextResponse.redirect(`${baseUrl}/dashboard?view=stockx-arbitrage&error=invalid_tokens&need_reauth=true`);
+      const redirectUrl = returnTo || defaultReturn;
+      return NextResponse.redirect(`${baseUrl}${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}error=invalid_tokens&need_reauth=true`);
     }
   }
 
   // PRIORITY 3: No valid tokens found at all
   console.log('❌ No valid tokens found - need authentication');
-  return NextResponse.redirect(`${baseUrl}/dashboard?view=stockx-arbitrage&error=no_tokens&need_reauth=true`);
+  const redirectUrl = returnTo || defaultReturn;
+  return NextResponse.redirect(`${baseUrl}${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}error=no_tokens&need_reauth=true`);
 } 

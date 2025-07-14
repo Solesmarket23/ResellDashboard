@@ -384,7 +384,10 @@ const StockXMarketResearch = () => {
             </div>
             <div>
               <button
-                onClick={() => window.location.href = '/api/stockx/auth'}
+                onClick={() => {
+                  const returnUrl = '/dashboard?section=stockx-market-research';
+                  window.location.href = `/api/stockx/auth?returnTo=${encodeURIComponent(returnUrl)}`;
+                }}
                 className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
               >
                 Connect StockX
@@ -621,7 +624,10 @@ const StockXMarketResearch = () => {
               )}
               {error.statusCode === 401 && (
                 <button
-                  onClick={() => window.location.href = '/api/stockx/auth'}
+                  onClick={() => {
+                    const returnUrl = '/dashboard?section=stockx-market-research';
+                    window.location.href = `/api/stockx/auth?returnTo=${encodeURIComponent(returnUrl)}`;
+                  }}
                   className="mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
                 >
                   Re-authenticate with StockX

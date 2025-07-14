@@ -1,13 +1,13 @@
 
 > template-2@0.1.0 dev
-> next dev -H 0.0.0.0 -p 3002
+> next dev -H 0.0.0.0
 
   ▲ Next.js 14.2.7
-  - Local:        http://localhost:3002
-  - Network:      http://0.0.0.0:3002
+  - Local:        http://localhost:3000
+  - Network:      http://0.0.0.0:3000
   - Environments: .env.local
+  - Experiments (use with caution):
+    · forceSwcTransforms
 
  ✓ Starting...
- ✓ Ready in 2.2s
-   Reload env: .env.local
-[?25h
+ ✓ Ready in 1205ms
