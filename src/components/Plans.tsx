@@ -91,29 +91,29 @@ const Plans = () => {
   ];
 
   return (
-    <div className={`min-h-screen relative overflow-hidden py-4 sm:py-8 px-4 flex-1 ${currentTheme.colors.background}`}>
+    <div className={`relative overflow-hidden py-2 sm:py-4 px-4 flex-1 ${currentTheme.colors.background}`}>
         {/* Neon theme background effects */}
         {isNeon && (
           <>
             <div className="absolute inset-0 bg-gradient-to-br from-cyan-900/20 via-slate-900/50 to-emerald-900/20"></div>
             <div className="absolute inset-0">
-              <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl animate-pulse"></div>
-              <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
+              <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl animate-pulse"></div>
+              <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
             </div>
           </>
         )}
         
         <div className="relative z-10 max-w-7xl mx-auto">
           {/* Header Section */}
-          <div className="text-center mb-6 sm:mb-10">
+          <div className="text-center mb-3 sm:mb-4">
             {isNeon && (
-              <div className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-cyan-600/20 to-emerald-600/20 rounded-full border border-cyan-500/30 mb-4 backdrop-blur-xl">
-                <Sparkles className="w-4 h-4 text-cyan-400 mr-2" />
-                <span className="text-cyan-300 text-sm font-medium">Premium Pricing Plans</span>
+              <div className="inline-flex items-center px-3 py-1 bg-gradient-to-r from-cyan-600/20 to-emerald-600/20 rounded-full border border-cyan-500/30 mb-2 backdrop-blur-xl">
+                <Sparkles className="w-3 h-3 text-cyan-400 mr-1" />
+                <span className="text-cyan-300 text-xs font-medium">Premium Pricing Plans</span>
               </div>
             )}
             
-            <h1 className={`text-2xl sm:text-3xl lg:text-4xl font-bold mb-2 sm:mb-4 leading-tight ${
+            <h1 className={`text-xl sm:text-2xl lg:text-3xl font-bold mb-1 sm:mb-2 leading-tight ${
               isNeon 
                 ? 'text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-100 to-emerald-100' 
                 : 'text-gray-900'
@@ -130,7 +130,7 @@ const Plans = () => {
               )}
             </h1>
             
-            <p className={`text-base sm:text-lg mb-2 max-w-4xl mx-auto leading-relaxed ${
+            <p className={`text-sm sm:text-base mb-1 max-w-4xl mx-auto leading-tight ${
               isNeon 
                 ? 'text-slate-300' 
                 : 'text-gray-600'
@@ -143,18 +143,18 @@ const Plans = () => {
             </p>
             
             {isNeon && (
-              <p className="text-base sm:text-lg mb-4 sm:mb-6 max-w-4xl mx-auto leading-relaxed text-center">
+              <p className="text-sm mb-2 max-w-4xl mx-auto leading-tight text-center">
                 <span className="text-cyan-400 font-semibold">Start your 14-day free trial today.</span>
               </p>
             )}
             
             {/* Billing Toggle */}
-            <div className="flex items-center justify-center space-x-3 mb-4 sm:mb-6 pt-10">
+            <div className="flex items-center justify-center space-x-3 mb-2 pt-2">
               {isNeon ? (
                 <div className="relative">
                   {/* 17% OFF Badge positioned above the Annually button */}
-                  <div className="absolute -top-10 right-4 z-20">
-                    <span className="bg-gradient-to-r from-emerald-400 to-cyan-400 text-slate-900 text-xs font-bold px-3 py-1.5 rounded-full shadow-lg border border-emerald-300/50">
+                  <div className="absolute -top-8 right-4 z-20">
+                    <span className="bg-gradient-to-r from-emerald-400 to-cyan-400 text-slate-900 text-xs font-bold px-2 py-1 rounded-full shadow-lg border border-emerald-300/50">
                       17% OFF
                     </span>
                   </div>
@@ -202,7 +202,7 @@ const Plans = () => {
 
           {/* Plans Grid */}
           <div className="relative">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-10 pt-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-3 sm:mb-4 pt-3">
               {plans.map((plan, index) => (
                 <div
                   key={plan.id}
@@ -212,8 +212,8 @@ const Plans = () => {
                 >
                   {/* Most Popular Badge - Outside the card to prevent clipping */}
                   {plan.popular && (
-                    <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 z-[100]">
-                      <span className={`px-4 py-1.5 rounded-full text-xs font-semibold flex items-center shadow-2xl whitespace-nowrap ${
+                    <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 z-[100]">
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center shadow-2xl whitespace-nowrap ${
                         isNeon 
                           ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 text-white border border-cyan-400/50' 
                           : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white'
@@ -247,22 +247,22 @@ const Plans = () => {
                         }`
                   }`}>
                   
-                  <div className="p-4 sm:p-6">
+                  <div className="p-3 sm:p-4">
                     {/* Plan Header */}
-                    <div className="flex items-center mb-3">
-                      <div className={`p-2 rounded-lg mr-3 flex-shrink-0 ${
+                    <div className="flex items-center mb-2">
+                      <div className={`p-1.5 rounded-lg mr-2 flex-shrink-0 ${
                         isNeon 
                           ? `${plan.popular ? 'bg-gradient-to-br from-cyan-500/20 to-emerald-500/20 border border-cyan-500/30' : 'bg-slate-800/50 border border-slate-700/50'}` 
                           : `${plan.color} bg-opacity-10`
                       }`}>
-                        <plan.icon className={`w-5 h-5 sm:w-6 sm:h-6 ${
+                        <plan.icon className={`w-4 h-4 sm:w-5 sm:h-5 ${
                           isNeon 
                             ? `${plan.popular ? 'text-cyan-400' : 'text-emerald-400'}` 
                             : plan.color.replace('bg-', 'text-')
                         }`} />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <h3 className={`text-lg sm:text-xl font-bold truncate ${
+                        <h3 className={`text-base sm:text-lg font-bold truncate ${
                           isNeon ? 'text-white' : 'text-gray-900'
                         }`}>{plan.name}</h3>
                         <p className={`text-xs leading-tight ${
@@ -272,19 +272,19 @@ const Plans = () => {
                     </div>
 
                     {/* Pricing */}
-                    <div className="mb-4">
+                    <div className="mb-3">
                       <div className="flex items-baseline">
-                        <span className={`text-2xl sm:text-3xl font-bold ${
+                        <span className={`text-xl sm:text-2xl font-bold ${
                           isNeon ? 'text-white' : 'text-gray-900'
                         }`}>
                           ${billingPeriod === 'monthly' ? plan.monthlyPrice : Math.floor(plan.annualPrice / 12)}
                         </span>
-                        <span className={`ml-1 text-sm ${
+                        <span className={`ml-1 text-xs ${
                           isNeon ? 'text-slate-400' : 'text-gray-600'
                         }`}>/month</span>
                       </div>
                       {billingPeriod === 'annually' && (
-                        <p className={`text-xs mt-1 font-semibold ${
+                        <p className={`text-xs mt-0.5 font-semibold ${
                           isNeon ? 'text-emerald-400' : 'text-green-600'
                         }`}>
                           {isNeon ? `$${plan.annualPrice} billed annually` : `Billed annually ($${plan.annualPrice}/year)`}
@@ -293,34 +293,34 @@ const Plans = () => {
                     </div>
 
                     {/* Features */}
-                    <ul className="space-y-2 mb-6">
-                      {plan.features.slice(0, 4).map((feature, index) => (
+                    <ul className="space-y-1.5 mb-4">
+                      {plan.features.slice(0, 3).map((feature, index) => (
                         <li key={index} className="flex items-start">
                           {isNeon ? (
-                            <div className="flex-shrink-0 w-4 h-4 bg-gradient-to-br from-emerald-400 to-cyan-400 rounded-full flex items-center justify-center mr-3 mt-0.5">
-                              <Check className="w-2.5 h-2.5 text-slate-900" />
+                            <div className="flex-shrink-0 w-3.5 h-3.5 bg-gradient-to-br from-emerald-400 to-cyan-400 rounded-full flex items-center justify-center mr-2 mt-0.5">
+                              <Check className="w-2 h-2 text-slate-900" />
                             </div>
                           ) : (
-                            <Check className="w-4 h-4 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
+                            <Check className="w-3.5 h-3.5 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
                           )}
-                          <span className={`text-sm leading-relaxed ${
+                          <span className={`text-xs leading-tight ${
                             isNeon ? 'text-slate-300' : 'text-gray-700'
                           }`}>{feature}</span>
                         </li>
                       ))}
-                      {plan.features.length > 4 && (
+                      {plan.features.length > 3 && (
                         <li className={`text-xs font-medium ${
                           isNeon ? 'text-center' : ''
                         }`}>
                           <span className={isNeon ? 'text-cyan-400' : 'text-purple-600'}>
-                            +{plan.features.length - 4} more features
+                            +{plan.features.length - 3} more features
                           </span>
                         </li>
                       )}
                     </ul>
 
                     {/* CTA Button */}
-                    <button className={`w-full py-2.5 sm:py-3 px-4 rounded-lg font-semibold text-sm transition-all duration-300 ${
+                    <button className={`w-full py-2 sm:py-2.5 px-3 rounded-lg font-semibold text-xs transition-all duration-300 ${
                       isNeon 
                         ? `transform hover:scale-105 ${
                             plan.popular
@@ -335,7 +335,7 @@ const Plans = () => {
                       {isNeon ? (
                         <>
                           Start 14-Day Free Trial
-                          <ArrowRight className="w-4 h-4 inline ml-2" />
+                          <ArrowRight className="w-3 h-3 inline ml-1" />
                         </>
                       ) : (
                         'Start Free Trial'
@@ -351,41 +351,41 @@ const Plans = () => {
           {/* Trust Indicators */}
           <div className="text-center">
             {isNeon ? (
-              <div className="grid md:grid-cols-3 gap-4 sm:gap-6">
+              <div className="grid md:grid-cols-3 gap-3 sm:gap-4">
                 <div className="text-center">
-                  <div className="dark-neon-card p-4 border border-slate-700/50">
-                    <TrendingUp className="w-6 h-6 text-emerald-400 mx-auto mb-2" />
-                    <h4 className="text-white font-semibold mb-1">Real-Time Tracking</h4>
-                    <p className="text-slate-400 text-xs">Live profit analytics and insights</p>
+                  <div className="dark-neon-card p-2 border border-slate-700/50">
+                    <TrendingUp className="w-4 h-4 text-emerald-400 mx-auto mb-1" />
+                    <h4 className="text-white font-semibold text-xs mb-0.5">Real-Time Tracking</h4>
+                    <p className="text-slate-400 text-xs">Live profit analytics</p>
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className="dark-neon-card p-4 border border-slate-700/50">
-                    <CheckCircle className="w-6 h-6 text-cyan-400 mx-auto mb-2" />
-                    <h4 className="text-white font-semibold mb-1">30-Day Money-Back Guarantee</h4>
-                    <p className="text-slate-400 text-xs">Risk-free trial with full refund</p>
+                  <div className="dark-neon-card p-2 border border-slate-700/50">
+                    <CheckCircle className="w-4 h-4 text-cyan-400 mx-auto mb-1" />
+                    <h4 className="text-white font-semibold text-xs mb-0.5">30-Day Guarantee</h4>
+                    <p className="text-slate-400 text-xs">Risk-free trial</p>
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className="dark-neon-card p-4 border border-slate-700/50">
-                    <Shield className="w-6 h-6 text-emerald-400 mx-auto mb-2" />
-                    <h4 className="text-white font-semibold mb-1">Enterprise Security</h4>
-                    <p className="text-slate-400 text-xs">Bank-level encryption and security</p>
+                  <div className="dark-neon-card p-2 border border-slate-700/50">
+                    <Shield className="w-4 h-4 text-emerald-400 mx-auto mb-1" />
+                    <h4 className="text-white font-semibold text-xs mb-0.5">Enterprise Security</h4>
+                    <p className="text-slate-400 text-xs">Bank-level encryption</p>
                   </div>
                 </div>
               </div>
             ) : (
-              <div className="flex flex-col sm:flex-row justify-center items-center space-y-2 sm:space-y-0 sm:space-x-6 text-sm text-gray-600">
-                <div className="flex items-center space-x-2">
-                  <Shield className="w-4 h-4 text-green-500" />
+              <div className="flex flex-col sm:flex-row justify-center items-center space-y-1 sm:space-y-0 sm:space-x-4 text-xs text-gray-600">
+                <div className="flex items-center space-x-1">
+                  <Shield className="w-3 h-3 text-green-500" />
                   <span>14-day free trial</span>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <X className="w-4 h-4 text-green-500" />
+                <div className="flex items-center space-x-1">
+                  <X className="w-3 h-3 text-green-500" />
                   <span>No credit card required</span>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <Clock className="w-4 h-4 text-green-500" />
+                <div className="flex items-center space-x-1">
+                  <Clock className="w-3 h-3 text-green-500" />
                   <span>Cancel anytime</span>
                 </div>
               </div>
