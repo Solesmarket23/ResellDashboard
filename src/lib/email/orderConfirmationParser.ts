@@ -166,15 +166,38 @@ export class OrderConfirmationParser {
     const $ = cheerio.load(htmlContent);
     const textContent = $.text();
     
-    // Detect email type - shipping confirmation or order confirmation
-    const isShippingConfirmation = htmlContent.toLowerCase().includes('order shipped') || 
-                                   htmlContent.toLowerCase().includes('your order is on its way') ||
-                                   htmlContent.toLowerCase().includes('order verified & shipped');
+    // Check if this is a shipping email based on subject line patterns
+    // ONLY extract tracking from these specific shipping emails
+    const shippingSubjectPatterns = [
+      'Order Verified & Shipped:',
+      'Order Shipped:',
+      'Xpress Order Shipped:'
+    ];
     
-    if (isShippingConfirmation) {
+    // Get subject from email
+    const subjectMatch = htmlContent.match(/<title>([^<]+)<\/title>/i) || 
+                        htmlContent.match(/Subject:\s*([^\n]+)/i);
+    const emailSubject = subjectMatch ? subjectMatch[1] : '';
+    
+    // Check if subject matches shipping patterns
+    const isShippingEmail = shippingSubjectPatterns.some(pattern => 
+      emailSubject.includes(pattern) || htmlContent.includes(pattern)
+    );
+    
+    // Also check for delivery confirmation emails
+    const isDeliveryConfirmation = htmlContent.toLowerCase().includes('order delivered') ||
+                                   htmlContent.toLowerCase().includes('has been delivered') ||
+                                   htmlContent.toLowerCase().includes('xpress ship order delivered');
+    
+    if (isShippingEmail) {
       orderInfo.shipping_status = "shipped";
-      // Extract tracking number for shipping confirmations
+      // Extract tracking number ONLY from shipping confirmation emails
+      console.log(`📦 SHIPPING EMAIL DETECTED: "${emailSubject}" - Extracting tracking...`);
       this.extractStockXTrackingInfo(htmlContent, textContent, orderInfo);
+    } else if (isDeliveryConfirmation) {
+      orderInfo.shipping_status = "delivered";
+      // Don't extract tracking from delivery emails - they usually don't have it
+      console.log(`📬 DELIVERY EMAIL DETECTED: "${emailSubject}" - No tracking extraction`);
     } else {
       orderInfo.shipping_status = "ordered";
     }
@@ -537,41 +560,117 @@ export class OrderConfirmationParser {
    * Extract tracking information from StockX shipping confirmation emails
    */
   private extractStockXTrackingInfo(htmlContent: string, textContent: string, orderInfo: OrderInfo): void {
-    // Tracking number patterns - looking for long numeric strings
+    // Tracking number patterns - looking for REAL tracking number formats
     const trackingPatterns = [
-      // Direct tracking number patterns
-      /tracking\s*(?:number|#)?:?\s*(\d{10,30})/i,
-      /track\s*(?:your\s*)?(?:package|order|shipment)?:?\s*(\d{10,30})/i,
+      // UPS tracking (1Z followed by 16 alphanumeric)
+      /tracking\s*(?:number|#)?:?\s*(1Z[0-9A-Z]{16})/i,
+      /track\s*(?:your\s*)?(?:package|order|shipment)?:?\s*(1Z[0-9A-Z]{16})/i,
       
-      // Pattern from the sample email - large bold number after "Order Verified & Shipped!"
-      /Order\s+Verified\s*&\s*Shipped![\s\S]*?<td[^>]*>(\d{10,30})<\/td>/i,
-      /Order\s+Verified\s*&\s*Shipped![\s\S]*?>(\d{10,30})</i,
+      // FedEx tracking (12 or 15 digits)
+      /tracking\s*(?:number|#)?:?\s*(\d{12}(?:\d{3})?)\b/i,
       
-      // Generic patterns for standalone tracking numbers
-      />(\d{12,30})</,  // 12+ digit numbers in HTML tags
-      /\b(\d{12,30})\b/  // 12+ digit numbers as word boundaries
+      // USPS tracking (20-22 digits, often starts with 9)
+      /tracking\s*(?:number|#)?:?\s*(9[0-9]{19,21})/i,
+      
+      // DHL tracking (10 digits)
+      /tracking\s*(?:number|#)?:?\s*(\d{10})\b/i,
+      
+      // Generic but with "tracking" context - must be preceded by tracking-related text
+      /(?:tracking|track your|package tracking)[^0-9]*(\d{10,22})\b/i,
+      
+      // Look for tracking in specific HTML structures
+      /<a[^>]*href=[^>]*track[^>]*>([0-9A-Z]{10,22})<\/a>/i
     ];
     
     for (const pattern of trackingPatterns) {
       const match = htmlContent.match(pattern);
       if (match) {
         const trackingNum = match[1].trim();
-        // Validate it looks like a real tracking number (10-30 digits)
-        if (trackingNum.length >= 10 && trackingNum.length <= 30 && /^\d+$/.test(trackingNum)) {
+        // Validate it looks like a real tracking number
+        // Skip if it looks like an order number (contains dash not in UPS format)
+        if (trackingNum.includes('-') && !trackingNum.startsWith('1Z')) {
+          console.log(`⚠️ Skipping potential order number: "${trackingNum}"`);
+          continue;
+        }
+        
+        // Validate based on carrier formats
+        const isValidTracking = (
+          // UPS: 1Z followed by 16 alphanumeric
+          /^1Z[0-9A-Z]{16}$/i.test(trackingNum) ||
+          // FedEx: 12 or 15 digits
+          /^\d{12}$/.test(trackingNum) || /^\d{15}$/.test(trackingNum) ||
+          // USPS: 20-22 digits
+          /^\d{20,22}$/.test(trackingNum) ||
+          // DHL: 10 digits
+          /^\d{10}$/.test(trackingNum)
+        );
+        
+        if (isValidTracking) {
           orderInfo.tracking_number = trackingNum;
           console.log(`✅ TRACKING NUMBER EXTRACTED: "${trackingNum}" using pattern: ${pattern}`);
           break;
+        } else {
+          console.log(`⚠️ Invalid tracking format: "${trackingNum}"`);
         }
       }
     }
     
-    // If no tracking number found in HTML, try text content
+    // If no tracking number found with strict patterns, try more flexible approaches
     if (!orderInfo.tracking_number) {
-      // Look for the specific number from the email sample
-      const specificTrackingMatch = textContent.match(/882637178429/);
-      if (specificTrackingMatch) {
-        orderInfo.tracking_number = specificTrackingMatch[0];
-        console.log(`✅ TRACKING NUMBER FOUND (specific match): "882637178429"`);
+      console.log(`🔍 Trying flexible tracking extraction for StockX...`);
+      
+      // StockX often puts tracking numbers in specific locations
+      // Look for 15-digit FedEx numbers (common for StockX)
+      const fedexPattern = /\b(\d{15})\b/g;
+      const fedexMatches = htmlContent.match(fedexPattern) || [];
+      
+      for (const match of fedexMatches) {
+        // Validate it's not an order number or other ID
+        if (!match.includes('-') && /^\d{15}$/.test(match)) {
+          // Additional validation: check if it's near shipping/tracking context
+          const contextCheck = new RegExp(`(?:tracking|shipped|delivered|package)[\\s\\S]{0,100}${match}|${match}[\\s\\S]{0,100}(?:tracking|shipped|delivered|package)`, 'i');
+          if (contextCheck.test(htmlContent)) {
+            orderInfo.tracking_number = match;
+            console.log(`✅ TRACKING NUMBER FOUND (FedEx 15-digit with context): "${match}"`);
+            break;
+          }
+        }
+      }
+      
+      // If still no tracking, look for any prominent 12-22 digit number in shipping emails
+      if (!orderInfo.tracking_number && orderInfo.shipping_status === "shipped") {
+        console.log(`🔍 Looking for ANY prominent number in shipping email...`);
+        
+        // Look for numbers in bold or large text (common for tracking numbers)
+        const prominentPatterns = [
+          /<(?:b|strong)>(\d{12,22})<\//g,
+          /<span[^>]*font-size[^>]*>(\d{12,22})<\/span>/g,
+          /<td[^>]*>(\d{12,22})<\/td>/g,
+          /<p[^>]*>(\d{12,22})<\/p>/g
+        ];
+        
+        for (const pattern of prominentPatterns) {
+          const matches = htmlContent.matchAll(pattern);
+          for (const match of matches) {
+            const number = match[1];
+            if (!number.includes('-') && /^\d{12,22}$/.test(number)) {
+              orderInfo.tracking_number = number;
+              console.log(`✅ TRACKING NUMBER FOUND (prominent ${number.length}-digit number): "${number}"`);
+              break;
+            }
+          }
+          if (orderInfo.tracking_number) break;
+        }
+      }
+      
+      // Last resort for shipping emails - find the FIRST long number after "shipped"
+      if (!orderInfo.tracking_number && orderInfo.shipping_status === "shipped") {
+        const afterShippedPattern = /(?:shipped|tracking|track your order)[^0-9]*(\d{12,22})/i;
+        const afterShippedMatch = textContent.match(afterShippedPattern);
+        if (afterShippedMatch && !afterShippedMatch[1].includes('-')) {
+          orderInfo.tracking_number = afterShippedMatch[1];
+          console.log(`✅ TRACKING NUMBER FOUND (first number after 'shipped'): "${afterShippedMatch[1]}"`);
+        }
       }
     }
     
