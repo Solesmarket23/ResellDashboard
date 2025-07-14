@@ -884,50 +884,6 @@ const Purchases = () => {
         </div>
       </div>
 
-      {/* Advanced Scanner Options */}
-      <details className="mb-6">
-        <summary className={`cursor-pointer ${currentTheme.colors.textSecondary} text-sm font-medium mb-3 hover:${currentTheme.colors.textPrimary} transition-colors`}>
-          Advanced Scanner Options
-        </summary>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => setShowScanModal(true)}
-            className={`px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1 ${
-              currentTheme.name === 'Neon' 
-                ? 'bg-white/10 hover:bg-white/20 text-gray-300' 
-                : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-            }`}
-          >
-            <Camera className="w-3 h-3" />
-            QuaggaJS
-          </button>
-          <button
-            onClick={() => setShowZXingScanModal(true)}
-            className={`px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1 ${
-              currentTheme.name === 'Neon' 
-                ? 'bg-white/10 hover:bg-white/20 text-gray-300' 
-                : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-            }`}
-          >
-            <Camera className="w-3 h-3" />
-            ZXing
-          </button>
-          <button
-            onClick={() => setShowRemoteScanModal(true)}
-            className={`px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1 ${
-              currentTheme.name === 'Neon' 
-                ? 'bg-white/10 hover:bg-white/20 text-gray-300' 
-                : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-            }`}
-          >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-            </svg>
-            Remote
-          </button>
-        </div>
-      </details>
-
       {/* Loading State */}
       {loading && (
         <div className="flex items-center justify-center py-8">
