@@ -46,6 +46,39 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
 
+    // Check for test mode bypass
+    const urlParams = new URLSearchParams(window.location.search);
+    const testMode = urlParams.get('testMode') === 'true';
+    
+    if (testMode) {
+      // Create a mock user for testing
+      const mockUser = {
+        uid: 'test-user-123',
+        email: 'test@example.com',
+        displayName: 'Test User',
+        photoURL: null,
+        emailVerified: true,
+        // Add other required User properties with mock values
+        isAnonymous: false,
+        metadata: {},
+        phoneNumber: null,
+        providerData: [],
+        providerId: 'test',
+        refreshToken: '',
+        tenantId: null,
+        delete: async () => {},
+        getIdToken: async () => 'mock-token',
+        getIdTokenResult: async () => ({ token: 'mock-token' } as any),
+        reload: async () => {},
+        toJSON: () => ({})
+      } as unknown as User;
+      
+      setUser(mockUser);
+      setLoading(false);
+      console.log('🧪 Test mode enabled - using mock user');
+      return;
+    }
+
     if (!auth) {
       // Firebase not configured, set to demo mode
       setLoading(false);
@@ -88,6 +121,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const signOut = async () => {
+    // Check if we're in test mode
+    const urlParams = new URLSearchParams(window.location.search);
+    const testMode = urlParams.get('testMode') === 'true';
+    
+    if (testMode) {
+      console.log("🧪 Test mode sign out");
+      setUser(null);
+      // Remove testMode from URL
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete('testMode');
+      window.history.replaceState({}, '', newUrl.toString());
+      return;
+    }
+    
     if (!auth) {
       console.log("🔧 Firebase not configured - demo sign out");
       return;

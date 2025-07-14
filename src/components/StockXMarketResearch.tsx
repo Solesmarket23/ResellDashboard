@@ -378,25 +378,16 @@ const StockXMarketResearch = () => {
             <div>
               <h3 className="text-xl font-bold text-red-400 mb-2">Authentication Required</h3>
               <p className="text-gray-300 mb-3">You need to authenticate with StockX to use the Market Research tool.</p>
-              <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-3 mb-3">
-                <p className="text-yellow-300 text-sm">
-                  <strong>💡 Tip:</strong> For the best experience, use the ngrok URL: <br />
-                  <code className="text-yellow-200">https://8b34-98-124-107-39.ngrok-free.app</code>
-                </p>
-              </div>
+              <p className="text-gray-400 text-sm">
+                Click the button to connect your StockX account and access real-time market data.
+              </p>
             </div>
-            <div className="flex flex-col gap-2">
+            <div>
               <button
                 onClick={() => window.location.href = '/api/stockx/auth'}
                 className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
               >
                 Connect StockX
-              </button>
-              <button
-                onClick={() => window.location.href = 'https://8b34-98-124-107-39.ngrok-free.app/dashboard?view=stockx-market-research'}
-                className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-2 text-sm"
-              >
-                Open on ngrok
               </button>
             </div>
           </div>
