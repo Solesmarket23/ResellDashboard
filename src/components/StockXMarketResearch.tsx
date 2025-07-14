@@ -124,8 +124,10 @@ const StockXMarketResearch = () => {
     
     setLoading(true);
     setError(null); // Clear any previous errors
+    setProducts([]); // Clear previous results
     
     try {
+      // For now, use non-streaming mode since the component expects JSON response
       const response = await fetch(
         `/api/stockx/search?query=${encodeURIComponent(searchQuery)}&limit=20&category=${selectedCategory}&brand=${selectedBrand}`
       );
@@ -156,6 +158,7 @@ const StockXMarketResearch = () => {
         setLoading(false);
         return;
       }
+      
       
       if (data.success && data.data?.products) {
         // Process products with market data from the enhanced API response
@@ -194,6 +197,11 @@ const StockXMarketResearch = () => {
         setProducts(enrichedProducts);
         calculateMetrics(enrichedProducts);
         setError(null); // Clear any previous errors on success
+      } else if (data.products) {
+        // Handle direct products array (legacy format)
+        setProducts(data.products);
+        calculateMetrics(data.products);
+        setError(null);
       } else {
         console.error('Search failed:', data);
         setError({
@@ -612,8 +620,9 @@ const StockXMarketResearch = () => {
                 {error.statusCode === 429 ? 'Rate Limit Exceeded' :
                  error.statusCode === 401 ? 'Authentication Required' :
                  error.statusCode === 403 ? 'Access Forbidden' :
-                 error.statusCode === 404 ? 'Endpoint Not Found' :
-                 error.statusCode >= 500 ? 'Server Error' :
+                 error.statusCode === 404 ? 'StockX API Endpoint Not Found' :
+                 error.statusCode === 400 ? 'Invalid Search Request' :
+                 error.statusCode >= 500 ? 'StockX Server Error' :
                  'Search Error'}
               </h3>
               <p className="text-gray-300 mt-1">{error.message}</p>
