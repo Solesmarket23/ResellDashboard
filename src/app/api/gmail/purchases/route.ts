@@ -744,7 +744,7 @@ async function parsePurchaseEmail(email: any, config: any, gmail: any) {
       status: category.status,
       statusColor: category.statusColor,
       priority: category.priority,
-      tracking: 'No tracking', // Temporarily disable tracking extraction to prevent timeouts
+      tracking: orderInfo.tracking_number || 'No tracking', // Use tracking from parsed email
       market,
       price,
       originalPrice: `${price} + $0.00`,
@@ -767,7 +767,9 @@ async function parsePurchaseEmail(email: any, config: any, gmail: any) {
       shippingType: orderInfo.shipping_type,
       estimatedDeliveryStart: orderInfo.estimated_delivery_start,
       estimatedDeliveryEnd: orderInfo.estimated_delivery_end,
-      parsedPurchaseDate: orderInfo.purchase_date
+      parsedPurchaseDate: orderInfo.purchase_date,
+      carrier: orderInfo.carrier,
+      shippingStatus: orderInfo.shipping_status
     };
 
   } catch (error) {

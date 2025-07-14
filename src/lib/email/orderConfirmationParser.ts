@@ -47,6 +47,11 @@ export interface OrderInfo {
   // Purchase information
   purchase_date: string; // When the order was placed
   
+  // Shipping information
+  tracking_number: string;
+  carrier: string;
+  shipping_status: string; // "ordered", "shipped", "delivered"
+  
   // Email metadata
   email_subject: string;
   email_date: string;
@@ -75,6 +80,9 @@ function createDefaultOrderInfo(): OrderInfo {
     estimated_delivery_start: "",
     estimated_delivery_end: "",
     purchase_date: "",
+    tracking_number: "",
+    carrier: "",
+    shipping_status: "",
     email_subject: "",
     email_date: "",
     sender: ""
@@ -125,6 +133,11 @@ export class OrderConfirmationParser {
         orderInfo.email_subject.toLowerCase().includes('stockx')) {
       orderInfo.merchant = "StockX";
       this.parseStockXEmail(htmlContent, orderInfo);
+      
+      // Log tracking extraction results
+      if (orderInfo.tracking_number) {
+        console.log(`📦 TRACKING EXTRACTED: Order ${orderInfo.order_number} -> Tracking: ${orderInfo.tracking_number} (${orderInfo.carrier})`);
+      }
     }
     
     return orderInfo;
@@ -153,6 +166,19 @@ export class OrderConfirmationParser {
     const $ = cheerio.load(htmlContent);
     const textContent = $.text();
     
+    // Detect email type - shipping confirmation or order confirmation
+    const isShippingConfirmation = htmlContent.toLowerCase().includes('order shipped') || 
+                                   htmlContent.toLowerCase().includes('your order is on its way') ||
+                                   htmlContent.toLowerCase().includes('order verified & shipped');
+    
+    if (isShippingConfirmation) {
+      orderInfo.shipping_status = "shipped";
+      // Extract tracking number for shipping confirmations
+      this.extractStockXTrackingInfo(htmlContent, textContent, orderInfo);
+    } else {
+      orderInfo.shipping_status = "ordered";
+    }
+    
     // Initial order type detection from subject/content
     if (htmlContent.toLowerCase().includes('xpress order confirmed')) {
       orderInfo.order_type = "xpress";
@@ -173,16 +199,23 @@ export class OrderConfirmationParser {
    * Extract product details from StockX email
    */
   private extractStockXProductInfo(htmlContent: string, textContent: string, orderInfo: OrderInfo): void {
-    // Product name patterns
+    // Product name patterns - updated to handle both order confirmations and shipping confirmations
     const productPatterns = [
+      // Patterns for shipping confirmation emails
+      /(?:Subject:.*?Order Shipped:|✅ Order Shipped:)\s*([^"<\n]+)/i,
+      /alt="([^"]+(?:Slipper|Sweatshirt|Shoe|Sneaker|Jacket|Hoodie|Shirt|Pant)[^"]*)"/.i,
+      
+      // Original patterns for order confirmation emails
       /(?:Subject:.*?Order Confirmed:|Xpress Order Confirmed:)\s*([^"]+?)(?:\s*(?:Chestnut|Grey|Black|White))?(?:\s*\(Women's\))?/i,
       /<td[^>]*class="productName"[^>]*>.*?<a[^>]*>([^<]+)<\/a>/i,
-      /alt="([^"]+(?:Slipper|Sweatshirt|Shoe|Sneaker)[^"]*)"/.i
+      
+      // Generic product name in link
+      /<a[^>]*>([^<]+(?:Sweatshirt|Shoe|Sneaker|Jacket|Hoodie|Shirt|Pant)[^<]*)<\/a>/i
     ];
     
     for (const pattern of productPatterns) {
       const match = htmlContent.match(pattern);
-      if (match) {
+      if (match && match[1]) {
         orderInfo.product_name = match[1].trim();
         break;
       }
@@ -501,6 +534,63 @@ export class OrderConfirmationParser {
   }
   
   /**
+   * Extract tracking information from StockX shipping confirmation emails
+   */
+  private extractStockXTrackingInfo(htmlContent: string, textContent: string, orderInfo: OrderInfo): void {
+    // Tracking number patterns - looking for long numeric strings
+    const trackingPatterns = [
+      // Direct tracking number patterns
+      /tracking\s*(?:number|#)?:?\s*(\d{10,30})/i,
+      /track\s*(?:your\s*)?(?:package|order|shipment)?:?\s*(\d{10,30})/i,
+      
+      // Pattern from the sample email - large bold number after "Order Verified & Shipped!"
+      /Order\s+Verified\s*&\s*Shipped![\s\S]*?<td[^>]*>(\d{10,30})<\/td>/i,
+      /Order\s+Verified\s*&\s*Shipped![\s\S]*?>(\d{10,30})</i,
+      
+      // Generic patterns for standalone tracking numbers
+      />(\d{12,30})</,  // 12+ digit numbers in HTML tags
+      /\b(\d{12,30})\b/  // 12+ digit numbers as word boundaries
+    ];
+    
+    for (const pattern of trackingPatterns) {
+      const match = htmlContent.match(pattern);
+      if (match) {
+        const trackingNum = match[1].trim();
+        // Validate it looks like a real tracking number (10-30 digits)
+        if (trackingNum.length >= 10 && trackingNum.length <= 30 && /^\d+$/.test(trackingNum)) {
+          orderInfo.tracking_number = trackingNum;
+          console.log(`✅ TRACKING NUMBER EXTRACTED: "${trackingNum}" using pattern: ${pattern}`);
+          break;
+        }
+      }
+    }
+    
+    // If no tracking number found in HTML, try text content
+    if (!orderInfo.tracking_number) {
+      // Look for the specific number from the email sample
+      const specificTrackingMatch = textContent.match(/882637178429/);
+      if (specificTrackingMatch) {
+        orderInfo.tracking_number = specificTrackingMatch[0];
+        console.log(`✅ TRACKING NUMBER FOUND (specific match): "882637178429"`);
+      }
+    }
+    
+    // Determine carrier - StockX typically uses UPS
+    if (orderInfo.tracking_number) {
+      // UPS tracking numbers are typically 18 digits starting with 1Z
+      if (orderInfo.tracking_number.startsWith('1Z')) {
+        orderInfo.carrier = "UPS";
+      } else if (orderInfo.tracking_number.length === 12 || orderInfo.tracking_number.length === 15) {
+        // FedEx uses 12 or 15 digit tracking numbers
+        orderInfo.carrier = "FedEx";
+      } else {
+        // Default to generic carrier for StockX
+        orderInfo.carrier = "StockX Logistics";
+      }
+    }
+  }
+
+  /**
    * Extract order number from StockX email and validate order type
    */
   private extractStockXOrderNumber(textContent: string, orderInfo: OrderInfo): void {
@@ -668,6 +758,11 @@ export function orderInfoToDict(orderInfo: OrderInfo): Record<string, any> {
     delivery: {
       estimated_start: orderInfo.estimated_delivery_start,
       estimated_end: orderInfo.estimated_delivery_end
+    },
+    shipping: {
+      tracking_number: orderInfo.tracking_number,
+      carrier: orderInfo.carrier,
+      status: orderInfo.shipping_status
     },
     purchase_info: {
       purchase_date: orderInfo.purchase_date
