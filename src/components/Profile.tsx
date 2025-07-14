@@ -241,13 +241,13 @@ const Profile = () => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center space-x-2 px-4 py-3 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
+                className={`flex items-center space-x-2 px-4 py-3 rounded-lg font-medium whitespace-nowrap border ${
                   activeTab === tab.id
                     ? currentTheme.name === 'Neon'
-                      ? 'bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 text-cyan-400 border border-cyan-500/30'
-                      : `${currentTheme.colors.primary} text-white`
-                    : `${currentTheme.colors.textSecondary} hover:bg-white/5 hover:text-white`
-                }`}
+                      ? 'bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 text-cyan-400 border-cyan-500/30'
+                      : `${currentTheme.colors.primary} text-white border-transparent`
+                    : `${currentTheme.colors.textSecondary} hover:bg-white/5 hover:text-white border-transparent`
+                } transition-colors duration-150`}
               >
                 <IconComponent className="w-4 h-4" />
                 <span>{tab.label}</span>
