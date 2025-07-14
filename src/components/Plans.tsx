@@ -17,8 +17,8 @@ const Plans = () => {
       name: 'Starter',
       icon: Zap,
       description: 'Perfect for beginners starting their resell journey',
-      monthlyPrice: 19,
-      annualPrice: 190,
+      monthlyPrice: 15,
+      annualPrice: 150,
       features: [
         'Gmail integration',
         'Up to 100 purchases/month',
@@ -42,8 +42,8 @@ const Plans = () => {
       name: 'Professional',
       icon: TrendingUp,
       description: 'Most popular choice for serious resellers',
-      monthlyPrice: 49,
-      annualPrice: 490,
+      monthlyPrice: 40,
+      annualPrice: 400,
       features: [
         'Everything in Starter',
         'Up to 1,000 purchases/month',
@@ -69,8 +69,8 @@ const Plans = () => {
       name: 'Enterprise',
       icon: Crown,
       description: 'For high-volume resellers and teams',
-      monthlyPrice: 99,
-      annualPrice: 990,
+      monthlyPrice: 82,
+      annualPrice: 820,
       features: [
         'Everything in Professional',
         'Unlimited purchases',
@@ -294,7 +294,7 @@ const Plans = () => {
 
                     {/* Features */}
                     <ul className="space-y-2 mb-6">
-                      {plan.features.slice(0, 5).map((feature, index) => (
+                      {plan.features.slice(0, 4).map((feature, index) => (
                         <li key={index} className="flex items-start">
                           {isNeon ? (
                             <div className="flex-shrink-0 w-4 h-4 bg-gradient-to-br from-emerald-400 to-cyan-400 rounded-full flex items-center justify-center mr-3 mt-0.5">
@@ -308,12 +308,12 @@ const Plans = () => {
                           }`}>{feature}</span>
                         </li>
                       ))}
-                      {plan.features.length > 5 && (
+                      {plan.features.length > 4 && (
                         <li className={`text-xs font-medium ${
                           isNeon ? 'text-center' : ''
                         }`}>
                           <span className={isNeon ? 'text-cyan-400' : 'text-purple-600'}>
-                            +{plan.features.length - 5} more features
+                            +{plan.features.length - 4} more features
                           </span>
                         </li>
                       )}
