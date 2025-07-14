@@ -715,10 +715,14 @@ const Purchases = () => {
         const statusUpdate = statusUpdates.find(update => update.orderNumber === purchase.orderNumber);
         if (statusUpdate) {
           console.log(`🔄 FORCE UPDATING status for ${purchase.orderNumber}: ${purchase.status} → ${statusUpdate.status}`);
+          if (statusUpdate.tracking) {
+            console.log(`📦 FORCE UPDATING tracking for ${purchase.orderNumber}: ${statusUpdate.tracking}`);
+          }
           return {
             ...purchase,
             status: statusUpdate.status,
             statusColor: statusUpdate.statusColor,
+            tracking: statusUpdate.tracking || purchase.tracking,
             lastUpdated: new Date().toISOString() // Add timestamp to force re-render
           };
         }
@@ -729,10 +733,14 @@ const Purchases = () => {
         const statusUpdate = statusUpdates.find(update => update.orderNumber === purchase.orderNumber);
         if (statusUpdate) {
           console.log(`🔄 FORCE UPDATING status for ${purchase.orderNumber}: ${purchase.status} → ${statusUpdate.status}`);
+          if (statusUpdate.tracking) {
+            console.log(`📦 FORCE UPDATING tracking for ${purchase.orderNumber}: ${statusUpdate.tracking}`);
+          }
           return {
             ...purchase,
             status: statusUpdate.status,
             statusColor: statusUpdate.statusColor,
+            tracking: statusUpdate.tracking || purchase.tracking,
             lastUpdated: new Date().toISOString() // Add timestamp to force re-render
           };
         }
@@ -766,6 +774,7 @@ const Purchases = () => {
           await updateDocument('purchases', purchase.id, {
             status: purchase.status,
             statusColor: purchase.statusColor,
+            tracking: purchase.tracking,
             userId: user.uid
           });
           console.log(`💾 Firebase updated for ${purchase.orderNumber}`);

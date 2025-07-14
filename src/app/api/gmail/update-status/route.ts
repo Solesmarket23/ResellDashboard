@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { google } from 'googleapis';
 import { cookies } from 'next/headers';
+import { parseGmailApiMessage } from '../../../../lib/email/orderConfirmationParser';
 
 // Status update configuration - only status-related emails
 function getStatusUpdateConfig() {
@@ -316,6 +317,18 @@ export async function POST(request: NextRequest) {
         const statusInfo = categorizeStatusEmail(subjectHeader, config);
         if (!statusInfo) continue;
         
+        // Parse the email to extract tracking info
+        let trackingNumber = null;
+        try {
+          const parsedInfo = parseGmailApiMessage(emailData.data);
+          trackingNumber = parsedInfo.tracking_number || null;
+          if (trackingNumber) {
+            console.log(`📦 TRACKING FOUND: ${trackingNumber} for order ${orderNumber}`);
+          }
+        } catch (parseError) {
+          console.log(`⚠️ Could not parse tracking from email: ${parseError}`);
+        }
+        
         // Keep the highest priority status for each order
         if (!statusUpdates[orderNumber] || statusInfo.priority > statusUpdates[orderNumber].priority) {
           statusUpdates[orderNumber] = {
@@ -325,9 +338,13 @@ export async function POST(request: NextRequest) {
             priority: statusInfo.priority,
             subject: subjectHeader,
             date: dateHeader,
-            emailId: message.id
+            emailId: message.id,
+            tracking: trackingNumber
           };
           console.log(`✅ STATUS UPDATE: ${orderNumber} → ${statusInfo.status} (from: ${subjectHeader})`);
+          if (trackingNumber) {
+            console.log(`📦 TRACKING: ${trackingNumber}`);
+          }
         }
         
       } catch (error) {

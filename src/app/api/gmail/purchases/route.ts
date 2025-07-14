@@ -244,12 +244,14 @@ function consolidateOrderEmails(purchases: any[]) {
   for (const [orderNumber, orderEmails] of orderMap.entries()) {
     console.log(`📦 CONSOLIDATION DEBUG: Order ${orderNumber} has ${orderEmails.length} emails`);
     
-    // Special debugging for the specific order user mentioned
-    if (orderNumber === '01-3KF7CE560J') {
-      console.log(`🚨 SPECIAL DEBUG: Order 01-3KF7CE560J - This should be DELIVERED!`);
+    // Special debugging for specific orders
+    if (orderNumber === '01-3KF7CE560J' || orderNumber === '01-3KF7CE560J') {
+      console.log(`🚨 SPECIAL DEBUG: Order ${orderNumber} - This should be DELIVERED!`);
       orderEmails.forEach((email, idx) => {
         const priority = STATUS_PRIORITIES[email.status] || 1;
         console.log(`  🔍 Email ${idx}: "${email.subject}" -> Status: ${email.status} (priority ${priority})`);
+        console.log(`     From: ${email.fromEmail}`);
+        console.log(`     Tracking: ${email.tracking || 'N/A'}`);
       });
     }
     
@@ -279,9 +281,11 @@ function consolidateOrderEmails(purchases: any[]) {
       console.log(`🎯 Selected highest priority: ${primaryEmail.status} (priority ${STATUS_PRIORITIES[primaryEmail.status] || 1})`);
       console.log(`📋 All statuses for order ${orderNumber}:`, primaryEmail.allStatuses);
       
-      // Special debugging for the specific order user mentioned
-      if (orderNumber === '01-3KF7CE560J') {
-        console.log(`🚨 FINAL STATUS for 01-3KF7CE560J: ${primaryEmail.status} - This should be DELIVERED!`);
+      // Special debugging for specific orders
+      if (orderNumber === '01-3KF7CE560J' || orderNumber === '01-3KF7CE560J') {
+        console.log(`🚨 FINAL STATUS for ${orderNumber}: ${primaryEmail.status} - This should be DELIVERED!`);
+        console.log(`🚨 Final email subject: "${primaryEmail.subject}"`);
+        console.log(`🚨 Final tracking: ${primaryEmail.tracking || 'N/A'}`);
       }
       
       consolidatedPurchases.push(primaryEmail);
@@ -624,7 +628,8 @@ async function parsePurchaseEmail(email: any, config: any, gmail: any) {
       'Order Delivered:',
       'Xpress Order Delivered:',
       'has been delivered',
-      'package delivered'
+      'package delivered',
+      '🎉 Xpress Ship Order Delivered:' // Add pattern with emoji
     ];
     
     const isDeliveryEmail = deliveryKeywords.some(keyword => 
@@ -636,9 +641,10 @@ async function parsePurchaseEmail(email: any, config: any, gmail: any) {
       console.log(`🚚 Email: "${subjectHeader}" from ${fromHeader}`);
       console.log(`🚚 Order Number: ${orderInfo.order_number}`);
       
-      // Special debug for the specific order user mentioned
-      if (orderInfo.order_number === '01-3KF7CE560J') {
-        console.log(`🎯🚚 SPECIAL: Order 01-3KF7CE560J DELIVERY OVERRIDE TRIGGERED!`);
+      // Special debug for specific orders
+      if (orderInfo.order_number === '01-3KF7CE560J' || orderInfo.order_number === '01-3KF7CE560J') {
+        console.log(`🎯🚚 SPECIAL: Order ${orderInfo.order_number} DELIVERY OVERRIDE TRIGGERED!`);
+        console.log(`🎯🚚 Subject: "${subjectHeader}"`);
         console.log(`🎯🚚 This order should now be DELIVERED status!`);
       }
       
