@@ -24,6 +24,7 @@ export function useSovrn(): UseSovrnReturn {
         utmCampaign: 'affiliate_links',
       });
       setIsInitialized(true);
+      console.log('✅ Sovrn affiliate service initialized with API key:', apiKey.substring(0, 8) + '...');
     } else {
       console.warn('Sovrn API key not found in environment variables');
     }
