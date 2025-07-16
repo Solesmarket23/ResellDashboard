@@ -5,6 +5,7 @@ import { TrendingUp, DollarSign, ExternalLink, Search, AlertCircle, BarChart3, L
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { shareToTwitter, generateShareImage, ArbitrageShareData } from '@/lib/twitter/twitterExport';
 import { useSovrn } from '@/lib/hooks/useSovrn';
+import SovrnDebug from './SovrnDebug';
 
 // Enhanced placeholder component for StockX products since images aren't publicly accessible
 interface FallbackImageProps {
@@ -73,7 +74,16 @@ interface ArbitrageOpportunity {
 const StockXArbitrage: React.FC = () => {
   const { currentTheme } = useTheme();
   const isNeon = currentTheme.name === 'neon';
-  const { convertStockXLink } = useSovrn();
+  const { convertStockXLink, isInitialized } = useSovrn();
+  
+  // Debug Sovrn initialization
+  useEffect(() => {
+    console.log('🔍 StockXArbitrage - Sovrn status:', {
+      isInitialized,
+      convertStockXLink: typeof convertStockXLink,
+      timestamp: new Date().toISOString()
+    });
+  }, [isInitialized, convertStockXLink]);
   
   const [opportunities, setOpportunities] = useState<ArbitrageOpportunity[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -518,6 +528,8 @@ const StockXArbitrage: React.FC = () => {
 
   return (
     <div className="p-4 sm:p-6 bg-gray-900 text-white min-h-screen">
+      {/* Temporary debug component */}
+      {process.env.NODE_ENV === 'development' && <SovrnDebug />}
       <div className="max-w-6xl mx-auto">
         <div className="mb-6 sm:mb-8">
           <div className="flex items-center gap-3 mb-4">
@@ -980,14 +992,21 @@ const StockXArbitrage: React.FC = () => {
                     </div>
                   )}
                   <a
-                    href={convertStockXLink(
-                      opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId),
-                      {
+                    href={(() => {
+                      const originalUrl = opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId);
+                      const convertedUrl = convertStockXLink(originalUrl, {
                         productName: opportunity.productName,
                         productId: opportunity.productId,
                         size: opportunity.size
-                      }
-                    )}
+                      });
+                      console.log('🔗 StockX Link Conversion:', {
+                        originalUrl,
+                        convertedUrl,
+                        isInitialized,
+                        isSameUrl: originalUrl === convertedUrl
+                      });
+                      return convertedUrl;
+                    })()}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
