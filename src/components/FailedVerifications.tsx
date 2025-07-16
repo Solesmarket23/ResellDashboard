@@ -71,7 +71,7 @@ const FailedVerifications = () => {
       return;
     }
 
-    const failedVerificationsRef = collection(db, 'failedVerifications');
+    const failedVerificationsRef = collection(db, 'user_failed_verifications');
     const q = query(failedVerificationsRef, where('userId', '==', user.uid));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -119,7 +119,7 @@ const FailedVerifications = () => {
 
   const handleDeleteFailure = async (failureId: string) => {
     try {
-      await deleteDoc(doc(db, 'failedVerifications', failureId));
+      await deleteDoc(doc(db, 'user_failed_verifications', failureId));
     } catch (error) {
       console.error('Error deleting failed verification:', error);
       alert('Failed to delete verification failure.');
@@ -1120,7 +1120,7 @@ const FailedVerifications = () => {
               };
               
               try {
-                await addDoc(collection(db, 'failedVerifications'), newFailure);
+                await addDoc(collection(db, 'user_failed_verifications'), newFailure);
                 setShowAddModal(false);
                 e.currentTarget.reset();
               } catch (error) {
