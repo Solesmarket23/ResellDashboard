@@ -7,16 +7,16 @@ function createEmailContent(orderNumber: string, productName: string, userName: 
   const subject = `Return Label Request - Order ${orderNumber}`;
   
   const htmlBody = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #333;">Return Label Request</h2>
+    <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
       <p>Hello,</p>
       <p>I would like to request a return label for the following item that failed verification:</p>
-      <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
-        <p style="margin: 5px 0;"><strong>Order Number:</strong> ${orderNumber}</p>
-        <p style="margin: 5px 0;"><strong>Item:</strong> ${productName}</p>
-      </div>
+      <p style="margin-left: 20px;">
+        Order Number: ${orderNumber}<br>
+        Item: ${productName}
+      </p>
       <p>Please provide a return shipping label at your earliest convenience.</p>
-      <p>Thank you,<br>${userName}</p>
+      <p>Thank you,<br>
+      ${userName}</p>
     </div>
   `;
   
