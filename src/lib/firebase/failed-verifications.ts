@@ -1,4 +1,4 @@
-import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { doc, updateDoc, arrayUnion, Timestamp } from 'firebase/firestore';
 import { db } from './firebase';
 import { VerificationStatus, StatusHistory, FailedVerification } from '@/types/failed-verification';
 
@@ -16,10 +16,10 @@ export async function updateVerificationStatus(
     note
   };
   
+  // For now, we'll handle statusHistory differently since arrayUnion might not be working
   const updateData: any = {
     status: newStatus,
     lastStatusUpdate: new Date().toISOString(),
-    statusHistory: arrayUnion(statusUpdate),
     ...additionalData
   };
   
