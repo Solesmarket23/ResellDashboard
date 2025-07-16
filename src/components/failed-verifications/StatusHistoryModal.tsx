@@ -179,14 +179,14 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
                       <div 
                         className={`absolute left-6 w-0.5 ${isNeon ? 'bg-slate-700' : 'bg-gray-200'}`}
                         style={{
-                          top: '60px',  // Start at bottom of circle (12px top margin + 48px circle height)
-                          height: 'calc(100% - 60px + 32px)' // Extend to top of next circle (including 8*4=32px margin)
+                          top: '68px',  // Start at bottom of circle (20px margin + 48px circle height)
+                          height: 'calc(100% - 48px)' // Extend to next item, accounting for circle height
                         }}
                       />
                     )}
                     
                     {/* Icon circle - centered with content box */}
-                    <div className={`relative flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-full mt-3 ${
+                    <div className={`relative flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-full mt-5 ${
                       isNeon
                         ? isLatest 
                           ? 'bg-slate-900 border-2 border-cyan-500/50'
