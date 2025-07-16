@@ -261,6 +261,9 @@ const FailedVerifications = () => {
       // Update progress
       setScanProgress({ found: failures.length, saved: 0, message: `Found ${failures.length} verification failure${failures.length !== 1 ? 's' : ''}` });
       
+      // Clear previous scan results to avoid duplicates in the UI
+      setScanResults([]);
+      
       // Save scanned results to Firebase
       if (failures.length > 0 && user) {
         setScanStatus('saving');
@@ -268,14 +271,15 @@ const FailedVerifications = () => {
         console.log('💾 Saving scanned results to Firebase...');
         let savedCount = 0;
         
+        // Create a Set to track order numbers that already exist or have been saved
+        const existingOrderNumbers = new Set(manualFailures.map(f => f.orderNumber));
+        
         for (const failure of failures) {
           try {
-            // Check if this failure already exists in Firebase
-            const existingFailure = manualFailures.find(
-              f => f.orderNumber === failure.orderNumber && f.emailDate === failure.emailDate
-            );
-            
-            if (!existingFailure) {
+            // Check if this failure already exists or has been saved in this batch
+            if (!existingOrderNumbers.has(failure.orderNumber)) {
+              // Add to the set immediately to prevent duplicates in the same batch
+              existingOrderNumbers.add(failure.orderNumber);
               const failureToSave = {
                 userId: user.uid,
                 orderNumber: failure.orderNumber,
@@ -373,7 +377,8 @@ const FailedVerifications = () => {
     }
   };
 
-  const allFailures = [...scanResults, ...manualFailures];
+  // Only use manualFailures which includes all saved failures
+  const allFailures = manualFailures;
   const totalFailures = allFailures.length;
   
   // Calculate monthly breakdown dynamically
@@ -1091,7 +1096,7 @@ const FailedVerifications = () => {
       )}
 
       {/* StockX Verification Failures Table */}
-      {(showScanResult && !scanError && scanResults.length > 0) || manualFailures.length > 0 ? (
+      {manualFailures.length > 0 ? (
         <div className={`rounded-lg overflow-hidden ${
           isNeon
             ? 'dark-neon-card border border-slate-700/50'
@@ -1107,7 +1112,7 @@ const FailedVerifications = () => {
               }`} />
               <h3 className={`text-lg font-semibold ${
                 isNeon ? 'text-white' : 'text-gray-900'
-              }`}>StockX Verification Failures ({scanResults.length + manualFailures.length})</h3>
+              }`}>StockX Verification Failures ({manualFailures.length})</h3>
             </div>
             <p className={`text-sm ${
               isNeon ? 'text-slate-400' : 'text-gray-500'
@@ -1160,7 +1165,7 @@ const FailedVerifications = () => {
                   ? 'divide-slate-700/50' 
                   : `${currentTheme.colors.cardBackground} divide-gray-200`
               }`}>
-                {[...scanResults, ...manualFailures].map((failure, index) => (
+                {manualFailures.map((failure, index) => (
                   <tr key={index} className={`transition-colors duration-200 ${
                     isNeon ? 'hover:bg-slate-800/50' : 'hover:bg-gray-50'
                   }`}>
