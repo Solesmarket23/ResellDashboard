@@ -91,7 +91,7 @@ const Plans = () => {
   ];
 
   return (
-    <div className={`relative overflow-hidden py-2 sm:py-4 px-4 flex-1 ${currentTheme.colors.background}`}>
+    <div className={`relative overflow-hidden min-h-screen py-8 sm:py-12 px-4 flex flex-col ${currentTheme.colors.background}`}>
         {/* Neon theme background effects */}
         {isNeon && (
           <>
@@ -103,7 +103,7 @@ const Plans = () => {
           </>
         )}
         
-        <div className="relative z-10 max-w-7xl mx-auto">
+        <div className="relative z-10 max-w-7xl mx-auto flex-1 flex flex-col">
           {/* Header Section */}
           <div className="text-center mb-3 sm:mb-4">
             {isNeon && (
@@ -201,8 +201,8 @@ const Plans = () => {
           </div>
 
           {/* Plans Grid */}
-          <div className="relative">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-3 sm:mb-4 pt-3">
+          <div className="relative flex-1 flex items-center py-8 sm:py-12">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 w-full">
               {plans.map((plan, index) => (
                 <div
                   key={plan.id}
@@ -349,28 +349,28 @@ const Plans = () => {
           </div>
 
           {/* Trust Indicators */}
-          <div className="text-center">
+          <div className="text-center mt-auto pb-8 sm:pb-12">
             {isNeon ? (
-              <div className="grid md:grid-cols-3 gap-3 sm:gap-4">
+              <div className="grid md:grid-cols-3 gap-4 sm:gap-6 max-w-4xl mx-auto">
                 <div className="text-center">
-                  <div className="dark-neon-card p-2 border border-slate-700/50">
-                    <TrendingUp className="w-4 h-4 text-emerald-400 mx-auto mb-1" />
-                    <h4 className="text-white font-semibold text-xs mb-0.5">Real-Time Tracking</h4>
-                    <p className="text-slate-400 text-xs">Live profit analytics</p>
+                  <div className="dark-neon-card p-6 sm:p-8 border border-slate-700/50 hover:border-cyan-500/30 transition-all duration-300">
+                    <TrendingUp className="w-8 h-8 text-emerald-400 mx-auto mb-3" />
+                    <h4 className="text-white font-semibold text-base mb-2">Real-Time Tracking</h4>
+                    <p className="text-slate-400 text-sm">Live profit analytics</p>
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className="dark-neon-card p-2 border border-slate-700/50">
-                    <CheckCircle className="w-4 h-4 text-cyan-400 mx-auto mb-1" />
-                    <h4 className="text-white font-semibold text-xs mb-0.5">30-Day Guarantee</h4>
-                    <p className="text-slate-400 text-xs">Risk-free trial</p>
+                  <div className="dark-neon-card p-6 sm:p-8 border border-slate-700/50 hover:border-cyan-500/30 transition-all duration-300">
+                    <CheckCircle className="w-8 h-8 text-cyan-400 mx-auto mb-3" />
+                    <h4 className="text-white font-semibold text-base mb-2">30-Day Guarantee</h4>
+                    <p className="text-slate-400 text-sm">Risk-free trial</p>
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className="dark-neon-card p-2 border border-slate-700/50">
-                    <Shield className="w-4 h-4 text-emerald-400 mx-auto mb-1" />
-                    <h4 className="text-white font-semibold text-xs mb-0.5">Enterprise Security</h4>
-                    <p className="text-slate-400 text-xs">Bank-level encryption</p>
+                  <div className="dark-neon-card p-6 sm:p-8 border border-slate-700/50 hover:border-cyan-500/30 transition-all duration-300">
+                    <Shield className="w-8 h-8 text-emerald-400 mx-auto mb-3" />
+                    <h4 className="text-white font-semibold text-base mb-2">Enterprise Security</h4>
+                    <p className="text-slate-400 text-sm">Bank-level encryption</p>
                   </div>
                 </div>
               </div>
