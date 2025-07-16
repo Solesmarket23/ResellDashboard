@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Search, Plus, AlertTriangle, Calendar, ChevronDown, RotateCcw, CheckCircle, DollarSign, X, Trash2, Users, TrendingUp, TrendingDown, RefreshCw, Mail, Settings } from 'lucide-react';
+import { Search, Plus, AlertTriangle, Calendar, ChevronDown, RotateCcw, CheckCircle, DollarSign, X, Trash2, Users, TrendingUp, TrendingDown, RefreshCw, Mail, Settings, Package, Truck } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { generateGmailSearchUrl } from '../lib/utils/orderNumberUtils';
 import { useAuth } from '../lib/contexts/AuthContext';
@@ -9,6 +9,10 @@ import { db } from '../lib/firebase/firebase';
 import { collection, query, where, onSnapshot, doc, getDoc, addDoc, deleteDoc } from 'firebase/firestore';
 import { addDocument, deleteDocument } from '../lib/firebase/firebaseUtils';
 import { getCommunityAggregates, calculateUserPercentile, contributeFailureData } from '../lib/firebase/communityInsights';
+import { FailedVerification, VerificationStatus } from '../types/failed-verification';
+import { StatusBadge } from './failed-verifications/StatusBadge';
+import { QuickActions } from './failed-verifications/QuickActions';
+import { STATUS_LABELS } from '../lib/verification-status';
 
 const FailedVerifications = () => {
   const [timeFilter, setTimeFilter] = useState('Monthly');
@@ -18,19 +22,21 @@ const FailedVerifications = () => {
   const [timeDropdownOpen, setTimeDropdownOpen] = useState(false);
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [scanResults, setScanResults] = useState<any[]>([]);
-  const [manualFailures, setManualFailures] = useState<any[]>([]);
+  const [manualFailures, setManualFailures] = useState<FailedVerification[]>([]);
   const [loading, setLoading] = useState(true);
   const [scanError, setScanError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [communityInsightsEnabled, setCommunityInsightsEnabled] = useState(false);
   const [communityData, setCommunityData] = useState<any>(null);
-  const [isRescanning, setIsRescanning] = useState(false);
+
   const [sendingEmail, setSendingEmail] = useState<string | null>(null);
   const [testEmail, setTestEmail] = useState('');
   const [showEmailSettings, setShowEmailSettings] = useState(false);
-  const [removingDuplicates, setRemovingDuplicates] = useState(false);
+
   const [scanStatus, setScanStatus] = useState<'scanning' | 'saving' | 'complete' | null>(null);
   const [scanProgress, setScanProgress] = useState({ found: 0, saved: 0, message: '' });
+  const [verificationStatusFilter, setVerificationStatusFilter] = useState<VerificationStatus | 'all'>('all');
+  const [isMigrating, setIsMigrating] = useState(false);
   const { currentTheme } = useTheme();
   const { user, loading: authLoading } = useAuth();
   
@@ -141,16 +147,13 @@ const FailedVerifications = () => {
     }
   };
 
-  const handleRemoveDuplicates = async () => {
-    if (!user) {
-      alert('Please sign in to remove duplicates');
-      return;
-    }
-
-    setRemovingDuplicates(true);
+  // Run migration for existing data
+  const runMigration = async () => {
+    if (!user) return;
+    
+    setIsMigrating(true);
     try {
-      console.log('🧹 Removing duplicate failures...');
-      const response = await fetch('/api/remove-duplicate-failures', {
+      const response = await fetch('/api/migrate-failed-verifications', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -159,23 +162,20 @@ const FailedVerifications = () => {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to remove duplicates');
+        throw new Error('Failed to migrate data');
       }
 
       const data = await response.json();
-      console.log('✅ Duplicate removal complete:', data);
+      console.log('✅ Migration complete:', data);
       
-      if (data.duplicatesRemoved > 0) {
-        alert(`Successfully removed ${data.duplicatesRemoved} duplicate entries!\n\nYou now have ${data.uniqueFailures} unique verification failures.`);
-        // The Firebase listener will automatically update the UI
-      } else {
-        alert('No duplicates found. All your verification failures are unique.');
+      if (data.migratedDocuments > 0) {
+        alert(`Successfully migrated ${data.migratedDocuments} verification failures to the new status tracking system!`);
       }
     } catch (error) {
-      console.error('❌ Error removing duplicates:', error);
-      alert('Failed to remove duplicates. Please try again.');
+      console.error('❌ Error running migration:', error);
+      alert('Failed to migrate data. Please try again.');
     } finally {
-      setRemovingDuplicates(false);
+      setIsMigrating(false);
     }
   };
 
@@ -280,18 +280,25 @@ const FailedVerifications = () => {
             if (!existingOrderNumbers.has(failure.orderNumber)) {
               // Add to the set immediately to prevent duplicates in the same batch
               existingOrderNumbers.add(failure.orderNumber);
-              const failureToSave = {
+              const timestamp = new Date().toISOString();
+              const failureToSave: Partial<FailedVerification> = {
                 userId: user.uid,
                 orderNumber: failure.orderNumber,
                 productName: failure.productName || 'StockX Item',
                 failureReason: failure.failureReason || 'Did not pass verification',
                 date: failure.date,
                 emailDate: failure.emailDate,
-                status: 'Needs Review',
+                status: 'needs_review',
                 subject: failure.subject || 'An Update Regarding Your Sale',
                 fromEmail: failure.fromEmail || 'stockx@stockx.com',
                 source: 'gmail_scan',
-                createdAt: new Date().toISOString()
+                createdAt: timestamp,
+                statusHistory: [{
+                  status: 'needs_review',
+                  timestamp: timestamp,
+                  note: 'Imported from Gmail scan'
+                }],
+                lastStatusUpdate: timestamp
               };
               
               await addDocument('user_failed_verifications', failureToSave);
@@ -340,46 +347,35 @@ const FailedVerifications = () => {
     }
   };
 
-  const handleRescanClick = async () => {
-    if (!user) {
-      alert('Please sign in to rescan failures');
-      return;
-    }
 
-    setIsRescanning(true);
-    try {
-      console.log('🔄 Starting rescan of all failures...');
-      const response = await fetch('/api/gmail/rescan-failures', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ userId: user.uid }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to rescan failures');
-      }
-
-      const data = await response.json();
-      console.log('✅ Rescan complete:', data);
-      
-      if (data.updatedCount > 0) {
-        alert(`Successfully updated ${data.updatedCount} of ${data.totalScanned} verification failures with correct reasons.`);
-      } else {
-        alert('No updates were needed. All failure reasons are already up to date.');
-      }
-    } catch (error) {
-      console.error('❌ Error rescanning failures:', error);
-      alert('Failed to rescan verification failures. Please try again.');
-    } finally {
-      setIsRescanning(false);
-    }
-  };
 
   // Only use manualFailures which includes all saved failures
   const allFailures = manualFailures;
+  
+  // Filter by status if needed
+  const filteredFailures = verificationStatusFilter === 'all' 
+    ? allFailures 
+    : allFailures.filter(f => f.status === verificationStatusFilter);
+  
   const totalFailures = allFailures.length;
+  
+  // Calculate status counts
+  const statusCounts = allFailures.reduce((acc, failure) => {
+    acc[failure.status] = (acc[failure.status] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+  
+  // Calculate aging alerts
+  const agingAlerts = allFailures.filter(v => {
+    const daysSinceUpdate = Math.floor(
+      (Date.now() - new Date(v.lastStatusUpdate || v.createdAt).getTime()) / (1000 * 60 * 60 * 24)
+    );
+    return (
+      (v.status === 'email_sent' && daysSinceUpdate > 5) ||
+      (v.status === 'shipped_back' && daysSinceUpdate > 10) ||
+      (v.status === 'label_received' && daysSinceUpdate > 7)
+    );
+  });
   
   // Calculate monthly breakdown dynamically
   const monthlyData = groupFailuresByMonth(allFailures);
@@ -452,23 +448,25 @@ const FailedVerifications = () => {
       iconColor: 'text-red-600'
     },
     {
-      title: 'Pending Returns',
-      value: totalFailures.toString(),
+      title: 'Awaiting Action',
+      value: (statusCounts['needs_review'] || 0).toString(),
       icon: RotateCcw,
       iconColor: 'text-orange-600'
     },
     {
-      title: 'Completed',
-      value: '0',
-      icon: CheckCircle,
-      iconColor: 'text-green-600'
+      title: 'In Progress',
+      value: ((statusCounts['email_sent'] || 0) + 
+              (statusCounts['label_received'] || 0) + 
+              (statusCounts['shipped_back'] || 0)).toString(),
+      icon: Package,
+      iconColor: 'text-blue-600'
     },
     {
-      title: 'Total Loss',
-      value: '$0.00',
-      icon: DollarSign,
-      iconColor: 'text-red-600',
-      valueColor: 'text-red-600'
+      title: 'Aging Alerts',
+      value: agingAlerts.length.toString(),
+      icon: AlertTriangle,
+      iconColor: 'text-yellow-600',
+      valueColor: agingAlerts.length > 0 ? 'text-yellow-600' : ''
     }
   ];
 
@@ -604,44 +602,7 @@ const FailedVerifications = () => {
             <Search className="w-4 h-4 mr-2" />
             {isScanning ? 'Scanning...' : 'Scan for Verification Failures'}
           </button>
-          {totalFailures > 0 && (
-            <>
-              <button 
-                onClick={handleRemoveDuplicates}
-                disabled={removingDuplicates}
-                className={`flex items-center px-4 py-2 text-white rounded-lg transition-all duration-300 ${
-                  isNeon
-                    ? removingDuplicates 
-                      ? 'bg-gradient-to-r from-orange-500/50 to-red-500/50 cursor-not-allowed'
-                      : 'bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 shadow-lg shadow-orange-500/25 hover:shadow-xl hover:shadow-orange-500/40'
-                    : removingDuplicates 
-                      ? 'bg-orange-500 cursor-not-allowed' 
-                      : 'bg-orange-600 hover:bg-orange-700'
-                }`}
-                title="Remove duplicate verification failures"
-              >
-                <Trash2 className={`w-4 h-4 mr-2 ${removingDuplicates ? 'animate-pulse' : ''}`} />
-                {removingDuplicates ? 'Removing...' : 'Remove Duplicates'}
-              </button>
-              <button 
-                onClick={handleRescanClick}
-                disabled={isRescanning}
-                className={`flex items-center px-4 py-2 text-white rounded-lg transition-all duration-300 ${
-                  isNeon
-                    ? isRescanning 
-                      ? 'bg-gradient-to-r from-purple-500/50 to-pink-500/50 cursor-not-allowed'
-                      : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 shadow-lg shadow-purple-500/25 hover:shadow-xl hover:shadow-purple-500/40'
-                    : isRescanning 
-                      ? 'bg-purple-500 cursor-not-allowed' 
-                      : 'bg-purple-600 hover:bg-purple-700'
-                }`}
-                title="Re-scan all existing failures to update their failure reasons"
-              >
-                <RefreshCw className={`w-4 h-4 mr-2 ${isRescanning ? 'animate-spin' : ''}`} />
-                {isRescanning ? 'Updating...' : 'Update Failure Reasons'}
-              </button>
-            </>
-          )}
+
           <button 
             onClick={() => setShowAddModal(true)}
             className={`flex items-center px-4 py-2 text-white rounded-lg transition-all duration-300 ${
@@ -652,6 +613,27 @@ const FailedVerifications = () => {
             <Plus className="w-4 h-4 mr-2" />
             Add Failed Verification
           </button>
+          
+          {/* Migration button - only show if there are unmigrated items */}
+          {totalFailures > 0 && allFailures.some(f => !f.statusHistory) && (
+            <button 
+              onClick={runMigration}
+              disabled={isMigrating}
+              className={`flex items-center px-4 py-2 text-white rounded-lg transition-all duration-300 ${
+                isNeon
+                  ? isMigrating 
+                    ? 'bg-gradient-to-r from-purple-500/50 to-pink-500/50 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 shadow-lg shadow-purple-500/25 hover:shadow-xl hover:shadow-purple-500/40'
+                  : isMigrating 
+                    ? 'bg-purple-500 cursor-not-allowed' 
+                    : 'bg-purple-600 hover:bg-purple-700'
+              }`}
+              title="Upgrade your data to enable status tracking"
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${isMigrating ? 'animate-spin' : ''}`} />
+              {isMigrating ? 'Migrating...' : 'Enable Status Tracking'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -964,6 +946,43 @@ const FailedVerifications = () => {
         })}
       </div>
 
+      {/* Status Filter Tabs */}
+      <div className={`border-b mb-6 ${isNeon ? 'border-slate-700/50' : 'border-gray-200'}`}>
+        <nav className="-mb-px flex space-x-8 overflow-x-auto">
+          <button
+            onClick={() => setVerificationStatusFilter('all')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
+              verificationStatusFilter === 'all'
+                ? isNeon 
+                  ? 'border-cyan-400 text-cyan-400'
+                  : 'border-blue-500 text-blue-600'
+                : isNeon
+                  ? 'border-transparent text-slate-400 hover:text-slate-300 hover:border-slate-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            All ({totalFailures})
+          </button>
+          {Object.entries(STATUS_LABELS).map(([status, label]) => (
+            <button
+              key={status}
+              onClick={() => setVerificationStatusFilter(status as VerificationStatus)}
+              className={`py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
+                verificationStatusFilter === status
+                  ? isNeon 
+                    ? 'border-cyan-400 text-cyan-400'
+                    : 'border-blue-500 text-blue-600'
+                  : isNeon
+                    ? 'border-transparent text-slate-400 hover:text-slate-300 hover:border-slate-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              {label} ({statusCounts[status] || 0})
+            </button>
+          ))}
+        </nav>
+      </div>
+
       {/* Search and Filter */}
       <div className="flex items-center justify-between mb-6" style={{ overflow: 'visible' }}>
         <div className="relative flex-1 max-w-md">
@@ -1165,7 +1184,7 @@ const FailedVerifications = () => {
                   ? 'divide-slate-700/50' 
                   : `${currentTheme.colors.cardBackground} divide-gray-200`
               }`}>
-                {manualFailures.map((failure, index) => (
+                {filteredFailures.map((failure, index) => (
                   <tr key={index} className={`transition-colors duration-200 ${
                     isNeon ? 'hover:bg-slate-800/50' : 'hover:bg-gray-50'
                   }`}>
@@ -1209,38 +1228,47 @@ const FailedVerifications = () => {
                       {failure.date}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                        isNeon 
-                          ? 'bg-orange-900/30 text-orange-400 border border-orange-500/30' 
-                          : 'bg-orange-100 text-orange-800'
-                      }`}>
-                        <RotateCcw className="w-4 h-4 mr-1" />
-                        Needs Review
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <StatusBadge 
+                          status={failure.status || 'needs_review'} 
+                          showTimestamp={failure.lastStatusUpdate !== failure.createdAt}
+                          timestamp={failure.lastStatusUpdate}
+                        />
+                        {(() => {
+                          const daysSinceUpdate = Math.floor(
+                            (Date.now() - new Date(failure.lastStatusUpdate || failure.createdAt).getTime()) / (1000 * 60 * 60 * 24)
+                          );
+                          const showAgingAlert = 
+                            (failure.status === 'email_sent' && daysSinceUpdate > 5) ||
+                            (failure.status === 'shipped_back' && daysSinceUpdate > 10) ||
+                            (failure.status === 'label_received' && daysSinceUpdate > 7);
+                          
+                          return showAgingAlert ? (
+                            <div className="group relative">
+                              <AlertTriangle className={`w-4 h-4 ${isNeon ? 'text-yellow-400' : 'text-yellow-500'}`} />
+                              <div className={`absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 ${
+                                isNeon ? 'bg-gray-900 text-white' : 'bg-gray-900 text-white'
+                              } text-xs`}>
+                                {daysSinceUpdate} days since last update
+                              </div>
+                            </div>
+                          ) : null;
+                        })()}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      {failure.userId ? (
-                        <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2">
+                        <QuickActions 
+                          verification={failure}
+                          testEmail={testEmail}
+                          onStatusUpdate={() => {
+                            // The Firebase listener will automatically update the UI
+                            console.log('Status updated for', failure.orderNumber);
+                          }}
+                        />
+                        {failure.id && (
                           <button
-                            onClick={() => handleSendReturnRequest(failure)}
-                            disabled={sendingEmail === failure.id}
-                            className={`p-1.5 rounded-lg transition-colors ${
-                              sendingEmail === failure.id
-                                ? 'cursor-not-allowed opacity-50'
-                                : isNeon
-                                  ? 'hover:bg-blue-900/30 text-blue-400 hover:text-blue-300'
-                                  : 'hover:bg-blue-100 text-blue-600 hover:text-blue-700'
-                            }`}
-                            title="Send return request email"
-                          >
-                            {sendingEmail === failure.id ? (
-                              <RefreshCw className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Mail className="w-4 h-4" />
-                            )}
-                          </button>
-                          <button
-                            onClick={() => handleDeleteFailure(failure.id)}
+                            onClick={() => handleDeleteFailure(failure.id!)}
                             className={`p-1.5 rounded-lg transition-colors ${
                               isNeon
                                 ? 'hover:bg-red-900/30 text-red-400 hover:text-red-300'
@@ -1250,32 +1278,8 @@ const FailedVerifications = () => {
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => handleSendReturnRequest(failure)}
-                            disabled={sendingEmail === failure.id}
-                            className={`p-1.5 rounded-lg transition-colors ${
-                              sendingEmail === failure.id
-                                ? 'cursor-not-allowed opacity-50'
-                                : isNeon
-                                  ? 'hover:bg-blue-900/30 text-blue-400 hover:text-blue-300'
-                                  : 'hover:bg-blue-100 text-blue-600 hover:text-blue-700'
-                            }`}
-                            title="Send return request email"
-                          >
-                            {sendingEmail === failure.id ? (
-                              <RefreshCw className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Mail className="w-4 h-4" />
-                            )}
-                          </button>
-                          <span className={`text-sm ${
-                            isNeon ? 'text-slate-500' : 'text-gray-400'
-                          }`}>Scanned</span>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1317,20 +1321,28 @@ const FailedVerifications = () => {
               }
               
               const formData = new FormData(e.currentTarget);
-              const newFailure = {
+              const timestamp = new Date().toISOString();
+              const newFailure: Partial<FailedVerification> = {
                 userId: user.uid,
-                orderNumber: formData.get('orderNumber'),
-                productName: formData.get('productName'),
-                failureReason: formData.get('failureReason'),
+                orderNumber: formData.get('orderNumber') as string,
+                productName: formData.get('productName') as string,
+                failureReason: formData.get('failureReason') as string,
                 date: new Date().toLocaleDateString('en-US', { 
                   month: 'numeric', 
                   day: 'numeric', 
                   year: '2-digit' 
                 }),
-                status: 'Needs Review',
+                status: 'needs_review',
                 subject: 'Manual Entry',
                 fromEmail: 'manual@entry.com',
-                createdAt: new Date().toISOString()
+                source: 'manual',
+                createdAt: timestamp,
+                statusHistory: [{
+                  status: 'needs_review',
+                  timestamp: timestamp,
+                  note: 'Manually added'
+                }],
+                lastStatusUpdate: timestamp
               };
               
               try {
