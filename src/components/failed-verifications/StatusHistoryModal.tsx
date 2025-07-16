@@ -39,7 +39,12 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
   if (!isOpen) return null;
   
   // Build timeline data
-  const timelineEvents = [];
+  const timelineEvents: Array<{
+    status: VerificationStatus;
+    timestamp: string;
+    label: string;
+    note: string;
+  }> = [];
   
   // Add created event
   timelineEvents.push({
@@ -212,37 +217,38 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
                       
                       {/* Content */}
                       <div className="ml-6 flex-1 pb-6">
-                      <div className={`rounded-lg p-4 ${
-                        isNeon
-                          ? isLatest
-                            ? 'bg-gradient-to-r from-cyan-500/10 to-emerald-500/10 border border-cyan-500/30'
-                            : 'bg-slate-800/50 border border-slate-700/50'
-                          : isLatest
-                            ? 'bg-blue-50 border border-blue-200'
-                            : 'bg-gray-50 border border-gray-200'
-                      }`}>
-                        <div className="flex items-center justify-between mb-2">
-                          <h3 className={`font-semibold ${
-                            isNeon ? 'text-white' : 'text-gray-900'
-                          }`}>
-                            {event.label}
-                          </h3>
-                          <div className="flex items-center gap-1">
-                            <Clock className={`w-4 h-4 ${
-                              isNeon ? 'text-slate-500' : 'text-gray-400'
-                            }`} />
-                            <span className={`text-sm ${
-                              isNeon ? 'text-slate-400' : 'text-gray-600'
-                            }`}>
-                              {new Date(event.timestamp).toLocaleString()}
-                            </span>
-                          </div>
-                        </div>
-                        <p className={`text-sm ${
-                          isNeon ? 'text-slate-400' : 'text-gray-600'
+                        <div className={`rounded-lg p-4 ${
+                          isNeon
+                            ? isLatest
+                              ? 'bg-gradient-to-r from-cyan-500/10 to-emerald-500/10 border border-cyan-500/30'
+                              : 'bg-slate-800/50 border border-slate-700/50'
+                            : isLatest
+                              ? 'bg-blue-50 border border-blue-200'
+                              : 'bg-gray-50 border border-gray-200'
                         }`}>
-                          {event.note}
-                        </p>
+                          <div className="flex items-center justify-between mb-2">
+                            <h3 className={`font-semibold ${
+                              isNeon ? 'text-white' : 'text-gray-900'
+                            }`}>
+                              {event.label}
+                            </h3>
+                            <div className="flex items-center gap-1">
+                              <Clock className={`w-4 h-4 ${
+                                isNeon ? 'text-slate-500' : 'text-gray-400'
+                              }`} />
+                              <span className={`text-sm ${
+                                isNeon ? 'text-slate-400' : 'text-gray-600'
+                              }`}>
+                                {new Date(event.timestamp).toLocaleString()}
+                              </span>
+                            </div>
+                          </div>
+                          <p className={`text-sm ${
+                            isNeon ? 'text-slate-400' : 'text-gray-600'
+                          }`}>
+                            {event.note}
+                          </p>
+                        </div>
                       </div>
                     </div>
                   </div>
