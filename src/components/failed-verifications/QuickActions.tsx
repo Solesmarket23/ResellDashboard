@@ -76,6 +76,7 @@ export function QuickActions({ verification, testEmail, onStatusUpdate }: QuickA
             key={status}
             onClick={() => handleStatusUpdate(status as VerificationStatus)}
             disabled={updating !== null}
+            title={status === 'email_sent' ? 'Click after sending return request email to StockX' : `Update status to ${STATUS_LABELS[status]}`}
             className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-all
                        ${isNeon 
                          ? `bg-slate-800/50 border border-slate-600/50 text-slate-300 
@@ -91,7 +92,7 @@ export function QuickActions({ verification, testEmail, onStatusUpdate }: QuickA
             ) : (
               STATUS_ICONS[status as VerificationStatus]
             )}
-            {STATUS_LABELS[status]}
+            Mark as {STATUS_LABELS[status]}
           </button>
         );
       })}
