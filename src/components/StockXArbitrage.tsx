@@ -994,11 +994,12 @@ const StockXArbitrage: React.FC = () => {
                   <a
                     href={(() => {
                       const originalUrl = opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId);
-                      const convertedUrl = convertStockXLink(originalUrl, {
+                      // Force re-render when Sovrn initializes
+                      const convertedUrl = isInitialized ? convertStockXLink(originalUrl, {
                         productName: opportunity.productName,
                         productId: opportunity.productId,
                         size: opportunity.size
-                      });
+                      }) : originalUrl;
                       console.log('🔗 StockX Link Conversion:', {
                         originalUrl,
                         convertedUrl,
