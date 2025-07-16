@@ -1239,7 +1239,7 @@ const FailedVerifications = () => {
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-2">
                         <StatusBadge 
-                          status={failure.status || 'needs_review'} 
+                          status={(failure.status === 'Needs Review' ? 'needs_review' : failure.status) || 'needs_review'} 
                           showTimestamp={failure.lastStatusUpdate !== failure.createdAt}
                           timestamp={failure.lastStatusUpdate}
                         />
@@ -1268,7 +1268,10 @@ const FailedVerifications = () => {
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-2">
                         <QuickActions 
-                          verification={failure}
+                          verification={{
+                            ...failure,
+                            status: (failure.status === 'Needs Review' ? 'needs_review' : failure.status) || 'needs_review'
+                          }}
                           testEmail={testEmail}
                           onStatusUpdate={() => {
                             // The Firebase listener will automatically update the UI
