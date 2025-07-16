@@ -171,22 +171,24 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
         <div className="px-6 py-6 overflow-y-auto max-h-[400px]">
           <div className="relative">
             {/* Timeline events */}
-            <div className="relative">
-              {/* Vertical line that goes behind circles */}
-              <div className={`absolute left-6 top-6 bottom-6 w-0.5 ${
-                isNeon ? 'bg-slate-700' : 'bg-gray-200'
-              }`} />
-              
-              {/* Events */}
-              <div className="relative space-y-6">
-                {timelineEvents.map((event, index) => {
-                  const Icon = STATUS_ICONS[event.status];
-                  const isLatest = index === timelineEvents.length - 1;
-                  
-                  return (
-                    <div key={index} className="relative flex items-start">
-                      {/* Icon circle with higher z-index to cover the line */}
-                      <div className={`relative z-20 flex items-center justify-center w-12 h-12 rounded-full ${
+            <div className="space-y-0">
+              {timelineEvents.map((event, index) => {
+                const Icon = STATUS_ICONS[event.status];
+                const isLatest = index === timelineEvents.length - 1;
+                const isFirst = index === 0;
+                
+                return (
+                  <div key={index} className="relative">
+                    {/* Line connecting to next event */}
+                    {!isLatest && (
+                      <div className={`absolute left-6 top-[3rem] w-0.5 h-6 ${
+                        isNeon ? 'bg-slate-700' : 'bg-gray-200'
+                      }`} />
+                    )}
+                    
+                    <div className="relative flex items-start">
+                      {/* Icon circle */}
+                      <div className={`relative flex items-center justify-center w-12 h-12 rounded-full ${
                         isNeon
                           ? isLatest 
                             ? 'bg-slate-900 border-2 border-cyan-500/50'
@@ -209,7 +211,7 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
                       </div>
                       
                       {/* Content */}
-                      <div className="ml-6 flex-1">
+                      <div className="ml-6 flex-1 pb-6">
                       <div className={`rounded-lg p-4 ${
                         isNeon
                           ? isLatest
@@ -244,9 +246,8 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
                       </div>
                     </div>
                   </div>
-                  );
-                })}
-              </div>
+                );
+              })}
             </div>
           </div>
         </div>
