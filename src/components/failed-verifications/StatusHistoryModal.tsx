@@ -170,11 +170,6 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
         {/* Timeline */}
         <div className="px-6 py-6 overflow-y-auto max-h-[400px]">
           <div className="relative">
-            {/* Vertical line */}
-            <div className={`absolute left-6 top-0 bottom-0 w-0.5 ${
-              isNeon ? 'bg-slate-700' : 'bg-gray-200'
-            }`} />
-            
             {/* Timeline events */}
             <div className="space-y-6">
               {timelineEvents.map((event, index) => {
@@ -183,11 +178,18 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
                 
                 return (
                   <div key={index} className="relative flex items-start">
+                    {/* Line segment to next event */}
+                    {index < timelineEvents.length - 1 && (
+                      <div className={`absolute left-6 top-12 w-0.5 h-[calc(100%-3rem)] ${
+                        isNeon ? 'bg-slate-700' : 'bg-gray-200'
+                      }`} />
+                    )}
+                    
                     {/* Icon circle */}
                     <div className={`relative z-10 flex items-center justify-center w-12 h-12 rounded-full ${
                       isNeon
                         ? isLatest 
-                          ? 'bg-gradient-to-br from-cyan-500/20 to-emerald-500/20 border-2 border-cyan-500/50'
+                          ? 'bg-slate-900 bg-gradient-to-br from-cyan-500/30 to-emerald-500/30 border-2 border-cyan-500/50'
                           : 'bg-slate-800 border border-slate-700'
                         : isLatest
                           ? 'bg-blue-100 border-2 border-blue-500'
