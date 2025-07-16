@@ -1,3 +1,5 @@
+'use client';
+
 import React from 'react';
 import { X, Clock, CheckCircle, Mail, Package, Truck, AlertTriangle } from 'lucide-react';
 import { FailedVerification, VerificationStatus } from '@/types/failed-verification';
@@ -48,7 +50,7 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
   
   // Add created event
   timelineEvents.push({
-    status: 'needs_review' as VerificationStatus,
+    status: 'needs_review',
     timestamp: verification.createdAt,
     label: 'Verification Failed',
     note: 'Item failed StockX verification'
@@ -57,7 +59,7 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
   // Add status-specific events
   if (verification.emailSentAt) {
     timelineEvents.push({
-      status: 'email_sent' as VerificationStatus,
+      status: 'email_sent',
       timestamp: verification.emailSentAt,
       label: 'Return Request Sent',
       note: 'Email sent to StockX support'
@@ -66,7 +68,7 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
   
   if (verification.labelReceivedAt) {
     timelineEvents.push({
-      status: 'label_received' as VerificationStatus,
+      status: 'label_received',
       timestamp: verification.labelReceivedAt,
       label: 'Shipping Label Received',
       note: 'Return shipping label provided by StockX'
@@ -75,7 +77,7 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
   
   if (verification.shippedBackAt) {
     timelineEvents.push({
-      status: 'shipped_back' as VerificationStatus,
+      status: 'shipped_back',
       timestamp: verification.shippedBackAt,
       label: 'Package Shipped',
       note: verification.returnTrackingNumber ? `Tracking: ${verification.returnTrackingNumber}` : 'Item shipped back to StockX'
@@ -84,7 +86,7 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
   
   if (verification.deliveredAt) {
     timelineEvents.push({
-      status: 'delivered_to_stockx' as VerificationStatus,
+      status: 'delivered_to_stockx',
       timestamp: verification.deliveredAt,
       label: 'Delivered to StockX',
       note: 'Package received by StockX'
@@ -93,7 +95,7 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
   
   if (verification.refundProcessedAt) {
     timelineEvents.push({
-      status: 'refund_processed' as VerificationStatus,
+      status: 'refund_processed',
       timestamp: verification.refundProcessedAt,
       label: 'Refund Processed',
       note: verification.refundAmount ? `Amount: $${verification.refundAmount.toFixed(2)}` : 'Refund completed'
@@ -103,27 +105,24 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
   // Sort by timestamp
   timelineEvents.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
   
+  const modalClasses = isNeon
+    ? 'dark-neon-card border border-cyan-500/30 shadow-2xl shadow-cyan-500/20'
+    : 'bg-white shadow-2xl';
+    
+  const headerBorderClasses = isNeon ? 'border-slate-700/50' : 'border-gray-200';
+  const productInfoClasses = isNeon ? 'border-slate-700/50 bg-slate-900/50' : 'border-gray-100 bg-gray-50';
+  
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className={`rounded-lg max-w-2xl w-full max-h-[80vh] overflow-hidden ${
-        isNeon
-          ? 'dark-neon-card border border-cyan-500/30 shadow-2xl shadow-cyan-500/20'
-          : 'bg-white shadow-2xl'
-      }`}>
+      <div className={`rounded-lg max-w-2xl w-full max-h-[80vh] overflow-hidden ${modalClasses}`}>
         {/* Header */}
-        <div className={`px-6 py-4 border-b ${
-          isNeon ? 'border-slate-700/50' : 'border-gray-200'
-        }`}>
+        <div className={`px-6 py-4 border-b ${headerBorderClasses}`}>
           <div className="flex items-center justify-between">
             <div>
-              <h2 className={`text-xl font-bold ${
-                isNeon ? 'text-white' : 'text-gray-900'
-              }`}>
+              <h2 className={`text-xl font-bold ${isNeon ? 'text-white' : 'text-gray-900'}`}>
                 Status History
               </h2>
-              <p className={`text-sm mt-1 ${
-                isNeon ? 'text-slate-400' : 'text-gray-600'
-              }`}>
+              <p className={`text-sm mt-1 ${isNeon ? 'text-slate-400' : 'text-gray-600'}`}>
                 Order: {verification.orderNumber}
               </p>
             </div>
@@ -141,30 +140,22 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
         </div>
         
         {/* Product Info */}
-        <div className={`px-6 py-4 border-b ${
-          isNeon ? 'border-slate-700/50 bg-slate-900/50' : 'border-gray-100 bg-gray-50'
-        }`}>
+        <div className={`px-6 py-4 border-b ${productInfoClasses}`}>
           <div className="flex items-center justify-between">
             <div>
-              <p className={`font-medium ${
-                isNeon ? 'text-white' : 'text-gray-900'
-              }`}>
+              <p className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>
                 {verification.productName}
               </p>
-              <p className={`text-sm ${
-                isNeon ? 'text-slate-400' : 'text-gray-600'
-              }`}>
+              <p className={`text-sm ${isNeon ? 'text-slate-400' : 'text-gray-600'}`}>
                 Failure Reason: {verification.failureReason}
               </p>
             </div>
             {verification.expectedRefundAmount && (
               <div className="text-right">
-                <p className={`text-sm ${
-                  isNeon ? 'text-slate-400' : 'text-gray-600'
-                }`}>Expected Refund</p>
-                <p className={`font-semibold ${
-                  isNeon ? 'text-cyan-400' : 'text-gray-900'
-                }`}>
+                <p className={`text-sm ${isNeon ? 'text-slate-400' : 'text-gray-600'}`}>
+                  Expected Refund
+                </p>
+                <p className={`font-semibold ${isNeon ? 'text-cyan-400' : 'text-gray-900'}`}>
                   ${verification.expectedRefundAmount.toFixed(2)}
                 </p>
               </div>
@@ -180,19 +171,16 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
               {timelineEvents.map((event, index) => {
                 const Icon = STATUS_ICONS[event.status];
                 const isLatest = index === timelineEvents.length - 1;
-                const isFirst = index === 0;
                 
                 return (
                   <div key={index} className="relative flex items-start mb-8 last:mb-0">
-                    {/* Line connecting to next event - positioned after the circle */}
+                    {/* Line connecting to next event */}
                     {!isLatest && (
                       <div 
-                        className={`absolute left-6 w-0.5 ${
-                          isNeon ? 'bg-slate-700' : 'bg-gray-200'
-                        }`}
+                        className={`absolute left-6 w-0.5 ${isNeon ? 'bg-slate-700' : 'bg-gray-200'}`}
                         style={{
-                          top: '48px', // Start at bottom of circle (48px = 12 * 4)
-                          height: 'calc(100% - 48px + 32px)' // Extend to next item (32px = 8 * 4 margin)
+                          top: '48px',
+                          height: 'calc(100% - 48px + 32px)'
                         }}
                       />
                     )}
@@ -222,38 +210,29 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
                     
                     {/* Content */}
                     <div className="ml-6 flex-1">
-                        <div className={`rounded-lg p-4 ${
-                          isNeon
-                            ? isLatest
-                              ? 'bg-gradient-to-r from-cyan-500/10 to-emerald-500/10 border border-cyan-500/30'
-                              : 'bg-slate-800/50 border border-slate-700/50'
-                            : isLatest
-                              ? 'bg-blue-50 border border-blue-200'
-                              : 'bg-gray-50 border border-gray-200'
-                        }`}>
-                          <div className="flex items-center justify-between mb-2">
-                            <h3 className={`font-semibold ${
-                              isNeon ? 'text-white' : 'text-gray-900'
-                            }`}>
-                              {event.label}
-                            </h3>
-                            <div className="flex items-center gap-1">
-                              <Clock className={`w-4 h-4 ${
-                                isNeon ? 'text-slate-500' : 'text-gray-400'
-                              }`} />
-                              <span className={`text-sm ${
-                                isNeon ? 'text-slate-400' : 'text-gray-600'
-                              }`}>
-                                {new Date(event.timestamp).toLocaleString()}
-                              </span>
-                            </div>
+                      <div className={`rounded-lg p-4 ${
+                        isNeon
+                          ? isLatest
+                            ? 'bg-gradient-to-r from-cyan-500/10 to-emerald-500/10 border border-cyan-500/30'
+                            : 'bg-slate-800/50 border border-slate-700/50'
+                          : isLatest
+                            ? 'bg-blue-50 border border-blue-200'
+                            : 'bg-gray-50 border border-gray-200'
+                      }`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <h3 className={`font-semibold ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+                            {event.label}
+                          </h3>
+                          <div className="flex items-center gap-1">
+                            <Clock className={`w-4 h-4 ${isNeon ? 'text-slate-500' : 'text-gray-400'}`} />
+                            <span className={`text-sm ${isNeon ? 'text-slate-400' : 'text-gray-600'}`}>
+                              {new Date(event.timestamp).toLocaleString()}
+                            </span>
                           </div>
-                          <p className={`text-sm ${
-                            isNeon ? 'text-slate-400' : 'text-gray-600'
-                          }`}>
-                            {event.note}
-                          </p>
                         </div>
+                        <p className={`text-sm ${isNeon ? 'text-slate-400' : 'text-gray-600'}`}>
+                          {event.note}
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -264,16 +243,12 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
         </div>
         
         {/* Footer */}
-        <div className={`px-6 py-4 border-t ${
-          isNeon ? 'border-slate-700/50' : 'border-gray-200'
-        }`}>
+        <div className={`px-6 py-4 border-t ${headerBorderClasses}`}>
           <div className="flex items-center justify-between">
-            <p className={`text-sm ${
-              isNeon ? 'text-slate-400' : 'text-gray-600'
-            }`}>
-              Current Status: <span className={`font-medium ${
-                isNeon ? 'text-cyan-400' : 'text-blue-600'
-              }`}>{STATUS_LABELS[verification.status || 'needs_review']}</span>
+            <p className={`text-sm ${isNeon ? 'text-slate-400' : 'text-gray-600'}`}>
+              Current Status: <span className={`font-medium ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`}>
+                {STATUS_LABELS[verification.status || 'needs_review']}
+              </span>
             </p>
             <button
               onClick={onClose}
