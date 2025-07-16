@@ -16,7 +16,8 @@ export function generateTwitterText(data: ArbitrageShareData): string {
     `${data.productName} (Size ${data.size})\n` +
     `Buy: $${data.purchasePrice.toFixed(2)}\n` +
     `Sell: $${data.salePrice.toFixed(2)}\n` +
-    `Profit: $${data.profit.toFixed(2)} (${data.profitMargin}%)\n\n`;
+    `Profit: $${data.profit.toFixed(2)} (${data.profitMargin}%)\n\n` +
+    `*Estimated profit based on buyer fees & selling via no-fee resale\n\n`;
   
   // Add affiliate link if available
   if (data.affiliateUrl) {
@@ -51,112 +52,39 @@ export async function generateShareImage(data: ArbitrageShareData): Promise<stri
     canvas.width = 1200;
     canvas.height = 675;
     
-    // Background gradient
-    const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-    gradient.addColorStop(0, '#1a1a2e');
-    gradient.addColorStop(1, '#0f0f23');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    // Add grid pattern
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
-    ctx.lineWidth = 1;
-    for (let i = 0; i < canvas.width; i += 50) {
-      ctx.beginPath();
-      ctx.moveTo(i, 0);
-      ctx.lineTo(i, canvas.height);
-      ctx.stroke();
+    // Load product image if available
+    if (data.imageUrl) {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        drawImageWithProduct(ctx, canvas, data, img);
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const url = URL.createObjectURL(blob);
+            resolve(url);
+          } else {
+            resolve('');
+          }
+        }, 'image/png');
+      };
+      img.onerror = () => {
+        // If image fails to load, draw without it
+        drawImageWithProduct(ctx, canvas, data, null);
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const url = URL.createObjectURL(blob);
+            resolve(url);
+          } else {
+            resolve('');
+          }
+        }, 'image/png');
+      };
+      img.src = data.imageUrl;
+      return;
     }
-    for (let i = 0; i < canvas.height; i += 50) {
-      ctx.beginPath();
-      ctx.moveTo(0, i);
-      ctx.lineTo(canvas.width, i);
-      ctx.stroke();
-    }
     
-    // Title
-    ctx.font = 'bold 48px Arial';
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'center';
-    ctx.fillText('StockX Arbitrage Opportunity', canvas.width / 2, 100);
-    
-    // Product name
-    ctx.font = '36px Arial';
-    ctx.fillStyle = '#00d4ff';
-    const productText = `${data.productName} (Size ${data.size})`;
-    ctx.fillText(productText, canvas.width / 2, 180);
-    
-    // Price boxes
-    const boxY = 250;
-    const boxHeight = 120;
-    const boxWidth = 300;
-    const boxGap = 50;
-    const startX = (canvas.width - (boxWidth * 3 + boxGap * 2)) / 2;
-    
-    // Buy box
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-    ctx.fillRect(startX, boxY, boxWidth, boxHeight);
-    ctx.strokeStyle = '#00d4ff';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(startX, boxY, boxWidth, boxHeight);
-    
-    ctx.font = '24px Arial';
-    ctx.fillStyle = '#888888';
-    ctx.textAlign = 'center';
-    ctx.fillText('BUY PRICE', startX + boxWidth / 2, boxY + 35);
-    
-    ctx.font = 'bold 48px Arial';
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(`$${data.purchasePrice.toFixed(2)}`, startX + boxWidth / 2, boxY + 85);
-    
-    // Sell box
-    const sellX = startX + boxWidth + boxGap;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-    ctx.fillRect(sellX, boxY, boxWidth, boxHeight);
-    ctx.strokeStyle = '#00ff88';
-    ctx.strokeRect(sellX, boxY, boxWidth, boxHeight);
-    
-    ctx.font = '24px Arial';
-    ctx.fillStyle = '#888888';
-    ctx.fillText('SELL PRICE', sellX + boxWidth / 2, boxY + 35);
-    
-    ctx.font = 'bold 48px Arial';
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(`$${data.salePrice.toFixed(2)}`, sellX + boxWidth / 2, boxY + 85);
-    
-    // Profit box
-    const profitX = sellX + boxWidth + boxGap;
-    ctx.fillStyle = 'rgba(0, 255, 136, 0.1)';
-    ctx.fillRect(profitX, boxY, boxWidth, boxHeight);
-    ctx.strokeStyle = '#00ff88';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(profitX, boxY, boxWidth, boxHeight);
-    
-    ctx.font = '24px Arial';
-    ctx.fillStyle = '#00ff88';
-    ctx.fillText('PROFIT', profitX + boxWidth / 2, boxY + 35);
-    
-    ctx.font = 'bold 48px Arial';
-    ctx.fillStyle = '#00ff88';
-    ctx.fillText(`$${data.profit.toFixed(2)}`, profitX + boxWidth / 2, boxY + 85);
-    
-    // Profit percentage
-    ctx.font = 'bold 64px Arial';
-    ctx.fillStyle = '#00ff88';
-    ctx.textAlign = 'center';
-    ctx.fillText(`+${data.profitMargin}%`, canvas.width / 2, 480);
-    
-    // Footer
-    ctx.font = '24px Arial';
-    ctx.fillStyle = '#666666';
-    ctx.fillText('Found with ResellDashboard', canvas.width / 2, 600);
-    
-    // Branding
-    ctx.font = 'bold 28px Arial';
-    ctx.fillStyle = '#00d4ff';
-    ctx.fillText('stockx.com/arbitrage', canvas.width / 2, 640);
-    
-    // Convert to blob URL
+    // No image available, draw without it
+    drawImageWithProduct(ctx, canvas, data, null);
     canvas.toBlob((blob) => {
       if (blob) {
         const url = URL.createObjectURL(blob);
@@ -166,4 +94,145 @@ export async function generateShareImage(data: ArbitrageShareData): Promise<stri
       }
     }, 'image/png');
   });
+}
+
+function drawImageWithProduct(
+  ctx: CanvasRenderingContext2D, 
+  canvas: HTMLCanvasElement, 
+  data: ArbitrageShareData, 
+  productImage: HTMLImageElement | null
+) {
+  // Background gradient
+  const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+  gradient.addColorStop(0, '#1a1a2e');
+  gradient.addColorStop(1, '#0f0f23');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  // Add grid pattern
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < canvas.width; i += 50) {
+    ctx.beginPath();
+    ctx.moveTo(i, 0);
+    ctx.lineTo(i, canvas.height);
+    ctx.stroke();
+  }
+  for (let i = 0; i < canvas.height; i += 50) {
+    ctx.beginPath();
+    ctx.moveTo(0, i);
+    ctx.lineTo(canvas.width, i);
+    ctx.stroke();
+  }
+  
+  // Draw product image if available
+  if (productImage) {
+    // Create a container for the image with padding
+    const imgSize = 200;
+    const imgX = 50;
+    const imgY = (canvas.height - imgSize) / 2;
+    
+    // White background for image
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.fillRect(imgX - 10, imgY - 10, imgSize + 20, imgSize + 20);
+    
+    // Draw image maintaining aspect ratio
+    const scale = Math.min(imgSize / productImage.width, imgSize / productImage.height);
+    const w = productImage.width * scale;
+    const h = productImage.height * scale;
+    const offsetX = (imgSize - w) / 2;
+    const offsetY = (imgSize - h) / 2;
+    
+    ctx.drawImage(productImage, imgX + offsetX, imgY + offsetY, w, h);
+    
+    // Add border
+    ctx.strokeStyle = '#00d4ff';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(imgX - 10, imgY - 10, imgSize + 20, imgSize + 20);
+  }
+  
+  // Adjust text positioning based on whether we have an image
+  const textStartX = productImage ? 350 : 100;
+  const contentWidth = productImage ? canvas.width - 400 : canvas.width - 200;
+  
+  // Title
+  ctx.font = 'bold 42px Arial';
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'left';
+  ctx.fillText('StockX Arbitrage Alert!', textStartX, 80);
+  
+  // Product name
+  ctx.font = '28px Arial';
+  ctx.fillStyle = '#00d4ff';
+  const productText = `${data.productName} (Size ${data.size})`;
+  // Wrap text if too long
+  const maxWidth = contentWidth;
+  const words = productText.split(' ');
+  let line = '';
+  let y = 140;
+  
+  for (let n = 0; n < words.length; n++) {
+    const testLine = line + words[n] + ' ';
+    const metrics = ctx.measureText(testLine);
+    const testWidth = metrics.width;
+    if (testWidth > maxWidth && n > 0) {
+      ctx.fillText(line, textStartX, y);
+      line = words[n] + ' ';
+      y += 35;
+    } else {
+      line = testLine;
+    }
+  }
+  ctx.fillText(line, textStartX, y);
+  
+  // Price information in a cleaner layout
+  const priceY = productImage ? 280 : 250;
+  const boxHeight = 80;
+  const boxGap = 20;
+  
+  // Buy price
+  ctx.font = '20px Arial';
+  ctx.fillStyle = '#888888';
+  ctx.fillText('BUY PRICE', textStartX, priceY);
+  ctx.font = 'bold 36px Arial';
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(`$${data.purchasePrice.toFixed(2)}`, textStartX, priceY + 35);
+  
+  // Sell price
+  ctx.fillStyle = '#888888';
+  ctx.font = '20px Arial';
+  ctx.fillText('SELL PRICE', textStartX + 200, priceY);
+  ctx.font = 'bold 36px Arial';
+  ctx.fillStyle = '#00ff88';
+  ctx.fillText(`$${data.salePrice.toFixed(2)}`, textStartX + 200, priceY + 35);
+  
+  // Profit
+  ctx.fillStyle = '#888888';
+  ctx.font = '20px Arial';
+  ctx.fillText('PROFIT', textStartX + 400, priceY);
+  ctx.font = 'bold 36px Arial';
+  ctx.fillStyle = '#00ff88';
+  ctx.fillText(`$${data.profit.toFixed(2)}`, textStartX + 400, priceY + 35);
+  
+  // Large profit percentage
+  ctx.font = 'bold 72px Arial';
+  ctx.fillStyle = '#00ff88';
+  ctx.textAlign = 'center';
+  ctx.fillText(`+${data.profitMargin}%`, canvas.width / 2, 480);
+  
+  // Disclaimer
+  ctx.font = '18px Arial';
+  ctx.fillStyle = '#888888';
+  ctx.textAlign = 'center';
+  ctx.fillText('*Estimated profit based on buyer fees & selling via no-fee resale', canvas.width / 2, 540);
+  
+  // Footer
+  ctx.font = '22px Arial';
+  ctx.fillStyle = '#666666';
+  ctx.fillText('Found with ResellDashboard', canvas.width / 2, 600);
+  
+  // Branding
+  ctx.font = 'bold 26px Arial';
+  ctx.fillStyle = '#00d4ff';
+  ctx.fillText('stockx.com/arbitrage', canvas.width / 2, 640);
 }
