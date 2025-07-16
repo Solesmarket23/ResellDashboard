@@ -55,22 +55,29 @@ const FailedVerifications = () => {
     let savedTestEmail = localStorage.getItem('returnRequestTestEmail');
     console.log('Loading test email from localStorage:', savedTestEmail);
     
-    // If not found, check if there's an email stored directly as a key (legacy)
+    // If not found, check common locations where it might be stored
     if (!savedTestEmail) {
-      const allKeys = Object.keys(localStorage);
-      const emailKey = allKeys.find(key => key.includes('@') && key.includes('.'));
-      if (emailKey) {
-        console.log('Found email in legacy format:', emailKey);
-        savedTestEmail = emailKey;
-        // Migrate to new key
-        localStorage.setItem('returnRequestTestEmail', emailKey);
+      // Check if it's stored under a different key
+      const possibleKeys = ['testEmail', 'test-email', 'returnEmail'];
+      for (const key of possibleKeys) {
+        const value = localStorage.getItem(key);
+        if (value && value.includes('@')) {
+          console.log(`Found test email under key '${key}':`, value);
+          savedTestEmail = value;
+          // Migrate to standard key
+          localStorage.setItem('returnRequestTestEmail', value);
+          break;
+        }
       }
     }
     
     if (savedTestEmail) {
       setTestEmail(savedTestEmail);
+      console.log('Test email set to:', savedTestEmail);
     } else {
-      setTestEmail(''); // Set empty string if no saved email
+      // If still not found, prompt user to set it
+      console.log('No test email found in localStorage');
+      setTestEmail('');
     }
     setEmailLoaded(true);
   }, []);
@@ -1513,8 +1520,11 @@ const FailedVerifications = () => {
                 <input
                   type="email"
                   value={testEmail}
-                  onChange={(e) => setTestEmail(e.target.value)}
-                  placeholder="Enter your email for testing"
+                  onChange={(e) => {
+                    console.log('Setting test email to:', e.target.value);
+                    setTestEmail(e.target.value);
+                  }}
+                  placeholder="Enter your email for testing (e.g. yankeesfan1616@gmail.com)"
                   className={`w-full px-3 py-2 rounded-lg ${
                     isNeon
                       ? 'input-premium text-white placeholder-slate-500'
