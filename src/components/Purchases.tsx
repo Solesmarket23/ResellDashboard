@@ -476,11 +476,11 @@ const Purchases = () => {
       }
       
       // Combine all purchases for display and deduplicate
-      const allPurchases = [...gmailPurchases, ...manualPurchases];
+      const allUserPurchases = [...gmailPurchases, ...manualPurchases];
       
       // Deduplicate by order number
       const uniquePurchaseMap = new Map();
-      allPurchases.forEach(purchase => {
+      allUserPurchases.forEach(purchase => {
         const existing = uniquePurchaseMap.get(purchase.orderNumber);
         if (!existing || 
             (purchase.status === 'Delivered' && existing.status !== 'Delivered') ||
@@ -490,7 +490,7 @@ const Purchases = () => {
       });
       
       const combinedPurchases = Array.from(uniquePurchaseMap.values());
-      console.log(`🔄 Display deduplication: ${allPurchases.length} → ${combinedPurchases.length} unique`);
+      console.log(`🔄 Display deduplication: ${allUserPurchases.length} → ${combinedPurchases.length} unique`);
       
       calculateTotals(combinedPurchases);
       
