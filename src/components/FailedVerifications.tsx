@@ -29,6 +29,8 @@ const FailedVerifications = () => {
   const [testEmail, setTestEmail] = useState('');
   const [showEmailSettings, setShowEmailSettings] = useState(false);
   const [removingDuplicates, setRemovingDuplicates] = useState(false);
+  const [scanStatus, setScanStatus] = useState<'scanning' | 'saving' | 'complete' | null>(null);
+  const [scanProgress, setScanProgress] = useState({ found: 0, saved: 0, message: '' });
   const { currentTheme } = useTheme();
   const { user, loading: authLoading } = useAuth();
   
@@ -228,6 +230,8 @@ const FailedVerifications = () => {
     setShowScanResult(false);
     setScanError(null);
     setScanResults([]);
+    setScanStatus('scanning');
+    setScanProgress({ found: 0, saved: 0, message: 'Scanning your Gmail for verification failures...' });
     
     try {
       console.log('🔍 Calling API...');
@@ -254,8 +258,13 @@ const FailedVerifications = () => {
       setShowScanResult(true);
       console.log('🔍 Scan complete, found', failures.length, 'results');
       
+      // Update progress
+      setScanProgress({ found: failures.length, saved: 0, message: `Found ${failures.length} verification failure${failures.length !== 1 ? 's' : ''}` });
+      
       // Save scanned results to Firebase
       if (failures.length > 0 && user) {
+        setScanStatus('saving');
+        setScanProgress({ found: failures.length, saved: 0, message: 'Saving to your account...' });
         console.log('💾 Saving scanned results to Firebase...');
         let savedCount = 0;
         
@@ -283,6 +292,7 @@ const FailedVerifications = () => {
               
               await addDocument('user_failed_verifications', failureToSave);
               savedCount++;
+              setScanProgress({ found: failures.length, saved: savedCount, message: `Saving... (${savedCount}/${failures.length})` });
             }
           } catch (error) {
             console.error('❌ Error saving scanned failure:', error);
@@ -290,15 +300,37 @@ const FailedVerifications = () => {
         }
         
         console.log(`✅ Saved ${savedCount} new failures to Firebase`);
+        setScanStatus('complete');
         if (savedCount > 0) {
-          alert(`Successfully saved ${savedCount} new verification failures to your account!`);
+          setScanProgress({ 
+            found: failures.length, 
+            saved: savedCount, 
+            message: `Successfully saved ${savedCount} new verification failure${savedCount !== 1 ? 's' : ''}!` 
+          });
         } else {
-          alert('All scanned failures were already saved.');
+          setScanProgress({ 
+            found: failures.length, 
+            saved: 0, 
+            message: 'All failures were already saved.' 
+          });
         }
+      } else if (failures.length === 0) {
+        setScanStatus('complete');
+        setScanProgress({ found: 0, saved: 0, message: 'No new verification failures found.' });
       }
+      
+      // Auto-close modal after 3 seconds if complete
+      setTimeout(() => {
+        setScanStatus(null);
+      }, 3000);
     } catch (error) {
       console.error('🔍 Error scanning verification failures:', error);
       setScanError(error instanceof Error ? error.message : 'Failed to scan');
+      setScanStatus('complete');
+      setScanProgress({ found: 0, saved: 0, message: 'Scan failed. Please try again.' });
+      setTimeout(() => {
+        setScanStatus(null);
+      }, 3000);
     } finally {
       setIsScanning(false);
     }
@@ -1472,6 +1504,100 @@ const FailedVerifications = () => {
                   Save
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Scan Status Modal */}
+      {scanStatus && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className={`rounded-lg p-8 max-w-md w-full mx-4 ${
+            isNeon
+              ? 'dark-neon-card border border-cyan-500/30 shadow-2xl shadow-cyan-500/20'
+              : 'bg-white shadow-2xl'
+          }`}>
+            {/* Animated Icon */}
+            <div className="flex justify-center mb-6">
+              <div className={`relative w-20 h-20 rounded-full flex items-center justify-center ${
+                isNeon
+                  ? 'bg-gradient-to-br from-cyan-500/20 to-emerald-500/20 border border-cyan-500/30'
+                  : 'bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-500/30'
+              }`}>
+                {scanStatus === 'scanning' && (
+                  <Search className={`w-10 h-10 ${
+                    isNeon ? 'text-cyan-400' : 'text-blue-600'
+                  } animate-pulse`} />
+                )}
+                {scanStatus === 'saving' && (
+                  <RefreshCw className={`w-10 h-10 ${
+                    isNeon ? 'text-emerald-400' : 'text-green-600'
+                  } animate-spin`} />
+                )}
+                {scanStatus === 'complete' && (
+                  <CheckCircle className={`w-10 h-10 ${
+                    scanProgress.saved > 0 || scanProgress.found === 0
+                      ? isNeon ? 'text-emerald-400' : 'text-green-600'
+                      : isNeon ? 'text-orange-400' : 'text-orange-600'
+                  }`} />
+                )}
+                
+                {/* Animated ring */}
+                <div className={`absolute inset-0 rounded-full ${
+                  isNeon
+                    ? 'bg-gradient-to-r from-cyan-500 to-emerald-500'
+                    : 'bg-gradient-to-r from-blue-500 to-purple-500'
+                } opacity-20 animate-ping`}></div>
+              </div>
+            </div>
+
+            {/* Status Text */}
+            <div className="text-center">
+              <h3 className={`text-xl font-semibold mb-2 ${
+                isNeon ? 'text-white' : 'text-gray-900'
+              }`}>
+                {scanStatus === 'scanning' && 'Scanning Gmail...'}
+                {scanStatus === 'saving' && 'Saving Results...'}
+                {scanStatus === 'complete' && 'Scan Complete!'}
+              </h3>
+              
+              <p className={`text-base mb-4 ${
+                isNeon ? 'text-cyan-300' : 'text-gray-700'
+              }`}>
+                {scanProgress.message}
+              </p>
+
+              {/* Progress indicators */}
+              {scanProgress.found > 0 && scanStatus !== 'complete' && (
+                <div className="space-y-2">
+                  <div className={`text-sm ${
+                    isNeon ? 'text-slate-400' : 'text-gray-600'
+                  }`}>
+                    Found: {scanProgress.found} failures
+                  </div>
+                  {scanStatus === 'saving' && (
+                    <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
+                      <div 
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          isNeon
+                            ? 'bg-gradient-to-r from-cyan-500 to-emerald-500'
+                            : 'bg-gradient-to-r from-blue-500 to-purple-500'
+                        }`}
+                        style={{ width: `${(scanProgress.saved / scanProgress.found) * 100}%` }}
+                      ></div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Auto-close notice */}
+              {scanStatus === 'complete' && (
+                <p className={`text-sm mt-4 ${
+                  isNeon ? 'text-slate-500' : 'text-gray-500'
+                }`}>
+                  Closing automatically...
+                </p>
+              )}
             </div>
           </div>
         </div>
