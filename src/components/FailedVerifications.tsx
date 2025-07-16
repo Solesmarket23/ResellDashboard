@@ -88,12 +88,19 @@ const FailedVerifications = () => {
 
     const unsubscribe = onSnapshot(q, 
       (snapshot) => {
-        const failures = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          // Ensure status field exists for legacy data
-          status: doc.data().status || 'needs_review'
-        })) as FailedVerification[];
+        const failures = snapshot.docs.map(doc => {
+          const data = doc.data();
+          // Convert old status format to new format
+          let status = data.status || 'needs_review';
+          if (status === 'Needs Review') {
+            status = 'needs_review';
+          }
+          return {
+            id: doc.id,
+            ...data,
+            status: status
+          };
+        }) as FailedVerification[];
         console.log('📊 Loaded failed verifications from Firebase:', failures.length);
         setManualFailures(failures);
         setLoading(false);

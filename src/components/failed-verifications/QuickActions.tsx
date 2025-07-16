@@ -30,6 +30,11 @@ export function QuickActions({ verification, testEmail, onStatusUpdate }: QuickA
   const currentStatus = verification?.status || 'needs_review';
   const nextStatuses = NEXT_STATUS_MAP[currentStatus] || [];
   
+  // Debug log
+  if (!nextStatuses.length) {
+    console.log('No next statuses for:', currentStatus, 'Available statuses:', Object.keys(NEXT_STATUS_MAP));
+  }
+  
   const handleStatusUpdate = async (newStatus: VerificationStatus) => {
     if (!verification.id) return;
     
