@@ -13,7 +13,8 @@
       "Bash(open http://localhost:3000/debug-01-3KF7CE560J)",
       "Bash(npm run dev:*)",
       "Bash(mkdir:*)",
-      "Bash(npx eslint:*)"
+      "Bash(npx eslint:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": []
   }

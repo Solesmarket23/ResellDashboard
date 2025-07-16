@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, setPersistence, browserLocalPersistence } from "firebase/auth";
 import { getFirestore, enableNetwork, disableNetwork, connectFirestoreEmulator } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
@@ -27,6 +27,11 @@ if (hasValidConfig && isClientSide) {
     auth = getAuth(app);
     db = getFirestore(app);
     storage = getStorage(app);
+    
+    // Set auth persistence to LOCAL to maintain login across page refreshes
+    setPersistence(auth, browserLocalPersistence).catch(err => {
+      console.warn("⚠️ Failed to set auth persistence:", err);
+    });
     
     // Enable network on initialization for proper sync
     enableNetwork(db).catch(err => {

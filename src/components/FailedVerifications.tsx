@@ -6,7 +6,8 @@ import { useTheme } from '../lib/contexts/ThemeContext';
 import { generateGmailSearchUrl } from '../lib/utils/orderNumberUtils';
 import { useAuth } from '../lib/contexts/AuthContext';
 import { db } from '../lib/firebase/firebase';
-import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, getDoc, addDoc, deleteDoc } from 'firebase/firestore';
+import { addDocument, deleteDocument } from '../lib/firebase/firebaseUtils';
 import { getCommunityAggregates, calculateUserPercentile, contributeFailureData } from '../lib/firebase/communityInsights';
 
 const FailedVerifications = () => {
@@ -28,7 +29,7 @@ const FailedVerifications = () => {
   const [testEmail, setTestEmail] = useState('');
   const [showEmailSettings, setShowEmailSettings] = useState(false);
   const { currentTheme } = useTheme();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   
   // Dynamic theme detection for consistent neon styling
   const isNeon = currentTheme.name === 'Neon';
@@ -67,21 +68,30 @@ const FailedVerifications = () => {
   // Load failed verifications from Firebase
   useEffect(() => {
     if (!user) {
+      console.log('🔍 No user found, skipping Firebase load');
       setLoading(false);
       return;
     }
 
+    console.log('🔍 Loading failed verifications for user:', user.uid);
     const failedVerificationsRef = collection(db, 'user_failed_verifications');
     const q = query(failedVerificationsRef, where('userId', '==', user.uid));
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const failures = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setManualFailures(failures);
-      setLoading(false);
-    });
+    const unsubscribe = onSnapshot(q, 
+      (snapshot) => {
+        const failures = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        console.log('📊 Loaded failed verifications from Firebase:', failures.length);
+        setManualFailures(failures);
+        setLoading(false);
+      },
+      (error) => {
+        console.error('❌ Error loading failed verifications:', error);
+        setLoading(false);
+      }
+    );
 
     return () => unsubscribe();
   }, [user]);
@@ -119,9 +129,11 @@ const FailedVerifications = () => {
 
   const handleDeleteFailure = async (failureId: string) => {
     try {
-      await deleteDoc(doc(db, 'user_failed_verifications', failureId));
+      console.log('🗑️ Attempting to delete failed verification:', failureId);
+      await deleteDocument('user_failed_verifications', failureId);
+      console.log('✅ Successfully deleted failed verification');
     } catch (error) {
-      console.error('Error deleting failed verification:', error);
+      console.error('❌ Error deleting failed verification:', error);
       alert('Failed to delete verification failure.');
     }
   };
@@ -360,6 +372,69 @@ const FailedVerifications = () => {
 
     contributeData();
   }, [user, communityInsightsEnabled, scanResults, manualFailures]);
+
+  // Show loading state while checking auth
+  if (authLoading) {
+    return (
+      <div className={`flex-1 p-8 ${
+        isNeon 
+          ? 'bg-slate-950' 
+          : currentTheme.colors.background
+      }`}>
+        <div className="flex items-center justify-center h-64">
+          <div className={`text-lg ${isNeon ? 'text-slate-400' : 'text-gray-600'}`}>
+            Loading...
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show auth prompt if no user
+  if (!user && !authLoading) {
+    return (
+      <div className={`flex-1 p-8 ${
+        isNeon 
+          ? 'bg-slate-950' 
+          : currentTheme.colors.background
+      }`}>
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <AlertTriangle className={`w-12 h-12 mx-auto mb-4 ${
+              isNeon ? 'text-orange-400' : 'text-orange-500'
+            }`} />
+            <h2 className={`text-xl font-semibold mb-2 ${
+              isNeon ? 'text-white' : 'text-gray-900'
+            }`}>
+              Sign In Required
+            </h2>
+            <p className={`mb-4 ${
+              isNeon ? 'text-slate-400' : 'text-gray-600'
+            }`}>
+              Please sign in to save and view your failed verifications
+            </p>
+            <div className="space-y-2">
+              <a
+                href="/login"
+                className={`inline-block px-6 py-2 rounded-lg text-white transition-all ${
+                  isNeon
+                    ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+              >
+                Sign In
+              </a>
+              <p className={`text-sm ${
+                isNeon ? 'text-slate-500' : 'text-gray-500'
+              }`}>
+                or add <code className="bg-gray-800 px-2 py-1 rounded">?testMode=true</code> to the URL for demo mode
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`flex-1 p-8 ${
@@ -1120,11 +1195,15 @@ const FailedVerifications = () => {
               };
               
               try {
-                await addDoc(collection(db, 'user_failed_verifications'), newFailure);
+                console.log('💾 Saving new failed verification:', newFailure);
+                const docRef = await addDocument('user_failed_verifications', newFailure);
+                console.log('✅ Successfully saved failed verification with ID:', docRef.id);
                 setShowAddModal(false);
                 e.currentTarget.reset();
+                // Show success feedback
+                alert('Failed verification saved successfully!');
               } catch (error) {
-                console.error('Error adding failed verification:', error);
+                console.error('❌ Error adding failed verification:', error);
                 alert('Failed to save verification failure. Please try again.');
               }
             }}>
