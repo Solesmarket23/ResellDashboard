@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Search, Plus, AlertTriangle, Calendar, ChevronDown, RotateCcw, CheckCircle, DollarSign, X, Trash2, Users, TrendingUp, TrendingDown, RefreshCw } from 'lucide-react';
+import { Search, Plus, AlertTriangle, Calendar, ChevronDown, RotateCcw, CheckCircle, DollarSign, X, Trash2, Users, TrendingUp, TrendingDown, RefreshCw, Mail, Settings } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { generateGmailSearchUrl } from '../lib/utils/orderNumberUtils';
 import { useAuth } from '../lib/contexts/AuthContext';
@@ -24,6 +24,9 @@ const FailedVerifications = () => {
   const [communityInsightsEnabled, setCommunityInsightsEnabled] = useState(false);
   const [communityData, setCommunityData] = useState<any>(null);
   const [isRescanning, setIsRescanning] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState<string | null>(null);
+  const [testEmail, setTestEmail] = useState('');
+  const [showEmailSettings, setShowEmailSettings] = useState(false);
   const { currentTheme } = useTheme();
   const { user } = useAuth();
   
@@ -35,6 +38,14 @@ const FailedVerifications = () => {
   
   const timeDropdownRef = useRef<HTMLDivElement>(null);
   const statusDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Load test email from localStorage
+  useEffect(() => {
+    const savedTestEmail = localStorage.getItem('returnRequestTestEmail');
+    if (savedTestEmail) {
+      setTestEmail(savedTestEmail);
+    }
+  }, []);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -241,6 +252,56 @@ const FailedVerifications = () => {
   // Calculate monthly breakdown dynamically
   const monthlyData = groupFailuresByMonth(allFailures);
   
+  // Handle sending return request email
+  const handleSendReturnRequest = async (failure: any) => {
+    if (!testEmail) {
+      alert('Please set a test email address first (click the settings icon)');
+      setShowEmailSettings(true);
+      return;
+    }
+
+    setSendingEmail(failure.id);
+    
+    try {
+      const response = await fetch('/api/gmail/send-return-request', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          orderNumber: failure.orderNumber,
+          productName: failure.productName || 'StockX Item',
+          recipientEmail: testEmail
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        alert(`Return request email sent to ${testEmail}`);
+      } else {
+        if (response.status === 403) {
+          alert('Gmail send permission not granted. Please reconnect your Gmail account.');
+          // Optionally redirect to Gmail auth
+          window.location.href = '/api/gmail/auth';
+        } else {
+          alert(`Failed to send email: ${data.error}`);
+        }
+      }
+    } catch (error) {
+      console.error('Error sending email:', error);
+      alert('Failed to send email. Please try again.');
+    } finally {
+      setSendingEmail(null);
+    }
+  };
+
+  // Save test email to localStorage
+  const saveTestEmail = (email: string) => {
+    setTestEmail(email);
+    localStorage.setItem('returnRequestTestEmail', email);
+  };
+
   // If no data, show placeholder
   const displayMonthlyData = monthlyData.length > 0 ? monthlyData : [
     { month: 'No data', rate: '--', failed: 0, total: '--', status: 'No failures recorded' }
@@ -317,6 +378,21 @@ const FailedVerifications = () => {
           }`}>Track items that failed marketplace verification</p>
         </div>
         <div className="flex items-center space-x-3">
+          <button 
+            onClick={() => setShowEmailSettings(!showEmailSettings)}
+            className={`p-2 rounded-lg transition-all duration-300 ${
+              isNeon
+                ? showEmailSettings
+                  ? 'bg-cyan-500/20 text-cyan-400'
+                  : 'hover:bg-slate-800 text-slate-400 hover:text-cyan-400'
+                : showEmailSettings
+                  ? 'bg-blue-100 text-blue-600'
+                  : 'hover:bg-gray-100 text-gray-600 hover:text-blue-600'
+            }`}
+            title="Email settings"
+          >
+            <Settings className="w-5 h-5" />
+          </button>
           <button 
             onClick={handleScanClick}
             disabled={isScanning}
@@ -930,21 +1006,61 @@ const FailedVerifications = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {failure.userId ? (
-                        <button
-                          onClick={() => handleDeleteFailure(failure.id)}
-                          className={`p-1.5 rounded-lg transition-colors ${
-                            isNeon
-                              ? 'hover:bg-red-900/30 text-red-400 hover:text-red-300'
-                              : 'hover:bg-red-100 text-red-600 hover:text-red-700'
-                          }`}
-                          title="Delete failed verification"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleSendReturnRequest(failure)}
+                            disabled={sendingEmail === failure.id}
+                            className={`p-1.5 rounded-lg transition-colors ${
+                              sendingEmail === failure.id
+                                ? 'cursor-not-allowed opacity-50'
+                                : isNeon
+                                  ? 'hover:bg-blue-900/30 text-blue-400 hover:text-blue-300'
+                                  : 'hover:bg-blue-100 text-blue-600 hover:text-blue-700'
+                            }`}
+                            title="Send return request email"
+                          >
+                            {sendingEmail === failure.id ? (
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Mail className="w-4 h-4" />
+                            )}
+                          </button>
+                          <button
+                            onClick={() => handleDeleteFailure(failure.id)}
+                            className={`p-1.5 rounded-lg transition-colors ${
+                              isNeon
+                                ? 'hover:bg-red-900/30 text-red-400 hover:text-red-300'
+                                : 'hover:bg-red-100 text-red-600 hover:text-red-700'
+                            }`}
+                            title="Delete failed verification"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       ) : (
-                        <span className={`text-sm ${
-                          isNeon ? 'text-slate-500' : 'text-gray-400'
-                        }`}>Scanned</span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleSendReturnRequest(failure)}
+                            disabled={sendingEmail === failure.id}
+                            className={`p-1.5 rounded-lg transition-colors ${
+                              sendingEmail === failure.id
+                                ? 'cursor-not-allowed opacity-50'
+                                : isNeon
+                                  ? 'hover:bg-blue-900/30 text-blue-400 hover:text-blue-300'
+                                  : 'hover:bg-blue-100 text-blue-600 hover:text-blue-700'
+                            }`}
+                            title="Send return request email"
+                          >
+                            {sendingEmail === failure.id ? (
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Mail className="w-4 h-4" />
+                            )}
+                          </button>
+                          <span className={`text-sm ${
+                            isNeon ? 'text-slate-500' : 'text-gray-400'
+                          }`}>Scanned</span>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -1097,6 +1213,85 @@ const FailedVerifications = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Email Settings Modal */}
+      {showEmailSettings && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className={`rounded-lg p-6 max-w-md w-full mx-4 ${
+            isNeon
+              ? 'dark-neon-card border border-slate-700/50'
+              : 'bg-white shadow-xl'
+          }`}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className={`text-lg font-semibold ${
+                isNeon ? 'text-white' : 'text-gray-900'
+              }`}>Email Settings</h3>
+              <button
+                onClick={() => setShowEmailSettings(false)}
+                className={`p-1 rounded-lg transition-colors ${
+                  isNeon
+                    ? 'hover:bg-slate-800 text-slate-400'
+                    : 'hover:bg-gray-100 text-gray-600'
+                }`}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className={`block text-sm font-medium mb-1 ${
+                  isNeon ? 'text-slate-300' : 'text-gray-700'
+                }`}>
+                  Test Email Address
+                </label>
+                <input
+                  type="email"
+                  value={testEmail}
+                  onChange={(e) => setTestEmail(e.target.value)}
+                  placeholder="Enter your email for testing"
+                  className={`w-full px-3 py-2 rounded-lg ${
+                    isNeon
+                      ? 'input-premium text-white placeholder-slate-500'
+                      : 'border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
+                  }`}
+                />
+                <p className={`mt-1 text-sm ${
+                  isNeon ? 'text-slate-400' : 'text-gray-500'
+                }`}>
+                  All return request emails will be sent to this address for testing
+                </p>
+              </div>
+              
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  onClick={() => setShowEmailSettings(false)}
+                  className={`px-4 py-2 rounded-lg transition-colors ${
+                    isNeon
+                      ? 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                      : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+                  }`}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    saveTestEmail(testEmail);
+                    setShowEmailSettings(false);
+                  }}
+                  className={`px-4 py-2 rounded-lg text-white transition-colors ${
+                    isNeon
+                      ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600'
+                      : 'bg-blue-600 hover:bg-blue-700'
+                  }`}
+                >
+                  Save
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

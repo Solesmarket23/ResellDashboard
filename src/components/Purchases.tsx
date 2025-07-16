@@ -148,7 +148,22 @@ const Purchases = () => {
   // Get sorted purchases
   const getSortedPurchases = () => {
     const allPurchases = [...purchases, ...manualPurchases];
-    return sortPurchases(allPurchases, sortBy, sortDirection);
+    
+    // Deduplicate by order number before sorting
+    const uniqueMap = new Map();
+    allPurchases.forEach(purchase => {
+      const existing = uniqueMap.get(purchase.orderNumber);
+      if (!existing || 
+          (purchase.status === 'Delivered' && existing.status !== 'Delivered') ||
+          (purchase.status === 'Shipped' && existing.status === 'Ordered') ||
+          (purchase.tracking && !existing.tracking)) {
+        // Keep the purchase with better status or tracking info
+        uniqueMap.set(purchase.orderNumber, purchase);
+      }
+    });
+    
+    const uniquePurchases = Array.from(uniqueMap.values());
+    return sortPurchases(uniquePurchases, sortBy, sortDirection);
   };
   
   // Sort icon component
@@ -279,6 +294,19 @@ const Purchases = () => {
     try {
       console.log(`📧 Saving ${gmailPurchases.length} Gmail purchases to Firebase...`);
       
+      // First, deduplicate purchases by order number to prevent duplicates
+      const uniquePurchases = new Map();
+      gmailPurchases.forEach(purchase => {
+        const existing = uniquePurchases.get(purchase.orderNumber);
+        if (!existing || (purchase.status === 'Delivered' || purchase.status === 'Shipped')) {
+          // Keep delivered/shipped status over ordered
+          uniquePurchases.set(purchase.orderNumber, purchase);
+        }
+      });
+      
+      const dedupedPurchases = Array.from(uniquePurchases.values());
+      console.log(`🔄 Deduplication: ${gmailPurchases.length} purchases → ${dedupedPurchases.length} unique`);
+      
       // Clear existing Gmail purchases for this user first
       const existingPurchases = await getDocuments('purchases');
       const existingGmailPurchases = existingPurchases.filter(
@@ -296,10 +324,10 @@ const Purchases = () => {
       
       console.log(`🗑️ Cleared ${existingGmailPurchases.length} old Gmail purchases`);
       
-      // Save all current Gmail purchases
+      // Save all current Gmail purchases (deduplicated)
       let savedCount = 0;
       
-      for (const purchase of gmailPurchases) {
+      for (const purchase of dedupedPurchases) {
         const purchaseData = {
           ...purchase,
           userId: user.uid,
@@ -312,7 +340,7 @@ const Purchases = () => {
         savedCount++;
       }
       
-      console.log(`✅ Gmail purchases saved to Firebase: ${savedCount} purchases`);
+      console.log(`✅ Gmail purchases saved to Firebase: ${savedCount} unique purchases`);
       
     } catch (error) {
       console.error('❌ Error saving Gmail purchases to Firebase:', error);
@@ -447,8 +475,23 @@ const Purchases = () => {
         console.log(`✅ Loaded ${gmailPurchases.length} Gmail purchases from Firebase`);
       }
       
-      // Combine all purchases for display
-      const combinedPurchases = [...gmailPurchases, ...manualPurchases];
+      // Combine all purchases for display and deduplicate
+      const allPurchases = [...gmailPurchases, ...manualPurchases];
+      
+      // Deduplicate by order number
+      const uniquePurchaseMap = new Map();
+      allPurchases.forEach(purchase => {
+        const existing = uniquePurchaseMap.get(purchase.orderNumber);
+        if (!existing || 
+            (purchase.status === 'Delivered' && existing.status !== 'Delivered') ||
+            (purchase.status === 'Shipped' && existing.status === 'Ordered')) {
+          uniquePurchaseMap.set(purchase.orderNumber, purchase);
+        }
+      });
+      
+      const combinedPurchases = Array.from(uniquePurchaseMap.values());
+      console.log(`🔄 Display deduplication: ${allPurchases.length} → ${combinedPurchases.length} unique`);
+      
       calculateTotals(combinedPurchases);
       
       console.log('✅ Loaded purchases from Firebase:', {
@@ -790,6 +833,64 @@ const Purchases = () => {
       
     } catch (error) {
       console.error('❌ Error applying status updates:', error);
+    }
+  };
+
+  // One-time cleanup function to remove duplicates from Firebase
+  const cleanupDuplicatesInFirebase = async () => {
+    if (!user) return;
+    
+    try {
+      console.log('🧹 Starting Firebase duplicate cleanup...');
+      const allPurchases = await getDocuments('purchases');
+      const userPurchases = allPurchases.filter((p: any) => p.userId === user.uid);
+      
+      // Group by order number
+      const orderGroups = new Map();
+      userPurchases.forEach((purchase: any) => {
+        const group = orderGroups.get(purchase.orderNumber) || [];
+        group.push(purchase);
+        orderGroups.set(purchase.orderNumber, group);
+      });
+      
+      let deletedCount = 0;
+      
+      // For each order with duplicates, keep the best one
+      for (const [orderNumber, duplicates] of orderGroups.entries()) {
+        if (duplicates.length > 1) {
+          console.log(`🔍 Found ${duplicates.length} duplicates for order ${orderNumber}`);
+          
+          // Sort by priority: Delivered > Shipped > Ordered, then by tracking presence
+          duplicates.sort((a: any, b: any) => {
+            const statusPriority: Record<string, number> = { 'Delivered': 3, 'Shipped': 2, 'Ordered': 1 };
+            const aPriority = statusPriority[a.status] || 0;
+            const bPriority = statusPriority[b.status] || 0;
+            
+            if (aPriority !== bPriority) return bPriority - aPriority;
+            if (a.tracking && !b.tracking) return -1;
+            if (!a.tracking && b.tracking) return 1;
+            return 0;
+          });
+          
+          // Keep the first (best) one, delete the rest
+          const toDelete = duplicates.slice(1);
+          for (const duplicate of toDelete) {
+            if (duplicate.id) {
+              await deleteDocument('purchases', duplicate.id);
+              deletedCount++;
+              console.log(`🗑️ Deleted duplicate: ${orderNumber} (${duplicate.status})`);
+            }
+          }
+        }
+      }
+      
+      console.log(`✅ Cleanup complete: Deleted ${deletedCount} duplicates`);
+      
+      // Reload data
+      await loadManualPurchasesFromFirebase();
+      
+    } catch (error) {
+      console.error('❌ Error cleaning up duplicates:', error);
     }
   };
 
