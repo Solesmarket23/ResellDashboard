@@ -28,6 +28,7 @@ const FailedVerifications = () => {
   const [sendingEmail, setSendingEmail] = useState<string | null>(null);
   const [testEmail, setTestEmail] = useState('');
   const [showEmailSettings, setShowEmailSettings] = useState(false);
+  const [removingDuplicates, setRemovingDuplicates] = useState(false);
   const { currentTheme } = useTheme();
   const { user, loading: authLoading } = useAuth();
   
@@ -135,6 +136,44 @@ const FailedVerifications = () => {
     } catch (error) {
       console.error('❌ Error deleting failed verification:', error);
       alert('Failed to delete verification failure.');
+    }
+  };
+
+  const handleRemoveDuplicates = async () => {
+    if (!user) {
+      alert('Please sign in to remove duplicates');
+      return;
+    }
+
+    setRemovingDuplicates(true);
+    try {
+      console.log('🧹 Removing duplicate failures...');
+      const response = await fetch('/api/remove-duplicate-failures', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId: user.uid }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to remove duplicates');
+      }
+
+      const data = await response.json();
+      console.log('✅ Duplicate removal complete:', data);
+      
+      if (data.duplicatesRemoved > 0) {
+        alert(`Successfully removed ${data.duplicatesRemoved} duplicate entries!\n\nYou now have ${data.uniqueFailures} unique verification failures.`);
+        // The Firebase listener will automatically update the UI
+      } else {
+        alert('No duplicates found. All your verification failures are unique.');
+      }
+    } catch (error) {
+      console.error('❌ Error removing duplicates:', error);
+      alert('Failed to remove duplicates. Please try again.');
+    } finally {
+      setRemovingDuplicates(false);
     }
   };
 
@@ -529,23 +568,42 @@ const FailedVerifications = () => {
             {isScanning ? 'Scanning...' : 'Scan for Verification Failures'}
           </button>
           {totalFailures > 0 && (
-            <button 
-              onClick={handleRescanClick}
-              disabled={isRescanning}
-              className={`flex items-center px-4 py-2 text-white rounded-lg transition-all duration-300 ${
-                isNeon
-                  ? isRescanning 
-                    ? 'bg-gradient-to-r from-purple-500/50 to-pink-500/50 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 shadow-lg shadow-purple-500/25 hover:shadow-xl hover:shadow-purple-500/40'
-                  : isRescanning 
-                    ? 'bg-purple-500 cursor-not-allowed' 
-                    : 'bg-purple-600 hover:bg-purple-700'
-              }`}
-              title="Re-scan all existing failures to update their failure reasons"
-            >
-              <RefreshCw className={`w-4 h-4 mr-2 ${isRescanning ? 'animate-spin' : ''}`} />
-              {isRescanning ? 'Updating...' : 'Update Failure Reasons'}
-            </button>
+            <>
+              <button 
+                onClick={handleRemoveDuplicates}
+                disabled={removingDuplicates}
+                className={`flex items-center px-4 py-2 text-white rounded-lg transition-all duration-300 ${
+                  isNeon
+                    ? removingDuplicates 
+                      ? 'bg-gradient-to-r from-orange-500/50 to-red-500/50 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 shadow-lg shadow-orange-500/25 hover:shadow-xl hover:shadow-orange-500/40'
+                    : removingDuplicates 
+                      ? 'bg-orange-500 cursor-not-allowed' 
+                      : 'bg-orange-600 hover:bg-orange-700'
+                }`}
+                title="Remove duplicate verification failures"
+              >
+                <Trash2 className={`w-4 h-4 mr-2 ${removingDuplicates ? 'animate-pulse' : ''}`} />
+                {removingDuplicates ? 'Removing...' : 'Remove Duplicates'}
+              </button>
+              <button 
+                onClick={handleRescanClick}
+                disabled={isRescanning}
+                className={`flex items-center px-4 py-2 text-white rounded-lg transition-all duration-300 ${
+                  isNeon
+                    ? isRescanning 
+                      ? 'bg-gradient-to-r from-purple-500/50 to-pink-500/50 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 shadow-lg shadow-purple-500/25 hover:shadow-xl hover:shadow-purple-500/40'
+                    : isRescanning 
+                      ? 'bg-purple-500 cursor-not-allowed' 
+                      : 'bg-purple-600 hover:bg-purple-700'
+                }`}
+                title="Re-scan all existing failures to update their failure reasons"
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${isRescanning ? 'animate-spin' : ''}`} />
+                {isRescanning ? 'Updating...' : 'Update Failure Reasons'}
+              </button>
+            </>
           )}
           <button 
             onClick={() => setShowAddModal(true)}
