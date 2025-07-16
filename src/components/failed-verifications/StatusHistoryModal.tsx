@@ -176,47 +176,52 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
         <div className="px-6 py-6 overflow-y-auto max-h-[400px]">
           <div className="relative">
             {/* Timeline events */}
-            <div className="space-y-0">
+            <div className="relative">
               {timelineEvents.map((event, index) => {
                 const Icon = STATUS_ICONS[event.status];
                 const isLatest = index === timelineEvents.length - 1;
                 const isFirst = index === 0;
                 
                 return (
-                  <div key={index} className="relative">
-                    {/* Line connecting to next event */}
+                  <div key={index} className="relative flex items-start mb-8 last:mb-0">
+                    {/* Line connecting to next event - positioned after the circle */}
                     {!isLatest && (
-                      <div className={`absolute left-6 top-[3rem] w-0.5 h-6 ${
-                        isNeon ? 'bg-slate-700' : 'bg-gray-200'
-                      }`} />
+                      <div 
+                        className={`absolute left-6 w-0.5 ${
+                          isNeon ? 'bg-slate-700' : 'bg-gray-200'
+                        }`}
+                        style={{
+                          top: '48px', // Start at bottom of circle (48px = 12 * 4)
+                          height: 'calc(100% - 48px + 32px)' // Extend to next item (32px = 8 * 4 margin)
+                        }}
+                      />
                     )}
                     
-                    <div className="relative flex items-start">
-                      {/* Icon circle */}
-                      <div className={`relative flex items-center justify-center w-12 h-12 rounded-full ${
-                        isNeon
-                          ? isLatest 
-                            ? 'bg-slate-900 border-2 border-cyan-500/50'
-                            : 'bg-slate-800 border border-slate-700'
-                          : isLatest
-                            ? 'bg-white border-2 border-blue-500'
-                            : 'bg-white border-2 border-gray-300'
+                    {/* Icon circle */}
+                    <div className={`relative flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-full ${
+                      isNeon
+                        ? isLatest 
+                          ? 'bg-slate-900 border-2 border-cyan-500/50'
+                          : 'bg-slate-800 border border-slate-700'
+                        : isLatest
+                          ? 'bg-white border-2 border-blue-500'
+                          : 'bg-white border-2 border-gray-300'
+                    }`}>
+                      {/* Gradient overlay for latest event */}
+                      {isLatest && isNeon && (
+                        <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/20 to-emerald-500/20 rounded-full" />
+                      )}
+                      <div className={`relative z-10 ${
+                        isNeon 
+                          ? STATUS_COLORS_NEON[event.status]
+                          : isLatest ? 'text-blue-600' : 'text-gray-600'
                       }`}>
-                        {/* Gradient overlay for latest event */}
-                        {isLatest && isNeon && (
-                          <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/20 to-emerald-500/20 rounded-full" />
-                        )}
-                        <div className={`relative z-10 ${
-                          isNeon 
-                            ? STATUS_COLORS_NEON[event.status]
-                            : isLatest ? 'text-blue-600' : 'text-gray-600'
-                        }`}>
-                          {Icon}
-                        </div>
+                        {Icon}
                       </div>
-                      
-                      {/* Content */}
-                      <div className="ml-6 flex-1 pb-6">
+                    </div>
+                    
+                    {/* Content */}
+                    <div className="ml-6 flex-1">
                         <div className={`rounded-lg p-4 ${
                           isNeon
                             ? isLatest
