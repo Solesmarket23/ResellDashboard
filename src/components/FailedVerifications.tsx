@@ -210,9 +210,53 @@ const FailedVerifications = () => {
         throw new Error(data.error);
       }
       
-      setScanResults(data.failures || []);
+      const failures = data.failures || [];
+      setScanResults(failures);
       setShowScanResult(true);
-      console.log('🔍 Scan complete, found', data.failures?.length || 0, 'results');
+      console.log('🔍 Scan complete, found', failures.length, 'results');
+      
+      // Save scanned results to Firebase
+      if (failures.length > 0 && user) {
+        console.log('💾 Saving scanned results to Firebase...');
+        let savedCount = 0;
+        
+        for (const failure of failures) {
+          try {
+            // Check if this failure already exists in Firebase
+            const existingFailure = manualFailures.find(
+              f => f.orderNumber === failure.orderNumber && f.emailDate === failure.emailDate
+            );
+            
+            if (!existingFailure) {
+              const failureToSave = {
+                userId: user.uid,
+                orderNumber: failure.orderNumber,
+                productName: failure.productName || 'StockX Item',
+                failureReason: failure.failureReason || 'Did not pass verification',
+                date: failure.date,
+                emailDate: failure.emailDate,
+                status: 'Needs Review',
+                subject: failure.subject || 'An Update Regarding Your Sale',
+                fromEmail: failure.fromEmail || 'stockx@stockx.com',
+                source: 'gmail_scan',
+                createdAt: new Date().toISOString()
+              };
+              
+              await addDocument('user_failed_verifications', failureToSave);
+              savedCount++;
+            }
+          } catch (error) {
+            console.error('❌ Error saving scanned failure:', error);
+          }
+        }
+        
+        console.log(`✅ Saved ${savedCount} new failures to Firebase`);
+        if (savedCount > 0) {
+          alert(`Successfully saved ${savedCount} new verification failures to your account!`);
+        } else {
+          alert('All scanned failures were already saved.');
+        }
+      }
     } catch (error) {
       console.error('🔍 Error scanning verification failures:', error);
       setScanError(error instanceof Error ? error.message : 'Failed to scan');
