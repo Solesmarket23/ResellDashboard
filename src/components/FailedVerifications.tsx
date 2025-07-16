@@ -32,6 +32,7 @@ const FailedVerifications = () => {
   const [sendingEmail, setSendingEmail] = useState<string | null>(null);
   const [testEmail, setTestEmail] = useState('');
   const [showEmailSettings, setShowEmailSettings] = useState(false);
+  const [emailLoaded, setEmailLoaded] = useState(false);
 
   const [scanStatus, setScanStatus] = useState<'scanning' | 'saving' | 'complete' | null>(null);
   const [scanProgress, setScanProgress] = useState({ found: 0, saved: 0, message: '' });
@@ -51,11 +52,27 @@ const FailedVerifications = () => {
 
   // Load test email from localStorage
   useEffect(() => {
-    const savedTestEmail = localStorage.getItem('returnRequestTestEmail');
+    let savedTestEmail = localStorage.getItem('returnRequestTestEmail');
     console.log('Loading test email from localStorage:', savedTestEmail);
+    
+    // If not found, check if there's an email stored directly as a key (legacy)
+    if (!savedTestEmail) {
+      const allKeys = Object.keys(localStorage);
+      const emailKey = allKeys.find(key => key.includes('@') && key.includes('.'));
+      if (emailKey) {
+        console.log('Found email in legacy format:', emailKey);
+        savedTestEmail = emailKey;
+        // Migrate to new key
+        localStorage.setItem('returnRequestTestEmail', emailKey);
+      }
+    }
+    
     if (savedTestEmail) {
       setTestEmail(savedTestEmail);
+    } else {
+      setTestEmail(''); // Set empty string if no saved email
     }
+    setEmailLoaded(true);
   }, []);
 
   // Close dropdowns when clicking outside
@@ -436,6 +453,7 @@ const FailedVerifications = () => {
 
   // Save test email to localStorage
   const saveTestEmail = (email: string) => {
+    console.log('Saving test email:', email);
     setTestEmail(email);
     localStorage.setItem('returnRequestTestEmail', email);
   };
@@ -1277,6 +1295,7 @@ const FailedVerifications = () => {
                           onStatusUpdate={() => {
                             // The Firebase listener will automatically update the UI
                             console.log('Status updated for', failure.orderNumber);
+                            console.log('Current test email in parent:', testEmail);
                           }}
                         />
                         {failure.id && (
