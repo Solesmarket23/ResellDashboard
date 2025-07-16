@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { X, Clock, CheckCircle, Mail, Package, Truck, AlertTriangle } from 'lucide-react';
 import { FailedVerification, VerificationStatus } from '@/types/failed-verification';
 import { STATUS_LABELS } from '@/lib/verification-status';
@@ -37,6 +37,28 @@ const STATUS_COLORS_NEON: Record<VerificationStatus, string> = {
 export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHistoryModalProps) {
   const { currentTheme } = useTheme();
   const isNeon = currentTheme?.name === 'Neon';
+  const modalRef = useRef<HTMLDivElement>(null);
+  
+  // Handle escape key press
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    
+    if (isOpen) {
+      document.addEventListener('keydown', handleEscape);
+      return () => document.removeEventListener('keydown', handleEscape);
+    }
+  }, [isOpen, onClose]);
+  
+  // Handle click outside
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (modalRef.current && !modalRef.current.contains(e.target as Node)) {
+      onClose();
+    }
+  };
   
   if (!isOpen) return null;
   
@@ -113,8 +135,14 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
   const productInfoClasses = isNeon ? 'border-slate-700/50 bg-slate-900/50' : 'border-gray-100 bg-gray-50';
   
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className={`rounded-lg max-w-2xl w-full max-h-[80vh] overflow-hidden ${modalClasses}`}>
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      onClick={handleBackdropClick}
+    >
+      <div 
+        ref={modalRef}
+        className={`rounded-lg max-w-2xl w-full max-h-[80vh] overflow-hidden ${modalClasses}`}
+      >
         {/* Header */}
         <div className={`px-6 py-4 border-b ${headerBorderClasses}`}>
           <div className="flex items-center justify-between">
