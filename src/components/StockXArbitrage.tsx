@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, DollarSign, ExternalLink, Search, AlertCircle, BarChart3, LogIn, CheckCircle, Bell } from 'lucide-react';
+import { TrendingUp, DollarSign, ExternalLink, Search, AlertCircle, BarChart3, LogIn, CheckCircle, Bell, Twitter } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
+import { shareToTwitter, generateShareImage, ArbitrageShareData } from '@/lib/twitter/twitterExport';
 
 // Enhanced placeholder component for StockX products since images aren't publicly accessible
 interface FallbackImageProps {
@@ -351,6 +352,36 @@ const StockXArbitrage: React.FC = () => {
     if (e.key === 'Enter') {
       searchArbitrageOpportunities();
     }
+  };
+
+  const handleTwitterExport = async (opportunity: ArbitrageOpportunity) => {
+    const shareData: ArbitrageShareData = {
+      productName: opportunity.productName,
+      size: opportunity.size,
+      purchasePrice: opportunity.costPrice || 0,
+      salePrice: opportunity.askAmount || 0,
+      profit: opportunity.profit || 0,
+      profitMargin: opportunity.profitMargin || 0,
+      imageUrl: opportunity.imageUrl
+    };
+    
+    // Generate and download image
+    const imageUrl = await generateShareImage(shareData);
+    if (imageUrl) {
+      // Create a temporary link to download the image
+      const link = document.createElement('a');
+      link.href = imageUrl;
+      link.download = `stockx-arbitrage-${opportunity.productName.replace(/\s+/g, '-')}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Clean up the blob URL
+      setTimeout(() => URL.revokeObjectURL(imageUrl), 1000);
+    }
+    
+    // Open Twitter with pre-filled text
+    shareToTwitter(shareData);
   };
 
   const addToFlexAskMonitor = (opportunity: ArbitrageOpportunity) => {
@@ -893,6 +924,14 @@ const StockXArbitrage: React.FC = () => {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleTwitterExport(opportunity)}
+                    className="bg-black hover:bg-gray-900 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2 border border-gray-700"
+                    title="Export to Twitter"
+                  >
+                    <Twitter className="w-4 h-4" />
+                    Share
+                  </button>
                   {showFlexAsk && opportunity.flexAskAmount && (() => {
                     const buttonId = `${opportunity.productId}-${opportunity.variantId}`;
                     const isClicked = clickedButtons.has(buttonId);
