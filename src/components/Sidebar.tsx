@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Home, 
   Package, 
@@ -30,6 +30,8 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
+import { db } from '../lib/firebase/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 interface SidebarProps {
   activeItem: string;
@@ -96,6 +98,44 @@ const navigationItems = [
 const Sidebar = ({ activeItem, onItemClick, isOpen, onClose }: SidebarProps) => {
   const { currentTheme } = useTheme();
   const { user, signOut } = useAuth();
+  const [profileData, setProfileData] = useState<{ firstName?: string; lastName?: string } | null>(null);
+  const [memberSince, setMemberSince] = useState<string>('');
+
+  // Load user profile data
+  useEffect(() => {
+    const loadProfileData = async () => {
+      if (!user) return;
+      
+      try {
+        const profileRef = doc(db, 'profiles', user.uid);
+        const profileDoc = await getDoc(profileRef);
+        
+        if (profileDoc.exists()) {
+          const data = profileDoc.data();
+          setProfileData({
+            firstName: data.firstName || '',
+            lastName: data.lastName || ''
+          });
+        }
+        
+        // Format member since date
+        const creationTime = user.metadata?.creationTime;
+        if (creationTime) {
+          const date = new Date(creationTime);
+          const formattedDate = date.toLocaleDateString('en-US', {
+            month: 'numeric',
+            day: 'numeric',
+            year: 'numeric'
+          });
+          setMemberSince(formattedDate);
+        }
+      } catch (error) {
+        console.error('Error loading profile data:', error);
+      }
+    };
+
+    loadProfileData();
+  }, [user]);
 
   const handleItemClick = (item: string) => {
     // Call the parent's click handler
@@ -173,23 +213,18 @@ const Sidebar = ({ activeItem, onItemClick, isOpen, onClose }: SidebarProps) => 
             <div className="space-y-3">
               {/* User Info */}
               <div className="flex items-center space-x-3">
-                {user.photoURL ? (
-                  <img
-                    src={user.photoURL}
-                    alt={user.displayName || 'User'}
-                    className="w-10 h-10 rounded-full"
-                  />
-                ) : (
-                  <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center">
-                    <User className="w-6 h-6 text-gray-400" />
-                  </div>
-                )}
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-400 to-cyan-600 flex items-center justify-center shadow-lg">
+                  <User className="w-6 h-6 text-white" />
+                </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-white truncate">
-                    {user.displayName || 'User'}
+                    {profileData?.firstName && profileData?.lastName 
+                      ? `${profileData.firstName} ${profileData.lastName}`
+                      : user.displayName || user.email?.split('@')[0] || 'User'
+                    }
                   </p>
                   <p className="text-xs text-gray-400 truncate">
-                    Pro Member
+                    Pro Member {memberSince && `since ${memberSince}`}
                   </p>
                 </div>
               </div>
