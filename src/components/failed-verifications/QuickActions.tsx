@@ -25,9 +25,10 @@ const STATUS_ICONS: Record<VerificationStatus, React.ReactNode> = {
 export function QuickActions({ verification, testEmail, onStatusUpdate }: QuickActionsProps) {
   const [updating, setUpdating] = React.useState<string | null>(null);
   const { currentTheme } = useTheme();
-  const isNeon = currentTheme.name === 'Neon';
+  const isNeon = currentTheme?.name === 'Neon';
   
-  const nextStatuses = NEXT_STATUS_MAP[verification.status] || [];
+  const currentStatus = verification?.status || 'needs_review';
+  const nextStatuses = NEXT_STATUS_MAP[currentStatus] || [];
   
   const handleStatusUpdate = async (newStatus: VerificationStatus) => {
     if (!verification.id) return;
@@ -35,7 +36,7 @@ export function QuickActions({ verification, testEmail, onStatusUpdate }: QuickA
     setUpdating(newStatus);
     try {
       // Special handling for email_sent status
-      if (newStatus === 'email_sent' && verification.status === 'needs_review') {
+      if (newStatus === 'email_sent' && currentStatus === 'needs_review') {
         if (!testEmail) {
           alert('Please set a test email address first (click the settings icon)');
           return;

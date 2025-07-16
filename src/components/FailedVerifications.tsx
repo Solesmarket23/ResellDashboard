@@ -90,8 +90,10 @@ const FailedVerifications = () => {
       (snapshot) => {
         const failures = snapshot.docs.map(doc => ({
           id: doc.id,
-          ...doc.data()
-        }));
+          ...doc.data(),
+          // Ensure status field exists for legacy data
+          status: doc.data().status || 'needs_review'
+        })) as FailedVerification[];
         console.log('📊 Loaded failed verifications from Firebase:', failures.length);
         setManualFailures(failures);
         setLoading(false);

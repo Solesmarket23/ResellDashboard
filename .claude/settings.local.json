@@ -14,7 +14,9 @@
       "Bash(npm run dev:*)",
       "Bash(mkdir:*)",
       "Bash(npx eslint:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(npm run build:*)",
+      "Bash(find:*)"
     ],
     "deny": []
   }
