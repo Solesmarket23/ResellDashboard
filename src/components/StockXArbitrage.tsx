@@ -994,12 +994,12 @@ const StockXArbitrage: React.FC = () => {
                   <a
                     href={(() => {
                       const originalUrl = opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId);
-                      // Force re-render when Sovrn initializes
-                      const convertedUrl = isInitialized ? convertStockXLink(originalUrl, {
+                      // Always use convertStockXLink - it will return original URL if not initialized
+                      const convertedUrl = convertStockXLink(originalUrl, {
                         productName: opportunity.productName,
                         productId: opportunity.productId,
                         size: opportunity.size
-                      }) : originalUrl;
+                      });
                       console.log('🔗 StockX Link Conversion:', {
                         originalUrl,
                         convertedUrl,
@@ -1008,6 +1008,15 @@ const StockXArbitrage: React.FC = () => {
                       });
                       return convertedUrl;
                     })()}
+                    onClick={(e) => {
+                      const href = e.currentTarget.href;
+                      console.log('🖱️ StockX Link Clicked:', {
+                        href,
+                        isInitialized,
+                        timestamp: new Date().toISOString()
+                      });
+                      // Don't prevent default - let the link work normally
+                    }}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
