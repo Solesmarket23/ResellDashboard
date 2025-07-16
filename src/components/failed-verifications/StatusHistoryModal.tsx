@@ -165,28 +165,26 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
         
         {/* Timeline */}
         <div className="px-6 py-6 overflow-y-auto max-h-[400px]">
-          <div className="relative">
-            {/* Timeline events */}
-            <div className="relative">
-              {timelineEvents.map((event, index) => {
-                const Icon = STATUS_ICONS[event.status];
-                const isLatest = index === timelineEvents.length - 1;
-                
-                return (
-                  <div key={index} className="relative flex items-start mb-8 last:mb-0">
-                    {/* Line connecting to next event */}
-                    {!isLatest && (
-                      <div 
-                        className={`absolute left-6 w-0.5 ${isNeon ? 'bg-slate-700' : 'bg-gray-200'}`}
-                        style={{
-                          top: '68px',  // Start at bottom of circle (20px margin + 48px circle height)
-                          height: 'calc(100% - 48px)' // Extend to next item, accounting for circle height
-                        }}
-                      />
-                    )}
-                    
-                    {/* Icon circle - centered with content box */}
-                    <div className={`relative flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-full mt-5 ${
+          <div className="space-y-0">
+            {timelineEvents.map((event, index) => {
+              const Icon = STATUS_ICONS[event.status];
+              const isLatest = index === timelineEvents.length - 1;
+              const isFirst = index === 0;
+              
+              return (
+                <div key={index} className="relative">
+                  {/* Line BEFORE the item (connects from previous item) */}
+                  {!isFirst && (
+                    <div 
+                      className={`absolute left-6 top-0 w-0.5 h-8 ${
+                        isNeon ? 'bg-slate-700' : 'bg-gray-200'
+                      }`}
+                    />
+                  )}
+                  
+                  <div className="relative flex items-start pb-8 last:pb-0">
+                    {/* Icon circle */}
+                    <div className={`relative z-10 flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-full ${
                       isNeon
                         ? isLatest 
                           ? 'bg-slate-900 border-2 border-cyan-500/50'
@@ -236,9 +234,18 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
                       </div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
+                  
+                  {/* Line AFTER the item (connects to next item) */}
+                  {!isLatest && (
+                    <div 
+                      className={`absolute left-6 bottom-0 w-0.5 h-8 ${
+                        isNeon ? 'bg-slate-700' : 'bg-gray-200'
+                      }`}
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
         
