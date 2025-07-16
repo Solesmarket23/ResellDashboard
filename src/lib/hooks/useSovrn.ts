@@ -12,8 +12,21 @@ export function useSovrn(): UseSovrnReturn {
   
   useEffect(() => {
     // Initialize Sovrn service if API key is available
+    // In production, these values are baked into the bundle at build time
     const apiKey = process.env.NEXT_PUBLIC_SOVRN_API_KEY;
     const enableOptimization = process.env.NEXT_PUBLIC_SOVRN_ENABLE_OPTIMIZATION === 'true';
+    
+    // Debug logging for production
+    if (typeof window !== 'undefined') {
+      console.log('🔍 Sovrn Environment Check:', {
+        apiKeyExists: !!apiKey,
+        apiKeyLength: apiKey?.length || 0,
+        enableOptimization,
+        nodeEnv: process.env.NODE_ENV,
+        // Log all NEXT_PUBLIC vars to debug
+        allPublicEnvKeys: Object.keys(process.env).filter(key => key.startsWith('NEXT_PUBLIC_')),
+      });
+    }
     
     if (apiKey) {
       initializeSovrn({
@@ -26,7 +39,7 @@ export function useSovrn(): UseSovrnReturn {
       setIsInitialized(true);
       console.log('✅ Sovrn affiliate service initialized with API key:', apiKey.substring(0, 8) + '...');
     } else {
-      console.warn('Sovrn API key not found in environment variables');
+      console.warn('⚠️ Sovrn API key not found in environment variables. Make sure NEXT_PUBLIC_SOVRN_API_KEY is set in Vercel.');
     }
   }, []);
   
