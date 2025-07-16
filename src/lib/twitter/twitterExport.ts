@@ -6,17 +6,24 @@ export interface ArbitrageShareData {
   profit: number;
   profitMargin: number;
   imageUrl?: string;
+  affiliateUrl?: string;
 }
 
 export function generateTwitterText(data: ArbitrageShareData): string {
   const profitEmoji = data.profit >= 100 ? '🚀' : data.profit >= 50 ? '🔥' : '💰';
   
-  const text = `${profitEmoji} StockX Arbitrage Alert!\n\n` +
+  let text = `${profitEmoji} StockX Arbitrage Alert!\n\n` +
     `${data.productName} (Size ${data.size})\n` +
     `Buy: $${data.purchasePrice.toFixed(2)}\n` +
     `Sell: $${data.salePrice.toFixed(2)}\n` +
-    `Profit: $${data.profit.toFixed(2)} (${data.profitMargin}%)\n\n` +
-    `#StockX #Reselling #SneakerArbitrage`;
+    `Profit: $${data.profit.toFixed(2)} (${data.profitMargin}%)\n\n`;
+  
+  // Add affiliate link if available
+  if (data.affiliateUrl) {
+    text += `🔗 ${data.affiliateUrl}\n\n`;
+  }
+  
+  text += `#StockX #Reselling #SneakerArbitrage`;
   
   return text;
 }

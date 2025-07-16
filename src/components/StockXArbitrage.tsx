@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { TrendingUp, DollarSign, ExternalLink, Search, AlertCircle, BarChart3, LogIn, CheckCircle, Bell, Twitter } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { shareToTwitter, generateShareImage, ArbitrageShareData } from '@/lib/twitter/twitterExport';
+import { useSovrn } from '@/lib/hooks/useSovrn';
 
 // Enhanced placeholder component for StockX products since images aren't publicly accessible
 interface FallbackImageProps {
@@ -72,6 +73,7 @@ interface ArbitrageOpportunity {
 const StockXArbitrage: React.FC = () => {
   const { currentTheme } = useTheme();
   const isNeon = currentTheme.name === 'neon';
+  const { convertStockXLink } = useSovrn();
   
   const [opportunities, setOpportunities] = useState<ArbitrageOpportunity[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -355,6 +357,14 @@ const StockXArbitrage: React.FC = () => {
   };
 
   const handleTwitterExport = async (opportunity: ArbitrageOpportunity) => {
+    // Generate affiliate URL for this product
+    const stockxUrl = opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId);
+    const affiliateUrl = convertStockXLink(stockxUrl, {
+      productName: opportunity.productName,
+      productId: opportunity.productId,
+      size: opportunity.size
+    });
+    
     const shareData: ArbitrageShareData = {
       productName: opportunity.productName,
       size: opportunity.size,
@@ -362,7 +372,8 @@ const StockXArbitrage: React.FC = () => {
       salePrice: opportunity.askAmount || 0,
       profit: opportunity.profit || 0,
       profitMargin: opportunity.profitMargin || 0,
-      imageUrl: opportunity.imageUrl
+      imageUrl: opportunity.imageUrl,
+      affiliateUrl
     };
     
     // Generate and download image
@@ -969,7 +980,14 @@ const StockXArbitrage: React.FC = () => {
                     </div>
                   )}
                   <a
-                    href={opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId)}
+                    href={convertStockXLink(
+                      opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId),
+                      {
+                        productName: opportunity.productName,
+                        productId: opportunity.productId,
+                        size: opportunity.size
+                      }
+                    )}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
