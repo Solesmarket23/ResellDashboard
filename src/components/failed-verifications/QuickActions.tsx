@@ -42,6 +42,7 @@ export function QuickActions({ verification, testEmail, onStatusUpdate }: QuickA
     try {
       // Special handling for email_sent status
       if (newStatus === 'email_sent' && currentStatus === 'needs_review') {
+        console.log('Test email check:', { testEmail, hasTestEmail: !!testEmail });
         if (!testEmail) {
           alert('Please set a test email address first (click the settings icon)');
           return;

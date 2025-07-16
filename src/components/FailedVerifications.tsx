@@ -52,6 +52,7 @@ const FailedVerifications = () => {
   // Load test email from localStorage
   useEffect(() => {
     const savedTestEmail = localStorage.getItem('returnRequestTestEmail');
+    console.log('Loading test email from localStorage:', savedTestEmail);
     if (savedTestEmail) {
       setTestEmail(savedTestEmail);
     }
