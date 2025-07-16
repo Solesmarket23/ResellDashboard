@@ -12,6 +12,7 @@ import { getCommunityAggregates, calculateUserPercentile, contributeFailureData 
 import { FailedVerification, VerificationStatus } from '../types/failed-verification';
 import { StatusBadge } from './failed-verifications/StatusBadge';
 import { QuickActions } from './failed-verifications/QuickActions';
+import { StatusHistoryModal } from './failed-verifications/StatusHistoryModal';
 import { STATUS_LABELS } from '../lib/verification-status';
 
 const FailedVerifications = () => {
@@ -38,6 +39,8 @@ const FailedVerifications = () => {
   const [scanProgress, setScanProgress] = useState({ found: 0, saved: 0, message: '' });
   const [verificationStatusFilter, setVerificationStatusFilter] = useState<VerificationStatus | 'all'>('all');
   const [isMigrating, setIsMigrating] = useState(false);
+  const [selectedVerification, setSelectedVerification] = useState<FailedVerification | null>(null);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
   const { currentTheme } = useTheme();
   const { user, loading: authLoading } = useAuth();
   
@@ -1220,14 +1223,24 @@ const FailedVerifications = () => {
                   : `${currentTheme.colors.cardBackground} divide-gray-200`
               }`}>
                 {filteredFailures.map((failure, index) => (
-                  <tr key={index} className={`transition-colors duration-200 ${
-                    isNeon ? 'hover:bg-slate-800/50' : 'hover:bg-gray-50'
-                  }`}>
+                  <tr 
+                    key={index} 
+                    onClick={() => {
+                      setSelectedVerification({
+                        ...failure,
+                        status: (failure.status === 'Needs Review' ? 'needs_review' : failure.status) || 'needs_review'
+                      });
+                      setShowHistoryModal(true);
+                    }}
+                    className={`transition-colors duration-200 cursor-pointer ${
+                      isNeon ? 'hover:bg-slate-800/50' : 'hover:bg-gray-50'
+                    }`}>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <a 
                         href={generateGmailSearchUrl(failure.orderNumber)}
                         target="_blank"
                         rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
                         className={`text-sm font-medium transition-colors duration-200 ${
                           isNeon 
                             ? 'text-cyan-400 hover:text-cyan-300' 
@@ -1291,7 +1304,7 @@ const FailedVerifications = () => {
                         })()}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-6 py-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-2">
                         <QuickActions 
                           verification={{
@@ -1307,7 +1320,10 @@ const FailedVerifications = () => {
                         />
                         {failure.id && (
                           <button
-                            onClick={() => handleDeleteFailure(failure.id!)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteFailure(failure.id!);
+                            }}
                             className={`p-1.5 rounded-lg transition-colors ${
                               isNeon
                                 ? 'hover:bg-red-900/30 text-red-400 hover:text-red-300'
@@ -1484,6 +1500,18 @@ const FailedVerifications = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Status History Modal */}
+      {selectedVerification && (
+        <StatusHistoryModal
+          verification={selectedVerification}
+          isOpen={showHistoryModal}
+          onClose={() => {
+            setShowHistoryModal(false);
+            setSelectedVerification(null);
+          }}
+        />
       )}
 
       {/* Email Settings Modal */}
