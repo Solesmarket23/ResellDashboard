@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/firebase/firebase';
-import { collection, doc, setDoc, getDoc } from 'firebase/firestore';
 import crypto from 'crypto';
+
+// Simple in-memory storage for short URLs (will reset on server restart)
+// In production, you'd want to use a proper database
+const shortLinks = new Map<string, string>();
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,46 +18,23 @@ export async function POST(request: NextRequest) {
     // Generate a hash of the URL for deduplication
     const urlHash = crypto.createHash('md5').update(url).digest('hex');
     
-    // Check if this URL already has a short link
-    const existingDoc = await getDoc(doc(db, 'shortLinks', urlHash));
-    if (existingDoc.exists()) {
-      const data = existingDoc.data();
-      const domain = process.env.NEXT_PUBLIC_DOMAIN || 'resell-dashboard-zeta.vercel.app';
+    // Check if this URL already has a short link in our memory storage
+    const existingShortId = Array.from(shortLinks.entries()).find(([_, fullUrl]) => fullUrl === url)?.[0];
+    if (existingShortId) {
+      const domain = process.env.NEXT_PUBLIC_DOMAIN || 'solesmarket.com';
       return NextResponse.json({ 
-        shortUrl: `https://${domain}/go/${data.shortId}` 
+        shortUrl: `https://${domain}/go/${existingShortId}` 
       });
     }
     
     // Generate a short ID
     const shortId = crypto.randomBytes(4).toString('hex');
     
-    // Store in Firestore - use a simpler approach
-    // Since we're having permission issues, let's create a document that doesn't require special permissions
-    const shortLinkData = {
-      shortId,
-      fullUrl: url,
-      created: new Date().toISOString(),
-      clicks: 0,
-      userId: userId || 'anonymous'
-    };
+    // Store in memory
+    shortLinks.set(shortId, url);
     
-    // Try to store in shortLinks collection
-    try {
-      await setDoc(doc(db, 'shortLinks', urlHash), shortLinkData);
-    } catch (e) {
-      console.log('Could not store in shortLinks collection:', e);
-    }
-    
-    // Store by shortId for quick lookup - this is the important one for redirects
-    await setDoc(doc(db, 'shortLinksByCode', shortId), {
-      fullUrl: url,
-      created: new Date().toISOString(),
-      clicks: 0,
-      userId: userId || 'anonymous'
-    });
-    
-    // Use custom domain if available, fallback to Vercel URL
-    const domain = process.env.NEXT_PUBLIC_DOMAIN || 'resell-dashboard-zeta.vercel.app';
+    // Use custom domain
+    const domain = process.env.NEXT_PUBLIC_DOMAIN || 'solesmarket.com';
     
     return NextResponse.json({ 
       shortUrl: `https://${domain}/go/${shortId}` 
@@ -69,3 +48,6 @@ export async function POST(request: NextRequest) {
     }, { status: 500 });
   }
 }
+
+// Export the shortLinks map so the redirect handler can access it
+export { shortLinks };
