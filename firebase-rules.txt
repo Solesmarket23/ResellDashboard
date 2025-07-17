@@ -51,6 +51,11 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
     
+    // User API keys - users can only access their own encrypted API keys
+    match /users/{userId}/apiKeys/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
     // Default deny all
     match /{document=**} {
       allow read, write: if false;

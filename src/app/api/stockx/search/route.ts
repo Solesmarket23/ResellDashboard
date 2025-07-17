@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getStockXApiCredentials, getUserIdFromRequest, validateApiCredentials } from '@/lib/utils/userApiKeyHelper';
 
 // Helper function to get product image URL
 function getProductImageUrl(product: any): string {
@@ -253,6 +254,18 @@ async function fetchMarketData(productId: string, accessToken: string, apiKey: s
   }
 }
 
+// Helper function to get estimated price for products without market data
+function getEstimatedPrice(product: any): number {
+  // Try to get price from various sources
+  if (product.market?.lastSale) return product.market.lastSale;
+  if (product.market?.averagePrice) return product.market.averagePrice;
+  if (product.retailPrice) return product.retailPrice * 1.5; // Estimate 50% markup
+  if (product.productAttributes?.retailPrice) return product.productAttributes.retailPrice * 1.5;
+  
+  // Default fallback price
+  return 150;
+}
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const rawQuery = searchParams.get('query') || '';
@@ -270,9 +283,27 @@ export async function GET(request: NextRequest) {
   const pageNumber = parseInt(searchParams.get('page') || '1');
   const { searchQuery: query, isUrlSearch, categoryInfo } = getSearchQuery(rawQuery, pageNumber);
 
+  // Get user ID from request
+  const userId = getUserIdFromRequest(request);
+  
+  // Get API credentials (user-specific or global)
+  const credentials = await getStockXApiCredentials(userId);
+  const validation = validateApiCredentials(credentials);
+  
+  if (!validation.isValid) {
+    return NextResponse.json(
+      { 
+        error: 'API credentials not configured',
+        message: validation.error || 'Please configure your StockX API credentials',
+        authRequired: true,
+        needsApiKeys: true
+      },
+      { status: 401 }
+    );
+  }
+
   // Get access token from cookies
   const accessToken = request.cookies.get('stockx_access_token')?.value;
-  const apiKey = process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID; // Fallback to client ID if API key not set
 
   if (!accessToken) {
     return NextResponse.json(
@@ -285,17 +316,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  if (!apiKey) {
-    console.error('StockX API key not found. Please set STOCKX_API_KEY or STOCKX_CLIENT_ID environment variable.');
-    return NextResponse.json(
-      { 
-        error: 'Configuration error',
-        message: 'StockX API key not configured. Please contact support.',
-        statusCode: 500
-      },
-      { status: 500 }
-    );
-  }
+  console.log(`🔑 Using ${credentials.source} API credentials for user: ${userId || 'anonymous'}`);
 
   // If streaming is requested, use Server-Sent Events
   if (streaming) {
@@ -334,7 +355,7 @@ export async function GET(request: NextRequest) {
             method: 'GET',
             headers: {
               'Authorization': `Bearer ${accessToken}`,
-              'X-API-Key': apiKey,
+              'X-API-Key': credentials.apiKey,
               'Content-Type': 'application/json',
               'Accept': 'application/json',
               'User-Agent': 'FlipFlow/1.0'
@@ -402,8 +423,8 @@ export async function GET(request: NextRequest) {
             try {
               // Fetch market data and variants in parallel
               const [marketData, variants] = await Promise.all([
-                fetchMarketData(product.productId, accessToken, apiKey),
-                fetchProductVariants(product.productId, accessToken, apiKey)
+                fetchMarketData(product.productId, accessToken, credentials.apiKey),
+                fetchProductVariants(product.productId, accessToken, credentials.apiKey)
               ]);
               
               console.log(`📊 Product ${product.title}: ${marketData?.length || 0} market data entries, ${variants?.length || 0} variants`);
@@ -579,7 +600,7 @@ export async function GET(request: NextRequest) {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
-        'X-API-Key': apiKey!,
+        'X-API-Key': credentials.apiKey,
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'User-Agent': 'FlipFlow/1.0'

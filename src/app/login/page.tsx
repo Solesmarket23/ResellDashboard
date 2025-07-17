@@ -31,8 +31,16 @@ function LoginForm() {
           localStorage.setItem('siteUserId', data.userId);
           localStorage.setItem('siteUserEmail', data.email || 'user@solesmarket.com');
         }
-        // Redirect to the page they were trying to access
-        router.push(from);
+        // Check if user has completed onboarding
+        const onboardingComplete = localStorage.getItem('onboardingComplete');
+        
+        if (onboardingComplete === 'true') {
+          // User has completed onboarding, redirect to intended destination
+          router.push(from);
+        } else {
+          // User needs to complete onboarding first
+          router.push('/onboarding');
+        }
       } else {
         setError('Invalid password');
       }

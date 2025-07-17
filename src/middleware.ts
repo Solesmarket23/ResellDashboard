@@ -12,7 +12,9 @@ const PUBLIC_ROUTES = [
   '/_next/',
   '/favicon.ico',
   '/login',
+  '/onboarding',  // Onboarding page
   '/api/auth/verify',
+  '/api/user/stockx-keys',  // User API key management
   '/',  // Landing page
   '/landing',  // Landing page route
   '/api/subscribe'  // Email subscription endpoint

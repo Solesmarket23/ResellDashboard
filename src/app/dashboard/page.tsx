@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Menu } from 'lucide-react';
 import { useTheme } from '../../lib/contexts/ThemeContext';
 
@@ -37,6 +38,7 @@ export default function DashboardPage() {
   const [currentSection, setCurrentSection] = useState('dashboard');
   const [isClient, setIsClient] = useState(false);
   const { currentTheme } = useTheme();
+  const router = useRouter();
   
   // Dynamic theme detection for consistent background
   const isNeon = currentTheme.name === 'Neon';
@@ -44,6 +46,13 @@ export default function DashboardPage() {
   // Ensure we're on the client side before accessing window
   useEffect(() => {
     setIsClient(true);
+    
+    // Check if user has completed onboarding
+    const onboardingComplete = localStorage.getItem('onboardingComplete');
+    if (onboardingComplete !== 'true') {
+      router.push('/onboarding');
+      return;
+    }
     
     // Get section from URL on mount
     if (typeof window !== 'undefined') {
