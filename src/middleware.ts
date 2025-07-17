@@ -32,13 +32,25 @@ export function middleware(request: NextRequest) {
   
   // Check if user is authenticated via site password
   const authCookie = request.cookies.get('site-auth');
+  
+  // For dashboard access, we need both site password AND Google authentication
+  if (pathname.startsWith('/dashboard')) {
+    // If user has site password but no Google auth, redirect to Google login
+    if (authCookie?.value === 'authenticated') {
+      // Let the client-side handle the Google auth check
+      return NextResponse.next();
+    } else {
+      // No site password auth, redirect to login
+      const loginUrl = new URL('/login', request.url);
+      loginUrl.searchParams.set('from', pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+  }
+  
+  // For other protected routes, site password is sufficient
   if (authCookie?.value === 'authenticated') {
     return NextResponse.next();
   }
-  
-  // Check if user is authenticated via Firebase (for Google sign-in)
-  // Note: Firebase auth tokens are handled client-side, so we'll let the client handle this
-  // The client-side components will redirect to login if not authenticated
   
   // Redirect to login page
   const loginUrl = new URL('/login', request.url);
