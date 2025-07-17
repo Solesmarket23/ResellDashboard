@@ -37,7 +37,7 @@ const nextConfig = {
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
   },
   // Mobile app configuration
-  trailingSlash: true,
+  // trailingSlash: true, // This might be breaking API routes
   // Add script to handle mobile app environment
   async headers() {
     return [
