@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useTheme } from '@/lib/contexts/ThemeContext';
@@ -12,7 +12,7 @@ import {
   User
 } from 'lucide-react';
 
-export default function GoogleLoginPage() {
+function GoogleLoginForm() {
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -246,5 +246,17 @@ export default function GoogleLoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function GoogleLoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div>
+      </div>
+    }>
+      <GoogleLoginForm />
+    </Suspense>
   );
 } 
