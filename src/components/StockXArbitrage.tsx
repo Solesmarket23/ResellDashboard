@@ -367,30 +367,8 @@ const StockXArbitrage: React.FC = () => {
   };
 
   const handleTwitterExport = async (opportunity: ArbitrageOpportunity) => {
-    // Generate affiliate URL for this product
+    // Use direct StockX URL - Sovrn JS will handle conversion
     const stockxUrl = opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId);
-    const affiliateUrl = convertStockXLink(stockxUrl, {
-      productName: opportunity.productName,
-      productId: opportunity.productId,
-      size: opportunity.size
-    });
-    
-    // Create a short URL to hide the API key
-    let shortUrl = '';
-    try {
-      const response = await fetch('/api/shorten', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: affiliateUrl })
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        shortUrl = data.shortUrl;
-      }
-    } catch (error) {
-      console.error('Failed to create short URL:', error);
-    }
     
     const shareData: ArbitrageShareData = {
       productName: opportunity.productName,
@@ -400,8 +378,7 @@ const StockXArbitrage: React.FC = () => {
       profit: opportunity.profit || 0,
       profitMargin: opportunity.profitMargin || 0,
       imageUrl: opportunity.imageUrl,
-      affiliateUrl,
-      shortUrl: shortUrl || undefined,
+      affiliateUrl: stockxUrl, // Direct URL - no API key exposed
       backgroundVersion: 'bright' // Using bright gradient as default
     };
     
@@ -1011,31 +988,8 @@ const StockXArbitrage: React.FC = () => {
                     </div>
                   )}
                   <a
-                    href={(() => {
-                      const originalUrl = opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId);
-                      // Always use convertStockXLink - it will return original URL if not initialized
-                      const convertedUrl = convertStockXLink(originalUrl, {
-                        productName: opportunity.productName,
-                        productId: opportunity.productId,
-                        size: opportunity.size
-                      });
-                      console.log('🔗 StockX Link Conversion:', {
-                        originalUrl,
-                        convertedUrl,
-                        isInitialized,
-                        isSameUrl: originalUrl === convertedUrl
-                      });
-                      return convertedUrl;
-                    })()}
-                    onClick={(e) => {
-                      const href = e.currentTarget.href;
-                      console.log('🖱️ StockX Link Clicked:', {
-                        href,
-                        isInitialized,
-                        timestamp: new Date().toISOString()
-                      });
-                      // Don't prevent default - let the link work normally
-                    }}
+                    href={opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId)}
+                    data-sovrn-auto="true"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
