@@ -12,6 +12,7 @@ const PUBLIC_ROUTES = [
   '/_next/',
   '/favicon.ico',
   '/login',
+  '/google-login',  // Google login page
   '/onboarding',  // Onboarding page
   '/api/auth/verify',
   '/api/user/stockx-keys',  // User API key management
@@ -29,11 +30,15 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
   
-  // Check if user is authenticated
+  // Check if user is authenticated via site password
   const authCookie = request.cookies.get('site-auth');
   if (authCookie?.value === 'authenticated') {
     return NextResponse.next();
   }
+  
+  // Check if user is authenticated via Firebase (for Google sign-in)
+  // Note: Firebase auth tokens are handled client-side, so we'll let the client handle this
+  // The client-side components will redirect to login if not authenticated
   
   // Redirect to login page
   const loginUrl = new URL('/login', request.url);

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Menu } from 'lucide-react';
 import { useTheme } from '../../lib/contexts/ThemeContext';
+import { useAuth } from '../../lib/contexts/AuthContext';
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
@@ -38,6 +39,7 @@ export default function DashboardPage() {
   const [currentSection, setCurrentSection] = useState('dashboard');
   const [isClient, setIsClient] = useState(false);
   const { currentTheme } = useTheme();
+  const { user, loading } = useAuth();
   const router = useRouter();
   
   // Dynamic theme detection for consistent background
@@ -47,11 +49,15 @@ export default function DashboardPage() {
   useEffect(() => {
     setIsClient(true);
     
-    // Check if user has completed onboarding
-    const onboardingComplete = localStorage.getItem('onboardingComplete');
-    if (onboardingComplete !== 'true') {
-      router.push('/onboarding');
-      return;
+    // Check authentication
+    if (!loading && !user) {
+      // Check if user has site password authentication
+      const siteUserId = localStorage.getItem('siteUserId');
+      if (!siteUserId) {
+        // No authentication, redirect to login
+        router.push('/login');
+        return;
+      }
     }
     
     // Get section from URL on mount
@@ -67,7 +73,7 @@ export default function DashboardPage() {
         window.history.replaceState({}, '', newUrl.toString());
       }
     }
-  }, []);
+  }, [user, loading, router]);
 
   // Handle browser back/forward buttons
   useEffect(() => {
@@ -241,6 +247,19 @@ export default function DashboardPage() {
         <div className="flex-1 flex items-center justify-center">
           <div className={`text-lg ${isNeon ? 'text-white' : 'text-gray-900'}`}>
             Loading...
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show loading while checking authentication
+  if (loading) {
+    return (
+      <div className={`flex h-screen overflow-hidden ${currentTheme.colors.background}`}>
+        <div className="flex-1 flex items-center justify-center">
+          <div className={`text-lg ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+            Checking authentication...
           </div>
         </div>
       </div>
