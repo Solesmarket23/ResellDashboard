@@ -1,600 +1,87 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import Link from 'next/link';
+import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Lock } from 'lucide-react';
 
-// Force dynamic rendering
-export const dynamic = 'force-dynamic';
-import { useRouter } from 'next/navigation';
-import Image from 'next/image';
-import { useTheme } from '@/lib/contexts/ThemeContext';
-import { useAuth } from '@/lib/contexts/AuthContext';
-import { Mail, Lock, User, Eye, EyeOff, ArrowLeft } from 'lucide-react';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '@/lib/firebase/firebase';
-
-const LoginPage = () => {
-  const { currentTheme, setTheme, themes } = useTheme();
-  const { signInWithGoogle } = useAuth();
-  const router = useRouter();
-  const [isLogin, setIsLogin] = useState(true);
-  const [showPassword, setShowPassword] = useState(false);
+export default function LoginPage() {
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isVisible, setIsVisible] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-    confirmPassword: '',
-    firstName: '',
-    lastName: ''
-  });
-
-  useEffect(() => {
-    // Trigger fade-in animation after component mounts
-    const timer = setTimeout(() => {
-      setIsVisible(true);
-    }, 50);
-    return () => clearTimeout(timer);
-  }, []);
-
-  const handleNavigation = (path: string) => {
-    setIsVisible(false);
-    setTimeout(() => {
-      router.push(path);
-    }, 300);
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData(prev => ({
-      ...prev,
-      [e.target.name]: e.target.value
-    }));
-    // Clear error and success messages when user starts typing
-    if (errorMessage) {
-      setErrorMessage('');
-    }
-    if (successMessage) {
-      setSuccessMessage('');
-    }
-  };
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const from = searchParams.get('from') || '/dashboard';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
     setIsLoading(true);
-    setErrorMessage(''); // Clear any previous errors
-    setSuccessMessage(''); // Clear any previous success messages
-    
+
     try {
-      if (isLogin) {
-        // Sign in existing user
-        await signInWithEmailAndPassword(auth, formData.email, formData.password);
-        // Navigate immediately for login
-        router.push('/loading');
+      const response = await fetch('/api/auth/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+
+      if (response.ok) {
+        // Redirect to the page they were trying to access
+        router.push(from);
       } else {
-        // Create new user account
-        if (formData.password !== formData.confirmPassword) {
-          setErrorMessage('Passwords do not match!');
-          setIsLoading(false);
-          return;
-        }
-        await createUserWithEmailAndPassword(auth, formData.email, formData.password);
-        
-        // Show success message for account creation
-        setSuccessMessage('Account Created Successfully!');
-        setIsLoading(false);
-        
-        // Keep success message visible until user clicks button
-        // No automatic navigation
+        setError('Invalid password');
       }
-    } catch (error: any) {
-      console.error('Email/password authentication failed:', error);
+    } catch (error) {
+      setError('An error occurred. Please try again.');
+    } finally {
       setIsLoading(false);
-      
-      // Show user-friendly error messages
-      let errorText = 'Authentication failed. Please try again.';
-      if (error.code === 'auth/user-not-found') {
-        errorText = 'No account found with this email address.';
-      } else if (error.code === 'auth/wrong-password') {
-        errorText = 'Incorrect password.';
-      } else if (error.code === 'auth/email-already-in-use') {
-        errorText = 'An account with this email already exists.';
-      } else if (error.code === 'auth/weak-password') {
-        errorText = 'Password should be at least 6 characters.';
-      } else if (error.code === 'auth/invalid-email') {
-        errorText = 'Please enter a valid email address.';
-      }
-      
-      setErrorMessage(errorText);
     }
-  };
-
-  const handleGoogleAuth = async () => {
-    setIsLoading(true);
-    setErrorMessage(''); // Clear any previous errors
-    setSuccessMessage(''); // Clear any previous success messages
-    
-    let authCompleted = false;
-    
-    try {
-      // Create a timeout promise that rejects after 10 seconds
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => {
-          if (!authCompleted) {
-            reject(new Error('Authentication timeout - popup may have been closed'));
-          }
-        }, 10000); // 10 seconds timeout
-      });
-      
-      // Create a window focus detection promise
-      const focusPromise = new Promise((_, reject) => {
-        const handleFocus = () => {
-          // Wait a bit after focus to see if auth completes
-          setTimeout(() => {
-            if (!authCompleted) {
-              window.removeEventListener('focus', handleFocus);
-              reject(new Error('Authentication cancelled - popup closed'));
-            }
-          }, 1000); // Wait 1 second after focus
-        };
-        
-        window.addEventListener('focus', handleFocus);
-        
-        // Clean up listener after timeout
-        setTimeout(() => {
-          window.removeEventListener('focus', handleFocus);
-        }, 10000);
-      });
-      
-      // Race the authentication against timeout and focus detection
-      await Promise.race([
-        signInWithGoogle().then(() => { authCompleted = true; }),
-        timeoutPromise,
-        focusPromise
-      ]);
-      
-      // Only navigate if authentication succeeded (keep loading state active during navigation)
-      router.push('/loading');
-    } catch (error: any) {
-      console.error('Google sign-in failed:', error);
-      
-      // Reset loading state on any error
-      setIsLoading(false);
-      
-      // Show user-friendly error message
-      let errorText = 'Google sign-in failed. Please try again.';
-      if (error.code === 'auth/popup-closed-by-user') {
-        errorText = 'Sign-in was cancelled. Please try again.';
-      } else if (error.code === 'auth/popup-blocked') {
-        errorText = 'Popup was blocked. Please enable popups and try again.';
-      } else if (error.code === 'auth/cancelled-popup-request') {
-        errorText = 'Sign-in was cancelled. Please try again.';
-      } else if (error.message === 'Authentication timeout - popup may have been closed') {
-        errorText = 'Sign-in timed out. Please try again.';
-      } else if (error.message === 'Authentication cancelled - popup closed') {
-        errorText = 'Sign-in was cancelled. Please try again.';
-      }
-      
-      setErrorMessage(errorText);
-    }
-  };
-
-  const handleGoToDashboard = () => {
-    setSuccessMessage(''); // Clear success message
-    router.push('/dashboard');
   };
 
   return (
-    <div className={`min-h-screen ${currentTheme.colors.background} ${currentTheme.colors.bodyClass} flex items-center justify-center p-4 transition-all duration-500 ease-out ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-      {/* Background decoration */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className={`absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-3xl opacity-20 ${
-          currentTheme.name === 'Neon' 
-            ? 'bg-gradient-to-r from-emerald-500 to-cyan-500' 
-            : 'bg-gradient-to-r from-purple-500 to-pink-500'
-        }`}></div>
-        <div className={`absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full blur-3xl opacity-20 ${
-          currentTheme.name === 'Neon' 
-            ? 'bg-gradient-to-r from-cyan-500 to-blue-500' 
-            : 'bg-gradient-to-r from-pink-500 to-purple-500'
-        }`}></div>
-      </div>
-
-      {/* Back Button - Top Left */}
-      <button 
-        onClick={() => handleNavigation('/landing')}
-        className={`absolute top-6 left-6 flex items-center space-x-2 ${currentTheme.colors.textSecondary} hover:${currentTheme.colors.textPrimary} transition-colors z-10`}
-      >
-        <ArrowLeft className="w-5 h-5" />
-        <span>Back</span>
-      </button>
-
-      {/* Theme Selector - Top Right */}
-      <div className="absolute top-6 right-6 flex items-center space-x-2 z-10">
-        <span className={`text-sm font-medium ${currentTheme.colors.textSecondary}`}>Theme:</span>
-        <div className="flex items-center space-x-1 p-1 rounded-lg bg-black/20 backdrop-blur-sm">
-          {Object.values(themes).map((theme, index) => (
-            <button
-              key={theme.name}
-              onClick={() => setTheme(theme.name)}
-              className={`w-6 h-6 rounded text-xs font-bold transition-all duration-200 ${
-                currentTheme.name === theme.name 
-                  ? 'bg-gradient-to-r from-cyan-500 to-purple-500 text-white shadow-lg scale-105' 
-                  : 'text-gray-400 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              {index + 1}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="relative w-full max-w-md">
-
-        {/* Logo & Title */}
-        <div className="text-center mb-8">
-          <div className="flex justify-center mb-4">
-            <div className={`relative p-3 rounded-xl ${
-              currentTheme.name === 'Neon' 
-                ? 'bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 border border-cyan-500/30' 
-                : 'bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30'
-            } backdrop-blur-sm`}>
-              <Image
-                src="/flip-flow-logo.svg"
-                alt="Flip Flow Logo"
-                width={32}
-                height={32}
-                className="w-8 h-8"
-              />
+    <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
+      <div className="max-w-md w-full">
+        <div className="bg-gray-800 rounded-lg shadow-xl p-8">
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full mb-4">
+              <Lock className="w-8 h-8 text-white" />
             </div>
-          </div>
-          <h1 className={`text-2xl font-bold ${currentTheme.colors.textPrimary} mb-2`}>
-            Welcome Back
-          </h1>
-          <p className={`${currentTheme.colors.textSecondary}`}>
-            {isLogin ? 'Sign in to your account' : 'Create your account'}
-          </p>
-        </div>
-
-        {/* Auth Card */}
-        <div className={`p-8 rounded-2xl login-card-glow ${
-          currentTheme.name === 'Neon'
-            ? 'bg-white/5 border border-cyan-500/20 backdrop-blur-sm'
-            : `${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border backdrop-blur-sm`
-        }`}>
-          {/* Toggle Login/Signup */}
-          <div className={`flex rounded-lg p-1 mb-6 ${
-            currentTheme.name === 'Neon' ? 'bg-white/10' : 'bg-gray-100'
-          }`}>
-            <button
-              onClick={() => {
-                setIsLogin(true);
-                setErrorMessage(''); // Clear error when switching modes
-                setSuccessMessage(''); // Clear success when switching modes
-              }}
-              className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all duration-200 ${
-                isLogin 
-                  ? currentTheme.name === 'Neon'
-                    ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-lg'
-                    : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
-                  : `${currentTheme.colors.textSecondary} hover:${currentTheme.colors.textPrimary}`
-              }`}
-            >
-              Sign In
-            </button>
-            <button
-              onClick={() => {
-                setIsLogin(false);
-                setErrorMessage(''); // Clear error when switching modes
-                setSuccessMessage(''); // Clear success when switching modes
-              }}
-              className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all duration-200 ${
-                !isLogin 
-                  ? currentTheme.name === 'Neon'
-                    ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-lg'
-                    : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
-                  : `${currentTheme.colors.textSecondary} hover:${currentTheme.colors.textPrimary}`
-              }`}
-            >
-              Sign Up
-            </button>
+            <h1 className="text-2xl font-bold text-white">SolesMarket Dashboard</h1>
+            <p className="text-gray-400 mt-2">Enter password to access</p>
           </div>
 
-          {/* Error Message */}
-          {errorMessage && (
-            <div className={`mb-4 p-4 rounded-lg border-l-4 ${
-              currentTheme.name === 'Neon' 
-                ? 'bg-red-500/10 border-red-500 text-red-400 backdrop-blur-sm' 
-                : 'bg-red-500/10 border-red-500 text-red-400'
-            } animate-pulse`}>
-              <div className="flex items-center space-x-2">
-                <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center">
-                  <span className="text-white text-xs font-bold">!</span>
-                </div>
-                <p className="text-sm font-medium">{errorMessage}</p>
-              </div>
-              
-              {/* 🔧 Debug button for Firebase OAuth issues */}
-              {errorMessage.includes('sign-in') && (
-                <button
-                  onClick={async () => {
-                    try {
-                      const response = await fetch('/api/debug/auth-domain');
-                      const data = await response.json();
-                      console.log('🔍 Auth Domain Debug:', data);
-                      
-                      const debug = data.debug;
-                      const instructions = debug.instructions;
-                      
-                      alert(`🔧 Firebase OAuth Debug:\n\n` +
-                        `Current Domain: ${debug.currentRequest.domain}\n` +
-                        `Firebase Project: ${debug.firebaseConfig.projectId}\n` +
-                        `Config Valid: ${debug.firebaseConfig.hasValidConfig}\n\n` +
-                        `Fix Steps:\n` +
-                        `1. Go to Firebase Console\n` +
-                        `2. Select your project\n` +
-                        `3. Authentication → Settings → Authorized domains\n` +
-                        `4. Add: ${debug.currentRequest.domain}\n` +
-                        `5. Also add: localhost, 127.0.0.1\n\n` +
-                        `Check console for full details.`);
-                    } catch (error) {
-                      console.error('Debug error:', error);
-                      alert('Debug tool failed - check console');
-                    }
-                  }}
-                  className="mt-2 px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
-                >
-                  🔧 Debug OAuth Issue
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Success Modal */}
-          {successMessage && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              {/* Backdrop */}
-              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
-              
-              {/* Modal */}
-              <div className="relative">
-                <div className={`w-full max-w-md mx-auto p-8 rounded-2xl success-notification ${
-                  currentTheme.name === 'Neon' 
-                    ? 'neon bg-gradient-to-br from-slate-800/95 to-slate-900/95 border border-emerald-400/30 text-emerald-300 backdrop-blur-lg shadow-2xl shadow-emerald-500/30' 
-                    : 'bg-gradient-to-br from-gray-800/95 to-gray-900/95 border border-emerald-400/30 text-emerald-300 backdrop-blur-lg shadow-2xl'
-                }`}>
-                  {/* Header */}
-                  <div className="text-center mb-6">
-                    <div className={`w-20 h-20 mx-auto rounded-full flex items-center justify-center mb-4 ${
-                      currentTheme.name === 'Neon' 
-                        ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 shadow-2xl shadow-emerald-500/60' 
-                        : 'bg-gradient-to-r from-emerald-500 to-green-500 shadow-2xl'
-                    }`}>
-                      <svg className="w-10 h-10 text-white success-checkmark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </div>
-                    <h2 className="text-2xl font-bold mb-2">{successMessage}</h2>
-                    <p className={`text-base ${
-                      currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-emerald-400'
-                    }`}>
-                      Welcome to Flip Flow! Your account is ready to go.
-                    </p>
-                  </div>
-
-                  {/* Action Button */}
-                  <button
-                    onClick={handleGoToDashboard}
-                    className={`w-full py-4 rounded-xl font-bold text-lg transition-all duration-300 transform hover:scale-105 ${
-                      currentTheme.name === 'Neon'
-                        ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white hover:shadow-xl hover:shadow-cyan-500/30'
-                        : 'bg-gradient-to-r from-emerald-500 to-green-500 text-white hover:shadow-xl hover:shadow-emerald-500/30'
-                    }`}
-                  >
-                    Let's Go!
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {!isLogin && (
-              <div className="grid grid-cols-2 gap-4">
-                <div className="relative">
-                  <User className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 ${currentTheme.colors.textSecondary}`} />
-                  <input
-                    type="text"
-                    name="firstName"
-                    placeholder="First Name"
-                    value={formData.firstName}
-                    onChange={handleInputChange}
-                    className={`w-full pl-10 pr-4 py-3 rounded-lg ${
-                      currentTheme.name === 'Neon'
-                        ? 'bg-slate-700 text-white placeholder-gray-400 focus:bg-slate-700 [&:not(:placeholder-shown)]:bg-slate-700 [&:placeholder-shown]:bg-slate-700 [&:empty]:bg-slate-700 autofill:bg-slate-700'
-                        : 'bg-gray-700 text-white placeholder-gray-400 focus:bg-gray-700 [&:not(:placeholder-shown)]:bg-gray-700 [&:placeholder-shown]:bg-gray-700 [&:empty]:bg-gray-700 autofill:bg-gray-700'
-                    } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 autofill:text-white`}
-                    required={!isLogin}
-                  />
-                </div>
-                <div className="relative">
-                  <User className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 ${currentTheme.colors.textSecondary}`} />
-                  <input
-                    type="text"
-                    name="lastName"
-                    placeholder="Last Name"
-                    value={formData.lastName}
-                    onChange={handleInputChange}
-                    className={`w-full pl-10 pr-4 py-3 rounded-lg ${
-                      currentTheme.name === 'Neon'
-                        ? 'bg-slate-700 text-white placeholder-gray-400 focus:bg-slate-700 [&:not(:placeholder-shown)]:bg-slate-700 [&:placeholder-shown]:bg-slate-700 [&:empty]:bg-slate-700 autofill:bg-slate-700'
-                        : 'bg-gray-700 text-white placeholder-gray-400 focus:bg-gray-700 [&:not(:placeholder-shown)]:bg-gray-700 [&:placeholder-shown]:bg-gray-700 [&:empty]:bg-gray-700 autofill:bg-gray-700'
-                    } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 autofill:text-white`}
-                    required={!isLogin}
-                  />
-                </div>
-              </div>
-            )}
-
-            <div className="relative">
-              <Mail className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 ${currentTheme.colors.textSecondary}`} />
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div>
               <input
-                type="email"
-                name="email"
-                placeholder="Email address"
-                value={formData.email}
-                onChange={handleInputChange}
-                className={`w-full pl-10 pr-4 py-3 rounded-lg ${
-                  currentTheme.name === 'Neon'
-                    ? 'bg-slate-700 text-white placeholder-gray-400 focus:bg-slate-700 [&:not(:placeholder-shown)]:bg-slate-700 [&:placeholder-shown]:bg-slate-700 [&:empty]:bg-slate-700 autofill:bg-slate-700'
-                    : 'bg-gray-700 text-white placeholder-gray-400 focus:bg-gray-700 [&:not(:placeholder-shown)]:bg-gray-700 [&:placeholder-shown]:bg-gray-700 [&:empty]:bg-gray-700 autofill:bg-gray-700'
-                } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 autofill:text-white`}
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter password"
+                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 required
+                autoFocus
               />
             </div>
 
-            <div className="relative">
-              <Lock className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 ${currentTheme.colors.textSecondary}`} />
-              <input
-                type={showPassword ? 'text' : 'password'}
-                name="password"
-                placeholder="Password"
-                value={formData.password}
-                onChange={handleInputChange}
-                className={`w-full pl-10 pr-12 py-3 rounded-lg ${
-                  currentTheme.name === 'Neon'
-                    ? 'bg-slate-700 text-white placeholder-gray-400 focus:bg-slate-700 [&:not(:placeholder-shown)]:bg-slate-700 [&:placeholder-shown]:bg-slate-700 [&:empty]:bg-slate-700 autofill:bg-slate-700'
-                    : 'bg-gray-700 text-white placeholder-gray-400 focus:bg-gray-700 [&:not(:placeholder-shown)]:bg-gray-700 [&:placeholder-shown]:bg-gray-700 [&:empty]:bg-gray-700 autofill:bg-gray-700'
-                } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 autofill:text-white`}
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className={`absolute right-3 top-1/2 transform -translate-y-1/2 ${currentTheme.colors.textSecondary} hover:${currentTheme.colors.textPrimary}`}
-              >
-                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-              </button>
-            </div>
-
-            {!isLogin && (
-              <div className="relative">
-                <Lock className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 ${currentTheme.colors.textSecondary}`} />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  name="confirmPassword"
-                  placeholder="Confirm Password"
-                  value={formData.confirmPassword}
-                  onChange={handleInputChange}
-                  className={`w-full pl-10 pr-4 py-3 rounded-lg ${
-                    currentTheme.name === 'Neon'
-                      ? 'bg-slate-700 text-white placeholder-gray-400 focus:bg-slate-700 [&:not(:placeholder-shown)]:bg-slate-700 [&:placeholder-shown]:bg-slate-700 [&:empty]:bg-slate-700 autofill:bg-slate-700'
-                      : 'bg-gray-700 text-white placeholder-gray-400 focus:bg-gray-700 [&:not(:placeholder-shown)]:bg-gray-700 [&:placeholder-shown]:bg-gray-700 [&:empty]:bg-gray-700 autofill:bg-gray-700'
-                  } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 autofill:text-white`}
-                  required={!isLogin}
-                />
+            {error && (
+              <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-3 text-red-400 text-sm">
+                {error}
               </div>
             )}
 
             <button
               type="submit"
               disabled={isLoading}
-              className={`w-full py-3 rounded-lg font-bold transition-all duration-300 transform hover:scale-105 ${
-                currentTheme.name === 'Neon'
-                  ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white hover:shadow-lg hover:shadow-cyan-500/25'
-                  : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:shadow-lg hover:shadow-purple-500/25'
-              } disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none`}
+              className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-3 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isLoading ? (
-                <div className="flex items-center justify-center space-x-2">
-                  <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
-                  <span>Please wait...</span>
-                </div>
-              ) : (
-                isLogin ? 'Sign In' : 'Create Account'
-              )}
+              {isLoading ? 'Verifying...' : 'Access Dashboard'}
             </button>
           </form>
 
-          {/* Divider */}
-          <div className="flex items-center my-6">
-            <div className={`flex-1 h-px ${
-              currentTheme.name === 'Neon' ? 'bg-cyan-500/30' : 'bg-gray-300'
-            }`}></div>
-            <span className={`px-4 text-sm ${currentTheme.colors.textSecondary}`}>or</span>
-            <div className={`flex-1 h-px ${
-              currentTheme.name === 'Neon' ? 'bg-cyan-500/30' : 'bg-gray-300'
-            }`}></div>
+          <div className="mt-6 text-center text-sm text-gray-400">
+            <p>Affiliate links remain publicly accessible</p>
           </div>
-
-          {/* Google Sign In */}
-          <button
-            onClick={handleGoogleAuth}
-            disabled={isLoading}
-            className={`w-full py-3 rounded-lg font-medium border transition-all duration-200 flex items-center justify-center space-x-2 ${
-              currentTheme.name === 'Neon'
-                ? 'border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 hover:border-cyan-500/50'
-                : 'border-purple-500/30 text-purple-600 hover:bg-purple-500/10 hover:border-purple-500/50'
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
-          >
-            {isLoading ? (
-              <>
-                <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-                <span>Connecting with Google...</span>
-              </>
-            ) : (
-              <>
-                <svg className="w-5 h-5" viewBox="0 0 24 24">
-                  <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                  <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                  <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                  <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                </svg>
-                <span>Continue with Google</span>
-              </>
-            )}
-          </button>
-          
-          {/* Google OAuth Explanation */}
-          <div className={`mt-3 p-3 rounded-lg ${
-            currentTheme.name === 'Neon'
-              ? 'bg-cyan-500/5 border border-cyan-500/20'
-              : 'bg-blue-50/10 border border-blue-500/20'
-          }`}>
-                         <p className={`text-xs text-center ${
-               currentTheme.name === 'Neon' ? 'text-cyan-400/70' : 'text-blue-400'
-             }`}>
-               <span className="block">If you already have an account with this email, you'll be signed in.</span>
-               <span className="block">If not, a new account will be created automatically.</span>
-             </p>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="text-center mt-6">
-          <p className={`text-sm ${currentTheme.colors.textSecondary}`}>
-            By continuing, you agree to our{' '}
-            <button 
-              onClick={() => alert('Terms of Service coming soon!')}
-              className={`${
-              currentTheme.name === 'Neon' ? 'text-cyan-400 hover:text-cyan-300' : 'text-purple-600 hover:text-purple-500'
-            } underline cursor-pointer`}>
-              Terms of Service
-            </button>{' '}
-            and{' '}
-            <button 
-              onClick={() => alert('Privacy Policy coming soon!')}
-              className={`${
-              currentTheme.name === 'Neon' ? 'text-cyan-400 hover:text-cyan-300' : 'text-purple-600 hover:text-purple-500'
-            } underline cursor-pointer`}>
-              Privacy Policy
-            </button>
-          </p>
         </div>
       </div>
     </div>
   );
-};
-
-export default LoginPage; 
+}
