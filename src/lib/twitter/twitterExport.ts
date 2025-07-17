@@ -227,9 +227,9 @@ function drawImageWithProduct(
   ctx.fillText('*Estimated profit based on buyer fees & selling via no-fee resale', canvas.width / 2, 540);
   
   // Footer
-  ctx.font = '22px Arial';
-  ctx.fillStyle = '#666666';
-  ctx.fillText('Found with ResellDashboard', canvas.width / 2, 600);
+  ctx.font = '24px Arial';
+  ctx.fillStyle = '#00d4ff';
+  ctx.fillText('Follow @SolesMarket23 on X', canvas.width / 2, 600);
   
   // Branding
   ctx.font = 'bold 26px Arial';
