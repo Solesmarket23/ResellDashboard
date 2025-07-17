@@ -38,14 +38,6 @@ const nextConfig = {
   },
   // Mobile app configuration
   trailingSlash: true,
-  async rewrites() {
-    return [
-      {
-        source: "/api/:path*",
-        destination: "https://api.openai.com/:path*",
-      },
-    ];
-  },
   // Add script to handle mobile app environment
   async headers() {
     return [
