@@ -367,8 +367,32 @@ const StockXArbitrage: React.FC = () => {
   };
 
   const handleTwitterExport = async (opportunity: ArbitrageOpportunity) => {
-    // Use direct StockX URL - Sovrn JS will handle conversion
+    // Generate affiliate URL for this product
     const stockxUrl = opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId);
+    const affiliateUrl = convertStockXLink(stockxUrl, {
+      productName: opportunity.productName,
+      productId: opportunity.productId,
+      size: opportunity.size
+    });
+    
+    // Create a short URL to hide the API key
+    let shortUrl = '';
+    try {
+      const response = await fetch('/api/shorten', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: affiliateUrl })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        shortUrl = data.shortUrl;
+      } else {
+        console.error('Failed to create short URL:', response.status, response.statusText);
+      }
+    } catch (error) {
+      console.error('Failed to create short URL:', error);
+    }
     
     const shareData: ArbitrageShareData = {
       productName: opportunity.productName,
@@ -378,7 +402,8 @@ const StockXArbitrage: React.FC = () => {
       profit: opportunity.profit || 0,
       profitMargin: opportunity.profitMargin || 0,
       imageUrl: opportunity.imageUrl,
-      affiliateUrl: stockxUrl, // Direct URL - no API key exposed
+      affiliateUrl,
+      shortUrl: shortUrl || undefined,
       backgroundVersion: 'bright' // Using bright gradient as default
     };
     
