@@ -16,7 +16,10 @@
       "Bash(npx eslint:*)",
       "Bash(git checkout:*)",
       "Bash(npm run build:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(mv:*)",
+      "Bash(cat:*)",
+      "Bash(git ls-tree:*)"
     ],
     "deny": []
   }
