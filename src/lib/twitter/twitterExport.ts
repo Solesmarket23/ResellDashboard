@@ -227,12 +227,7 @@ function drawImageWithProduct(
   ctx.fillText('*Estimated profit based on buyer fees & selling via no-fee resale', canvas.width / 2, 540);
   
   // Footer
-  ctx.font = '24px Arial';
+  ctx.font = '26px Arial';
   ctx.fillStyle = '#00d4ff';
-  ctx.fillText('Follow @SolesMarket23 on X', canvas.width / 2, 600);
-  
-  // Branding
-  ctx.font = 'bold 26px Arial';
-  ctx.fillStyle = '#00d4ff';
-  ctx.fillText('stockx.com/arbitrage', canvas.width / 2, 640);
+  ctx.fillText('Follow @SolesMarket23 on X for more flips', canvas.width / 2, 620);
 }
