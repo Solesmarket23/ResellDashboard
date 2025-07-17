@@ -4,8 +4,6 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/contexts/AuthContext";
 import { ThemeProvider } from "@/lib/contexts/ThemeContext";
 import { DeepgramContextProvider } from "@/lib/contexts/DeepgramContext";
-import MobileBottomNav from "@/components/MobileBottomNav";
-import InstallPrompt from "@/components/InstallPrompt";
 import Script from 'next/script';
 
 const inter = Inter({ subsets: ["latin"] });
@@ -60,9 +58,7 @@ export default function RootLayout({
                 <main className="flex-1 pb-safe-bottom sm:pb-0">
                   {children}
                 </main>
-                <MobileBottomNav />
               </div>
-              <InstallPrompt />
             </DeepgramContextProvider>
           </ThemeProvider>
         </AuthProvider>
