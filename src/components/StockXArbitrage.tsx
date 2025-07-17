@@ -378,7 +378,9 @@ const StockXArbitrage: React.FC = () => {
     // Create a short URL to hide the API key
     let shortUrl = '';
     try {
-      const response = await fetch('/api/shorten', {
+      // Try the test endpoint first to debug
+      const endpoint = '/api/shorten-test'; // Change back to '/api/shorten' when working
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: affiliateUrl })
