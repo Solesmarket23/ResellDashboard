@@ -1,18 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Helper function to get product image URL - since StockX images aren't publicly accessible, use placeholder
+// Helper function to get product image URL
 function getProductImageUrl(product: any): string {
-  // StockX images require authentication and aren't publicly accessible
-  // Use placeholder image for now
+  // Try to use the actual product image from StockX
+  if (product.media?.imageUrl) {
+    return product.media.imageUrl;
+  }
+  if (product.media?.thumbUrl) {
+    return product.media.thumbUrl;
+  }
+  if (product.imageUrl) {
+    return product.imageUrl;
+  }
+  if (product.thumbUrl) {
+    return product.thumbUrl;
+  }
+  // Fallback to placeholder
   return '/placeholder-shoe.png';
 }
 
-// Helper function to get product image URL with fallbacks for better reliability
+// Helper function to get product image URL with fallbacks
 function getProductImageUrlWithFallbacks(product: any): string[] {
-  // Since StockX images aren't publicly accessible, return placeholder options
-  return [
-    '/placeholder-shoe.png'
-  ];
+  const urls = [];
+  
+  // Add all possible image URLs
+  if (product.media?.imageUrl) urls.push(product.media.imageUrl);
+  if (product.media?.thumbUrl) urls.push(product.media.thumbUrl);
+  if (product.imageUrl) urls.push(product.imageUrl);
+  if (product.thumbUrl) urls.push(product.thumbUrl);
+  
+  // Add placeholder as final fallback
+  if (urls.length === 0) {
+    urls.push('/placeholder-shoe.png');
+  }
+  
+  return urls;
 }
 
 // Helper function to generate StockX product URL with size

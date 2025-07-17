@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, DollarSign, ExternalLink, Search, AlertCircle, BarChart3, LogIn, CheckCircle, Bell, Twitter } from 'lucide-react';
+import { TrendingUp, DollarSign, ExternalLink, Search, AlertCircle, BarChart3, LogIn, CheckCircle, Bell, Twitter, Upload, Image } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { shareToTwitter, generateShareImage, ArbitrageShareData } from '@/lib/twitter/twitterExport';
 import { generateEnhancedShareImage, EnhancedArbitrageShareData } from '@/lib/twitter/enhancedGraphics';
@@ -102,6 +102,8 @@ const StockXArbitrage: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [uploadedImages, setUploadedImages] = useState<{ [key: string]: string }>({});
+  const [affiliateLinks, setAffiliateLinks] = useState<{ [key: string]: string }>({});
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showFlexAsk, setShowFlexAsk] = useState(true); // Toggle for flex ask display - enabled by default
 
@@ -369,6 +371,27 @@ const StockXArbitrage: React.FC = () => {
     }
   };
 
+  // Handle image upload for a specific product
+  const handleImageUpload = (productId: string, event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      alert('Please upload an image file');
+      return;
+    }
+
+    // Create object URL for the uploaded image
+    const imageUrl = URL.createObjectURL(file);
+    
+    // Store the image URL for this product
+    setUploadedImages(prev => ({
+      ...prev,
+      [productId]: imageUrl
+    }));
+  };
+
   const handleTwitterExport = async (opportunity: ArbitrageOpportunity) => {
     // Generate affiliate URL for this product
     const stockxUrl = opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId);
@@ -377,6 +400,13 @@ const StockXArbitrage: React.FC = () => {
       productId: opportunity.productId,
       size: opportunity.size
     });
+    
+    // Store the affiliate URL for this opportunity so View on StockX button can use it
+    const opportunityKey = `${opportunity.productId}-${opportunity.variantId}`;
+    setAffiliateLinks(prev => ({
+      ...prev,
+      [opportunityKey]: affiliateUrl
+    }));
     
     // Create a short URL to hide the API key
     let shortUrl = '';
@@ -419,7 +449,7 @@ const StockXArbitrage: React.FC = () => {
       salePrice: opportunity.askAmount || 0,
       profit: opportunity.profit || 0,
       profitMargin: opportunity.profitMargin || 0,
-      imageUrl: opportunity.imageUrl,
+      imageUrl: uploadedImages[opportunity.productId] || opportunity.imageUrl, // Use uploaded image if available
       affiliateUrl,
       shortUrl: shortUrl || undefined,
       backgroundVersion: 'dark', // Premium dark background
@@ -954,12 +984,19 @@ const StockXArbitrage: React.FC = () => {
             <div key={opportunity.id} className="bg-gray-800 rounded-lg p-4 sm:p-6">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-4">
                 <div className="flex items-center gap-3 sm:gap-4">
-                  <FallbackImage
-                    imageUrls={[opportunity.imageUrl]}
-                    alt={opportunity.productName}
-                    className="w-12 h-12 sm:w-16 sm:h-16 rounded-lg flex-shrink-0"
-                    productTitle={opportunity.productName}
-                  />
+                  <div className="relative group">
+                    <FallbackImage
+                      imageUrls={[uploadedImages[opportunity.productId] || opportunity.imageUrl]}
+                      alt={opportunity.productName}
+                      className="w-12 h-12 sm:w-16 sm:h-16 rounded-lg flex-shrink-0"
+                      productTitle={opportunity.productName}
+                    />
+                    {uploadedImages[opportunity.productId] && (
+                      <div className="absolute -top-1 -right-1 bg-green-500 rounded-full p-1">
+                        <Image className="w-3 h-3 text-white" />
+                      </div>
+                    )}
+                  </div>
                   <div className="min-w-0 flex-1">
                     <h3 className="text-lg sm:text-xl font-semibold text-white truncate">{opportunity.productName}</h3>
                     <p className="text-gray-400 text-sm sm:text-base">{opportunity.size}</p>
@@ -1049,8 +1086,20 @@ const StockXArbitrage: React.FC = () => {
                     </div>
                   )}
                   <a
-                    href={opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId)}
-                    data-sovrn-auto="true"
+                    href={(() => {
+                      const opportunityKey = `${opportunity.productId}-${opportunity.variantId}`;
+                      const affiliateLink = affiliateLinks[opportunityKey];
+                      if (affiliateLink) {
+                        return affiliateLink;
+                      }
+                      // If no affiliate link stored yet, generate one
+                      const stockxUrl = opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId);
+                      return convertStockXLink(stockxUrl, {
+                        productName: opportunity.productName,
+                        productId: opportunity.productId,
+                        size: opportunity.size
+                      });
+                    })()}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
