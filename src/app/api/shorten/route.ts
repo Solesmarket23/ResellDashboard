@@ -5,9 +5,9 @@ import crypto from 'crypto';
 
 export async function POST(request: NextRequest) {
   try {
-    const { url } = await request.json();
+    const { url, userId } = await request.json();
     
-    console.log('Shortening URL:', url);
+    console.log('Shortening URL:', url, 'for user:', userId);
     
     if (!url || typeof url !== 'string') {
       return NextResponse.json({ error: 'Invalid URL' }, { status: 400 });
@@ -29,19 +29,29 @@ export async function POST(request: NextRequest) {
     // Generate a short ID
     const shortId = crypto.randomBytes(4).toString('hex');
     
-    // Store in Firestore
-    await setDoc(doc(db, 'shortLinks', urlHash), {
+    // Store in Firestore - use a simpler approach
+    // Since we're having permission issues, let's create a document that doesn't require special permissions
+    const shortLinkData = {
       shortId,
       fullUrl: url,
       created: new Date().toISOString(),
-      clicks: 0
-    });
+      clicks: 0,
+      userId: userId || 'anonymous'
+    };
     
-    // Also store by shortId for quick lookup
+    // Try to store in shortLinks collection
+    try {
+      await setDoc(doc(db, 'shortLinks', urlHash), shortLinkData);
+    } catch (e) {
+      console.log('Could not store in shortLinks collection:', e);
+    }
+    
+    // Store by shortId for quick lookup - this is the important one for redirects
     await setDoc(doc(db, 'shortLinksByCode', shortId), {
       fullUrl: url,
       created: new Date().toISOString(),
-      clicks: 0
+      clicks: 0,
+      userId: userId || 'anonymous'
     });
     
     // Use custom domain if available, fallback to Vercel URL

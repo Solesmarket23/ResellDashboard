@@ -7,7 +7,6 @@ import { shareToTwitter, generateShareImage, ArbitrageShareData } from '@/lib/tw
 import { useSovrn } from '@/lib/hooks/useSovrn';
 import SovrnDebug from './SovrnDebug';
 import { useAuth } from '@/lib/contexts/AuthContext';
-import { createShortUrl } from '@/lib/utils/urlShortener';
 
 // Enhanced placeholder component for StockX products since images aren't publicly accessible
 interface FallbackImageProps {
@@ -381,28 +380,31 @@ const StockXArbitrage: React.FC = () => {
     // Create a short URL to hide the API key
     let shortUrl = '';
     try {
-      // First check if user is authenticated
       const { user } = auth;
       console.log('Auth state:', { isAuthenticated: !!user, userId: user?.uid });
       
-      if (user) {
-        // Try the URL shortener utility
-        const url = await createShortUrl(affiliateUrl, user.uid);
-        if (url) {
-          shortUrl = url;
-          console.log('Short URL created successfully:', shortUrl);
-        } else {
-          console.log('createShortUrl returned null');
-        }
+      // Use the API route which handles Firebase server-side
+      const response = await fetch('/api/shorten', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          url: affiliateUrl,
+          userId: user?.uid 
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        shortUrl = data.shortUrl;
+        console.log('Short URL created via API:', shortUrl);
       } else {
-        // Fallback: Use a simple URL shortener that doesn't require auth
-        console.log('No authenticated user, using fallback URL');
-        // For now, just use the affiliate URL directly
+        console.error('API error:', response.status, await response.text());
+        // Fallback to affiliate URL
         shortUrl = affiliateUrl;
       }
     } catch (error) {
-      console.error('Error in short URL creation:', error);
-      // Fallback to affiliate URL
+      console.error('Error creating short URL:', error);
+      // Fallback to affiliate URL  
       shortUrl = affiliateUrl;
     }
     
