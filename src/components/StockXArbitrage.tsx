@@ -375,6 +375,23 @@ const StockXArbitrage: React.FC = () => {
       size: opportunity.size
     });
     
+    // Create a short URL to hide the API key
+    let shortUrl = '';
+    try {
+      const response = await fetch('/api/shorten', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: affiliateUrl })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        shortUrl = data.shortUrl;
+      }
+    } catch (error) {
+      console.error('Failed to create short URL:', error);
+    }
+    
     const shareData: ArbitrageShareData = {
       productName: opportunity.productName,
       size: opportunity.size,
@@ -384,6 +401,7 @@ const StockXArbitrage: React.FC = () => {
       profitMargin: opportunity.profitMargin || 0,
       imageUrl: opportunity.imageUrl,
       affiliateUrl,
+      shortUrl: shortUrl || undefined,
       backgroundVersion: 'bright' // Using bright gradient as default
     };
     

@@ -9,6 +9,7 @@ export interface ArbitrageShareData {
   profitMargin: number;
   imageUrl?: string;
   affiliateUrl?: string;
+  shortUrl?: string;
   backgroundVersion?: BackgroundVersion;
 }
 
@@ -21,8 +22,10 @@ export function generateTwitterText(data: ArbitrageShareData): string {
     `Sell: $${data.salePrice.toFixed(2)}\n` +
     `Profit: $${data.profit.toFixed(2)} (${data.profitMargin}%) (estimated profit with buyer fees & selling via no-fee resale)\n\n`;
   
-  // Don't include the affiliate link in tweet text for security
-  // Users should click through from your profile or use the link in the image
+  // Add short URL if available (doesn't expose API key)
+  if (data.shortUrl) {
+    text += `🔗 ${data.shortUrl}\n\n`;
+  }
   
   text += `#StockX #Reselling #SneakerArbitrage`;
   
