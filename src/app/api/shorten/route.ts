@@ -48,8 +48,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ 
       shortUrl: `https://${domain}/go/${shortId}` 
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating short URL:', error);
-    return NextResponse.json({ error: 'Failed to create short URL' }, { status: 500 });
+    return NextResponse.json({ 
+      error: 'Failed to create short URL',
+      details: error.message || 'Unknown error',
+      code: error.code
+    }, { status: 500 });
   }
 }
