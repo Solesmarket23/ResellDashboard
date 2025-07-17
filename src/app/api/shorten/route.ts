@@ -18,8 +18,9 @@ export async function POST(request: NextRequest) {
     const existingDoc = await getDoc(doc(db, 'shortLinks', urlHash));
     if (existingDoc.exists()) {
       const data = existingDoc.data();
+      const domain = process.env.NEXT_PUBLIC_DOMAIN || 'resell-dashboard-zeta.vercel.app';
       return NextResponse.json({ 
-        shortUrl: `https://resell-dashboard-zeta.vercel.app/go/${data.shortId}` 
+        shortUrl: `https://${domain}/go/${data.shortId}` 
       });
     }
     
@@ -41,8 +42,11 @@ export async function POST(request: NextRequest) {
       clicks: 0
     });
     
+    // Use custom domain if available, fallback to Vercel URL
+    const domain = process.env.NEXT_PUBLIC_DOMAIN || 'resell-dashboard-zeta.vercel.app';
+    
     return NextResponse.json({ 
-      shortUrl: `https://resell-dashboard-zeta.vercel.app/go/${shortId}` 
+      shortUrl: `https://${domain}/go/${shortId}` 
     });
   } catch (error) {
     console.error('Error creating short URL:', error);
