@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, DollarSign, ExternalLink, Search, AlertCircle, BarChart3, LogIn, CheckCircle, Bell, Twitter, Upload, Image } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, ExternalLink, Search, AlertCircle, BarChart3, LogIn, CheckCircle, Bell, Twitter, Upload, Image } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { shareToTwitter, generateShareImage, ArbitrageShareData } from '@/lib/twitter/twitterExport';
 import { generateEnhancedShareImage, EnhancedArbitrageShareData } from '@/lib/twitter/enhancedGraphics';
@@ -98,6 +98,9 @@ const StockXArbitrage: React.FC = () => {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [trackingMessage, setTrackingMessage] = useState<string | null>(null); // Separate message for tracking confirmations
   const [clickedButtons, setClickedButtons] = useState<Set<string>>(new Set()); // Track which buttons were clicked
+  const [monitoredProducts, setMonitoredProducts] = useState<Set<string>>(new Set()); // Track monitored products
+  const [showMonitorSettings, setShowMonitorSettings] = useState<{ [key: string]: boolean }>({});
+  const [monitorSettings, setMonitorSettings] = useState<{ [key: string]: { priceDropThreshold: number } }>({});
   const [hasSearched, setHasSearched] = useState(false); // Track if user has performed a search attempt
   const [currentPage, setCurrentPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
@@ -492,6 +495,78 @@ const StockXArbitrage: React.FC = () => {
     shareToTwitter(shareData);
   };
 
+  const addToPriceMonitor = async (opportunity: ArbitrageOpportunity, threshold: number = 20) => {
+    console.log('📊 Adding to price monitor:', opportunity.productName, 'with', threshold + '% threshold');
+    
+    const buttonId = `monitor-${opportunity.productId}-${opportunity.variantId}`;
+    setClickedButtons(prev => new Set(prev).add(buttonId));
+    
+    // Get existing monitored products from localStorage
+    const existingItems = localStorage.getItem('stockx_monitored_products');
+    const monitoredItems = existingItems ? JSON.parse(existingItems) : [];
+    
+    // Check if already monitored
+    const isAlreadyMonitored = monitoredItems.some((item: any) => 
+      item.productId === opportunity.productId && item.variantId === opportunity.variantId
+    );
+    
+    if (isAlreadyMonitored) {
+      setTrackingMessage('⚠️ This product is already being monitored for price drops');
+      setTimeout(() => {
+        setTrackingMessage(null);
+        setClickedButtons(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(buttonId);
+          return newSet;
+        });
+      }, 4000);
+      return;
+    }
+    
+    // Create new monitored product
+    const newMonitoredProduct = {
+      id: `${opportunity.productId}-${opportunity.variantId}`,
+      productId: opportunity.productId,
+      variantId: opportunity.variantId,
+      title: opportunity.productName,
+      brand: opportunity.productName.split(' ')[0], // Simple brand extraction
+      size: opportunity.size,
+      currentAsk: opportunity.askAmount || 0,
+      currentBid: opportunity.bidAmount || 0,
+      currentFlexAsk: opportunity.flexAskAmount,
+      targetAskPrice: Math.floor((opportunity.askAmount || 0) * (1 - threshold / 100)), // Target price based on threshold
+      targetFlexAskPrice: opportunity.flexAskAmount ? Math.floor(opportunity.flexAskAmount * (1 - threshold / 100)) : undefined,
+      priceDropThreshold: threshold,
+      flexPriceDropThreshold: threshold,
+      priceHistory: [{
+        timestamp: Date.now(),
+        highestBid: opportunity.bidAmount || 0,
+        lowestAsk: opportunity.askAmount || 0,
+        flexLowestAsk: opportunity.flexAskAmount
+      }],
+      lastChecked: Date.now(),
+      alerts: []
+    };
+    
+    // Add to monitored products
+    monitoredItems.push(newMonitoredProduct);
+    localStorage.setItem('stockx_monitored_products', JSON.stringify(monitoredItems));
+    
+    // Update state
+    setMonitoredProducts(new Set([...monitoredProducts, buttonId]));
+    
+    // Start monitoring if not already active
+    const isMonitoringActive = localStorage.getItem('stockx_monitoring_active') === 'true';
+    if (!isMonitoringActive) {
+      localStorage.setItem('stockx_monitoring_active', 'true');
+    }
+    
+    setTrackingMessage(`✅ Now monitoring ${opportunity.productName} for ${threshold}% price drops`);
+    setTimeout(() => {
+      setTrackingMessage(null);
+    }, 5000);
+  };
+
   const addToFlexAskMonitor = (opportunity: ArbitrageOpportunity) => {
     console.log('🔔 Track Flex Ask button clicked!');
     console.log('🔔 Adding to Flex Ask Monitor:', opportunity.productName, opportunity.size, 'Flex Ask:', opportunity.flexAskAmount);
@@ -794,6 +869,50 @@ const StockXArbitrage: React.FC = () => {
           </div>
         )}
 
+        {/* Price Drop Alerts */}
+        {(() => {
+          // Check for price drop alerts in localStorage
+          const savedProducts = localStorage.getItem('stockx_monitored_products');
+          if (savedProducts) {
+            const products = JSON.parse(savedProducts);
+            const recentAlerts = products
+              .flatMap((p: any) => p.alerts || [])
+              .filter((alert: any) => Date.now() - alert.timestamp < 24 * 60 * 60 * 1000) // Last 24 hours
+              .sort((a: any, b: any) => b.timestamp - a.timestamp)
+              .slice(0, 3); // Show latest 3 alerts
+            
+            if (recentAlerts.length > 0) {
+              return (
+                <div className="mb-6 bg-green-900/20 border border-green-500/30 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <TrendingDown className="w-5 h-5 text-green-400" />
+                    <h3 className="text-lg font-semibold text-green-400">Recent Price Drops</h3>
+                  </div>
+                  <div className="space-y-2">
+                    {recentAlerts.map((alert: any, index: number) => (
+                      <div key={index} className="text-sm text-gray-300">
+                        <span className="text-green-400">↓ {alert.percentage.toFixed(1)}%</span> - {alert.message}
+                        <span className="text-gray-500 ml-2">
+                          ({new Date(alert.timestamp).toLocaleTimeString()})
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3">
+                    <button
+                      onClick={() => window.location.href = '/dashboard?tab=stockx-price-monitor'}
+                      className="text-sm text-blue-400 hover:text-blue-300 underline"
+                    >
+                      View all monitored products →
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+          }
+          return null;
+        })()}
+
         {/* Tracking Success Message - Separate from search progress */}
         {trackingMessage && (
           <div className="bg-emerald-900/20 border border-emerald-500 rounded-lg p-4 mb-6">
@@ -1049,6 +1168,92 @@ const StockXArbitrage: React.FC = () => {
                     <Twitter className="w-4 h-4" />
                     Share
                   </button>
+                  
+                  {/* Price Monitor Button */}
+                  {(() => {
+                    const monitorButtonId = `monitor-${opportunity.productId}-${opportunity.variantId}`;
+                    const isMonitored = monitoredProducts.has(monitorButtonId);
+                    const showSettings = showMonitorSettings[monitorButtonId];
+                    const settings = monitorSettings[monitorButtonId] || { priceDropThreshold: 20 };
+                    
+                    return (
+                      <div className="relative">
+                        <button
+                          onClick={() => {
+                            if (!isMonitored && !showSettings) {
+                              setShowMonitorSettings(prev => ({ ...prev, [monitorButtonId]: true }));
+                            }
+                          }}
+                          className={`font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2 ${
+                            isMonitored 
+                              ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white cursor-default'
+                              : 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white'
+                          }`}
+                          disabled={isMonitored}
+                        >
+                          {isMonitored ? (
+                            <>
+                              <CheckCircle className="w-4 h-4" />
+                              Monitoring
+                            </>
+                          ) : (
+                            <>
+                              <TrendingDown className="w-4 h-4" />
+                              Monitor Price
+                            </>
+                          )}
+                        </button>
+                        
+                        {/* Price drop threshold settings */}
+                        {showSettings && !isMonitored && (
+                          <div className="absolute top-full mt-2 right-0 bg-gray-800 border border-gray-700 rounded-lg p-4 shadow-xl z-10 w-64">
+                            <div className="mb-3">
+                              <label className="text-sm text-gray-300 block mb-1">Alert when price drops by:</label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="range"
+                                  min="5"
+                                  max="50"
+                                  step="5"
+                                  value={settings.priceDropThreshold}
+                                  onChange={(e) => {
+                                    const value = parseInt(e.target.value);
+                                    setMonitorSettings(prev => ({
+                                      ...prev,
+                                      [monitorButtonId]: { priceDropThreshold: value }
+                                    }));
+                                  }}
+                                  className="flex-1"
+                                />
+                                <span className="text-white font-bold w-12 text-right">{settings.priceDropThreshold}%</span>
+                              </div>
+                              <div className="text-xs text-gray-400 mt-1">
+                                Current: ${opportunity.askAmount?.toFixed(2) || '0'} → Alert at: $
+                                {((opportunity.askAmount || 0) * (1 - settings.priceDropThreshold / 100)).toFixed(2)}
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => {
+                                  addToPriceMonitor(opportunity, settings.priceDropThreshold);
+                                  setShowMonitorSettings(prev => ({ ...prev, [monitorButtonId]: false }));
+                                }}
+                                className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-3 rounded transition-colors"
+                              >
+                                Start Monitoring
+                              </button>
+                              <button
+                                onClick={() => setShowMonitorSettings(prev => ({ ...prev, [monitorButtonId]: false }))}
+                                className="bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-3 rounded transition-colors"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {showFlexAsk && opportunity.flexAskAmount && (() => {
                     const buttonId = `${opportunity.productId}-${opportunity.variantId}`;
                     const isClicked = clickedButtons.has(buttonId);
