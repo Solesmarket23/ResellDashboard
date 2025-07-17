@@ -6,6 +6,8 @@ import { useTheme } from '../lib/contexts/ThemeContext';
 import { shareToTwitter, generateShareImage, ArbitrageShareData } from '@/lib/twitter/twitterExport';
 import { useSovrn } from '@/lib/hooks/useSovrn';
 import SovrnDebug from './SovrnDebug';
+import { useAuth } from '@/lib/contexts/AuthContext';
+import { createShortUrl } from '@/lib/utils/urlShortener';
 
 // Enhanced placeholder component for StockX products since images aren't publicly accessible
 interface FallbackImageProps {
@@ -75,6 +77,7 @@ const StockXArbitrage: React.FC = () => {
   const { currentTheme } = useTheme();
   const isNeon = currentTheme.name === 'neon';
   const { convertStockXLink, isInitialized } = useSovrn();
+  const auth = useAuth();
   
   // Debug Sovrn initialization
   useEffect(() => {
@@ -378,23 +381,32 @@ const StockXArbitrage: React.FC = () => {
     // Create a short URL to hide the API key
     let shortUrl = '';
     try {
-      // Try the test endpoint first to debug
-      const endpoint = '/api/shorten-test'; // Change back to '/api/shorten' when working
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: affiliateUrl })
-      });
+      // First check if user is authenticated
+      const { user } = auth;
+      console.log('Auth state:', { isAuthenticated: !!user, userId: user?.uid });
       
-      if (response.ok) {
-        const data = await response.json();
-        shortUrl = data.shortUrl;
+      if (user) {
+        // Try the URL shortener utility
+        const url = await createShortUrl(affiliateUrl, user.uid);
+        if (url) {
+          shortUrl = url;
+          console.log('Short URL created successfully:', shortUrl);
+        } else {
+          console.log('createShortUrl returned null');
+        }
       } else {
-        console.error('Failed to create short URL:', response.status, response.statusText);
+        // Fallback: Use a simple URL shortener that doesn't require auth
+        console.log('No authenticated user, using fallback URL');
+        // For now, just use the affiliate URL directly
+        shortUrl = affiliateUrl;
       }
     } catch (error) {
-      console.error('Failed to create short URL:', error);
+      console.error('Error in short URL creation:', error);
+      // Fallback to affiliate URL
+      shortUrl = affiliateUrl;
     }
+    
+    console.log('Final URLs:', { affiliateUrl, shortUrl });
     
     const shareData: ArbitrageShareData = {
       productName: opportunity.productName,

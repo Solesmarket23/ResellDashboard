@@ -7,6 +7,8 @@ export async function POST(request: NextRequest) {
   try {
     const { url } = await request.json();
     
+    console.log('Shortening URL:', url);
+    
     if (!url || typeof url !== 'string') {
       return NextResponse.json({ error: 'Invalid URL' }, { status: 400 });
     }

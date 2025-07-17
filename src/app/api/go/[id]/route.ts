@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/firebase/firebase';
-import { doc, getDoc, updateDoc, increment } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, increment, collection, query, where, getDocs } from 'firebase/firestore';
 
 export async function GET(
   request: NextRequest,
@@ -9,8 +9,21 @@ export async function GET(
   try {
     const { id } = params;
     
-    // Get the short link data from Firestore
-    const shortLinkDoc = await getDoc(doc(db, 'shortLinksByCode', id));
+    // First try to get from public collection
+    let shortLinkDoc = await getDoc(doc(db, 'shortLinksByCode', id));
+    
+    // If not found, search in user collections
+    if (!shortLinkDoc.exists()) {
+      // Query all users' shortLinks subcollections
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      for (const userDoc of usersSnapshot.docs) {
+        const userShortLinkDoc = await getDoc(doc(db, `users/${userDoc.id}/shortLinks`, id));
+        if (userShortLinkDoc.exists()) {
+          shortLinkDoc = userShortLinkDoc;
+          break;
+        }
+      }
+    }
     
     if (!shortLinkDoc.exists()) {
       // Return a 404 page instead of JSON for better UX
