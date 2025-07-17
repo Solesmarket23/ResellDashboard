@@ -8,7 +8,92 @@ export const dynamic = 'force-dynamic';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useTheme } from '@/lib/contexts/ThemeContext';
-import { TrendingUp, Shield, Zap, BarChart3, DollarSign, Target, ArrowRight } from 'lucide-react';
+import { TrendingUp, Shield, Zap, BarChart3, DollarSign, Target, ArrowRight, Mail, CheckCircle } from 'lucide-react';
+
+// Email Collection Form Component
+const EmailCollectionForm = ({ currentTheme }: { currentTheme: any }) => {
+  const [email, setEmail] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setMessage(null);
+
+    try {
+      const response = await fetch('/api/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setMessage({ type: 'success', text: data.message });
+        setEmail('');
+      } else {
+        setMessage({ type: 'error', text: data.error || 'Something went wrong' });
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Failed to subscribe. Please try again.' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="max-w-md mx-auto">
+      <div className="flex flex-col sm:flex-row gap-4 mb-4">
+        <div className="flex-1 relative">
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Enter your email"
+            required
+            className={`w-full px-5 py-4 rounded-xl ${
+              currentTheme.name === 'Neon'
+                ? 'bg-gray-800/50 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500'
+                : 'bg-gray-800/50 border border-purple-500/30 text-white placeholder-gray-400 focus:border-purple-500'
+            } backdrop-blur-sm transition-all duration-200 focus:outline-none focus:ring-2 ${
+              currentTheme.name === 'Neon' ? 'focus:ring-cyan-500/20' : 'focus:ring-purple-500/20'
+            }`}
+          />
+          <Mail className={`absolute right-4 top-1/2 transform -translate-y-1/2 w-5 h-5 ${
+            currentTheme.colors.textSecondary
+          }`} />
+        </div>
+        
+        <button
+          type="submit"
+          disabled={isLoading}
+          className={`px-8 py-4 rounded-xl font-bold transition-all duration-300 ${
+            currentTheme.name === 'Neon'
+              ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white hover:shadow-lg hover:shadow-cyan-500/25'
+              : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:shadow-lg hover:shadow-purple-500/25'
+          } disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105`}
+        >
+          {isLoading ? 'Subscribing...' : 'Get Early Access'}
+        </button>
+      </div>
+
+      {message && (
+        <div className={`flex items-center justify-center space-x-2 p-3 rounded-lg ${
+          message.type === 'success'
+            ? currentTheme.name === 'Neon'
+              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+              : 'bg-green-500/10 text-green-400 border border-green-500/20'
+            : 'bg-red-500/10 text-red-400 border border-red-500/20'
+        }`}>
+          {message.type === 'success' && <CheckCircle className="w-5 h-5" />}
+          <span>{message.text}</span>
+        </div>
+      )}
+    </form>
+  );
+};
 
 const LandingPage = () => {
   const { currentTheme, setTheme, themes } = useTheme();
@@ -229,6 +314,20 @@ const LandingPage = () => {
               </div>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* Email Collection Section */}
+      <section className={`py-20`}>
+        <div className="max-w-2xl mx-auto text-center px-6">
+          <h2 className={`text-3xl font-bold leading-snug ${currentTheme.colors.textPrimary} mb-4`}>
+            Get Early Access to SolesMarket
+          </h2>
+          <p className={`text-lg ${currentTheme.colors.textSecondary} leading-relaxed mb-8`}>
+            Join the waitlist and be the first to know when we launch new features and exclusive deals.
+          </p>
+          
+          <EmailCollectionForm currentTheme={currentTheme} />
         </div>
       </section>
 

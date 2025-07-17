@@ -12,7 +12,10 @@ const PUBLIC_ROUTES = [
   '/_next/',
   '/favicon.ico',
   '/login',
-  '/api/auth/verify'
+  '/api/auth/verify',
+  '/',  // Landing page
+  '/landing',  // Landing page route
+  '/api/subscribe'  // Email subscription endpoint
 ];
 
 export function middleware(request: NextRequest) {
