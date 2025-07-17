@@ -1,3 +1,5 @@
+import { getBackgroundStyle, BackgroundVersion } from './backgrounds';
+
 export interface ArbitrageShareData {
   productName: string;
   size: string;
@@ -7,6 +9,7 @@ export interface ArbitrageShareData {
   profitMargin: number;
   imageUrl?: string;
   affiliateUrl?: string;
+  backgroundVersion?: BackgroundVersion;
 }
 
 export function generateTwitterText(data: ArbitrageShareData): string {
@@ -16,8 +19,7 @@ export function generateTwitterText(data: ArbitrageShareData): string {
     `${data.productName} (Size ${data.size})\n` +
     `Buy: $${data.purchasePrice.toFixed(2)}\n` +
     `Sell: $${data.salePrice.toFixed(2)}\n` +
-    `Profit: $${data.profit.toFixed(2)} (${data.profitMargin}%)\n\n` +
-    `*Estimated profit based on buyer fees & selling via no-fee resale\n\n`;
+    `Profit: $${data.profit.toFixed(2)} (${data.profitMargin}%) (estimated profit with buyer fees & selling via no-fee resale)\n\n`;
   
   // Add affiliate link if available
   if (data.affiliateUrl) {
@@ -102,28 +104,12 @@ function drawImageWithProduct(
   data: ArbitrageShareData, 
   productImage: HTMLImageElement | null
 ) {
-  // Background gradient
-  const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-  gradient.addColorStop(0, '#1a1a2e');
-  gradient.addColorStop(1, '#0f0f23');
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // Get background style
+  const bgStyle = getBackgroundStyle(data.backgroundVersion || 'bright');
+  const colors = bgStyle.textColors;
   
-  // Add grid pattern
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
-  ctx.lineWidth = 1;
-  for (let i = 0; i < canvas.width; i += 50) {
-    ctx.beginPath();
-    ctx.moveTo(i, 0);
-    ctx.lineTo(i, canvas.height);
-    ctx.stroke();
-  }
-  for (let i = 0; i < canvas.height; i += 50) {
-    ctx.beginPath();
-    ctx.moveTo(0, i);
-    ctx.lineTo(canvas.width, i);
-    ctx.stroke();
-  }
+  // Draw background
+  bgStyle.drawBackground(ctx, canvas);
   
   // Draw product image if available
   if (productImage) {
@@ -146,7 +132,7 @@ function drawImageWithProduct(
     ctx.drawImage(productImage, imgX + offsetX, imgY + offsetY, w, h);
     
     // Add border
-    ctx.strokeStyle = '#00d4ff';
+    ctx.strokeStyle = colors.accent;
     ctx.lineWidth = 3;
     ctx.strokeRect(imgX - 10, imgY - 10, imgSize + 20, imgSize + 20);
   }
@@ -157,13 +143,13 @@ function drawImageWithProduct(
   
   // Title
   ctx.font = 'bold 42px Arial';
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = colors.primary;
   ctx.textAlign = 'left';
   ctx.fillText('StockX Arbitrage Alert!', textStartX, 80);
   
   // Product name
   ctx.font = '28px Arial';
-  ctx.fillStyle = '#00d4ff';
+  ctx.fillStyle = colors.secondary;
   const productText = `${data.productName} (Size ${data.size})`;
   // Wrap text if too long
   const maxWidth = contentWidth;
@@ -192,42 +178,42 @@ function drawImageWithProduct(
   
   // Buy price
   ctx.font = '20px Arial';
-  ctx.fillStyle = '#888888';
+  ctx.fillStyle = colors.muted;
   ctx.fillText('BUY PRICE', textStartX, priceY);
   ctx.font = 'bold 36px Arial';
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = colors.primary;
   ctx.fillText(`$${data.purchasePrice.toFixed(2)}`, textStartX, priceY + 35);
   
   // Sell price
-  ctx.fillStyle = '#888888';
+  ctx.fillStyle = colors.muted;
   ctx.font = '20px Arial';
   ctx.fillText('SELL PRICE', textStartX + 200, priceY);
   ctx.font = 'bold 36px Arial';
-  ctx.fillStyle = '#00ff88';
+  ctx.fillStyle = colors.profit;
   ctx.fillText(`$${data.salePrice.toFixed(2)}`, textStartX + 200, priceY + 35);
   
   // Profit
-  ctx.fillStyle = '#888888';
+  ctx.fillStyle = colors.muted;
   ctx.font = '20px Arial';
   ctx.fillText('PROFIT', textStartX + 400, priceY);
   ctx.font = 'bold 36px Arial';
-  ctx.fillStyle = '#00ff88';
+  ctx.fillStyle = colors.profit;
   ctx.fillText(`$${data.profit.toFixed(2)}`, textStartX + 400, priceY + 35);
   
   // Large profit percentage
   ctx.font = 'bold 72px Arial';
-  ctx.fillStyle = '#00ff88';
+  ctx.fillStyle = colors.profit;
   ctx.textAlign = 'center';
   ctx.fillText(`+${data.profitMargin}%`, canvas.width / 2, 480);
   
   // Disclaimer
   ctx.font = '18px Arial';
-  ctx.fillStyle = '#888888';
+  ctx.fillStyle = colors.muted;
   ctx.textAlign = 'center';
   ctx.fillText('*Estimated profit based on buyer fees & selling via no-fee resale', canvas.width / 2, 540);
   
   // Footer
   ctx.font = '26px Arial';
-  ctx.fillStyle = '#00d4ff';
+  ctx.fillStyle = colors.accent;
   ctx.fillText('Follow @SolesMarket23 on X for more flips', canvas.width / 2, 620);
 }

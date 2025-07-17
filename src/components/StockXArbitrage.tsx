@@ -383,7 +383,8 @@ const StockXArbitrage: React.FC = () => {
       profit: opportunity.profit || 0,
       profitMargin: opportunity.profitMargin || 0,
       imageUrl: opportunity.imageUrl,
-      affiliateUrl
+      affiliateUrl,
+      backgroundVersion: 'bright' // Using bright gradient as default
     };
     
     // Generate and download image
