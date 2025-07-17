@@ -49,13 +49,17 @@ export default function DashboardPage() {
   useEffect(() => {
     setIsClient(true);
     
-    // Check authentication
+    // Check authentication - require Google authentication for dashboard access
     if (!loading && !user) {
       // Check if user has site password authentication
       const siteUserId = localStorage.getItem('siteUserId');
       if (!siteUserId) {
-        // No authentication, redirect to login
+        // No site password authentication, redirect to login
         router.push('/login');
+        return;
+      } else {
+        // User has site password but no Google authentication, redirect to Google login
+        router.push('/google-login');
         return;
       }
     }
