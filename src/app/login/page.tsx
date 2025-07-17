@@ -25,6 +25,12 @@ function LoginForm() {
       });
 
       if (response.ok) {
+        const data = await response.json();
+        // Store user info in localStorage for client-side use
+        if (data.userId) {
+          localStorage.setItem('siteUserId', data.userId);
+          localStorage.setItem('siteUserEmail', data.email || 'user@solesmarket.com');
+        }
         // Redirect to the page they were trying to access
         router.push(from);
       } else {

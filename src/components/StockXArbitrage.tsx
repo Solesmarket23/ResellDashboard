@@ -8,6 +8,7 @@ import { generateEnhancedShareImage, EnhancedArbitrageShareData } from '@/lib/tw
 import { useSovrn } from '@/lib/hooks/useSovrn';
 import SovrnDebug from './SovrnDebug';
 import { useAuth } from '@/lib/contexts/AuthContext';
+import { useSiteAuth } from '@/lib/hooks/useSiteAuth';
 
 // Enhanced placeholder component for StockX products since images aren't publicly accessible
 interface FallbackImageProps {
@@ -78,6 +79,7 @@ const StockXArbitrage: React.FC = () => {
   const isNeon = currentTheme.name === 'neon';
   const { convertStockXLink, isInitialized } = useSovrn();
   const auth = useAuth();
+  const siteAuth = useSiteAuth(); // Use site auth for password-protected users
   
   // Debug Sovrn initialization
   useEffect(() => {
@@ -414,8 +416,9 @@ const StockXArbitrage: React.FC = () => {
     // Create a short URL to hide the API key
     let shortUrl = '';
     try {
-      const { user } = auth;
-      console.log('Auth state:', { isAuthenticated: !!user, userId: user?.uid });
+      // Use site auth if available (password-protected users), otherwise use Firebase auth
+      const user = siteAuth.user || auth.user;
+      console.log('Auth state:', { isAuthenticated: !!user, userId: user?.uid, source: siteAuth.user ? 'site' : 'firebase' });
       
       // Use the API route which handles Firebase server-side
       const response = await fetch('/api/shorten', {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createHash } from 'crypto';
 
 export async function POST(request: NextRequest) {
   try {
@@ -8,14 +9,35 @@ export async function POST(request: NextRequest) {
     const sitePassword = process.env.SITE_PASSWORD || 'solesmarket2024';
     
     if (password === sitePassword) {
-      // Set authentication cookie
-      const response = NextResponse.json({ success: true });
+      // Generate a unique user ID based on the site password
+      // This ensures the same "user" across all password-protected sessions
+      const userId = createHash('sha256')
+        .update(`solesmarket-user-${process.env.SITE_PASSWORD || 'default'}`)
+        .digest('hex')
+        .substring(0, 28); // Firebase UIDs are typically 28 chars
+      
+      // Set authentication cookie with user info
+      const response = NextResponse.json({ 
+        success: true,
+        userId: userId,
+        email: `user@solesmarket.com` // Default email for password-protected users
+      });
+      
       response.cookies.set('site-auth', 'authenticated', {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         maxAge: 60 * 60 * 24 * 30, // 30 days
       });
+      
+      // Also set a user ID cookie that can be read client-side
+      response.cookies.set('site-user-id', userId, {
+        httpOnly: false, // Allow client-side access
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 60 * 60 * 24 * 30, // 30 days
+      });
+      
       return response;
     } else {
       return NextResponse.json({ error: 'Invalid password' }, { status: 401 });
