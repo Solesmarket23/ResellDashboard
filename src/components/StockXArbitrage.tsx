@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { TrendingUp, DollarSign, ExternalLink, Search, AlertCircle, BarChart3, LogIn, CheckCircle, Bell, Twitter } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { shareToTwitter, generateShareImage, ArbitrageShareData } from '@/lib/twitter/twitterExport';
+import { generateEnhancedShareImage, EnhancedArbitrageShareData } from '@/lib/twitter/enhancedGraphics';
 import { useSovrn } from '@/lib/hooks/useSovrn';
 import SovrnDebug from './SovrnDebug';
 import { useAuth } from '@/lib/contexts/AuthContext';
@@ -410,7 +411,8 @@ const StockXArbitrage: React.FC = () => {
     
     console.log('Final URLs:', { affiliateUrl, shortUrl });
     
-    const shareData: ArbitrageShareData = {
+    // Use enhanced graphics for better visual impact
+    const enhancedShareData: EnhancedArbitrageShareData = {
       productName: opportunity.productName,
       size: opportunity.size,
       purchasePrice: opportunity.costPrice || 0,
@@ -420,22 +422,40 @@ const StockXArbitrage: React.FC = () => {
       imageUrl: opportunity.imageUrl,
       affiliateUrl,
       shortUrl: shortUrl || undefined,
-      backgroundVersion: 'bright' // Using bright gradient as default
+      backgroundVersion: 'dark', // Premium dark background
+      platform: 'stockx',
+      flipTime: '3-5 days'
     };
     
-    // Generate and download image
-    const imageUrl = await generateShareImage(shareData);
-    if (imageUrl) {
-      // Create a temporary link to download the image
+    // Generate the enhanced share image
+    const shareImageUrl = await generateEnhancedShareImage(enhancedShareData);
+    
+    // For Twitter, we still use the text-based share
+    const shareData: ArbitrageShareData = {
+      productName: opportunity.productName,
+      size: opportunity.size,
+      purchasePrice: opportunity.costPrice || 0,
+      salePrice: opportunity.askAmount || 0,
+      profit: opportunity.profit || 0,
+      profitMargin: opportunity.profitMargin || 0,
+      imageUrl: shareImageUrl, // Use the generated image
+      affiliateUrl,
+      shortUrl: shortUrl || undefined,
+      backgroundVersion: 'bright'
+    };
+    
+    // Download the enhanced graphic
+    if (shareImageUrl) {
+      // Create a temporary link to download the enhanced image
       const link = document.createElement('a');
-      link.href = imageUrl;
-      link.download = `stockx-arbitrage-${opportunity.productName.replace(/\s+/g, '-')}.png`;
+      link.href = shareImageUrl;
+      link.download = `stockx-arbitrage-enhanced-${opportunity.productName.replace(/\s+/g, '-')}.png`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       
       // Clean up the blob URL
-      setTimeout(() => URL.revokeObjectURL(imageUrl), 1000);
+      setTimeout(() => URL.revokeObjectURL(shareImageUrl), 1000);
     }
     
     // Open Twitter with pre-filled text
