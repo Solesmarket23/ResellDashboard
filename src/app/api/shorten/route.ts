@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { kv } from '@vercel/kv';
+import { Redis } from '@upstash/redis';
 import crypto from 'crypto';
 
 export async function POST(request: NextRequest) {
@@ -10,9 +10,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid URL' }, { status: 400 });
     }
 
-    // Check if KV is configured
-    if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
-      console.log('Vercel KV not configured, using Bitly fallback');
+    // Initialize Redis
+    let redis: Redis | null = null;
+    try {
+      redis = Redis.fromEnv();
+    } catch (e) {
+      console.log('Redis not configured, using fallback');
       
       // Fallback to Bitly if available
       if (process.env.BITLY_ACCESS_TOKEN) {
@@ -34,7 +37,11 @@ export async function POST(request: NextRequest) {
         }
       }
       
-      // If no KV or Bitly, return original URL
+      // If no Redis or Bitly, return original URL
+      return NextResponse.json({ shortUrl: url });
+    }
+
+    if (!redis) {
       return NextResponse.json({ shortUrl: url });
     }
 
@@ -42,7 +49,7 @@ export async function POST(request: NextRequest) {
     const urlHash = crypto.createHash('md5').update(url).digest('hex');
     
     // Check if this URL already exists
-    const existingShortId = await kv.get(`url:${urlHash}`);
+    const existingShortId = await redis.get(`url:${urlHash}`);
     if (existingShortId) {
       const domain = process.env.NEXT_PUBLIC_DOMAIN || 'solesmarket.com';
       return NextResponse.json({ 
@@ -53,9 +60,9 @@ export async function POST(request: NextRequest) {
     // Generate a short ID
     const shortId = crypto.randomBytes(4).toString('hex');
     
-    // Store both mappings in KV
-    await kv.set(`url:${urlHash}`, shortId, { ex: 60 * 60 * 24 * 30 }); // 30 days expiry
-    await kv.set(`short:${shortId}`, url, { ex: 60 * 60 * 24 * 30 }); // 30 days expiry
+    // Store both mappings in Redis
+    await redis.set(`url:${urlHash}`, shortId, { ex: 60 * 60 * 24 * 30 }); // 30 days expiry
+    await redis.set(`short:${shortId}`, url, { ex: 60 * 60 * 24 * 30 }); // 30 days expiry
     
     // Use custom domain
     const domain = process.env.NEXT_PUBLIC_DOMAIN || 'solesmarket.com';

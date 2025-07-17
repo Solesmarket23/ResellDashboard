@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { kv } from '@vercel/kv';
+import { Redis } from '@upstash/redis';
 
 export async function GET(
   request: NextRequest,
@@ -8,8 +8,11 @@ export async function GET(
   try {
     const { id } = params;
     
-    // Check if KV is configured
-    if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
+    // Initialize Redis
+    let redis: Redis | null = null;
+    try {
+      redis = Redis.fromEnv();
+    } catch (e) {
       return new NextResponse(
         `<!DOCTYPE html>
         <html>
@@ -33,8 +36,32 @@ export async function GET(
       );
     }
     
-    // Get the full URL from KV storage
-    const fullUrl = await kv.get<string>(`short:${id}`);
+    if (!redis) {
+      return new NextResponse(
+        `<!DOCTYPE html>
+        <html>
+          <head>
+            <title>Service Unavailable</title>
+            <style>
+              body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+              h1 { color: #333; }
+              p { color: #666; }
+            </style>
+          </head>
+          <body>
+            <h1>Service Temporarily Unavailable</h1>
+            <p>URL shortening service is not configured.</p>
+          </body>
+        </html>`,
+        { 
+          status: 503,
+          headers: { 'Content-Type': 'text/html' }
+        }
+      );
+    }
+    
+    // Get the full URL from Redis storage
+    const fullUrl = await redis.get<string>(`short:${id}`);
     
     if (!fullUrl) {
       // Return a 404 page
