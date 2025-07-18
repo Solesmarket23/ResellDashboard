@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Package } from 'lucide-react';
+import { Loader } from 'lucide-react';
 import StockXListingCreator from '@/components/StockXListingCreator';
-import LoadingOverlay from '@/components/LoadingOverlay';
 import { useSiteAuth } from '@/lib/hooks/useSiteAuth';
 
 export default function StockXListingsPage() {
@@ -22,7 +21,11 @@ export default function StockXListingsPage() {
   }, [isAuthenticated, router]);
 
   if (isLoading) {
-    return <LoadingOverlay />;
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <Loader className="w-8 h-8 animate-spin text-cyan-400" />
+      </div>
+    );
   }
 
   return (
