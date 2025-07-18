@@ -91,15 +91,14 @@ export default function StockXListingCreator() {
         // Transform the products to match our expected format
         const transformedProducts = data.data.products.map((p: any) => {
           // StockX API sometimes uses 'id' and sometimes 'productId'
-          // StockX search returns uuid which should work as productId for variants
-          const productId = p.uuid || p.productId || p.id;
+          // StockX search returns productId according to API docs
+          const productId = p.productId || p.id || p.uuid;
           console.log('Product data:', { 
-            id: p.id, 
-            productId: p.productId, 
-            uuid: p.uuid,
+            productId: p.productId,
             title: p.title,
             urlKey: p.urlKey,
-            selectedProductId: productId
+            styleId: p.styleId,
+            brand: p.brand
           });
           
           return {
@@ -143,11 +142,13 @@ export default function StockXListingCreator() {
       
       if (sizes.length > 0) {
         const mockVariants = sizes.map((size: any) => ({
-          variantId: `${product.productId}-size-${size}`,
+          variantId: `trait-${size}`, // Different prefix for trait-based sizes
           variantValue: size,
           // These will be populated when a size is selected
           lowestAsk: 0,
-          highestBid: 0
+          highestBid: 0,
+          isFlexEligible: false,
+          isDirectEligible: false
         }));
         setVariants(mockVariants);
         console.log(`Created ${mockVariants.length} variants from product traits`);
@@ -193,10 +194,12 @@ export default function StockXListingCreator() {
         console.log('Using standard sneaker sizes as fallback...');
         const standardSizes = ['7', '7.5', '8', '8.5', '9', '9.5', '10', '10.5', '11', '11.5', '12', '13'];
         const fallbackVariants = standardSizes.map(size => ({
-          variantId: `${product.productId}-size-${size}`,
+          variantId: `fallback-${size}`, // Use a simple fallback ID
           variantValue: size,
           lowestAsk: 0,
-          highestBid: 0
+          highestBid: 0,
+          isFlexEligible: false,
+          isDirectEligible: false
         }));
         setVariants(fallbackVariants);
       }
@@ -205,10 +208,12 @@ export default function StockXListingCreator() {
       // Use standard sizes as fallback
       const standardSizes = ['7', '7.5', '8', '8.5', '9', '9.5', '10', '10.5', '11', '11.5', '12', '13'];
       const mockVariants = standardSizes.map(size => ({
-        variantId: `${product.productId}-size-${size}`,
+        variantId: `fallback-${size}`,
         variantValue: size,
         lowestAsk: 0,
-        highestBid: 0
+        highestBid: 0,
+        isFlexEligible: false,
+        isDirectEligible: false
       }));
       setVariants(mockVariants);
     } finally {

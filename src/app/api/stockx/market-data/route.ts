@@ -31,9 +31,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'StockX API key not configured' }, { status: 500 });
     }
 
-    // Use the same endpoint structure as the working search route
-    const marketUrl = `https://api.stockx.com/v2/catalog/products/${productId}/market-data`;
-    console.log(`💰 Fetching market data: ${marketUrl}`);
+    // Use the correct endpoint from Swagger docs
+    const marketUrl = `https://api.stockx.com/v2/catalog/products/${productId}/variants/${variantId}/market-data`;
+    console.log(`💰 Fetching market data for product ${productId}, variant ${variantId}`);
     
     let response = await fetch(marketUrl, {
       method: 'GET',
