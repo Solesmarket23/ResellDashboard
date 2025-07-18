@@ -1,8 +1,10 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Search, DollarSign, Package, CheckCircle, AlertCircle, Loader, X, TrendingUp, ArrowRight } from 'lucide-react';
+import { Search, DollarSign, Package, CheckCircle, AlertCircle, Loader, X, TrendingUp, ArrowRight, Settings } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
+import { useAuth } from '@/lib/contexts/AuthContext';
+import { getUserStockXSettings, saveUserStockXSettings, UserStockXSettings } from '@/lib/firebase/userDataUtils';
 
 interface Product {
   productId: string;
@@ -50,9 +52,28 @@ function getProductIdentifier(product: any): string | null {
          null;
 }
 
+// StockX seller level configuration
+const STOCKX_SELLER_LEVELS = [
+  { level: 1, name: 'Level 1', salesRequired: 'N/A', revenueRequired: 'N/A', baseFee: 9.0 },
+  { level: 2, name: 'Level 2', salesRequired: '12', revenueRequired: '$1,500', baseFee: 8.5 },
+  { level: 3, name: 'Level 3', salesRequired: '40', revenueRequired: '$5,000', baseFee: 8.0 },
+  { level: 4, name: 'Level 4', salesRequired: '200', revenueRequired: '$25,000', baseFee: 7.5 },
+  { level: 5, name: 'Level 5', salesRequired: '800', revenueRequired: '$100,000', baseFee: 7.0 }
+];
+
+const PROCESSING_FEE = 3.0; // 3% payment processing fee
+const SHIPPING_FEE = 4.0; // $4 flat shipping fee
+
 export default function StockXListingCreator() {
   const { currentTheme } = useTheme();
+  const { user } = useAuth();
   const isNeon = currentTheme.name === 'neon';
+  
+  // StockX settings state
+  const [stockXSettings, setStockXSettings] = useState<UserStockXSettings | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [selectedLevel, setSelectedLevel] = useState(1);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
   
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -79,6 +100,51 @@ export default function StockXListingCreator() {
   const [currentOperation, setCurrentOperation] = useState<ListingOperation | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
 
+  // Load StockX settings on mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      if (user) {
+        try {
+          const settings = await getUserStockXSettings(user.uid);
+          if (settings) {
+            setStockXSettings(settings);
+            setSelectedLevel(settings.sellerLevel);
+          }
+        } catch (error) {
+          console.error('Error loading StockX settings:', error);
+        }
+      }
+    };
+    loadSettings();
+  }, [user]);
+
+  // Save StockX settings
+  const saveSettings = async () => {
+    if (!user) return;
+    
+    setIsSavingSettings(true);
+    try {
+      const levelConfig = STOCKX_SELLER_LEVELS.find(l => l.level === selectedLevel);
+      if (levelConfig) {
+        const settings: Partial<UserStockXSettings> = {
+          sellerLevel: selectedLevel as 1 | 2 | 3 | 4 | 5,
+          transactionFee: levelConfig.baseFee
+        };
+        await saveUserStockXSettings(user.uid, settings);
+        setStockXSettings({
+          userId: user.uid,
+          sellerLevel: selectedLevel as 1 | 2 | 3 | 4 | 5,
+          transactionFee: levelConfig.baseFee,
+          updatedAt: new Date().toISOString()
+        });
+        setShowSettings(false);
+      }
+    } catch (error) {
+      console.error('Error saving StockX settings:', error);
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
 
   // Search for products
   const searchProducts = async () => {
@@ -423,15 +489,21 @@ export default function StockXListingCreator() {
     if (!listingPrice || !marketData) return null;
     
     const price = parseFloat(listingPrice);
-    const sellerFee = price * 0.09; // 9% seller fee
-    const transactionFee = price * 0.03; // 3% transaction fee
-    const totalFees = sellerFee + transactionFee;
+    
+    // Use saved transaction fee or default to Level 1 (9%)
+    const transactionFeePercent = stockXSettings?.transactionFee || 9.0;
+    const transactionFee = price * (transactionFeePercent / 100);
+    const processingFee = price * (PROCESSING_FEE / 100);
+    const shippingFee = SHIPPING_FEE;
+    const totalFees = transactionFee + processingFee + shippingFee;
     const payout = price - totalFees;
     
     return {
       price,
-      sellerFee,
       transactionFee,
+      transactionFeePercent,
+      processingFee,
+      shippingFee,
       totalFees,
       payout,
       profitMargin: ((payout / price) * 100).toFixed(1)
@@ -444,16 +516,104 @@ export default function StockXListingCreator() {
     <div className="min-h-screen p-6 bg-gray-900 text-white overflow-y-auto">
       <div className="max-w-4xl mx-auto">
         <div className="mb-8">
-          <div className="flex items-center gap-3 mb-4">
-            <Package className="w-8 h-8 text-cyan-400" />
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-emerald-400 bg-clip-text text-transparent">
-              Create StockX Listing
-            </h1>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <Package className="w-8 h-8 text-cyan-400" />
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-emerald-400 bg-clip-text text-transparent">
+                Create StockX Listing
+              </h1>
+            </div>
+            <button
+              onClick={() => setShowSettings(!showSettings)}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+            >
+              <Settings className="w-4 h-4" />
+              <span className="text-sm">
+                {stockXSettings ? `Level ${stockXSettings.sellerLevel}` : 'Settings'}
+              </span>
+            </button>
           </div>
           <p className="text-gray-400">
             List your products on StockX marketplace with competitive pricing
           </p>
         </div>
+
+        {/* StockX Settings Modal */}
+        {showSettings && (
+          <div className="mb-8 bg-gray-800 rounded-lg p-6 border border-gray-700">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Settings className="w-5 h-5 text-cyan-400" />
+              StockX Seller Settings
+            </h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-3">
+                  Select Your StockX Seller Level
+                </label>
+                <div className="space-y-2">
+                  {STOCKX_SELLER_LEVELS.map((level) => (
+                    <label
+                      key={level.level}
+                      className={`flex items-center justify-between p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                        selectedLevel === level.level
+                          ? 'bg-cyan-500/10 border-cyan-500'
+                          : 'bg-gray-900 border-gray-700 hover:border-gray-600'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="radio"
+                          name="stockxLevel"
+                          value={level.level}
+                          checked={selectedLevel === level.level}
+                          onChange={() => setSelectedLevel(level.level)}
+                          className="w-4 h-4 text-cyan-500 bg-gray-800 border-gray-600 focus:ring-cyan-500"
+                        />
+                        <div>
+                          <div className="font-semibold">{level.name}</div>
+                          <div className="text-sm text-gray-400">
+                            {level.salesRequired !== 'N/A' && (
+                              <>
+                                {level.salesRequired} sales, {level.revenueRequired} revenue
+                              </>
+                            )}
+                            {level.salesRequired === 'N/A' && 'New seller'}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-semibold text-cyan-400">{level.baseFee}%</div>
+                        <div className="text-xs text-gray-400">Transaction Fee</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-4 flex gap-3">
+                <button
+                  onClick={saveSettings}
+                  disabled={isSavingSettings}
+                  className="flex-1 bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isSavingSettings ? (
+                    <Loader className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <CheckCircle className="w-4 h-4" />
+                  )}
+                  Save Settings
+                </button>
+                <button
+                  onClick={() => setShowSettings(false)}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Step 1: Product Search */}
         <div className="mb-8">
@@ -667,12 +827,23 @@ export default function StockXListingCreator() {
                     <span>${profit.price.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Seller Fee (9%)</span>
-                    <span className="text-red-400">-${profit.sellerFee.toFixed(2)}</span>
+                    <span className="text-gray-400">
+                      Transaction Fee ({profit.transactionFeePercent}%)
+                      {stockXSettings && (
+                        <span className="text-xs text-cyan-400 ml-1">
+                          (Level {stockXSettings.sellerLevel})
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-red-400">-${profit.transactionFee.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Transaction Fee (3%)</span>
-                    <span className="text-red-400">-${profit.transactionFee.toFixed(2)}</span>
+                    <span className="text-gray-400">Processing Fee (3%)</span>
+                    <span className="text-red-400">-${profit.processingFee.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Shipping Fee</span>
+                    <span className="text-red-400">-${profit.shippingFee.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between pt-2 border-t border-gray-700 font-semibold">
                     <span>Your Payout</span>

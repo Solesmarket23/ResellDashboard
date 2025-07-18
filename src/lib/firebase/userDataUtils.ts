@@ -122,6 +122,13 @@ export interface UserDashboardSettings {
   updatedAt: string;
 }
 
+export interface UserStockXSettings {
+  userId: string;
+  sellerLevel: 1 | 2 | 3 | 4 | 5; // StockX seller levels
+  transactionFee: number; // Base transaction fee percentage (e.g., 9.0, 8.5, 8.0, 7.5, 7.0)
+  updatedAt: string;
+}
+
 // Collection names
 const COLLECTIONS = {
   THEMES: 'user_themes',
@@ -129,7 +136,8 @@ const COLLECTIONS = {
   SALES: 'user_sales',
   PURCHASES: 'user_purchases', // New collection for purchases
   EMAIL_CONFIGS: 'user_email_configs',
-  DASHBOARD_SETTINGS: 'user_dashboard_settings'
+  DASHBOARD_SETTINGS: 'user_dashboard_settings',
+  STOCKX_SETTINGS: 'user_stockx_settings'
 };
 
 // Theme Persistence
@@ -528,6 +536,42 @@ export const getUserDashboardSettings = async (userId: string): Promise<UserDash
   }
 };
 
+// StockX Settings Persistence
+export const saveUserStockXSettings = async (userId: string, settings: Partial<UserStockXSettings>) => {
+  try {
+    const stockxSettings: UserStockXSettings = {
+      userId,
+      ...settings,
+      updatedAt: new Date().toISOString()
+    } as UserStockXSettings;
+
+    const existingSettings = await getDocuments(COLLECTIONS.STOCKX_SETTINGS);
+    const userSettings = existingSettings.find((s: any) => s.userId === userId);
+
+    if (userSettings && userSettings.id) {
+      await updateDocument(COLLECTIONS.STOCKX_SETTINGS, userSettings.id, stockxSettings);
+    } else {
+      await addDocument(COLLECTIONS.STOCKX_SETTINGS, stockxSettings);
+    }
+
+    console.log('✅ StockX settings saved to Firebase');
+  } catch (error) {
+    console.error('❌ Error saving StockX settings:', error);
+    throw error;
+  }
+};
+
+export const getUserStockXSettings = async (userId: string): Promise<UserStockXSettings | null> => {
+  try {
+    const settings = await getDocuments(COLLECTIONS.STOCKX_SETTINGS);
+    const userSettings = settings.find((s: any) => s.userId === userId);
+    return userSettings || null;
+  } catch (error) {
+    console.error('❌ Error loading StockX settings:', error);
+    return null;
+  }
+};
+
 // Utility function to clear all user data
 export const clearAllUserData = async (userId: string) => {
   console.log('🧹 Starting complete data wipe for user:', userId);
@@ -542,7 +586,8 @@ export const clearAllUserData = async (userId: string) => {
     purchases: 0,
     sales: 0,
     emailConfigs: 0,
-    dashboardSettings: 0
+    dashboardSettings: 0,
+    stockxSettings: 0
   };
 
   try {
@@ -640,6 +685,22 @@ export const clearAllUserData = async (userId: string) => {
       console.log(`✅ Cleared ${clearedCounts.dashboardSettings} dashboard settings`);
     } catch (error) {
       console.warn('⚠️ Error clearing dashboard settings (continuing anyway):', error);
+    }
+
+    // Clear StockX settings (with error handling)
+    try {
+      console.log('🔄 Clearing StockX settings...');
+      const stockxSettings = await getDocuments(COLLECTIONS.STOCKX_SETTINGS);
+      const userStockXSettings = stockxSettings.filter((setting: any) => setting.userId === userId);
+      for (const setting of userStockXSettings) {
+        if (setting.id) {
+          await deleteDocument(COLLECTIONS.STOCKX_SETTINGS, setting.id);
+          clearedCounts.stockxSettings++;
+        }
+      }
+      console.log(`✅ Cleared ${clearedCounts.stockxSettings} StockX settings`);
+    } catch (error) {
+      console.warn('⚠️ Error clearing StockX settings (continuing anyway):', error);
     }
 
     // Clear localStorage data (client-side only, non-critical)
