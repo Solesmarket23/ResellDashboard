@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Bell, BellRing, TrendingDown, TrendingUp, Plus, Trash2, Settings, AlertTriangle, DollarSign, Clock, Target } from 'lucide-react';
 import { usePriceMonitor } from '@/lib/contexts/PriceMonitorContext';
+import { useTheme } from '@/lib/contexts/ThemeContext';
 
 interface PriceData {
   timestamp: number;
@@ -49,6 +50,7 @@ interface NewProductForm {
 }
 
 const StockXPriceMonitor: React.FC = () => {
+  const { theme } = useTheme();
   const {
     monitoredProducts,
     isMonitoring,
@@ -75,6 +77,7 @@ const StockXPriceMonitor: React.FC = () => {
   });
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   // Mark alerts as read when viewing the page
   useEffect(() => {
@@ -708,12 +711,51 @@ const StockXPriceMonitor: React.FC = () => {
                     </div>
                   </div>
                   
-                  <button
-                    onClick={() => removeMonitoredProduct(product.id)}
-                    className="bg-red-600 hover:bg-red-700 text-white p-2 rounded-lg"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  {confirmDeleteId === product.id ? (
+                    <div className={`flex items-center gap-2 rounded-lg px-3 py-2 ${
+                      theme === 'neon' 
+                        ? 'bg-gradient-to-r from-red-900/40 via-pink-900/40 to-purple-900/40 border border-red-500/60 shadow-lg shadow-red-500/30'
+                        : 'bg-gradient-to-r from-red-900/30 to-pink-900/30 border border-red-500/50 shadow-lg shadow-red-500/20'
+                    }`}>
+                      <span className={`text-sm font-medium ${
+                        theme === 'neon' ? 'text-red-300' : 'text-red-400'
+                      }`}>Delete?</span>
+                      <button
+                        onClick={() => {
+                          removeMonitoredProduct(product.id);
+                          setConfirmDeleteId(null);
+                        }}
+                        className={`px-3 py-1 rounded text-sm font-semibold transition-all duration-200 ${
+                          theme === 'neon'
+                            ? 'bg-gradient-to-r from-red-500 via-pink-500 to-red-600 hover:from-red-600 hover:via-pink-600 hover:to-red-700 text-white shadow-lg shadow-red-500/40 animate-pulse'
+                            : 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-lg shadow-red-500/25'
+                        }`}
+                      >
+                        Yes
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteId(null)}
+                        className={`px-3 py-1 rounded text-sm font-semibold transition-all duration-200 ${
+                          theme === 'neon'
+                            ? 'bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 hover:from-gray-800 hover:via-gray-700 hover:to-gray-800 text-gray-200 border border-gray-600/50'
+                            : 'bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white'
+                        }`}
+                      >
+                        No
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmDeleteId(product.id)}
+                      className={`p-2 rounded-lg transition-all duration-200 ${
+                        theme === 'neon'
+                          ? 'bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-700 hover:to-pink-700 text-white shadow-lg shadow-red-500/30'
+                          : 'bg-red-600 hover:bg-red-700 text-white'
+                      }`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
 
                 {/* Recent Alerts */}
