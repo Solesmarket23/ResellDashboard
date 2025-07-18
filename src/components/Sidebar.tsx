@@ -75,6 +75,7 @@ const navigationItems = [
       { id: 'stockx-market-research', label: 'Market Research', icon: Search },
       { id: 'stockx-inventory', label: 'Inventory Manager', icon: Archive },
       { id: 'stockx-arbitrage', label: 'Arbitrage Finder', icon: ArrowLeftRight },
+      { id: 'stockx-listings', label: 'Create Listing', icon: Package },
       { id: 'stockx-repricing', label: 'Automated Repricing', icon: Activity },
       { id: 'stockx-sales', label: 'My Sales', icon: DollarSign },
       { id: 'stockx-releases', label: 'Release Calendar', icon: Calendar },
