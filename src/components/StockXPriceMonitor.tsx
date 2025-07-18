@@ -66,7 +66,7 @@ const StockXPriceMonitor: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const monitoredProductsRef = React.useRef<MonitoredProduct[]>([]);
 
-  // Load saved products from localStorage
+  // Load saved products and settings from localStorage
   useEffect(() => {
     const saved = localStorage.getItem('stockx_monitored_products');
     if (saved) {
@@ -76,6 +76,11 @@ const StockXPriceMonitor: React.FC = () => {
     const savedMonitoring = localStorage.getItem('stockx_monitoring_active');
     if (savedMonitoring === 'true') {
       setIsMonitoring(true);
+    }
+
+    const savedInterval = localStorage.getItem('stockx_monitoring_interval');
+    if (savedInterval) {
+      setMonitoringInterval(parseInt(savedInterval));
     }
   }, []);
 
@@ -89,6 +94,11 @@ const StockXPriceMonitor: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('stockx_monitoring_active', isMonitoring.toString());
   }, [isMonitoring]);
+
+  // Save monitoring interval
+  useEffect(() => {
+    localStorage.setItem('stockx_monitoring_interval', monitoringInterval.toString());
+  }, [monitoringInterval]);
 
   // Check authentication status
   useEffect(() => {
