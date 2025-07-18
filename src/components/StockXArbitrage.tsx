@@ -989,7 +989,7 @@ const StockXArbitrage: React.FC = () => {
           <div className={`flex items-center justify-between p-4 rounded-lg border ${
             isAuthenticated 
               ? isNeon 
-                ? 'bg-green-500/10 border-green-500/30 text-green-400' 
+                ? 'bg-gradient-to-r from-green-900/20 via-emerald-900/20 to-cyan-900/20 border-green-500/50 text-green-400 shadow-lg shadow-green-500/10' 
                 : 'bg-green-50 border-green-200 text-green-800'
               : isNeon 
                 ? 'bg-red-500/10 border-red-500/30 text-red-400' 
@@ -998,9 +998,9 @@ const StockXArbitrage: React.FC = () => {
             <div className="flex items-center">
               <div className={`w-3 h-3 rounded-full mr-3 ${
                 isAuthenticated ? 'bg-green-500' : 'bg-red-500'
-              }`} />
+              } ${isAuthenticated && isNeon ? 'animate-pulse' : ''}`} />
               <span className="font-medium">
-                {isAuthenticated ? '✅ StockX Connected' : '❌ StockX Authentication Required'}
+                {isAuthenticated ? 'StockX Connected' : '❌ StockX Authentication Required'}
               </span>
             </div>
             {!isAuthenticated && (
