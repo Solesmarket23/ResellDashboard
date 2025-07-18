@@ -35,6 +35,7 @@ export async function GET(request: NextRequest) {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
+          'X-API-Key': process.env.STOCKX_CLIENT_ID || '',
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'User-Agent': 'ResellDashboard/1.0'
@@ -183,6 +184,7 @@ export async function POST(request: NextRequest) {
             method: 'PATCH',
             headers: {
               'Authorization': `Bearer ${accessToken}`,
+              'X-API-Key': process.env.STOCKX_CLIENT_ID || '',
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
@@ -236,6 +238,7 @@ export async function POST(request: NextRequest) {
             method: 'DELETE',
             headers: {
               'Authorization': `Bearer ${accessToken}`,
+              'X-API-Key': process.env.STOCKX_CLIENT_ID || '',
             }
           });
 
