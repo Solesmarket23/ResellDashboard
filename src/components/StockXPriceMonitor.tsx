@@ -64,6 +64,7 @@ const StockXPriceMonitor: React.FC = () => {
   const [monitoringInterval, setMonitoringInterval] = useState(300000); // 5 minutes default
   const [notifications, setNotifications] = useState<string[]>([]);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const monitoredProductsRef = React.useRef<MonitoredProduct[]>([]);
 
   // Load saved products from localStorage
   useEffect(() => {
@@ -78,9 +79,10 @@ const StockXPriceMonitor: React.FC = () => {
     }
   }, []);
 
-  // Save products to localStorage
+  // Save products to localStorage and update ref
   useEffect(() => {
     localStorage.setItem('stockx_monitored_products', JSON.stringify(monitoredProducts));
+    monitoredProductsRef.current = monitoredProducts;
   }, [monitoredProducts]);
 
   // Save monitoring state
@@ -117,12 +119,15 @@ const StockXPriceMonitor: React.FC = () => {
   useEffect(() => {
     let intervalId: NodeJS.Timeout;
 
-    if (isMonitoring && monitoredProducts.length > 0) {
+    if (isMonitoring) {
       const checkPrices = async () => {
-        console.log('🔍 Checking prices for', monitoredProducts.length, 'products');
+        const currentProducts = monitoredProductsRef.current;
+        if (currentProducts.length === 0) return;
+        
+        console.log('🔍 Checking prices for', currentProducts.length, 'products');
         
         // Use batch API for better performance
-        const products = monitoredProducts.map(p => ({
+        const products = currentProducts.map(p => ({
           productId: p.productId,
           variantId: p.variantId
         }));
@@ -186,7 +191,7 @@ const StockXPriceMonitor: React.FC = () => {
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
-  }, [isMonitoring, monitoredProducts, monitoringInterval]);
+  }, [isMonitoring, monitoringInterval]); // Removed monitoredProducts to prevent re-creating intervals
 
   const updateProductPrice = (productId: string, newAsk: number, newBid: number, newFlexAsk?: number) => {
     setMonitoredProducts(prev => prev.map(product => {
