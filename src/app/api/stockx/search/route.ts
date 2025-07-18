@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getStockXApiCredentials, getUserIdFromRequest, validateApiCredentials } from '@/lib/utils/userApiKeyHelper';
+import { refreshStockXTokens, setStockXTokenCookies } from '@/lib/stockx/tokenRefresh';
 
 // Helper function to get product image URL
 function getProductImageUrl(product: any): string {
@@ -303,7 +304,8 @@ export async function GET(request: NextRequest) {
   }
 
   // Get access token from cookies
-  const accessToken = request.cookies.get('stockx_access_token')?.value;
+  let accessToken = request.cookies.get('stockx_access_token')?.value;
+  const refreshToken = request.cookies.get('stockx_refresh_token')?.value;
 
   if (!accessToken) {
     return NextResponse.json(

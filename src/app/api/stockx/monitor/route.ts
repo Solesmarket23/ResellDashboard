@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { refreshStockXTokens, setStockXTokenCookies } from '@/lib/stockx/tokenRefresh';
 
 export async function GET(request: NextRequest) {
   try {
     const cookieStore = cookies();
-    const accessToken = cookieStore.get('stockx_access_token')?.value;
+    let accessToken = cookieStore.get('stockx_access_token')?.value;
+    const refreshToken = cookieStore.get('stockx_refresh_token')?.value;
     
     if (!accessToken) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
@@ -19,7 +21,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch market data using catalog search
-    const searchResponse = await fetch(
+    let searchResponse = await fetch(
       `https://api.stockx.com/v2/catalog/search`,
       {
         method: 'POST',
@@ -43,6 +45,70 @@ export async function GET(request: NextRequest) {
         })
       }
     );
+
+    // Handle token refresh if needed
+    if (searchResponse.status === 401 && refreshToken) {
+      console.log('🔄 Token expired, attempting refresh...');
+      const refreshResult = await refreshStockXTokens(refreshToken);
+      
+      if (refreshResult.success && refreshResult.accessToken) {
+        // Retry with new token
+        searchResponse = await fetch(
+          `https://api.stockx.com/v2/catalog/search`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${refreshResult.accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              query: {
+                bool: {
+                  must: [
+                    {
+                      term: {
+                        "product_id": productId
+                      }
+                    }
+                  ]
+                }
+              },
+              size: 1
+            })
+          }
+        );
+
+        if (searchResponse.ok) {
+          const searchData = await searchResponse.json();
+          
+          if (searchData.hits && searchData.hits.hits && searchData.hits.hits.length > 0) {
+            const product = searchData.hits.hits[0]._source;
+            let variantMarketData = null;
+            
+            if (product.market_data && product.market_data.variants) {
+              variantMarketData = product.market_data.variants.find((variant: any) => variant.id === variantId);
+            }
+            
+            const response = NextResponse.json({
+              success: true,
+              data: {
+                productId,
+                variantId,
+                productInfo: product,
+                marketData: variantMarketData,
+                timestamp: Date.now()
+              }
+            });
+
+            // Update tokens
+            setStockXTokenCookies(response, refreshResult.accessToken, refreshResult.refreshToken);
+            return response;
+          }
+        }
+      } else {
+        return NextResponse.json({ error: 'Authentication expired' }, { status: 401 });
+      }
+    }
 
     if (!searchResponse.ok) {
       if (searchResponse.status === 401) {
@@ -108,7 +174,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const cookieStore = cookies();
-    const accessToken = cookieStore.get('stockx_access_token')?.value;
+    let accessToken = cookieStore.get('stockx_access_token')?.value;
+    const refreshToken = cookieStore.get('stockx_refresh_token')?.value;
     
     if (!accessToken) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
@@ -122,6 +189,9 @@ export async function POST(request: NextRequest) {
     }
 
     const results = [];
+    let tokenRefreshed = false;
+    let newAccessToken = accessToken;
+    let newRefreshToken = refreshToken;
     
     // Process each product (with rate limiting)
     for (const product of products) {
@@ -129,12 +199,12 @@ export async function POST(request: NextRequest) {
         const { productId, variantId } = product;
         
         // Fetch market data using catalog search
-        const searchResponse = await fetch(
+        let searchResponse = await fetch(
           `https://api.stockx.com/v2/catalog/search`,
           {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${accessToken}`,
+              'Authorization': `Bearer ${newAccessToken}`,
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
@@ -153,6 +223,44 @@ export async function POST(request: NextRequest) {
             })
           }
         );
+
+        // Handle token refresh on first 401
+        if (searchResponse.status === 401 && refreshToken && !tokenRefreshed) {
+          console.log('🔄 Token expired during batch, attempting refresh...');
+          const refreshResult = await refreshStockXTokens(refreshToken);
+          
+          if (refreshResult.success && refreshResult.accessToken) {
+            tokenRefreshed = true;
+            newAccessToken = refreshResult.accessToken;
+            newRefreshToken = refreshResult.refreshToken || refreshToken;
+            
+            // Retry with new token
+            searchResponse = await fetch(
+              `https://api.stockx.com/v2/catalog/search`,
+              {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${newAccessToken}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  query: {
+                    bool: {
+                      must: [
+                        {
+                          term: {
+                            "product_id": productId
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  size: 1
+                })
+              }
+            );
+          }
+        }
 
         if (searchResponse.ok) {
           const searchData = await searchResponse.json();
@@ -211,11 +319,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       results,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      tokenRefreshed
     });
+
+    // Update tokens if refreshed
+    if (tokenRefreshed && newAccessToken) {
+      setStockXTokenCookies(response, newAccessToken, newRefreshToken);
+    }
+
+    return response;
 
   } catch (error) {
     console.error('Batch monitor API error:', error);
@@ -224,4 +340,4 @@ export async function POST(request: NextRequest) {
       details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 });
   }
-} 
+}

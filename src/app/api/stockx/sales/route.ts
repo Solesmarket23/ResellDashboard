@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { refreshStockXTokens, setStockXTokenCookies } from '@/lib/stockx/tokenRefresh';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -62,86 +63,43 @@ export async function GET(request: NextRequest) {
 
     if (response.status === 401 && refreshToken) {
       // Access token expired, try to refresh
-      console.log('Access token expired, attempting refresh...');
+      console.log('🔄 Token expired, attempting refresh...');
+      const refreshResult = await refreshStockXTokens(refreshToken);
       
-      const clientId = process.env.STOCKX_CLIENT_ID;
-      const clientSecret = process.env.STOCKX_CLIENT_SECRET;
-
-      if (!clientId || !clientSecret) {
-        return NextResponse.json(
-          { error: 'Missing OAuth credentials for token refresh' },
-          { status: 500 }
-        );
-      }
-
-      try {
-        const refreshResponse = await fetch('https://accounts.stockx.com/oauth/token', {
-          method: 'POST',
+      if (refreshResult.success && refreshResult.accessToken) {
+        // Retry the request with new token
+        const retryResponse = await fetch(apiUrl, {
+          method: 'GET',
           headers: {
-            'Content-Type': 'application/x-www-form-urlencoded'
-          },
-          body: new URLSearchParams({
-            grant_type: 'refresh_token',
-            client_id: clientId,
-            client_secret: clientSecret,
-            audience: 'gateway.stockx.com',
-            refresh_token: refreshToken
-          })
+            'Authorization': `Bearer ${refreshResult.accessToken}`,
+            'x-api-key': apiKey,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'FlipFlow/1.0'
+          }
         });
 
-        if (refreshResponse.ok) {
-          const tokenData = await refreshResponse.json();
+        if (retryResponse.ok) {
+          const salesData = await retryResponse.json();
           
-          // Retry the request with new token
-          const retryResponse = await fetch(apiUrl, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${tokenData.access_token}`,
-              'x-api-key': apiKey,
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-              'User-Agent': 'FlipFlow/1.0'
-            }
+          // Process the sales data
+          const processedSales = processSalesData(salesData);
+          
+          // Create response
+          const successResponse = NextResponse.json({
+            success: true,
+            data: processedSales,
+            totalCount: salesData.totalCount || processedSales.length,
+            pageNumber,
+            pageSize,
+            tokenRefreshed: true
           });
 
-          if (retryResponse.ok) {
-            const salesData = await retryResponse.json();
-            
-            // Process the sales data
-            const processedSales = processSalesData(salesData);
-            
-            // Update the access token cookie
-            const successResponse = NextResponse.json({
-              success: true,
-              data: processedSales,
-              totalCount: salesData.totalCount || processedSales.length,
-              pageNumber,
-              pageSize,
-              tokenRefreshed: true
-            });
+          // Update tokens using helper function
+          setStockXTokenCookies(successResponse, refreshResult.accessToken, refreshResult.refreshToken || refreshToken);
 
-            successResponse.cookies.set('stockx_access_token', tokenData.access_token, {
-              httpOnly: true,
-              secure: process.env.NODE_ENV === 'production',
-              sameSite: 'lax',
-              maxAge: 2592000 // 30 days in seconds
-            });
-
-            // Also update refresh token if provided
-            if (tokenData.refresh_token) {
-              successResponse.cookies.set('stockx_refresh_token', tokenData.refresh_token, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'lax',
-                maxAge: 2592000 // 30 days in seconds
-              });
-            }
-
-            return successResponse;
-          }
+          return successResponse;
         }
-      } catch (refreshError) {
-        console.error('Token refresh failed:', refreshError);
       }
     }
 

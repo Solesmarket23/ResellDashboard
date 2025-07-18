@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { refreshStockXTokens, setStockXTokenCookies } from '@/lib/stockx/tokenRefresh';
 
 export async function GET(request: NextRequest) {
   try {
     // Get access token from cookies
     const cookieStore = cookies();
-    const accessToken = cookieStore.get('stockx_access_token')?.value;
+    let accessToken = cookieStore.get('stockx_access_token')?.value;
+    const refreshToken = cookieStore.get('stockx_refresh_token')?.value;
 
     if (!accessToken) {
       return NextResponse.json({ 
@@ -17,7 +19,7 @@ export async function GET(request: NextRequest) {
     console.log('🛍️ Fetching StockX listings...');
 
     // Fetch listings from StockX API
-    const response = await fetch('https://api.stockx.com/v2/selling/listings', {
+    let response = await fetch('https://api.stockx.com/v2/selling/listings', {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
@@ -27,18 +29,34 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    if (!response.ok) {
-      if (response.status === 401) {
-        // Clear the invalid token
-        const responseWithClearedCookie = NextResponse.json({ 
+    // Handle token refresh if needed
+    if (response.status === 401 && refreshToken) {
+      console.log('🔄 Token expired, attempting refresh...');
+      const refreshResult = await refreshStockXTokens(refreshToken);
+      
+      if (refreshResult.success && refreshResult.accessToken) {
+        // Retry with new token
+        response = await fetch('https://api.stockx.com/v2/selling/listings', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${refreshResult.accessToken}`,
+            'x-api-key': process.env.STOCKX_API_KEY!,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          }
+        });
+        
+        // Store the new access token for later use
+        accessToken = refreshResult.accessToken;
+      } else {
+        return NextResponse.json({ 
           success: false, 
           error: 'Authentication expired. Please re-authenticate.' 
         }, { status: 401 });
-        
-        responseWithClearedCookie.cookies.delete('stockx_access_token');
-        return responseWithClearedCookie;
       }
+    }
 
+    if (!response.ok) {
       throw new Error(`StockX API error: ${response.status} ${response.statusText}`);
     }
 
@@ -65,12 +83,19 @@ export async function GET(request: NextRequest) {
       updatedAt: listing.updatedAt
     }));
 
-    return NextResponse.json({
+    const successResponse = NextResponse.json({
       success: true,
       listings: transformedListings,
       totalCount: transformedListings.length,
       timestamp: new Date().toISOString()
     });
+
+    // If we refreshed the token, set the new cookies
+    if (accessToken !== cookieStore.get('stockx_access_token')?.value) {
+      setStockXTokenCookies(successResponse, accessToken, refreshToken!);
+    }
+
+    return successResponse;
 
   } catch (error) {
     console.error('❌ Error fetching listings:', error);
@@ -88,7 +113,8 @@ export async function POST(request: NextRequest) {
     
     // Get access token from cookies
     const cookieStore = cookies();
-    const accessToken = cookieStore.get('stockx_access_token')?.value;
+    let accessToken = cookieStore.get('stockx_access_token')?.value;
+    const refreshToken = cookieStore.get('stockx_refresh_token')?.value;
 
     if (!accessToken) {
       return NextResponse.json({ 

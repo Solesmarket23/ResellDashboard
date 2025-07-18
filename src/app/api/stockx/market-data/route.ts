@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { refreshStockXTokens, setStockXTokenCookies } from '@/lib/stockx/tokenRefresh';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -11,7 +12,8 @@ export async function GET(request: NextRequest) {
 
   try {
     // Get access token from cookies (same as search route)
-    const accessToken = request.cookies.get('stockx_access_token')?.value;
+    let accessToken = request.cookies.get('stockx_access_token')?.value;
+    const refreshToken = request.cookies.get('stockx_refresh_token')?.value;
     const apiKey = process.env.STOCKX_API_KEY;
 
     if (!accessToken) {
@@ -33,7 +35,7 @@ export async function GET(request: NextRequest) {
     const marketUrl = `https://api.stockx.com/v2/catalog/products/${productId}/market-data`;
     console.log(`💰 Fetching market data: ${marketUrl}`);
     
-    const response = await fetch(marketUrl, {
+    let response = await fetch(marketUrl, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
@@ -44,10 +46,27 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    if (!response.ok) {
-      console.error('StockX API error:', response.status, response.statusText);
+    // Handle token refresh if needed
+    if (response.status === 401 && refreshToken) {
+      console.log('🔄 Token expired, attempting refresh...');
+      const refreshResult = await refreshStockXTokens(refreshToken);
       
-      if (response.status === 401) {
+      if (refreshResult.success && refreshResult.accessToken) {
+        // Retry with new token
+        response = await fetch(marketUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${refreshResult.accessToken}`,
+            'X-API-Key': apiKey,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'FlipFlow/1.0'
+          }
+        });
+        
+        // Store the new access token for later use
+        accessToken = refreshResult.accessToken;
+      } else {
         return NextResponse.json(
           { 
             error: 'Authentication failed', 
@@ -57,7 +76,10 @@ export async function GET(request: NextRequest) {
           { status: 401 }
         );
       }
-      
+    }
+
+    if (!response.ok) {
+      console.error('StockX API error:', response.status, response.statusText);
       return NextResponse.json({ error: 'Failed to fetch market data' }, { status: response.status });
     }
 
@@ -74,7 +96,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Return the specific variant data in the expected format
-    return NextResponse.json({
+    const successResponse = NextResponse.json({
       productId: productId,
       variantId: variantId,
       highestBidAmount: variantData.highestBidAmount,
@@ -82,6 +104,13 @@ export async function GET(request: NextRequest) {
       flexLowestAskAmount: variantData.flexLowestAskAmount,
       currencyCode: variantData.currencyCode || 'USD'
     });
+
+    // If we refreshed the token, set the new cookies
+    if (accessToken !== request.cookies.get('stockx_access_token')?.value) {
+      setStockXTokenCookies(successResponse, accessToken, refreshToken!);
+    }
+
+    return successResponse;
 
   } catch (error) {
     console.error('Error fetching market data:', error);
