@@ -135,8 +135,18 @@ export async function GET(request: NextRequest) {
               httpOnly: true,
               secure: process.env.NODE_ENV === 'production',
               sameSite: 'lax',
-              maxAge: 43200 // 12 hours
+              maxAge: 2592000 // 30 days in seconds
             });
+
+            // Also update refresh token if provided
+            if (tokenData.refresh_token) {
+              successResponse.cookies.set('stockx_refresh_token', tokenData.refresh_token, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'lax',
+                maxAge: 2592000 // 30 days in seconds
+              });
+            }
 
             return successResponse;
           }

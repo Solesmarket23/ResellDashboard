@@ -115,6 +115,7 @@ export async function GET(request: NextRequest) {
         secure: true,
         sameSite: 'none' as const,
         path: '/',
+        maxAge: 2592000 // 30 days in seconds
       };
 
       const finalRedirect = returnTo ? `${baseUrl}${returnTo}` : `${baseUrl}${defaultReturn}`;
