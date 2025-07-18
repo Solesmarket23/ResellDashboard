@@ -74,6 +74,7 @@ export default function StockXListingCreator() {
   const [showSettings, setShowSettings] = useState(false);
   const [selectedLevel, setSelectedLevel] = useState(1);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [showSaveSuccess, setShowSaveSuccess] = useState(false);
   
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -138,6 +139,12 @@ export default function StockXListingCreator() {
           updatedAt: new Date().toISOString()
         });
         setShowSettings(false);
+        setShowSaveSuccess(true);
+        
+        // Hide success message after 3 seconds
+        setTimeout(() => {
+          setShowSaveSuccess(false);
+        }, 3000);
       }
     } catch (error) {
       console.error('Error saving StockX settings:', error);
@@ -538,6 +545,19 @@ export default function StockXListingCreator() {
           </p>
         </div>
 
+        {/* Success Notification */}
+        {showSaveSuccess && (
+          <div 
+            className="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 z-50 transition-all duration-300"
+            style={{
+              animation: 'slideIn 0.3s ease-out',
+            }}
+          >
+            <CheckCircle className="w-5 h-5" />
+            <span className="font-medium">Settings saved successfully!</span>
+          </div>
+        )}
+
         {/* StockX Settings Modal */}
         {showSettings && (
           <div className="mb-8 bg-gray-800 rounded-lg p-6 border border-gray-700">
@@ -917,6 +937,20 @@ export default function StockXListingCreator() {
           </div>
         )}
       </div>
+      
+      {/* Add animation styles */}
+      <style jsx>{`
+        @keyframes slideIn {
+          from {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+      `}</style>
     </div>
   );
 }
