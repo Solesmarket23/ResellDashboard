@@ -200,11 +200,35 @@ export default function StockXListingCreator() {
           const variantInfo = variantMap.get(marketEntry.variantId);
           const size = variantInfo?.size || 'Unknown';
           
+          // Convert pricing from cents to dollars (same as arbitrage finder)
+          const rawBid = parseInt(marketEntry.highestBidAmount) || 0;
+          const standardAsk = parseInt(marketEntry.lowestAskAmount) || 0;
+          const flexAsk = parseInt(marketEntry.flexLowestAskAmount) || 0;
+          
+          // Use best available pricing (same logic as arbitrage finder)
+          let bestAsk = 0;
+          if (standardAsk > 0 && flexAsk > 0) {
+            bestAsk = Math.min(standardAsk, flexAsk);
+          } else if (standardAsk > 0) {
+            bestAsk = standardAsk;
+          } else if (flexAsk > 0) {
+            bestAsk = flexAsk;
+          }
+          
+          // Convert from cents to dollars
+          const lowestAsk = bestAsk / 100;
+          const highestBid = rawBid / 100;
+          
+          console.log(`💰 Variant ${marketEntry.variantId} (${size}):`, {
+            rawBid, standardAsk, flexAsk, bestAsk,
+            finalPrices: { lowestAsk, highestBid }
+          });
+          
           return {
             variantId: marketEntry.variantId,
             variantValue: size, // Use the actual size from variants endpoint
-            lowestAsk: marketEntry.lowestAskAmount || 0,
-            highestBid: marketEntry.highestBidAmount || 0,
+            lowestAsk: lowestAsk,
+            highestBid: highestBid,
             isFlexEligible: marketEntry.isFlexEligible || false,
             isDirectEligible: marketEntry.isDirectEligible || false
           };
