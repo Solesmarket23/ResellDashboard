@@ -55,31 +55,38 @@ export default function StockXRepricing() {
   const [results, setResults] = useState<RepricingResult[]>([]);
   const [dryRun, setDryRun] = useState(true);
   const [notificationEmail, setNotificationEmail] = useState('');
-  const [authenticated, setAuthenticated] = useState(false);
+  const [authenticated, setAuthenticated] = useState(true); // Assume authenticated initially
+  const [authError, setAuthError] = useState(false);
 
   useEffect(() => {
-    checkAuthentication();
+    // Check if we're returning from authentication
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('authenticated') === 'true') {
+      // Remove the parameter from URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+    
     fetchListings();
   }, []);
 
-  const checkAuthentication = async () => {
-    try {
-      const response = await fetch('/api/stockx/test-api-key');
-      const data = await response.json();
-      setAuthenticated(data.success && data.authenticated);
-    } catch (error) {
-      console.error('Auth check failed:', error);
-      setAuthenticated(false);
-    }
-  };
-
   const fetchListings = async () => {
     setLoading(true);
+    setAuthError(false);
     try {
       const response = await fetch('/api/stockx/listings');
+      
+      // Check if authentication failed
+      if (response.status === 401 || response.status === 403) {
+        setAuthenticated(false);
+        setAuthError(true);
+        setListings([]);
+        return;
+      }
+      
       const data = await response.json();
       
       if (data.success && data.listings && Array.isArray(data.listings)) {
+        setAuthenticated(true); // User is authenticated if we got listings
         const enrichedListings = data.listings.map((listing: any) => ({
           ...listing,
           selected: false,
@@ -89,6 +96,11 @@ export default function StockXRepricing() {
           saves: Math.floor(Math.random() * 20)
         }));
         setListings(enrichedListings);
+      } else if (data.error && data.error.includes('token')) {
+        // Token related error
+        setAuthenticated(false);
+        setAuthError(true);
+        setListings([]);
       } else {
         console.log('No listings found or invalid response:', data);
         setListings([]);
@@ -187,17 +199,21 @@ export default function StockXRepricing() {
     }
   };
 
-  if (!authenticated) {
+  if (!authenticated || authError) {
     return (
       <div className="bg-white p-6 rounded-lg shadow-lg">
         <h2 className="text-2xl font-bold mb-4">StockX Repricing</h2>
         <div className="text-center py-8">
-          <p className="text-gray-600 mb-4">Please authenticate with StockX to use the repricing feature.</p>
+          <p className="text-gray-600 mb-4">
+            {authError 
+              ? "Your StockX session has expired. Please re-authenticate to continue."
+              : "Please authenticate with StockX to use the repricing feature."}
+          </p>
           <button 
             onClick={() => window.location.href = '/api/stockx/auth?returnTo=' + encodeURIComponent(window.location.origin + '/dashboard?view=stockx-repricing')}
             className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700"
           >
-            Authenticate with StockX
+            {authError ? "Re-authenticate with StockX" : "Authenticate with StockX"}
           </button>
         </div>
       </div>
