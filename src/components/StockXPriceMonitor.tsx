@@ -127,6 +127,8 @@ const StockXPriceMonitor: React.FC = () => {
           variantId: p.variantId
         }));
         
+        const checkStartTime = Date.now();
+        
         try {
           const response = await fetch('/api/stockx/monitor', {
             method: 'POST',
@@ -140,23 +142,37 @@ const StockXPriceMonitor: React.FC = () => {
             const data = await response.json();
             if (data.success && data.results) {
               // Process results
-                             data.results.forEach((result: any) => {
-                 if (result.success && result.marketData) {
-                   const productId = `${result.productId}-${result.variantId}`;
-                   const newAsk = parseInt(result.marketData.lowestAskAmount);
-                   const newBid = parseInt(result.marketData.highestBidAmount);
-                   const newFlexAsk = result.marketData.flexLowestAskAmount ? parseInt(result.marketData.flexLowestAskAmount) : undefined;
-                   
-                   updateProductPrice(productId, newAsk, newBid, newFlexAsk);
-                 }
-               });
+              data.results.forEach((result: any) => {
+                if (result.success && result.marketData) {
+                  const productId = `${result.productId}-${result.variantId}`;
+                  const newAsk = parseInt(result.marketData.lowestAskAmount);
+                  const newBid = parseInt(result.marketData.highestBidAmount);
+                  const newFlexAsk = result.marketData.flexLowestAskAmount ? parseInt(result.marketData.flexLowestAskAmount) : undefined;
+                  
+                  updateProductPrice(productId, newAsk, newBid, newFlexAsk);
+                }
+              });
+              
+              // Update last check time even if no price changes
+              setMonitoredProducts(prev => prev.map(product => ({
+                ...product,
+                lastChecked: checkStartTime
+              })));
+              
+              console.log('✅ Price check completed at', new Date(checkStartTime).toLocaleTimeString());
             }
           } else if (response.status === 401) {
             // Handle authentication error
-            console.error('Authentication error - please re-authenticate with StockX');
+            console.error('❌ Authentication error - please re-authenticate with StockX');
+            setNotifications(prev => ['Authentication error - please reconnect to StockX', ...prev.slice(0, 9)]);
           }
         } catch (error) {
-          console.error('Error checking prices:', error);
+          console.error('❌ Error checking prices:', error);
+          // Still update last check time to show the attempt was made
+          setMonitoredProducts(prev => prev.map(product => ({
+            ...product,
+            lastChecked: checkStartTime
+          })));
         }
       };
 
