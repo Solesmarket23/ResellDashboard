@@ -95,15 +95,12 @@ export default function StockXListingCreator() {
     console.log(`🧪 Testing with real product ID: ${realProductId}`);
     
     try {
-      // Test different endpoint patterns
+      // Test the market data endpoint which includes variants + pricing
       const endpoints = [
-        `/api/stockx/products/${realProductId}/details`,
+        `/api/stockx/products/${realProductId}/market-data`,
+        `/api/stockx/catalog/products/${realProductId}/market-data`,
         `/api/stockx/products/${realProductId}/variants`,
-        `/api/stockx/products/${realProductId}`,
-        `/api/stockx/catalog/products/${realProductId}`,
-        `/api/stockx/catalog/products/${realProductId}/variants`,
-        `/api/stockx/v1/products/${realProductId}`,
-        `/api/stockx/v1/products/${realProductId}/variants`
+        `/api/stockx/catalog/products/${realProductId}/variants`
       ];
       
       for (const endpoint of endpoints) {
@@ -246,8 +243,15 @@ export default function StockXListingCreator() {
         console.log('✅ Product should have variants, proceeding to fetch them...');
       }
       
-      // Step 2: Try to fetch variants
-      const response = await fetch(`/api/stockx/products/${product.productId}/variants`);
+      // Step 2: Try to fetch variants with market data (better approach)
+      console.log('💰 Trying market data endpoint for variants...');
+      let response = await fetch(`/api/stockx/products/${product.productId}/market-data`);
+      
+      // If market data fails, fall back to variants endpoint
+      if (!response.ok) {
+        console.log('💰 Market data failed, trying variants endpoint...');
+        response = await fetch(`/api/stockx/products/${product.productId}/variants`);
+      }
       
       if (!response.ok) {
         const errorText = await response.text();
@@ -265,7 +269,7 @@ export default function StockXListingCreator() {
       console.log('Variants response:', data);
       
       if (data.success && data.variants && data.variants.length > 0) {
-        console.log('✅ Using real variants from StockX API');
+        console.log(`✅ Using real variants from StockX API (${data.source || 'variants'})`);
         // Sort variants by size (numeric sort for shoe sizes)
         const sortedVariants = data.variants.sort((a: Variant, b: Variant) => {
           const aSize = parseFloat(a.variantValue);
@@ -276,7 +280,7 @@ export default function StockXListingCreator() {
           return a.variantValue.localeCompare(b.variantValue);
         });
         setVariants(sortedVariants);
-        console.log(`✅ Loaded ${sortedVariants.length} variants from API`);
+        console.log(`✅ Loaded ${sortedVariants.length} variants from ${data.source || 'API'}`);
       } else {
         console.warn('❌ No variants data available for product:', product.productId);
         // Use standard sizes as fallback
