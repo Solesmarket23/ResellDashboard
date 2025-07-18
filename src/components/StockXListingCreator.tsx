@@ -81,44 +81,6 @@ export default function StockXListingCreator() {
   const [currentOperation, setCurrentOperation] = useState<ListingOperation | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
 
-  // Test with actual product from search results
-  const testKnownProduct = async () => {
-    console.log('🧪 Testing API endpoints...');
-    
-    // First test with a real product ID from our search results
-    const realProductId = searchResults[0]?.productId;
-    if (!realProductId) {
-      console.log('🧪 No search results to test with. Search for Nike first.');
-      return;
-    }
-    
-    console.log(`🧪 Testing with real product ID: ${realProductId}`);
-    
-    try {
-      // Test different API patterns based on working endpoints
-      const endpoints = [
-        `/api/stockx/catalog/products/${realProductId}/market-data`,
-        `/api/stockx/catalog/products/${realProductId}/variants`,
-        `/api/stockx/selling/products/${realProductId}/variants`,
-        `/api/stockx/selling/products/${realProductId}/market-data`,
-        `/api/stockx/v2/catalog/products/${realProductId}/variants`,
-        `/api/stockx/v2/selling/products/${realProductId}/variants`
-      ];
-      
-      for (const endpoint of endpoints) {
-        try {
-          console.log(`🧪 Testing endpoint: ${endpoint}`);
-          const response = await fetch(endpoint);
-          const data = await response.json();
-          console.log(`✅ ${endpoint} -> Status: ${response.status}`, data);
-        } catch (error) {
-          console.log(`❌ ${endpoint} -> Failed:`, error);
-        }
-      }
-    } catch (error) {
-      console.error('🧪 Test failed:', error);
-    }
-  };
 
   // Search for products
   const searchProducts = async () => {
@@ -148,36 +110,11 @@ export default function StockXListingCreator() {
             return null;
           }
           
-          console.log('Product data with values:', JSON.stringify({
-            productId: p.productId,
+          console.log('Product:', {
+            productId: productId,
             title: p.title,
-            brand: p.brand,
-            selectedIdentifier: productId,
-            // Show actual values of potentially variant-related fields
-            variants: p.variants,
-            sizes: p.sizes,
-            market: p.market,
-            children: p.children,
-            sizeChart: p.sizeChart,
-            productAttributes: p.productAttributes,
-            traits: p.traits,
-            // Show all field names
-            allFields: Object.keys(p)
-          }, null, 2));
-          
-          // If any of these fields contain data, log them separately
-          if (p.children && Object.keys(p.children).length > 0) {
-            console.log('🔍 FOUND CHILDREN:', JSON.stringify(p.children, null, 2));
-          }
-          if (p.variants && p.variants.length > 0) {
-            console.log('🔍 FOUND VARIANTS:', JSON.stringify(p.variants, null, 2));
-          }
-          if (p.sizes && p.sizes.length > 0) {
-            console.log('🔍 FOUND SIZES:', JSON.stringify(p.sizes, null, 2));
-          }
-          if (p.sizeChart) {
-            console.log('🔍 FOUND SIZE CHART:', JSON.stringify(p.sizeChart, null, 2));
-          }
+            brand: p.brand
+          });
           
           return {
             productId: productId,
@@ -211,93 +148,23 @@ export default function StockXListingCreator() {
     setSelectedVariant(null);
     setSearchError(null);
     
-    // First check if we have size data from the search results
-    if (product.sizeData || product.productTraits) {
-      console.log('Checking for size data in search results:', { sizeData: product.sizeData, traits: product.productTraits });
-      
-      // Extract sizes from productTraits if available
-      const sizes = product.productTraits?.find((trait: any) => trait.name === 'Size' || trait.filterId === 'size')?.values || [];
-      
-      if (sizes.length > 0) {
-        const mockVariants = sizes.map((size: any) => ({
-          variantId: `trait-${size}`, // Different prefix for trait-based sizes
-          variantValue: size,
-          // These will be populated when a size is selected
-          lowestAsk: 0,
-          highestBid: 0,
-          isFlexEligible: false,
-          isDirectEligible: false
-        }));
-        setVariants(mockVariants);
-        console.log(`Created ${mockVariants.length} variants from product traits`);
-        setIsLoadingVariants(false);
-        return;
-      }
-    }
-    
-    // If no size data in search results, first check product details to see if it should have variants
     try {
-      // Step 1: Get product details to understand what variants should exist
-      console.log('🔍 Checking product details first...');
-      const detailsResponse = await fetch(`/api/stockx/products/${product.productId}/details`);
-      
-      if (detailsResponse.ok) {
-        const detailsData = await detailsResponse.json();
-        console.log('📦 Product details:', detailsData.productData);
-        
-        if (!detailsData.productData.shouldHaveVariants) {
-          console.log('ℹ️ Product type does not have variants:', detailsData.productData.productType);
-          // This product doesn't have variants, use standard sizes anyway
-          const standardSizes = ['7', '7.5', '8', '8.5', '9', '9.5', '10', '10.5', '11', '11.5', '12', '13'];
-          const fallbackVariants = standardSizes.map(size => ({
-            variantId: `fallback-${size}`,
-            variantValue: size,
-            lowestAsk: 0,
-            highestBid: 0,
-            isFlexEligible: false,
-            isDirectEligible: false
-          }));
-          setVariants(fallbackVariants);
-          setIsLoadingVariants(false);
-          return;
-        }
-        
-        console.log('✅ Product should have variants, proceeding to fetch them...');
-      }
-      
-      // Step 2: Try different API patterns to find working variants endpoint
-      console.log('🏷️ Trying selling API for variants (since /selling/listings works)...');
-      let response = await fetch(`/api/stockx/selling/products/${product.productId}/variants`);
-      
-      // If selling API fails, try market data
-      if (!response.ok) {
-        console.log('💰 Selling API failed, trying market data endpoint...');
-        response = await fetch(`/api/stockx/products/${product.productId}/market-data`);
-      }
-      
-      // If market data fails, fall back to catalog variants
-      if (!response.ok) {
-        console.log('📦 Market data failed, trying catalog variants endpoint...');
-        response = await fetch(`/api/stockx/products/${product.productId}/variants`);
-      }
+      // Use market data endpoint to get real variant IDs (same as arbitrage finder)
+      console.log('💰 Fetching market data to get real variant IDs...');
+      const response = await fetch(`/api/stockx/products/${product.productId}/market-data`);
       
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Variants API error:', response.status, errorText);
-        
-        // If API fails with 404, continue to fallback logic below
-        if (response.status === 404) {
-          console.log('Product not found (404), will use standard sizes...');
-        }
-        
-        throw new Error(`Failed to load variants: ${response.status}`);
+        console.error('Market data API error:', response.status, errorText);
+        throw new Error(`Failed to load market data: ${response.status}`);
       }
       
       const data = await response.json();
-      console.log('Variants response:', data);
+      console.log('Market data response:', data);
       
       if (data.success && data.variants && data.variants.length > 0) {
-        console.log(`✅ Using real variants from StockX API (${data.source || 'variants'})`);
+        console.log(`✅ Using real variants from market data (${data.variants.length} variants)`);
+        
         // Sort variants by size (numeric sort for shoe sizes)
         const sortedVariants = data.variants.sort((a: Variant, b: Variant) => {
           const aSize = parseFloat(a.variantValue);
@@ -307,28 +174,20 @@ export default function StockXListingCreator() {
           }
           return a.variantValue.localeCompare(b.variantValue);
         });
+        
         setVariants(sortedVariants);
-        console.log(`✅ Loaded ${sortedVariants.length} variants from ${data.source || 'API'}`);
+        console.log(`✅ Loaded ${sortedVariants.length} real variants with pricing data`);
       } else {
-        console.warn('❌ No variants data available for product:', product.productId);
-        // Use standard sizes as fallback
-        console.log('🔄 Using standard sneaker sizes as fallback...');
-        const standardSizes = ['7', '7.5', '8', '8.5', '9', '9.5', '10', '10.5', '11', '11.5', '12', '13'];
-        const fallbackVariants = standardSizes.map(size => ({
-          variantId: `fallback-${size}`, // Use a simple fallback ID
-          variantValue: size,
-          lowestAsk: 0,
-          highestBid: 0,
-          isFlexEligible: false,
-          isDirectEligible: false
-        }));
-        setVariants(fallbackVariants);
+        console.warn('❌ No market data available for product:', product.productId);
+        throw new Error('No market data available');
       }
     } catch (error) {
       console.error('Error loading variants:', error);
+      console.log('🔄 Using standard sneaker sizes as fallback...');
+      
       // Use standard sizes as fallback
       const standardSizes = ['7', '7.5', '8', '8.5', '9', '9.5', '10', '10.5', '11', '11.5', '12', '13'];
-      const mockVariants = standardSizes.map(size => ({
+      const fallbackVariants = standardSizes.map(size => ({
         variantId: `fallback-${size}`,
         variantValue: size,
         lowestAsk: 0,
@@ -336,7 +195,7 @@ export default function StockXListingCreator() {
         isFlexEligible: false,
         isDirectEligible: false
       }));
-      setVariants(mockVariants);
+      setVariants(fallbackVariants);
     } finally {
       setIsLoadingVariants(false);
     }
@@ -348,40 +207,34 @@ export default function StockXListingCreator() {
     setMarketData(null);
     
     try {
-      // Log what we're sending to help debug
-      console.log('Loading market data for:', {
+      // Log what we're using
+      console.log('Using market data for:', {
         productId: product.productId,
         variantId: variant.variantId,
-        variantValue: variant.variantValue
+        variantValue: variant.variantValue,
+        lowestAsk: variant.lowestAsk,
+        highestBid: variant.highestBid
       });
       
-      const response = await fetch(`/api/stockx/market-data?productId=${product.productId}&variantId=${variant.variantId}`, {
-        method: 'GET'
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to load market data');
-      }
-      
-      const data = await response.json();
+      // Since we already have pricing from the market data endpoint,
+      // we can use it directly without making another API call
       setMarketData({
         variantId: variant.variantId,
-        lowestAskAmount: data.lowestAskAmount || variant.lowestAsk || 0,
-        highestBidAmount: data.highestBidAmount || variant.highestBid || 0,
-        lastSaleAmount: data.lastSaleAmount
+        lowestAskAmount: variant.lowestAsk || 0,
+        highestBidAmount: variant.highestBid || 0,
+        lastSaleAmount: 0 // Not available in variant data
       });
       
       // Suggest a competitive price (slightly below lowest ask)
-      if (data.lowestAskAmount) {
-        const suggestedPrice = Math.floor(data.lowestAskAmount * 0.95);
+      if (variant.lowestAsk && variant.lowestAsk > 0) {
+        const suggestedPrice = Math.floor(variant.lowestAsk * 0.95);
         setListingPrice(suggestedPrice.toString());
+        console.log(`💰 Suggested price: $${suggestedPrice} (5% below lowest ask of $${variant.lowestAsk})`);
+      } else {
+        console.log('⚠️ No pricing data available for variant');
       }
     } catch (error) {
-      console.error('Error loading market data:', error);
-      // Use variant data as fallback
-      if (variant.lowestAsk) {
-        setListingPrice(Math.floor(variant.lowestAsk * 0.95).toString());
-      }
+      console.error('Error processing market data:', error);
     } finally {
       setIsLoadingMarketData(false);
     }
@@ -555,12 +408,6 @@ export default function StockXListingCreator() {
                 <Search className="w-4 h-4" />
               )}
               Search
-            </button>
-            <button
-              onClick={testKnownProduct}
-              className="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm"
-            >
-              Test
             </button>
           </div>
 
