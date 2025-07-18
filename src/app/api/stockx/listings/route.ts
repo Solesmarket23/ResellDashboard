@@ -17,6 +17,8 @@ export async function GET(request: NextRequest) {
     }
 
     console.log('🛍️ Fetching StockX listings...');
+    console.log('🔑 Using client ID:', process.env.STOCKX_CLIENT_ID ? 'Present' : 'Missing');
+    console.log('🎫 Access token:', accessToken ? `${accessToken.substring(0, 20)}...` : 'Missing');
 
     // Function to fetch a page of listings
     const fetchPage = async (pageNum: number, token: string) => {
@@ -26,7 +28,10 @@ export async function GET(request: NextRequest) {
         sort: 'created_at:desc' // Get newest listings first
       });
       
-      const response = await fetch(`https://api.stockx.com/v2/selling/listings?${params}`, {
+      const url = `https://api.stockx.com/v2/selling/listings?${params}`;
+      console.log('📍 Fetching from:', url);
+      
+      const response = await fetch(url, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -36,6 +41,8 @@ export async function GET(request: NextRequest) {
           'User-Agent': 'ResellDashboard/1.0'
         }
       });
+      
+      console.log('📊 Response status:', response.status);
       
       return response;
     };
@@ -62,7 +69,25 @@ export async function GET(request: NextRequest) {
     }
 
     if (!response.ok) {
-      throw new Error(`StockX API error: ${response.status} ${response.statusText}`);
+      const errorText = await response.text();
+      console.error('❌ StockX API error:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorText
+      });
+      
+      // Try to parse error details
+      let errorMessage = `StockX API error: ${response.status}`;
+      try {
+        const errorData = JSON.parse(errorText);
+        if (errorData.message) errorMessage = errorData.message;
+        if (errorData.error) errorMessage = errorData.error;
+      } catch {
+        // If not JSON, use the text
+        if (errorText) errorMessage = errorText;
+      }
+      
+      throw new Error(errorMessage);
     }
 
     const data = await response.json();

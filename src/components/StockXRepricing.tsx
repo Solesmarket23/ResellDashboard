@@ -453,6 +453,23 @@ export default function StockXRepricing() {
         {listings.length === 0 ? (
           <div className={`text-center py-8 ${isNeon ? 'text-gray-400' : 'text-gray-500'}`}>
             <p>No listings found. Click "Refresh Listings" to load your StockX listings.</p>
+            {authError && (
+              <div className="mt-4">
+                <p className={`mb-3 ${isNeon ? 'text-red-400' : 'text-red-600'}`}>
+                  Authentication error detected. You may need to re-authenticate with StockX.
+                </p>
+                <button
+                  onClick={() => window.location.href = '/api/stockx/auth?returnTo=' + encodeURIComponent(window.location.pathname)}
+                  className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                    isNeon 
+                      ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white'
+                      : 'bg-green-600 text-white hover:bg-green-700'
+                  }`}
+                >
+                  Re-authenticate with StockX
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
