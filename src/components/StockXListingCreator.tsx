@@ -81,19 +81,41 @@ export default function StockXListingCreator() {
   const [currentOperation, setCurrentOperation] = useState<ListingOperation | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
 
-  // Test with a known sneaker product
+  // Test with actual product from search results
   const testKnownProduct = async () => {
-    console.log('🧪 Testing with known sneaker product...');
-    const testProductId = "bf364c53-eb77-4522-955c-6a6ce952cc6f"; // From StockX docs
+    console.log('🧪 Testing API endpoints...');
+    
+    // First test with a real product ID from our search results
+    const realProductId = searchResults[0]?.productId;
+    if (!realProductId) {
+      console.log('🧪 No search results to test with. Search for Nike first.');
+      return;
+    }
+    
+    console.log(`🧪 Testing with real product ID: ${realProductId}`);
     
     try {
-      const detailsResponse = await fetch(`/api/stockx/products/${testProductId}/details`);
-      const detailsData = await detailsResponse.json();
-      console.log('🧪 Test product details:', detailsData);
+      // Test different endpoint patterns
+      const endpoints = [
+        `/api/stockx/products/${realProductId}/details`,
+        `/api/stockx/products/${realProductId}/variants`,
+        `/api/stockx/products/${realProductId}`,
+        `/api/stockx/catalog/products/${realProductId}`,
+        `/api/stockx/catalog/products/${realProductId}/variants`,
+        `/api/stockx/v1/products/${realProductId}`,
+        `/api/stockx/v1/products/${realProductId}/variants`
+      ];
       
-      const variantsResponse = await fetch(`/api/stockx/products/${testProductId}/variants`);
-      const variantsData = await variantsResponse.json();
-      console.log('🧪 Test product variants:', variantsData);
+      for (const endpoint of endpoints) {
+        try {
+          console.log(`🧪 Testing endpoint: ${endpoint}`);
+          const response = await fetch(endpoint);
+          const data = await response.json();
+          console.log(`✅ ${endpoint} -> Status: ${response.status}`, data);
+        } catch (error) {
+          console.log(`❌ ${endpoint} -> Failed:`, error);
+        }
+      }
     } catch (error) {
       console.error('🧪 Test failed:', error);
     }
