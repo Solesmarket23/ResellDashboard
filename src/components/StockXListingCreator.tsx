@@ -196,6 +196,7 @@ export default function StockXListingCreator() {
       console.log('Variants response:', data);
       
       if (data.success && data.variants && data.variants.length > 0) {
+        console.log('✅ Using real variants from StockX API');
         // Sort variants by size (numeric sort for shoe sizes)
         const sortedVariants = data.variants.sort((a: Variant, b: Variant) => {
           const aSize = parseFloat(a.variantValue);
@@ -206,11 +207,11 @@ export default function StockXListingCreator() {
           return a.variantValue.localeCompare(b.variantValue);
         });
         setVariants(sortedVariants);
-        console.log(`Loaded ${sortedVariants.length} variants from API`);
+        console.log(`✅ Loaded ${sortedVariants.length} variants from API`);
       } else {
-        console.warn('No variants data available for product:', product.productId);
+        console.warn('❌ No variants data available for product:', product.productId);
         // Use standard sizes as fallback
-        console.log('Using standard sneaker sizes as fallback...');
+        console.log('🔄 Using standard sneaker sizes as fallback...');
         const standardSizes = ['7', '7.5', '8', '8.5', '9', '9.5', '10', '10.5', '11', '11.5', '12', '13'];
         const fallbackVariants = standardSizes.map(size => ({
           variantId: `fallback-${size}`, // Use a simple fallback ID
