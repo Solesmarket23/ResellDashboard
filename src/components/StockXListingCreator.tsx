@@ -84,14 +84,25 @@ export default function StockXListingCreator() {
       const data = await response.json();
       if (data.success && data.data?.products) {
         // Transform the products to match our expected format
-        const transformedProducts = data.data.products.map((p: any) => ({
-          productId: p.id || p.productId,
-          title: p.title || p.name,
-          brand: p.brand || 'Unknown',
-          imageUrl: p.imageUrl || p.media?.imageUrl || p.media?.thumbUrl || '/placeholder-shoe.png',
-          retailPrice: p.retailPrice || 0,
-          urlKey: p.urlKey || ''
-        }));
+        const transformedProducts = data.data.products.map((p: any) => {
+          // StockX API sometimes uses 'id' and sometimes 'productId'
+          const productId = p.id || p.productId || p.uuid;
+          console.log('Product data:', { 
+            id: p.id, 
+            productId: p.productId, 
+            uuid: p.uuid,
+            title: p.title 
+          });
+          
+          return {
+            productId: productId,
+            title: p.title || p.name || 'Unknown Product',
+            brand: p.brand || p.primaryCategory || 'Unknown',
+            imageUrl: p.imageUrl || p.media?.imageUrl || p.media?.thumbUrl || p.thumbUrl || '/placeholder-shoe.png',
+            retailPrice: p.retailPrice || p.retail || 0,
+            urlKey: p.urlKey || p.slug || ''
+          };
+        });
         setSearchResults(transformedProducts);
       } else {
         setSearchError('No products found');
