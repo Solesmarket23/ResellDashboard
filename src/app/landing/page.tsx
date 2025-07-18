@@ -175,7 +175,7 @@ const LandingPage = () => {
           </div>
           
           <button 
-            onClick={() => handleNavigation('/login')}
+            onClick={() => handleNavigation('/password-protect')}
             className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
               currentTheme.name === 'Neon'
                 ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white hover:shadow-lg hover:shadow-cyan-500/25'
@@ -229,7 +229,7 @@ const LandingPage = () => {
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <button 
-              onClick={() => handleNavigation('/login')}
+              onClick={() => handleNavigation('/password-protect')}
               className={`px-8 py-4 rounded-xl font-bold text-lg leading-none transition-all duration-300 transform hover:scale-105 ${
                 currentTheme.name === 'Neon'
                   ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white hover:shadow-2xl hover:shadow-cyan-500/25'
@@ -345,7 +345,7 @@ const LandingPage = () => {
             Join thousands of successful resellers using our platform to maximize profits.
           </p>
           <Link 
-            href="/login"
+            href="/password-protect"
             className={`inline-flex items-center justify-center space-x-2 px-8 py-4 rounded-xl font-bold text-lg leading-none transition-all duration-300 transform hover:scale-105 ${
               currentTheme.name === 'Neon'
                 ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white hover:shadow-2xl hover:shadow-cyan-500/25'
