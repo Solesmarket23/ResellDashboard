@@ -147,7 +147,7 @@ async function fetchMarketData(productId: string, variantId: string, accessToken
   const response = await fetch(`https://api.stockx.com/v2/catalog/products/${productId}/market-data`, {
     headers: {
       'Authorization': `Bearer ${accessToken}`,
-      'x-api-key': process.env.STOCKX_API_KEY!,
+      'x-api-key': process.env.STOCKX_CLIENT_ID || '',
       'Content-Type': 'application/json'
     }
   });
@@ -157,13 +157,16 @@ async function fetchMarketData(productId: string, variantId: string, accessToken
   }
 
   const data = await response.json();
-  return Array.isArray(data) ? data.find(item => item.variantId === variantId) : null;
+  // The market data endpoint returns an object with a 'variants' array
+  const variants = data.variants || data;
+  return Array.isArray(variants) ? variants.find(item => item.variantId === variantId) : null;
 }
 
 function calculateNewPrice(listing: ListingToReprice, marketData: any, strategy: RepricingStrategy) {
   const { lowestAskAmount, highestBidAmount } = marketData;
-  const currentLowestAsk = parseInt(lowestAskAmount);
-  const currentHighestBid = parseInt(highestBidAmount);
+  // Convert from cents to dollars
+  const currentLowestAsk = parseInt(lowestAskAmount) / 100;
+  const currentHighestBid = parseInt(highestBidAmount) / 100;
 
   switch (strategy.type) {
     case 'competitive':
@@ -269,19 +272,22 @@ async function updateListingPrice(listingId: string, newPrice: number, accessTok
       method: 'PATCH',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
-        'x-api-key': process.env.STOCKX_API_KEY!,
+        'x-api-key': process.env.STOCKX_CLIENT_ID || '',
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        price: newPrice
+        amount: String(newPrice), // Use 'amount' and ensure it's a string
+        currencyCode: 'USD' // Add currency code
       })
     });
 
     if (!response.ok) {
-      throw new Error(`Update failed: ${response.status}`);
+      const errorData = await response.json();
+      throw new Error(`Update failed: ${response.status} - ${errorData.message || 'Unknown error'}`);
     }
 
-    return { success: true };
+    const result = await response.json();
+    return { success: true, operation: result };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -294,8 +300,9 @@ function calculateProfitChange(listing: ListingToReprice, newPrice: number) {
 }
 
 function analyzeCompetitivePosition(price: number, marketData: any) {
-  const lowestAsk = parseInt(marketData.lowestAskAmount);
-  const highestBid = parseInt(marketData.highestBidAmount);
+  // Convert from cents to dollars
+  const lowestAsk = parseInt(marketData.lowestAskAmount) / 100;
+  const highestBid = parseInt(marketData.highestBidAmount) / 100;
   
   if (price <= lowestAsk) {
     return 'lowest_ask';
