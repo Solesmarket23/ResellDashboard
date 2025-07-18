@@ -17,10 +17,11 @@ export function generateTwitterText(data: ArbitrageShareData): string {
   const profitEmoji = data.profit >= 100 ? '🚀' : data.profit >= 50 ? '🔥' : '💰';
   
   let text = `${profitEmoji} StockX Arbitrage Alert!\n\n` +
-    `${data.productName} (Size ${data.size})\n` +
-    `Buy: $${data.purchasePrice.toFixed(2)}\n` +
-    `Sell: $${data.salePrice.toFixed(2)}\n` +
-    `Profit: $${data.profit.toFixed(2)} (${data.profitMargin}%) (estimated profit with buyer fees & selling via no-fee resale)\n\n`;
+    `${data.productName} (Size ${data.size})\n\n` +
+    `Highest bid: $${data.purchasePrice.toFixed(2)}\n` +
+    `Lowest ask: $${data.salePrice.toFixed(2)}\n\n` +
+    `Profit: $${data.profit.toFixed(2)} (${data.profitMargin}%)\n\n` +
+    `(estimated profit with buyer fees & selling via no-fee resale)\n\n`;
   
   // Add short URL if available (doesn't expose API key)
   if (data.shortUrl) {
@@ -177,18 +178,18 @@ function drawImageWithProduct(
   const boxHeight = 80;
   const boxGap = 20;
   
-  // Buy price
+  // Highest bid
   ctx.font = '20px Arial';
   ctx.fillStyle = colors.muted;
-  ctx.fillText('BUY PRICE', textStartX, priceY);
+  ctx.fillText('HIGHEST BID', textStartX, priceY);
   ctx.font = 'bold 36px Arial';
   ctx.fillStyle = colors.primary;
   ctx.fillText(`$${data.purchasePrice.toFixed(2)}`, textStartX, priceY + 35);
   
-  // Sell price
+  // Lowest ask
   ctx.fillStyle = colors.muted;
   ctx.font = '20px Arial';
-  ctx.fillText('SELL PRICE', textStartX + 200, priceY);
+  ctx.fillText('LOWEST ASK', textStartX + 200, priceY);
   ctx.font = 'bold 36px Arial';
   ctx.fillStyle = colors.profit;
   ctx.fillText(`$${data.salePrice.toFixed(2)}`, textStartX + 200, priceY + 35);
