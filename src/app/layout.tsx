@@ -4,6 +4,7 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/contexts/AuthContext";
 import { ThemeProvider } from "@/lib/contexts/ThemeContext";
 import { DeepgramContextProvider } from "@/lib/contexts/DeepgramContext";
+import { PriceMonitorProvider } from "@/lib/contexts/PriceMonitorContext";
 import Script from 'next/script';
 
 const inter = Inter({ subsets: ["latin"] });
@@ -53,13 +54,15 @@ export default function RootLayout({
       <body className={inter.className}>
         <AuthProvider>
           <ThemeProvider>
-            <DeepgramContextProvider>
-              <div className="flex flex-col min-h-screen">
-                <main className="flex-1 pb-safe-bottom sm:pb-0">
-                  {children}
-                </main>
-              </div>
-            </DeepgramContextProvider>
+            <PriceMonitorProvider>
+              <DeepgramContextProvider>
+                <div className="flex flex-col min-h-screen">
+                  <main className="flex-1 pb-safe-bottom sm:pb-0">
+                    {children}
+                  </main>
+                </div>
+              </DeepgramContextProvider>
+            </PriceMonitorProvider>
           </ThemeProvider>
         </AuthProvider>
       </body>

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Bell, BellRing, TrendingDown, TrendingUp, Plus, Trash2, Settings, AlertTriangle, DollarSign, Clock, Target } from 'lucide-react';
+import { usePriceMonitor } from '@/lib/contexts/PriceMonitorContext';
 
 interface PriceData {
   timestamp: number;
@@ -19,12 +20,12 @@ interface MonitoredProduct {
   size: string;
   currentAsk: number;
   currentBid: number;
-  currentFlexAsk?: number; // Track flex ask separately
-  targetAskPrice?: number; // Alert when ask drops below this
-  targetFlexAskPrice?: number; // Alert when flex ask drops below this
-  targetBidPrice?: number; // Alert when bid goes above this
-  priceDropThreshold: number; // Percentage drop to trigger alert
-  flexPriceDropThreshold: number; // Percentage drop to trigger flex alert
+  currentFlexAsk?: number;
+  targetAskPrice?: number;
+  targetFlexAskPrice?: number;
+  targetBidPrice?: number;
+  priceDropThreshold: number;
+  flexPriceDropThreshold: number;
   priceHistory: PriceData[];
   lastChecked: number;
   alerts: Array<{
@@ -48,8 +49,21 @@ interface NewProductForm {
 }
 
 const StockXPriceMonitor: React.FC = () => {
-  const [monitoredProducts, setMonitoredProducts] = useState<MonitoredProduct[]>([]);
-  const [isMonitoring, setIsMonitoring] = useState(false);
+  const {
+    monitoredProducts,
+    isMonitoring,
+    monitoringInterval,
+    notifications,
+    isAuthenticated,
+    unreadAlertCount,
+    addMonitoredProduct,
+    removeMonitoredProduct,
+    setIsMonitoring,
+    setMonitoringInterval,
+    clearNotifications,
+    markAlertsAsRead
+  } = usePriceMonitor();
+  
   const [showAddForm, setShowAddForm] = useState(false);
   const [newProduct, setNewProduct] = useState<NewProductForm>({
     query: '',
@@ -61,301 +75,11 @@ const StockXPriceMonitor: React.FC = () => {
   });
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [monitoringInterval, setMonitoringInterval] = useState(300000); // 5 minutes default
-  const [notifications, setNotifications] = useState<string[]>([]);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-  const monitoredProductsRef = React.useRef<MonitoredProduct[]>([]);
 
-  // Load saved products and settings from localStorage
+  // Mark alerts as read when viewing the page
   useEffect(() => {
-    const saved = localStorage.getItem('stockx_monitored_products');
-    if (saved) {
-      setMonitoredProducts(JSON.parse(saved));
-    }
-
-    const savedMonitoring = localStorage.getItem('stockx_monitoring_active');
-    if (savedMonitoring === 'true') {
-      setIsMonitoring(true);
-    }
-
-    const savedInterval = localStorage.getItem('stockx_monitoring_interval');
-    if (savedInterval) {
-      setMonitoringInterval(parseInt(savedInterval));
-    }
-  }, []);
-
-  // Save products to localStorage and update ref
-  useEffect(() => {
-    localStorage.setItem('stockx_monitored_products', JSON.stringify(monitoredProducts));
-    monitoredProductsRef.current = monitoredProducts;
-  }, [monitoredProducts]);
-
-  // Save monitoring state
-  useEffect(() => {
-    localStorage.setItem('stockx_monitoring_active', isMonitoring.toString());
-  }, [isMonitoring]);
-
-  // Save monitoring interval
-  useEffect(() => {
-    localStorage.setItem('stockx_monitoring_interval', monitoringInterval.toString());
-  }, [monitoringInterval]);
-
-  // Check authentication status
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const response = await fetch('/api/stockx/test');
-        if (response.ok) {
-          const data = await response.json();
-          console.log('🔍 Auth check response:', data);
-          // Check if we have access token and catalog access (needed for search)
-          const isAuthenticated = data.accessTokenPresent && data.summary?.hasCatalogAccess;
-          setIsAuthenticated(isAuthenticated);
-          console.log('✅ Authentication status:', isAuthenticated);
-        } else {
-          console.log('❌ Auth check failed with status:', response.status);
-          setIsAuthenticated(false);
-        }
-      } catch (error) {
-        console.error('❌ Auth check error:', error);
-        setIsAuthenticated(false);
-      }
-    };
-    
-    checkAuth();
-  }, []);
-
-  // Monitoring loop
-  useEffect(() => {
-    let intervalId: NodeJS.Timeout;
-    let isChecking = false; // Prevent overlapping checks
-
-    if (isMonitoring) {
-      const checkPrices = async () => {
-        // Skip if already checking
-        if (isChecking) {
-          console.log('⏭️ Skipping check - previous check still in progress');
-          return;
-        }
-        
-        isChecking = true;
-        const currentProducts = monitoredProductsRef.current;
-        if (currentProducts.length === 0) {
-          isChecking = false;
-          return;
-        }
-        
-        console.log('🔍 Starting price check for', currentProducts.length, 'products at', new Date().toLocaleTimeString());
-        
-        // Use batch API for better performance
-        const products = currentProducts.map(p => ({
-          productId: p.productId,
-          variantId: p.variantId
-        }));
-        
-        const checkStartTime = Date.now();
-        
-        try {
-          const response = await fetch('/api/stockx/monitor', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ products })
-          });
-          
-          if (response.ok) {
-            const data = await response.json();
-            if (data.success && data.results) {
-              // Process results
-              data.results.forEach((result: any) => {
-                if (result.success && result.marketData) {
-                  const productId = `${result.productId}-${result.variantId}`;
-                  const newAsk = parseInt(result.marketData.lowestAskAmount);
-                  const newBid = parseInt(result.marketData.highestBidAmount);
-                  const newFlexAsk = result.marketData.flexLowestAskAmount ? parseInt(result.marketData.flexLowestAskAmount) : undefined;
-                  
-                  updateProductPrice(productId, newAsk, newBid, newFlexAsk);
-                }
-              });
-              
-              // Update last check time even if no price changes
-              setMonitoredProducts(prev => prev.map(product => ({
-                ...product,
-                lastChecked: checkStartTime
-              })));
-              
-              const checkDuration = Date.now() - checkStartTime;
-              console.log(`✅ Price check completed at ${new Date(checkStartTime).toLocaleTimeString()} (took ${(checkDuration / 1000).toFixed(1)}s)`);
-            }
-          } else if (response.status === 401) {
-            // Handle authentication error
-            console.error('❌ Authentication error - please re-authenticate with StockX');
-            setNotifications(prev => ['Authentication error - please reconnect to StockX', ...prev.slice(0, 9)]);
-            setIsAuthenticated(false);
-          } else {
-            console.error('❌ API error:', response.status);
-          }
-        } catch (error) {
-          console.error('❌ Error checking prices:', error);
-          // Still update last check time to show the attempt was made
-          setMonitoredProducts(prev => prev.map(product => ({
-            ...product,
-            lastChecked: checkStartTime
-          })));
-        }
-        
-        isChecking = false;
-      };
-
-      // Initial check
-      checkPrices();
-      
-      // Set up interval
-      intervalId = setInterval(checkPrices, monitoringInterval);
-      console.log(`⏰ Monitoring interval set to ${monitoringInterval / 1000} seconds`);
-    }
-
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-        console.log('🛑 Monitoring interval cleared');
-      }
-    };
-  }, [isMonitoring, monitoringInterval]); // Removed monitoredProducts to prevent re-creating intervals
-
-  const updateProductPrice = (productId: string, newAsk: number, newBid: number, newFlexAsk?: number) => {
-    setMonitoredProducts(prev => prev.map(product => {
-      if (product.id !== productId) return product;
-
-      const alerts = [...product.alerts];
-      const now = Date.now();
-
-      // Check for ask price drop
-      if (newAsk < product.currentAsk) {
-        const dropPercentage = ((product.currentAsk - newAsk) / product.currentAsk) * 100;
-        
-        if (dropPercentage >= product.priceDropThreshold) {
-          const alert = {
-            id: `${productId}-${now}`,
-            type: 'ask_drop' as const,
-            message: `Ask price dropped ${dropPercentage.toFixed(1)}% from $${product.currentAsk} to $${newAsk}`,
-            timestamp: now,
-            oldPrice: product.currentAsk,
-            newPrice: newAsk,
-            percentage: dropPercentage
-          };
-          alerts.unshift(alert);
-          
-          // Send browser notification
-          sendNotification(`📉 ${product.title} (${product.size})`, alert.message);
-        }
-      }
-
-             // Check for target ask price hit
-       if (product.targetAskPrice && newAsk <= product.targetAskPrice) {
-         const alert = {
-           id: `${productId}-target-${now}`,
-           type: 'target_hit' as const,
-           message: `Target ask price hit! Ask is now $${newAsk} (target: $${product.targetAskPrice})`,
-           timestamp: now,
-           oldPrice: product.currentAsk,
-           newPrice: newAsk,
-           percentage: 0
-         };
-         alerts.unshift(alert);
-         
-         sendNotification(`🎯 ${product.title} (${product.size})`, alert.message);
-       }
-
-       // Check for flex ask price drop
-       if (newFlexAsk && product.currentFlexAsk && newFlexAsk < product.currentFlexAsk) {
-         const dropPercentage = ((product.currentFlexAsk - newFlexAsk) / product.currentFlexAsk) * 100;
-         
-         if (dropPercentage >= product.flexPriceDropThreshold) {
-           const alert = {
-             id: `${productId}-flex-${now}`,
-             type: 'flex_ask_drop' as const,
-             message: `Flex ask dropped ${dropPercentage.toFixed(1)}% from $${product.currentFlexAsk} to $${newFlexAsk}`,
-             timestamp: now,
-             oldPrice: product.currentFlexAsk,
-             newPrice: newFlexAsk,
-             percentage: dropPercentage
-           };
-           alerts.unshift(alert);
-           
-           sendNotification(`📉 FLEX ${product.title} (${product.size})`, alert.message);
-         }
-       }
-
-       // Check for target flex ask price hit
-       if (product.targetFlexAskPrice && newFlexAsk && newFlexAsk <= product.targetFlexAskPrice) {
-         const alert = {
-           id: `${productId}-flex-target-${now}`,
-           type: 'flex_target_hit' as const,
-           message: `Target flex ask hit! Flex ask is now $${newFlexAsk} (target: $${product.targetFlexAskPrice})`,
-           timestamp: now,
-           oldPrice: product.currentFlexAsk || 0,
-           newPrice: newFlexAsk,
-           percentage: 0
-         };
-         alerts.unshift(alert);
-         
-         sendNotification(`🎯 FLEX ${product.title} (${product.size})`, alert.message);
-       }
-
-      // Check for bid price rise
-      if (newBid > product.currentBid) {
-        const risePercentage = ((newBid - product.currentBid) / product.currentBid) * 100;
-        
-        if (product.targetBidPrice && newBid >= product.targetBidPrice) {
-          const alert = {
-            id: `${productId}-bid-${now}`,
-            type: 'bid_rise' as const,
-            message: `Target bid price hit! Bid is now $${newBid} (target: $${product.targetBidPrice})`,
-            timestamp: now,
-            oldPrice: product.currentBid,
-            newPrice: newBid,
-            percentage: risePercentage
-          };
-          alerts.unshift(alert);
-          
-          sendNotification(`📈 ${product.title} (${product.size})`, alert.message);
-        }
-      }
-
-             // Add to price history
-       const priceHistory = [...product.priceHistory, {
-         timestamp: now,
-         highestBid: newBid,
-         lowestAsk: newAsk,
-         flexLowestAsk: newFlexAsk
-       }].slice(-100); // Keep last 100 data points
-
-       return {
-         ...product,
-         currentAsk: newAsk,
-         currentBid: newBid,
-         currentFlexAsk: newFlexAsk,
-         priceHistory,
-         lastChecked: now,
-         alerts: alerts.slice(0, 50) // Keep last 50 alerts
-       };
-    }));
-  };
-
-  const sendNotification = (title: string, message: string) => {
-    // Browser notification
-    if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification(title, {
-        body: message,
-        icon: '/flip-flow-logo.svg'
-      });
-    }
-
-    // In-app notification
-    setNotifications(prev => [`${title}: ${message}`, ...prev.slice(0, 9)]);
-  };
+    markAlertsAsRead();
+  }, [markAlertsAsRead]);
 
   const requestNotificationPermission = async () => {
     if ('Notification' in window) {
@@ -390,23 +114,16 @@ const StockXPriceMonitor: React.FC = () => {
         } else {
           console.log('❌ No products found');
           setSearchResults([]);
-          // Show user feedback
-          setNotifications(prev => [`No products found for "${newProduct.query}"`, ...prev.slice(0, 9)]);
         }
       } else if (response.status === 401) {
         console.error('❌ Authentication error');
-        setNotifications(prev => [`Authentication error - please login to StockX first`, ...prev.slice(0, 9)]);
         setSearchResults([]);
       } else {
         console.error('❌ Search failed with status:', response.status);
-        const errorData = await response.text();
-        console.error('Error details:', errorData);
-        setNotifications(prev => [`Search failed - please try again`, ...prev.slice(0, 9)]);
         setSearchResults([]);
       }
     } catch (error) {
       console.error('❌ Search error:', error);
-      setNotifications(prev => [`Search error - please check your connection`, ...prev.slice(0, 9)]);
       setSearchResults([]);
     }
     setIsSearching(false);
@@ -438,7 +155,7 @@ const StockXPriceMonitor: React.FC = () => {
       alerts: []
     };
 
-    setMonitoredProducts(prev => [...prev, newMonitoredProduct]);
+    addMonitoredProduct(newMonitoredProduct);
     setShowAddForm(false);
     setSearchResults([]);
     setNewProduct({
@@ -449,10 +166,6 @@ const StockXPriceMonitor: React.FC = () => {
       priceDropThreshold: '10',
       flexPriceDropThreshold: '10'
     });
-  };
-
-  const removeProduct = (productId: string) => {
-    setMonitoredProducts(prev => prev.filter(p => p.id !== productId));
   };
 
   const getPriceChange = (product: MonitoredProduct) => {
@@ -489,6 +202,11 @@ const StockXPriceMonitor: React.FC = () => {
                   <span className="text-green-400 text-sm font-medium">Monitoring Active</span>
                 </div>
               )}
+              {unreadAlertCount > 0 && (
+                <div className="bg-red-500 text-white text-xs font-bold rounded-full h-6 w-6 flex items-center justify-center">
+                  {unreadAlertCount}
+                </div>
+              )}
             </div>
             
             <div className="flex items-center gap-3">
@@ -513,6 +231,7 @@ const StockXPriceMonitor: React.FC = () => {
           
           <p className="text-gray-400 text-lg mb-4">
             Track price changes on StockX products and get alerts when opportunities arise
+            {isMonitoring && ' (Running in background across all pages)'}
           </p>
 
           {/* Monitoring Settings */}
@@ -842,9 +561,9 @@ const StockXPriceMonitor: React.FC = () => {
           </div>
         )}
 
-                 {/* Stats */}
-         {monitoredProducts.length > 0 && (
-           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+        {/* Stats */}
+        {monitoredProducts.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
             <div className="bg-gray-800 rounded-lg p-4">
               <div className="flex items-center gap-2 mb-2">
                 <Target className="w-5 h-5 text-blue-400" />
@@ -990,7 +709,7 @@ const StockXPriceMonitor: React.FC = () => {
                   </div>
                   
                   <button
-                    onClick={() => removeProduct(product.id)}
+                    onClick={() => removeMonitoredProduct(product.id)}
                     className="bg-red-600 hover:bg-red-700 text-white p-2 rounded-lg"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -1065,4 +784,4 @@ const StockXPriceMonitor: React.FC = () => {
   );
 };
 
-export default StockXPriceMonitor; 
+export default StockXPriceMonitor;
