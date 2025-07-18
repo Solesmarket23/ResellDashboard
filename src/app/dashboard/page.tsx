@@ -44,6 +44,17 @@ export default function DashboardPage() {
   
   // Dynamic theme detection for consistent background
   const isNeon = currentTheme.name === 'Neon';
+  
+  // Early return if no user and not loading - prevent any dashboard rendering
+  if (!loading && !user && typeof window !== 'undefined') {
+    const siteUserId = localStorage.getItem('siteUserId');
+    if (!siteUserId) {
+      window.location.href = '/login';
+    } else {
+      window.location.href = '/google-login?from=/dashboard';
+    }
+    return null;
+  }
 
   // Ensure we're on the client side before accessing window
   useEffect(() => {
@@ -56,12 +67,12 @@ export default function DashboardPage() {
       if (!siteUserId) {
         // No site password authentication, redirect to login
         console.log('🔐 No site password auth, redirecting to login');
-        router.push('/login');
+        window.location.href = '/login';
         return;
       } else {
         // User has site password but no Google authentication, redirect to Google login
         console.log('🔐 Site password auth found, but no Google auth, redirecting to Google login');
-        router.push('/google-login?from=/dashboard');
+        window.location.href = '/google-login?from=/dashboard';
         return;
       }
     }
