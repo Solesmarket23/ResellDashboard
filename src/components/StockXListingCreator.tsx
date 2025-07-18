@@ -67,7 +67,7 @@ const SHIPPING_FEE = 4.0; // $4 flat shipping fee
 export default function StockXListingCreator() {
   const { currentTheme } = useTheme();
   const { user } = useAuth();
-  const isNeon = currentTheme.name === 'neon';
+  const isNeon = currentTheme.name.toLowerCase() === 'neon';
   
   // StockX settings state
   const [stockXSettings, setStockXSettings] = useState<UserStockXSettings | null>(null);

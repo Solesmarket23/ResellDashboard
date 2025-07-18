@@ -43,7 +43,7 @@ interface RepricingResult {
 
 export default function StockXRepricing() {
   const { currentTheme } = useTheme();
-  const isNeon = currentTheme.name === 'neon';
+  const isNeon = currentTheme.name.toLowerCase() === 'neon';
   
   // Debug theme detection
   useEffect(() => {

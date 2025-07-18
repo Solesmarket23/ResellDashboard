@@ -76,7 +76,7 @@ interface ArbitrageOpportunity {
 
 const StockXArbitrage: React.FC = () => {
   const { currentTheme } = useTheme();
-  const isNeon = currentTheme.name === 'neon';
+  const isNeon = currentTheme.name.toLowerCase() === 'neon';
   const { convertStockXLink, isInitialized } = useSovrn();
   const auth = useAuth();
   const siteAuth = useSiteAuth(); // Use site auth for password-protected users
