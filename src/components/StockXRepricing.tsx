@@ -44,6 +44,12 @@ interface RepricingResult {
 export default function StockXRepricing() {
   const { currentTheme } = useTheme();
   const isNeon = currentTheme.name === 'neon';
+  
+  // Debug theme detection
+  useEffect(() => {
+    console.log('StockX Repricing Theme:', currentTheme.name, 'isNeon:', isNeon);
+  }, [currentTheme, isNeon]);
+  
   const [listings, setListings] = useState<Listing[]>([]);
   const [strategy, setStrategy] = useState<RepricingStrategy>({
     type: 'competitive',
@@ -205,7 +211,7 @@ export default function StockXRepricing() {
 
   if (!authenticated || authError) {
     return (
-      <div className={`min-h-screen p-6 ${isNeon ? 'bg-gray-900' : 'bg-white'} rounded-lg`}>
+      <div className={`min-h-screen p-6 ${isNeon ? 'bg-gray-900' : 'bg-gray-50'}`}>
         <h2 className={`text-2xl font-bold mb-4 ${isNeon ? 'text-cyan-400' : 'text-gray-900'}`}>
           StockX Repricing
         </h2>
@@ -231,7 +237,7 @@ export default function StockXRepricing() {
   }
 
   return (
-    <div className={`min-h-screen p-6 ${isNeon ? 'bg-gray-900 text-white' : 'bg-white'} rounded-lg space-y-6`}>
+    <div className={`min-h-screen p-6 ${isNeon ? 'bg-gray-900 text-white' : 'bg-gray-50'} space-y-6`}>
       <div className="flex items-center justify-between mb-8">
         <div>
           <h2 className={`text-3xl font-bold ${
