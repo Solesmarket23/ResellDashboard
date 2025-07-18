@@ -498,7 +498,7 @@ const StockXArbitrage: React.FC = () => {
     shareToTwitter(shareData);
   };
 
-  const addToPriceMonitor = async (opportunity: ArbitrageOpportunity, threshold: number = 20) => {
+  const addToPriceMonitor = async (opportunity: ArbitrageOpportunity, threshold: number = 30) => {
     console.log('📊 Adding to price monitor:', opportunity.productName, 'with', threshold + '% threshold');
     
     const buttonId = `monitor-${opportunity.productId}-${opportunity.variantId}`;
@@ -1177,7 +1177,7 @@ const StockXArbitrage: React.FC = () => {
                     const monitorButtonId = `monitor-${opportunity.productId}-${opportunity.variantId}`;
                     const isMonitored = monitoredProducts.has(monitorButtonId);
                     const showSettings = showMonitorSettings[monitorButtonId];
-                    const settings = monitorSettings[monitorButtonId] || { priceDropThreshold: 20 };
+                    const settings = monitorSettings[monitorButtonId] || { priceDropThreshold: 30 };
                     
                     return (
                       <div className="relative">
