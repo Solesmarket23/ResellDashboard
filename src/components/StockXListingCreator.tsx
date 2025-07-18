@@ -95,12 +95,14 @@ export default function StockXListingCreator() {
     console.log(`🧪 Testing with real product ID: ${realProductId}`);
     
     try {
-      // Test the market data endpoint which includes variants + pricing
+      // Test different API patterns based on working endpoints
       const endpoints = [
-        `/api/stockx/products/${realProductId}/market-data`,
         `/api/stockx/catalog/products/${realProductId}/market-data`,
-        `/api/stockx/products/${realProductId}/variants`,
-        `/api/stockx/catalog/products/${realProductId}/variants`
+        `/api/stockx/catalog/products/${realProductId}/variants`,
+        `/api/stockx/selling/products/${realProductId}/variants`,
+        `/api/stockx/selling/products/${realProductId}/market-data`,
+        `/api/stockx/v2/catalog/products/${realProductId}/variants`,
+        `/api/stockx/v2/selling/products/${realProductId}/variants`
       ];
       
       for (const endpoint of endpoints) {
@@ -249,13 +251,19 @@ export default function StockXListingCreator() {
         console.log('✅ Product should have variants, proceeding to fetch them...');
       }
       
-      // Step 2: Try to fetch variants with market data (better approach)
-      console.log('💰 Trying market data endpoint for variants...');
-      let response = await fetch(`/api/stockx/products/${product.productId}/market-data`);
+      // Step 2: Try different API patterns to find working variants endpoint
+      console.log('🏷️ Trying selling API for variants (since /selling/listings works)...');
+      let response = await fetch(`/api/stockx/selling/products/${product.productId}/variants`);
       
-      // If market data fails, fall back to variants endpoint
+      // If selling API fails, try market data
       if (!response.ok) {
-        console.log('💰 Market data failed, trying variants endpoint...');
+        console.log('💰 Selling API failed, trying market data endpoint...');
+        response = await fetch(`/api/stockx/products/${product.productId}/market-data`);
+      }
+      
+      // If market data fails, fall back to catalog variants
+      if (!response.ok) {
+        console.log('📦 Market data failed, trying catalog variants endpoint...');
         response = await fetch(`/api/stockx/products/${product.productId}/variants`);
       }
       
