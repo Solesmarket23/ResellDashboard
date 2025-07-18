@@ -148,22 +148,36 @@ export default function StockXListingCreator() {
             return null;
           }
           
-          console.log('Product data:', JSON.stringify({
+          console.log('Product data with values:', JSON.stringify({
             productId: p.productId,
-            uuid: p.uuid,
-            id: p.id,
             title: p.title,
-            urlKey: p.urlKey,
-            styleId: p.styleId,
             brand: p.brand,
             selectedIdentifier: productId,
-            // Look for any variant/size data in search results
+            // Show actual values of potentially variant-related fields
             variants: p.variants,
             sizes: p.sizes,
             market: p.market,
             children: p.children,
-            allFields: Object.keys(p) // Show all available fields
+            sizeChart: p.sizeChart,
+            productAttributes: p.productAttributes,
+            traits: p.traits,
+            // Show all field names
+            allFields: Object.keys(p)
           }, null, 2));
+          
+          // If any of these fields contain data, log them separately
+          if (p.children && Object.keys(p.children).length > 0) {
+            console.log('🔍 FOUND CHILDREN:', JSON.stringify(p.children, null, 2));
+          }
+          if (p.variants && p.variants.length > 0) {
+            console.log('🔍 FOUND VARIANTS:', JSON.stringify(p.variants, null, 2));
+          }
+          if (p.sizes && p.sizes.length > 0) {
+            console.log('🔍 FOUND SIZES:', JSON.stringify(p.sizes, null, 2));
+          }
+          if (p.sizeChart) {
+            console.log('🔍 FOUND SIZE CHART:', JSON.stringify(p.sizeChart, null, 2));
+          }
           
           return {
             productId: productId,
