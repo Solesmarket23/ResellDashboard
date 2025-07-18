@@ -21,9 +21,9 @@ interface Particle {
 }
 
 const PARTICLE_COUNT = 18;
-const PARTICLE_SIZE = 1.5;
-const MIN_OPACITY = 0.04;
-const MAX_OPACITY = 0.12;
+const PARTICLE_SIZE = 2; // Increased from 1.5 for better visibility
+const MIN_OPACITY = 0.08; // Increased from 0.04
+const MAX_OPACITY = 0.20; // Increased from 0.12
 const MIN_SPEED = 0.3;
 const MAX_SPEED = 0.8;
 const ANGLE_VARIANCE = 15;
@@ -55,11 +55,18 @@ export default function ParticleBackground() {
   const lastTimeRef = useRef<number>(0);
 
   useEffect(() => {
+    console.log('ParticleBackground component mounted');
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) {
+      console.error('Canvas ref not found');
+      return;
+    }
 
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) {
+      console.error('Could not get 2D context');
+      return;
+    }
 
     // Set canvas size
     const resizeCanvas = () => {
@@ -73,16 +80,20 @@ export default function ParticleBackground() {
     const initParticles = () => {
       particlesRef.current = [];
       for (let i = 0; i < PARTICLE_COUNT; i++) {
-        particlesRef.current.push(createParticle(i));
+        particlesRef.current.push(createParticle(i, true)); // Pass true for initial spawn
       }
     };
 
-    const createParticle = (id: number): Particle => {
+    const createParticle = (id: number, initialSpawn = false): Particle => {
       const lifetime = MIN_LIFETIME + Math.random() * (MAX_LIFETIME - MIN_LIFETIME);
+      const startY = initialSpawn 
+        ? Math.random() * window.innerHeight // Random position for initial particles
+        : window.innerHeight + 50; // Start below viewport for respawns
+      
       return {
         id,
         x: Math.random() * window.innerWidth,
-        y: window.innerHeight + 50, // Start below viewport
+        y: startY,
         size: PARTICLE_SIZE,
         speed: MIN_SPEED + Math.random() * (MAX_SPEED - MIN_SPEED),
         angle: 90 + (Math.random() - 0.5) * ANGLE_VARIANCE * 2, // 90° is upward
@@ -164,16 +175,23 @@ export default function ParticleBackground() {
 
       ctx.save();
       
-      // Apply blur filter
+      // Apply blur filter and add glow effect
       ctx.filter = 'blur(0.5px)';
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = particle.color;
       
       // Set color with opacity
       ctx.globalAlpha = particle.opacity;
       ctx.fillStyle = particle.color;
       
-      // Draw circle
+      // Draw circle with glow
       ctx.beginPath();
       ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Draw a second pass for extra glow
+      ctx.globalAlpha = particle.opacity * 0.5;
+      ctx.shadowBlur = 20;
       ctx.fill();
       
       ctx.restore();
@@ -224,8 +242,15 @@ export default function ParticleBackground() {
   return (
     <canvas
       ref={canvasRef}
-      className="fixed inset-0 pointer-events-none"
-      style={{ zIndex: 0 }}
+      className="fixed inset-0 w-full h-full pointer-events-none"
+      style={{ 
+        zIndex: 1,
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100%'
+      }}
     />
   );
 }
