@@ -72,8 +72,6 @@ export default function StockXListingCreator() {
   
   // Listing form state
   const [listingPrice, setListingPrice] = useState('');
-  const [quantity, setQuantity] = useState(1);
-  const [condition, setCondition] = useState<'new' | 'used'>('new');
   const [createAsActive, setCreateAsActive] = useState(true);
   
   // Operation state
@@ -334,18 +332,26 @@ export default function StockXListingCreator() {
     setCurrentOperation(null);
     
     try {
+      console.log('🏷️ Creating listing with data:', {
+        variantId: selectedVariant.variantId,
+        amount: parseFloat(listingPrice),
+        active: createAsActive,
+        currencyCode: 'USD',
+        inventoryType: 'STANDARD'
+      });
+      
       const response = await fetch('/api/stockx/listings/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          productId: selectedProduct.productId,
-          variantId: selectedVariant.variantId,
-          amount: parseFloat(listingPrice),
-          quantity,
-          active: createAsActive,
-          condition
+          variantId: selectedVariant.variantId, // Only send variantId (not productId)
+          amount: parseFloat(listingPrice), // Amount as number (will be converted to string)
+          active: createAsActive, // Boolean flag
+          currencyCode: 'USD', // Explicit currency
+          inventoryType: 'STANDARD' // Explicit inventory type
+          // Remove: productId, quantity, condition - not in API spec
         })
       });
       
@@ -391,7 +397,6 @@ export default function StockXListingCreator() {
             setSelectedProduct(null);
             setSelectedVariant(null);
             setListingPrice('');
-            setQuantity(1);
             setSearchQuery('');
             setSearchResults([]);
           } else if (data.isFailed && data.operation.error) {
@@ -636,32 +641,6 @@ export default function StockXListingCreator() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Quantity
-                  </label>
-                  <input
-                    type="number"
-                    value={quantity}
-                    onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                    min="1"
-                    className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Condition
-                  </label>
-                  <select
-                    value={condition}
-                    onChange={(e) => setCondition(e.target.value as 'new' | 'used')}
-                    className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  >
-                    <option value="new">New</option>
-                    <option value="used">Used</option>
-                  </select>
-                </div>
 
                 <div className="flex items-center gap-3">
                   <input

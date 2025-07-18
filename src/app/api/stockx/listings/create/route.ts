@@ -2,12 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { refreshStockXTokens, setStockXTokenCookies } from '@/lib/stockx/tokenRefresh';
 
 interface CreateListingRequest {
-  productId: string;
-  variantId: string;
-  amount: number; // Price in dollars
-  quantity?: number; // Default to 1
+  variantId: string; // Required: Unique StockX variant ID
+  amount: number; // Price in dollars (will be converted to string)
   active?: boolean; // Whether to create as active or inactive
-  condition?: 'new' | 'used'; // Default to 'new'
+  currencyCode?: string; // Currency code (defaults to USD)
+  inventoryType?: 'STANDARD' | 'DIRECT'; // Inventory type (defaults to STANDARD)
 }
 
 export async function POST(request: NextRequest) {
@@ -33,12 +32,12 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const body: CreateListingRequest = await request.json();
-    const { productId, variantId, amount, quantity = 1, active = true, condition = 'new' } = body;
+    const { variantId, amount, active = true, currencyCode = 'USD', inventoryType = 'STANDARD' } = body;
 
-    // Validate required fields
-    if (!productId || !variantId || !amount) {
+    // Validate required fields (only variantId and amount are required)
+    if (!variantId || !amount) {
       return NextResponse.json(
-        { error: 'Missing required fields: productId, variantId, and amount are required' },
+        { error: 'Missing required fields: variantId and amount are required' },
         { status: 400 }
       );
     }
@@ -51,14 +50,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Prepare the listing data
+    // Prepare the listing data according to StockX API specification
     const listingData = {
-      productId,
-      variantId,
-      amount: Math.round(amount * 100), // Convert to cents
-      quantity,
-      active,
-      condition
+      variantId, // Required: Unique StockX variant ID
+      amount: amount.toString(), // Required: Amount as string (e.g., "150")
+      currencyCode, // Optional: Currency code (defaults to USD)
+      active, // Optional: Boolean flag for activation (defaults to true)
+      inventoryType // Optional: Inventory type (defaults to STANDARD)
     };
 
     console.log('🏷️ Creating StockX listing:', listingData);
@@ -80,7 +78,7 @@ export async function POST(request: NextRequest) {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
-        'X-API-Key': apiKey,
+        'x-api-key': apiKey, // Use lowercase as per API documentation
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'User-Agent': 'ResellDashboard/1.0'
@@ -99,7 +97,7 @@ export async function POST(request: NextRequest) {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${refreshResult.accessToken}`,
-            'X-API-Key': apiKey,
+            'x-api-key': apiKey, // Use lowercase as per API documentation
             'Content-Type': 'application/json',
             'Accept': 'application/json',
             'User-Agent': 'ResellDashboard/1.0'
