@@ -79,21 +79,21 @@ function LoginForm() {
   return (
     <div className={`min-h-screen flex items-center justify-center px-4 ${
       isNeon 
-        ? 'bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900' 
-        : 'bg-gray-900'
+        ? 'bg-gradient-to-br from-gray-900 via-teal-900 to-gray-900' 
+        : 'bg-gray-800'
     }`}>
       <div className="max-w-md w-full">
         <div className={`rounded-lg shadow-xl p-8 ${
           isNeon 
-            ? 'bg-gray-800/50 backdrop-blur-sm border border-purple-500/20' 
-            : 'bg-gray-800'
+            ? 'bg-gray-800/50 backdrop-blur-sm border border-teal-500/20' 
+            : 'bg-gray-700'
         }`}>
           {/* Header */}
           <div className="text-center mb-8">
             <div className={`inline-flex items-center justify-center w-16 h-16 rounded-full mb-4 ${
               isNeon 
-                ? 'bg-gradient-to-r from-purple-500 to-pink-500 shadow-lg shadow-purple-500/25' 
-                : 'bg-gradient-to-r from-purple-500 to-pink-500'
+                ? 'bg-gradient-to-r from-teal-500 to-cyan-500 shadow-lg shadow-teal-500/25' 
+                : 'bg-gradient-to-r from-teal-500 to-cyan-500'
             }`}>
               <Lock className="w-8 h-8 text-white" />
             </div>
@@ -103,7 +103,7 @@ function LoginForm() {
               {isSignUp ? 'Create Account' : 'Welcome Back'}
             </h1>
             <p className={`mt-2 ${
-              isNeon ? 'text-purple-300' : 'text-gray-400'
+              isNeon ? 'text-teal-300' : 'text-gray-400'
             }`}>
               {isSignUp ? 'Sign up to access your dashboard' : 'Sign in to your account'}
             </p>
@@ -116,8 +116,8 @@ function LoginForm() {
               className={`flex-1 py-2 text-center font-medium transition-all duration-200 ${
                 !isSignUp
                   ? isNeon
-                    ? 'text-purple-300 border-b-2 border-purple-400'
-                    : 'text-white border-b-2 border-purple-500'
+                    ? 'text-teal-300 border-b-2 border-teal-400'
+                    : 'text-white border-b-2 border-teal-500'
                   : isNeon
                     ? 'text-gray-400 border-b border-gray-700'
                     : 'text-gray-500 border-b border-gray-700'
@@ -130,8 +130,8 @@ function LoginForm() {
               className={`flex-1 py-2 text-center font-medium transition-all duration-200 ${
                 isSignUp
                   ? isNeon
-                    ? 'text-purple-300 border-b-2 border-purple-400'
-                    : 'text-white border-b-2 border-purple-500'
+                    ? 'text-teal-300 border-b-2 border-teal-400'
+                    : 'text-white border-b-2 border-teal-500'
                   : isNeon
                     ? 'text-gray-400 border-b border-gray-700'
                     : 'text-gray-500 border-b border-gray-700'
@@ -149,7 +149,7 @@ function LoginForm() {
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                     <User className={`h-5 w-5 ${
-                      isNeon ? 'text-purple-400' : 'text-gray-400'
+                      isNeon ? 'text-teal-400' : 'text-gray-400'
                     }`} />
                   </div>
                   <input
@@ -162,8 +162,8 @@ function LoginForm() {
                     onChange={(e) => setName(e.target.value)}
                     className={`block w-full pl-10 pr-3 py-3 border rounded-lg bg-gray-700 border-gray-600 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:border-transparent ${
                       isNeon
-                        ? 'focus:ring-purple-500'
-                        : 'focus:ring-purple-500'
+                        ? 'focus:ring-teal-500'
+                        : 'focus:ring-teal-500'
                     }`}
                     placeholder="Full name"
                   />
@@ -176,7 +176,7 @@ function LoginForm() {
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <Mail className={`h-5 w-5 ${
-                    isNeon ? 'text-purple-400' : 'text-gray-400'
+                    isNeon ? 'text-teal-400' : 'text-gray-400'
                   }`} />
                 </div>
                 <input
@@ -202,7 +202,7 @@ function LoginForm() {
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <Lock className={`h-5 w-5 ${
-                    isNeon ? 'text-purple-400' : 'text-gray-400'
+                    isNeon ? 'text-teal-400' : 'text-gray-400'
                   }`} />
                 </div>
                 <input
@@ -227,11 +227,11 @@ function LoginForm() {
                 >
                   {showPassword ? (
                     <EyeOff className={`h-5 w-5 ${
-                      isNeon ? 'text-purple-400' : 'text-gray-400'
+                      isNeon ? 'text-teal-400' : 'text-gray-400'
                     } hover:text-gray-300`} />
                   ) : (
                     <Eye className={`h-5 w-5 ${
-                      isNeon ? 'text-purple-400' : 'text-gray-400'
+                      isNeon ? 'text-teal-400' : 'text-gray-400'
                     } hover:text-gray-300`} />
                   )}
                 </button>
@@ -257,9 +257,9 @@ function LoginForm() {
               disabled={loading || isLoading}
               className={`w-full py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white transition-all duration-200 ${
                 isNeon 
-                  ? 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 shadow-lg shadow-purple-500/25' 
-                  : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600'
-              } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 ${
+                  ? 'bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 shadow-lg shadow-teal-500/25' 
+                  : 'bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600'
+              } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 ${
                 (loading || isLoading) ? 'opacity-50 cursor-not-allowed' : ''
               }`}
             >
@@ -301,7 +301,7 @@ function LoginForm() {
               className={`w-full flex justify-center items-center px-4 py-3 border rounded-lg shadow-sm text-sm font-medium transition-all duration-200 ${
                 isNeon 
                   ? 'border-gray-600 text-white bg-gray-700 hover:bg-gray-600' 
-                  : 'border-gray-600 text-white bg-gray-700 hover:bg-gray-600'
+                  : 'border-gray-600 text-white bg-gray-600 hover:bg-gray-500'
               } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 ${
                 (loading || isLoading) ? 'opacity-50 cursor-not-allowed' : ''
               }`}
@@ -321,11 +321,11 @@ function LoginForm() {
             <p>By continuing, you agree to our</p>
             <div className="mt-1">
               <a href="#" className={`${
-                isNeon ? 'text-purple-400 hover:text-purple-300' : 'text-purple-400 hover:text-purple-300'
+                isNeon ? 'text-teal-400 hover:text-teal-300' : 'text-teal-400 hover:text-teal-300'
               }`}>Terms of Service</a>
               {' and '}
               <a href="#" className={`${
-                isNeon ? 'text-purple-400 hover:text-purple-300' : 'text-purple-400 hover:text-purple-300'
+                isNeon ? 'text-teal-400 hover:text-teal-300' : 'text-teal-400 hover:text-teal-300'
               }`}>Privacy Policy</a>
             </div>
           </div>
