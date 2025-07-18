@@ -81,6 +81,24 @@ export default function StockXListingCreator() {
   const [currentOperation, setCurrentOperation] = useState<ListingOperation | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
 
+  // Test with a known sneaker product
+  const testKnownProduct = async () => {
+    console.log('🧪 Testing with known sneaker product...');
+    const testProductId = "bf364c53-eb77-4522-955c-6a6ce952cc6f"; // From StockX docs
+    
+    try {
+      const detailsResponse = await fetch(`/api/stockx/products/${testProductId}/details`);
+      const detailsData = await detailsResponse.json();
+      console.log('🧪 Test product details:', detailsData);
+      
+      const variantsResponse = await fetch(`/api/stockx/products/${testProductId}/variants`);
+      const variantsData = await variantsResponse.json();
+      console.log('🧪 Test product variants:', variantsData);
+    } catch (error) {
+      console.error('🧪 Test failed:', error);
+    }
+  };
+
   // Search for products
   const searchProducts = async () => {
     if (!searchQuery.trim()) return;
@@ -176,8 +194,37 @@ export default function StockXListingCreator() {
       }
     }
     
-    // If no size data in search results, try the API
+    // If no size data in search results, first check product details to see if it should have variants
     try {
+      // Step 1: Get product details to understand what variants should exist
+      console.log('🔍 Checking product details first...');
+      const detailsResponse = await fetch(`/api/stockx/products/${product.productId}/details`);
+      
+      if (detailsResponse.ok) {
+        const detailsData = await detailsResponse.json();
+        console.log('📦 Product details:', detailsData.productData);
+        
+        if (!detailsData.productData.shouldHaveVariants) {
+          console.log('ℹ️ Product type does not have variants:', detailsData.productData.productType);
+          // This product doesn't have variants, use standard sizes anyway
+          const standardSizes = ['7', '7.5', '8', '8.5', '9', '9.5', '10', '10.5', '11', '11.5', '12', '13'];
+          const fallbackVariants = standardSizes.map(size => ({
+            variantId: `fallback-${size}`,
+            variantValue: size,
+            lowestAsk: 0,
+            highestBid: 0,
+            isFlexEligible: false,
+            isDirectEligible: false
+          }));
+          setVariants(fallbackVariants);
+          setIsLoadingVariants(false);
+          return;
+        }
+        
+        console.log('✅ Product should have variants, proceeding to fetch them...');
+      }
+      
+      // Step 2: Try to fetch variants
       const response = await fetch(`/api/stockx/products/${product.productId}/variants`);
       
       if (!response.ok) {
@@ -454,6 +501,12 @@ export default function StockXListingCreator() {
                 <Search className="w-4 h-4" />
               )}
               Search
+            </button>
+            <button
+              onClick={testKnownProduct}
+              className="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm"
+            >
+              Test
             </button>
           </div>
 

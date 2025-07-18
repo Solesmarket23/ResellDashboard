@@ -27,7 +27,7 @@ export async function GET(
       );
     }
 
-    console.log(`🔍 Fetching variants for product: ${productId}`);
+    console.log(`🔍 Fetching product details for: ${productId}`);
     
     if (!productId) {
       return NextResponse.json(
@@ -36,10 +36,10 @@ export async function GET(
       );
     }
 
-    // Make API request to get product variants
-    const variantsUrl = `https://api.stockx.com/v2/catalog/products/${productId}/variants`;
+    // Make API request to get product details
+    const productUrl = `https://api.stockx.com/v2/catalog/products/${productId}`;
     
-    let response = await fetch(variantsUrl, {
+    let response = await fetch(productUrl, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
@@ -56,7 +56,7 @@ export async function GET(
       
       if (refreshResult.success && refreshResult.accessToken) {
         // Retry with new token
-        response = await fetch(variantsUrl, {
+        response = await fetch(productUrl, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${refreshResult.accessToken}`,
@@ -78,57 +78,57 @@ export async function GET(
 
     if (!response.ok) {
       const errorData = await response.text();
-      console.error('❌ Failed to fetch variants:', {
+      console.error('❌ Failed to fetch product details:', {
         status: response.status,
         statusText: response.statusText,
-        url: variantsUrl,
+        url: productUrl,
         productId: productId,
         errorData: errorData
       });
       
       return NextResponse.json(
         { 
-          error: 'Failed to fetch product variants',
+          error: 'Failed to fetch product details',
           status: response.status,
           statusText: response.statusText,
           productId: productId,
-          url: variantsUrl,
+          url: productUrl,
           details: errorData
         },
         { status: response.status }
       );
     }
 
-    // Parse the variants response
-    const data = await response.json();
-    console.log(`✅ Retrieved variants response`);
-
-    // Parse the variants response - it's an array directly
-    const variants = Array.isArray(data) ? data : (data.variants || []);
-    console.log(`✅ Raw variants response:`, {
-      isArray: Array.isArray(data),
-      variantsCount: variants.length,
-      sampleVariant: variants[0] || null,
-      responseKeys: Object.keys(data || {})
+    // Parse the product details response
+    const productData = await response.json();
+    console.log('✅ Product details retrieved:', {
+      productId: productData.productId,
+      productType: productData.productType,
+      title: productData.title,
+      hasSizeChart: !!productData.sizeChart,
+      availableConversions: productData.sizeChart?.availableConversions?.length || 0
     });
-    
-    // Transform variants to match our expected format
-    const transformedVariants = variants.map((variant: any) => ({
-      variantId: variant.variantId,
-      variantValue: variant.variantValue || variant.variantName || 'Unknown',
-      lowestAsk: variant.market?.lowestAsk || 0,
-      highestBid: variant.market?.highestBid || 0,
-      lastSale: variant.market?.lastSale || 0,
-      salesLast72Hours: variant.market?.salesLast72Hours || 0,
-      isFlexEligible: variant.isFlexEligible || false,
-      isDirectEligible: variant.isDirectEligible || false
-    }));
 
     // Create success response
     const successResponse = NextResponse.json({
       success: true,
       productId,
-      variants: transformedVariants
+      productData: {
+        productId: productData.productId,
+        productType: productData.productType,
+        title: productData.title,
+        brand: productData.brand,
+        urlKey: productData.urlKey,
+        styleId: productData.styleId,
+        sizeChart: productData.sizeChart,
+        productAttributes: productData.productAttributes,
+        // Check if this product should have variants
+        shouldHaveVariants: productData.productType === 'sneakers' || 
+                          productData.productType === 'shoes' || 
+                          productData.productType === 'apparel' ||
+                          (productData.sizeChart?.availableConversions?.length > 0),
+        hasVariants: productData.sizeChart?.availableConversions?.length > 0
+      }
     });
 
     // Update tokens if refreshed
@@ -139,7 +139,7 @@ export async function GET(
     return successResponse;
 
   } catch (error) {
-    console.error('❌ Error fetching variants:', error);
+    console.error('❌ Error fetching product details:', error);
     return NextResponse.json(
       { 
         error: 'Internal server error',
