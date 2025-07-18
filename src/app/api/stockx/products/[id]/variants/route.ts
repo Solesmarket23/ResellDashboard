@@ -114,16 +114,22 @@ export async function GET(
 
     // Parse the variants response
     const data = await response.json();
-    console.log(`✅ Retrieved ${data.variants?.length || 0} variants`);
+    console.log(`✅ Retrieved variants response`);
 
+    // Parse the variants response - it's an array directly
+    const variants = Array.isArray(data) ? data : (data.variants || []);
+    console.log(`✅ Raw variants data:`, variants);
+    
     // Transform variants to match our expected format
-    const transformedVariants = (data.variants || []).map((variant: any) => ({
-      variantId: variant.id,
-      variantValue: variant.sizeChart?.displayName || variant.size || 'Unknown',
+    const transformedVariants = variants.map((variant: any) => ({
+      variantId: variant.variantId,
+      variantValue: variant.variantValue || variant.variantName || 'Unknown',
       lowestAsk: variant.market?.lowestAsk || 0,
       highestBid: variant.market?.highestBid || 0,
       lastSale: variant.market?.lastSale || 0,
-      salesLast72Hours: variant.market?.salesLast72Hours || 0
+      salesLast72Hours: variant.market?.salesLast72Hours || 0,
+      isFlexEligible: variant.isFlexEligible || false,
+      isDirectEligible: variant.isDirectEligible || false
     }));
 
     // Create success response

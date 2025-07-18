@@ -21,6 +21,8 @@ interface Variant {
   variantValue: string; // Size
   lowestAsk?: number;
   highestBid?: number;
+  isFlexEligible?: boolean;
+  isDirectEligible?: boolean;
 }
 
 interface MarketData {
@@ -89,12 +91,15 @@ export default function StockXListingCreator() {
         // Transform the products to match our expected format
         const transformedProducts = data.data.products.map((p: any) => {
           // StockX API sometimes uses 'id' and sometimes 'productId'
-          const productId = p.id || p.productId || p.uuid;
+          // StockX search returns uuid which should work as productId for variants
+          const productId = p.uuid || p.productId || p.id;
           console.log('Product data:', { 
             id: p.id, 
             productId: p.productId, 
             uuid: p.uuid,
-            title: p.title 
+            title: p.title,
+            urlKey: p.urlKey,
+            selectedProductId: productId
           });
           
           return {
@@ -131,13 +136,13 @@ export default function StockXListingCreator() {
     
     // First check if we have size data from the search results
     if (product.sizeData || product.productTraits) {
-      console.log('Using size data from search results:', { sizeData: product.sizeData, traits: product.productTraits });
+      console.log('Checking for size data in search results:', { sizeData: product.sizeData, traits: product.productTraits });
       
       // Extract sizes from productTraits if available
       const sizes = product.productTraits?.find((trait: any) => trait.name === 'Size' || trait.filterId === 'size')?.values || [];
       
       if (sizes.length > 0) {
-        const mockVariants = sizes.map((size: any, index: number) => ({
+        const mockVariants = sizes.map((size: any) => ({
           variantId: `${product.productId}-size-${size}`,
           variantValue: size,
           // These will be populated when a size is selected
@@ -159,18 +164,9 @@ export default function StockXListingCreator() {
         const errorText = await response.text();
         console.error('Variants API error:', response.status, errorText);
         
-        // If API fails, create standard sneaker sizes as fallback
+        // If API fails with 404, continue to fallback logic below
         if (response.status === 404) {
-          console.log('Product not found, creating standard sneaker sizes...');
-          const standardSizes = ['7', '7.5', '8', '8.5', '9', '9.5', '10', '10.5', '11', '11.5', '12', '13'];
-          const mockVariants = standardSizes.map(size => ({
-            variantId: `${product.productId}-size-${size}`,
-            variantValue: size,
-            lowestAsk: 0,
-            highestBid: 0
-          }));
-          setVariants(mockVariants);
-          return;
+          console.log('Product not found (404), will use standard sizes...');
         }
         
         throw new Error(`Failed to load variants: ${response.status}`);
@@ -180,13 +176,29 @@ export default function StockXListingCreator() {
       console.log('Variants response:', data);
       
       if (data.success && data.variants && data.variants.length > 0) {
-        setVariants(data.variants);
-        console.log(`Loaded ${data.variants.length} variants`);
+        // Sort variants by size (numeric sort for shoe sizes)
+        const sortedVariants = data.variants.sort((a: Variant, b: Variant) => {
+          const aSize = parseFloat(a.variantValue);
+          const bSize = parseFloat(b.variantValue);
+          if (!isNaN(aSize) && !isNaN(bSize)) {
+            return aSize - bSize;
+          }
+          return a.variantValue.localeCompare(b.variantValue);
+        });
+        setVariants(sortedVariants);
+        console.log(`Loaded ${sortedVariants.length} variants from API`);
       } else {
         console.warn('No variants data available for product:', product.productId);
-        // Show an error message to the user
-        setSearchError('No sizes available for this product. Please try another product.');
-        setVariants([]);
+        // Use standard sizes as fallback
+        console.log('Using standard sneaker sizes as fallback...');
+        const standardSizes = ['7', '7.5', '8', '8.5', '9', '9.5', '10', '10.5', '11', '11.5', '12', '13'];
+        const fallbackVariants = standardSizes.map(size => ({
+          variantId: `${product.productId}-size-${size}`,
+          variantValue: size,
+          lowestAsk: 0,
+          highestBid: 0
+        }));
+        setVariants(fallbackVariants);
       }
     } catch (error) {
       console.error('Error loading variants:', error);
@@ -210,6 +222,13 @@ export default function StockXListingCreator() {
     setMarketData(null);
     
     try {
+      // Log what we're sending to help debug
+      console.log('Loading market data for:', {
+        productId: product.productId,
+        variantId: variant.variantId,
+        variantValue: variant.variantValue
+      });
+      
       const response = await fetch(`/api/stockx/market-data?productId=${product.productId}&variantId=${variant.variantId}`, {
         method: 'GET'
       });
@@ -496,8 +515,8 @@ export default function StockXListingCreator() {
               </div>
             ) : (
               <div className="text-center py-8">
-                <p className="text-gray-400">No sizes available for this product.</p>
-                <p className="text-gray-500 text-sm mt-2">Please try selecting a different product.</p>
+                <p className="text-gray-400">Loading sizes failed. Please try again.</p>
+                <p className="text-gray-500 text-sm mt-2">If the problem persists, select a different product.</p>
               </div>
             )}
           </div>
