@@ -22,7 +22,11 @@ const PUBLIC_ROUTES = [
 
 // Routes that require site password but not Firebase auth
 const SITE_PASSWORD_ONLY_ROUTES = [
-  '/login'  // Login/signup page - requires site password but not Firebase auth
+  '/login',  // Login/signup page - requires site password but not Firebase auth
+  '/api/gmail/auth',  // Gmail OAuth initiation
+  '/api/gmail/callback',  // Gmail OAuth callback
+  '/api/gmail/status',  // Gmail connection status check
+  '/loading'  // Loading page after Gmail auth
 ];
 
 export function middleware(request: NextRequest) {
