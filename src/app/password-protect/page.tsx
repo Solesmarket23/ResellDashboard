@@ -3,6 +3,7 @@
 import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Lock } from 'lucide-react';
+import ParticleBackground from '@/components/ParticleBackground';
 
 function LoginForm() {
   const [password, setPassword] = useState('');
@@ -48,8 +49,9 @@ function LoginForm() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
-      <div className="max-w-md w-full">
+    <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4 relative">
+      <ParticleBackground />
+      <div className="max-w-md w-full relative z-10">
         <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-lg shadow-2xl p-8 border border-cyan-500/20 shadow-cyan-500/10">
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-cyan-500 via-teal-500 to-emerald-500 rounded-full mb-4 shadow-lg shadow-cyan-500/50 animate-pulse">
@@ -111,8 +113,9 @@ function LoginForm() {
 export default function LoginPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-2 border-cyan-500 border-t-transparent shadow-lg shadow-cyan-500/50"></div>
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center relative">
+        <ParticleBackground />
+        <div className="animate-spin rounded-full h-12 w-12 border-2 border-cyan-500 border-t-transparent shadow-lg shadow-cyan-500/50 relative z-10"></div>
       </div>
     }>
       <LoginForm />
