@@ -21,7 +21,7 @@ interface Particle {
   breathingPhase: number;
 }
 
-const PARTICLE_COUNT = 18;
+const PARTICLE_COUNT = 12; // Reduced from 18 for better performance
 const PARTICLE_SIZE = 2; // Increased from 1.5 for better visibility
 const MIN_OPACITY = 0.08; // Increased from 0.04
 const MAX_OPACITY = 0.20; // Increased from 0.12
@@ -179,36 +179,19 @@ export default function ParticleBackground() {
       if (particle.baseX > window.innerWidth - SINE_AMPLITUDE) particle.baseX = window.innerWidth - SINE_AMPLITUDE;
     };
 
-    const drawParticle = (particle: Particle) => {
-      if (particle.opacity <= 0) return;
 
-      ctx.save();
-      
-      // Apply blur filter and add glow effect
-      ctx.filter = 'blur(0.5px)';
-      ctx.shadowBlur = 10;
-      ctx.shadowColor = particle.color;
-      
-      // Set color with opacity
-      ctx.globalAlpha = particle.opacity;
-      ctx.fillStyle = particle.color;
-      
-      // Draw circle with glow
-      ctx.beginPath();
-      ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
-      ctx.fill();
-      
-      // Draw a second pass for extra glow
-      ctx.globalAlpha = particle.opacity * 0.5;
-      ctx.shadowBlur = 20;
-      ctx.fill();
-      
-      ctx.restore();
-    };
-
+    let frameCount = 0;
+    
     const animate = (currentTime: number) => {
+      // Skip every other frame to run at 30fps instead of 60fps
+      frameCount++;
+      if (frameCount % 2 !== 0) {
+        animationFrameRef.current = requestAnimationFrame(animate);
+        return;
+      }
+      
       // Calculate delta time with frame limiting
-      const deltaTime = lastTimeRef.current ? Math.min((currentTime - lastTimeRef.current) / 1000, 0.033) : 0; // Cap at ~30fps minimum
+      const deltaTime = lastTimeRef.current ? Math.min((currentTime - lastTimeRef.current) / 1000, 0.066) : 0; // Cap at ~15fps minimum
       lastTimeRef.current = currentTime;
 
       // Skip frame if delta is too small (helps prevent jitter)
@@ -220,10 +203,40 @@ export default function ParticleBackground() {
       // Clear canvas
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Update and draw particles
+      // Update all particles first
       particlesRef.current.forEach(particle => {
         updateParticle(particle, deltaTime);
-        drawParticle(particle);
+      });
+      
+      // Group particles by color for batch rendering
+      const particlesByColor = new Map<string, Particle[]>();
+      particlesRef.current.forEach(particle => {
+        if (particle.opacity > 0) {
+          const group = particlesByColor.get(particle.color) || [];
+          group.push(particle);
+          particlesByColor.set(particle.color, group);
+        }
+      });
+      
+      // Draw all particles of the same color in one batch
+      particlesByColor.forEach((particles, color) => {
+        ctx.fillStyle = color;
+        
+        // Draw main circles
+        particles.forEach(particle => {
+          ctx.globalAlpha = particle.opacity;
+          ctx.beginPath();
+          ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+          ctx.fill();
+        });
+        
+        // Draw glow circles
+        particles.forEach(particle => {
+          ctx.globalAlpha = particle.opacity * 0.3;
+          ctx.beginPath();
+          ctx.arc(particle.x, particle.y, particle.size * 3, 0, Math.PI * 2);
+          ctx.fill();
+        });
       });
 
       animationFrameRef.current = requestAnimationFrame(animate);
@@ -265,7 +278,10 @@ export default function ParticleBackground() {
         top: 0,
         left: 0,
         width: '100%',
-        height: '100%'
+        height: '100%',
+        willChange: 'transform',
+        transform: 'translateZ(0)', // Force GPU acceleration
+        backfaceVisibility: 'hidden',
       }}
     />
   );
