@@ -29,8 +29,37 @@ export async function GET(
 
     console.log(`🔍 Fetching variants for product: ${productId}`);
 
+    // First, try to get the product details to get the correct ID format
+    // The search API might return a UUID, but we need the actual product ID
+    let actualProductId = productId;
+    
+    // If the productId looks like a UUID, we need to fetch the product first
+    if (productId.includes('-') && productId.length === 36) {
+      console.log('📦 UUID detected, fetching product details first...');
+      const productUrl = `https://api.stockx.com/v2/catalog/products/${productId}`;
+      
+      const productResponse = await fetch(productUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'X-API-Key': apiKey,
+          'Accept': 'application/json',
+          'User-Agent': 'ResellDashboard/1.0'
+        }
+      });
+      
+      if (productResponse.ok) {
+        const productData = await productResponse.json();
+        // Use the product's ID from the response
+        actualProductId = productData.id || productData.productId || productId;
+        console.log(`✅ Got actual product ID: ${actualProductId}`);
+      } else {
+        console.log('⚠️ Could not fetch product details, will try with UUID directly');
+      }
+    }
+
     // Make API request to get product variants
-    const variantsUrl = `https://api.stockx.com/v2/catalog/products/${productId}/variants`;
+    const variantsUrl = `https://api.stockx.com/v2/catalog/products/${actualProductId}/variants`;
     
     let response = await fetch(variantsUrl, {
       method: 'GET',
