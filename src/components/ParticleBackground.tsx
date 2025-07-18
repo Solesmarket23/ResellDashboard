@@ -6,6 +6,7 @@ interface Particle {
   id: number;
   x: number;
   y: number;
+  baseX: number; // Store original X position
   size: number;
   speed: number;
   angle: number;
@@ -24,12 +25,12 @@ const PARTICLE_COUNT = 18;
 const PARTICLE_SIZE = 2; // Increased from 1.5 for better visibility
 const MIN_OPACITY = 0.08; // Increased from 0.04
 const MAX_OPACITY = 0.20; // Increased from 0.12
-const MIN_SPEED = 0.3;
-const MAX_SPEED = 0.8;
+const MIN_SPEED = 0.15; // Reduced from 0.3
+const MAX_SPEED = 0.4; // Reduced from 0.8
 const ANGLE_VARIANCE = 15;
-const SINE_AMPLITUDE = 10;
-const SINE_PERIOD = 20; // seconds
-const PATH_VARIATION = 2;
+const SINE_AMPLITUDE = 8; // Reduced from 10 for subtler movement
+const SINE_PERIOD = 25; // Increased from 20 for slower oscillation
+const PATH_VARIATION = 1; // Reduced from 2 for less erratic movement
 const PATH_VARIATION_INTERVAL = [3, 5]; // seconds
 const MIN_LIFETIME = 60; // seconds
 const MAX_LIFETIME = 90; // seconds
@@ -89,11 +90,13 @@ export default function ParticleBackground() {
       const startY = initialSpawn 
         ? Math.random() * window.innerHeight // Random position for initial particles
         : window.innerHeight + 50; // Start below viewport for respawns
+      const baseX = Math.random() * window.innerWidth;
       
       return {
         id,
-        x: Math.random() * window.innerWidth,
+        x: baseX,
         y: startY,
+        baseX: baseX, // Store the base position
         size: PARTICLE_SIZE,
         speed: MIN_SPEED + Math.random() * (MAX_SPEED - MIN_SPEED),
         angle: 90 + (Math.random() - 0.5) * ANGLE_VARIANCE * 2, // 90° is upward
@@ -124,29 +127,35 @@ export default function ParticleBackground() {
         return;
       }
 
-      // Update position
-      const angleRad = (particle.angle * Math.PI) / 180;
-      particle.y -= particle.speed * deltaTime * 60; // 60 fps base
+      // Update position with frame-independent movement
+      const pixelsPerSecond = particle.speed * 60; // Convert to pixels per second
+      particle.y -= pixelsPerSecond * deltaTime;
 
-      // Apply sine wave horizontal movement
-      const sineTime = (particle.lifetime + particle.sineOffset) * ((Math.PI * 2) / SINE_PERIOD);
-      particle.x += Math.sin(sineTime) * SINE_AMPLITUDE * (deltaTime / SINE_PERIOD);
-
-      // Apply path variation
+      // Apply sine wave horizontal movement based on base position
+      const sineTime = particle.lifetime / SINE_PERIOD;
+      const sineValue = Math.sin((sineTime + particle.sineOffset) * Math.PI * 2);
+      
+      // Apply gentler path variation
       particle.pathVariationTimer -= deltaTime;
       if (particle.pathVariationTimer <= 0) {
-        particle.pathVariation = (Math.random() - 0.5) * PATH_VARIATION * 2;
+        particle.pathVariation = (Math.random() - 0.5) * PATH_VARIATION;
         particle.pathVariationTimer = PATH_VARIATION_INTERVAL[0] + Math.random() * (PATH_VARIATION_INTERVAL[1] - PATH_VARIATION_INTERVAL[0]);
       }
-      particle.x += particle.pathVariation * deltaTime * 60;
+      
+      // Calculate total horizontal offset from base position
+      const sineOffset = sineValue * SINE_AMPLITUDE;
+      const variationOffset = particle.pathVariation * Math.sin(particle.lifetime * 0.5);
+      
+      // Set position based on base position plus offsets
+      particle.x = particle.baseX + sineOffset + variationOffset;
 
       // Calculate opacity with fade in/out and breathing effect
-      let targetOpacity = MIN_OPACITY + Math.random() * (MAX_OPACITY - MIN_OPACITY);
+      const baseOpacity = MIN_OPACITY + (MAX_OPACITY - MIN_OPACITY) * 0.5; // Use middle opacity as base
       
-      // Breathing effect
-      const breathingTime = (particle.lifetime + particle.breathingPhase) * ((Math.PI * 2) / BREATHING_PERIOD);
-      const breathingMultiplier = 0.7 + 0.3 * Math.sin(breathingTime);
-      targetOpacity *= breathingMultiplier;
+      // Breathing effect (smoother calculation)
+      const breathingTime = particle.lifetime / BREATHING_PERIOD;
+      const breathingMultiplier = 0.85 + 0.15 * Math.sin((breathingTime + particle.breathingPhase) * Math.PI * 2);
+      let targetOpacity = baseOpacity * breathingMultiplier;
 
       // Fade in
       if (particle.lifetime < FADE_DURATION) {
@@ -165,9 +174,9 @@ export default function ParticleBackground() {
         particle.opacity = targetOpacity;
       }
 
-      // Wrap horizontal position
-      if (particle.x < -20) particle.x = window.innerWidth + 20;
-      if (particle.x > window.innerWidth + 20) particle.x = -20;
+      // Keep particle within viewport bounds (with margin for sine wave)
+      if (particle.baseX < SINE_AMPLITUDE) particle.baseX = SINE_AMPLITUDE;
+      if (particle.baseX > window.innerWidth - SINE_AMPLITUDE) particle.baseX = window.innerWidth - SINE_AMPLITUDE;
     };
 
     const drawParticle = (particle: Particle) => {
@@ -198,8 +207,15 @@ export default function ParticleBackground() {
     };
 
     const animate = (currentTime: number) => {
-      const deltaTime = lastTimeRef.current ? (currentTime - lastTimeRef.current) / 1000 : 0;
+      // Calculate delta time with frame limiting
+      const deltaTime = lastTimeRef.current ? Math.min((currentTime - lastTimeRef.current) / 1000, 0.033) : 0; // Cap at ~30fps minimum
       lastTimeRef.current = currentTime;
+
+      // Skip frame if delta is too small (helps prevent jitter)
+      if (deltaTime < 0.001) {
+        animationFrameRef.current = requestAnimationFrame(animate);
+        return;
+      }
 
       // Clear canvas
       ctx.clearRect(0, 0, canvas.width, canvas.height);
