@@ -26,33 +26,31 @@ const SITE_PASSWORD_ONLY_ROUTES = [
   '/loading'  // Loading page after Gmail auth
 ];
 
-// API routes that should be accessible with just site password (for authenticated users)
-const AUTHENTICATED_API_ROUTES = [
-  '/api/gmail',  // All Gmail API routes (no trailing slash)
-  '/api/stockx',  // All StockX API routes (no trailing slash)
-];
-
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  
+  // Log for debugging
+  console.log('🔐 Middleware checking path:', pathname);
   
   // Check if this is a public route
   const isPublicRoute = PUBLIC_ROUTES.some(route => pathname.startsWith(route));
   if (isPublicRoute) {
+    console.log('✅ Public route, allowing access');
     return NextResponse.next();
   }
   
   // Check if user is authenticated via site password
   const authCookie = request.cookies.get('site-auth');
+  console.log('🍪 Auth cookie:', authCookie?.value);
   
-  // Check if this is an authenticated API route
-  const isAuthenticatedApiRoute = AUTHENTICATED_API_ROUTES.some(route => pathname.startsWith(route));
-  if (isAuthenticatedApiRoute) {
-    // For API routes, only require site password
+  // Special handling for Gmail and StockX API routes - these should be accessible with site password
+  if (pathname.startsWith('/api/gmail') || pathname.startsWith('/api/stockx')) {
+    console.log('📧 API route detected:', pathname);
     if (authCookie?.value === 'authenticated') {
+      console.log('✅ User has site password, allowing API access');
       return NextResponse.next();
     } else {
-      // No site password auth, redirect to password protection
-      console.log('🔐 Middleware: No site password auth for API route, redirecting to password protection');
+      console.log('❌ No site password for API route');
       const passwordUrl = new URL('/password-protect', request.url);
       passwordUrl.searchParams.set('from', pathname);
       return NextResponse.redirect(passwordUrl);
