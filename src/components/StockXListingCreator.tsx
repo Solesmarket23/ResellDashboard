@@ -154,7 +154,13 @@ export default function StockXListingCreator() {
             urlKey: p.urlKey,
             styleId: p.styleId,
             brand: p.brand,
-            selectedIdentifier: productId
+            selectedIdentifier: productId,
+            // Look for any variant/size data in search results
+            variants: p.variants,
+            sizes: p.sizes,
+            market: p.market,
+            children: p.children,
+            allFields: Object.keys(p) // Show all available fields
           }, null, 2));
           
           return {
