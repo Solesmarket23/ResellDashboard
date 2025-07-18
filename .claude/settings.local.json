@@ -19,7 +19,9 @@
       "Bash(find:*)",
       "Bash(mv:*)",
       "Bash(cat:*)",
-      "Bash(git ls-tree:*)"
+      "Bash(git ls-tree:*)",
+      "Bash(cp:*)",
+      "Bash(rm:*)"
     ],
     "deny": []
   }

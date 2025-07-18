@@ -49,9 +49,9 @@ export default function DashboardPage() {
   if (!loading && !user && typeof window !== 'undefined') {
     const siteUserId = localStorage.getItem('siteUserId');
     if (!siteUserId) {
-      window.location.href = '/login';
+      window.location.href = '/password-protect';
     } else {
-      window.location.href = '/google-login?from=/dashboard';
+      window.location.href = '/login?from=/dashboard';
     }
     return null;
   }
@@ -65,14 +65,14 @@ export default function DashboardPage() {
       // Check if user has site password authentication
       const siteUserId = localStorage.getItem('siteUserId');
       if (!siteUserId) {
-        // No site password authentication, redirect to login
-        console.log('🔐 No site password auth, redirecting to login');
-        window.location.href = '/login';
+        // No site password authentication, redirect to password protection
+        console.log('🔐 No site password auth, redirecting to password protection');
+        window.location.href = '/password-protect';
         return;
       } else {
-        // User has site password but no Google authentication, redirect to Google login
-        console.log('🔐 Site password auth found, but no Google auth, redirecting to Google login');
-        window.location.href = '/google-login?from=/dashboard';
+        // User has site password but no Firebase authentication, redirect to login
+        console.log('🔐 Site password auth found, but no Firebase auth, redirecting to login');
+        window.location.href = '/login?from=/dashboard';
         return;
       }
     }

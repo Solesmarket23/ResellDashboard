@@ -11,7 +11,7 @@ const PUBLIC_ROUTES = [
   '/api/shorten',
   '/_next/',
   '/favicon.ico',
-  '/login',
+  '/password-protect',  // Site password protection page
   '/onboarding',  // Onboarding page
   '/api/auth/verify',
   '/api/user/stockx-keys',  // User API key management
@@ -20,9 +20,9 @@ const PUBLIC_ROUTES = [
   '/api/subscribe'  // Email subscription endpoint
 ];
 
-// Routes that require site password but not Google auth
+// Routes that require site password but not Firebase auth
 const SITE_PASSWORD_ONLY_ROUTES = [
-  '/google-login'  // Google login page - requires site password but not Google auth
+  '/login'  // Login/signup page - requires site password but not Firebase auth
 ];
 
 export function middleware(request: NextRequest) {
@@ -44,11 +44,11 @@ export function middleware(request: NextRequest) {
     if (authCookie?.value === 'authenticated') {
       return NextResponse.next();
     } else {
-      // No site password auth, redirect to login
-      console.log('🔐 Middleware: No site password auth for google-login, redirecting to login');
-      const loginUrl = new URL('/login', request.url);
-      loginUrl.searchParams.set('from', pathname);
-      return NextResponse.redirect(loginUrl);
+      // No site password auth, redirect to password protection
+      console.log('🔐 Middleware: No site password auth for login page, redirecting to password protection');
+      const passwordUrl = new URL('/password-protect', request.url);
+      passwordUrl.searchParams.set('from', pathname);
+      return NextResponse.redirect(passwordUrl);
     }
   }
   
@@ -60,11 +60,11 @@ export function middleware(request: NextRequest) {
       // The dashboard page will handle checking for Google authentication
       return NextResponse.next();
     } else {
-      // No site password auth, redirect to login
-      console.log('🔐 Middleware: No site password auth, redirecting to login');
-      const loginUrl = new URL('/login', request.url);
-      loginUrl.searchParams.set('from', pathname);
-      return NextResponse.redirect(loginUrl);
+      // No site password auth, redirect to password protection
+      console.log('🔐 Middleware: No site password auth, redirecting to password protection');
+      const passwordUrl = new URL('/password-protect', request.url);
+      passwordUrl.searchParams.set('from', pathname);
+      return NextResponse.redirect(passwordUrl);
     }
   }
   
@@ -73,10 +73,10 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
   
-  // Redirect to login page
-  const loginUrl = new URL('/login', request.url);
-  loginUrl.searchParams.set('from', pathname);
-  return NextResponse.redirect(loginUrl);
+  // Redirect to password protection page
+  const passwordUrl = new URL('/password-protect', request.url);
+  passwordUrl.searchParams.set('from', pathname);
+  return NextResponse.redirect(passwordUrl);
 }
 
 export const config = {

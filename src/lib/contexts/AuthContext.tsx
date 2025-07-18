@@ -1,7 +1,14 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { signInWithPopup, GoogleAuthProvider, signOut as firebaseSignOut } from "firebase/auth";
+import { 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  signOut as firebaseSignOut,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile
+} from "firebase/auth";
 import { User } from "firebase/auth";
 import { auth } from "../firebase/firebase";
 
@@ -10,6 +17,8 @@ interface AuthContextType {
   loading: boolean;
   error: string | null;
   signInWithGoogle: () => Promise<void>;
+  signInWithEmail: (email: string, password: string) => Promise<void>;
+  signUpWithEmail: (email: string, password: string, name: string) => Promise<void>;
   signOut: () => Promise<void>;
   clearError: () => void;
 }
@@ -27,6 +36,8 @@ export const useAuth = () => {
       loading: false,
       error: null,
       signInWithGoogle: async () => {},
+      signInWithEmail: async () => {},
+      signUpWithEmail: async () => {},
       signOut: async () => {},
       clearError: () => {}
     };
@@ -129,6 +140,76 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const signInWithEmail = async (email: string, password: string) => {
+    if (!auth) {
+      console.log("🔧 Firebase not configured - demo sign in");
+      setError("Firebase not configured. Please check your environment variables.");
+      return;
+    }
+
+    try {
+      setError(null);
+      console.log("🔐 Starting email sign-in process...");
+      await signInWithEmailAndPassword(auth, email, password);
+      console.log("🔐 Email sign-in successful!");
+    } catch (error: any) {
+      console.error("❌ Email sign-in error:", error);
+      
+      // Handle specific Firebase auth errors
+      if (error.code === 'auth/user-not-found') {
+        setError("No account found with this email address.");
+      } else if (error.code === 'auth/wrong-password') {
+        setError("Incorrect password. Please try again.");
+      } else if (error.code === 'auth/invalid-email') {
+        setError("Invalid email address.");
+      } else if (error.code === 'auth/too-many-requests') {
+        setError("Too many failed attempts. Please try again later.");
+      } else {
+        setError(`Sign-in failed: ${error.message}`);
+      }
+      throw error;
+    }
+  };
+
+  const signUpWithEmail = async (email: string, password: string, name: string) => {
+    if (!auth) {
+      console.log("🔧 Firebase not configured - demo sign up");
+      setError("Firebase not configured. Please check your environment variables.");
+      return;
+    }
+
+    try {
+      setError(null);
+      console.log("🔐 Starting email sign-up process...");
+      
+      // Create user account
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      
+      // Update display name
+      if (userCredential.user) {
+        await updateProfile(userCredential.user, {
+          displayName: name
+        });
+      }
+      
+      console.log("🔐 Email sign-up successful!");
+    } catch (error: any) {
+      console.error("❌ Email sign-up error:", error);
+      
+      // Handle specific Firebase auth errors
+      if (error.code === 'auth/email-already-in-use') {
+        setError("An account with this email already exists.");
+      } else if (error.code === 'auth/invalid-email') {
+        setError("Invalid email address.");
+      } else if (error.code === 'auth/weak-password') {
+        setError("Password should be at least 6 characters.");
+      } else {
+        setError(`Sign-up failed: ${error.message}`);
+      }
+      throw error;
+    }
+  };
+
   const signOut = async () => {
     // Check if we're in test mode
     const urlParams = new URLSearchParams(window.location.search);
@@ -167,6 +248,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     loading,
     error,
     signInWithGoogle,
+    signInWithEmail,
+    signUpWithEmail,
     signOut,
     clearError,
   };
