@@ -28,6 +28,13 @@ export async function GET(
     }
 
     console.log(`🔍 Fetching variants for product: ${productId}`);
+    
+    if (!productId) {
+      return NextResponse.json(
+        { error: 'Product ID is required' },
+        { status: 400 }
+      );
+    }
 
     // Make API request to get product variants
     const variantsUrl = `https://api.stockx.com/v2/catalog/products/${productId}/variants`;
@@ -71,12 +78,21 @@ export async function GET(
 
     if (!response.ok) {
       const errorData = await response.text();
-      console.error('❌ Failed to fetch variants:', response.status, errorData);
+      console.error('❌ Failed to fetch variants:', {
+        status: response.status,
+        statusText: response.statusText,
+        url: variantsUrl,
+        productId: productId,
+        errorData: errorData
+      });
       
       return NextResponse.json(
         { 
           error: 'Failed to fetch product variants',
           status: response.status,
+          statusText: response.statusText,
+          productId: productId,
+          url: variantsUrl,
           details: errorData
         },
         { status: response.status }

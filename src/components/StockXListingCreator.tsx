@@ -40,6 +40,16 @@ interface ListingOperation {
   error?: any;
 }
 
+// Helper function to extract product identifier from various API responses
+function getProductIdentifier(product: any): string | null {
+  return product?.productId || 
+         product?.uuid || 
+         product?.id || 
+         product?.stockxId ||
+         product?.product_id ||
+         null;
+}
+
 export default function StockXListingCreator() {
   const { currentTheme } = useTheme();
   const isNeon = currentTheme.name === 'neon';
@@ -91,15 +101,24 @@ export default function StockXListingCreator() {
         // Transform the products to match our expected format
         const transformedProducts = data.data.products.map((p: any) => {
           // StockX API sometimes uses 'id' and sometimes 'productId'
-          // StockX search returns productId according to API docs
-          const productId = p.productId || p.id || p.uuid;
-          console.log('Product data:', { 
+          // Handle both productId (from docs) and uuid (from actual API)
+          const productId = getProductIdentifier(p);
+          
+          if (!productId) {
+            console.error('No valid product identifier found for:', p);
+            return null;
+          }
+          
+          console.log('Product data:', JSON.stringify({
             productId: p.productId,
+            uuid: p.uuid,
+            id: p.id,
             title: p.title,
             urlKey: p.urlKey,
             styleId: p.styleId,
-            brand: p.brand
-          });
+            brand: p.brand,
+            selectedIdentifier: productId
+          }, null, 2));
           
           return {
             productId: productId,
@@ -111,7 +130,7 @@ export default function StockXListingCreator() {
             sizeData: p.sizeData || p.sizes || p.variants,
             productTraits: p.productTraits || p.traits
           };
-        });
+        }).filter(p => p !== null); // Remove any products without valid identifiers
         setSearchResults(transformedProducts);
       } else {
         setSearchError('No products found');
