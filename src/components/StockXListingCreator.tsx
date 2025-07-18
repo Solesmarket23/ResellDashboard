@@ -105,15 +105,21 @@ export default function StockXListingCreator() {
   useEffect(() => {
     const loadSettings = async () => {
       if (user) {
+        console.log('Loading StockX settings for user:', user.uid);
         try {
           const settings = await getUserStockXSettings(user.uid);
+          console.log('Loaded settings:', settings);
           if (settings) {
             setStockXSettings(settings);
             setSelectedLevel(settings.sellerLevel);
+          } else {
+            console.log('No existing settings found, using defaults');
           }
         } catch (error) {
           console.error('Error loading StockX settings:', error);
         }
+      } else {
+        console.log('No user logged in, cannot load settings');
       }
     };
     loadSettings();
@@ -121,7 +127,10 @@ export default function StockXListingCreator() {
 
   // Save StockX settings
   const saveSettings = async () => {
-    if (!user) return;
+    if (!user) {
+      console.log('Cannot save settings - no user logged in');
+      return;
+    }
     
     setIsSavingSettings(true);
     try {
@@ -131,6 +140,7 @@ export default function StockXListingCreator() {
           sellerLevel: selectedLevel as 1 | 2 | 3 | 4 | 5,
           transactionFee: levelConfig.baseFee
         };
+        console.log('Saving StockX settings:', settings);
         await saveUserStockXSettings(user.uid, settings);
         setStockXSettings({
           userId: user.uid,
@@ -140,6 +150,7 @@ export default function StockXListingCreator() {
         });
         setShowSettings(false);
         setShowSaveSuccess(true);
+        console.log('Settings saved successfully!');
         
         // Hide success message after 3 seconds
         setTimeout(() => {
@@ -547,12 +558,7 @@ export default function StockXListingCreator() {
 
         {/* Success Notification */}
         {showSaveSuccess && (
-          <div 
-            className="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 z-50 transition-all duration-300"
-            style={{
-              animation: 'slideIn 0.3s ease-out',
-            }}
-          >
+          <div className="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 z-50 animate-in slide-in-from-right duration-300">
             <CheckCircle className="w-5 h-5" />
             <span className="font-medium">Settings saved successfully!</span>
           </div>
@@ -866,7 +872,7 @@ export default function StockXListingCreator() {
                     <span className="text-red-400">-${profit.shippingFee.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between pt-2 border-t border-gray-700 font-semibold">
-                    <span>Your Payout</span>
+                    <span>Estimated Payout</span>
                     <span className="text-green-400">${profit.payout.toFixed(2)}</span>
                   </div>
                 </div>
@@ -937,20 +943,6 @@ export default function StockXListingCreator() {
           </div>
         )}
       </div>
-      
-      {/* Add animation styles */}
-      <style jsx>{`
-        @keyframes slideIn {
-          from {
-            transform: translateX(100%);
-            opacity: 0;
-          }
-          to {
-            transform: translateX(0);
-            opacity: 1;
-          }
-        }
-      `}</style>
     </div>
   );
 }
