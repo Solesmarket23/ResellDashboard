@@ -28,8 +28,8 @@ const SITE_PASSWORD_ONLY_ROUTES = [
 
 // API routes that should be accessible with just site password (for authenticated users)
 const AUTHENTICATED_API_ROUTES = [
-  '/api/gmail/',  // All Gmail API routes
-  '/api/stockx/',  // All StockX API routes
+  '/api/gmail',  // All Gmail API routes (no trailing slash)
+  '/api/stockx',  // All StockX API routes (no trailing slash)
 ];
 
 export function middleware(request: NextRequest) {
