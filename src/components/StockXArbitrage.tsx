@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { TrendingUp, TrendingDown, DollarSign, ExternalLink, Search, AlertCircle, BarChart3, LogIn, CheckCircle, Bell, Twitter, Upload, Image } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { TrendingUp, TrendingDown, DollarSign, ExternalLink, Search, AlertCircle, BarChart3, LogIn, CheckCircle, Bell, Twitter, Upload, Image, X } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { shareToTwitter, generateShareImage, ArbitrageShareData } from '@/lib/twitter/twitterExport';
 import { generateEnhancedShareImage, EnhancedArbitrageShareData } from '@/lib/twitter/enhancedGraphics';
@@ -93,7 +93,8 @@ const StockXArbitrage: React.FC = () => {
   const [opportunities, setOpportunities] = useState<ArbitrageOpportunity[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [minSpreadPercentage, setMinSpreadPercentage] = useState(10);
-  const [excludedBrands, setExcludedBrands] = useState('');
+  const [excludedBrandTags, setExcludedBrandTags] = useState<string[]>([]);
+  const [excludedBrandInput, setExcludedBrandInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isAuthError, setIsAuthError] = useState(false);
@@ -247,6 +248,39 @@ const StockXArbitrage: React.FC = () => {
     window.location.href = authUrl;
   };
 
+  // Tag management functions
+  const addBrandTag = (brand: string) => {
+    const trimmedBrand = brand.trim();
+    if (trimmedBrand && !excludedBrandTags.includes(trimmedBrand)) {
+      setExcludedBrandTags([...excludedBrandTags, trimmedBrand]);
+      setExcludedBrandInput('');
+    }
+  };
+
+  const removeBrandTag = (index: number) => {
+    setExcludedBrandTags(excludedBrandTags.filter((_, i) => i !== index));
+  };
+
+  const handleBrandInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === ',' || e.key === 'Enter') {
+      e.preventDefault();
+      addBrandTag(excludedBrandInput);
+    } else if (e.key === 'Backspace' && excludedBrandInput === '' && excludedBrandTags.length > 0) {
+      // Remove last tag when backspace is pressed on empty input
+      removeBrandTag(excludedBrandTags.length - 1);
+    }
+  };
+
+  const handleBrandInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    // If user types a comma, add the tag
+    if (value.endsWith(',')) {
+      addBrandTag(value.slice(0, -1));
+    } else {
+      setExcludedBrandInput(value);
+    }
+  };
+
   const handleClearTokens = () => {
     // Clear all StockX tokens and force re-authentication
     const currentUrl = window.location.href;
@@ -288,8 +322,8 @@ const StockXArbitrage: React.FC = () => {
       });
 
       // Add excluded brands if specified
-      if (excludedBrands.trim()) {
-        params.set('excludeBrands', excludedBrands.trim());
+      if (excludedBrandTags.length > 0) {
+        params.set('excludeBrands', excludedBrandTags.join(','));
       }
 
       // Use EventSource for streaming results
@@ -721,6 +755,21 @@ const StockXArbitrage: React.FC = () => {
 
   return (
     <div className="p-4 sm:p-6 bg-gray-900 text-white min-h-screen">
+      <style jsx>{`
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+            transform: scale(0.9);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+        .animate-fadeIn {
+          animation: fadeIn 0.2s ease-out;
+        }
+      `}</style>
       {/* Temporary debug component */}
       {process.env.NODE_ENV === 'development' && <SovrnDebug />}
       <div className="max-w-6xl mx-auto">
@@ -822,19 +871,46 @@ const StockXArbitrage: React.FC = () => {
               <label className="block text-sm font-medium text-gray-300 mb-2">
                 Exclude Brands (optional)
               </label>
-              <input
-                type="text"
-                value={excludedBrands}
-                onChange={(e) => setExcludedBrands(e.target.value)}
-                onKeyPress={handleKeyPress}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                placeholder="e.g., Nike, Adidas, Jordan (comma-separated)"
-              />
+              <div className="w-full min-h-[42px] px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg focus-within:ring-2 focus-within:ring-cyan-500 cursor-text" 
+                onClick={() => document.getElementById('brand-input')?.focus()}>
+                <div className="flex flex-wrap gap-2 items-center">
+                  {excludedBrandTags.map((tag, index) => (
+                    <span
+                      key={index}
+                      className="inline-flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-cyan-500/20 to-emerald-500/20 border border-cyan-500/30 rounded-md text-sm text-white group animate-fadeIn"
+                    >
+                      <span>{tag}</span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeBrandTag(index);
+                        }}
+                        className="ml-1 hover:bg-white/20 rounded-sm transition-colors duration-200"
+                      >
+                        <X className="w-3 h-3 text-gray-300 hover:text-white" />
+                      </button>
+                    </span>
+                  ))}
+                  <input
+                    id="brand-input"
+                    type="text"
+                    value={excludedBrandInput}
+                    onChange={handleBrandInputChange}
+                    onKeyDown={handleBrandInputKeyDown}
+                    className="flex-1 min-w-[120px] bg-transparent border-none outline-none text-white placeholder-gray-400"
+                    placeholder={excludedBrandTags.length === 0 ? "Type brand and press comma" : "Add more..."}
+                  />
+                </div>
+              </div>
               <div className="mt-1 text-xs text-gray-400">
                 <span>💡 Example exclusions:</span>
                 <button
                   type="button"
-                  onClick={() => setExcludedBrands('Nike, Jordan, Adidas')}
+                  onClick={() => {
+                    setExcludedBrandTags(['Nike', 'Jordan', 'Adidas']);
+                    setExcludedBrandInput('');
+                  }}
                   className="ml-1 text-red-400 hover:text-red-300 underline"
                 >
                   Major Sports Brands
@@ -842,7 +918,10 @@ const StockXArbitrage: React.FC = () => {
                 <span className="mx-1">•</span>
                 <button
                   type="button"
-                  onClick={() => setExcludedBrands('Supreme, Off-White, Yeezy')}
+                  onClick={() => {
+                    setExcludedBrandTags(['Supreme', 'Off-White', 'Yeezy']);
+                    setExcludedBrandInput('');
+                  }}
                   className="text-red-400 hover:text-red-300 underline"
                 >
                   Hype Brands
