@@ -106,6 +106,7 @@ export default function StockXListingCreator() {
 
   // Load variants when product is selected
   const loadVariants = async (product: Product) => {
+    console.log('Loading variants for product:', product.productId, product.title);
     setIsLoadingVariants(true);
     setVariants([]);
     setSelectedVariant(null);
@@ -114,19 +115,26 @@ export default function StockXListingCreator() {
       const response = await fetch(`/api/stockx/products/${product.productId}/variants`);
       
       if (!response.ok) {
-        throw new Error('Failed to load variants');
+        const errorText = await response.text();
+        console.error('Variants API error:', response.status, errorText);
+        throw new Error(`Failed to load variants: ${response.status}`);
       }
       
       const data = await response.json();
+      console.log('Variants response:', data);
       
-      if (data.success && data.variants) {
+      if (data.success && data.variants && data.variants.length > 0) {
         setVariants(data.variants);
+        console.log(`Loaded ${data.variants.length} variants`);
       } else {
         console.warn('No variants data available for product:', product.productId);
+        // Show an error message to the user
+        setSearchError('No sizes available for this product. Please try another product.');
         setVariants([]);
       }
     } catch (error) {
       console.error('Error loading variants:', error);
+      setSearchError('Failed to load product sizes. Please try again.');
     } finally {
       setIsLoadingVariants(false);
     }
@@ -297,7 +305,7 @@ export default function StockXListingCreator() {
   const profit = calculateProfitMargin();
 
   return (
-    <div className="p-6 bg-gray-900 text-white">
+    <div className="min-h-screen p-6 bg-gray-900 text-white overflow-y-auto">
       <div className="max-w-4xl mx-auto">
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-4">
@@ -401,7 +409,7 @@ export default function StockXListingCreator() {
               <div className="flex items-center justify-center py-8">
                 <Loader className="w-6 h-6 animate-spin text-cyan-400" />
               </div>
-            ) : (
+            ) : variants.length > 0 ? (
               <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
                 {variants.map((variant) => (
                   <button
@@ -421,6 +429,11 @@ export default function StockXListingCreator() {
                     )}
                   </button>
                 ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-gray-400">No sizes available for this product.</p>
+                <p className="text-gray-500 text-sm mt-2">Please try selecting a different product.</p>
               </div>
             )}
           </div>
