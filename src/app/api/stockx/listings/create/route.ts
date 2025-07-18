@@ -62,6 +62,18 @@ export async function POST(request: NextRequest) {
     };
 
     console.log('🏷️ Creating StockX listing:', listingData);
+    console.log('📋 Request details:', {
+      url: 'https://api.stockx.com/v2/selling/listings',
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken?.substring(0, 20)}...`,
+        'X-API-Key': apiKey?.substring(0, 10) + '...',
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'User-Agent': 'ResellDashboard/1.0'
+      },
+      body: JSON.stringify(listingData, null, 2)
+    });
 
     // Make API request to create listing
     let response = await fetch('https://api.stockx.com/v2/selling/listings', {
@@ -107,13 +119,30 @@ export async function POST(request: NextRequest) {
 
     if (!response.ok) {
       const errorData = await response.text();
-      console.error('❌ StockX listing creation failed:', response.status, errorData);
+      console.error('❌ StockX listing creation failed:', {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries()),
+        errorData: errorData
+      });
+      
+      // Try to parse error as JSON for more details
+      let parsedError;
+      try {
+        parsedError = JSON.parse(errorData);
+        console.error('📋 Parsed error details:', parsedError);
+      } catch (e) {
+        console.error('📋 Error is not JSON:', errorData);
+        parsedError = { message: errorData };
+      }
       
       return NextResponse.json(
         { 
           error: 'Failed to create listing',
           status: response.status,
-          details: errorData
+          statusText: response.statusText,
+          details: parsedError || errorData,
+          rawError: errorData
         },
         { status: response.status }
       );

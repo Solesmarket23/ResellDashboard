@@ -110,17 +110,72 @@ export async function GET(
       responseKeys: Object.keys(marketData || {})
     });
 
+    // Log the first few variants to understand the structure
+    if (variants.length > 0) {
+      console.log('🔍 First 3 variants detailed structure:');
+      variants.slice(0, 3).forEach((variant, index) => {
+        console.log(`Variant ${index + 1}:`, {
+          variantId: variant.variantId,
+          allKeys: Object.keys(variant),
+          variantValue: variant.variantValue,
+          size: variant.size,
+          sizeValue: variant.sizeValue,
+          displaySize: variant.displaySize,
+          shoeSize: variant.shoeSize,
+          sizeChart: variant.sizeChart,
+          traits: variant.traits,
+          variantTraits: variant.variantTraits
+        });
+      });
+    }
+
     // Transform market data to variants format
-    const transformedVariants = variants.map((variant: any) => ({
-      variantId: variant.variantId,
-      variantValue: variant.variantValue || variant.size || 'Unknown',
-      lowestAsk: variant.lowestAskAmount || 0,
-      highestBid: variant.highestBidAmount || 0,
-      currencyCode: variant.currencyCode || 'USD',
-      productId: variant.productId,
-      isFlexEligible: variant.isFlexEligible || false,
-      isDirectEligible: variant.isDirectEligible || false
-    }));
+    const transformedVariants = variants.map((variant: any) => {
+      // Try multiple field names for size information
+      let sizeValue = variant.variantValue || 
+                     variant.size || 
+                     variant.sizeValue || 
+                     variant.displaySize || 
+                     variant.shoeSize;
+      
+      // Try to extract size from traits if available
+      if (!sizeValue && variant.traits) {
+        const sizeTraits = variant.traits.find((trait: any) => 
+          trait.name?.toLowerCase().includes('size') || 
+          trait.filterId?.toLowerCase().includes('size')
+        );
+        if (sizeTraits && sizeTraits.value) {
+          sizeValue = sizeTraits.value;
+        }
+      }
+      
+      // Try to extract size from variantTraits if available
+      if (!sizeValue && variant.variantTraits) {
+        const sizeTraits = variant.variantTraits.find((trait: any) => 
+          trait.name?.toLowerCase().includes('size') || 
+          trait.filterId?.toLowerCase().includes('size')
+        );
+        if (sizeTraits && sizeTraits.value) {
+          sizeValue = sizeTraits.value;
+        }
+      }
+      
+      // If still no size, try to parse from variant ID or use index
+      if (!sizeValue || sizeValue === 'Unknown') {
+        sizeValue = 'Size N/A';
+      }
+      
+      return {
+        variantId: variant.variantId,
+        variantValue: sizeValue,
+        lowestAsk: variant.lowestAskAmount || 0,
+        highestBid: variant.highestBidAmount || 0,
+        currencyCode: variant.currencyCode || 'USD',
+        productId: variant.productId,
+        isFlexEligible: variant.isFlexEligible || false,
+        isDirectEligible: variant.isDirectEligible || false
+      };
+    });
 
     // Create success response
     const successResponse = NextResponse.json({
