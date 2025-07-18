@@ -128,13 +128,24 @@ const StockXPriceMonitor: React.FC = () => {
   // Monitoring loop
   useEffect(() => {
     let intervalId: NodeJS.Timeout;
+    let isChecking = false; // Prevent overlapping checks
 
     if (isMonitoring) {
       const checkPrices = async () => {
-        const currentProducts = monitoredProductsRef.current;
-        if (currentProducts.length === 0) return;
+        // Skip if already checking
+        if (isChecking) {
+          console.log('⏭️ Skipping check - previous check still in progress');
+          return;
+        }
         
-        console.log('🔍 Checking prices for', currentProducts.length, 'products');
+        isChecking = true;
+        const currentProducts = monitoredProductsRef.current;
+        if (currentProducts.length === 0) {
+          isChecking = false;
+          return;
+        }
+        
+        console.log('🔍 Starting price check for', currentProducts.length, 'products at', new Date().toLocaleTimeString());
         
         // Use batch API for better performance
         const products = currentProducts.map(p => ({
@@ -174,12 +185,16 @@ const StockXPriceMonitor: React.FC = () => {
                 lastChecked: checkStartTime
               })));
               
-              console.log('✅ Price check completed at', new Date(checkStartTime).toLocaleTimeString());
+              const checkDuration = Date.now() - checkStartTime;
+              console.log(`✅ Price check completed at ${new Date(checkStartTime).toLocaleTimeString()} (took ${(checkDuration / 1000).toFixed(1)}s)`);
             }
           } else if (response.status === 401) {
             // Handle authentication error
             console.error('❌ Authentication error - please re-authenticate with StockX');
             setNotifications(prev => ['Authentication error - please reconnect to StockX', ...prev.slice(0, 9)]);
+            setIsAuthenticated(false);
+          } else {
+            console.error('❌ API error:', response.status);
           }
         } catch (error) {
           console.error('❌ Error checking prices:', error);
@@ -189,6 +204,8 @@ const StockXPriceMonitor: React.FC = () => {
             lastChecked: checkStartTime
           })));
         }
+        
+        isChecking = false;
       };
 
       // Initial check
@@ -196,10 +213,14 @@ const StockXPriceMonitor: React.FC = () => {
       
       // Set up interval
       intervalId = setInterval(checkPrices, monitoringInterval);
+      console.log(`⏰ Monitoring interval set to ${monitoringInterval / 1000} seconds`);
     }
 
     return () => {
-      if (intervalId) clearInterval(intervalId);
+      if (intervalId) {
+        clearInterval(intervalId);
+        console.log('🛑 Monitoring interval cleared');
+      }
     };
   }, [isMonitoring, monitoringInterval]); // Removed monitoredProducts to prevent re-creating intervals
 

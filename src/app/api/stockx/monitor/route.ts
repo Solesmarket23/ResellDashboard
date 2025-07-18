@@ -198,8 +198,8 @@ export async function POST(request: NextRequest) {
           });
         }
         
-        // Rate limiting - wait 500ms between requests
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Rate limiting - wait 100ms between requests for faster processing
+        await new Promise(resolve => setTimeout(resolve, 100));
         
       } catch (error) {
         results.push({
