@@ -139,7 +139,7 @@ export default function StockXListingCreator() {
     }
   };
 
-  // Load variants when product is selected
+  // Load variants when product is selected (same approach as arbitrage finder)
   const loadVariants = async (product: Product) => {
     console.log('Loading variants for product:', product.productId, product.title);
     console.log('Product data:', product);
@@ -149,24 +149,69 @@ export default function StockXListingCreator() {
     setSearchError(null);
     
     try {
-      // Use market data endpoint to get real variant IDs (same as arbitrage finder)
-      console.log('💰 Fetching market data to get real variant IDs...');
-      const response = await fetch(`/api/stockx/products/${product.productId}/market-data`);
+      // Use same approach as arbitrage finder: fetch both variants and market data
+      console.log('🔄 Fetching variants and market data (same as arbitrage finder)...');
       
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Market data API error:', response.status, errorText);
-        throw new Error(`Failed to load market data: ${response.status}`);
+      // Fetch both variants (for size info) and market data (for pricing) in parallel
+      const [variantsResponse, marketDataResponse] = await Promise.all([
+        fetch(`/api/stockx/products/${product.productId}/variants`),
+        fetch(`/api/stockx/products/${product.productId}/market-data`)
+      ]);
+      
+      let variantsData = [];
+      let marketData = [];
+      
+      // Process variants response (has size information)
+      if (variantsResponse.ok) {
+        const variantsResult = await variantsResponse.json();
+        variantsData = variantsResult.variants || [];
+        console.log(`📏 Fetched ${variantsData.length} variants with size info`);
+      } else {
+        console.log('⚠️ Variants endpoint failed, will use market data only');
       }
       
-      const data = await response.json();
-      console.log('Market data response:', data);
+      // Process market data response (has pricing and variant IDs)
+      if (marketDataResponse.ok) {
+        const marketResult = await marketDataResponse.json();
+        marketData = marketResult.variants || [];
+        console.log(`💰 Fetched ${marketData.length} market data entries`);
+      } else {
+        const errorText = await marketDataResponse.text();
+        console.error('Market data API error:', marketDataResponse.status, errorText);
+        throw new Error(`Failed to load market data: ${marketDataResponse.status}`);
+      }
       
-      if (data.success && data.variants && data.variants.length > 0) {
-        console.log(`✅ Using real variants from market data (${data.variants.length} variants)`);
+      // Create a map of variant IDs to variant info for quick lookup (same as arbitrage finder)
+      const variantMap = new Map();
+      if (variantsData.length > 0) {
+        variantsData.forEach((variant: any) => {
+          variantMap.set(variant.variantId, {
+            size: variant.variantValue || 'One Size',
+            sizeChart: variant.sizeChart
+          });
+        });
+        console.log(`📋 Created variant mapping with ${variantMap.size} entries`);
+      }
+      
+      // Process market data and match with variants (same as arbitrage finder)
+      if (marketData.length > 0) {
+        const combinedVariants = marketData.map((marketEntry: any) => {
+          // Get size from variant mapping
+          const variantInfo = variantMap.get(marketEntry.variantId);
+          const size = variantInfo?.size || 'Unknown';
+          
+          return {
+            variantId: marketEntry.variantId,
+            variantValue: size, // Use the actual size from variants endpoint
+            lowestAsk: marketEntry.lowestAskAmount || 0,
+            highestBid: marketEntry.highestBidAmount || 0,
+            isFlexEligible: marketEntry.isFlexEligible || false,
+            isDirectEligible: marketEntry.isDirectEligible || false
+          };
+        });
         
         // Sort variants by size (numeric sort for shoe sizes)
-        const sortedVariants = data.variants.sort((a: Variant, b: Variant) => {
+        const sortedVariants = combinedVariants.sort((a: Variant, b: Variant) => {
           const aSize = parseFloat(a.variantValue);
           const bSize = parseFloat(b.variantValue);
           if (!isNaN(aSize) && !isNaN(bSize)) {
@@ -176,7 +221,7 @@ export default function StockXListingCreator() {
         });
         
         setVariants(sortedVariants);
-        console.log(`✅ Loaded ${sortedVariants.length} real variants with pricing data`);
+        console.log(`✅ Loaded ${sortedVariants.length} variants with real sizes and pricing`);
       } else {
         console.warn('❌ No market data available for product:', product.productId);
         throw new Error('No market data available');
