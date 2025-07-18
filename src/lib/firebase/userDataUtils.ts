@@ -545,16 +545,25 @@ export const saveUserStockXSettings = async (userId: string, settings: Partial<U
       updatedAt: new Date().toISOString()
     } as UserStockXSettings;
 
-    const existingSettings = await getDocuments(COLLECTIONS.STOCKX_SETTINGS);
-    const userSettings = existingSettings.find((s: any) => s.userId === userId);
+    try {
+      // Try Firebase first
+      const existingSettings = await getDocuments(COLLECTIONS.STOCKX_SETTINGS);
+      const userSettings = existingSettings.find((s: any) => s.userId === userId);
 
-    if (userSettings && userSettings.id) {
-      await updateDocument(COLLECTIONS.STOCKX_SETTINGS, userSettings.id, stockxSettings);
-    } else {
-      await addDocument(COLLECTIONS.STOCKX_SETTINGS, stockxSettings);
+      if (userSettings && userSettings.id) {
+        await updateDocument(COLLECTIONS.STOCKX_SETTINGS, userSettings.id, stockxSettings);
+      } else {
+        await addDocument(COLLECTIONS.STOCKX_SETTINGS, stockxSettings);
+      }
+      console.log('✅ StockX settings saved to Firebase');
+    } catch (firebaseError) {
+      console.warn('⚠️ Firebase save failed, using localStorage fallback:', firebaseError);
+      // Fallback to localStorage
+      if (isClientSide) {
+        localStorage.setItem(`stockx_settings_${userId}`, JSON.stringify(stockxSettings));
+        console.log('✅ StockX settings saved to localStorage');
+      }
     }
-
-    console.log('✅ StockX settings saved to Firebase');
   } catch (error) {
     console.error('❌ Error saving StockX settings:', error);
     throw error;
@@ -563,9 +572,28 @@ export const saveUserStockXSettings = async (userId: string, settings: Partial<U
 
 export const getUserStockXSettings = async (userId: string): Promise<UserStockXSettings | null> => {
   try {
-    const settings = await getDocuments(COLLECTIONS.STOCKX_SETTINGS);
-    const userSettings = settings.find((s: any) => s.userId === userId);
-    return userSettings || null;
+    // Try Firebase first
+    try {
+      const settings = await getDocuments(COLLECTIONS.STOCKX_SETTINGS);
+      const userSettings = settings.find((s: any) => s.userId === userId);
+      if (userSettings) {
+        console.log('✅ StockX settings loaded from Firebase');
+        return userSettings;
+      }
+    } catch (firebaseError) {
+      console.warn('⚠️ Firebase load failed, trying localStorage:', firebaseError);
+    }
+    
+    // Fallback to localStorage
+    if (isClientSide) {
+      const localSettings = localStorage.getItem(`stockx_settings_${userId}`);
+      if (localSettings) {
+        console.log('✅ StockX settings loaded from localStorage');
+        return JSON.parse(localSettings);
+      }
+    }
+    
+    return null;
   } catch (error) {
     console.error('❌ Error loading StockX settings:', error);
     return null;
