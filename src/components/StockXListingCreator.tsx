@@ -83,7 +83,16 @@ export default function StockXListingCreator() {
       
       const data = await response.json();
       if (data.success && data.data?.products) {
-        setSearchResults(data.data.products);
+        // Transform the products to match our expected format
+        const transformedProducts = data.data.products.map((p: any) => ({
+          productId: p.id || p.productId,
+          title: p.title || p.name,
+          brand: p.brand || 'Unknown',
+          imageUrl: p.imageUrl || p.media?.imageUrl || p.media?.thumbUrl || '/placeholder-shoe.png',
+          retailPrice: p.retailPrice || 0,
+          urlKey: p.urlKey || ''
+        }));
+        setSearchResults(transformedProducts);
       } else {
         setSearchError('No products found');
       }
@@ -102,28 +111,20 @@ export default function StockXListingCreator() {
     setSelectedVariant(null);
     
     try {
-      const response = await fetch(`/api/stockx/search?query=${encodeURIComponent(product.title)}&limit=1`);
+      const response = await fetch(`/api/stockx/products/${product.productId}/variants`);
       
       if (!response.ok) {
         throw new Error('Failed to load variants');
       }
       
-      // Since we don't have a direct variants endpoint, we'll simulate it
-      // In production, you'd call the actual variants endpoint
       const data = await response.json();
       
-      // Mock variants for now - in production, fetch from StockX API
-      const mockVariants: Variant[] = [
-        { variantId: `${product.productId}-1`, variantValue: '8', lowestAsk: 250, highestBid: 200 },
-        { variantId: `${product.productId}-2`, variantValue: '8.5', lowestAsk: 260, highestBid: 210 },
-        { variantId: `${product.productId}-3`, variantValue: '9', lowestAsk: 270, highestBid: 220 },
-        { variantId: `${product.productId}-4`, variantValue: '9.5', lowestAsk: 280, highestBid: 230 },
-        { variantId: `${product.productId}-5`, variantValue: '10', lowestAsk: 290, highestBid: 240 },
-        { variantId: `${product.productId}-6`, variantValue: '10.5', lowestAsk: 300, highestBid: 250 },
-        { variantId: `${product.productId}-7`, variantValue: '11', lowestAsk: 310, highestBid: 260 },
-      ];
-      
-      setVariants(mockVariants);
+      if (data.success && data.variants) {
+        setVariants(data.variants);
+      } else {
+        console.warn('No variants data available for product:', product.productId);
+        setVariants([]);
+      }
     } catch (error) {
       console.error('Error loading variants:', error);
     } finally {
@@ -137,7 +138,9 @@ export default function StockXListingCreator() {
     setMarketData(null);
     
     try {
-      const response = await fetch(`/api/stockx/market-data?productId=${product.productId}&variantId=${variant.variantId}`);
+      const response = await fetch(`/api/stockx/market-data?productId=${product.productId}&variantId=${variant.variantId}`, {
+        method: 'GET'
+      });
       
       if (!response.ok) {
         throw new Error('Failed to load market data');
@@ -356,13 +359,26 @@ export default function StockXListingCreator() {
                   }`}
                 >
                   <div className="flex gap-4">
-                    <div className="w-20 h-20 bg-gray-700 rounded-lg flex items-center justify-center">
-                      <Package className="w-8 h-8 text-gray-500" />
+                    <div className="w-20 h-20 bg-gray-700 rounded-lg overflow-hidden">
+                      {product.imageUrl && product.imageUrl !== '/placeholder-shoe.png' ? (
+                        <img 
+                          src={product.imageUrl} 
+                          alt={product.title}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = '/placeholder-shoe.png';
+                          }}
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <Package className="w-8 h-8 text-gray-500" />
+                        </div>
+                      )}
                     </div>
                     <div className="flex-1">
                       <h3 className="font-semibold text-white">{product.title}</h3>
                       <p className="text-gray-400 text-sm">{product.brand}</p>
-                      {product.retailPrice && (
+                      {product.retailPrice > 0 && (
                         <p className="text-gray-500 text-sm">Retail: ${product.retailPrice}</p>
                       )}
                     </div>

@@ -11,7 +11,7 @@ export async function GET(
     // Get tokens from cookies
     let accessToken = request.cookies.get('stockx_access_token')?.value;
     const refreshToken = request.cookies.get('stockx_refresh_token')?.value;
-    const apiKey = process.env.STOCKX_API_KEY;
+    const apiKey = process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID;
 
     if (!accessToken || !refreshToken) {
       return NextResponse.json(

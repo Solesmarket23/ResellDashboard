@@ -1,17 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { refreshStockXTokens, setStockXTokenCookies } from '@/lib/stockx/tokenRefresh';
 
-interface CreateListingRequest {
-  productId: string;
-  variantId: string;
-  amount: number; // Price in dollars
-  quantity?: number; // Default to 1
-  active?: boolean; // Whether to create as active or inactive
-  condition?: 'new' | 'used'; // Default to 'new'
-}
-
-export async function POST(request: NextRequest) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
+    const productId = params.id;
+    
     // Get tokens from cookies
     let accessToken = request.cookies.get('stockx_access_token')?.value;
     const refreshToken = request.cookies.get('stockx_refresh_token')?.value;
@@ -31,49 +27,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Parse request body
-    const body: CreateListingRequest = await request.json();
-    const { productId, variantId, amount, quantity = 1, active = true, condition = 'new' } = body;
+    console.log(`🔍 Fetching variants for product: ${productId}`);
 
-    // Validate required fields
-    if (!productId || !variantId || !amount) {
-      return NextResponse.json(
-        { error: 'Missing required fields: productId, variantId, and amount are required' },
-        { status: 400 }
-      );
-    }
-
-    // Validate amount
-    if (amount <= 0) {
-      return NextResponse.json(
-        { error: 'Amount must be greater than 0' },
-        { status: 400 }
-      );
-    }
-
-    // Prepare the listing data
-    const listingData = {
-      productId,
-      variantId,
-      amount: Math.round(amount * 100), // Convert to cents
-      quantity,
-      active,
-      condition
-    };
-
-    console.log('🏷️ Creating StockX listing:', listingData);
-
-    // Make API request to create listing
-    let response = await fetch('https://api.stockx.com/v2/selling/listings', {
-      method: 'POST',
+    // Make API request to get product variants
+    const variantsUrl = `https://api.stockx.com/v2/catalog/products/${productId}/variants`;
+    
+    let response = await fetch(variantsUrl, {
+      method: 'GET',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'X-API-Key': apiKey,
-        'Content-Type': 'application/json',
         'Accept': 'application/json',
         'User-Agent': 'ResellDashboard/1.0'
-      },
-      body: JSON.stringify(listingData)
+      }
     });
 
     // Handle token refresh if needed
@@ -83,16 +49,14 @@ export async function POST(request: NextRequest) {
       
       if (refreshResult.success && refreshResult.accessToken) {
         // Retry with new token
-        response = await fetch('https://api.stockx.com/v2/selling/listings', {
-          method: 'POST',
+        response = await fetch(variantsUrl, {
+          method: 'GET',
           headers: {
             'Authorization': `Bearer ${refreshResult.accessToken}`,
             'X-API-Key': apiKey,
-            'Content-Type': 'application/json',
             'Accept': 'application/json',
             'User-Agent': 'ResellDashboard/1.0'
-          },
-          body: JSON.stringify(listingData)
+          }
         });
         
         // Store the new access token for response
@@ -107,11 +71,11 @@ export async function POST(request: NextRequest) {
 
     if (!response.ok) {
       const errorData = await response.text();
-      console.error('❌ StockX listing creation failed:', response.status, errorData);
+      console.error('❌ Failed to fetch variants:', response.status, errorData);
       
       return NextResponse.json(
         { 
-          error: 'Failed to create listing',
+          error: 'Failed to fetch product variants',
           status: response.status,
           details: errorData
         },
@@ -119,22 +83,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Parse the operation response
-    const operation = await response.json();
-    console.log('✅ Listing operation created:', operation);
+    // Parse the variants response
+    const data = await response.json();
+    console.log(`✅ Retrieved ${data.variants?.length || 0} variants`);
+
+    // Transform variants to match our expected format
+    const transformedVariants = (data.variants || []).map((variant: any) => ({
+      variantId: variant.id,
+      variantValue: variant.sizeChart?.displayName || variant.size || 'Unknown',
+      lowestAsk: variant.market?.lowestAsk || 0,
+      highestBid: variant.market?.highestBid || 0,
+      lastSale: variant.market?.lastSale || 0,
+      salesLast72Hours: variant.market?.salesLast72Hours || 0
+    }));
 
     // Create success response
     const successResponse = NextResponse.json({
       success: true,
-      operation: {
-        listingId: operation.listingId,
-        operationId: operation.operationId,
-        operationType: operation.operationType,
-        operationStatus: operation.operationStatus,
-        operationUrl: operation.operationUrl,
-        createdAt: operation.createdAt
-      },
-      message: `Listing ${active ? 'created and activated' : 'created as inactive'}. Operation ID: ${operation.operationId}`
+      productId,
+      variants: transformedVariants
     });
 
     // Update tokens if refreshed
@@ -145,7 +112,7 @@ export async function POST(request: NextRequest) {
     return successResponse;
 
   } catch (error) {
-    console.error('❌ Error creating listing:', error);
+    console.error('❌ Error fetching variants:', error);
     return NextResponse.json(
       { 
         error: 'Internal server error',
