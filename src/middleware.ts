@@ -23,10 +23,13 @@ const PUBLIC_ROUTES = [
 // Routes that require site password but not Firebase auth
 const SITE_PASSWORD_ONLY_ROUTES = [
   '/login',  // Login/signup page - requires site password but not Firebase auth
-  '/api/gmail/auth',  // Gmail OAuth initiation
-  '/api/gmail/callback',  // Gmail OAuth callback
-  '/api/gmail/status',  // Gmail connection status check
   '/loading'  // Loading page after Gmail auth
+];
+
+// API routes that should be accessible with just site password (for authenticated users)
+const AUTHENTICATED_API_ROUTES = [
+  '/api/gmail/',  // All Gmail API routes
+  '/api/stockx/',  // All StockX API routes
 ];
 
 export function middleware(request: NextRequest) {
@@ -40,6 +43,21 @@ export function middleware(request: NextRequest) {
   
   // Check if user is authenticated via site password
   const authCookie = request.cookies.get('site-auth');
+  
+  // Check if this is an authenticated API route
+  const isAuthenticatedApiRoute = AUTHENTICATED_API_ROUTES.some(route => pathname.startsWith(route));
+  if (isAuthenticatedApiRoute) {
+    // For API routes, only require site password
+    if (authCookie?.value === 'authenticated') {
+      return NextResponse.next();
+    } else {
+      // No site password auth, redirect to password protection
+      console.log('🔐 Middleware: No site password auth for API route, redirecting to password protection');
+      const passwordUrl = new URL('/password-protect', request.url);
+      passwordUrl.searchParams.set('from', pathname);
+      return NextResponse.redirect(passwordUrl);
+    }
+  }
   
   // Check if this route only requires site password
   const isSitePasswordOnlyRoute = SITE_PASSWORD_ONLY_ROUTES.some(route => pathname.startsWith(route));
