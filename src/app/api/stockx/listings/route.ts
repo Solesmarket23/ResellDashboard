@@ -18,16 +18,30 @@ export async function GET(request: NextRequest) {
 
     console.log('🛍️ Fetching StockX listings...');
 
-    // Fetch listings from StockX API
-    let response = await fetch('https://api.stockx.com/v2/selling/listings', {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'x-api-key': process.env.STOCKX_API_KEY!,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      }
-    });
+    // Function to fetch a page of listings
+    const fetchPage = async (pageNum: number, token: string) => {
+      const params = new URLSearchParams({
+        limit: '100', // Get up to 100 listings per page
+        page: pageNum.toString(),
+        sort: 'created_at:desc' // Get newest listings first
+      });
+      
+      const response = await fetch(`https://api.stockx.com/v2/selling/listings?${params}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'x-api-key': process.env.STOCKX_CLIENT_ID || '',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'ResellDashboard/1.0'
+        }
+      });
+      
+      return response;
+    };
+
+    // Fetch first page
+    let response = await fetchPage(1, accessToken);
 
     // Handle token refresh if needed
     if (response.status === 401 && refreshToken) {
@@ -35,19 +49,10 @@ export async function GET(request: NextRequest) {
       const refreshResult = await refreshStockXTokens(refreshToken);
       
       if (refreshResult.success && refreshResult.accessToken) {
-        // Retry with new token
-        response = await fetch('https://api.stockx.com/v2/selling/listings', {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${refreshResult.accessToken}`,
-            'x-api-key': process.env.STOCKX_API_KEY!,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          }
-        });
-        
         // Store the new access token for later use
         accessToken = refreshResult.accessToken;
+        // Retry with new token
+        response = await fetchPage(1, accessToken);
       } else {
         return NextResponse.json({ 
           success: false, 
@@ -61,27 +66,46 @@ export async function GET(request: NextRequest) {
     }
 
     const data = await response.json();
-    console.log('✅ Listings fetched successfully:', {
-      totalListings: data.listings?.length || 0,
-      hasData: !!data.listings
+    console.log('✅ Listings response:', {
+      hasListings: !!data.listings,
+      dataKeys: Object.keys(data),
+      firstListing: data.listings?.[0]
     });
 
+    // StockX API returns listings in a 'listings' array
+    const rawListings = data.listings || data.data || [];
+    console.log(`📦 Found ${rawListings.length} listings`);
+
     // Transform the data to match our component's expectations
-    const transformedListings = (data.listings || []).map((listing: any, index: number) => ({
-      listingId: listing.id || `listing-${index}`,
-      productId: listing.product?.id || '',
-      variantId: listing.variant?.id || '',
-      productName: listing.product?.title || 'Unknown Product',
-      size: listing.variant?.size || listing.variant?.variantValue || 'Unknown Size',
-      currentPrice: parseFloat(listing.amount || '0'),
-      originalPrice: parseFloat(listing.amount || '0'),
-      brand: listing.product?.brand || 'Unknown Brand',
-      colorway: listing.product?.colorway || '',
-      condition: listing.condition || 'new',
-      status: listing.status || 'active',
-      createdAt: listing.createdAt,
-      updatedAt: listing.updatedAt
-    }));
+    const transformedListings = rawListings.map((listing: any, index: number) => {
+      // Log the structure of the first listing to understand the format
+      if (index === 0) {
+        console.log('Sample listing structure:', {
+          keys: Object.keys(listing),
+          listing: listing
+        });
+      }
+      
+      return {
+        listingId: listing.listingId || listing.id || `listing-${index}`,
+        productId: listing.productId || listing.product?.id || '',
+        variantId: listing.variantId || listing.variant?.id || '',
+        productName: listing.productName || listing.product?.title || listing.product?.name || 'Unknown Product',
+        size: listing.size || listing.variant?.size || listing.variant?.variantValue || listing.variantValue || 'Unknown Size',
+        currentPrice: parseFloat(listing.amount || listing.price || '0'),
+        originalPrice: parseFloat(listing.amount || listing.price || '0'),
+        brand: listing.brand || listing.product?.brand || 'Unknown Brand',
+        colorway: listing.colorway || listing.product?.colorway || '',
+        condition: listing.condition || 'new',
+        status: listing.status || listing.listingStatus || 'active',
+        createdAt: listing.createdAt || listing.created_at,
+        updatedAt: listing.updatedAt || listing.updated_at,
+        // Additional fields that might be useful
+        productUuid: listing.productUuid || listing.product?.uuid,
+        variantUuid: listing.variantUuid || listing.variant?.uuid,
+        listingUuid: listing.uuid || listing.listingUuid
+      };
+    });
 
     const successResponse = NextResponse.json({
       success: true,
@@ -135,7 +159,7 @@ export async function POST(request: NextRequest) {
             method: 'PATCH',
             headers: {
               'Authorization': `Bearer ${accessToken}`,
-              'x-api-key': process.env.STOCKX_API_KEY!,
+              'x-api-key': process.env.STOCKX_CLIENT_ID || '',
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
@@ -189,7 +213,7 @@ export async function POST(request: NextRequest) {
             method: 'DELETE',
             headers: {
               'Authorization': `Bearer ${accessToken}`,
-              'x-api-key': process.env.STOCKX_API_KEY!,
+              'x-api-key': process.env.STOCKX_CLIENT_ID || '',
             }
           });
 
