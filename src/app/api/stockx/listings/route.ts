@@ -17,7 +17,8 @@ export async function GET(request: NextRequest) {
     }
 
     console.log('🛍️ Fetching StockX listings...');
-    console.log('🔑 Using client ID:', process.env.STOCKX_CLIENT_ID ? 'Present' : 'Missing');
+    console.log('🔑 API Key:', process.env.STOCKX_API_KEY ? `Present (${process.env.STOCKX_API_KEY.substring(0, 8)}...)` : 'Missing');
+    console.log('🔐 Client ID:', process.env.STOCKX_CLIENT_ID ? 'Present' : 'Missing');
     console.log('🎫 Access token:', accessToken ? `${accessToken.substring(0, 20)}...` : 'Missing');
 
     // Function to fetch a page of listings
@@ -31,11 +32,14 @@ export async function GET(request: NextRequest) {
       const url = `https://api.stockx.com/v2/selling/listings?${params}`;
       console.log('📍 Fetching from:', url);
       
+      const apiKey = process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID || '';
+      console.log('🔐 Using API Key:', apiKey ? `${apiKey.substring(0, 8)}...` : 'EMPTY');
+      
       const response = await fetch(url, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
-          'X-API-Key': process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID || '',
+          'X-API-Key': apiKey,
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'User-Agent': 'ResellDashboard/1.0'
