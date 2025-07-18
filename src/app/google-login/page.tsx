@@ -23,16 +23,22 @@ function GoogleLoginForm() {
   const isNeon = currentTheme.name === 'Neon';
 
   useEffect(() => {
+    console.log('🔐 Google login page loaded');
     // Check if user is already authenticated
     const checkAuth = () => {
       const siteUserId = localStorage.getItem('siteUserId');
       const siteUserEmail = localStorage.getItem('siteUserEmail');
       
+      console.log('🔐 Checking auth:', { siteUserId, siteUserEmail });
+      
       if (!siteUserId || !siteUserEmail) {
         // User hasn't completed password verification, redirect back to login
+        console.log('🔐 No site auth found, redirecting to login');
         router.push('/login');
         return;
       }
+      
+      console.log('🔐 Site auth found, showing Google login');
     };
 
     checkAuth();

@@ -12,13 +12,17 @@ const PUBLIC_ROUTES = [
   '/_next/',
   '/favicon.ico',
   '/login',
-  '/google-login',  // Google login page
   '/onboarding',  // Onboarding page
   '/api/auth/verify',
   '/api/user/stockx-keys',  // User API key management
   '/',  // Landing page
   '/landing',  // Landing page route
   '/api/subscribe'  // Email subscription endpoint
+];
+
+// Routes that require site password but not Google auth
+const SITE_PASSWORD_ONLY_ROUTES = [
+  '/google-login'  // Google login page - requires site password but not Google auth
 ];
 
 export function middleware(request: NextRequest) {
@@ -33,14 +37,31 @@ export function middleware(request: NextRequest) {
   // Check if user is authenticated via site password
   const authCookie = request.cookies.get('site-auth');
   
-  // For dashboard access, we need both site password AND Google authentication
-  if (pathname.startsWith('/dashboard')) {
-    // If user has site password but no Google auth, redirect to Google login
+  // Check if this route only requires site password
+  const isSitePasswordOnlyRoute = SITE_PASSWORD_ONLY_ROUTES.some(route => pathname.startsWith(route));
+  if (isSitePasswordOnlyRoute) {
+    // For these routes, only check site password
     if (authCookie?.value === 'authenticated') {
-      // Let the client-side handle the Google auth check
       return NextResponse.next();
     } else {
       // No site password auth, redirect to login
+      console.log('🔐 Middleware: No site password auth for google-login, redirecting to login');
+      const loginUrl = new URL('/login', request.url);
+      loginUrl.searchParams.set('from', pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+  }
+  
+  // For dashboard access, we need both site password AND Google authentication
+  if (pathname.startsWith('/dashboard')) {
+    // Check if user has site password authentication
+    if (authCookie?.value === 'authenticated') {
+      // User has site password, let them access the dashboard
+      // The dashboard page will handle checking for Google authentication
+      return NextResponse.next();
+    } else {
+      // No site password auth, redirect to login
+      console.log('🔐 Middleware: No site password auth, redirecting to login');
       const loginUrl = new URL('/login', request.url);
       loginUrl.searchParams.set('from', pathname);
       return NextResponse.redirect(loginUrl);

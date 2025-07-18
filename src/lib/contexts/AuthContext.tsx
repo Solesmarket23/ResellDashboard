@@ -103,10 +103,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     try {
       setError(null);
+      console.log("🔐 Starting Google sign-in process...");
+      console.log("🔐 Current domain:", window.location.hostname);
+      console.log("🔐 Firebase auth domain:", process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN);
+      
       const provider = new GoogleAuthProvider();
+      console.log("🔐 Google provider created, attempting sign-in...");
       await signInWithPopup(auth, provider);
+      console.log("🔐 Google sign-in successful!");
     } catch (error: any) {
-      console.error("Google sign-in error:", error);
+      console.error("❌ Google sign-in error:", error);
+      console.error("❌ Error code:", error.code);
+      console.error("❌ Error message:", error.message);
       
       // Handle specific Firebase auth errors
       if (error.code === 'auth/unauthorized-domain') {
@@ -116,7 +124,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       } else if (error.code === 'auth/popup-blocked') {
         setError("Pop-up blocked. Please allow pop-ups for this site and try again.");
       } else {
-        setError("Sign-in failed. Please try again.");
+        setError(`Sign-in failed: ${error.message}. Please try again.`);
       }
     }
   };

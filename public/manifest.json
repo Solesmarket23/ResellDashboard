@@ -1,0 +1,16 @@
+{
+  "name": "Flip Flow - Resell Dashboard",
+  "short_name": "Flip Flow",
+  "description": "Professional reselling dashboard for sneaker flippers",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#6366f1",
+  "icons": [
+    {
+      "src": "/flip-flow-logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+} 

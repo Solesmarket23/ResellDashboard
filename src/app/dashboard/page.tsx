@@ -55,11 +55,13 @@ export default function DashboardPage() {
       const siteUserId = localStorage.getItem('siteUserId');
       if (!siteUserId) {
         // No site password authentication, redirect to login
+        console.log('🔐 No site password auth, redirecting to login');
         router.push('/login');
         return;
       } else {
         // User has site password but no Google authentication, redirect to Google login
-        router.push('/google-login');
+        console.log('🔐 Site password auth found, but no Google auth, redirecting to Google login');
+        router.push('/google-login?from=/dashboard');
         return;
       }
     }
@@ -264,6 +266,20 @@ export default function DashboardPage() {
         <div className="flex-1 flex items-center justify-center">
           <div className={`text-lg ${isNeon ? 'text-white' : 'text-gray-900'}`}>
             Checking authentication...
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // If not loading and no user, don't render the dashboard
+  // The useEffect will handle the redirect
+  if (!user) {
+    return (
+      <div className={`flex h-screen overflow-hidden ${currentTheme.colors.background}`}>
+        <div className="flex-1 flex items-center justify-center">
+          <div className={`text-lg ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+            Redirecting to login...
           </div>
         </div>
       </div>

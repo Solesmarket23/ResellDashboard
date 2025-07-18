@@ -26,13 +26,17 @@ function LoginForm() {
 
       if (response.ok) {
         const data = await response.json();
+        console.log('🔐 Password verified successfully:', data);
         // Store user info in localStorage for client-side use
         if (data.userId) {
           localStorage.setItem('siteUserId', data.userId);
           localStorage.setItem('siteUserEmail', data.email || 'user@solesmarket.com');
+          console.log('🔐 Stored user data in localStorage');
         }
         // Redirect to Google login page
-        router.push(`/google-login?from=${encodeURIComponent(from)}`);
+        const googleLoginUrl = `/google-login?from=${encodeURIComponent(from)}`;
+        console.log('🔐 Redirecting to Google login:', googleLoginUrl);
+        window.location.href = googleLoginUrl; // Use window.location instead of router.push
       } else {
         setError('Invalid password');
       }
