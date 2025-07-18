@@ -128,6 +128,34 @@ const StockXArbitrage: React.FC = () => {
     checkAuth();
   }, []);
 
+  // Load existing monitored products from localStorage
+  useEffect(() => {
+    const loadMonitoredProducts = () => {
+      try {
+        const existingItems = localStorage.getItem('stockx_monitored_products');
+        if (existingItems) {
+          const monitoredItems = JSON.parse(existingItems);
+          const monitoredIds = new Set<string>();
+          
+          // Extract the monitor button IDs from stored products
+          monitoredItems.forEach((item: any) => {
+            if (item.productId && item.variantId) {
+              const buttonId = `monitor-${item.productId}-${item.variantId}`;
+              monitoredIds.add(buttonId);
+            }
+          });
+          
+          setMonitoredProducts(monitoredIds);
+          console.log('📊 Loaded monitored products:', monitoredIds.size, 'items');
+        }
+      } catch (error) {
+        console.error('Failed to load monitored products:', error);
+      }
+    };
+    
+    loadMonitoredProducts();
+  }, []);
+
   // Check for success message on component mount
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
