@@ -122,7 +122,7 @@ export async function GET(request: NextRequest) {
     const listingsWithOrders = rawListings.filter((l: any) => l.order);
     console.log(`📦 Listings with orders (likely MATCHED): ${listingsWithOrders.length}`);
     
-    // Check for expired asks
+    // Check for expired asks with more detailed logging
     const now = new Date();
     const expiredListings = rawListings.filter((l: any) => {
       if (l.ask?.askExpiresAt) {
@@ -135,6 +135,10 @@ export async function GET(request: NextRequest) {
       }
       return false;
     });
+    
+    // Create a Set of expired listing IDs for easier lookup
+    const expiredListingIds = new Set(expiredListings.map((l: any) => l.id || l.listingId));
+    
     console.log(`⏰ Listings with expired asks: ${expiredListings.length}`);
     console.log(`🎯 Expected active listings after filtering expired: ${rawListings.length - expiredListings.length}`);
 
@@ -185,8 +189,10 @@ export async function GET(request: NextRequest) {
     const activeListings = transformedListings.filter((listing: any, index: number) => {
       const status = listing.status?.toUpperCase();
       
-      // Check if listing has the raw data we need
-      const rawListing = rawListings[index];
+      // Find the corresponding raw listing by ID
+      const rawListing = rawListings.find((r: any) => 
+        (r.id || r.listingId) === (listing.listingId || listing.listingUuid)
+      );
       
       // Criteria for a truly active listing:
       // 1. Status must be ACTIVE
@@ -258,6 +264,36 @@ export async function GET(request: NextRequest) {
     
     if (activeListings.length !== 51) {
       console.log(`\n⚠️  Discrepancy detected! Expected 51 but got ${activeListings.length}`);
+      
+      // Find which expired listings might have slipped through
+      const suspiciousListings = activeListings.filter((listing: any) => {
+        // Find the corresponding raw listing by ID
+        const rawListing = rawListings.find((r: any) => 
+          (r.id || r.listingId) === (listing.listingId || listing.listingUuid)
+        );
+        const listingId = listing.listingId || listing.listingUuid;
+        
+        // Check if this listing was marked as expired but still made it through
+        if (expiredListingIds.has(listingId)) {
+          console.log(`🚨 EXPIRED LISTING SLIPPED THROUGH: ${listing.productName} - Size ${listing.size}`);
+          return true;
+        }
+        
+        // Check if this listing has an expiration date we might have missed
+        if (rawListing?.ask?.askExpiresAt) {
+          const expirationDate = new Date(rawListing.ask.askExpiresAt);
+          if (expirationDate <= now) {
+            console.log(`🚨 MISSED EXPIRED LISTING: ${listing.productName} - Expired: ${expirationDate.toISOString()}`);
+            return true;
+          }
+        }
+        
+        return false;
+      });
+      
+      if (suspiciousListings.length > 0) {
+        console.log(`\n🔍 Found ${suspiciousListings.length} suspicious listings that might be expired`);
+      }
     }
     
     // Log status breakdown
