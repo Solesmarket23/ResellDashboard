@@ -122,25 +122,19 @@ export async function GET(request: NextRequest) {
     const listingsWithOrders = rawListings.filter((l: any) => l.order);
     console.log(`📦 Listings with orders (likely MATCHED): ${listingsWithOrders.length}`);
     
-    // Check for expired asks using BOTH methods
+    // Check for expired asks using expiration dates
     const now = new Date();
     
-    // Method 1: Check the reason field (StockX tells us directly)
-    const expiredByReason = rawListings.filter((l: any) => l.reason === 'Ask expired');
-    console.log(`📋 Listings with reason='Ask expired': ${expiredByReason.length}`);
-    
-    // Method 2: Check expiration dates
-    const expiredByDate = rawListings.filter((l: any) => {
+    // Check expiration dates (the only reliable method)
+    const expiredListings = rawListings.filter((l: any) => {
       if (l.ask?.askExpiresAt) {
         const expirationDate = new Date(l.ask.askExpiresAt);
         return expirationDate <= now;
       }
       return false;
     });
-    console.log(`📅 Listings with expired dates: ${expiredByDate.length}`);
+    console.log(`📅 Listings with expired dates: ${expiredListings.length}`);
     
-    // Use the reason field as primary indicator
-    const expiredListings = expiredByReason;
     const expiredListingIds = new Set(expiredListings.map((l: any) => l.id || l.listingId));
     
     console.log(`⏰ Listings with expired asks: ${expiredListings.length}`);
@@ -160,10 +154,6 @@ export async function GET(request: NextRequest) {
         });
       }
       
-      // Log any listings with 'Ask expired' reason
-      if (listing.reason === 'Ask expired') {
-        console.log(`🚨 Found expired listing in raw data: ${listing.product?.title} - Reason: ${listing.reason}`);
-      }
       
       return {
         listingId: listing.listingId || listing.id || `listing-${index}`,
@@ -187,7 +177,6 @@ export async function GET(request: NextRequest) {
         lastSale: parseFloat(listing.product?.lastSale || listing.lastSale || '0'),
         category: listing.product?.category || listing.category || '',
         inventoryType: listing.inventoryType || '',
-        reason: listing.reason || '', // Important: StockX reason field
         // UUID fields
         productUuid: listing.productUuid || listing.product?.uuid,
         variantUuid: listing.variantUuid || listing.variant?.uuid,
@@ -195,23 +184,9 @@ export async function GET(request: NextRequest) {
       };
     });
     
-    // IMMEDIATE FILTER: Remove any listings with 'Ask expired' reason
-    console.log(`\n🔍 Before filtering expired: ${transformedListings.length} listings`);
-    const nonExpiredListings = transformedListings.filter((listing: any) => {
-      if (listing.reason === 'Ask expired') {
-        console.log(`❌ Removing expired: ${listing.productName} - Size ${listing.size}`);
-        return false;
-      }
-      return true;
-    });
-    console.log(`✅ After filtering expired: ${nonExpiredListings.length} listings`);
-    
-    // Use the filtered list for further processing
-    const listingsToProcess = nonExpiredListings;
-    
     // Strict filtering for truly active listings that can be repriced
     let filteredListingsAnalysis: any[] = [];
-    const activeListings = listingsToProcess.filter((listing: any, index: number) => {
+    const activeListings = transformedListings.filter((listing: any, index: number) => {
       const status = listing.status?.toUpperCase();
       
       // Find the corresponding raw listing by ID
@@ -228,26 +203,21 @@ export async function GET(request: NextRequest) {
       const hasNoOrder = !rawListing?.order;
       const hasAsk = !!rawListing?.ask;
       
-      // Check the reason field - StockX tells us directly if ask is expired
-      const notExpiredByReason = rawListing?.reason !== 'Ask expired';
-      
-      // Additional date check as backup
-      let notExpiredByDate = true;
+      // Check expiration date
+      let notExpired = true;
       if (rawListing?.ask?.askExpiresAt) {
         const expirationDate = new Date(rawListing.ask.askExpiresAt);
         const now = new Date();
-        notExpiredByDate = expirationDate > now;
+        notExpired = expirationDate > now;
       }
       
-      // Use BOTH reason field and date check for maximum accuracy
-      const isActive = hasActiveStatus && hasNoOrder && hasAsk && notExpiredByReason && notExpiredByDate;
+      const isActive = hasActiveStatus && hasNoOrder && hasAsk && notExpired;
       
       if (!isActive) {
         const reason = !hasActiveStatus ? 'Not ACTIVE status' :
                       !hasNoOrder ? 'Has order (MATCHED)' :
                       !hasAsk ? 'No ask price' :
-                      !notExpiredByReason ? 'Ask expired (by reason field)' :
-                      !notExpiredByDate ? 'Ask expired (by date)' : 'Unknown';
+                      !notExpired ? 'Ask expired' : 'Unknown';
         
         if (index < 5) {
           console.log(`🚫 Filtering out listing:`, {
@@ -277,8 +247,8 @@ export async function GET(request: NextRequest) {
       return isActive;
     });
     
-    console.log(`🎯 Strict filtering: ${activeListings.length} truly active listings (from ${listingsToProcess.length} total)`);
-    console.log(`📊 Filtered out: ${listingsToProcess.length - activeListings.length} listings`);
+    console.log(`🎯 Strict filtering: ${activeListings.length} truly active listings (from ${transformedListings.length} total)`);
+    console.log(`📊 Filtered out: ${transformedListings.length - activeListings.length} listings`);
     
     // Double-check our math
     console.log('\n📐 Filtering Math Check:');
@@ -323,7 +293,7 @@ export async function GET(request: NextRequest) {
     }
     
     // Log status breakdown
-    const statusBreakdown = listingsToProcess.reduce((acc: any, listing: any) => {
+    const statusBreakdown = transformedListings.reduce((acc: any, listing: any) => {
       const status = listing.status || 'NO_STATUS';
       acc[status] = (acc[status] || 0) + 1;
       return acc;
@@ -444,13 +414,7 @@ export async function GET(request: NextRequest) {
         (r.id || r.listingId) === (listing.listingId || listing.listingUuid)
       );
       
-      // Check reason field first (most reliable)
-      if (rawListing?.reason === 'Ask expired' || listing.reason === 'Ask expired') {
-        console.log(`🧹 Final cleanup: Removing expired listing ${listing.productName} - Size ${listing.size} (reason: Ask expired)`);
-        return false;
-      }
-      
-      // Also check date as backup
+      // Check expiration date (the reason field doesn't exist in StockX API)
       if (rawListing?.ask?.askExpiresAt) {
         const expirationDate = new Date(rawListing.ask.askExpiresAt);
         if (expirationDate <= now) {
