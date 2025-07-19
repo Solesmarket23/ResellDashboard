@@ -332,21 +332,21 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
                 </p>
               </div>
 
-              {/* Plan Details - Adjusted for better symmetry */}
-              <div className="grid md:grid-cols-2 gap-12 mb-8 max-w-5xl mx-auto">
+              {/* Plan Details - Centered with better spacing */}
+              <div className="grid md:grid-cols-2 gap-8 mb-8 max-w-3xl mx-auto">
                 {/* Left Column - Plan Info */}
-                <div className="md:pl-8">
+                <div className="text-center md:text-left">
                   <h3 className={`text-2xl font-bold ${currentTheme.colors.textPrimary} mb-2`}>{plan.name}</h3>
                   <p className={`text-3xl font-bold ${currentTheme.colors.accent} mb-4`}>{plan.price}</p>
                   <p className={`${currentTheme.colors.textSecondary} mb-4`}>{plan.description}</p>
-                  <div className={`flex items-center gap-2 ${currentTheme.colors.textSecondary}`}>
+                  <div className={`flex items-center gap-2 ${currentTheme.colors.textSecondary} justify-center md:justify-start`}>
                     <span className="text-sm">Setup time:</span>
                     <span className="text-sm font-medium">{plan.setupTime}</span>
                   </div>
                 </div>
 
                 {/* Right Column - Features */}
-                <div className="md:pr-8">
+                <div>
                   <h4 className={`font-semibold ${currentTheme.colors.textPrimary} mb-4`}>Features included:</h4>
                   <ul className="space-y-2">
                     {plan.features.map((feature, index) => (
