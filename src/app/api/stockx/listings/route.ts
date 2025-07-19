@@ -258,6 +258,7 @@ export async function GET(request: NextRequest) {
     
     if (activeListings.length !== 51) {
       console.log(`\n⚠️  Discrepancy detected! Expected 51 but got ${activeListings.length}`);
+    }
     
     // Log status breakdown
     const statusBreakdown = transformedListings.reduce((acc: any, listing: any) => {
