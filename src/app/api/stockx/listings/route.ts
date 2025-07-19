@@ -210,9 +210,16 @@ export async function GET(request: NextRequest) {
         const now = new Date();
         notExpired = expirationDate > now;
         
-        if (!notExpired && index < 5) {
-          console.log(`📅 Expired listing: ${listing.productName} - Expired at: ${expirationDate.toISOString()}, Current time: ${now.toISOString()}`);
+        if (!notExpired) {
+          if (index < 5) {
+            console.log(`📅 Expired listing: ${listing.productName} - Expired at: ${expirationDate.toISOString()}, Current time: ${now.toISOString()}`);
+          }
+          // Always mark as expired if the date check fails
+          notExpired = false;
         }
+      } else if (!rawListing?.ask) {
+        // If there's no ask at all, it's not active
+        notExpired = false;
       }
       
       const isActive = hasActiveStatus && hasNoOrder && hasAsk && notExpired;
@@ -411,6 +418,29 @@ export async function GET(request: NextRequest) {
     } else {
       console.log('\n✅ No true duplicates found - all listings appear to be legitimate variations');
     }
+    
+    // Final safety check - remove any expired listings that might have slipped through
+    const now = new Date();
+    const finalListings = deduplicatedListings.filter((listing: any) => {
+      const rawListing = rawListings.find((r: any) => 
+        (r.id || r.listingId) === (listing.listingId || listing.listingUuid)
+      );
+      
+      if (rawListing?.ask?.askExpiresAt) {
+        const expirationDate = new Date(rawListing.ask.askExpiresAt);
+        if (expirationDate <= now) {
+          console.log(`🧹 Final cleanup: Removing expired listing ${listing.productName} - Size ${listing.size}`);
+          return false;
+        }
+      }
+      
+      return true;
+    });
+    
+    if (finalListings.length !== deduplicatedListings.length) {
+      console.log(`\n🧹 Final cleanup removed ${deduplicatedListings.length - finalListings.length} expired listings`);
+      deduplicatedListings = finalListings;
+    }
 
     // Capture filtering details for client
     const filteringDetails = {
@@ -425,8 +455,10 @@ export async function GET(request: NextRequest) {
     };
 
     // If discrepancy, find suspicious listings
-    if (activeListings.length !== 51) {
-      activeListings.forEach((listing: any) => {
+    if (deduplicatedListings.length !== 51) {
+      console.log(`\n🔍 Checking ${deduplicatedListings.length} deduplicated listings for expired items...`);
+      
+      deduplicatedListings.forEach((listing: any) => {
         const rawListing = rawListings.find((r: any) => 
           (r.id || r.listingId) === (listing.listingId || listing.listingUuid)
         );
@@ -435,15 +467,21 @@ export async function GET(request: NextRequest) {
           const expirationDate = new Date(rawListing.ask.askExpiresAt);
           const now = new Date();
           if (expirationDate <= now) {
+            console.log(`🚨 FOUND EXPIRED IN FINAL LIST: ${listing.productName} - Size ${listing.size}`);
             filteringDetails.suspiciousListings.push({
               productName: listing.productName,
               size: listing.size,
+              listingId: listing.listingId,
               expiredAt: expirationDate.toISOString(),
               currentTime: now.toISOString()
             });
           }
         }
       });
+      
+      if (filteringDetails.suspiciousListings.length > 0) {
+        console.log(`\n⚠️  Found ${filteringDetails.suspiciousListings.length} expired listings in final output!`);
+      }
     }
 
     // Add debug information to response
