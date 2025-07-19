@@ -447,8 +447,20 @@ export async function GET(request: NextRequest) {
       });
       
       if (!rawListing) {
-        console.log(`⚠️ Could not find raw listing for ${listing.productName}`);
-        return true; // Keep it if we can't find the raw data
+        // Try harder to find the raw listing - check if this listing's ID matches any raw listing
+        rawListing = rawListings.find((r: any) => {
+          // The transformed listingId might be the raw listing's id OR listingId
+          return listing.listingId === r.id || 
+                 listing.listingId === r.listingId ||
+                 listing.listingUuid === r.id ||
+                 listing.listingUuid === r.listingId ||
+                 listing.listingUuid === r.uuid;
+        });
+        
+        if (!rawListing) {
+          console.log(`⚠️ Could not find raw listing for ${listing.productName} (ID: ${listing.listingId}) - REMOVING as potentially expired`);
+          return false; // Remove it if we can't find the raw data - likely expired
+        }
       }
       
       // Log first few listings to debug
@@ -480,6 +492,25 @@ export async function GET(request: NextRequest) {
     } else {
       console.log(`\n✅ No expired listings found in final cleanup`);
       console.log(`Final count: ${deduplicatedListings.length} listings`);
+    }
+    
+    // If we still have more than 51, log which ones they are
+    if (deduplicatedListings.length > 51) {
+      console.log(`\n🚨 Still have ${deduplicatedListings.length - 51} extra listings!`);
+      console.log('Listing all products to identify extras:');
+      deduplicatedListings.forEach((listing: any, index: number) => {
+        const rawListing = rawListings.find((r: any) => 
+          listing.listingId === r.id || listing.listingId === r.listingId
+        );
+        console.log(`${index + 1}. ${listing.productName} - Size ${listing.size}`);
+        if (rawListing?.ask?.askExpiresAt) {
+          const expDate = new Date(rawListing.ask.askExpiresAt);
+          const isExpired = expDate <= now;
+          if (isExpired) {
+            console.log(`   🚨 EXPIRED: ${expDate.toISOString()}`);
+          }
+        }
+      });
     }
     
     // CRITICAL: Log what we're about to return
