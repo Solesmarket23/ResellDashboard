@@ -98,7 +98,8 @@ export default function StockXRepricing() {
     fetchListings();
   }, []);
 
-  const fetchListings = async () => {
+  const fetchListings = async (forceReload = false) => {
+    console.log(`🔄 Fetching listings... (forceReload: ${forceReload})`);
     setLoading(true);
     setAuthError(false);
     // Clear existing listings before fetching
@@ -107,11 +108,16 @@ export default function StockXRepricing() {
     
     try {
       // Add cache-busting timestamp to ensure fresh data
-      const response = await fetch(`/api/stockx/listings?t=${Date.now()}`, {
+      const url = `/api/stockx/listings?t=${Date.now()}&force=${forceReload}`;
+      console.log(`📍 Fetching from: ${url}`);
+      
+      const response = await fetch(url, {
+        method: 'GET',
         cache: 'no-store',
         headers: {
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
         }
       });
       
@@ -195,10 +201,12 @@ export default function StockXRepricing() {
         setListings([]);
       }
     } catch (error) {
-      console.error('Failed to fetch listings:', error);
+      console.error('❌ Failed to fetch listings:', error);
       setListings([]);
+      setLastFetchTime(new Date());
     } finally {
       setLoading(false);
+      console.log(`✅ Fetch complete at ${new Date().toISOString()}`);
     }
   };
 
@@ -332,27 +340,44 @@ export default function StockXRepricing() {
             Optimize your listing prices with intelligent repricing strategies
           </p>
         </div>
-        <button
-          onClick={fetchListings}
-          disabled={loading}
-          className={`px-6 py-3 rounded-lg font-semibold transition-all duration-200 flex items-center gap-2 ${
-            isNeon
-              ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white disabled:opacity-50'
-              : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50'
-          }`}
-        >
-          {loading ? (
-            <>
-              <Loader className="w-4 h-4 animate-spin" />
-              Loading...
-            </>
-          ) : (
-            <>
-              <RefreshCw className="w-4 h-4" />
-              Refresh Listings
-            </>
-          )}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => fetchListings(false)}
+            disabled={loading}
+            className={`px-6 py-3 rounded-lg font-semibold transition-all duration-200 flex items-center gap-2 ${
+              isNeon
+                ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white disabled:opacity-50'
+                : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50'
+            }`}
+          >
+            {loading ? (
+              <>
+                <Loader className="w-4 h-4 animate-spin" />
+                Loading...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="w-4 h-4" />
+                Refresh Listings
+              </>
+            )}
+          </button>
+          <button
+            onClick={() => {
+              console.log('🔥 HARD RELOAD TRIGGERED');
+              window.location.reload();
+            }}
+            disabled={loading}
+            className={`px-4 py-3 rounded-lg font-semibold transition-all duration-200 ${
+              isNeon
+                ? 'bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30'
+                : 'bg-red-100 text-red-800 border border-red-300 hover:bg-red-200'
+            }`}
+            title="Force complete page reload"
+          >
+            Hard Reload
+          </button>
+        </div>
       </div>
 
       {/* Strategy Selection */}
