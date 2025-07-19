@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
         limit: '100', // Get up to 100 listings per page
         page: pageNum.toString(),
         sort: 'created_at:desc', // Get newest listings first
-        status: 'ACTIVE' // Only get active listings that can be repriced
+        listingStatuses: 'ACTIVE' // Only get active listings that can be repriced
       });
       
       const url = `https://api.stockx.com/v2/selling/listings?${params}`;
@@ -123,6 +123,7 @@ export async function GET(request: NextRequest) {
           return acc;
         }, {});
         console.log('📊 Listing status distribution:', statusCounts);
+        console.log('📌 Valid statuses: INACTIVE, ACTIVE, DELETED, CANCELED, MATCHED, COMPLETED');
       }
       
       return {
