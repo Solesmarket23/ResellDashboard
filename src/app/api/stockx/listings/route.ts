@@ -691,7 +691,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { action, listingIds, newPrice } = await request.json();
+    const { action, listingIds, newPrice, updates } = await request.json();
     
     // Get access token from cookies
     const cookieStore = cookies();
@@ -711,9 +711,15 @@ export async function POST(request: NextRequest) {
       // Update listing prices
       const results = [];
       
-      for (const listingId of listingIds) {
+      // Use updates array if provided, otherwise fall back to single price
+      const priceUpdates = updates || listingIds.map(id => ({ listingId: id, newPrice }));
+      
+      for (const update of priceUpdates) {
         try {
-          const response = await fetch(`https://api.stockx.com/v2/selling/listings/${listingId}`, {
+          // Find the specific price for this listing
+          const listingPrice = update.newPrice || newPrice;
+          
+          const response = await fetch(`https://api.stockx.com/v2/selling/listings/${update.listingId}`, {
             method: 'PATCH',
             headers: {
               'Authorization': `Bearer ${accessToken}`,
@@ -721,23 +727,26 @@ export async function POST(request: NextRequest) {
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              amount: newPrice.toString()
+              amount: listingPrice.toString()
             })
           });
 
           if (response.ok) {
             const updatedListing = await response.json();
             results.push({
-              listingId,
+              listingId: update.listingId,
               success: true,
-              newPrice,
+              oldPrice: update.currentPrice,
+              newPrice: listingPrice,
+              marketPrice: update.marketPrice,
               listing: updatedListing
             });
           } else {
+            const errorText = await response.text();
             results.push({
-              listingId,
+              listingId: update.listingId,
               success: false,
-              error: `Failed to update: ${response.status}`
+              error: `Failed to update: ${response.status} - ${errorText}`
             });
           }
           
@@ -746,7 +755,7 @@ export async function POST(request: NextRequest) {
           
         } catch (error) {
           results.push({
-            listingId,
+            listingId: update.listingId,
             success: false,
             error: error.message
           });

@@ -227,6 +227,140 @@ export default function StockXRepricing() {
   const isAllSelected = listings.length > 0 && selectedCount === listings.length;
   const isPartiallySelected = selectedCount > 0 && selectedCount < listings.length;
 
+  const applyPricingRule = async (rule: string, value: number) => {
+    const selectedListings = listings.filter(listing => listing.selected);
+    
+    if (selectedListings.length === 0) {
+      alert('Please select at least one listing to reprice');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Calculate new prices based on rule
+      const updates = selectedListings.map(listing => {
+        let newPrice = listing.currentPrice;
+        
+        if (rule === 'beat_lowest') {
+          newPrice = (listing.lowestAsk || listing.currentPrice) - value;
+        } else if (rule === 'match_lowest') {
+          newPrice = listing.lowestAsk || listing.currentPrice;
+        } else if (rule === 'percentage') {
+          const marketPrice = listing.lowestAsk || listing.currentPrice;
+          newPrice = marketPrice * (1 - value / 100);
+        }
+        
+        // Round to nearest dollar
+        newPrice = Math.round(newPrice);
+        
+        return {
+          listingId: listing.listingId,
+          currentPrice: listing.currentPrice,
+          newPrice,
+          marketPrice: listing.lowestAsk || 0
+        };
+      });
+
+      // Update prices via API
+      const response = await fetch('/api/stockx/listings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'update_price',
+          listingIds: updates.map(u => u.listingId),
+          updates // Send all update details
+        })
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        alert(`Successfully updated ${updates.length} listing${updates.length > 1 ? 's' : ''}`);
+        // Refresh listings to show new prices
+        await fetchListings();
+      } else {
+        alert(`Failed to update prices: ${data.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Pricing rule error:', error);
+      alert('Failed to apply pricing rule');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const applyCustomRule = async (type: string, amount: number) => {
+    const selectedListings = listings.filter(listing => listing.selected);
+    
+    if (selectedListings.length === 0) {
+      alert('Please select at least one listing to reprice');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Calculate new prices based on custom rule
+      const updates = selectedListings.map(listing => {
+        let newPrice = listing.currentPrice;
+        const marketPrice = listing.lowestAsk || listing.currentPrice;
+        
+        switch (type) {
+          case 'below_dollar':
+            newPrice = marketPrice - amount;
+            break;
+          case 'below_percent':
+            newPrice = marketPrice * (1 - amount / 100);
+            break;
+          case 'above_dollar':
+            newPrice = marketPrice + amount;
+            break;
+          case 'above_percent':
+            newPrice = marketPrice * (1 + amount / 100);
+            break;
+        }
+        
+        // Round to nearest dollar
+        newPrice = Math.round(newPrice);
+        
+        return {
+          listingId: listing.listingId,
+          currentPrice: listing.currentPrice,
+          newPrice,
+          marketPrice
+        };
+      });
+
+      // Update prices via API
+      const response = await fetch('/api/stockx/listings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'update_price',
+          listingIds: updates.map(u => u.listingId),
+          updates
+        })
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        alert(`Successfully updated ${updates.length} listing${updates.length > 1 ? 's' : ''}`);
+        await fetchListings();
+      } else {
+        alert(`Failed to update prices: ${data.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Custom rule error:', error);
+      alert('Failed to apply custom pricing rule');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const executeRepricing = async () => {
     const selectedListings = listings.filter(listing => listing.selected);
     
@@ -380,149 +514,148 @@ export default function StockXRepricing() {
         </div>
       </div>
 
-      {/* Strategy Selection */}
+      {/* Simple Pricing Rules - Only show when items are selected */}
+      {selectedCount > 0 && (
+        <div className={`rounded-lg p-6 ${
+          isNeon ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-200'
+        }`}>
+          <h3 className={`text-lg font-semibold mb-4 flex items-center gap-2 ${
+            isNeon ? 'text-cyan-400' : 'text-gray-900'
+          }`}>
+            <Target className="w-5 h-5" />
+            Set Pricing Rule for {selectedCount} Selected Item{selectedCount > 1 ? 's' : ''}
+          </h3>
+        
+        <div className="space-y-3">
+          {/* Quick Pricing Rules */}
+          <button
+            onClick={() => applyPricingRule('beat_lowest', 1)}
+            className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
+              isNeon 
+                ? 'bg-gray-900 border-gray-700 hover:border-cyan-500 hover:bg-cyan-500/10'
+                : 'bg-white border-gray-200 hover:border-blue-500 hover:bg-blue-50'
+            }`}
+          >
+            <div className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+              Beat Lowest Ask by $1
+            </div>
+            <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+              Set price to $1 below the current market price
+            </div>
+          </button>
+
+          <button
+            onClick={() => applyPricingRule('match_lowest', 0)}
+            className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
+              isNeon 
+                ? 'bg-gray-900 border-gray-700 hover:border-cyan-500 hover:bg-cyan-500/10'
+                : 'bg-white border-gray-200 hover:border-blue-500 hover:bg-blue-50'
+            }`}
+          >
+            <div className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+              Match Lowest Ask
+            </div>
+            <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+              Set price equal to the current market price
+            </div>
+          </button>
+
+          <button
+            onClick={() => applyPricingRule('percentage', 5)}
+            className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
+              isNeon 
+                ? 'bg-gray-900 border-gray-700 hover:border-cyan-500 hover:bg-cyan-500/10'
+                : 'bg-white border-gray-200 hover:border-blue-500 hover:bg-blue-50'
+            }`}
+          >
+            <div className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+              5% Below Market
+            </div>
+            <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+              Set price to 5% below the current market price
+            </div>
+          </button>
+
+          <button
+            onClick={() => applyPricingRule('percentage', 10)}
+            className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
+              isNeon 
+                ? 'bg-gray-900 border-gray-700 hover:border-cyan-500 hover:bg-cyan-500/10'
+                : 'bg-white border-gray-200 hover:border-blue-500 hover:bg-blue-50'
+            }`}
+          >
+            <div className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+              10% Below Market
+            </div>
+            <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+              Set price to 10% below the current market price
+            </div>
+          </button>
+
+          {/* Custom Price Input */}
+          <div className={`p-4 rounded-lg border-2 ${
+            isNeon ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'
+          }`}>
+            <label className={`block text-sm font-medium mb-2 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+              Custom Rule
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                placeholder="Amount"
+                min="0"
+                step="1"
+                className={`flex-1 p-2 rounded-md ${
+                  isNeon 
+                    ? 'bg-gray-800 border border-gray-700 text-white focus:border-cyan-500 focus:outline-none'
+                    : 'bg-gray-50 border border-gray-300 focus:border-blue-500 focus:outline-none'
+                }`}
+                id="customAmount"
+              />
+              <select
+                className={`p-2 rounded-md ${
+                  isNeon 
+                    ? 'bg-gray-800 border border-gray-700 text-white focus:border-cyan-500 focus:outline-none'
+                    : 'bg-gray-50 border border-gray-300 focus:border-blue-500 focus:outline-none'
+                }`}
+                id="customType"
+              >
+                <option value="below_dollar">$ Below Market</option>
+                <option value="below_percent">% Below Market</option>
+                <option value="above_dollar">$ Above Market</option>
+                <option value="above_percent">% Above Market</option>
+              </select>
+              <button
+                onClick={() => {
+                  const amount = parseFloat((document.getElementById('customAmount') as HTMLInputElement).value);
+                  const type = (document.getElementById('customType') as HTMLSelectElement).value;
+                  if (amount) applyCustomRule(type, amount);
+                }}
+                className={`px-4 py-2 rounded-md font-medium ${
+                  isNeon 
+                    ? 'bg-cyan-500 text-black hover:bg-cyan-400'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+              >
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notification Settings */}
       <div className={`rounded-lg p-6 ${
         isNeon ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-200'
       }`}>
-        <h3 className={`text-lg font-semibold mb-4 flex items-center gap-2 ${
+        <h3 className={`text-lg font-semibold mb-4 ${
           isNeon ? 'text-cyan-400' : 'text-gray-900'
         }`}>
-          <Target className="w-5 h-5" />
-          Repricing Strategy
+          Notification Settings
         </h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          {(['competitive', 'margin_based', 'velocity_based', 'hybrid'] as const).map((type) => (
-            <label key={type} className={`flex items-center space-x-3 cursor-pointer p-4 rounded-lg border-2 transition-all ${
-              strategy.type === type
-                ? isNeon 
-                  ? 'bg-cyan-500/10 border-cyan-500' 
-                  : 'bg-blue-50 border-blue-500'
-                : isNeon
-                  ? 'bg-gray-900 border-gray-700 hover:border-gray-600'
-                  : 'bg-white border-gray-200 hover:border-gray-300'
-            }`}>
-              <input
-                type="radio"
-                name="strategy"
-                value={type}
-                checked={strategy.type === type}
-                onChange={(e) => setStrategy(prev => ({ ...prev, type: e.target.value as any }))}
-                className={`w-4 h-4 ${isNeon ? 'text-cyan-500' : 'text-blue-600'}`}
-              />
-              <div className="flex-1">
-                <div className={`font-medium capitalize ${isNeon ? 'text-white' : 'text-gray-900'}`}>
-                  {type.replace('_', ' ')}
-                </div>
-                <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-                  {getStrategyDescription(type)}
-                </div>
-              </div>
-            </label>
-          ))}
-        </div>
-
-        {/* Strategy Settings */}
-        <div className={`grid grid-cols-1 md:grid-cols-3 gap-4 p-4 rounded-lg ${
-          isNeon ? 'bg-gray-900' : 'bg-gray-50'
-        }`}>
-          <div>
-            <label className={`block text-sm font-medium mb-1 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-              Min Profit Margin
-            </label>
-            <input
-              type="number"
-              min="0"
-              max="1"
-              step="0.01"
-              value={strategy.settings.minProfitMargin || 0.15}
-              onChange={(e) => setStrategy(prev => ({
-                ...prev,
-                settings: { ...prev.settings, minProfitMargin: parseFloat(e.target.value) }
-              }))}
-              className={`w-full p-2 rounded-md ${
-                isNeon 
-                  ? 'bg-gray-800 border border-gray-700 text-white focus:border-cyan-500 focus:outline-none'
-                  : 'bg-white border border-gray-300 focus:border-blue-500 focus:outline-none'
-              }`}
-            />
-          </div>
-          
-          <div>
-            <label className={`block text-sm font-medium mb-1 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-              Max Price Reduction
-            </label>
-            <input
-              type="number"
-              min="0"
-              max="1"
-              step="0.01"
-              value={strategy.settings.maxPriceReduction || 0.20}
-              onChange={(e) => setStrategy(prev => ({
-                ...prev,
-                settings: { ...prev.settings, maxPriceReduction: parseFloat(e.target.value) }
-              }))}
-              className={`w-full p-2 rounded-md ${
-                isNeon 
-                  ? 'bg-gray-800 border border-gray-700 text-white focus:border-cyan-500 focus:outline-none'
-                  : 'bg-white border border-gray-300 focus:border-blue-500 focus:outline-none'
-              }`}
-            />
-          </div>
-
-          <div>
-            <label className={`block text-sm font-medium mb-1 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-              Competitive Buffer ($)
-            </label>
-            <input
-              type="number"
-              min="0"
-              value={strategy.settings.competitiveBuffer || 1}
-              onChange={(e) => setStrategy(prev => ({
-                ...prev,
-                settings: { ...prev.settings, competitiveBuffer: parseInt(e.target.value) }
-              }))}
-              className={`w-full p-2 rounded-md ${
-                isNeon 
-                  ? 'bg-gray-800 border border-gray-700 text-white focus:border-cyan-500 focus:outline-none'
-                  : 'bg-white border border-gray-300 focus:border-blue-500 focus:outline-none'
-              }`}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Max Days Listed</label>
-            <input
-              type="number"
-              min="1"
-              value={strategy.settings.maxDaysListed || 30}
-              onChange={(e) => setStrategy(prev => ({
-                ...prev,
-                settings: { ...prev.settings, maxDaysListed: parseInt(e.target.value) }
-              }))}
-              className="w-full p-2 border rounded-md"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Aggressiveness</label>
-            <select
-              value={strategy.settings.aggressiveness || 'moderate'}
-              onChange={(e) => setStrategy(prev => ({
-                ...prev,
-                settings: { ...prev.settings, aggressiveness: e.target.value as any }
-              }))}
-              className="w-full p-2 border rounded-md"
-            >
-              <option value="conservative">Conservative</option>
-              <option value="moderate">Moderate</option>
-              <option value="aggressive">Aggressive</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Notification Email</label>
-            <input
+        <div>
+          <label className="block text-sm font-medium mb-1">Notification Email</label>
+          <input
               type="email"
               value={notificationEmail}
               onChange={(e) => setNotificationEmail(e.target.value)}
@@ -626,7 +759,8 @@ export default function StockXRepricing() {
                   <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Style ID</th>
                   <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Colorway</th>
                   <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Size</th>
-                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Current Price</th>
+                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>My Price</th>
+                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Market Price</th>
                   <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Status</th>
                 </tr>
               </thead>
@@ -659,6 +793,9 @@ export default function StockXRepricing() {
                     <td className={`p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>{listing.size}</td>
                     <td className={`p-3 font-medium ${isNeon ? 'text-cyan-400' : 'text-gray-900'}`}>
                       ${listing.currentPrice}
+                    </td>
+                    <td className={`p-3 font-medium ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                      ${listing.lowestAsk || '-'}
                     </td>
                     <td className={`p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                       <span className={`px-2 py-1 text-xs rounded-full ${
