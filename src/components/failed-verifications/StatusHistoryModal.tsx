@@ -146,15 +146,13 @@ export function StatusHistoryModal({ verification, isOpen, onClose, onReset, onU
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return { date: `${year}-${month}-${day}`, time: `${hours}:${minutes}` };
+    return `${year}-${month}-${day}`;
   };
   
   const handleEditTimestamp = (fieldName: string, currentTimestamp: string) => {
     setEditingTimestamp(fieldName);
-    const { date, time } = formatDateForInput(currentTimestamp);
-    setTempDates({ [fieldName]: `${date}T${time}` });
+    const formattedDate = formatDateForInput(currentTimestamp);
+    setTempDates({ [fieldName]: formattedDate });
   };
   
   const handleSaveTimestamp = async (fieldName: string) => {
@@ -162,7 +160,8 @@ export function StatusHistoryModal({ verification, isOpen, onClose, onReset, onU
     
     setSaving(true);
     try {
-      const newDate = new Date(tempDates[fieldName]);
+      // Create date at noon to avoid timezone issues
+      const newDate = new Date(tempDates[fieldName] + 'T12:00:00');
       const updates: Partial<FailedVerification> = {
         [fieldName]: newDate.toISOString(),
         updatedAt: new Date().toISOString()
@@ -310,8 +309,8 @@ export function StatusHistoryModal({ verification, isOpen, onClose, onReset, onU
                           {editingTimestamp === event.fieldName ? (
                             <div className="flex items-center gap-2">
                               <input
-                                type="datetime-local"
-                                value={tempDates[event.fieldName] || ''}
+                                type="date"
+                                value={tempDates[event.fieldName] ? tempDates[event.fieldName].split('T')[0] : ''}
                                 onChange={(e) => setTempDates({ ...tempDates, [event.fieldName]: e.target.value })}
                                 className={`px-2 py-1 rounded text-sm ${
                                   isNeon
@@ -431,63 +430,57 @@ export function StatusHistoryModal({ verification, isOpen, onClose, onReset, onU
     </div>
     {isNeon && (
       <style jsx global>{`
-        /* Neon theme styles for datetime-local input */
-        input[type="datetime-local"] {
+        /* Neon theme styles for date input */
+        input[type="date"] {
           color-scheme: dark;
         }
         
-        input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+        input[type="date"]::-webkit-calendar-picker-indicator {
           filter: invert(1);
           opacity: 0.7;
           cursor: pointer;
         }
         
-        input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+        input[type="date"]::-webkit-calendar-picker-indicator:hover {
           opacity: 1;
         }
         
-        /* Style the datetime input in neon theme */
-        .dark-neon-card input[type="datetime-local"] {
+        /* Style the date input in neon theme */
+        .dark-neon-card input[type="date"] {
           background-color: rgb(30 41 59);
           border: 1px solid rgb(71 85 105);
           color: white;
         }
         
-        .dark-neon-card input[type="datetime-local"]:focus {
+        .dark-neon-card input[type="date"]:focus {
           outline: none;
           border-color: rgb(6 182 212);
           box-shadow: 0 0 0 1px rgb(6 182 212 / 0.5);
         }
         
         /* Webkit-specific calendar styling */
-        input[type="datetime-local"]::-webkit-datetime-edit {
+        input[type="date"]::-webkit-datetime-edit {
           padding: 0.2em;
         }
         
-        input[type="datetime-local"]::-webkit-datetime-edit-fields-wrapper {
+        input[type="date"]::-webkit-datetime-edit-fields-wrapper {
           background: transparent;
         }
         
-        input[type="datetime-local"]::-webkit-datetime-edit-text {
+        input[type="date"]::-webkit-datetime-edit-text {
           color: rgb(148 163 184);
           padding: 0 0.3em;
         }
         
-        input[type="datetime-local"]::-webkit-datetime-edit-month-field,
-        input[type="datetime-local"]::-webkit-datetime-edit-day-field,
-        input[type="datetime-local"]::-webkit-datetime-edit-year-field,
-        input[type="datetime-local"]::-webkit-datetime-edit-hour-field,
-        input[type="datetime-local"]::-webkit-datetime-edit-minute-field,
-        input[type="datetime-local"]::-webkit-datetime-edit-ampm-field {
+        input[type="date"]::-webkit-datetime-edit-month-field,
+        input[type="date"]::-webkit-datetime-edit-day-field,
+        input[type="date"]::-webkit-datetime-edit-year-field {
           color: white;
         }
         
-        input[type="datetime-local"]::-webkit-datetime-edit-month-field:focus,
-        input[type="datetime-local"]::-webkit-datetime-edit-day-field:focus,
-        input[type="datetime-local"]::-webkit-datetime-edit-year-field:focus,
-        input[type="datetime-local"]::-webkit-datetime-edit-hour-field:focus,
-        input[type="datetime-local"]::-webkit-datetime-edit-minute-field:focus,
-        input[type="datetime-local"]::-webkit-datetime-edit-ampm-field:focus {
+        input[type="date"]::-webkit-datetime-edit-month-field:focus,
+        input[type="date"]::-webkit-datetime-edit-day-field:focus,
+        input[type="date"]::-webkit-datetime-edit-year-field:focus {
           background-color: rgb(6 182 212 / 0.2);
           color: rgb(6 182 212);
         }
