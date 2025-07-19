@@ -214,6 +214,8 @@ export async function GET(request: NextRequest) {
     
     if (duplicates.length > 0) {
       console.log('🔁 Found duplicate listings:', duplicates);
+      const totalDuplicates = duplicates.reduce((sum, dup) => sum + (dup.count - 1), 0);
+      console.log(`📊 Total duplicate listings: ${totalDuplicates} (these are the "extra" listings)`);
     }
 
     const successResponse = NextResponse.json({
