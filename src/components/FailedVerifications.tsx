@@ -1234,13 +1234,14 @@ const FailedVerifications = () => {
           </div>
 
           {/* Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className={`border-b ${
-                isNeon 
-                  ? 'bg-slate-800/50 border-slate-700/50' 
-                  : 'bg-gray-50 border-gray-200'
-              }`}>
+          <div className="relative">
+            <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: '600px' }}>
+              <table className="w-full">
+                <thead className={`sticky top-0 z-10 border-b ${
+                  isNeon 
+                    ? 'bg-slate-800/90 backdrop-blur-sm border-slate-700/50' 
+                    : 'bg-gray-50/95 backdrop-blur-sm border-gray-200'
+                }`}>
                 <tr>
                   <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
                     isNeon ? 'text-slate-300' : 'text-gray-500'
@@ -1439,6 +1440,7 @@ const FailedVerifications = () => {
               </tbody>
             </table>
           </div>
+        </div>
         </div>
       ) : null}
 
