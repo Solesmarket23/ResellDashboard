@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     // Function to fetch a page of listings
     const fetchPage = async (pageNum: number, token: string) => {
       const params = new URLSearchParams({
-        limit: '100', // Get up to 100 listings per page
+        limit: '200', // Get up to 200 listings per page
         page: pageNum.toString(),
         sort: 'created_at:desc', // Get newest listings first
         listingStatuses: 'ACTIVE' // Only get active listings that can be repriced
@@ -171,11 +171,29 @@ export async function GET(request: NextRequest) {
       return acc;
     }, {});
     console.log('📊 Status breakdown:', statusBreakdown);
+    
+    // Identify potential test listings (e.g., $999 Travis Scott)
+    const testListings = activeListings.filter((listing: any) => 
+      listing.currentPrice === 999 || 
+      (listing.productName?.includes('Travis Scott') && listing.currentPrice > 900)
+    );
+    
+    if (testListings.length > 0) {
+      console.log(`🧪 Found ${testListings.length} potential test listings:`, 
+        testListings.map((l: any) => ({
+          name: l.productName,
+          size: l.size,
+          price: l.currentPrice
+        }))
+      );
+    }
 
     const successResponse = NextResponse.json({
       success: true,
       listings: activeListings,
       totalCount: activeListings.length,
+      actualCount: activeListings.length - testListings.length, // Count without test listings
+      testListingCount: testListings.length,
       timestamp: new Date().toISOString()
     });
 
