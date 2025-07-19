@@ -145,7 +145,14 @@ export async function GET(request: NextRequest) {
         status: listing.status || listing.listingStatus,
         createdAt: listing.createdAt || listing.created_at,
         updatedAt: listing.updatedAt || listing.updated_at,
-        // Additional fields that might be useful
+        // Additional useful fields
+        retailPrice: parseFloat(listing.product?.retailPrice || listing.retailPrice || '0'),
+        lowestAsk: parseFloat(listing.product?.lowestAsk || listing.lowestAsk || '0'),
+        highestBid: parseFloat(listing.product?.highestBid || listing.highestBid || '0'),
+        lastSale: parseFloat(listing.product?.lastSale || listing.lastSale || '0'),
+        category: listing.product?.category || listing.category || '',
+        inventoryType: listing.inventoryType || '',
+        // UUID fields
         productUuid: listing.productUuid || listing.product?.uuid,
         variantUuid: listing.variantUuid || listing.variant?.uuid,
         listingUuid: listing.uuid || listing.listingUuid

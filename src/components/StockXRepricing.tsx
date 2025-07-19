@@ -24,10 +24,18 @@ interface Listing {
   size: string;
   currentPrice: number;
   originalPrice: number;
-  costBasis: number;
-  daysListed: number;
-  views: number;
-  saves: number;
+  styleId?: string;
+  colorway?: string;
+  brand?: string;
+  condition?: string;
+  status?: string;
+  createdAt?: string;
+  retailPrice?: number;
+  lowestAsk?: number;
+  highestBid?: number;
+  lastSale?: number;
+  category?: string;
+  inventoryType?: string;
   selected: boolean;
 }
 
@@ -109,11 +117,7 @@ export default function StockXRepricing() {
         setAuthenticated(true); // User is authenticated if we got listings
         const enrichedListings = data.listings.map((listing: any) => ({
           ...listing,
-          selected: false,
-          costBasis: listing.price * 0.8, // Example: assume 80% cost basis
-          daysListed: Math.floor(Math.random() * 60), // Mock days listed
-          views: Math.floor(Math.random() * 100),
-          saves: Math.floor(Math.random() * 20)
+          selected: false
         }));
         setListings(enrichedListings);
         
@@ -522,11 +526,11 @@ export default function StockXRepricing() {
                     </div>
                   </th>
                   <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Product</th>
+                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Style ID</th>
+                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Colorway</th>
                   <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Size</th>
                   <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Current Price</th>
-                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Days Listed</th>
-                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Views</th>
-                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Saves</th>
+                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -549,13 +553,25 @@ export default function StockXRepricing() {
                         {listing.productName}
                       </div>
                     </td>
+                    <td className={`p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                      {listing.styleId || '-'}
+                    </td>
+                    <td className={`p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                      {listing.colorway || '-'}
+                    </td>
                     <td className={`p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>{listing.size}</td>
                     <td className={`p-3 font-medium ${isNeon ? 'text-cyan-400' : 'text-gray-900'}`}>
                       ${listing.currentPrice}
                     </td>
-                    <td className={`p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>{listing.daysListed}</td>
-                    <td className={`p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>{listing.views}</td>
-                    <td className={`p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>{listing.saves}</td>
+                    <td className={`p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                      <span className={`px-2 py-1 text-xs rounded-full ${
+                        listing.status === 'ACTIVE' 
+                          ? isNeon ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-800'
+                          : isNeon ? 'bg-gray-500/20 text-gray-400' : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {listing.status}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
