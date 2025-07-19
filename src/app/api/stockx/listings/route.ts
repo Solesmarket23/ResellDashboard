@@ -149,7 +149,8 @@ export async function GET(request: NextRequest) {
           hasAsk: !!listing.ask,
           askKeys: listing.ask ? Object.keys(listing.ask) : [],
           askExpiresAt: listing.ask?.askExpiresAt,
-          reason: listing.reason,
+          id: listing.id,
+          listingId: listing.listingId,
           listing: listing
         });
       }
@@ -409,16 +410,32 @@ export async function GET(request: NextRequest) {
     }
     
     // Final safety check - remove any expired listings that might have slipped through
-    const finalListings = deduplicatedListings.filter((listing: any) => {
+    console.log(`\n🔍 Final cleanup check on ${deduplicatedListings.length} listings...`);
+    const finalListings = deduplicatedListings.filter((listing: any, index: number) => {
       const rawListing = rawListings.find((r: any) => 
         (r.id || r.listingId) === (listing.listingId || listing.listingUuid)
       );
       
-      // Check expiration date (the reason field doesn't exist in StockX API)
-      if (rawListing?.ask?.askExpiresAt) {
+      if (!rawListing) {
+        console.log(`⚠️ Could not find raw listing for ${listing.productName}`);
+        return true; // Keep it if we can't find the raw data
+      }
+      
+      // Log first few listings to debug
+      if (index < 5) {
+        console.log(`Checking ${listing.productName}:`, {
+          hasAsk: !!rawListing.ask,
+          askExpiresAt: rawListing.ask?.askExpiresAt,
+          isExpired: rawListing.ask?.askExpiresAt ? new Date(rawListing.ask.askExpiresAt) <= now : 'N/A'
+        });
+      }
+      
+      // Check expiration date
+      if (rawListing.ask?.askExpiresAt) {
         const expirationDate = new Date(rawListing.ask.askExpiresAt);
         if (expirationDate <= now) {
-          console.log(`🧹 Final cleanup: Removing expired listing ${listing.productName} - Size ${listing.size} (expired date)`);
+          console.log(`🧹 Final cleanup: Removing expired listing ${listing.productName} - Size ${listing.size}`);
+          console.log(`   Expired at: ${expirationDate.toISOString()}, Current time: ${now.toISOString()}`);
           return false;
         }
       }
@@ -428,7 +445,17 @@ export async function GET(request: NextRequest) {
     
     if (finalListings.length !== deduplicatedListings.length) {
       console.log(`\n🧹 Final cleanup removed ${deduplicatedListings.length - finalListings.length} expired listings`);
+      console.log(`Final count: ${finalListings.length} listings`);
       deduplicatedListings = finalListings;
+    } else {
+      console.log(`\n✅ No expired listings found in final cleanup`);
+      console.log(`Final count: ${deduplicatedListings.length} listings`);
+    }
+    
+    // CRITICAL: Log what we're about to return
+    console.log(`\n📤 ABOUT TO RETURN ${deduplicatedListings.length} LISTINGS`);
+    if (deduplicatedListings.length !== 51) {
+      console.log(`⚠️ WARNING: Expected 51 but returning ${deduplicatedListings.length}`);
     }
 
     // Capture filtering details for client
