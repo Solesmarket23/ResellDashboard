@@ -174,7 +174,7 @@ export function StatusHistoryModal({ verification, isOpen, onClose, onReset, onU
       
       console.log('Saving timestamp update:', { fieldName, newDate: newDate.toISOString(), id: verification.id });
       
-      await updateDocument('failedVerifications', verification.id, updates);
+      await updateDocument('user_failed_verifications', verification.id, updates);
       onUpdate(verification.id, updates);
       setEditingTimestamp(null);
       setTempDates({});
