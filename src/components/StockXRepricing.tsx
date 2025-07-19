@@ -67,6 +67,10 @@ export default function StockXRepricing() {
   const [notificationEmail, setNotificationEmail] = useState('');
   const [authenticated, setAuthenticated] = useState(true); // Assume authenticated initially
   const [authError, setAuthError] = useState(false);
+  const [listingStats, setListingStats] = useState<{
+    rawCount?: number;
+    duplicatesRemoved?: number;
+  }>({});
 
   useEffect(() => {
     // Check if we're returning from authentication
@@ -106,6 +110,14 @@ export default function StockXRepricing() {
           saves: Math.floor(Math.random() * 20)
         }));
         setListings(enrichedListings);
+        
+        // Store listing stats if available
+        if (data.rawCount !== undefined || data.duplicatesRemoved !== undefined) {
+          setListingStats({
+            rawCount: data.rawCount,
+            duplicatesRemoved: data.duplicatesRemoved
+          });
+        }
       } else if (data.error && data.error.includes('token')) {
         // Token related error
         setAuthenticated(false);
@@ -447,6 +459,15 @@ export default function StockXRepricing() {
               </span>
             )}
           </h3>
+          {listingStats.duplicatesRemoved && listingStats.duplicatesRemoved > 0 && (
+            <div className={`text-sm px-3 py-1 rounded-full ${
+              isNeon 
+                ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' 
+                : 'bg-yellow-100 text-yellow-800 border border-yellow-300'
+            }`}>
+              {listingStats.duplicatesRemoved} duplicates removed
+            </div>
+          )}
         </div>
 
         {listings.length === 0 ? (

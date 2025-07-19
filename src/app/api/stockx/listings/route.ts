@@ -194,7 +194,7 @@ export async function GET(request: NextRequest) {
       }))
     );
     
-    // Check for duplicates
+    // Check for duplicates and deduplicate by keeping the lowest priced listing
     const productSizeCombo = new Map();
     activeListings.forEach((listing: any) => {
       const key = `${listing.productName}-${listing.size}`;
@@ -209,20 +209,64 @@ export async function GET(request: NextRequest) {
       .map(([key, listings]) => ({
         product: key,
         count: listings.length,
-        prices: listings.map((l: any) => l.currentPrice)
+        prices: listings.map((l: any) => l.currentPrice),
+        listings: listings
       }));
     
+    let deduplicatedListings = activeListings;
+    let duplicateListingIds: string[] = [];
+    
     if (duplicates.length > 0) {
-      console.log('🔁 Found duplicate listings:', duplicates);
+      console.log('🔁 Found duplicate listings:', duplicates.map(d => ({
+        product: d.product,
+        count: d.count,
+        prices: d.prices
+      })));
       const totalDuplicates = duplicates.reduce((sum, dup) => sum + (dup.count - 1), 0);
       console.log(`📊 Total duplicate listings: ${totalDuplicates} (these are the "extra" listings)`);
+      
+      // Deduplicate by keeping only the lowest priced listing for each product-size combo
+      deduplicatedListings = [];
+      const processedKeys = new Set();
+      
+      activeListings.forEach((listing: any) => {
+        const key = `${listing.productName}-${listing.size}`;
+        
+        if (!processedKeys.has(key)) {
+          processedKeys.add(key);
+          const allListingsForKey = productSizeCombo.get(key);
+          
+          if (allListingsForKey && allListingsForKey.length > 1) {
+            // Sort by price (ascending) and keep the lowest
+            const sortedByPrice = allListingsForKey.sort((a: any, b: any) => a.currentPrice - b.currentPrice);
+            deduplicatedListings.push(sortedByPrice[0]);
+            
+            // Track the duplicate listing IDs that were removed
+            for (let i = 1; i < sortedByPrice.length; i++) {
+              duplicateListingIds.push(sortedByPrice[i].listingId);
+            }
+            
+            console.log(`🔧 Kept lowest price listing for ${key}: $${sortedByPrice[0].currentPrice} (removed ${sortedByPrice.length - 1} duplicates)`);
+          } else {
+            // No duplicates for this key
+            deduplicatedListings.push(listing);
+          }
+        }
+      });
+      
+      console.log(`✅ Deduplicated listings: ${deduplicatedListings.length} unique listings (removed ${activeListings.length - deduplicatedListings.length} duplicates)`);
     }
 
     const successResponse = NextResponse.json({
       success: true,
-      listings: activeListings,
-      totalCount: activeListings.length,
-      actualCount: activeListings.length - testListings.length, // Count without test listings
+      listings: deduplicatedListings,
+      totalCount: deduplicatedListings.length,
+      rawCount: activeListings.length,
+      duplicatesRemoved: activeListings.length - deduplicatedListings.length,
+      duplicateListingIds: duplicateListingIds,
+      actualCount: deduplicatedListings.length - testListings.filter((t: any) => 
+        !duplicateListingIds.includes(t.listingId)
+      ).length, // Count without test listings (excluding removed duplicates)
       testListingCount: testListings.length,
       timestamp: new Date().toISOString()
     });
