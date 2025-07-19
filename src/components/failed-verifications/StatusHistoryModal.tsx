@@ -158,6 +158,11 @@ export function StatusHistoryModal({ verification, isOpen, onClose, onReset, onU
   const handleSaveTimestamp = async (fieldName: string) => {
     if (!onUpdate || !tempDates[fieldName]) return;
     
+    if (!verification.id) {
+      console.error('No verification ID found');
+      return;
+    }
+    
     setSaving(true);
     try {
       // Create date at noon to avoid timezone issues
@@ -167,12 +172,17 @@ export function StatusHistoryModal({ verification, isOpen, onClose, onReset, onU
         updatedAt: new Date().toISOString()
       };
       
+      console.log('Saving timestamp update:', { fieldName, newDate: newDate.toISOString(), id: verification.id });
+      
       await updateDocument('failedVerifications', verification.id, updates);
       onUpdate(verification.id, updates);
       setEditingTimestamp(null);
       setTempDates({});
+      
+      console.log('Timestamp saved successfully');
     } catch (error) {
       console.error('Error updating timestamp:', error);
+      alert('Failed to save timestamp. Please try again.');
     } finally {
       setSaving(false);
     }

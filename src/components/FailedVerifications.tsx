@@ -1619,6 +1619,10 @@ const FailedVerifications = () => {
                 item.id === id ? { ...item, ...updates } : item
               )
             );
+            // Also update the selected verification to reflect changes immediately
+            if (selectedVerification && selectedVerification.id === id) {
+              setSelectedVerification({ ...selectedVerification, ...updates });
+            }
           }}
         />
       )}
