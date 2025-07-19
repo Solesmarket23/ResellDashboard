@@ -44,6 +44,7 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [transitionDirection, setTransitionDirection] = useState<'forward' | 'backward'>('forward');
   const [isCalculating, setIsCalculating] = useState(false);
+  const [showFadeTransition, setShowFadeTransition] = useState(false);
   
   const [formData, setFormData] = useState<QuestionnaireData>({
     stockxLevel: '',
@@ -221,7 +222,7 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
         if (user) {
           saveQuestionnaireData();
         }
-      }, 2000);
+      }, 3000);
     }
   };
 
@@ -268,6 +269,7 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
     setShowRecommendation(false);
     setRecommendedPlan(null);
     setIsCalculating(false);
+    setShowFadeTransition(false);
     setFormData({
       stockxLevel: '',
       monthlyVolume: 25,
@@ -278,100 +280,105 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
     });
   };
 
-  // Loading state
-  if (isCalculating) {
+  // Loading state or recommendation with fade transition
+  if (isCalculating || showRecommendation) {
+    const plan = recommendedPlan ? plans[recommendedPlan] : null;
+    const PlanIcon = plan?.icon;
+
     return (
-      <div className={`min-h-screen ${currentTheme.colors.background} flex items-center justify-center p-6`}>
-        <div className="text-center">
-          <div className="mb-8">
-            <div className="relative inline-flex items-center justify-center w-24 h-24">
-              <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-emerald-400 rounded-full animate-pulse opacity-20" />
-              <div className="absolute inset-2 bg-gradient-to-r from-cyan-400 to-emerald-400 rounded-full animate-ping opacity-30" />
-              <div className={`relative z-10 w-20 h-20 ${currentTheme.colors.primary} rounded-full flex items-center justify-center`}>
-                <Rocket className="w-10 h-10 text-white" />
+      <div className={`min-h-screen ${currentTheme.colors.background} flex items-center justify-center p-6 relative`}>
+        {/* Loading state */}
+        <div className={`absolute inset-0 flex items-center justify-center transition-opacity duration-500 ${
+          isCalculating ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}>
+          <div className="text-center">
+            <div className="mb-8">
+              <div className="relative inline-flex items-center justify-center w-24 h-24">
+                <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-emerald-400 rounded-full animate-pulse opacity-20" />
+                <div className="absolute inset-2 bg-gradient-to-r from-cyan-400 to-emerald-400 rounded-full animate-ping opacity-30" />
+                <div className={`relative z-10 w-20 h-20 ${currentTheme.colors.primary} rounded-full flex items-center justify-center`}>
+                  <Rocket className="w-10 h-10 text-white" />
+                </div>
               </div>
             </div>
-          </div>
-          <h2 className={`text-2xl font-bold ${currentTheme.colors.textPrimary} mb-2`}>
-            Analyzing your responses
-          </h2>
-          <p className={`${currentTheme.colors.textSecondary} mb-4`}>
-            Finding the perfect plan for your needs...
-          </p>
-          <div className="flex justify-center gap-2">
-            <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-            <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-            <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Recommendation display
-  if (showRecommendation && recommendedPlan) {
-    const plan = plans[recommendedPlan];
-    const PlanIcon = plan.icon;
-
-    return (
-      <div className={`min-h-screen ${currentTheme.colors.background} flex items-center justify-center p-6`}>
-        <div className={`max-w-4xl w-full ${currentTheme.colors.cardBackground} backdrop-blur-sm rounded-2xl p-8 border ${currentTheme.colors.border}`}>
-          {/* Header */}
-          <div className="text-center mb-8">
-            <div className={`inline-flex items-center justify-center w-20 h-20 ${currentTheme.colors.primary} rounded-full mb-4`}>
-              <PlanIcon className="w-10 h-10 text-white" />
-            </div>
-            <h2 className={`text-3xl font-bold ${currentTheme.colors.textPrimary} mb-2`}>Perfect Match!</h2>
-            <p className={`${currentTheme.colors.textSecondary}`}>
-              Based on your answers, we recommend starting your 14-day free trial with the {recommendedPlan === 'enterprise' ? 'Enterprise' : recommendedPlan === 'professional' ? 'Professional' : 'Starter'} Plan. You can always switch plans during or after your trial!
+            <h2 className={`text-2xl font-bold ${currentTheme.colors.textPrimary} mb-2`}>
+              Analyzing your responses
+            </h2>
+            <p className={`${currentTheme.colors.textSecondary} mb-4`}>
+              Finding the perfect plan for your needs...
             </p>
-          </div>
-
-          {/* Plan Details - Adjusted for better symmetry */}
-          <div className="grid md:grid-cols-2 gap-12 mb-8 max-w-5xl mx-auto">
-            {/* Left Column - Plan Info */}
-            <div className="md:pl-8">
-              <h3 className={`text-2xl font-bold ${currentTheme.colors.textPrimary} mb-2`}>{plan.name}</h3>
-              <p className={`text-3xl font-bold ${currentTheme.colors.accent} mb-4`}>{plan.price}</p>
-              <p className={`${currentTheme.colors.textSecondary} mb-4`}>{plan.description}</p>
-              <div className={`flex items-center gap-2 ${currentTheme.colors.textSecondary}`}>
-                <span className="text-sm">Setup time:</span>
-                <span className="text-sm font-medium">{plan.setupTime}</span>
-              </div>
+            <div className="flex justify-center gap-2">
+              <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+              <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+              <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
             </div>
-
-            {/* Right Column - Features */}
-            <div className="md:pr-8">
-              <h4 className={`font-semibold ${currentTheme.colors.textPrimary} mb-4`}>Features included:</h4>
-              <ul className="space-y-2">
-                {plan.features.map((feature, index) => (
-                  <li key={index} className="flex items-start gap-2">
-                    <Check className={`w-5 h-5 ${currentTheme.colors.accent} flex-shrink-0 mt-0.5`} />
-                    <span className={`${currentTheme.colors.textSecondary}`}>{feature}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button
-              onClick={() => onComplete?.()}
-              className={`px-6 py-3 ${currentTheme.colors.primary} ${currentTheme.colors.primaryHover} text-white rounded-lg font-medium transition-all flex items-center justify-center gap-2`}
-            >
-              Start 14-Day Free Trial of {plan.name}
-              <ChevronRight className="w-4 h-4" />
-            </button>
-            <button
-              onClick={restartQuestionnaire}
-              className={`px-6 py-3 ${currentTheme.colors.cardBackground} ${currentTheme.colors.textSecondary} hover:${currentTheme.colors.textPrimary} border ${currentTheme.colors.border} rounded-lg font-medium transition-all flex items-center justify-center gap-2`}
-            >
-              <RefreshCw className="w-4 h-4" />
-              Retake Quiz
-            </button>
           </div>
         </div>
+
+        {/* Recommendation display */}
+        {showRecommendation && recommendedPlan && plan && PlanIcon && (
+          <div className={`transition-all duration-700 transform ${
+            !isCalculating ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
+          }`}>
+            <div className={`max-w-4xl w-full ${currentTheme.colors.cardBackground} backdrop-blur-sm rounded-2xl p-8 border ${currentTheme.colors.border}`}>
+              {/* Header */}
+              <div className="text-center mb-8">
+                <div className={`inline-flex items-center justify-center w-20 h-20 ${currentTheme.colors.primary} rounded-full mb-4`}>
+                  <PlanIcon className="w-10 h-10 text-white" />
+                </div>
+                <h2 className={`text-3xl font-bold ${currentTheme.colors.textPrimary} mb-2`}>Perfect Match!</h2>
+                <p className={`${currentTheme.colors.textSecondary}`}>
+                  Based on your answers, we recommend starting your 14-day free trial with the {recommendedPlan === 'enterprise' ? 'Enterprise' : recommendedPlan === 'professional' ? 'Professional' : 'Starter'} Plan. You can always switch plans during or after your trial!
+                </p>
+              </div>
+
+              {/* Plan Details - Adjusted for better symmetry */}
+              <div className="grid md:grid-cols-2 gap-12 mb-8 max-w-5xl mx-auto">
+                {/* Left Column - Plan Info */}
+                <div className="md:pl-8">
+                  <h3 className={`text-2xl font-bold ${currentTheme.colors.textPrimary} mb-2`}>{plan.name}</h3>
+                  <p className={`text-3xl font-bold ${currentTheme.colors.accent} mb-4`}>{plan.price}</p>
+                  <p className={`${currentTheme.colors.textSecondary} mb-4`}>{plan.description}</p>
+                  <div className={`flex items-center gap-2 ${currentTheme.colors.textSecondary}`}>
+                    <span className="text-sm">Setup time:</span>
+                    <span className="text-sm font-medium">{plan.setupTime}</span>
+                  </div>
+                </div>
+
+                {/* Right Column - Features */}
+                <div className="md:pr-8">
+                  <h4 className={`font-semibold ${currentTheme.colors.textPrimary} mb-4`}>Features included:</h4>
+                  <ul className="space-y-2">
+                    {plan.features.map((feature, index) => (
+                      <li key={index} className="flex items-start gap-2">
+                        <Check className={`w-5 h-5 ${currentTheme.colors.accent} flex-shrink-0 mt-0.5`} />
+                        <span className={`${currentTheme.colors.textSecondary}`}>{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <button
+                  onClick={() => onComplete?.()}
+                  className={`px-6 py-3 ${currentTheme.colors.primary} ${currentTheme.colors.primaryHover} text-white rounded-lg font-medium transition-all flex items-center justify-center gap-2`}
+                >
+                  Start 14-Day Free Trial of {plan.name}
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={restartQuestionnaire}
+                  className={`px-6 py-3 ${currentTheme.colors.cardBackground} ${currentTheme.colors.textSecondary} hover:${currentTheme.colors.textPrimary} border ${currentTheme.colors.border} rounded-lg font-medium transition-all flex items-center justify-center gap-2`}
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Retake Quiz
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
