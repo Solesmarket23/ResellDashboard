@@ -379,8 +379,8 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
                   <span className={currentTheme.colors.textSecondary}>0</span>
                   <span className={currentTheme.colors.textSecondary}>500+</span>
                 </div>
-                <div className={`text-center text-sm ${currentTheme.colors.textSecondary}`}>
-                  <span className="font-medium">{getVolumeBenchmark(formData.monthlyVolume)}</span>
+                <div className={`text-center text-lg ${currentTheme.colors.textSecondary}`}>
+                  <span className="font-semibold">{getVolumeBenchmark(formData.monthlyVolume)}</span>
                 </div>
               </div>
             </>
