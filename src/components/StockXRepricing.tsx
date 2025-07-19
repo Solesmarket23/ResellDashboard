@@ -113,6 +113,11 @@ export default function StockXRepricing() {
       
       const data = await response.json();
       
+      // Always log the raw response to see what we're getting
+      console.log('📦 Raw API Response:', data);
+      console.log('📊 Listings count:', data.listings?.length);
+      console.log('🔍 Has debugInfo?', !!data.debugInfo);
+      
       // Log debug information to browser console
       if (data.debugInfo) {
         console.log('🔍 === StockX Listing Debug Info ===');
