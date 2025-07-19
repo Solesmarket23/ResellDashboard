@@ -136,6 +136,10 @@ export default function StockXRepricing() {
     setListings(prev => prev.map(listing => ({ ...listing, selected: !allSelected })));
   };
 
+  const selectedCount = listings.filter(l => l.selected).length;
+  const isAllSelected = listings.length > 0 && selectedCount === listings.length;
+  const isPartiallySelected = selectedCount > 0 && selectedCount < listings.length;
+
   const executeRepricing = async () => {
     const selectedListings = listings.filter(listing => listing.selected);
     
@@ -435,19 +439,14 @@ export default function StockXRepricing() {
           }`}>
             <Package className="w-5 h-5" />
             Select Listings to Reprice
+            {listings.length > 0 && (
+              <span className={`text-sm font-normal ml-2 ${
+                isNeon ? 'text-gray-400' : 'text-gray-600'
+              }`}>
+                ({selectedCount} of {listings.length} selected)
+              </span>
+            )}
           </h3>
-          {listings.length > 0 && (
-            <button
-              onClick={selectAll}
-              className={`font-medium transition-colors ${
-                isNeon 
-                  ? 'text-cyan-400 hover:text-cyan-300' 
-                  : 'text-blue-600 hover:text-blue-800'
-              }`}
-            >
-              {listings.every(l => l.selected) ? 'Deselect All' : 'Select All'}
-            </button>
-          )}
         </div>
 
         {listings.length === 0 ? (
@@ -476,7 +475,20 @@ export default function StockXRepricing() {
             <table className="w-full text-sm">
               <thead>
                 <tr className={`border-b ${isNeon ? 'border-gray-700' : 'border-gray-200'}`}>
-                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Select</th>
+                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                    <div className="flex flex-col items-center">
+                      <span className="mb-1">Select</span>
+                      <input
+                        type="checkbox"
+                        checked={isAllSelected}
+                        ref={(el) => {
+                          if (el) el.indeterminate = isPartiallySelected;
+                        }}
+                        onChange={selectAll}
+                        className={`w-4 h-4 ${isNeon ? 'text-cyan-500' : 'text-blue-600'} rounded cursor-pointer`}
+                      />
+                    </div>
+                  </th>
                   <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Product</th>
                   <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Size</th>
                   <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Current Price</th>
