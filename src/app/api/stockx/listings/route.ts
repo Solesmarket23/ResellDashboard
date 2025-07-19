@@ -172,20 +172,48 @@ export async function GET(request: NextRequest) {
     }, {});
     console.log('📊 Status breakdown:', statusBreakdown);
     
-    // Identify potential test listings (e.g., $999 Travis Scott)
+    // Identify potential test listings and anomalies
     const testListings = activeListings.filter((listing: any) => 
       listing.currentPrice === 999 || 
-      (listing.productName?.includes('Travis Scott') && listing.currentPrice > 900)
+      listing.currentPrice === 9999 ||
+      listing.currentPrice === 99999 ||
+      (listing.productName?.includes('Test') || listing.productName?.includes('test'))
     );
     
-    if (testListings.length > 0) {
-      console.log(`🧪 Found ${testListings.length} potential test listings:`, 
-        testListings.map((l: any) => ({
-          name: l.productName,
-          size: l.size,
-          price: l.currentPrice
-        }))
-      );
+    // Find highest priced listings
+    const sortedByPrice = [...activeListings].sort((a: any, b: any) => b.currentPrice - a.currentPrice);
+    const top10Expensive = sortedByPrice.slice(0, 10);
+    
+    console.log(`🧪 Found ${testListings.length} potential test listings`);
+    console.log('💰 Top 10 most expensive listings:', 
+      top10Expensive.map((l: any) => ({
+        name: l.productName.substring(0, 40) + (l.productName.length > 40 ? '...' : ''),
+        size: l.size,
+        price: `$${l.currentPrice}`,
+        listingId: l.listingId.substring(0, 8) + '...'
+      }))
+    );
+    
+    // Check for duplicates
+    const productSizeCombo = new Map();
+    activeListings.forEach((listing: any) => {
+      const key = `${listing.productName}-${listing.size}`;
+      if (!productSizeCombo.has(key)) {
+        productSizeCombo.set(key, []);
+      }
+      productSizeCombo.get(key).push(listing);
+    });
+    
+    const duplicates = Array.from(productSizeCombo.entries())
+      .filter(([_, listings]) => listings.length > 1)
+      .map(([key, listings]) => ({
+        product: key,
+        count: listings.length,
+        prices: listings.map((l: any) => l.currentPrice)
+      }));
+    
+    if (duplicates.length > 0) {
+      console.log('🔁 Found duplicate listings:', duplicates);
     }
 
     const successResponse = NextResponse.json({
