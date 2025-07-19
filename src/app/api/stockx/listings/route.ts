@@ -142,7 +142,7 @@ export async function GET(request: NextRequest) {
         styleId: listing.styleId || listing.product?.styleId || '',
         colorway: listing.colorway || listing.product?.colorway || '',
         condition: listing.condition || 'new',
-        status: listing.status || listing.listingStatus || 'active',
+        status: listing.status || listing.listingStatus,
         createdAt: listing.createdAt || listing.created_at,
         updatedAt: listing.updatedAt || listing.updated_at,
         // Additional fields that might be useful
@@ -153,11 +153,24 @@ export async function GET(request: NextRequest) {
     });
     
     // Filter to only include ACTIVE listings
-    const activeListings = transformedListings.filter((listing: any) => 
-      listing.status === 'ACTIVE' || listing.status === 'active'
-    );
+    const activeListings = transformedListings.filter((listing: any) => {
+      const status = listing.status?.toUpperCase();
+      const isActive = status === 'ACTIVE';
+      if (!isActive && transformedListings.length <= 10) {
+        console.log(`Filtering out listing with status: ${listing.status} - ${listing.productName}`);
+      }
+      return isActive;
+    });
     
     console.log(`🎯 Filtered to ${activeListings.length} ACTIVE listings (from ${transformedListings.length} total)`);
+    
+    // Log status breakdown
+    const statusBreakdown = transformedListings.reduce((acc: any, listing: any) => {
+      const status = listing.status || 'NO_STATUS';
+      acc[status] = (acc[status] || 0) + 1;
+      return acc;
+    }, {});
+    console.log('📊 Status breakdown:', statusBreakdown);
 
     const successResponse = NextResponse.json({
       success: true,
