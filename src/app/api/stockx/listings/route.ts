@@ -440,7 +440,7 @@ export async function GET(request: NextRequest) {
     // Final safety check - remove any expired listings that might have slipped through
     console.log(`\n🔍 Final cleanup check on ${deduplicatedListings.length} listings...`);
     const finalListings = deduplicatedListings.filter((listing: any, index: number) => {
-      const rawListing = rawListings.find((r: any) => {
+      let rawListing = rawListings.find((r: any) => {
         const rawId = r.id || r.listingId;
         return rawId === listing.listingId || 
                rawId === listing.listingUuid;
