@@ -642,6 +642,7 @@ export default function StockXRepricing() {
             </div>
           </div>
         </div>
+        </div>
       )}
 
       {/* Notification Settings */}
