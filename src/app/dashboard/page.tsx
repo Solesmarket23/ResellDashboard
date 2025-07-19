@@ -34,6 +34,7 @@ import StockXProfitCalc from '../../components/StockXProfitCalc';
 import StockXTrends from '../../components/StockXTrends';
 import StockXAlerts from '../../components/StockXAlerts';
 import StockXListingCreator from '../../components/StockXListingCreator';
+import OnboardingQuestionnaire from '../../components/OnboardingQuestionnaire';
 
 export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -244,6 +245,8 @@ export default function DashboardPage() {
         return <StockXAlerts />;
       case 'stockx-listings':
         return <StockXListingCreator />;
+      case 'onboarding-questionnaire':
+        return <OnboardingQuestionnaire onComplete={() => handleItemClick('dashboard')} />;
       default:
         return (
           <div className={`flex-1 p-4 sm:p-8 ${currentTheme.colors.background}`}>

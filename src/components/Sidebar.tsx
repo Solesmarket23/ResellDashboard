@@ -92,6 +92,7 @@ const navigationItems = [
       { id: 'plans', label: 'Plans & Pricing', icon: CreditCard },
       { id: 'feature-requests', label: 'Feature Requests', icon: Zap },
       { id: 'faq', label: 'FAQ', icon: HelpCircle },
+      { id: 'onboarding-questionnaire', label: 'Setup Wizard', icon: Zap },
     ]
   }
 ];
