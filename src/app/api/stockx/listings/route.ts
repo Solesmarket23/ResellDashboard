@@ -135,9 +135,26 @@ export async function GET(request: NextRequest) {
     });
     console.log(`📅 Listings with expired dates: ${expiredListings.length}`);
     
-    const expiredListingIds = new Set(expiredListings.map((l: any) => l.id || l.listingId));
+    // Create a set of expired listing IDs - use both id and listingId for comprehensive matching
+    const expiredListingIds = new Set();
+    expiredListings.forEach((l: any) => {
+      if (l.id) expiredListingIds.add(l.id);
+      if (l.listingId) expiredListingIds.add(l.listingId);
+    });
     
     console.log(`⏰ Listings with expired asks: ${expiredListings.length}`);
+    console.log(`🆔 Expired listing IDs collected: ${expiredListingIds.size}`);
+    
+    // Debug: Show first few expired listings
+    if (expiredListings.length > 0) {
+      console.log('🔍 First 3 expired listings:');
+      expiredListings.slice(0, 3).forEach((l: any, i: number) => {
+        console.log(`  ${i + 1}. ${l.productName || l.product?.productName || 'Unknown'}`);
+        console.log(`     id: ${l.id}, listingId: ${l.listingId}`);
+        console.log(`     expires: ${l.ask?.askExpiresAt}`);
+      });
+    }
+    
     console.log(`🎯 Expected active listings after filtering expired: ${rawListings.length - expiredListings.length}`);
 
     // Transform the data to match our component's expectations
@@ -191,9 +208,11 @@ export async function GET(request: NextRequest) {
       const status = listing.status?.toUpperCase();
       
       // Find the corresponding raw listing by ID
-      const rawListing = rawListings.find((r: any) => 
-        (r.id || r.listingId) === (listing.listingId || listing.listingUuid)
-      );
+      const rawListing = rawListings.find((r: any) => {
+        const rawId = r.id || r.listingId;
+        return rawId === listing.listingId || 
+               rawId === listing.listingUuid;
+      });
       
       // Criteria for a truly active listing:
       // 1. Status must be ACTIVE
@@ -268,11 +287,20 @@ export async function GET(request: NextRequest) {
         const rawListing = rawListings.find((r: any) => 
           (r.id || r.listingId) === (listing.listingId || listing.listingUuid)
         );
-        const listingId = listing.listingId || listing.listingUuid;
+        // Check all possible ID variations
+        const possibleIds = [
+          listing.listingId,
+          listing.listingUuid,
+          listing.productId + '-' + listing.variantId,
+          rawListing?.id,
+          rawListing?.listingId
+        ].filter(Boolean);
         
         // Check if this listing was marked as expired but still made it through
-        if (expiredListingIds.has(listingId)) {
+        const isExpired = possibleIds.some(id => expiredListingIds.has(id));
+        if (isExpired) {
           console.log(`🚨 EXPIRED LISTING SLIPPED THROUGH: ${listing.productName} - Size ${listing.size}`);
+          console.log(`   IDs checked: ${possibleIds.join(', ')}`);
           return true;
         }
         
@@ -412,9 +440,11 @@ export async function GET(request: NextRequest) {
     // Final safety check - remove any expired listings that might have slipped through
     console.log(`\n🔍 Final cleanup check on ${deduplicatedListings.length} listings...`);
     const finalListings = deduplicatedListings.filter((listing: any, index: number) => {
-      const rawListing = rawListings.find((r: any) => 
-        (r.id || r.listingId) === (listing.listingId || listing.listingUuid)
-      );
+      const rawListing = rawListings.find((r: any) => {
+        const rawId = r.id || r.listingId;
+        return rawId === listing.listingId || 
+               rawId === listing.listingUuid;
+      });
       
       if (!rawListing) {
         console.log(`⚠️ Could not find raw listing for ${listing.productName}`);
@@ -457,6 +487,24 @@ export async function GET(request: NextRequest) {
     if (deduplicatedListings.length !== 51) {
       console.log(`⚠️ WARNING: Expected 51 but returning ${deduplicatedListings.length}`);
     }
+    
+    // Debug: Check a few listings to see if they're expired
+    const debugSample = deduplicatedListings.slice(0, 10).map((listing: any) => {
+      const rawListing = rawListings.find((r: any) => {
+        const rawId = r.id || r.listingId;
+        return rawId === listing.listingId || 
+               rawId === listing.listingUuid;
+      });
+      return {
+        productName: listing.productName,
+        size: listing.size,
+        listingId: listing.listingId,
+        hasRawListing: !!rawListing,
+        askExpiresAt: rawListing?.ask?.askExpiresAt,
+        isExpired: rawListing?.ask?.askExpiresAt ? 
+          new Date(rawListing.ask.askExpiresAt) <= now : null
+      };
+    });
 
     // Capture filtering details for client
     const filteringDetails = {
