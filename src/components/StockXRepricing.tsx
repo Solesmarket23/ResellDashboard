@@ -462,7 +462,7 @@ export default function StockXRepricing() {
   }
 
   return (
-    <div className={`min-h-screen p-6 ${isNeon ? 'bg-gray-900 text-white' : 'bg-gray-50'} space-y-6`}>
+    <div className={`min-h-screen p-6 space-y-6 ${isNeon ? 'bg-gray-900 text-white' : 'bg-gray-50'}`}>
       <div className="flex items-center justify-between mb-8">
         <div>
           <h2 className={`text-3xl font-bold ${
