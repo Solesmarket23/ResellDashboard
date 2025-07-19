@@ -1,16 +1,18 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
-import { X, Clock, CheckCircle, Mail, Package, Truck, AlertTriangle } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { X, Clock, CheckCircle, Mail, Package, Truck, AlertTriangle, Edit2, Save, Calendar } from 'lucide-react';
 import { FailedVerification, VerificationStatus } from '@/types/failed-verification';
 import { STATUS_LABELS } from '@/lib/verification-status';
 import { useTheme } from '@/lib/contexts/ThemeContext';
+import { updateDocument } from '@/lib/firebase/firebaseUtils';
 
 interface StatusHistoryModalProps {
   verification: FailedVerification;
   isOpen: boolean;
   onClose: () => void;
   onReset?: (verificationId: string) => void;
+  onUpdate?: (verificationId: string, updates: Partial<FailedVerification>) => void;
 }
 
 const STATUS_ICONS: Record<VerificationStatus, React.ReactNode> = {
@@ -35,10 +37,13 @@ const STATUS_COLORS_NEON: Record<VerificationStatus, string> = {
   closed_no_resolution: 'text-gray-400'
 };
 
-export function StatusHistoryModal({ verification, isOpen, onClose, onReset }: StatusHistoryModalProps) {
+export function StatusHistoryModal({ verification, isOpen, onClose, onReset, onUpdate }: StatusHistoryModalProps) {
   const { currentTheme } = useTheme();
   const isNeon = currentTheme?.name === 'Neon';
   const modalRef = useRef<HTMLDivElement>(null);
+  const [editingTimestamp, setEditingTimestamp] = useState<string | null>(null);
+  const [tempDates, setTempDates] = useState<{ [key: string]: string }>({});
+  const [saving, setSaving] = useState(false);
   
   // Handle escape key press
   useEffect(() => {
@@ -69,6 +74,7 @@ export function StatusHistoryModal({ verification, isOpen, onClose, onReset }: S
     timestamp: string;
     label: string;
     note: string;
+    fieldName: string;
   }> = [];
   
   // Add created event
@@ -76,7 +82,8 @@ export function StatusHistoryModal({ verification, isOpen, onClose, onReset }: S
     status: 'needs_review',
     timestamp: verification.createdAt,
     label: 'Verification Failed',
-    note: 'Item failed StockX verification'
+    note: 'Item failed StockX verification',
+    fieldName: 'createdAt'
   });
   
   // Add status-specific events
@@ -85,7 +92,8 @@ export function StatusHistoryModal({ verification, isOpen, onClose, onReset }: S
       status: 'email_sent',
       timestamp: verification.emailSentAt,
       label: 'Return Request Sent',
-      note: 'Email sent to StockX support'
+      note: 'Email sent to StockX support',
+      fieldName: 'emailSentAt'
     });
   }
   
@@ -94,7 +102,8 @@ export function StatusHistoryModal({ verification, isOpen, onClose, onReset }: S
       status: 'label_received',
       timestamp: verification.labelReceivedAt,
       label: 'Shipping Label Received',
-      note: 'Return shipping label provided by StockX'
+      note: 'Return shipping label provided by StockX',
+      fieldName: 'labelReceivedAt'
     });
   }
   
@@ -103,7 +112,8 @@ export function StatusHistoryModal({ verification, isOpen, onClose, onReset }: S
       status: 'shipped_back',
       timestamp: verification.shippedBackAt,
       label: 'Package Shipped',
-      note: verification.returnTrackingNumber ? `Tracking: ${verification.returnTrackingNumber}` : 'Item shipped back to StockX'
+      note: verification.returnTrackingNumber ? `Tracking: ${verification.returnTrackingNumber}` : 'Item shipped back to StockX',
+      fieldName: 'shippedBackAt'
     });
   }
   
@@ -112,7 +122,8 @@ export function StatusHistoryModal({ verification, isOpen, onClose, onReset }: S
       status: 'delivered_to_stockx',
       timestamp: verification.deliveredAt,
       label: 'Delivered to StockX',
-      note: 'Package received by StockX'
+      note: 'Package received by StockX',
+      fieldName: 'deliveredAt'
     });
   }
   
@@ -121,12 +132,57 @@ export function StatusHistoryModal({ verification, isOpen, onClose, onReset }: S
       status: 'refund_processed',
       timestamp: verification.refundProcessedAt,
       label: 'Refund Processed',
-      note: verification.refundAmount ? `Amount: $${verification.refundAmount.toFixed(2)}` : 'Refund completed'
+      note: verification.refundAmount ? `Amount: $${verification.refundAmount.toFixed(2)}` : 'Refund completed',
+      fieldName: 'refundProcessedAt'
     });
   }
   
   // Sort by timestamp
   timelineEvents.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  
+  // Helper functions for date editing
+  const formatDateForInput = (dateString: string) => {
+    const date = new Date(dateString);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return { date: `${year}-${month}-${day}`, time: `${hours}:${minutes}` };
+  };
+  
+  const handleEditTimestamp = (fieldName: string, currentTimestamp: string) => {
+    setEditingTimestamp(fieldName);
+    const { date, time } = formatDateForInput(currentTimestamp);
+    setTempDates({ [fieldName]: `${date}T${time}` });
+  };
+  
+  const handleSaveTimestamp = async (fieldName: string) => {
+    if (!onUpdate || !tempDates[fieldName]) return;
+    
+    setSaving(true);
+    try {
+      const newDate = new Date(tempDates[fieldName]);
+      const updates: Partial<FailedVerification> = {
+        [fieldName]: newDate.toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      
+      await updateDocument('failedVerifications', verification.id, updates);
+      onUpdate(verification.id, updates);
+      setEditingTimestamp(null);
+      setTempDates({});
+    } catch (error) {
+      console.error('Error updating timestamp:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+  
+  const handleCancelEdit = () => {
+    setEditingTimestamp(null);
+    setTempDates({});
+  };
   
   const modalClasses = isNeon
     ? 'dark-neon-card border border-cyan-500/30 shadow-2xl shadow-cyan-500/20'
@@ -250,12 +306,65 @@ export function StatusHistoryModal({ verification, isOpen, onClose, onReset }: S
                           <h3 className={`font-semibold ${isNeon ? 'text-white' : 'text-gray-900'}`}>
                             {event.label}
                           </h3>
-                          <div className="flex items-center gap-1">
-                            <Clock className={`w-4 h-4 ${isNeon ? 'text-slate-500' : 'text-gray-400'}`} />
-                            <span className={`text-sm ${isNeon ? 'text-slate-400' : 'text-gray-600'}`}>
-                              {new Date(event.timestamp).toLocaleString()}
-                            </span>
-                          </div>
+                          {editingTimestamp === event.fieldName ? (
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="datetime-local"
+                                value={tempDates[event.fieldName] || ''}
+                                onChange={(e) => setTempDates({ ...tempDates, [event.fieldName]: e.target.value })}
+                                className={`px-2 py-1 rounded text-sm ${
+                                  isNeon
+                                    ? 'bg-slate-700 text-white border border-slate-600'
+                                    : 'bg-white text-gray-900 border border-gray-300'
+                                }`}
+                                disabled={saving}
+                              />
+                              <button
+                                onClick={() => handleSaveTimestamp(event.fieldName)}
+                                disabled={saving}
+                                className={`p-1 rounded transition-colors ${
+                                  isNeon
+                                    ? 'hover:bg-slate-700 text-emerald-400 hover:text-emerald-300'
+                                    : 'hover:bg-gray-100 text-green-600 hover:text-green-700'
+                                } disabled:opacity-50`}
+                              >
+                                <Save className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={handleCancelEdit}
+                                disabled={saving}
+                                className={`p-1 rounded transition-colors ${
+                                  isNeon
+                                    ? 'hover:bg-slate-700 text-red-400 hover:text-red-300'
+                                    : 'hover:bg-gray-100 text-red-600 hover:text-red-700'
+                                } disabled:opacity-50`}
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1">
+                                <Clock className={`w-4 h-4 ${isNeon ? 'text-slate-500' : 'text-gray-400'}`} />
+                                <span className={`text-sm ${isNeon ? 'text-slate-400' : 'text-gray-600'}`}>
+                                  {new Date(event.timestamp).toLocaleString()}
+                                </span>
+                              </div>
+                              {event.fieldName !== 'createdAt' && (
+                                <button
+                                  onClick={() => handleEditTimestamp(event.fieldName, event.timestamp)}
+                                  className={`p-1 rounded transition-colors ${
+                                    isNeon
+                                      ? 'hover:bg-slate-700 text-slate-400 hover:text-white'
+                                      : 'hover:bg-gray-100 text-gray-400 hover:text-gray-600'
+                                  }`}
+                                  title="Edit timestamp"
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
                         <p className={`text-sm ${isNeon ? 'text-slate-400' : 'text-gray-600'}`}>
                           {event.note}

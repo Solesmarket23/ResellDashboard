@@ -1612,6 +1612,14 @@ const FailedVerifications = () => {
             setSelectedVerification(null);
           }}
           onReset={handleResetStatus}
+          onUpdate={(id, updates) => {
+            // Update local state with new timestamps
+            setManualFailures(prev => 
+              prev.map(item => 
+                item.id === id ? { ...item, ...updates } : item
+              )
+            );
+          }}
         />
       )}
 
