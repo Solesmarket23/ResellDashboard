@@ -123,13 +123,20 @@ export async function GET(request: NextRequest) {
     console.log(`📦 Listings with orders (likely MATCHED): ${listingsWithOrders.length}`);
     
     // Check for expired asks
+    const now = new Date();
     const expiredListings = rawListings.filter((l: any) => {
       if (l.ask?.askExpiresAt) {
-        return new Date(l.ask.askExpiresAt) < new Date();
+        const expirationDate = new Date(l.ask.askExpiresAt);
+        const isExpired = expirationDate <= now;
+        if (isExpired && rawListings.length <= 10) {
+          console.log(`Expired: ${l.product?.title} - ${expirationDate.toISOString()}`);
+        }
+        return isExpired;
       }
       return false;
     });
     console.log(`⏰ Listings with expired asks: ${expiredListings.length}`);
+    console.log(`🎯 Expected active listings after filtering expired: ${rawListings.length - expiredListings.length}`);
 
     // Transform the data to match our component's expectations
     const transformedListings = rawListings.map((listing: any, index: number) => {
@@ -137,18 +144,11 @@ export async function GET(request: NextRequest) {
       if (index === 0) {
         console.log('Sample listing structure:', {
           keys: Object.keys(listing),
+          hasAsk: !!listing.ask,
+          askKeys: listing.ask ? Object.keys(listing.ask) : [],
+          askExpiresAt: listing.ask?.askExpiresAt,
           listing: listing
         });
-      }
-      
-      // Log status distribution
-      if (index === 0) {
-        const statusCounts = rawListings.reduce((acc: any, l: any) => {
-          acc[l.status || 'UNKNOWN'] = (acc[l.status || 'UNKNOWN'] || 0) + 1;
-          return acc;
-        }, {});
-        console.log('📊 Listing status distribution:', statusCounts);
-        console.log('📌 Valid statuses: INACTIVE, ACTIVE, DELETED, CANCELED, MATCHED, COMPLETED');
       }
       
       return {
@@ -196,8 +196,18 @@ export async function GET(request: NextRequest) {
       const hasActiveStatus = status === 'ACTIVE';
       const hasNoOrder = !rawListing?.order;
       const hasAsk = !!rawListing?.ask;
-      const notExpired = !rawListing?.ask?.askExpiresAt || 
-                        new Date(rawListing.ask.askExpiresAt) > new Date();
+      
+      // More strict expiration check
+      let notExpired = true;
+      if (rawListing?.ask?.askExpiresAt) {
+        const expirationDate = new Date(rawListing.ask.askExpiresAt);
+        const now = new Date();
+        notExpired = expirationDate > now;
+        
+        if (!notExpired && index < 5) {
+          console.log(`📅 Expired listing: ${listing.productName} - Expired at: ${expirationDate.toISOString()}, Current time: ${now.toISOString()}`);
+        }
+      }
       
       const isActive = hasActiveStatus && hasNoOrder && hasAsk && notExpired;
       
@@ -237,6 +247,17 @@ export async function GET(request: NextRequest) {
     
     console.log(`🎯 Strict filtering: ${activeListings.length} truly active listings (from ${transformedListings.length} total)`);
     console.log(`📊 Filtered out: ${transformedListings.length - activeListings.length} listings`);
+    
+    // Double-check our math
+    console.log('\n📐 Filtering Math Check:');
+    console.log(`  Total from API: ${rawListings.length}`);
+    console.log(`  - Expired asks: ${expiredListings.length}`);
+    console.log(`  - With orders: ${listingsWithOrders.length}`);
+    console.log(`  = Should have: ${rawListings.length - expiredListings.length - listingsWithOrders.length} active listings`);
+    console.log(`  Actually have: ${activeListings.length} active listings`);
+    
+    if (activeListings.length !== 51) {
+      console.log(`\n⚠️  Discrepancy detected! Expected 51 but got ${activeListings.length}`);
     
     // Log status breakdown
     const statusBreakdown = transformedListings.reduce((acc: any, listing: any) => {
@@ -379,12 +400,35 @@ export async function GET(request: NextRequest) {
     };
 
     // Analyze discrepancy
-    if (deduplicatedListings.length > 51) {
+    if (deduplicatedListings.length !== 51) {
+      // Count how many were filtered for each reason
+      const filterReasons: { [key: string]: number } = {};
+      filteredListingsAnalysis.forEach(filtered => {
+        filterReasons[filtered.reason] = (filterReasons[filtered.reason] || 0) + 1;
+      });
+      
+      debugInfo.discrepancy.filterReasons = filterReasons;
+      
       if (listingsWithOrders > 0) {
         debugInfo.discrepancy.possibleReasons.push(`${listingsWithOrders} listings have orders (MATCHED)`);
       }
       if (expiredListings.length > 0) {
         debugInfo.discrepancy.possibleReasons.push(`${expiredListings.length} listings have expired asks`);
+      }
+      
+      // If we're showing MORE than expected, some expired listings might be slipping through
+      if (deduplicatedListings.length > 51) {
+        const difference = deduplicatedListings.length - 51;
+        debugInfo.discrepancy.possibleReasons.push(`${difference} listings may have slipped through filtering`);
+        
+        // Sample some of the active listings to check for issues
+        const suspiciousListings = deduplicatedListings.slice(0, 10).map((l: any) => ({
+          productName: l.productName,
+          size: l.size,
+          status: l.status,
+          hasExpiration: !!rawListings.find((r: any) => r.id === l.listingId)?.ask?.askExpiresAt
+        }));
+        debugInfo.discrepancy.sampleActiveListings = suspiciousListings;
       }
       
       // Check inventory types
