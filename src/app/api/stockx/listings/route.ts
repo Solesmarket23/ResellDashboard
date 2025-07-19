@@ -117,13 +117,14 @@ export async function GET(request: NextRequest) {
       
       return {
         listingId: listing.listingId || listing.id || `listing-${index}`,
-        productId: listing.productId || listing.product?.id || '',
-        variantId: listing.variantId || listing.variant?.id || '',
-        productName: listing.productName || listing.product?.title || listing.product?.name || 'Unknown Product',
+        productId: listing.productId || listing.product?.productId || listing.product?.id || '',
+        variantId: listing.variantId || listing.variant?.variantId || listing.variant?.id || '',
+        productName: listing.productName || listing.product?.productName || listing.product?.title || listing.product?.name || 'Unknown Product',
         size: listing.size || listing.variant?.size || listing.variant?.variantValue || listing.variantValue || 'Unknown Size',
         currentPrice: parseFloat(listing.amount || listing.price || '0'),
         originalPrice: parseFloat(listing.amount || listing.price || '0'),
         brand: listing.brand || listing.product?.brand || 'Unknown Brand',
+        styleId: listing.styleId || listing.product?.styleId || '',
         colorway: listing.colorway || listing.product?.colorway || '',
         condition: listing.condition || 'new',
         status: listing.status || listing.listingStatus || 'active',
