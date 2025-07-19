@@ -77,13 +77,13 @@ export function StatusHistoryModal({ verification, isOpen, onClose, onReset, onU
     fieldName: string;
   }> = [];
   
-  // Add created event
+  // Add created event - use date from email if available, otherwise createdAt
   timelineEvents.push({
     status: 'needs_review',
-    timestamp: verification.createdAt,
+    timestamp: verification.date || verification.createdAt,
     label: 'Verification Failed',
     note: 'Item failed StockX verification',
-    fieldName: 'createdAt'
+    fieldName: 'date'  // Changed to 'date' to allow editing the actual failure date
   });
   
   // Add status-specific events
@@ -351,19 +351,17 @@ export function StatusHistoryModal({ verification, isOpen, onClose, onReset, onU
                                   {new Date(event.timestamp).toLocaleString()}
                                 </span>
                               </div>
-                              {event.fieldName !== 'createdAt' && (
-                                <button
-                                  onClick={() => handleEditTimestamp(event.fieldName, event.timestamp)}
-                                  className={`p-1 rounded transition-colors ${
-                                    isNeon
-                                      ? 'hover:bg-slate-700 text-slate-400 hover:text-white'
-                                      : 'hover:bg-gray-100 text-gray-400 hover:text-gray-600'
-                                  }`}
-                                  title="Edit timestamp"
-                                >
-                                  <Edit2 className="w-3 h-3" />
-                                </button>
-                              )}
+                              <button
+                                onClick={() => handleEditTimestamp(event.fieldName, event.timestamp)}
+                                className={`p-1 rounded transition-colors ${
+                                  isNeon
+                                    ? 'hover:bg-slate-700 text-slate-400 hover:text-white'
+                                    : 'hover:bg-gray-100 text-gray-400 hover:text-gray-600'
+                                }`}
+                                title="Edit timestamp"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                              </button>
                             </div>
                           )}
                         </div>
