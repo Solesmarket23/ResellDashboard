@@ -43,7 +43,7 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
   const [recommendedPlan, setRecommendedPlan] = useState<'enterprise' | 'professional' | 'starter' | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [transitionDirection, setTransitionDirection] = useState<'forward' | 'backward'>('forward');
-  // Removed boxAnimationStage - not needed without animation
+  const [isCalculating, setIsCalculating] = useState(false);
   
   const [formData, setFormData] = useState<QuestionnaireData>({
     stockxLevel: '',
@@ -207,15 +207,21 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
         }, 225);
       }, 175);
     } else {
-      // Calculate and show recommendation
-      const recommendation = calculateRecommendation();
-      setRecommendedPlan(recommendation);
-      setShowRecommendation(true);
+      // Show loading state
+      setIsCalculating(true);
       
-      // Save questionnaire data if user is authenticated
-      if (user) {
-        saveQuestionnaireData();
-      }
+      setTimeout(() => {
+        // Calculate and show recommendation
+        const recommendation = calculateRecommendation();
+        setRecommendedPlan(recommendation);
+        setShowRecommendation(true);
+        setIsCalculating(false);
+        
+        // Save questionnaire data if user is authenticated
+        if (user) {
+          saveQuestionnaireData();
+        }
+      }, 2000);
     }
   };
 
@@ -261,7 +267,7 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
     setCurrentStep(1);
     setShowRecommendation(false);
     setRecommendedPlan(null);
-    // Reset state
+    setIsCalculating(false);
     setFormData({
       stockxLevel: '',
       monthlyVolume: 25,
@@ -271,6 +277,36 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
       timeCommitment: ''
     });
   };
+
+  // Loading state
+  if (isCalculating) {
+    return (
+      <div className={`min-h-screen ${currentTheme.colors.background} flex items-center justify-center p-6`}>
+        <div className="text-center">
+          <div className="mb-8">
+            <div className="relative inline-flex items-center justify-center w-24 h-24">
+              <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-emerald-400 rounded-full animate-pulse opacity-20" />
+              <div className="absolute inset-2 bg-gradient-to-r from-cyan-400 to-emerald-400 rounded-full animate-ping opacity-30" />
+              <div className={`relative z-10 w-20 h-20 ${currentTheme.colors.primary} rounded-full flex items-center justify-center`}>
+                <Rocket className="w-10 h-10 text-white" />
+              </div>
+            </div>
+          </div>
+          <h2 className={`text-2xl font-bold ${currentTheme.colors.textPrimary} mb-2`}>
+            Analyzing your responses
+          </h2>
+          <p className={`${currentTheme.colors.textSecondary} mb-4`}>
+            Finding the perfect plan for your needs...
+          </p>
+          <div className="flex justify-center gap-2">
+            <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+            <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+            <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Recommendation display
   if (showRecommendation && recommendedPlan) {
@@ -291,10 +327,10 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
             </p>
           </div>
 
-          {/* Plan Details */}
-          <div className="grid md:grid-cols-2 gap-8 mb-8">
+          {/* Plan Details - Adjusted for better symmetry */}
+          <div className="grid md:grid-cols-2 gap-12 mb-8 max-w-5xl mx-auto">
             {/* Left Column - Plan Info */}
-            <div>
+            <div className="md:pl-8">
               <h3 className={`text-2xl font-bold ${currentTheme.colors.textPrimary} mb-2`}>{plan.name}</h3>
               <p className={`text-3xl font-bold ${currentTheme.colors.accent} mb-4`}>{plan.price}</p>
               <p className={`${currentTheme.colors.textSecondary} mb-4`}>{plan.description}</p>
@@ -305,7 +341,7 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
             </div>
 
             {/* Right Column - Features */}
-            <div>
+            <div className="md:pr-8">
               <h4 className={`font-semibold ${currentTheme.colors.textPrimary} mb-4`}>Features included:</h4>
               <ul className="space-y-2">
                 {plan.features.map((feature, index) => (
