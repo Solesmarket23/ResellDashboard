@@ -496,6 +496,35 @@ const FailedVerifications = () => {
     localStorage.setItem('returnRequestTestEmail', email);
   };
 
+  // Reset verification status back to 'needs_review'
+  const handleResetStatus = async (verificationId: string) => {
+    if (!user) {
+      alert('Please sign in to update status');
+      return;
+    }
+
+    try {
+      const timestamp = new Date().toISOString();
+      await updateDocument('user_failed_verifications', verificationId, {
+        status: 'needs_review',
+        lastStatusUpdate: timestamp,
+        // Clear all status-specific timestamps
+        emailSentAt: null,
+        labelReceivedAt: null,
+        shippedBackAt: null,
+        deliveredAt: null,
+        refundProcessedAt: null,
+        returnTrackingNumber: null,
+        refundAmount: null
+      });
+      
+      console.log('✅ Status reset to needs_review for:', verificationId);
+    } catch (error) {
+      console.error('❌ Error resetting status:', error);
+      alert('Failed to reset status. Please try again.');
+    }
+  };
+
   // If no data, show placeholder
   const displayMonthlyData = monthlyData.length > 0 ? monthlyData : [
     { month: 'No data', rate: '--', failed: 0, total: '--', status: 'No failures recorded' }
@@ -1580,6 +1609,7 @@ const FailedVerifications = () => {
             setShowHistoryModal(false);
             setSelectedVerification(null);
           }}
+          onReset={handleResetStatus}
         />
       )}
 

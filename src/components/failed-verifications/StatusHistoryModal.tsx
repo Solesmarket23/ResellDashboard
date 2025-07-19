@@ -10,6 +10,7 @@ interface StatusHistoryModalProps {
   verification: FailedVerification;
   isOpen: boolean;
   onClose: () => void;
+  onReset?: (verificationId: string) => void;
 }
 
 const STATUS_ICONS: Record<VerificationStatus, React.ReactNode> = {
@@ -34,7 +35,7 @@ const STATUS_COLORS_NEON: Record<VerificationStatus, string> = {
   closed_no_resolution: 'text-gray-400'
 };
 
-export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHistoryModalProps) {
+export function StatusHistoryModal({ verification, isOpen, onClose, onReset }: StatusHistoryModalProps) {
   const { currentTheme } = useTheme();
   const isNeon = currentTheme?.name === 'Neon';
   const modalRef = useRef<HTMLDivElement>(null);
@@ -192,7 +193,7 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
         </div>
         
         {/* Timeline */}
-        <div className="px-6 py-6 overflow-y-auto max-h-[400px]">
+        <div className="px-6 py-6 overflow-y-auto" style={{ maxHeight: 'calc(80vh - 300px)' }}>
           <div className="space-y-0">
             {timelineEvents.map((event, index) => {
               const Icon = STATUS_ICONS[event.status];
@@ -285,16 +286,33 @@ export function StatusHistoryModal({ verification, isOpen, onClose }: StatusHist
                 {STATUS_LABELS[verification.status || 'needs_review']}
               </span>
             </p>
-            <button
-              onClick={onClose}
-              className={`px-4 py-2 rounded-lg font-medium transition-all ${
-                isNeon
-                  ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white shadow-lg shadow-cyan-500/25'
-                  : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
-              }`}
-            >
-              Close
-            </button>
+            <div className="flex gap-3">
+              {onReset && verification.status !== 'needs_review' && (
+                <button
+                  onClick={() => {
+                    onReset(verification.id);
+                    onClose();
+                  }}
+                  className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                    isNeon
+                      ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+                      : 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300'
+                  }`}
+                >
+                  Reset Status
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                  isNeon
+                    ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white shadow-lg shadow-cyan-500/25'
+                    : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+                }`}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       </div>
