@@ -231,7 +231,7 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
             </div>
             <h2 className={`text-3xl font-bold ${currentTheme.colors.textPrimary} mb-2`}>Perfect Match!</h2>
             <p className={`${currentTheme.colors.textSecondary}`}>
-              Based on your responses, we recommend:
+              Based on your answers, we recommend starting your 14-day free trial with the {recommendedPlan === 'enterprise' ? 'Enterprise' : recommendedPlan === 'professional' ? 'Professional' : 'Starter'} Plan. You can always switch plans during or after your trial!
             </p>
           </div>
 
@@ -268,7 +268,7 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
               onClick={() => onComplete?.()}
               className={`px-6 py-3 ${currentTheme.colors.primary} ${currentTheme.colors.primaryHover} text-white rounded-lg font-medium transition-all flex items-center justify-center gap-2`}
             >
-              Start {plan.name} Plan
+              Start 14-Day Free Trial of {plan.name}
               <ChevronRight className="w-4 h-4" />
             </button>
             <button
@@ -367,7 +367,7 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
                   type="range"
                   min="0"
                   max="500"
-                  step="5"
+                  step="25"
                   value={formData.monthlyVolume}
                   onChange={(e) => setFormData({ ...formData, monthlyVolume: parseInt(e.target.value) })}
                   className={`w-full h-2 rounded-lg appearance-none cursor-pointer slider-neon`}
