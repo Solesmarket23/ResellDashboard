@@ -194,67 +194,90 @@ export async function GET(request: NextRequest) {
       }))
     );
     
-    // Check for duplicates and deduplicate by keeping the lowest priced listing
-    const productSizeCombo = new Map();
+    // Function to find true duplicates based on all relevant factors
+    function findTrueDuplicates(listings: any[]) {
+      const groups: { [key: string]: any[] } = {};
+      
+      listings.forEach(listing => {
+        // Create unique key including ALL relevant factors
+        const key = [
+          listing.productId || 'no-product-id',
+          listing.variantId || 'no-variant-id',
+          listing.listingId || 'no-listing-id',
+          listing.status || 'no-status',
+          listing.condition || 'no-condition',
+          listing.currentPrice || 'no-price'
+        ].join('|');
+        
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(listing);
+      });
+      
+      // Return groups with multiple entries as potential duplicates
+      return Object.entries(groups).filter(([_, group]) => group.length > 1);
+    }
+    
+    // Analyze what the "duplicates" actually are
+    const productSizeGroups = new Map();
     activeListings.forEach((listing: any) => {
       const key = `${listing.productName}-${listing.size}`;
-      if (!productSizeCombo.has(key)) {
-        productSizeCombo.set(key, []);
+      if (!productSizeGroups.has(key)) {
+        productSizeGroups.set(key, []);
       }
-      productSizeCombo.get(key).push(listing);
+      productSizeGroups.get(key).push(listing);
     });
     
-    const duplicates = Array.from(productSizeCombo.entries())
-      .filter(([_, listings]) => listings.length > 1)
-      .map(([key, listings]) => ({
-        product: key,
-        count: listings.length,
-        prices: listings.map((l: any) => l.currentPrice),
-        listings: listings
-      }));
+    const potentialDuplicates = Array.from(productSizeGroups.entries())
+      .filter(([_, listings]) => listings.length > 1);
     
+    if (potentialDuplicates.length > 0) {
+      console.log('🔍 Investigating potential duplicates...');
+      console.log(`Found ${potentialDuplicates.length} product-size combinations with multiple listings`);
+      
+      // Log detailed information about each group
+      potentialDuplicates.forEach(([productSize, listings]) => {
+        console.log(`\n📦 ${productSize} (${listings.length} listings):`);
+        listings.forEach((listing: any, index: number) => {
+          console.log(`  ${index + 1}. Listing ID: ${listing.listingId}`);
+          console.log(`     - Price: $${listing.currentPrice}`);
+          console.log(`     - Product ID: ${listing.productId}`);
+          console.log(`     - Variant ID: ${listing.variantId}`);
+          console.log(`     - Status: ${listing.status}`);
+          console.log(`     - Condition: ${listing.condition}`);
+          console.log(`     - Created: ${listing.createdAt}`);
+        });
+      });
+      
+      const totalPotentialDuplicates = potentialDuplicates.reduce((sum, [_, listings]) => sum + (listings.length - 1), 0);
+      console.log(`\n📊 Total potential duplicates: ${totalPotentialDuplicates}`);
+    }
+    
+    // Find TRUE duplicates using all factors
+    const trueDuplicateGroups = findTrueDuplicates(activeListings);
     let deduplicatedListings = activeListings;
     let duplicateListingIds: string[] = [];
     
-    if (duplicates.length > 0) {
-      console.log('🔁 Found duplicate listings:', duplicates.map(d => ({
-        product: d.product,
-        count: d.count,
-        prices: d.prices
-      })));
-      const totalDuplicates = duplicates.reduce((sum, dup) => sum + (dup.count - 1), 0);
-      console.log(`📊 Total duplicate listings: ${totalDuplicates} (these are the "extra" listings)`);
-      
-      // Deduplicate by keeping only the lowest priced listing for each product-size combo
-      deduplicatedListings = [];
-      const processedKeys = new Set();
-      
-      activeListings.forEach((listing: any) => {
-        const key = `${listing.productName}-${listing.size}`;
-        
-        if (!processedKeys.has(key)) {
-          processedKeys.add(key);
-          const allListingsForKey = productSizeCombo.get(key);
-          
-          if (allListingsForKey && allListingsForKey.length > 1) {
-            // Sort by price (ascending) and keep the lowest
-            const sortedByPrice = allListingsForKey.sort((a: any, b: any) => a.currentPrice - b.currentPrice);
-            deduplicatedListings.push(sortedByPrice[0]);
-            
-            // Track the duplicate listing IDs that were removed
-            for (let i = 1; i < sortedByPrice.length; i++) {
-              duplicateListingIds.push(sortedByPrice[i].listingId);
-            }
-            
-            console.log(`🔧 Kept lowest price listing for ${key}: $${sortedByPrice[0].currentPrice} (removed ${sortedByPrice.length - 1} duplicates)`);
-          } else {
-            // No duplicates for this key
-            deduplicatedListings.push(listing);
-          }
-        }
+    if (trueDuplicateGroups.length > 0) {
+      console.log('\n⚠️  Found TRUE duplicates (exact same listing data):');
+      trueDuplicateGroups.forEach(([key, duplicates]) => {
+        console.log(`  - ${duplicates[0].productName} Size ${duplicates[0].size}: ${duplicates.length} identical listings`);
+        console.log(`    IDs: ${duplicates.map((d: any) => d.listingId).join(', ')}`);
       });
       
-      console.log(`✅ Deduplicated listings: ${deduplicatedListings.length} unique listings (removed ${activeListings.length - deduplicatedListings.length} duplicates)`);
+      // Remove true duplicates only
+      const seenListingIds = new Set();
+      deduplicatedListings = activeListings.filter((listing: any) => {
+        if (seenListingIds.has(listing.listingId)) {
+          duplicateListingIds.push(listing.listingId);
+          return false;
+        }
+        seenListingIds.add(listing.listingId);
+        return true;
+      });
+      
+      console.log(`\n✅ Removed ${duplicateListingIds.length} true duplicate listings`);
+    } else {
+      console.log('\n✅ No true duplicates found - all listings appear to be legitimate variations');
     }
 
     const successResponse = NextResponse.json({
@@ -262,8 +285,16 @@ export async function GET(request: NextRequest) {
       listings: deduplicatedListings,
       totalCount: deduplicatedListings.length,
       rawCount: activeListings.length,
-      duplicatesRemoved: activeListings.length - deduplicatedListings.length,
+      trueDuplicatesRemoved: duplicateListingIds.length,
       duplicateListingIds: duplicateListingIds,
+      investigation: {
+        productSizeGroupsWithMultiples: potentialDuplicates.length,
+        totalPotentialDuplicates: potentialDuplicates.reduce((sum, [_, listings]) => sum + (listings.length - 1), 0),
+        trueDuplicateGroups: trueDuplicateGroups.length,
+        message: trueDuplicateGroups.length > 0 
+          ? `Removed ${duplicateListingIds.length} true duplicates` 
+          : 'No true duplicates found - all listings appear to be legitimate variations'
+      },
       actualCount: deduplicatedListings.length - testListings.filter((t: any) => 
         !duplicateListingIds.includes(t.listingId)
       ).length, // Count without test listings (excluding removed duplicates)

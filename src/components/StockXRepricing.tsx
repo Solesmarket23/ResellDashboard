@@ -69,7 +69,13 @@ export default function StockXRepricing() {
   const [authError, setAuthError] = useState(false);
   const [listingStats, setListingStats] = useState<{
     rawCount?: number;
-    duplicatesRemoved?: number;
+    trueDuplicatesRemoved?: number;
+    investigation?: {
+      productSizeGroupsWithMultiples: number;
+      totalPotentialDuplicates: number;
+      trueDuplicateGroups: number;
+      message: string;
+    };
   }>({});
 
   useEffect(() => {
@@ -112,10 +118,11 @@ export default function StockXRepricing() {
         setListings(enrichedListings);
         
         // Store listing stats if available
-        if (data.rawCount !== undefined || data.duplicatesRemoved !== undefined) {
+        if (data.rawCount !== undefined || data.trueDuplicatesRemoved !== undefined || data.investigation) {
           setListingStats({
             rawCount: data.rawCount,
-            duplicatesRemoved: data.duplicatesRemoved
+            trueDuplicatesRemoved: data.trueDuplicatesRemoved,
+            investigation: data.investigation
           });
         }
       } else if (data.error && data.error.includes('token')) {
@@ -459,13 +466,17 @@ export default function StockXRepricing() {
               </span>
             )}
           </h3>
-          {listingStats.duplicatesRemoved && listingStats.duplicatesRemoved > 0 && (
-            <div className={`text-sm px-3 py-1 rounded-full ${
-              isNeon 
-                ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' 
-                : 'bg-yellow-100 text-yellow-800 border border-yellow-300'
-            }`}>
-              {listingStats.duplicatesRemoved} duplicates removed
+          {listingStats.investigation && (
+            <div className={`text-sm px-3 py-1 rounded-full flex items-center gap-2 ${
+              listingStats.trueDuplicatesRemoved && listingStats.trueDuplicatesRemoved > 0
+                ? isNeon 
+                  ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' 
+                  : 'bg-yellow-100 text-yellow-800 border border-yellow-300'
+                : isNeon
+                  ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                  : 'bg-green-100 text-green-800 border border-green-300'
+            }`} title={`${listingStats.investigation.productSizeGroupsWithMultiples} product-size combos have multiple listings`}>
+              {listingStats.investigation.message}
             </div>
           )}
         </div>
