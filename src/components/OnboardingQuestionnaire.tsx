@@ -525,7 +525,7 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
                   {stockxLevels.map((level) => (
                     <button
                       key={level.id}
-                      onClick={() => setFormData({ ...formData, stockxLevel: level.id })}
+                      onClick={() => setFormData({ ...formData, stockxLevel: formData.stockxLevel === level.id ? '' : level.id })}
                       className={`p-4 rounded-lg border transition-all ${
                         formData.stockxLevel === level.id
                           ? `${currentTheme.colors.border} ${currentTheme.colors.primaryLight}`
@@ -597,7 +597,7 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
                   {biggestChallenges.map((challenge) => (
                     <button
                       key={challenge.id}
-                      onClick={() => setFormData({ ...formData, biggestChallenge: challenge.id })}
+                      onClick={() => setFormData({ ...formData, biggestChallenge: formData.biggestChallenge === challenge.id ? '' : challenge.id })}
                       className={`p-4 rounded-lg border transition-all ${
                         formData.biggestChallenge === challenge.id
                           ? `${currentTheme.colors.border} ${currentTheme.colors.primaryLight}`
@@ -674,7 +674,7 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
                   {techComfortLevels.map((level) => (
                     <button
                       key={level.id}
-                      onClick={() => setFormData({ ...formData, techComfort: level.id })}
+                      onClick={() => setFormData({ ...formData, techComfort: formData.techComfort === level.id ? '' : level.id })}
                       className={`w-full p-4 rounded-lg border transition-all ${
                         formData.techComfort === level.id
                           ? `${currentTheme.colors.border} ${currentTheme.colors.primaryLight}`
@@ -707,7 +707,7 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
                   {timeCommitments.map((time) => (
                     <button
                       key={time.id}
-                      onClick={() => setFormData({ ...formData, timeCommitment: time.id })}
+                      onClick={() => setFormData({ ...formData, timeCommitment: formData.timeCommitment === time.id ? '' : time.id })}
                       className={`w-full p-4 rounded-lg border transition-all ${
                         formData.timeCommitment === time.id
                           ? `${currentTheme.colors.border} ${currentTheme.colors.primaryLight}`
@@ -731,18 +731,22 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
 
         {/* Navigation */}
         <div className="flex justify-between">
-          <button
-            onClick={handlePrevious}
-            disabled={currentStep === 1 || isTransitioning}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
-              currentStep === 1 || isTransitioning
-                ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                : `${currentTheme.colors.cardBackground} ${currentTheme.colors.textSecondary} hover:${currentTheme.colors.textPrimary} border ${currentTheme.colors.border}`
-            }`}
-          >
-            <ChevronLeft className="w-4 h-4" />
-            Previous
-          </button>
+          {currentStep > 1 ? (
+            <button
+              onClick={handlePrevious}
+              disabled={isTransitioning}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
+                isTransitioning
+                  ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                  : `${currentTheme.colors.cardBackground} ${currentTheme.colors.textSecondary} hover:${currentTheme.colors.textPrimary} border ${currentTheme.colors.border}`
+              }`}
+            >
+              <ChevronLeft className="w-4 h-4" />
+              Previous
+            </button>
+          ) : (
+            <div />
+          )}
           
           <button
             onClick={handleNext}
