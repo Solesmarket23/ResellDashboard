@@ -7,7 +7,7 @@ import { generateGmailSearchUrl } from '../lib/utils/orderNumberUtils';
 import { useAuth } from '../lib/contexts/AuthContext';
 import { db } from '../lib/firebase/firebase';
 import { collection, query, where, onSnapshot, doc, getDoc, addDoc, deleteDoc } from 'firebase/firestore';
-import { addDocument, deleteDocument } from '../lib/firebase/firebaseUtils';
+import { addDocument, deleteDocument, updateDocument } from '../lib/firebase/firebaseUtils';
 import { getCommunityAggregates, calculateUserPercentile, contributeFailureData } from '../lib/firebase/communityInsights';
 import { FailedVerification, VerificationStatus } from '../types/failed-verification';
 import { StatusBadge } from './failed-verifications/StatusBadge';
@@ -41,6 +41,8 @@ const FailedVerifications = () => {
   const [isMigrating, setIsMigrating] = useState(false);
   const [selectedVerification, setSelectedVerification] = useState<FailedVerification | null>(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [editingPurchaseOrder, setEditingPurchaseOrder] = useState<{ [key: string]: string }>({});
+  const [savingPurchaseOrder, setSavingPurchaseOrder] = useState<string | null>(null);
   const { currentTheme } = useTheme();
   const { user, loading: authLoading } = useAuth();
   
@@ -181,6 +183,32 @@ const FailedVerifications = () => {
     } catch (error) {
       console.error('❌ Error deleting failed verification:', error);
       alert('Failed to delete verification failure.');
+    }
+  };
+
+  const handleSavePurchaseOrder = async (failureId: string, purchaseOrderNumber: string) => {
+    if (!failureId) return;
+    
+    setSavingPurchaseOrder(failureId);
+    try {
+      console.log('💾 Saving purchase order number:', purchaseOrderNumber);
+      await updateDocument('user_failed_verifications', failureId, {
+        purchaseOrderNumber,
+        lastUpdated: new Date().toISOString()
+      });
+      console.log('✅ Successfully saved purchase order number');
+      
+      // Clear the editing state
+      setEditingPurchaseOrder(prev => {
+        const newState = { ...prev };
+        delete newState[failureId];
+        return newState;
+      });
+    } catch (error) {
+      console.error('❌ Error saving purchase order number:', error);
+      alert('Failed to save purchase order number.');
+    } finally {
+      setSavingPurchaseOrder(null);
     }
   };
 
@@ -1188,7 +1216,12 @@ const FailedVerifications = () => {
                   <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
                     isNeon ? 'text-slate-300' : 'text-gray-500'
                   }`}>
-                    Order Number
+                    Purchase Order Number
+                  </th>
+                  <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
+                    isNeon ? 'text-slate-300' : 'text-gray-500'
+                  }`}>
+                    Sale Order Number
                   </th>
                   <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
                     isNeon ? 'text-slate-300' : 'text-gray-500'
@@ -1235,6 +1268,42 @@ const FailedVerifications = () => {
                     className={`transition-colors duration-200 cursor-pointer ${
                       isNeon ? 'hover:bg-slate-800/50' : 'hover:bg-gray-50'
                     }`}>
+                    <td className="px-6 py-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={editingPurchaseOrder[failure.id!] !== undefined 
+                            ? editingPurchaseOrder[failure.id!] 
+                            : (failure as any).purchaseOrderNumber || ''}
+                          onChange={(e) => {
+                            setEditingPurchaseOrder(prev => ({
+                              ...prev,
+                              [failure.id!]: e.target.value
+                            }));
+                          }}
+                          onBlur={() => {
+                            if (failure.id && editingPurchaseOrder[failure.id] !== undefined) {
+                              handleSavePurchaseOrder(failure.id, editingPurchaseOrder[failure.id]);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && failure.id && editingPurchaseOrder[failure.id] !== undefined) {
+                              handleSavePurchaseOrder(failure.id, editingPurchaseOrder[failure.id]);
+                            }
+                          }}
+                          placeholder="Enter order #"
+                          className={`w-40 px-2 py-1 text-sm rounded-md transition-all ${
+                            isNeon
+                              ? 'bg-slate-800/50 border border-slate-600/50 text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500/50'
+                              : 'bg-white border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50'
+                          } ${savingPurchaseOrder === failure.id ? 'opacity-50' : ''}`}
+                          disabled={savingPurchaseOrder === failure.id}
+                        />
+                        {savingPurchaseOrder === failure.id && (
+                          <RefreshCw className={`w-3 h-3 animate-spin ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
+                        )}
+                      </div>
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <a 
                         href={generateGmailSearchUrl(failure.orderNumber)}

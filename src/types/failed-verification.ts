@@ -41,4 +41,6 @@ export interface FailedVerification {
   refundProcessedAt?: string;
   refundAmount?: number;
   expectedRefundAmount?: number;
+  purchaseOrderNumber?: string;
+  lastUpdated?: string;
 }
