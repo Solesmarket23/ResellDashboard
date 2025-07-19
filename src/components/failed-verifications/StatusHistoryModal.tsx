@@ -192,10 +192,11 @@ export function StatusHistoryModal({ verification, isOpen, onClose, onReset, onU
   const productInfoClasses = isNeon ? 'border-slate-700/50 bg-slate-900/50' : 'border-gray-100 bg-gray-50';
   
   return (
-    <div 
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-      onClick={handleBackdropClick}
-    >
+    <>
+      <div 
+        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+        onClick={handleBackdropClick}
+      >
       <div 
         ref={modalRef}
         className={`rounded-lg max-w-2xl w-full max-h-[80vh] overflow-hidden ${modalClasses}`}
@@ -426,5 +427,70 @@ export function StatusHistoryModal({ verification, isOpen, onClose, onReset, onU
         </div>
       </div>
     </div>
+    {isNeon && (
+      <style jsx global>{`
+        /* Neon theme styles for datetime-local input */
+        input[type="datetime-local"] {
+          color-scheme: dark;
+        }
+        
+        input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+          filter: invert(1);
+          opacity: 0.7;
+          cursor: pointer;
+        }
+        
+        input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+          opacity: 1;
+        }
+        
+        /* Style the datetime input in neon theme */
+        .dark-neon-card input[type="datetime-local"] {
+          background-color: rgb(30 41 59);
+          border: 1px solid rgb(71 85 105);
+          color: white;
+        }
+        
+        .dark-neon-card input[type="datetime-local"]:focus {
+          outline: none;
+          border-color: rgb(6 182 212);
+          box-shadow: 0 0 0 1px rgb(6 182 212 / 0.5);
+        }
+        
+        /* Webkit-specific calendar styling */
+        input[type="datetime-local"]::-webkit-datetime-edit {
+          padding: 0.2em;
+        }
+        
+        input[type="datetime-local"]::-webkit-datetime-edit-fields-wrapper {
+          background: transparent;
+        }
+        
+        input[type="datetime-local"]::-webkit-datetime-edit-text {
+          color: rgb(148 163 184);
+          padding: 0 0.3em;
+        }
+        
+        input[type="datetime-local"]::-webkit-datetime-edit-month-field,
+        input[type="datetime-local"]::-webkit-datetime-edit-day-field,
+        input[type="datetime-local"]::-webkit-datetime-edit-year-field,
+        input[type="datetime-local"]::-webkit-datetime-edit-hour-field,
+        input[type="datetime-local"]::-webkit-datetime-edit-minute-field,
+        input[type="datetime-local"]::-webkit-datetime-edit-ampm-field {
+          color: white;
+        }
+        
+        input[type="datetime-local"]::-webkit-datetime-edit-month-field:focus,
+        input[type="datetime-local"]::-webkit-datetime-edit-day-field:focus,
+        input[type="datetime-local"]::-webkit-datetime-edit-year-field:focus,
+        input[type="datetime-local"]::-webkit-datetime-edit-hour-field:focus,
+        input[type="datetime-local"]::-webkit-datetime-edit-minute-field:focus,
+        input[type="datetime-local"]::-webkit-datetime-edit-ampm-field:focus {
+          background-color: rgb(6 182 212 / 0.2);
+          color: rgb(6 182 212);
+        }
+      `}</style>
+    )}
+    </>
   );
 }
