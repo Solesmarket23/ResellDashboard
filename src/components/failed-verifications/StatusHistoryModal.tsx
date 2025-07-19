@@ -354,16 +354,24 @@ export function StatusHistoryModal({ verification, isOpen, onClose, onReset, onU
                             </div>
                           ) : (
                             <div className="flex items-center gap-2">
-                              <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => handleEditTimestamp(event.fieldName, event.timestamp)}
+                                className={`flex items-center gap-1 rounded px-1 -ml-1 transition-all cursor-pointer ${
+                                  isNeon
+                                    ? 'hover:bg-slate-700/50 hover:text-cyan-400'
+                                    : 'hover:bg-gray-100'
+                                }`}
+                                title="Click to edit date"
+                              >
                                 <Clock className={`w-4 h-4 ${isNeon ? 'text-slate-500' : 'text-gray-400'}`} />
-                                <span className={`text-sm ${isNeon ? 'text-slate-400' : 'text-gray-600'}`}>
+                                <span className={`text-sm underline-offset-2 ${isNeon ? 'text-slate-400 hover:text-cyan-400' : 'text-gray-600 hover:text-gray-900'} hover:underline`}>
                                   {new Date(event.timestamp).toLocaleDateString('en-US', { 
                                     month: 'numeric', 
                                     day: 'numeric', 
                                     year: 'numeric' 
                                   })}
                                 </span>
-                              </div>
+                              </button>
                               <button
                                 onClick={() => handleEditTimestamp(event.fieldName, event.timestamp)}
                                 className={`p-1 rounded transition-colors ${
