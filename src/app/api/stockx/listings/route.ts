@@ -26,7 +26,8 @@ export async function GET(request: NextRequest) {
       const params = new URLSearchParams({
         limit: '100', // Get up to 100 listings per page
         page: pageNum.toString(),
-        sort: 'created_at:desc' // Get newest listings first
+        sort: 'created_at:desc', // Get newest listings first
+        status: 'ACTIVE' // Only get active listings that can be repriced
       });
       
       const url = `https://api.stockx.com/v2/selling/listings?${params}`;
@@ -113,6 +114,15 @@ export async function GET(request: NextRequest) {
           keys: Object.keys(listing),
           listing: listing
         });
+      }
+      
+      // Log status distribution
+      if (index === 0) {
+        const statusCounts = rawListings.reduce((acc: any, l: any) => {
+          acc[l.status || 'UNKNOWN'] = (acc[l.status || 'UNKNOWN'] || 0) + 1;
+          return acc;
+        }, {});
+        console.log('📊 Listing status distribution:', statusCounts);
       }
       
       return {
