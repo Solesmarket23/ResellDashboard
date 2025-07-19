@@ -43,7 +43,7 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
   const [recommendedPlan, setRecommendedPlan] = useState<'enterprise' | 'professional' | 'starter' | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [transitionDirection, setTransitionDirection] = useState<'forward' | 'backward'>('forward');
-  const [boxAnimationStage, setBoxAnimationStage] = useState<'closed' | 'loading' | 'opening' | 'revealing' | 'complete'>('closed');
+  // Removed boxAnimationStage - not needed without animation
   
   const [formData, setFormData] = useState<QuestionnaireData>({
     stockxLevel: '',
@@ -108,9 +108,7 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
         'Custom Integrations'
       ],
       setupTime: '30-45 minutes',
-      description: 'Complete automation suite for serious sellers ready to scale.',
-      boxStyle: 'bg-gradient-to-br from-gray-900 to-black border-2 border-yellow-500/30',
-      accentColor: 'from-yellow-400 to-yellow-600'
+      description: 'Complete automation suite for serious sellers ready to scale.'
     },
     professional: {
       name: 'Professional',
@@ -124,9 +122,7 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
         'StockX API Integration'
       ],
       setupTime: '5-15 minutes',
-      description: 'Great balance of automation and advanced features for experienced sellers.',
-      boxStyle: 'bg-gradient-to-br from-orange-900 to-black border-2 border-orange-500/30',
-      accentColor: 'from-orange-400 to-orange-600'
+      description: 'Great balance of automation and advanced features for experienced sellers.'
     },
     starter: {
       name: 'Starter',
@@ -139,9 +135,7 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
         'Email Support'
       ],
       setupTime: '2-5 minutes',
-      description: 'Perfect for getting started quickly with essential features.',
-      boxStyle: 'bg-gradient-to-br from-gray-800 to-gray-900 border-2 border-gray-600/30',
-      accentColor: 'from-gray-400 to-gray-600'
+      description: 'Perfect for getting started quickly with essential features.'
     }
   };
 
@@ -218,21 +212,6 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
       setRecommendedPlan(recommendation);
       setShowRecommendation(true);
       
-      // Start box animation sequence
-      setBoxAnimationStage('loading');
-      
-      setTimeout(() => {
-        setBoxAnimationStage('opening');
-      }, 2000);
-      
-      setTimeout(() => {
-        setBoxAnimationStage('revealing');
-      }, 2800);
-      
-      setTimeout(() => {
-        setBoxAnimationStage('complete');
-      }, 3400);
-      
       // Save questionnaire data if user is authenticated
       if (user) {
         saveQuestionnaireData();
@@ -282,7 +261,7 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
     setCurrentStep(1);
     setShowRecommendation(false);
     setRecommendedPlan(null);
-    setBoxAnimationStage('closed');
+    // Reset state
     setFormData({
       stockxLevel: '',
       monthlyVolume: 25,
@@ -293,183 +272,70 @@ const OnboardingQuestionnaire: React.FC<OnboardingQuestionnaireProps> = ({ onCom
     });
   };
 
-  // Shoe box unboxing animation
+  // Recommendation display
   if (showRecommendation && recommendedPlan) {
     const plan = plans[recommendedPlan];
     const PlanIcon = plan.icon;
 
     return (
-      <div className={`min-h-screen ${currentTheme.colors.background} flex items-center justify-center p-6 overflow-hidden`}>
-        <div className="relative w-full max-w-4xl">
-          {/* Confetti particles */}
-          {boxAnimationStage === 'complete' && (
-            <div className="absolute inset-0 pointer-events-none">
-              {[...Array(20)].map((_, i) => (
-                <div
-                  key={i}
-                  className="absolute animate-float-particle"
-                  style={{
-                    left: `${Math.random() * 100}%`,
-                    top: `${Math.random() * 100}%`,
-                    animationDelay: `${Math.random() * 2}s`,
-                    animationDuration: `${3 + Math.random() * 2}s`
-                  }}
-                >
-                  <div className={`w-2 h-2 ${i % 3 === 0 ? 'bg-cyan-400' : i % 3 === 1 ? 'bg-emerald-400' : 'bg-yellow-400'} rounded-full opacity-60`} />
-                </div>
-              ))}
+      <div className={`min-h-screen ${currentTheme.colors.background} flex items-center justify-center p-6`}>
+        <div className={`max-w-4xl w-full ${currentTheme.colors.cardBackground} backdrop-blur-sm rounded-2xl p-8 border ${currentTheme.colors.border}`}>
+          {/* Header */}
+          <div className="text-center mb-8">
+            <div className={`inline-flex items-center justify-center w-20 h-20 ${currentTheme.colors.primary} rounded-full mb-4`}>
+              <PlanIcon className="w-10 h-10 text-white" />
             </div>
-          )}
+            <h2 className={`text-3xl font-bold ${currentTheme.colors.textPrimary} mb-2`}>Perfect Match!</h2>
+            <p className={`${currentTheme.colors.textSecondary}`}>
+              Based on your answers, we recommend starting your 14-day free trial with the {recommendedPlan === 'enterprise' ? 'Enterprise' : recommendedPlan === 'professional' ? 'Professional' : 'Starter'} Plan. You can always switch plans during or after your trial!
+            </p>
+          </div>
 
-          {/* Main content */}
-          <div className="relative z-10">
-            {/* Loading text */}
-            {boxAnimationStage === 'loading' && (
-              <div className="text-center mb-8 animate-fade-in">
-                <p className={`text-2xl font-medium ${currentTheme.colors.textPrimary} mb-2`}>
-                  Curating your perfect plan
-                </p>
-                <div className="flex justify-center gap-2">
-                  <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                </div>
+          {/* Plan Details */}
+          <div className="grid md:grid-cols-2 gap-8 mb-8">
+            {/* Left Column - Plan Info */}
+            <div>
+              <h3 className={`text-2xl font-bold ${currentTheme.colors.textPrimary} mb-2`}>{plan.name}</h3>
+              <p className={`text-3xl font-bold ${currentTheme.colors.accent} mb-4`}>{plan.price}</p>
+              <p className={`${currentTheme.colors.textSecondary} mb-4`}>{plan.description}</p>
+              <div className={`flex items-center gap-2 ${currentTheme.colors.textSecondary}`}>
+                <span className="text-sm">Setup time:</span>
+                <span className="text-sm font-medium">{plan.setupTime}</span>
               </div>
-            )}
-
-            {/* Shoe box */}
-            <div className="relative mx-auto w-80 h-96 perspective-1000">
-              {/* Box bottom */}
-              <div className={`absolute inset-0 ${plan.boxStyle} rounded-xl shadow-2xl transform-gpu transition-all duration-1000 ${
-                boxAnimationStage !== 'closed' ? 'shadow-cyan-500/20' : ''
-              }`}>
-                {/* Inner glow effect */}
-                {(boxAnimationStage === 'opening' || boxAnimationStage === 'revealing' || boxAnimationStage === 'complete') && (
-                  <div className="absolute inset-0 bg-gradient-to-t from-transparent via-cyan-400/10 to-cyan-400/20 rounded-xl animate-pulse" />
-                )}
-              </div>
-
-              {/* Box lid */}
-              <div className={`absolute inset-x-0 top-0 h-24 ${plan.boxStyle} rounded-t-xl shadow-xl transform-gpu transition-all duration-800 origin-top ${
-                boxAnimationStage === 'opening' || boxAnimationStage === 'revealing' || boxAnimationStage === 'complete' 
-                  ? '-rotate-x-90 -translate-y-4' 
-                  : ''
-              }`} style={{ transformStyle: 'preserve-3d' }}>
-                <div className="absolute inset-0 rounded-t-xl bg-gradient-to-b from-white/10 to-transparent" />
-              </div>
-
-              {/* Plan reveal */}
-              {(boxAnimationStage === 'revealing' || boxAnimationStage === 'complete') && (
-                <div className={`absolute inset-x-8 bottom-12 transform transition-all duration-600 ${
-                  boxAnimationStage === 'complete' ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
-                }`}>
-                  <div className={`${currentTheme.colors.cardBackground} backdrop-blur-sm rounded-2xl p-6 border ${currentTheme.colors.border} shadow-2xl`}>
-                    <div className="text-center">
-                      <div className={`inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r ${plan.accentColor} rounded-full mb-4`}>
-                        <PlanIcon className="w-8 h-8 text-white" />
-                      </div>
-                      <h3 className={`text-2xl font-bold ${currentTheme.colors.textPrimary} mb-1`}>{plan.name}</h3>
-                      <p className={`text-3xl font-bold bg-gradient-to-r ${plan.accentColor} bg-clip-text text-transparent mb-3`}>
-                        {plan.price}
-                      </p>
-                      <p className={`text-sm ${currentTheme.colors.textSecondary}`}>{plan.description}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
 
-            {/* Features and actions */}
-            {boxAnimationStage === 'complete' && (
-              <div className="mt-12 animate-fade-in-up">
-                {/* Features */}
-                <div className="grid md:grid-cols-2 gap-4 mb-8 max-w-2xl mx-auto">
-                  {plan.features.map((feature, index) => (
-                    <div key={index} className="flex items-center gap-2 animate-fade-in-up" style={{ animationDelay: `${index * 50}ms` }}>
-                      <Check className={`w-5 h-5 text-cyan-400 flex-shrink-0`} />
-                      <span className={`${currentTheme.colors.textSecondary}`}>{feature}</span>
-                    </div>
-                  ))}
-                </div>
+            {/* Right Column - Features */}
+            <div>
+              <h4 className={`font-semibold ${currentTheme.colors.textPrimary} mb-4`}>Features included:</h4>
+              <ul className="space-y-2">
+                {plan.features.map((feature, index) => (
+                  <li key={index} className="flex items-start gap-2">
+                    <Check className={`w-5 h-5 ${currentTheme.colors.accent} flex-shrink-0 mt-0.5`} />
+                    <span className={`${currentTheme.colors.textSecondary}`}>{feature}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
 
-                {/* Action buttons */}
-                <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                  <button
-                    onClick={() => onComplete?.()}
-                    className={`px-6 py-3 bg-gradient-to-r ${plan.accentColor} hover:opacity-90 text-white rounded-lg font-medium transition-all flex items-center justify-center gap-2 transform hover:scale-105`}
-                  >
-                    Start 14-Day Free Trial of {plan.name}
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={restartQuestionnaire}
-                    className={`px-6 py-3 ${currentTheme.colors.cardBackground} ${currentTheme.colors.textSecondary} hover:${currentTheme.colors.textPrimary} border ${currentTheme.colors.border} rounded-lg font-medium transition-all flex items-center justify-center gap-2`}
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    Retake Quiz
-                  </button>
-                </div>
-              </div>
-            )}
+          {/* Action Buttons */}
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <button
+              onClick={() => onComplete?.()}
+              className={`px-6 py-3 ${currentTheme.colors.primary} ${currentTheme.colors.primaryHover} text-white rounded-lg font-medium transition-all flex items-center justify-center gap-2`}
+            >
+              Start 14-Day Free Trial of {plan.name}
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            <button
+              onClick={restartQuestionnaire}
+              className={`px-6 py-3 ${currentTheme.colors.cardBackground} ${currentTheme.colors.textSecondary} hover:${currentTheme.colors.textPrimary} border ${currentTheme.colors.border} rounded-lg font-medium transition-all flex items-center justify-center gap-2`}
+            >
+              <RefreshCw className="w-4 h-4" />
+              Retake Quiz
+            </button>
           </div>
         </div>
-
-        <style jsx>{`
-          @keyframes float-particle {
-            0% {
-              transform: translateY(0) translateX(0) scale(0);
-              opacity: 0;
-            }
-            10% {
-              opacity: 0.6;
-              transform: scale(1);
-            }
-            100% {
-              transform: translateY(-100px) translateX(${Math.random() > 0.5 ? '' : '-'}${Math.random() * 50}px) scale(0.5);
-              opacity: 0;
-            }
-          }
-          
-          @keyframes fade-in {
-            from {
-              opacity: 0;
-            }
-            to {
-              opacity: 1;
-            }
-          }
-          
-          @keyframes fade-in-up {
-            from {
-              opacity: 0;
-              transform: translateY(20px);
-            }
-            to {
-              opacity: 1;
-              transform: translateY(0);
-            }
-          }
-          
-          .animate-float-particle {
-            animation: float-particle 3s ease-out infinite;
-          }
-          
-          .animate-fade-in {
-            animation: fade-in 0.5s ease-out;
-          }
-          
-          .animate-fade-in-up {
-            animation: fade-in-up 0.5s ease-out;
-          }
-          
-          .perspective-1000 {
-            perspective: 1000px;
-          }
-          
-          .-rotate-x-90 {
-            transform: rotateX(-90deg);
-          }
-        `}</style>
       </div>
     );
   }
