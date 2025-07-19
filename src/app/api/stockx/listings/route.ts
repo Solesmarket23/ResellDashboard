@@ -155,8 +155,14 @@ export async function GET(request: NextRequest) {
           hasAsk: !!listing.ask,
           askKeys: listing.ask ? Object.keys(listing.ask) : [],
           askExpiresAt: listing.ask?.askExpiresAt,
+          reason: listing.reason,
           listing: listing
         });
+      }
+      
+      // Log any listings with 'Ask expired' reason
+      if (listing.reason === 'Ask expired') {
+        console.log(`🚨 Found expired listing in raw data: ${listing.product?.title} - Reason: ${listing.reason}`);
       }
       
       return {
@@ -189,9 +195,23 @@ export async function GET(request: NextRequest) {
       };
     });
     
+    // IMMEDIATE FILTER: Remove any listings with 'Ask expired' reason
+    console.log(`\n🔍 Before filtering expired: ${transformedListings.length} listings`);
+    const nonExpiredListings = transformedListings.filter((listing: any) => {
+      if (listing.reason === 'Ask expired') {
+        console.log(`❌ Removing expired: ${listing.productName} - Size ${listing.size}`);
+        return false;
+      }
+      return true;
+    });
+    console.log(`✅ After filtering expired: ${nonExpiredListings.length} listings`);
+    
+    // Use the filtered list for further processing
+    const listingsToProcess = nonExpiredListings;
+    
     // Strict filtering for truly active listings that can be repriced
     let filteredListingsAnalysis: any[] = [];
-    const activeListings = transformedListings.filter((listing: any, index: number) => {
+    const activeListings = listingsToProcess.filter((listing: any, index: number) => {
       const status = listing.status?.toUpperCase();
       
       // Find the corresponding raw listing by ID
@@ -257,8 +277,8 @@ export async function GET(request: NextRequest) {
       return isActive;
     });
     
-    console.log(`🎯 Strict filtering: ${activeListings.length} truly active listings (from ${transformedListings.length} total)`);
-    console.log(`📊 Filtered out: ${transformedListings.length - activeListings.length} listings`);
+    console.log(`🎯 Strict filtering: ${activeListings.length} truly active listings (from ${listingsToProcess.length} total)`);
+    console.log(`📊 Filtered out: ${listingsToProcess.length - activeListings.length} listings`);
     
     // Double-check our math
     console.log('\n📐 Filtering Math Check:');
@@ -303,7 +323,7 @@ export async function GET(request: NextRequest) {
     }
     
     // Log status breakdown
-    const statusBreakdown = transformedListings.reduce((acc: any, listing: any) => {
+    const statusBreakdown = listingsToProcess.reduce((acc: any, listing: any) => {
       const status = listing.status || 'NO_STATUS';
       acc[status] = (acc[status] || 0) + 1;
       return acc;
