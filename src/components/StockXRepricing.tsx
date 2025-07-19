@@ -662,7 +662,6 @@ export default function StockXRepricing() {
               placeholder="your@email.com"
               className="w-full p-2 border rounded-md"
             />
-          </div>
         </div>
       </div>
 
