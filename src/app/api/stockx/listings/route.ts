@@ -181,6 +181,7 @@ export async function GET(request: NextRequest) {
     });
     
     // Strict filtering for truly active listings that can be repriced
+    let filteredListingsAnalysis: any[] = [];
     const activeListings = transformedListings.filter((listing: any, index: number) => {
       const status = listing.status?.toUpperCase();
       
@@ -200,17 +201,34 @@ export async function GET(request: NextRequest) {
       
       const isActive = hasActiveStatus && hasNoOrder && hasAsk && notExpired;
       
-      if (!isActive && index < 5) {
-        console.log(`🚫 Filtering out listing:`, {
+      if (!isActive) {
+        const reason = !hasActiveStatus ? 'Not ACTIVE status' :
+                      !hasNoOrder ? 'Has order (MATCHED)' :
+                      !hasAsk ? 'No ask price' :
+                      !notExpired ? 'Ask expired' : 'Unknown';
+        
+        if (index < 5) {
+          console.log(`🚫 Filtering out listing:`, {
+            productName: listing.productName,
+            status: listing.status,
+            hasOrder: !hasNoOrder,
+            hasAsk: hasAsk,
+            expired: !notExpired,
+            reason: reason
+          });
+        }
+        
+        // Track filtered listings for analysis
+        if (!filteredListingsAnalysis) {
+          filteredListingsAnalysis = [];
+        }
+        filteredListingsAnalysis.push({
           productName: listing.productName,
+          size: listing.size,
           status: listing.status,
-          hasOrder: !hasNoOrder,
-          hasAsk: hasAsk,
-          expired: !notExpired,
-          reason: !hasActiveStatus ? 'Not ACTIVE status' :
-                 !hasNoOrder ? 'Has order (MATCHED)' :
-                 !hasAsk ? 'No ask price' :
-                 !notExpired ? 'Ask expired' : 'Unknown'
+          reason: reason,
+          order: rawListing?.order,
+          inventoryType: rawListing?.inventoryType
         });
       }
       
@@ -336,6 +354,51 @@ export async function GET(request: NextRequest) {
       console.log('\n✅ No true duplicates found - all listings appear to be legitimate variations');
     }
 
+    // Add debug information to response
+    const debugInfo = {
+      apiResponse: {
+        totalFromAPI: rawListings.length,
+        paginationCount: data.count,
+        statusBreakdown: statusCounts,
+        listingsWithOrders,
+        expiredListings: expiredListings.length
+      },
+      filtering: {
+        afterStatusFilter: transformedListings.length,
+        afterStrictFilter: activeListings.length,
+        removedByStrictFilter: transformedListings.length - activeListings.length,
+        afterDuplicateRemoval: deduplicatedListings.length,
+        trueDuplicatesRemoved: duplicateListingIds.length
+      },
+      discrepancy: {
+        expected: 51, // Your actual count
+        showing: deduplicatedListings.length,
+        difference: deduplicatedListings.length - 51,
+        possibleReasons: []
+      }
+    };
+
+    // Analyze discrepancy
+    if (deduplicatedListings.length > 51) {
+      if (listingsWithOrders > 0) {
+        debugInfo.discrepancy.possibleReasons.push(`${listingsWithOrders} listings have orders (MATCHED)`);
+      }
+      if (expiredListings.length > 0) {
+        debugInfo.discrepancy.possibleReasons.push(`${expiredListings.length} listings have expired asks`);
+      }
+      
+      // Check inventory types
+      const inventoryTypes: { [key: string]: number } = {};
+      rawListings.forEach((listing: any) => {
+        const type = listing.inventoryType || 'STANDARD';
+        inventoryTypes[type] = (inventoryTypes[type] || 0) + 1;
+      });
+      debugInfo.discrepancy.inventoryTypes = inventoryTypes;
+      
+      // Add first 5 filtered listings to debug info
+      debugInfo.discrepancy.filteredListings = filteredListingsAnalysis.slice(0, 5);
+    }
+
     const successResponse = NextResponse.json({
       success: true,
       listings: deduplicatedListings,
@@ -355,6 +418,7 @@ export async function GET(request: NextRequest) {
         !duplicateListingIds.includes(t.listingId)
       ).length, // Count without test listings (excluding removed duplicates)
       testListingCount: testListings.length,
+      debugInfo, // Include debug info for client
       timestamp: new Date().toISOString()
     });
 

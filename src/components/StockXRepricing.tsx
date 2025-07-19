@@ -113,6 +113,22 @@ export default function StockXRepricing() {
       
       const data = await response.json();
       
+      // Log debug information to browser console
+      if (data.debugInfo) {
+        console.log('🔍 === StockX Listing Debug Info ===');
+        console.log('API Response:', data.debugInfo.apiResponse);
+        console.log('Filtering Steps:', data.debugInfo.filtering);
+        console.log('Discrepancy Analysis:', data.debugInfo.discrepancy);
+        
+        if (data.debugInfo.discrepancy.difference !== 0) {
+          console.warn(`⚠️ Showing ${data.debugInfo.discrepancy.showing} listings but expected ${data.debugInfo.discrepancy.expected}`);
+          console.warn('Possible reasons:', data.debugInfo.discrepancy.possibleReasons);
+          if (data.debugInfo.discrepancy.inventoryTypes) {
+            console.log('Inventory Types:', data.debugInfo.discrepancy.inventoryTypes);
+          }
+        }
+      }
+      
       if (data.success && data.listings && Array.isArray(data.listings)) {
         setAuthenticated(true); // User is authenticated if we got listings
         const enrichedListings = data.listings.map((listing: any) => ({
@@ -470,19 +486,30 @@ export default function StockXRepricing() {
               </span>
             )}
           </h3>
-          {listingStats.investigation && (
-            <div className={`text-sm px-3 py-1 rounded-full flex items-center gap-2 ${
-              listingStats.trueDuplicatesRemoved && listingStats.trueDuplicatesRemoved > 0
-                ? isNeon 
-                  ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' 
-                  : 'bg-yellow-100 text-yellow-800 border border-yellow-300'
-                : isNeon
-                  ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                  : 'bg-green-100 text-green-800 border border-green-300'
-            }`} title={`${listingStats.investigation.productSizeGroupsWithMultiples} product-size combos have multiple listings`}>
-              {listingStats.investigation.message}
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {listingStats.investigation && (
+              <div className={`text-sm px-3 py-1 rounded-full flex items-center gap-2 ${
+                listingStats.trueDuplicatesRemoved && listingStats.trueDuplicatesRemoved > 0
+                  ? isNeon 
+                    ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' 
+                    : 'bg-yellow-100 text-yellow-800 border border-yellow-300'
+                  : isNeon
+                    ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                    : 'bg-green-100 text-green-800 border border-green-300'
+              }`} title={`${listingStats.investigation.productSizeGroupsWithMultiples} product-size combos have multiple listings`}>
+                {listingStats.investigation.message}
+              </div>
+            )}
+            {listings.length !== 51 && (
+              <div className={`text-sm px-3 py-1 rounded-full ${
+                isNeon 
+                  ? 'bg-red-500/20 text-red-400 border border-red-500/30' 
+                  : 'bg-red-100 text-red-800 border border-red-300'
+              }`} title="Check browser console for debug info">
+                ⚠️ Expected 51, showing {listings.length}
+              </div>
+            )}
+          </div>
         </div>
 
         {listings.length === 0 ? (
