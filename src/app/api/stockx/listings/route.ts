@@ -24,9 +24,8 @@ export async function GET(request: NextRequest) {
     // Function to fetch a page of listings
     const fetchPage = async (pageNum: number, token: string) => {
       const params = new URLSearchParams({
-        limit: '200', // Get up to 200 listings per page
-        page: pageNum.toString(),
-        sort: 'created_at:desc', // Get newest listings first
+        pageSize: '100', // Use pageSize instead of limit per API docs
+        pageNumber: pageNum.toString(), // Use pageNumber instead of page
         listingStatuses: 'ACTIVE' // Only get active listings that can be repriced
       });
       
@@ -99,16 +98,38 @@ export async function GET(request: NextRequest) {
     console.log('✅ Listings response:', {
       hasListings: !!data.listings,
       dataKeys: Object.keys(data),
+      count: data.count,
+      pageSize: data.pageSize,
+      pageNumber: data.pageNumber,
+      hasNextPage: data.hasNextPage,
       firstListing: data.listings?.[0]
     });
 
     // StockX API returns listings in a 'listings' array
     const rawListings = data.listings || data.data || [];
-    console.log(`📦 Found ${rawListings.length} listings`);
+    console.log(`📦 Found ${rawListings.length} listings from API`);
+    console.log(`📊 Total count reported by API: ${data.count}`);
     
-    // Log all unique statuses found
-    const uniqueStatuses = [...new Set(rawListings.map((l: any) => l.status || 'NO_STATUS'))];
-    console.log('🏷️ Unique statuses in response:', uniqueStatuses);
+    // Count by status BEFORE any filtering
+    const statusCounts: { [key: string]: number } = {};
+    rawListings.forEach((listing: any) => {
+      const status = listing.status || 'NO_STATUS';
+      statusCounts[status] = (statusCounts[status] || 0) + 1;
+    });
+    console.log('🏷️ Status breakdown from API:', statusCounts);
+    
+    // Check for listings with orders (MATCHED status)
+    const listingsWithOrders = rawListings.filter((l: any) => l.order);
+    console.log(`📦 Listings with orders (likely MATCHED): ${listingsWithOrders.length}`);
+    
+    // Check for expired asks
+    const expiredListings = rawListings.filter((l: any) => {
+      if (l.ask?.askExpiresAt) {
+        return new Date(l.ask.askExpiresAt) < new Date();
+      }
+      return false;
+    });
+    console.log(`⏰ Listings with expired asks: ${expiredListings.length}`);
 
     // Transform the data to match our component's expectations
     const transformedListings = rawListings.map((listing: any, index: number) => {
@@ -159,17 +180,45 @@ export async function GET(request: NextRequest) {
       };
     });
     
-    // Filter to only include ACTIVE listings
-    const activeListings = transformedListings.filter((listing: any) => {
+    // Strict filtering for truly active listings that can be repriced
+    const activeListings = transformedListings.filter((listing: any, index: number) => {
       const status = listing.status?.toUpperCase();
-      const isActive = status === 'ACTIVE';
-      if (!isActive && transformedListings.length <= 10) {
-        console.log(`Filtering out listing with status: ${listing.status} - ${listing.productName}`);
+      
+      // Check if listing has the raw data we need
+      const rawListing = rawListings[index];
+      
+      // Criteria for a truly active listing:
+      // 1. Status must be ACTIVE
+      // 2. No associated order (not MATCHED)
+      // 3. Has an active ask
+      // 4. Ask is not expired (if expiration date exists)
+      const hasActiveStatus = status === 'ACTIVE';
+      const hasNoOrder = !rawListing?.order;
+      const hasAsk = !!rawListing?.ask;
+      const notExpired = !rawListing?.ask?.askExpiresAt || 
+                        new Date(rawListing.ask.askExpiresAt) > new Date();
+      
+      const isActive = hasActiveStatus && hasNoOrder && hasAsk && notExpired;
+      
+      if (!isActive && index < 5) {
+        console.log(`🚫 Filtering out listing:`, {
+          productName: listing.productName,
+          status: listing.status,
+          hasOrder: !hasNoOrder,
+          hasAsk: hasAsk,
+          expired: !notExpired,
+          reason: !hasActiveStatus ? 'Not ACTIVE status' :
+                 !hasNoOrder ? 'Has order (MATCHED)' :
+                 !hasAsk ? 'No ask price' :
+                 !notExpired ? 'Ask expired' : 'Unknown'
+        });
       }
+      
       return isActive;
     });
     
-    console.log(`🎯 Filtered to ${activeListings.length} ACTIVE listings (from ${transformedListings.length} total)`);
+    console.log(`🎯 Strict filtering: ${activeListings.length} truly active listings (from ${transformedListings.length} total)`);
+    console.log(`📊 Filtered out: ${transformedListings.length - activeListings.length} listings`);
     
     // Log status breakdown
     const statusBreakdown = transformedListings.reduce((acc: any, listing: any) => {
