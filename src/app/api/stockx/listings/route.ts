@@ -105,6 +105,10 @@ export async function GET(request: NextRequest) {
     // StockX API returns listings in a 'listings' array
     const rawListings = data.listings || data.data || [];
     console.log(`📦 Found ${rawListings.length} listings`);
+    
+    // Log all unique statuses found
+    const uniqueStatuses = [...new Set(rawListings.map((l: any) => l.status || 'NO_STATUS'))];
+    console.log('🏷️ Unique statuses in response:', uniqueStatuses);
 
     // Transform the data to match our component's expectations
     const transformedListings = rawListings.map((listing: any, index: number) => {
@@ -147,11 +151,18 @@ export async function GET(request: NextRequest) {
         listingUuid: listing.uuid || listing.listingUuid
       };
     });
+    
+    // Filter to only include ACTIVE listings
+    const activeListings = transformedListings.filter((listing: any) => 
+      listing.status === 'ACTIVE' || listing.status === 'active'
+    );
+    
+    console.log(`🎯 Filtered to ${activeListings.length} ACTIVE listings (from ${transformedListings.length} total)`);
 
     const successResponse = NextResponse.json({
       success: true,
-      listings: transformedListings,
-      totalCount: transformedListings.length,
+      listings: activeListings,
+      totalCount: activeListings.length,
       timestamp: new Date().toISOString()
     });
 
