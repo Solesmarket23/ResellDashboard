@@ -118,7 +118,28 @@ export default function StockXRepricing() {
         console.log('🔍 === StockX Listing Debug Info ===');
         console.log('API Response:', data.debugInfo.apiResponse);
         console.log('Filtering Steps:', data.debugInfo.filtering);
-        console.log('Discrepancy Analysis:', data.debugInfo.discrepancy);
+        
+        // Log filtering math check
+        if (data.debugInfo.filtering.mathCheck) {
+          console.log('\n📐 Filtering Math Check:');
+          console.log(`  Total from API: ${data.debugInfo.filtering.mathCheck.totalFromAPI}`);
+          console.log(`  - Expired listings: ${data.debugInfo.filtering.mathCheck.expiredListings}`);
+          console.log(`  - With orders: ${data.debugInfo.filtering.mathCheck.listingsWithOrders}`);
+          console.log(`  = Should have: ${data.debugInfo.filtering.mathCheck.calculated}`);
+          console.log(`  Actually have: ${data.debugInfo.filtering.mathCheck.actual}`);
+        }
+        
+        // Log suspicious listings
+        if (data.debugInfo.filtering.suspiciousListings && data.debugInfo.filtering.suspiciousListings.length > 0) {
+          console.log('\n🚨 Suspicious Listings (expired but showing):');
+          data.debugInfo.filtering.suspiciousListings.forEach((listing: any, index: number) => {
+            console.log(`  ${index + 1}. ${listing.productName} - Size ${listing.size}`);
+            console.log(`     Expired: ${listing.expiredAt}`);
+            console.log(`     Current: ${listing.currentTime}`);
+          });
+        }
+        
+        console.log('\nDiscrepancy Analysis:', data.debugInfo.discrepancy);
         
         if (data.debugInfo.discrepancy.difference !== 0) {
           console.warn(`⚠️ Showing ${data.debugInfo.discrepancy.showing} listings but expected ${data.debugInfo.discrepancy.expected}`);

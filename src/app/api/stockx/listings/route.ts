@@ -412,6 +412,40 @@ export async function GET(request: NextRequest) {
       console.log('\n✅ No true duplicates found - all listings appear to be legitimate variations');
     }
 
+    // Capture filtering details for client
+    const filteringDetails = {
+      mathCheck: {
+        totalFromAPI: rawListings.length,
+        expiredListings: expiredListings.length,
+        listingsWithOrders: listingsWithOrders.length,
+        calculated: rawListings.length - expiredListings.length - listingsWithOrders.length,
+        actual: activeListings.length
+      },
+      suspiciousListings: [] as any[]
+    };
+
+    // If discrepancy, find suspicious listings
+    if (activeListings.length !== 51) {
+      activeListings.forEach((listing: any) => {
+        const rawListing = rawListings.find((r: any) => 
+          (r.id || r.listingId) === (listing.listingId || listing.listingUuid)
+        );
+        
+        if (rawListing?.ask?.askExpiresAt) {
+          const expirationDate = new Date(rawListing.ask.askExpiresAt);
+          const now = new Date();
+          if (expirationDate <= now) {
+            filteringDetails.suspiciousListings.push({
+              productName: listing.productName,
+              size: listing.size,
+              expiredAt: expirationDate.toISOString(),
+              currentTime: now.toISOString()
+            });
+          }
+        }
+      });
+    }
+
     // Add debug information to response
     const debugInfo = {
       apiResponse: {
@@ -426,7 +460,9 @@ export async function GET(request: NextRequest) {
         afterStrictFilter: activeListings.length,
         removedByStrictFilter: transformedListings.length - activeListings.length,
         afterDuplicateRemoval: deduplicatedListings.length,
-        trueDuplicatesRemoved: duplicateListingIds.length
+        trueDuplicatesRemoved: duplicateListingIds.length,
+        mathCheck: filteringDetails.mathCheck,
+        suspiciousListings: filteringDetails.suspiciousListings
       },
       discrepancy: {
         expected: 51, // Your actual count
