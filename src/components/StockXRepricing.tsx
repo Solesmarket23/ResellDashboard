@@ -953,5 +953,6 @@ export default function StockXRepricing() {
         </div>
       )}
     </div>
+    </div>
   );
 } 
