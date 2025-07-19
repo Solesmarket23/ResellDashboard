@@ -348,7 +348,11 @@ export function StatusHistoryModal({ verification, isOpen, onClose, onReset, onU
                               <div className="flex items-center gap-1">
                                 <Clock className={`w-4 h-4 ${isNeon ? 'text-slate-500' : 'text-gray-400'}`} />
                                 <span className={`text-sm ${isNeon ? 'text-slate-400' : 'text-gray-600'}`}>
-                                  {new Date(event.timestamp).toLocaleString()}
+                                  {new Date(event.timestamp).toLocaleDateString('en-US', { 
+                                    month: 'numeric', 
+                                    day: 'numeric', 
+                                    year: 'numeric' 
+                                  })}
                                 </span>
                               </div>
                               <button
