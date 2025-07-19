@@ -85,6 +85,7 @@ export default function StockXRepricing() {
       message: string;
     };
   }>({});
+  const [lastFetchTime, setLastFetchTime] = useState<Date | null>(null);
 
   useEffect(() => {
     // Check if we're returning from authentication
@@ -100,8 +101,19 @@ export default function StockXRepricing() {
   const fetchListings = async () => {
     setLoading(true);
     setAuthError(false);
+    // Clear existing listings before fetching
+    setListings([]);
+    setListingStats({});
+    
     try {
-      const response = await fetch('/api/stockx/listings');
+      // Add cache-busting timestamp to ensure fresh data
+      const response = await fetch(`/api/stockx/listings?t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
       
       // Check if authentication failed
       if (response.status === 401 || response.status === 403) {
@@ -117,6 +129,7 @@ export default function StockXRepricing() {
       console.log('📦 Raw API Response:', data);
       console.log('📊 Listings count:', data.listings?.length);
       console.log('🔍 Has debugInfo?', !!data.debugInfo);
+      console.log('⏰ Fetched at:', new Date().toISOString());
       
       // Log debug information to browser console
       if (data.debugInfo) {
@@ -162,6 +175,7 @@ export default function StockXRepricing() {
           selected: false
         }));
         setListings(enrichedListings);
+        setLastFetchTime(new Date());
         
         // Store listing stats if available
         if (data.rawCount !== undefined || data.trueDuplicatesRemoved !== undefined || data.investigation) {
@@ -524,6 +538,11 @@ export default function StockXRepricing() {
                     : 'bg-green-100 text-green-800 border border-green-300'
               }`} title={`${listingStats.investigation.productSizeGroupsWithMultiples} product-size combos have multiple listings`}>
                 {listingStats.investigation.message}
+              </div>
+            )}
+            {lastFetchTime && (
+              <div className={`text-xs ${isNeon ? 'text-gray-500' : 'text-gray-400'}`}>
+                Last updated: {lastFetchTime.toLocaleTimeString()}
               </div>
             )}
             {listings.length !== 51 && (
