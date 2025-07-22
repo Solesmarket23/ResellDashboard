@@ -103,6 +103,8 @@ export default function StockXRepricing() {
   }>({});
   const [lastFetchTime, setLastFetchTime] = useState<Date | null>(null);
   const [lastMarketRefreshTime, setLastMarketRefreshTime] = useState<Date | null>(null);
+  const [refreshProgress, setRefreshProgress] = useState<{ current: number; total: number } | null>(null);
+  const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
   
   // Pagination calculations - moved here so they're available for all functions
   const totalPages = Math.ceil(listings.length / itemsPerPage);
@@ -131,22 +133,22 @@ export default function StockXRepricing() {
     fetchListings();
   }, []);
 
-  // Auto-refresh market prices every 15 minutes
+  // Auto-refresh ALL market prices every 15 minutes
   useEffect(() => {
     // Only run if we have listings
-    if (paginatedListings.length === 0) return;
+    if (listings.length === 0) return;
 
-    console.log('🔄 Starting auto-refresh timer for market prices (15 min intervals)');
+    console.log('🔄 Starting auto-refresh timer for ALL market prices (15 min intervals)');
     
-    // Refresh immediately on mount if listings exist
+    // Refresh all listings immediately on mount if listings exist
     const timer = setTimeout(() => {
-      refreshMarketPrices();
-    }, 2000); // Small delay to ensure listings are loaded
+      refreshAllMarketPrices();
+    }, 3000); // Small delay to ensure listings are loaded
 
-    // Set up interval for periodic refresh
+    // Set up interval for periodic refresh of ALL listings
     const interval = setInterval(() => {
-      console.log('⏰ Auto-refreshing market prices...');
-      refreshMarketPrices();
+      console.log('⏰ Auto-refreshing ALL market prices...');
+      refreshAllMarketPrices();
     }, 15 * 60 * 1000); // 15 minutes
 
     // Cleanup
@@ -155,7 +157,7 @@ export default function StockXRepricing() {
       clearInterval(interval);
       console.log('🛑 Stopped auto-refresh timer');
     };
-  }, [paginatedListings.length, currentPage, refreshMarketPrices]); // Re-run when page changes or listings update
+  }, [listings.length, refreshAllMarketPrices]); // Re-run when listings change
 
   const fetchListings = async (forceReload = false) => {
     console.log(`🔄 Fetching listings... (forceReload: ${forceReload})`);
@@ -384,7 +386,6 @@ export default function StockXRepricing() {
     if (listingsToFetch.length === 0) return;
     
     try {
-      setLoading(true);
       const batchListings = listingsToFetch.map(l => ({
         listingId: l.listingId,
         productId: l.productId,
@@ -419,27 +420,77 @@ export default function StockXRepricing() {
       }
     } catch (error) {
       console.error('Error refreshing market prices:', error);
-      alert('Failed to refresh market prices. Please try again.');
+      // Don't show alert in background refresh, only log
+      if (!isBackgroundRefreshing) {
+        alert('Failed to refresh market prices. Please try again.');
+      }
+    }
+  }, [isBackgroundRefreshing]);
+
+  const refreshMarketPrices = useCallback(async () => {
+    // This is for manual refresh of current page only
+    try {
+      setLoading(true);
+      const listingsNeedingData = paginatedListings.filter(l => !l.lowestAsk || l.lowestAsk === 0);
+      
+      if (listingsNeedingData.length === 0) {
+        // If all have prices, refresh all on current page
+        await fetchMarketDataForListings(paginatedListings);
+      } else {
+        // Otherwise just fetch for those missing prices
+        await fetchMarketDataForListings(listingsNeedingData);
+      }
+      
+      // Don't update the main refresh time, this is just for current page
+      console.log(`✅ Refreshed market prices for ${paginatedListings.length} items on current page`);
     } finally {
       setLoading(false);
     }
-  }, []);
-
-  const refreshMarketPrices = useCallback(async () => {
-    // Fetch market prices for all items on current page
-    const listingsNeedingData = paginatedListings.filter(l => !l.lowestAsk || l.lowestAsk === 0);
-    
-    if (listingsNeedingData.length === 0) {
-      // If all have prices, refresh all on current page
-      await fetchMarketDataForListings(paginatedListings);
-    } else {
-      // Otherwise just fetch for those missing prices
-      await fetchMarketDataForListings(listingsNeedingData);
-    }
-    
-    // Update last refresh time
-    setLastMarketRefreshTime(new Date());
   }, [paginatedListings, fetchMarketDataForListings]);
+
+  const refreshAllMarketPrices = useCallback(async () => {
+    // Background refresh for ALL listings in batches
+    if (isBackgroundRefreshing || listings.length === 0) return;
+    
+    console.log(`🔄 Starting background refresh for ${listings.length} total listings`);
+    setIsBackgroundRefreshing(true);
+    setRefreshProgress({ current: 0, total: listings.length });
+    
+    const BATCH_SIZE = 25; // Process 25 items at a time
+    const DELAY_BETWEEN_BATCHES = 2000; // 2 seconds between batches
+    
+    try {
+      // Process all listings in batches
+      for (let i = 0; i < listings.length; i += BATCH_SIZE) {
+        const batch = listings.slice(i, i + BATCH_SIZE);
+        const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+        const totalBatches = Math.ceil(listings.length / BATCH_SIZE);
+        
+        console.log(`📦 Processing batch ${batchNumber}/${totalBatches} (${batch.length} items)`);
+        
+        // Fetch market data for this batch
+        await fetchMarketDataForListings(batch);
+        
+        // Update progress
+        const processed = Math.min(i + BATCH_SIZE, listings.length);
+        setRefreshProgress({ current: processed, total: listings.length });
+        
+        // Wait between batches to avoid rate limiting (except for last batch)
+        if (i + BATCH_SIZE < listings.length) {
+          await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_BATCHES));
+        }
+      }
+      
+      console.log('✅ Background refresh completed for all listings');
+      setLastMarketRefreshTime(new Date());
+      
+    } catch (error) {
+      console.error('❌ Error during background refresh:', error);
+    } finally {
+      setIsBackgroundRefreshing(false);
+      setRefreshProgress(null);
+    }
+  }, [listings, isBackgroundRefreshing, fetchMarketDataForListings]);
 
   // Individual listing update functions
   const updateListingStrategy = (listingId: string, type: IndividualPricingStrategy['type']) => {
@@ -996,22 +1047,46 @@ export default function StockXRepricing() {
                 Listings: {lastFetchTime.toLocaleTimeString()}
               </div>
             )}
-            {lastMarketRefreshTime && (
-              <div className={`text-xs px-2 py-1 rounded-full flex items-center gap-1 ${
+            {(lastMarketRefreshTime || isBackgroundRefreshing) && (
+              <div className={`text-xs px-2 py-1 rounded-full ${
                 isNeon 
                   ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' 
                   : 'bg-blue-50 text-blue-600 border border-blue-200'
               }`}>
-                <RefreshCw className="w-3 h-3" />
-                Market prices: {lastMarketRefreshTime.toLocaleTimeString()}
-                <span className={`text-xs ${isNeon ? 'text-cyan-300' : 'text-blue-500'}`}>
-                  (auto-refresh every 15min)
-                </span>
+                {isBackgroundRefreshing ? (
+                  <div className="flex items-center gap-2">
+                    <RefreshCw className="w-3 h-3 animate-spin" />
+                    <span>Refreshing all prices...</span>
+                    {refreshProgress && (
+                      <div className="flex items-center gap-1">
+                        <div className={`w-24 h-2 rounded-full overflow-hidden ${
+                          isNeon ? 'bg-gray-700' : 'bg-gray-300'
+                        }`}>
+                          <div 
+                            className={`h-full transition-all duration-500 ${
+                              isNeon ? 'bg-gradient-to-r from-cyan-500 to-emerald-500' : 'bg-blue-500'
+                            }`}
+                            style={{ width: `${(refreshProgress.current / refreshProgress.total) * 100}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-medium">{refreshProgress.current}/{refreshProgress.total}</span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <RefreshCw className="w-3 h-3" />
+                    Market prices: {lastMarketRefreshTime.toLocaleTimeString()}
+                    <span className={`text-xs ${isNeon ? 'text-cyan-300' : 'text-blue-500'}`}>
+                      (auto-refresh all every 15min)
+                    </span>
+                  </div>
+                )}
               </div>
             )}
             <button
               onClick={refreshMarketPrices}
-              disabled={loading}
+              disabled={loading || isBackgroundRefreshing}
               className={`px-3 py-1 text-xs rounded-md font-medium transition-all flex items-center gap-1 ${
                 isNeon
                   ? 'bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 border border-cyan-500/30 disabled:opacity-50'
@@ -1020,7 +1095,20 @@ export default function StockXRepricing() {
               title="Refresh market prices for current page"
             >
               <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
-              Refresh Prices
+              Refresh Page
+            </button>
+            <button
+              onClick={refreshAllMarketPrices}
+              disabled={loading || isBackgroundRefreshing}
+              className={`px-3 py-1 text-xs rounded-md font-medium transition-all flex items-center gap-1 ${
+                isNeon
+                  ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30 disabled:opacity-50'
+                  : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-300 disabled:opacity-50'
+              }`}
+              title="Refresh market prices for ALL listings"
+            >
+              <RefreshCw className={`w-3 h-3 ${isBackgroundRefreshing ? 'animate-spin' : ''}`} />
+              Refresh All ({listings.length})
             </button>
             {listings.length !== 51 && (
               <div className={`text-sm px-3 py-1 rounded-full ${
