@@ -917,7 +917,7 @@ export default function StockXRepricing() {
                                   }`}
                                 >
                                   <option value="keep_current">Keep Current Price</option>
-                                  <option value="beat_lowest">Beat Lowest Ask</option>
+                                  <option value="beat_lowest">Beat Lowest Ask by $X</option>
                                   <option value="match_lowest">Match Lowest Ask</option>
                                   <option value="percentage_below">% Below Market</option>
                                   <option value="manual">Manual Price</option>

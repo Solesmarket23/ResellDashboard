@@ -76,8 +76,18 @@ export async function POST(request: NextRequest) {
 
         // Calculate new price based on strategy
         let newPrice: number;
+        let skipReason: string | null = null;
+        
         if (useIndividualStrategies && listing.pricingStrategy) {
           newPrice = calculateIndividualPrice(listing, marketData);
+          
+          // Check if we're already the lowest ask for "beat_lowest" strategy
+          if (listing.pricingStrategy.type === 'beat_lowest') {
+            const lowestAsk = parseInt(marketData.lowestAskAmount) / 100;
+            if (listing.currentPrice <= lowestAsk) {
+              skipReason = `Already lowest ask at $${listing.currentPrice} (market: $${lowestAsk})`;
+            }
+          }
         } else {
           newPrice = calculateNewPrice(listing, marketData, strategy);
         }
@@ -88,7 +98,7 @@ export async function POST(request: NextRequest) {
             currentPrice: listing.currentPrice,
             newPrice: listing.currentPrice,
             action: 'no_change',
-            reason: 'Price already optimal'
+            reason: skipReason || 'Price already optimal'
           });
           continue;
         }
@@ -369,7 +379,17 @@ function calculateIndividualPrice(listing: ListingToReprice, marketData: any): n
       
     case 'beat_lowest':
       const beatBy = listing.pricingStrategy.value || 1;
-      return Math.max(1, lowestAsk - beatBy);
+      
+      // If we're already the lowest ask (or lower), don't change price
+      if (listing.currentPrice <= lowestAsk) {
+        console.log(`🎯 Listing ${listing.listingId} is already lowest ask at $${listing.currentPrice} (market: $${lowestAsk})`);
+        return listing.currentPrice; // Keep current price
+      }
+      
+      // Otherwise, beat the lowest ask by the specified amount
+      const newPrice = Math.max(1, lowestAsk - beatBy);
+      console.log(`💰 Beating lowest ask: $${lowestAsk} - $${beatBy} = $${newPrice}`);
+      return newPrice;
       
     case 'match_lowest':
       return lowestAsk;

@@ -20,6 +20,7 @@ function LoginForm() {
   const [name, setName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true); // Default to remembering users
   const router = useRouter();
   const searchParams = useSearchParams();
   const { signInWithGoogle, signInWithEmail, signUpWithEmail, loading, error, clearError } = useAuth();
@@ -50,6 +51,16 @@ function LoginForm() {
       } else {
         await signInWithEmail(email, password);
       }
+      
+      // Store remember me preference and last activity timestamp
+      if (rememberMe) {
+        localStorage.setItem('rememberMe', 'true');
+        localStorage.setItem('lastActivity', Date.now().toString());
+      } else {
+        localStorage.removeItem('rememberMe');
+        localStorage.removeItem('lastActivity');
+      }
+      
       // If successful, redirect to intended destination
       router.push(from);
     } catch (error) {
@@ -66,6 +77,12 @@ function LoginForm() {
     
     try {
       await signInWithGoogle();
+      
+      // Store remember me preference and last activity timestamp
+      // Default to remember for Google sign-in
+      localStorage.setItem('rememberMe', 'true');
+      localStorage.setItem('lastActivity', Date.now().toString());
+      
       // If successful, redirect to intended destination
       router.push(from);
     } catch (error) {
@@ -237,6 +254,29 @@ function LoginForm() {
                 </button>
               </div>
             </div>
+
+            {/* Remember Me checkbox */}
+            {!isSignUp && (
+              <div className="flex items-center justify-between">
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className={`h-4 w-4 border-gray-600 rounded focus:ring-2 focus:ring-offset-0 ${
+                      isNeon 
+                        ? 'bg-gray-700 text-teal-500 focus:ring-teal-500' 
+                        : 'bg-gray-700 text-teal-500 focus:ring-teal-500'
+                    }`}
+                  />
+                  <span className={`ml-2 text-sm ${
+                    isNeon ? 'text-gray-300' : 'text-gray-300'
+                  }`}>
+                    Remember me for 30 days
+                  </span>
+                </label>
+              </div>
+            )}
 
             {/* Error Display */}
             {error && (

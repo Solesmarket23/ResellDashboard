@@ -47,16 +47,7 @@ export default function DashboardPage() {
   // Dynamic theme detection for consistent background
   const isNeon = currentTheme.name === 'Neon';
   
-  // Early return if no user and not loading - prevent any dashboard rendering
-  if (!loading && !user && typeof window !== 'undefined') {
-    const siteUserId = localStorage.getItem('siteUserId');
-    if (!siteUserId) {
-      window.location.href = '/password-protect';
-    } else {
-      window.location.href = '/login?from=/dashboard';
-    }
-    return null;
-  }
+  // Remove early return to allow proper auth state checking in useEffect
 
   // Ensure we're on the client side before accessing window
   useEffect(() => {
@@ -263,34 +254,21 @@ export default function DashboardPage() {
     }
   };
 
-  // Don't render until client-side hydration is complete
-  if (!isClient) {
+  // Don't render until client-side hydration is complete and auth state is determined
+  if (!isClient || loading) {
     return (
       <div className={`flex h-screen overflow-hidden ${currentTheme.colors.background}`}>
         <div className="flex-1 flex items-center justify-center">
           <div className={`text-lg ${isNeon ? 'text-white' : 'text-gray-900'}`}>
-            Loading...
+            {!isClient ? 'Loading...' : 'Checking authentication...'}
           </div>
         </div>
       </div>
     );
   }
 
-  // Show loading while checking authentication
-  if (loading) {
-    return (
-      <div className={`flex h-screen overflow-hidden ${currentTheme.colors.background}`}>
-        <div className="flex-1 flex items-center justify-center">
-          <div className={`text-lg ${isNeon ? 'text-white' : 'text-gray-900'}`}>
-            Checking authentication...
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // If not loading and no user, don't render the dashboard
-  // The useEffect will handle the redirect
+  // If not loading and no user, show redirecting message
+  // The useEffect will handle the actual redirect
   if (!user) {
     return (
       <div className={`flex h-screen overflow-hidden ${currentTheme.colors.background}`}>

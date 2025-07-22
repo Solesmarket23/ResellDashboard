@@ -11,6 +11,7 @@ import {
 } from "firebase/auth";
 import { User } from "firebase/auth";
 import { auth } from "../firebase/firebase";
+import { getSessionManager } from "../utils/sessionManager";
 
 interface AuthContextType {
   user: User | null;
@@ -98,11 +99,35 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const unsubscribe = auth.onAuthStateChanged((user) => {
       console.log('🔐 Auth state changed:', user ? `User ${user.email} (${user.uid})` : 'No user');
+      
+      if (user) {
+        // Check if session is still valid based on remember me settings
+        const sessionManager = getSessionManager();
+        if (!sessionManager.checkSessionValidity()) {
+          console.log('🔐 Session expired, signing out user');
+          firebaseSignOut(auth);
+          return;
+        }
+        
+        // Set up idle timeout callback
+        sessionManager.setIdleCallback(() => {
+          console.log('🔐 User idle timeout, signing out');
+          firebaseSignOut(auth);
+        });
+      }
+      
       setUser(user);
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      // Clean up session manager if needed
+      const sessionManager = getSessionManager();
+      if (sessionManager) {
+        sessionManager.destroy();
+      }
+    };
   }, []);
 
   const signInWithGoogle = async () => {
@@ -232,6 +257,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     try {
       setError(null);
+      
+      // Clear session data
+      const sessionManager = getSessionManager();
+      if (sessionManager) {
+        sessionManager.clearSession();
+      }
+      
       await firebaseSignOut(auth);
     } catch (error: any) {
       console.error("Sign-out error:", error);
