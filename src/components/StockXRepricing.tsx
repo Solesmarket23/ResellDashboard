@@ -122,43 +122,6 @@ export default function StockXRepricing() {
     setCurrentPage(1);
   }, [listings.length]);
 
-  useEffect(() => {
-    // Check if we're returning from authentication
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('authenticated') === 'true') {
-      // Remove the parameter from URL
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
-    
-    fetchListings();
-  }, []);
-
-  // Auto-refresh ALL market prices every 15 minutes
-  useEffect(() => {
-    // Only run if we have listings
-    if (listings.length === 0) return;
-
-    console.log('🔄 Starting auto-refresh timer for ALL market prices (15 min intervals)');
-    
-    // Refresh all listings immediately on mount if listings exist
-    const timer = setTimeout(() => {
-      refreshAllMarketPrices();
-    }, 3000); // Small delay to ensure listings are loaded
-
-    // Set up interval for periodic refresh of ALL listings
-    const interval = setInterval(() => {
-      console.log('⏰ Auto-refreshing ALL market prices...');
-      refreshAllMarketPrices();
-    }, 15 * 60 * 1000); // 15 minutes
-
-    // Cleanup
-    return () => {
-      clearTimeout(timer);
-      clearInterval(interval);
-      console.log('🛑 Stopped auto-refresh timer');
-    };
-  }, [listings.length, refreshAllMarketPrices]); // Re-run when listings change
-
   const fetchListings = async (forceReload = false) => {
     console.log(`🔄 Fetching listings... (forceReload: ${forceReload})`);
     setLoading(true);
@@ -491,6 +454,44 @@ export default function StockXRepricing() {
       setRefreshProgress(null);
     }
   }, [listings, isBackgroundRefreshing, fetchMarketDataForListings]);
+
+  // useEffect hooks after function definitions to avoid hoisting issues
+  useEffect(() => {
+    // Check if we're returning from authentication
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('authenticated') === 'true') {
+      // Remove the parameter from URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+    
+    fetchListings();
+  }, []);
+
+  // Auto-refresh ALL market prices every 15 minutes
+  useEffect(() => {
+    // Only run if we have listings
+    if (listings.length === 0) return;
+
+    console.log('🔄 Starting auto-refresh timer for ALL market prices (15 min intervals)');
+    
+    // Refresh all listings immediately on mount if listings exist
+    const timer = setTimeout(() => {
+      refreshAllMarketPrices();
+    }, 3000); // Small delay to ensure listings are loaded
+
+    // Set up interval for periodic refresh of ALL listings
+    const interval = setInterval(() => {
+      console.log('⏰ Auto-refreshing ALL market prices...');
+      refreshAllMarketPrices();
+    }, 15 * 60 * 1000); // 15 minutes
+
+    // Cleanup
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+      console.log('🛑 Stopped auto-refresh timer');
+    };
+  }, [listings.length]); // Only depend on listings.length to avoid circular dependency
 
   // Individual listing update functions
   const updateListingStrategy = (listingId: string, type: IndividualPricingStrategy['type']) => {
