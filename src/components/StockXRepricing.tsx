@@ -72,6 +72,8 @@ export default function StockXRepricing() {
   }, [currentTheme, isNeon]);
   
   const [listings, setListings] = useState<Listing[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(50);
   const [strategy, setStrategy] = useState<RepricingStrategy>({
     type: 'competitive',
     settings: {
@@ -100,6 +102,22 @@ export default function StockXRepricing() {
     };
   }>({});
   const [lastFetchTime, setLastFetchTime] = useState<Date | null>(null);
+  
+  // Pagination calculations - moved here so they're available for all functions
+  const totalPages = Math.ceil(listings.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedListings = listings.slice(startIndex, endIndex);
+  
+  const selectedCount = listings.filter(l => l.selected).length;
+  const pageSelectedCount = paginatedListings.filter(l => l.selected).length;
+  const isAllSelected = paginatedListings.length > 0 && paginatedListings.every(l => l.selected);
+  const isPartiallySelected = pageSelectedCount > 0 && pageSelectedCount < paginatedListings.length;
+
+  // Reset to page 1 when listings change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [listings.length]);
 
   useEffect(() => {
     // Check if we're returning from authentication
@@ -279,16 +297,24 @@ export default function StockXRepricing() {
   };
 
   const selectAll = async () => {
-    const allSelected = listings.every(listing => listing.selected);
-    setListings(prev => prev.map(listing => ({ ...listing, selected: !allSelected })));
+    const allPageSelected = paginatedListings.every(listing => listing.selected);
     
-    // If selecting all, fetch market data for listings that don't have it
-    if (!allSelected) {
-      const listingsNeedingData = listings.filter(l => !l.lowestAsk || l.lowestAsk === 0);
+    // Update selection state for current page items only
+    setListings(prev => prev.map(listing => {
+      const isOnCurrentPage = paginatedListings.some(pl => pl.listingId === listing.listingId);
+      if (isOnCurrentPage) {
+        return { ...listing, selected: !allPageSelected };
+      }
+      return listing;
+    }));
+    
+    // If selecting all on current page, fetch market data for listings that don't have it
+    if (!allPageSelected) {
+      const listingsNeedingData = paginatedListings.filter(l => !l.lowestAsk || l.lowestAsk === 0);
       if (listingsNeedingData.length > 0) {
         try {
-          // Limit to first 10 to avoid rate limiting
-          const batchListings = listingsNeedingData.slice(0, 10).map(l => ({
+          // No need to limit since we're already paginated
+          const batchListings = listingsNeedingData.map(l => ({
             listingId: l.listingId,
             productId: l.productId,
             variantId: l.variantId
@@ -327,9 +353,6 @@ export default function StockXRepricing() {
     }
   };
 
-  const selectedCount = listings.filter(l => l.selected).length;
-  const isAllSelected = listings.length > 0 && selectedCount === listings.length;
-  const isPartiallySelected = selectedCount > 0 && selectedCount < listings.length;
 
   // Individual listing update functions
   const updateListingStrategy = (listingId: string, type: IndividualPricingStrategy['type']) => {
@@ -863,7 +886,7 @@ export default function StockXRepricing() {
               <span className={`text-sm font-normal ml-2 ${
                 isNeon ? 'text-gray-400' : 'text-gray-600'
               }`}>
-                ({selectedCount} of {listings.length} selected)
+                ({selectedCount} of {listings.length} selected{pageSelectedCount > 0 ? `, ${pageSelectedCount} on this page` : ''})
               </span>
             )}
           </h3>
@@ -920,6 +943,7 @@ export default function StockXRepricing() {
             )}
           </div>
         ) : (
+          <>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -950,7 +974,7 @@ export default function StockXRepricing() {
                 </tr>
               </thead>
               <tbody>
-                {listings.map((listing) => (
+                {paginatedListings.map((listing) => (
                   <tr key={listing.listingId} className={`border-b transition-colors ${
                     isNeon 
                       ? 'border-gray-700 hover:bg-gray-700/50' 
@@ -1091,6 +1115,82 @@ export default function StockXRepricing() {
               </tbody>
             </table>
           </div>
+          
+          {totalPages > 1 && (
+            <div className={`flex items-center justify-between mt-4 px-2 ${
+              isNeon ? 'text-gray-300' : 'text-gray-700'
+            }`}>
+              <div className="text-sm">
+                Showing {startIndex + 1} to {Math.min(endIndex, listings.length)} of {listings.length} listings
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className={`px-3 py-1 rounded-md transition-all ${
+                    currentPage === 1
+                      ? isNeon ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                      : isNeon 
+                        ? 'bg-gray-700 hover:bg-gray-600 text-cyan-400' 
+                        : 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300'
+                  }`}
+                >
+                  Previous
+                </button>
+                
+                <div className="flex items-center gap-1">
+                  {[...Array(totalPages)].map((_, index) => {
+                    const page = index + 1;
+                    // Show first page, last page, current page, and pages around current
+                    if (
+                      page === 1 || 
+                      page === totalPages || 
+                      Math.abs(page - currentPage) <= 1
+                    ) {
+                      return (
+                        <button
+                          key={page}
+                          onClick={() => setCurrentPage(page)}
+                          className={`px-3 py-1 rounded-md transition-all ${
+                            page === currentPage
+                              ? isNeon 
+                                ? 'bg-cyan-500 text-black font-semibold' 
+                                : 'bg-blue-600 text-white font-semibold'
+                              : isNeon 
+                                ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' 
+                                : 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300'
+                          }`}
+                        >
+                          {page}
+                        </button>
+                      );
+                    } else if (
+                      page === currentPage - 2 || 
+                      page === currentPage + 2
+                    ) {
+                      return <span key={page} className="px-1">...</span>;
+                    }
+                    return null;
+                  })}
+                </div>
+                
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className={`px-3 py-1 rounded-md transition-all ${
+                    currentPage === totalPages
+                      ? isNeon ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                      : isNeon 
+                        ? 'bg-gray-700 hover:bg-gray-600 text-cyan-400' 
+                        : 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300'
+                  }`}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+          </>
         )}
       </div>
 
