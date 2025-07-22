@@ -224,17 +224,107 @@ export default function StockXRepricing() {
     }
   };
 
-  const toggleListingSelection = (listingId: string) => {
+  const toggleListingSelection = async (listingId: string) => {
+    // First update the selection state
     setListings(prev => prev.map(listing => 
       listing.listingId === listingId 
         ? { ...listing, selected: !listing.selected }
         : listing
     ));
+    
+    // Find the listing that was toggled
+    const listing = listings.find(l => l.listingId === listingId);
+    if (!listing || listing.selected) return; // If already selected or not found, skip
+    
+    // If we don't have market data for this listing, fetch it
+    if (!listing.lowestAsk || listing.lowestAsk === 0) {
+      try {
+        const response = await fetch('/api/stockx/listings/market-data', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            listings: [{ 
+              listingId: listing.listingId, 
+              productId: listing.productId, 
+              variantId: listing.variantId 
+            }]
+          })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.marketData && data.marketData.length > 0) {
+            const marketInfo = data.marketData[0];
+            if (marketInfo.marketData) {
+              // Update the listing with market data
+              setListings(prev => prev.map(l => 
+                l.listingId === listingId 
+                  ? { 
+                      ...l, 
+                      lowestAsk: marketInfo.marketData.lowestAsk,
+                      highestBid: marketInfo.marketData.highestBid,
+                      lastSale: marketInfo.marketData.lastSale
+                    }
+                  : l
+              ));
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching market data:', error);
+      }
+    }
   };
 
-  const selectAll = () => {
+  const selectAll = async () => {
     const allSelected = listings.every(listing => listing.selected);
     setListings(prev => prev.map(listing => ({ ...listing, selected: !allSelected })));
+    
+    // If selecting all, fetch market data for listings that don't have it
+    if (!allSelected) {
+      const listingsNeedingData = listings.filter(l => !l.lowestAsk || l.lowestAsk === 0);
+      if (listingsNeedingData.length > 0) {
+        try {
+          // Limit to first 10 to avoid rate limiting
+          const batchListings = listingsNeedingData.slice(0, 10).map(l => ({
+            listingId: l.listingId,
+            productId: l.productId,
+            variantId: l.variantId
+          }));
+          
+          const response = await fetch('/api/stockx/listings/market-data', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ listings: batchListings })
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.marketData) {
+              // Update listings with market data
+              setListings(prev => prev.map(listing => {
+                const marketInfo = data.marketData.find((m: any) => m.listingId === listing.listingId);
+                if (marketInfo && marketInfo.marketData) {
+                  return {
+                    ...listing,
+                    lowestAsk: marketInfo.marketData.lowestAsk,
+                    highestBid: marketInfo.marketData.highestBid,
+                    lastSale: marketInfo.marketData.lastSale
+                  };
+                }
+                return listing;
+              }));
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching market data for batch:', error);
+        }
+      }
+    }
   };
 
   const selectedCount = listings.filter(l => l.selected).length;

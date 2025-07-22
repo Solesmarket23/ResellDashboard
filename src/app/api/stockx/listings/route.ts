@@ -157,8 +157,46 @@ export async function GET(request: NextRequest) {
     
     console.log(`🎯 Expected active listings after filtering expired: ${rawListings.length - expiredListings.length}`);
 
+    // Function to fetch market data for a product/variant
+    const fetchMarketData = async (productId: string, variantId: string, token: string) => {
+      try {
+        const marketUrl = `https://api.stockx.com/v2/catalog/products/${productId}/variants/${variantId}/market-data`;
+        const apiKey = process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID || '';
+        
+        const response = await fetch(marketUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'X-API-Key': apiKey,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'ResellDashboard/1.0'
+          }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          // The market data endpoint returns an array, find the matching variant
+          const variantData = Array.isArray(data) 
+            ? data.find((item: any) => item.variantId === variantId)
+            : data;
+          
+          if (variantData) {
+            return {
+              lowestAsk: variantData.lowestAskAmount ? parseInt(variantData.lowestAskAmount) / 100 : null,
+              highestBid: variantData.highestBidAmount ? parseInt(variantData.highestBidAmount) / 100 : null,
+              lastSale: variantData.lastSaleAmount ? parseInt(variantData.lastSaleAmount) / 100 : null
+            };
+          }
+        }
+      } catch (error) {
+        console.error(`Error fetching market data for ${productId}/${variantId}:`, error);
+      }
+      return { lowestAsk: null, highestBid: null, lastSale: null };
+    };
+
     // Transform the data to match our component's expectations
-    const transformedListings = rawListings.map((listing: any, index: number) => {
+    const transformedListings = await Promise.all(rawListings.map(async (listing: any, index: number) => {
       // Log the structure of the first listing to understand the format
       if (index === 0) {
         console.log('Sample listing structure:', {
@@ -172,11 +210,16 @@ export async function GET(request: NextRequest) {
         });
       }
       
+      const productId = listing.productId || listing.product?.productId || listing.product?.id || '';
+      const variantId = listing.variantId || listing.variant?.variantId || listing.variant?.id || '';
+      
+      // Don't fetch market data during initial load - it will be fetched when needed
+      let marketData = { lowestAsk: null, highestBid: null, lastSale: null };
       
       return {
         listingId: listing.listingId || listing.id || `listing-${index}`,
-        productId: listing.productId || listing.product?.productId || listing.product?.id || '',
-        variantId: listing.variantId || listing.variant?.variantId || listing.variant?.id || '',
+        productId: productId,
+        variantId: variantId,
         productName: listing.productName || listing.product?.productName || listing.product?.title || listing.product?.name || 'Unknown Product',
         size: listing.size || listing.variant?.size || listing.variant?.variantValue || listing.variantValue || 'Unknown Size',
         currentPrice: parseFloat(listing.amount || listing.price || '0'),
@@ -190,9 +233,9 @@ export async function GET(request: NextRequest) {
         updatedAt: listing.updatedAt || listing.updated_at,
         // Additional useful fields
         retailPrice: parseFloat(listing.product?.retailPrice || listing.retailPrice || '0'),
-        lowestAsk: parseFloat(listing.product?.lowestAsk || listing.lowestAsk || '0'),
-        highestBid: parseFloat(listing.product?.highestBid || listing.highestBid || '0'),
-        lastSale: parseFloat(listing.product?.lastSale || listing.lastSale || '0'),
+        lowestAsk: marketData.lowestAsk || parseFloat(listing.product?.lowestAsk || listing.lowestAsk || '0'),
+        highestBid: marketData.highestBid || parseFloat(listing.product?.highestBid || listing.highestBid || '0'),
+        lastSale: marketData.lastSale || parseFloat(listing.product?.lastSale || listing.lastSale || '0'),
         category: listing.product?.category || listing.category || '',
         inventoryType: listing.inventoryType || '',
         // UUID fields
@@ -200,7 +243,7 @@ export async function GET(request: NextRequest) {
         variantUuid: listing.variantUuid || listing.variant?.uuid,
         listingUuid: listing.uuid || listing.listingUuid
       };
-    });
+    }));
     
     // Strict filtering for truly active listings that can be repriced
     let filteredListingsAnalysis: any[] = [];
