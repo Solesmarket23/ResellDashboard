@@ -107,6 +107,8 @@ export default function StockXRepricing() {
   const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
   const [bulkActionMessage, setBulkActionMessage] = useState<string | null>(null);
   const [showBulkPricingModal, setShowBulkPricingModal] = useState(false);
+  const [previewResults, setPreviewResults] = useState<RepricingResult[]>([]);
+  const [isPreviewMinimized, setIsPreviewMinimized] = useState(false);
   
   // Pagination calculations - moved here so they're available for all functions
   const totalPages = Math.ceil(listings.length / itemsPerPage);
@@ -743,6 +745,90 @@ export default function StockXRepricing() {
     }
   };
 
+  const calculatePreviewPrices = async () => {
+    const selectedListings = listings.filter(listing => listing.selected);
+    
+    if (selectedListings.length === 0) {
+      return;
+    }
+
+    const previewData: RepricingResult[] = selectedListings.map(listing => {
+      let newPrice = listing.currentPrice;
+      let reason = 'No pricing rule set';
+      
+      if (listing.pricingStrategy) {
+        const marketPrice = listing.lowestAsk || listing.currentPrice;
+        
+        switch (listing.pricingStrategy.type) {
+          case 'beat_lowest':
+            const beatBy = listing.pricingStrategy.value || 1;
+            newPrice = Math.max(1, marketPrice - beatBy);
+            reason = `Beat lowest by $${beatBy}`;
+            break;
+            
+          case 'match_lowest':
+            newPrice = marketPrice;
+            reason = 'Match lowest ask';
+            break;
+            
+          case 'percentage_below':
+            const percentage = listing.pricingStrategy.value || 5;
+            newPrice = Math.max(1, Math.round(marketPrice * (1 - percentage / 100)));
+            reason = `${percentage}% below market`;
+            break;
+            
+          case 'manual':
+            newPrice = listing.pricingStrategy.manualPrice || listing.currentPrice;
+            reason = 'Manual price';
+            break;
+            
+          case 'keep_current':
+            newPrice = listing.currentPrice;
+            reason = 'Keep current price';
+            break;
+        }
+        
+        // Apply min/max constraints if set
+        if (listing.minPrice && newPrice < listing.minPrice) {
+          newPrice = listing.minPrice;
+          reason += ' (limited by min price)';
+        }
+        if (listing.maxPrice && newPrice > listing.maxPrice) {
+          newPrice = listing.maxPrice;
+          reason += ' (limited by max price)';
+        }
+      }
+      
+      const priceChange = newPrice - listing.currentPrice;
+      const competitivePosition = listing.lowestAsk 
+        ? newPrice <= listing.lowestAsk 
+          ? 'lowest_ask' 
+          : newPrice <= listing.lowestAsk + 5 
+            ? 'competitive' 
+            : 'above_market'
+        : 'unknown';
+      
+      return {
+        listingId: listing.listingId,
+        currentPrice: listing.currentPrice,
+        newPrice: newPrice,
+        action: priceChange === 0 ? 'no_change' : 'would_update',
+        reason: reason,
+        profitChange: priceChange,
+        competitivePosition: competitivePosition
+      };
+    });
+    
+    setPreviewResults(previewData);
+  };
+
+  // Update preview whenever selection or pricing rules change
+  useEffect(() => {
+    if (dryRun) {
+      calculatePreviewPrices();
+    }
+  }, [listings.filter(l => l.selected).map(l => `${l.listingId}-${l.pricingStrategy?.type}-${l.pricingStrategy?.value}`).join(','), dryRun]);
+
   const executeRepricing = async () => {
     const selectedListings = listings.filter(listing => listing.selected);
     
@@ -864,7 +950,7 @@ export default function StockXRepricing() {
   }
 
   return (
-    <div className={`min-h-screen p-6 space-y-6 ${isNeon ? 'bg-gray-900 text-white' : 'bg-gray-50'}`}>
+    <div className={`min-h-screen p-6 space-y-6 pb-32 ${isNeon ? 'bg-gray-900 text-white' : 'bg-gray-50'}`}>
       <div className="flex items-center justify-between mb-8">
         <div>
           <h2 className={`text-3xl font-bold ${
@@ -1526,49 +1612,159 @@ export default function StockXRepricing() {
         )}
       </div>
 
-      {/* Execution Controls */}
-      <div className={`flex items-center justify-between p-6 rounded-lg ${
-        isNeon ? 'bg-gray-800' : 'bg-gray-50'
+      {/* Sticky Execution Controls */}
+      <div className={`fixed bottom-0 left-0 right-0 z-40 transition-all duration-300 ${
+        isPreviewMinimized ? 'transform translate-y-[calc(100%-4rem)]' : ''
       }`}>
-        <div className="flex items-center space-x-4">
-          <label className="flex items-center space-x-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={dryRun}
-              onChange={(e) => setDryRun(e.target.checked)}
-              className={`w-4 h-4 ${isNeon ? 'text-cyan-500' : 'text-blue-600'}`}
-            />
-            <span className={isNeon ? 'text-gray-300' : 'text-gray-700'}>
-              Dry Run (Preview Only)
-            </span>
-          </label>
-        </div>
-        
-        <button
-          onClick={executeRepricing}
-          disabled={loading || listings.filter(l => l.selected).length === 0}
-          className={`px-6 py-3 rounded-lg font-semibold transition-all duration-200 flex items-center gap-2 disabled:opacity-50 ${
-            dryRun 
-              ? isNeon
-                ? 'bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
-              : isNeon
-                ? 'bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-600 hover:to-green-600 text-white'
-                : 'bg-green-600 text-white hover:bg-green-700'
-          }`}
-        >
-          {loading ? (
-            <>
-              <Loader className="w-4 h-4 animate-spin" />
-              Processing...
-            </>
-          ) : (
-            <>
-              {dryRun ? <AlertTriangle className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
-              {dryRun ? 'Preview Repricing' : 'Execute Repricing'}
-            </>
+        <div className={`${
+          isNeon ? 'bg-gray-900 border-t border-gray-700' : 'bg-white border-t border-gray-200'
+        } shadow-2xl`}>
+          {/* Minimize/Maximize Button */}
+          <button
+            onClick={() => setIsPreviewMinimized(!isPreviewMinimized)}
+            className={`absolute -top-10 right-4 px-4 py-2 rounded-t-lg flex items-center gap-2 ${
+              isNeon 
+                ? 'bg-gray-800 text-cyan-400 hover:bg-gray-700' 
+                : 'bg-white text-gray-700 hover:bg-gray-50'
+            } shadow-lg`}
+          >
+            <svg 
+              className={`w-4 h-4 transition-transform ${isPreviewMinimized ? 'rotate-180' : ''}`} 
+              fill="none" 
+              viewBox="0 0 24 24" 
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+            {isPreviewMinimized ? 'Show' : 'Hide'} Preview
+          </button>
+
+          {/* Preview Results Table (when expanded and in dry run mode) */}
+          {!isPreviewMinimized && dryRun && previewResults.length > 0 && (
+            <div className={`max-h-64 overflow-y-auto border-b ${
+              isNeon ? 'border-gray-700' : 'border-gray-200'
+            }`}>
+              <table className="w-full text-sm">
+                <thead className={`sticky top-0 ${
+                  isNeon ? 'bg-gray-800' : 'bg-gray-50'
+                }`}>
+                  <tr className={`border-b ${isNeon ? 'border-gray-700' : 'border-gray-200'}`}>
+                    <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Product</th>
+                    <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Current</th>
+                    <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Market</th>
+                    <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>New Price</th>
+                    <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Change</th>
+                    <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Rule</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {previewResults.map((result) => {
+                    const listing = listings.find(l => l.listingId === result.listingId);
+                    const priceChange = result.newPrice - result.currentPrice;
+                    const priceChangePercent = (priceChange / result.currentPrice) * 100;
+                    
+                    return (
+                      <tr key={result.listingId} className={`border-b ${
+                        isNeon ? 'border-gray-700' : 'border-gray-100'
+                      }`}>
+                        <td className="p-3">
+                          <div className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+                            {listing?.productName}
+                          </div>
+                          <div className={`text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                            Size {listing?.size}
+                          </div>
+                        </td>
+                        <td className={`p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                          ${result.currentPrice}
+                        </td>
+                        <td className={`p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                          ${listing?.lowestAsk || '-'}
+                        </td>
+                        <td className={`p-3 font-medium ${
+                          priceChange < 0 
+                            ? isNeon ? 'text-emerald-400' : 'text-green-600'
+                            : priceChange > 0 
+                              ? isNeon ? 'text-red-400' : 'text-red-600'
+                              : isNeon ? 'text-gray-400' : 'text-gray-600'
+                        }`}>
+                          ${result.newPrice}
+                        </td>
+                        <td className={`p-3 text-xs ${
+                          priceChange < 0 
+                            ? isNeon ? 'text-emerald-400' : 'text-green-600'
+                            : priceChange > 0 
+                              ? isNeon ? 'text-red-400' : 'text-red-600'
+                              : isNeon ? 'text-gray-400' : 'text-gray-600'
+                        }`}>
+                          {priceChange !== 0 && (
+                            <>
+                              {priceChange > 0 ? '+' : ''}${priceChange}
+                              <div>({priceChangePercent.toFixed(1)}%)</div>
+                            </>
+                          )}
+                          {priceChange === 0 && 'No change'}
+                        </td>
+                        <td className={`p-3 text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                          {result.reason}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
-        </button>
+
+          {/* Control Bar */}
+          <div className="flex items-center justify-between p-4">
+            <div className="flex items-center space-x-4">
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={dryRun}
+                  onChange={(e) => setDryRun(e.target.checked)}
+                  className={`w-4 h-4 ${isNeon ? 'text-cyan-500' : 'text-blue-600'}`}
+                />
+                <span className={isNeon ? 'text-gray-300' : 'text-gray-700'}>
+                  Preview Mode
+                </span>
+              </label>
+              
+              {selectedCount > 0 && (
+                <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                  {selectedCount} item{selectedCount !== 1 ? 's' : ''} selected
+                </div>
+              )}
+            </div>
+            
+            <button
+              onClick={executeRepricing}
+              disabled={loading || listings.filter(l => l.selected).length === 0}
+              className={`px-6 py-3 rounded-lg font-semibold transition-all duration-200 flex items-center gap-2 disabled:opacity-50 ${
+                dryRun 
+                  ? isNeon
+                    ? 'bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                  : isNeon
+                    ? 'bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-600 hover:to-green-600 text-white'
+                    : 'bg-green-600 text-white hover:bg-green-700'
+              }`}
+            >
+              {loading ? (
+                <>
+                  <Loader className="w-4 h-4 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  {dryRun ? <AlertTriangle className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
+                  {dryRun ? 'Preview Repricing' : 'Execute Repricing'}
+                </>
+              )}
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Results */}
