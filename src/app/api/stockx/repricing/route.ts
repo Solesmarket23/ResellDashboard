@@ -13,6 +13,12 @@ interface RepricingStrategy {
   };
 }
 
+interface IndividualPricingStrategy {
+  type: 'beat_lowest' | 'match_lowest' | 'percentage_below' | 'manual' | 'keep_current';
+  value?: number;
+  manualPrice?: number;
+}
+
 interface ListingToReprice {
   listingId: string;
   productId: string;
@@ -23,6 +29,11 @@ interface ListingToReprice {
   daysListed: number;
   views: number;
   saves: number;
+  // Individual pricing settings
+  pricingStrategy?: IndividualPricingStrategy;
+  minPrice?: number;
+  maxPrice?: number;
+  autoDeactivate?: boolean;
 }
 
 export async function POST(request: NextRequest) {
@@ -38,12 +49,14 @@ export async function POST(request: NextRequest) {
       listings, 
       strategy, 
       dryRun = true,
-      notificationEmail 
+      notificationEmail,
+      useIndividualStrategies = false
     }: {
       listings: ListingToReprice[];
       strategy: RepricingStrategy;
       dryRun?: boolean;
       notificationEmail?: string;
+      useIndividualStrategies?: boolean;
     } = await request.json();
 
     console.log(`🔄 Starting repricing for ${listings.length} listings (dry run: ${dryRun})`);
@@ -62,7 +75,12 @@ export async function POST(request: NextRequest) {
         }
 
         // Calculate new price based on strategy
-        const newPrice = calculateNewPrice(listing, marketData, strategy);
+        let newPrice: number;
+        if (useIndividualStrategies && listing.pricingStrategy) {
+          newPrice = calculateIndividualPrice(listing, marketData);
+        } else {
+          newPrice = calculateNewPrice(listing, marketData, strategy);
+        }
         
         if (!newPrice || newPrice === listing.currentPrice) {
           repricingResults.push({
@@ -73,6 +91,28 @@ export async function POST(request: NextRequest) {
             reason: 'Price already optimal'
           });
           continue;
+        }
+
+        // Apply min/max price constraints if individual strategies are used
+        if (useIndividualStrategies && listing.minPrice && listing.maxPrice) {
+          const originalNewPrice = newPrice;
+          newPrice = Math.max(listing.minPrice, Math.min(listing.maxPrice, newPrice));
+          
+          // Check if we need to deactivate the listing
+          if (listing.autoDeactivate && (originalNewPrice < listing.minPrice || originalNewPrice > listing.maxPrice)) {
+            // Deactivate the listing
+            if (!dryRun) {
+              await deactivateListing(listing.listingId, accessToken);
+            }
+            repricingResults.push({
+              listingId: listing.listingId,
+              currentPrice: listing.currentPrice,
+              newPrice: listing.currentPrice, // Keep current price
+              action: dryRun ? 'would_deactivate' : 'deactivated',
+              reason: `Price ${originalNewPrice} outside range [${listing.minPrice}, ${listing.maxPrice}]`
+            });
+            continue;
+          }
         }
 
         // Apply safety checks
@@ -312,6 +352,62 @@ function analyzeCompetitivePosition(price: number, marketData: any) {
     return 'market_price';
   } else {
     return 'premium';
+  }
+}
+
+function calculateIndividualPrice(listing: ListingToReprice, marketData: any): number {
+  if (!listing.pricingStrategy) {
+    return listing.currentPrice;
+  }
+
+  // Convert from cents to dollars
+  const lowestAsk = parseInt(marketData.lowestAskAmount) / 100;
+  
+  switch (listing.pricingStrategy.type) {
+    case 'keep_current':
+      return listing.currentPrice;
+      
+    case 'beat_lowest':
+      const beatBy = listing.pricingStrategy.value || 1;
+      return Math.max(1, lowestAsk - beatBy);
+      
+    case 'match_lowest':
+      return lowestAsk;
+      
+    case 'percentage_below':
+      const percentage = listing.pricingStrategy.value || 5;
+      return Math.max(1, lowestAsk * (1 - percentage / 100));
+      
+    case 'manual':
+      return listing.pricingStrategy.manualPrice || listing.currentPrice;
+      
+    default:
+      return listing.currentPrice;
+  }
+}
+
+async function deactivateListing(listingId: string, accessToken: string) {
+  try {
+    // StockX uses DELETE to deactivate a listing
+    const response = await fetch(`https://api.stockx.com/v2/selling/listings/${listingId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'x-api-key': process.env.STOCKX_CLIENT_ID || '',
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`Deactivation failed: ${response.status} - ${errorData.message || 'Unknown error'}`);
+    }
+
+    console.log(`✅ Listing ${listingId} deactivated successfully`);
+    return { success: true };
+  } catch (error) {
+    console.error(`❌ Failed to deactivate listing ${listingId}:`, error);
+    return { success: false, error: error.message };
   }
 }
 

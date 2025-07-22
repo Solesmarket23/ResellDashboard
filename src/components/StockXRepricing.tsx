@@ -16,6 +16,12 @@ interface RepricingStrategy {
   };
 }
 
+interface IndividualPricingStrategy {
+  type: 'beat_lowest' | 'match_lowest' | 'percentage_below' | 'manual' | 'keep_current';
+  value?: number; // Amount for beat_lowest or percentage
+  manualPrice?: number;
+}
+
 interface Listing {
   listingId: string;
   productId: string;
@@ -37,6 +43,12 @@ interface Listing {
   category?: string;
   inventoryType?: string;
   selected: boolean;
+  // Individual pricing settings
+  pricingStrategy?: IndividualPricingStrategy;
+  minPrice?: number;
+  maxPrice?: number;
+  autoDeactivate?: boolean;
+  costBasis?: number; // Add cost basis for validation
 }
 
 interface RepricingResult {
@@ -227,6 +239,63 @@ export default function StockXRepricing() {
   const isAllSelected = listings.length > 0 && selectedCount === listings.length;
   const isPartiallySelected = selectedCount > 0 && selectedCount < listings.length;
 
+  // Individual listing update functions
+  const updateListingStrategy = (listingId: string, type: IndividualPricingStrategy['type']) => {
+    setListings(prev => prev.map(listing => 
+      listing.listingId === listingId 
+        ? { 
+            ...listing, 
+            pricingStrategy: { 
+              ...listing.pricingStrategy, 
+              type,
+              value: type === 'beat_lowest' ? 1 : type === 'percentage_below' ? 5 : undefined,
+              manualPrice: type === 'manual' ? listing.currentPrice : undefined
+            } 
+          }
+        : listing
+    ));
+  };
+
+  const updateStrategyValue = (listingId: string, value: number) => {
+    setListings(prev => prev.map(listing => 
+      listing.listingId === listingId 
+        ? { ...listing, pricingStrategy: { ...listing.pricingStrategy!, value } }
+        : listing
+    ));
+  };
+
+  const updateManualPrice = (listingId: string, manualPrice: number) => {
+    setListings(prev => prev.map(listing => 
+      listing.listingId === listingId 
+        ? { ...listing, pricingStrategy: { ...listing.pricingStrategy!, manualPrice } }
+        : listing
+    ));
+  };
+
+  const updateMinPrice = (listingId: string, minPrice: number) => {
+    setListings(prev => prev.map(listing => 
+      listing.listingId === listingId 
+        ? { ...listing, minPrice: isNaN(minPrice) ? undefined : minPrice }
+        : listing
+    ));
+  };
+
+  const updateMaxPrice = (listingId: string, maxPrice: number) => {
+    setListings(prev => prev.map(listing => 
+      listing.listingId === listingId 
+        ? { ...listing, maxPrice: isNaN(maxPrice) ? undefined : maxPrice }
+        : listing
+    ));
+  };
+
+  const updateAutoDeactivate = (listingId: string, autoDeactivate: boolean) => {
+    setListings(prev => prev.map(listing => 
+      listing.listingId === listingId 
+        ? { ...listing, autoDeactivate }
+        : listing
+    ));
+  };
+
   const applyPricingRule = async (rule: string, value: number) => {
     const selectedListings = listings.filter(listing => listing.selected);
     
@@ -369,6 +438,22 @@ export default function StockXRepricing() {
       return;
     }
 
+    // Validate that all selected listings have min/max prices
+    const invalidListings = selectedListings.filter(listing => !listing.minPrice || !listing.maxPrice);
+    if (invalidListings.length > 0) {
+      alert(`Please set min and max prices for all selected listings. ${invalidListings.length} listing(s) are missing price limits.`);
+      return;
+    }
+
+    // Validate min < max for all listings
+    const invalidPriceRanges = selectedListings.filter(listing => 
+      listing.minPrice && listing.maxPrice && listing.minPrice >= listing.maxPrice
+    );
+    if (invalidPriceRanges.length > 0) {
+      alert(`Please ensure min price is less than max price for all listings. ${invalidPriceRanges.length} listing(s) have invalid price ranges.`);
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await fetch('/api/stockx/repricing', {
@@ -377,10 +462,14 @@ export default function StockXRepricing() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          listings: selectedListings,
+          listings: selectedListings.map(listing => ({
+            ...listing,
+            costBasis: listing.costBasis || listing.retailPrice || listing.originalPrice * 0.7, // Estimate cost basis if not provided
+          })),
           strategy,
           dryRun,
-          notificationEmail: notificationEmail || undefined
+          notificationEmail: notificationEmail || undefined,
+          useIndividualStrategies: true // Flag to indicate we're using individual strategies
         })
       });
 
@@ -766,47 +855,208 @@ export default function StockXRepricing() {
               </thead>
               <tbody>
                 {listings.map((listing) => (
-                  <tr key={listing.listingId} className={`border-b transition-colors ${
-                    isNeon 
-                      ? 'border-gray-700 hover:bg-gray-700/50' 
-                      : 'border-gray-100 hover:bg-gray-50'
-                  }`}>
-                    <td className="p-3">
-                      <input
-                        type="checkbox"
-                        checked={listing.selected}
-                        onChange={() => toggleListingSelection(listing.listingId)}
-                        className={`w-4 h-4 ${isNeon ? 'text-cyan-500' : 'text-blue-600'}`}
-                      />
-                    </td>
-                    <td className="p-3">
-                      <div className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>
-                        {listing.productName}
-                      </div>
-                    </td>
-                    <td className={`p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-                      {listing.styleId || '-'}
-                    </td>
-                    <td className={`p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-                      {listing.colorway || '-'}
-                    </td>
-                    <td className={`p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>{listing.size}</td>
-                    <td className={`p-3 font-medium ${isNeon ? 'text-cyan-400' : 'text-gray-900'}`}>
-                      ${listing.currentPrice}
-                    </td>
-                    <td className={`p-3 font-medium ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-                      ${listing.lowestAsk || '-'}
-                    </td>
-                    <td className={`p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-                      <span className={`px-2 py-1 text-xs rounded-full ${
-                        listing.status === 'ACTIVE' 
-                          ? isNeon ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-800'
-                          : isNeon ? 'bg-gray-500/20 text-gray-400' : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        {listing.status}
-                      </span>
-                    </td>
-                  </tr>
+                  <React.Fragment key={listing.listingId}>
+                    <tr className={`border-b transition-colors ${
+                      isNeon 
+                        ? 'border-gray-700 hover:bg-gray-700/50' 
+                        : 'border-gray-100 hover:bg-gray-50'
+                    }`}>
+                      <td className="p-3">
+                        <input
+                          type="checkbox"
+                          checked={listing.selected}
+                          onChange={() => toggleListingSelection(listing.listingId)}
+                          className={`w-4 h-4 ${isNeon ? 'text-cyan-500' : 'text-blue-600'}`}
+                        />
+                      </td>
+                      <td className="p-3">
+                        <div className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+                          {listing.productName}
+                        </div>
+                      </td>
+                      <td className={`p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                        {listing.styleId || '-'}
+                      </td>
+                      <td className={`p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                        {listing.colorway || '-'}
+                      </td>
+                      <td className={`p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>{listing.size}</td>
+                      <td className={`p-3 font-medium ${isNeon ? 'text-cyan-400' : 'text-gray-900'}`}>
+                        ${listing.currentPrice}
+                      </td>
+                      <td className={`p-3 font-medium ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                        ${listing.lowestAsk || '-'}
+                      </td>
+                      <td className={`p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                        <span className={`px-2 py-1 text-xs rounded-full ${
+                          listing.status === 'ACTIVE' 
+                            ? isNeon ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-800'
+                            : isNeon ? 'bg-gray-500/20 text-gray-400' : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {listing.status}
+                        </span>
+                      </td>
+                    </tr>
+                    {listing.selected && (
+                      <tr className={`border-b ${isNeon ? 'border-gray-700 bg-gray-800/50' : 'border-gray-100 bg-gray-50/50'}`}>
+                        <td colSpan={8} className="p-4">
+                          <div className="space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                              {/* Pricing Strategy Dropdown */}
+                              <div>
+                                <label className={`block text-sm font-medium mb-1 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                                  Pricing Strategy
+                                </label>
+                                <select
+                                  value={listing.pricingStrategy?.type || 'keep_current'}
+                                  onChange={(e) => updateListingStrategy(listing.listingId, e.target.value as any)}
+                                  className={`w-full px-3 py-2 rounded-lg border ${
+                                    isNeon 
+                                      ? 'bg-gray-700 border-gray-600 text-white' 
+                                      : 'bg-white border-gray-300 text-gray-900'
+                                  }`}
+                                >
+                                  <option value="keep_current">Keep Current Price</option>
+                                  <option value="beat_lowest">Beat Lowest Ask</option>
+                                  <option value="match_lowest">Match Lowest Ask</option>
+                                  <option value="percentage_below">% Below Market</option>
+                                  <option value="manual">Manual Price</option>
+                                </select>
+                              </div>
+
+                              {/* Strategy Value Input */}
+                              {listing.pricingStrategy?.type === 'beat_lowest' && (
+                                <div>
+                                  <label className={`block text-sm font-medium mb-1 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                                    Beat By ($)
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    value={listing.pricingStrategy?.value || 1}
+                                    onChange={(e) => updateStrategyValue(listing.listingId, parseFloat(e.target.value))}
+                                    className={`w-full px-3 py-2 rounded-lg border ${
+                                      isNeon 
+                                        ? 'bg-gray-700 border-gray-600 text-white' 
+                                        : 'bg-white border-gray-300 text-gray-900'
+                                    }`}
+                                  />
+                                </div>
+                              )}
+
+                              {listing.pricingStrategy?.type === 'percentage_below' && (
+                                <div>
+                                  <label className={`block text-sm font-medium mb-1 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                                    Percentage (%)
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max="50"
+                                    value={listing.pricingStrategy?.value || 5}
+                                    onChange={(e) => updateStrategyValue(listing.listingId, parseFloat(e.target.value))}
+                                    className={`w-full px-3 py-2 rounded-lg border ${
+                                      isNeon 
+                                        ? 'bg-gray-700 border-gray-600 text-white' 
+                                        : 'bg-white border-gray-300 text-gray-900'
+                                    }`}
+                                  />
+                                </div>
+                              )}
+
+                              {listing.pricingStrategy?.type === 'manual' && (
+                                <div>
+                                  <label className={`block text-sm font-medium mb-1 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                                    Manual Price ($)
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    value={listing.pricingStrategy?.manualPrice || listing.currentPrice}
+                                    onChange={(e) => updateManualPrice(listing.listingId, parseFloat(e.target.value))}
+                                    className={`w-full px-3 py-2 rounded-lg border ${
+                                      isNeon 
+                                        ? 'bg-gray-700 border-gray-600 text-white' 
+                                        : 'bg-white border-gray-300 text-gray-900'
+                                    }`}
+                                  />
+                                </div>
+                              )}
+
+                              {/* Min Price */}
+                              <div>
+                                <label className={`block text-sm font-medium mb-1 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                                  Min Price ($) *
+                                </label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={listing.minPrice || ''}
+                                  onChange={(e) => updateMinPrice(listing.listingId, parseFloat(e.target.value))}
+                                  className={`w-full px-3 py-2 rounded-lg border ${
+                                    isNeon 
+                                      ? 'bg-gray-700 border-gray-600 text-white' 
+                                      : 'bg-white border-gray-300 text-gray-900'
+                                  } ${!listing.minPrice ? 'border-red-500' : ''}`}
+                                  placeholder="Required"
+                                  required
+                                />
+                              </div>
+
+                              {/* Max Price */}
+                              <div>
+                                <label className={`block text-sm font-medium mb-1 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                                  Max Price ($) *
+                                </label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={listing.maxPrice || ''}
+                                  onChange={(e) => updateMaxPrice(listing.listingId, parseFloat(e.target.value))}
+                                  className={`w-full px-3 py-2 rounded-lg border ${
+                                    isNeon 
+                                      ? 'bg-gray-700 border-gray-600 text-white' 
+                                      : 'bg-white border-gray-300 text-gray-900'
+                                  } ${!listing.maxPrice ? 'border-red-500' : ''}`}
+                                  placeholder="Required"
+                                  required
+                                />
+                              </div>
+                            </div>
+
+                            {/* Auto-deactivate checkbox */}
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                id={`auto-deactivate-${listing.listingId}`}
+                                checked={listing.autoDeactivate || false}
+                                onChange={(e) => updateAutoDeactivate(listing.listingId, e.target.checked)}
+                                className={`w-4 h-4 ${isNeon ? 'text-cyan-500' : 'text-blue-600'}`}
+                              />
+                              <label 
+                                htmlFor={`auto-deactivate-${listing.listingId}`}
+                                className={`text-sm ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}
+                              >
+                                Auto-deactivate listing if price goes outside min/max range
+                              </label>
+                            </div>
+
+                            {/* Validation Messages */}
+                            {listing.minPrice && listing.maxPrice && listing.minPrice >= listing.maxPrice && (
+                              <div className="text-sm text-red-500">
+                                Min price must be less than max price
+                              </div>
+                            )}
+                            {listing.costBasis && listing.minPrice && listing.minPrice < listing.costBasis && (
+                              <div className="text-sm text-yellow-500">
+                                Warning: Min price is below cost basis (${listing.costBasis})
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
