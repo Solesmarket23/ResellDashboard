@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { DollarSign, TrendingDown, Target, Zap, RefreshCw, AlertTriangle, CheckCircle, Loader, Package } from 'lucide-react';
 import NeonDropdown from './NeonDropdown';
@@ -102,6 +102,7 @@ export default function StockXRepricing() {
     };
   }>({});
   const [lastFetchTime, setLastFetchTime] = useState<Date | null>(null);
+  const [lastMarketRefreshTime, setLastMarketRefreshTime] = useState<Date | null>(null);
   
   // Pagination calculations - moved here so they're available for all functions
   const totalPages = Math.ceil(listings.length / itemsPerPage);
@@ -129,6 +130,32 @@ export default function StockXRepricing() {
     
     fetchListings();
   }, []);
+
+  // Auto-refresh market prices every 15 minutes
+  useEffect(() => {
+    // Only run if we have listings
+    if (paginatedListings.length === 0) return;
+
+    console.log('🔄 Starting auto-refresh timer for market prices (15 min intervals)');
+    
+    // Refresh immediately on mount if listings exist
+    const timer = setTimeout(() => {
+      refreshMarketPrices();
+    }, 2000); // Small delay to ensure listings are loaded
+
+    // Set up interval for periodic refresh
+    const interval = setInterval(() => {
+      console.log('⏰ Auto-refreshing market prices...');
+      refreshMarketPrices();
+    }, 15 * 60 * 1000); // 15 minutes
+
+    // Cleanup
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+      console.log('🛑 Stopped auto-refresh timer');
+    };
+  }, [paginatedListings.length, currentPage, refreshMarketPrices]); // Re-run when page changes or listings update
 
   const fetchListings = async (forceReload = false) => {
     console.log(`🔄 Fetching listings... (forceReload: ${forceReload})`);
@@ -353,6 +380,66 @@ export default function StockXRepricing() {
     }
   };
 
+  const fetchMarketDataForListings = useCallback(async (listingsToFetch: Listing[]) => {
+    if (listingsToFetch.length === 0) return;
+    
+    try {
+      setLoading(true);
+      const batchListings = listingsToFetch.map(l => ({
+        listingId: l.listingId,
+        productId: l.productId,
+        variantId: l.variantId
+      }));
+      
+      const response = await fetch('/api/stockx/listings/market-data', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ listings: batchListings })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.marketData) {
+          // Update listings with market data
+          setListings(prev => prev.map(listing => {
+            const marketInfo = data.marketData.find((m: any) => m.listingId === listing.listingId);
+            if (marketInfo && marketInfo.marketData) {
+              return {
+                ...listing,
+                lowestAsk: marketInfo.marketData.lowestAsk,
+                highestBid: marketInfo.marketData.highestBid,
+                lastSale: marketInfo.marketData.lastSale
+              };
+            }
+            return listing;
+          }));
+        }
+      }
+    } catch (error) {
+      console.error('Error refreshing market prices:', error);
+      alert('Failed to refresh market prices. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const refreshMarketPrices = useCallback(async () => {
+    // Fetch market prices for all items on current page
+    const listingsNeedingData = paginatedListings.filter(l => !l.lowestAsk || l.lowestAsk === 0);
+    
+    if (listingsNeedingData.length === 0) {
+      // If all have prices, refresh all on current page
+      await fetchMarketDataForListings(paginatedListings);
+    } else {
+      // Otherwise just fetch for those missing prices
+      await fetchMarketDataForListings(listingsNeedingData);
+    }
+    
+    // Update last refresh time
+    setLastMarketRefreshTime(new Date());
+  }, [paginatedListings, fetchMarketDataForListings]);
 
   // Individual listing update functions
   const updateListingStrategy = (listingId: string, type: IndividualPricingStrategy['type']) => {
@@ -906,9 +993,35 @@ export default function StockXRepricing() {
             )}
             {lastFetchTime && (
               <div className={`text-xs ${isNeon ? 'text-gray-500' : 'text-gray-400'}`}>
-                Last updated: {lastFetchTime.toLocaleTimeString()}
+                Listings: {lastFetchTime.toLocaleTimeString()}
               </div>
             )}
+            {lastMarketRefreshTime && (
+              <div className={`text-xs px-2 py-1 rounded-full flex items-center gap-1 ${
+                isNeon 
+                  ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' 
+                  : 'bg-blue-50 text-blue-600 border border-blue-200'
+              }`}>
+                <RefreshCw className="w-3 h-3" />
+                Market prices: {lastMarketRefreshTime.toLocaleTimeString()}
+                <span className={`text-xs ${isNeon ? 'text-cyan-300' : 'text-blue-500'}`}>
+                  (auto-refresh every 15min)
+                </span>
+              </div>
+            )}
+            <button
+              onClick={refreshMarketPrices}
+              disabled={loading}
+              className={`px-3 py-1 text-xs rounded-md font-medium transition-all flex items-center gap-1 ${
+                isNeon
+                  ? 'bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 border border-cyan-500/30 disabled:opacity-50'
+                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-300 disabled:opacity-50'
+              }`}
+              title="Refresh market prices for current page"
+            >
+              <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+              Refresh Prices
+            </button>
             {listings.length !== 51 && (
               <div className={`text-sm px-3 py-1 rounded-full ${
                 isNeon 
