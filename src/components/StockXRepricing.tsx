@@ -106,6 +106,7 @@ export default function StockXRepricing() {
   const [refreshProgress, setRefreshProgress] = useState<{ current: number; total: number } | null>(null);
   const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
   const [bulkActionMessage, setBulkActionMessage] = useState<string | null>(null);
+  const [showBulkPricingModal, setShowBulkPricingModal] = useState(false);
   
   // Pagination calculations - moved here so they're available for all functions
   const totalPages = Math.ceil(listings.length / itemsPerPage);
@@ -599,6 +600,9 @@ export default function StockXRepricing() {
     setBulkActionMessage(message);
     setTimeout(() => setBulkActionMessage(null), 5000); // Clear after 5 seconds
     
+    // Close the modal
+    setShowBulkPricingModal(false);
+    
     // Optional: Auto-refresh market prices for selected items
     if (selectedListings.some(l => !l.lowestAsk)) {
       await fetchMarketDataForListings(selectedListings);
@@ -924,24 +928,61 @@ export default function StockXRepricing() {
         </div>
       )}
 
-      {/* Simple Pricing Rules - Only show when items are selected */}
+      {/* Bulk Pricing Button - Only show when items are selected */}
       {selectedCount > 0 && (
-        <div className={`rounded-lg p-6 ${
-          isNeon ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-200'
-        }`}>
-          <div className="flex items-center justify-between mb-4">
-            <h3 className={`text-lg font-semibold flex items-center gap-2 ${
-              isNeon ? 'text-cyan-400' : 'text-gray-900'
-            }`}>
-              <Target className="w-5 h-5" />
-              Bulk Pricing Rules
-            </h3>
-            <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-              {selectedCount} item{selectedCount > 1 ? 's' : ''} selected
+        <div className="flex justify-center">
+          <button
+            onClick={() => setShowBulkPricingModal(true)}
+            className={`px-6 py-3 rounded-lg font-semibold transition-all duration-200 flex items-center gap-2 ${
+              isNeon
+                ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white shadow-lg hover:shadow-cyan-500/25'
+                : 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg'
+            }`}
+          >
+            <Target className="w-5 h-5" />
+            Apply Pricing Rule to {selectedCount} Item{selectedCount > 1 ? 's' : ''}
+          </button>
+        </div>
+      )}
+
+      {/* Bulk Pricing Modal */}
+      {showBulkPricingModal && (
+        <div 
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setShowBulkPricingModal(false)}
+        >
+          <div 
+            className={`w-full max-w-lg rounded-xl shadow-2xl animate-fadeIn ${
+            isNeon ? 'bg-gray-800 border border-cyan-500/30' : 'bg-white'
+          }`}
+            onClick={(e) => e.stopPropagation()}>
+            <div className={`p-6 border-b ${isNeon ? 'border-gray-700' : 'border-gray-200'}`}>
+              <div className="flex items-center justify-between">
+                <h3 className={`text-xl font-semibold flex items-center gap-2 ${
+                  isNeon ? 'text-cyan-400' : 'text-gray-900'
+                }`}>
+                  <Target className="w-6 h-6" />
+                  Bulk Pricing Rules
+                </h3>
+                <button
+                  onClick={() => setShowBulkPricingModal(false)}
+                  className={`p-2 rounded-lg transition-colors ${
+                    isNeon 
+                      ? 'hover:bg-gray-700 text-gray-400 hover:text-white'
+                      : 'hover:bg-gray-100 text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <p className={`mt-2 text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                Apply pricing rule to {selectedCount} selected item{selectedCount > 1 ? 's' : ''}
+              </p>
             </div>
-          </div>
-        
-        <div className="space-y-3">
+            
+            <div className="p-6 space-y-3">
           {/* Quick Pricing Rules */}
           <button
             onClick={() => applyPricingRule('beat_lowest', 1)}
@@ -1070,7 +1111,8 @@ export default function StockXRepricing() {
               </button>
             </div>
           </div>
-        </div>
+            </div>
+          </div>
         </div>
       )}
 
