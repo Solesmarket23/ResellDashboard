@@ -105,6 +105,7 @@ export default function StockXRepricing() {
   const [lastMarketRefreshTime, setLastMarketRefreshTime] = useState<Date | null>(null);
   const [refreshProgress, setRefreshProgress] = useState<{ current: number; total: number } | null>(null);
   const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
+  const [bulkActionMessage, setBulkActionMessage] = useState<string | null>(null);
   
   // Pagination calculations - moved here so they're available for all functions
   const totalPages = Math.ceil(listings.length / itemsPerPage);
@@ -554,6 +555,60 @@ export default function StockXRepricing() {
     const selectedListings = listings.filter(listing => listing.selected);
     
     if (selectedListings.length === 0) {
+      alert('Please select at least one listing to apply pricing rule');
+      return;
+    }
+
+    // Map rule to pricing strategy type
+    let strategyType: IndividualPricingStrategy['type'] = 'keep_current';
+    if (rule === 'beat_lowest') {
+      strategyType = 'beat_lowest';
+    } else if (rule === 'match_lowest') {
+      strategyType = 'match_lowest';
+    } else if (rule === 'percentage') {
+      strategyType = 'percentage_below';
+    }
+
+    // Update the pricing strategy for all selected listings
+    setListings(prev => prev.map(listing => {
+      if (listing.selected) {
+        return {
+          ...listing,
+          pricingStrategy: {
+            type: strategyType,
+            value: value
+          }
+        };
+      }
+      return listing;
+    }));
+
+    // Show success message
+    console.log(`✅ Applied ${rule} pricing rule to ${selectedListings.length} listings`);
+    
+    // Display success message
+    let message = '';
+    if (rule === 'beat_lowest') {
+      message = `Applied "Beat Lowest by $${value}" to ${selectedListings.length} item${selectedListings.length > 1 ? 's' : ''}`;
+    } else if (rule === 'match_lowest') {
+      message = `Applied "Match Lowest Ask" to ${selectedListings.length} item${selectedListings.length > 1 ? 's' : ''}`;
+    } else if (rule === 'percentage') {
+      message = `Applied "${value}% Below Market" to ${selectedListings.length} item${selectedListings.length > 1 ? 's' : ''}`;
+    }
+    
+    setBulkActionMessage(message);
+    setTimeout(() => setBulkActionMessage(null), 5000); // Clear after 5 seconds
+    
+    // Optional: Auto-refresh market prices for selected items
+    if (selectedListings.some(l => !l.lowestAsk)) {
+      await fetchMarketDataForListings(selectedListings);
+    }
+  };
+
+  const applyPricingRuleDirectly = async (rule: string, value: number) => {
+    const selectedListings = listings.filter(listing => listing.selected);
+    
+    if (selectedListings.length === 0) {
       alert('Please select at least one listing to reprice');
       return;
     }
@@ -857,17 +912,34 @@ export default function StockXRepricing() {
         </div>
       </div>
 
+      {/* Success Message */}
+      {bulkActionMessage && (
+        <div className={`rounded-lg p-4 mb-4 flex items-center gap-3 animate-fadeIn ${
+          isNeon 
+            ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-400'
+            : 'bg-green-50 border border-green-200 text-green-800'
+        }`}>
+          <CheckCircle className="w-5 h-5 flex-shrink-0" />
+          <span className="font-medium">{bulkActionMessage}</span>
+        </div>
+      )}
+
       {/* Simple Pricing Rules - Only show when items are selected */}
       {selectedCount > 0 && (
         <div className={`rounded-lg p-6 ${
           isNeon ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-200'
         }`}>
-          <h3 className={`text-lg font-semibold mb-4 flex items-center gap-2 ${
-            isNeon ? 'text-cyan-400' : 'text-gray-900'
-          }`}>
-            <Target className="w-5 h-5" />
-            Set Pricing Rule for {selectedCount} Selected Item{selectedCount > 1 ? 's' : ''}
-          </h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className={`text-lg font-semibold flex items-center gap-2 ${
+              isNeon ? 'text-cyan-400' : 'text-gray-900'
+            }`}>
+              <Target className="w-5 h-5" />
+              Bulk Pricing Rules
+            </h3>
+            <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+              {selectedCount} item{selectedCount > 1 ? 's' : ''} selected
+            </div>
+          </div>
         
         <div className="space-y-3">
           {/* Quick Pricing Rules */}
@@ -884,6 +956,22 @@ export default function StockXRepricing() {
             </div>
             <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
               Set price to $1 below the current market price
+            </div>
+          </button>
+
+          <button
+            onClick={() => applyPricingRule('beat_lowest', 5)}
+            className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
+              isNeon 
+                ? 'bg-gray-900 border-gray-700 hover:border-cyan-500 hover:bg-cyan-500/10'
+                : 'bg-white border-gray-200 hover:border-blue-500 hover:bg-blue-50'
+            }`}
+          >
+            <div className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+              Beat Lowest Ask by $5
+            </div>
+            <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+              Set price to $5 below the current market price
             </div>
           </button>
 
