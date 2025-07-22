@@ -49,9 +49,9 @@ export async function POST(request: NextRequest) {
             return {
               listingId: listing.listingId,
               marketData: {
-                lowestAsk: variantData.lowestAskAmount ? parseInt(variantData.lowestAskAmount) / 100 : null,
-                highestBid: variantData.highestBidAmount ? parseInt(variantData.highestBidAmount) / 100 : null,
-                lastSale: variantData.lastSaleAmount ? parseInt(variantData.lastSaleAmount) / 100 : null,
+                lowestAsk: variantData.lowestAskAmount ? parseInt(variantData.lowestAskAmount) : null,
+                highestBid: variantData.highestBidAmount ? parseInt(variantData.highestBidAmount) : null,
+                lastSale: variantData.lastSaleAmount ? parseInt(variantData.lastSaleAmount) : null,
                 numberOfAsks: variantData.numberOfAsks || 0,
                 numberOfBids: variantData.numberOfBids || 0
               }

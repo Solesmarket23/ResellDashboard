@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
           
           // Check if we're already the lowest ask for "beat_lowest" strategy
           if (listing.pricingStrategy.type === 'beat_lowest') {
-            const lowestAsk = parseInt(marketData.lowestAskAmount) / 100;
+            const lowestAsk = parseInt(marketData.lowestAskAmount);
             if (listing.currentPrice <= lowestAsk) {
               skipReason = `Already lowest ask at $${listing.currentPrice} (market: $${lowestAsk})`;
             }
@@ -194,7 +194,7 @@ export async function POST(request: NextRequest) {
 }
 
 async function fetchMarketData(productId: string, variantId: string, accessToken: string) {
-  const response = await fetch(`https://api.stockx.com/v2/catalog/products/${productId}/market-data`, {
+  const response = await fetch(`https://api.stockx.com/v2/catalog/products/${productId}/variants/${variantId}/market-data`, {
     headers: {
       'Authorization': `Bearer ${accessToken}`,
       'x-api-key': process.env.STOCKX_CLIENT_ID || '',
@@ -209,14 +209,14 @@ async function fetchMarketData(productId: string, variantId: string, accessToken
   const data = await response.json();
   // The market data endpoint returns an object with a 'variants' array
   const variants = data.variants || data;
-  return Array.isArray(variants) ? variants.find(item => item.variantId === variantId) : null;
+  return Array.isArray(variants) ? variants.find(item => item.variantId === variantId) : data;
 }
 
 function calculateNewPrice(listing: ListingToReprice, marketData: any, strategy: RepricingStrategy) {
   const { lowestAskAmount, highestBidAmount } = marketData;
-  // Convert from cents to dollars
-  const currentLowestAsk = parseInt(lowestAskAmount) / 100;
-  const currentHighestBid = parseInt(highestBidAmount) / 100;
+  // Prices are already in dollars from API
+  const currentLowestAsk = parseInt(lowestAskAmount);
+  const currentHighestBid = parseInt(highestBidAmount);
 
   switch (strategy.type) {
     case 'competitive':
@@ -350,9 +350,9 @@ function calculateProfitChange(listing: ListingToReprice, newPrice: number) {
 }
 
 function analyzeCompetitivePosition(price: number, marketData: any) {
-  // Convert from cents to dollars
-  const lowestAsk = parseInt(marketData.lowestAskAmount) / 100;
-  const highestBid = parseInt(marketData.highestBidAmount) / 100;
+  // Prices are already in dollars from API
+  const lowestAsk = parseInt(marketData.lowestAskAmount);
+  const highestBid = parseInt(marketData.highestBidAmount);
   
   if (price <= lowestAsk) {
     return 'lowest_ask';
@@ -370,8 +370,8 @@ function calculateIndividualPrice(listing: ListingToReprice, marketData: any): n
     return listing.currentPrice;
   }
 
-  // Convert from cents to dollars
-  const lowestAsk = parseInt(marketData.lowestAskAmount) / 100;
+  // Prices are already in dollars from API
+  const lowestAsk = parseInt(marketData.lowestAskAmount);
   
   switch (listing.pricingStrategy.type) {
     case 'keep_current':
