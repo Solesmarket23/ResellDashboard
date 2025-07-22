@@ -704,7 +704,7 @@ export default function StockXRepricing() {
               <select
                 className={`p-2 rounded-md ${
                   isNeon 
-                    ? 'bg-gray-800 border border-gray-700 text-white focus:border-cyan-500 focus:outline-none'
+                    ? 'bg-gray-800 border border-gray-700 text-cyan-400 focus:border-cyan-500 focus:outline-none [&>option]:bg-gray-800 [&>option]:text-cyan-400'
                     : 'bg-gray-50 border border-gray-300 focus:border-blue-500 focus:outline-none'
                 }`}
                 id="customType"
@@ -744,7 +744,7 @@ export default function StockXRepricing() {
           Notification Settings
         </h3>
         <div>
-          <label className="block text-sm font-medium mb-1">Notification Email</label>
+          <label className={`block text-sm font-medium mb-1 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Notification Email</label>
           <input
               type="email"
               value={notificationEmail}
@@ -752,8 +752,8 @@ export default function StockXRepricing() {
               placeholder="your@email.com"
               className={`w-full p-2 rounded-md border focus:outline-none focus:ring-2 ${
                 isNeon 
-                  ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
-                  : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
+                  ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50 placeholder-gray-500' 
+                  : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 placeholder-gray-400'
               }`}
             />
         </div>
@@ -897,7 +897,7 @@ export default function StockXRepricing() {
                             onChange={(e) => updateListingStrategy(listing.listingId, e.target.value as any)}
                             className={`text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
                               isNeon 
-                                ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50 hover:border-cyan-400' 
+                                ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50 hover:border-cyan-400 [&>option]:bg-gray-800 [&>option]:text-cyan-400 [&>option:hover]:bg-cyan-500/20' 
                                 : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 hover:border-blue-400'
                             }`}
                           >
