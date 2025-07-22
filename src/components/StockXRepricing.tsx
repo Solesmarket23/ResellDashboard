@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { DollarSign, TrendingDown, Target, Zap, RefreshCw, AlertTriangle, CheckCircle, Loader, Package } from 'lucide-react';
+import NeonDropdown from './NeonDropdown';
 
 interface RepricingStrategy {
   type: 'competitive' | 'margin_based' | 'velocity_based' | 'hybrid';
@@ -87,6 +88,7 @@ export default function StockXRepricing() {
   const [notificationEmail, setNotificationEmail] = useState('');
   const [authenticated, setAuthenticated] = useState(true); // Assume authenticated initially
   const [authError, setAuthError] = useState(false);
+  const [customRuleType, setCustomRuleType] = useState('below_dollar');
   const [listingStats, setListingStats] = useState<{
     rawCount?: number;
     trueDuplicatesRemoved?: number;
@@ -701,23 +703,21 @@ export default function StockXRepricing() {
                 }`}
                 id="customAmount"
               />
-              <select
-                className={`p-2 rounded-md ${
-                  isNeon 
-                    ? 'bg-gray-800 border border-gray-700 text-cyan-400 focus:border-cyan-500 focus:outline-none [&>option]:bg-gray-800 [&>option]:text-cyan-400'
-                    : 'bg-gray-50 border border-gray-300 focus:border-blue-500 focus:outline-none'
-                }`}
-                id="customType"
-              >
-                <option value="below_dollar">$ Below Market</option>
-                <option value="below_percent">% Below Market</option>
-                <option value="above_dollar">$ Above Market</option>
-                <option value="above_percent">% Above Market</option>
-              </select>
+              <NeonDropdown
+                value={customRuleType}
+                onChange={setCustomRuleType}
+                options={[
+                  { value: 'below_dollar', label: '$ Below Market' },
+                  { value: 'below_percent', label: '% Below Market' },
+                  { value: 'above_dollar', label: '$ Above Market' },
+                  { value: 'above_percent', label: '% Above Market' }
+                ]}
+                isNeon={isNeon}
+              />
               <button
                 onClick={() => {
                   const amount = parseFloat((document.getElementById('customAmount') as HTMLInputElement).value);
-                  const type = (document.getElementById('customType') as HTMLSelectElement).value;
+                  const type = customRuleType;
                   if (amount) applyCustomRule(type, amount);
                 }}
                 className={`px-4 py-2 rounded-md font-medium ${
@@ -892,21 +892,19 @@ export default function StockXRepricing() {
                     <td className="p-2">
                       {listing.selected ? (
                         <div className="flex items-center gap-1">
-                          <select
+                          <NeonDropdown
                             value={listing.pricingStrategy?.type || 'keep_current'}
-                            onChange={(e) => updateListingStrategy(listing.listingId, e.target.value as any)}
-                            className={`text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
-                              isNeon 
-                                ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50 hover:border-cyan-400 [&>option]:bg-gray-800 [&>option]:text-cyan-400 [&>option:hover]:bg-cyan-500/20' 
-                                : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 hover:border-blue-400'
-                            }`}
-                          >
-                            <option value="keep_current">Keep Current</option>
-                            <option value="beat_lowest">Beat lowest ask by ${listing.pricingStrategy?.type === 'beat_lowest' ? listing.pricingStrategy?.value || 1 : 1}</option>
-                            <option value="match_lowest">Match Lowest</option>
-                            <option value="percentage_below">-{listing.pricingStrategy?.type === 'percentage_below' ? listing.pricingStrategy?.value || 5 : 5}%</option>
-                            <option value="manual">Manual</option>
-                          </select>
+                            onChange={(value) => updateListingStrategy(listing.listingId, value as any)}
+                            options={[
+                              { value: 'keep_current', label: 'Keep Current' },
+                              { value: 'beat_lowest', label: `Beat lowest ask by $${listing.pricingStrategy?.type === 'beat_lowest' ? listing.pricingStrategy?.value || 1 : 1}` },
+                              { value: 'match_lowest', label: 'Match Lowest' },
+                              { value: 'percentage_below', label: `-${listing.pricingStrategy?.type === 'percentage_below' ? listing.pricingStrategy?.value || 5 : 5}%` },
+                              { value: 'manual', label: 'Manual' }
+                            ]}
+                            isNeon={isNeon}
+                            className="flex-1"
+                          />
                           {(listing.pricingStrategy?.type === 'beat_lowest' || 
                             listing.pricingStrategy?.type === 'percentage_below' ||
                             listing.pricingStrategy?.type === 'manual') && (
