@@ -313,13 +313,25 @@ export default function StockXRepricing() {
     try {
       const existingSetting = savedSettings[listingId];
       
-      // Ensure we have a valid pricing strategy
-      const pricingStrategy = settings.pricingStrategy || { type: 'keep_current' };
+      // Ensure we have a valid pricing strategy and clean it
+      let pricingStrategy = settings.pricingStrategy || { type: 'keep_current' };
+      
+      // Clean the pricing strategy object - remove undefined values
+      const cleanPricingStrategy: any = { type: pricingStrategy.type };
+      if (pricingStrategy.value !== undefined && pricingStrategy.value !== null) {
+        cleanPricingStrategy.value = pricingStrategy.value;
+      }
+      if (pricingStrategy.manualPrice !== undefined && pricingStrategy.manualPrice !== null) {
+        cleanPricingStrategy.manualPrice = pricingStrategy.manualPrice;
+      }
+      if (pricingStrategy.peekSettings) {
+        cleanPricingStrategy.peekSettings = pricingStrategy.peekSettings;
+      }
       
       const settingData: any = {
         userId: currentUser.uid,
         listingId,
-        pricingStrategy: pricingStrategy,
+        pricingStrategy: cleanPricingStrategy,
         autoDeactivate: settings.autoDeactivate || false,
         updatedAt: new Date().toISOString()
       };
@@ -952,17 +964,23 @@ export default function StockXRepricing() {
     const listing = listings.find(l => l.listingId === listingId);
     if (!listing) return;
     
-    const newStrategy: IndividualPricingStrategy = { 
-      ...listing.pricingStrategy, 
-      type,
-      value: type === 'beat_lowest' ? 1 : type === 'percentage_below' ? 5 : undefined,
-      manualPrice: type === 'manual' ? listing.currentPrice : undefined,
-      peekSettings: type === 'market_peek' ? {
-        frequency: 'balanced',
+    // Build a clean strategy object without undefined values
+    const newStrategy: any = { type };
+    
+    // Only add properties that are needed for each strategy type
+    if (type === 'beat_lowest') {
+      newStrategy.value = 1;
+    } else if (type === 'percentage_below') {
+      newStrategy.value = listing.pricingStrategy?.value || 5;
+    } else if (type === 'manual') {
+      newStrategy.manualPrice = listing.pricingStrategy?.manualPrice || listing.currentPrice;
+    } else if (type === 'market_peek') {
+      newStrategy.peekSettings = {
+        frequency: listing.pricingStrategy?.peekSettings?.frequency || 'balanced',
         lastPeekTime: listing.pricingStrategy?.peekSettings?.lastPeekTime,
         peekHistory: listing.pricingStrategy?.peekSettings?.peekHistory || []
-      } : undefined
-    };
+      };
+    }
     
     // Check if this listing is part of a group
     const group = listing.inventoryGroupId ? inventoryGroups.get(listing.inventoryGroupId) : null;
