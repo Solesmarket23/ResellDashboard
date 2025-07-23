@@ -21,9 +21,32 @@ interface RepricingStrategy {
 }
 
 interface IndividualPricingStrategy {
-  type: 'beat_lowest' | 'match_lowest' | 'percentage_below' | 'manual' | 'keep_current';
+  type: 'beat_lowest' | 'match_lowest' | 'percentage_below' | 'manual' | 'keep_current' | 'market_peek';
   value?: number; // Amount for beat_lowest or percentage
   manualPrice?: number;
+  peekSettings?: {
+    frequency: 'conservative' | 'balanced' | 'aggressive'; // 8h, 6h, 4h
+    lastPeekTime?: string;
+    nextScheduledPeek?: string;
+    isPeeking?: boolean;
+    peekHistory?: MarketPeekResult[];
+  };
+}
+
+interface MarketPeekResult {
+  timestamp: string;
+  previousPrice: number;
+  peekPrice: number;
+  discoveredLowestAsk: number;
+  newPrice: number;
+  profitGained: number;
+  success: boolean;
+  error?: string;
+  apiResponseTimes: {
+    raisePriceMs?: number;
+    fetchMarketMs?: number;
+    setPriceMs?: number;
+  };
 }
 
 interface Listing {
@@ -116,6 +139,8 @@ export default function StockXRepricing() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [savedSettings, setSavedSettings] = useState<Record<string, any>>({});
   const [savingSettings, setSavingSettings] = useState(false);
+  const [activePeeks, setActivePeeks] = useState<Record<string, boolean>>({});
+  const [peekScheduler, setPeekScheduler] = useState<NodeJS.Timeout | null>(null);
   
   // Pagination calculations - moved here so they're available for all functions
   const totalPages = Math.ceil(listings.length / itemsPerPage);
@@ -162,6 +187,31 @@ export default function StockXRepricing() {
       }));
     }
   }, [listings.length, Object.keys(savedSettings).length]);
+
+  // Market Peek Scheduler
+  useEffect(() => {
+    if (peekScheduler) {
+      clearInterval(peekScheduler);
+    }
+
+    // Check every minute for scheduled peeks
+    const scheduler = setInterval(() => {
+      const now = new Date();
+      const currentHour = now.getHours();
+      const currentMinute = now.getMinutes();
+      
+      // Check if it's time for a scheduled peek (9 AM, 3 PM, 9 PM)
+      if (currentMinute === 0 && (currentHour === 9 || currentHour === 15 || currentHour === 21)) {
+        runScheduledPeeks();
+      }
+    }, 60000); // Check every minute
+
+    setPeekScheduler(scheduler);
+
+    return () => {
+      if (scheduler) clearInterval(scheduler);
+    };
+  }, [listings]);
 
   const loadSavedSettings = async (userId: string) => {
     try {
@@ -604,11 +654,43 @@ export default function StockXRepricing() {
     const listing = listings.find(l => l.listingId === listingId);
     if (!listing) return;
     
-    const newStrategy = { 
+    const newStrategy: IndividualPricingStrategy = { 
       ...listing.pricingStrategy, 
       type,
       value: type === 'beat_lowest' ? 1 : type === 'percentage_below' ? 5 : undefined,
-      manualPrice: type === 'manual' ? listing.currentPrice : undefined
+      manualPrice: type === 'manual' ? listing.currentPrice : undefined,
+      peekSettings: type === 'market_peek' ? {
+        frequency: 'balanced',
+        lastPeekTime: listing.pricingStrategy?.peekSettings?.lastPeekTime,
+        peekHistory: listing.pricingStrategy?.peekSettings?.peekHistory || []
+      } : undefined
+    };
+    
+    setListings(prev => prev.map(l => 
+      l.listingId === listingId 
+        ? { ...l, pricingStrategy: newStrategy }
+        : l
+    ));
+    
+    // Save to Firebase
+    saveSettingToFirebase(listingId, {
+      pricingStrategy: newStrategy,
+      minPrice: listing.minPrice,
+      maxPrice: listing.maxPrice,
+      autoDeactivate: listing.autoDeactivate
+    });
+  };
+
+  const updatePeekFrequency = (listingId: string, frequency: 'conservative' | 'balanced' | 'aggressive') => {
+    const listing = listings.find(l => l.listingId === listingId);
+    if (!listing || !listing.pricingStrategy) return;
+    
+    const newStrategy = {
+      ...listing.pricingStrategy,
+      peekSettings: {
+        ...listing.pricingStrategy.peekSettings!,
+        frequency
+      }
     };
     
     setListings(prev => prev.map(l => 
@@ -961,6 +1043,13 @@ export default function StockXRepricing() {
             newPrice = listing.currentPrice;
             reason = 'Keep current price';
             break;
+            
+          case 'market_peek':
+            // For preview, show what would happen after a peek
+            newPrice = Math.max(1, marketPrice - 1);
+            const freq = listing.pricingStrategy.peekSettings?.frequency || 'balanced';
+            reason = `Market Peek (${freq === 'conservative' ? '8h' : freq === 'balanced' ? '6h' : '4h'})`;
+            break;
         }
         
         // Apply min/max constraints if set
@@ -1014,6 +1103,205 @@ export default function StockXRepricing() {
       // Execute repricing
       await executeRepricing();
     }
+  };
+
+  const runScheduledPeeks = async () => {
+    const peekListings = listings.filter(l => 
+      l.pricingStrategy?.type === 'market_peek' && 
+      !activePeeks[l.listingId]
+    );
+
+    for (const listing of peekListings) {
+      const peekSettings = listing.pricingStrategy?.peekSettings;
+      if (!peekSettings) continue;
+
+      // Check if enough time has passed based on frequency
+      const lastPeek = peekSettings.lastPeekTime ? new Date(peekSettings.lastPeekTime) : null;
+      const hoursSinceLastPeek = lastPeek ? (Date.now() - lastPeek.getTime()) / (1000 * 60 * 60) : Infinity;
+      
+      const requiredHours = peekSettings.frequency === 'conservative' ? 8 : 
+                           peekSettings.frequency === 'balanced' ? 6 : 4;
+
+      if (hoursSinceLastPeek >= requiredHours) {
+        console.log(`📅 Running scheduled peek for ${listing.productName}`);
+        await executeMarketPeek(listing);
+        // Add delay between peeks to avoid overwhelming the API
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      }
+    }
+  };
+
+  const manualPeekNow = async (listingId: string) => {
+    const listing = listings.find(l => l.listingId === listingId);
+    if (!listing) return;
+
+    // Check if a peek was done in the last 2 hours
+    const lastPeek = listing.pricingStrategy?.peekSettings?.lastPeekTime;
+    if (lastPeek) {
+      const hoursSinceLastPeek = (Date.now() - new Date(lastPeek).getTime()) / (1000 * 60 * 60);
+      if (hoursSinceLastPeek < 2) {
+        alert(`Please wait ${Math.ceil(2 - hoursSinceLastPeek)} more hours before peeking again.`);
+        return;
+      }
+    }
+
+    console.log(`👆 Manual peek triggered for ${listing.productName}`);
+    const result = await executeMarketPeek(listing);
+    
+    if (result.success) {
+      setBulkActionMessage(`Market peek successful! Discovered price: $${result.discoveredLowestAsk}, New price: $${result.newPrice}`);
+      setTimeout(() => setBulkActionMessage(null), 5000);
+    }
+  };
+
+  const executeMarketPeek = async (listing: Listing): Promise<MarketPeekResult> => {
+    const startTime = Date.now();
+    const result: MarketPeekResult = {
+      timestamp: new Date().toISOString(),
+      previousPrice: listing.currentPrice,
+      peekPrice: 0,
+      discoveredLowestAsk: 0,
+      newPrice: 0,
+      profitGained: 0,
+      success: false,
+      apiResponseTimes: {}
+    };
+
+    try {
+      // Mark listing as peeking
+      setActivePeeks(prev => ({ ...prev, [listing.listingId]: true }));
+      
+      // Step 1: Calculate peek price (10x current market price, capped)
+      const currentMarketPrice = listing.lowestAsk || listing.currentPrice;
+      result.peekPrice = Math.min(currentMarketPrice * 10, 9999); // Cap at $9999
+      
+      console.log(`🔍 Market Peek starting for ${listing.productName} - Raising to $${result.peekPrice}`);
+      
+      // Step 1: Raise price to peek amount
+      const raiseStart = Date.now();
+      const raiseResponse = await fetch('/api/stockx/listings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update_price',
+          listingIds: [listing.listingId],
+          newPrice: result.peekPrice
+        })
+      });
+      
+      if (!raiseResponse.ok) throw new Error('Failed to raise price for peek');
+      result.apiResponseTimes.raisePriceMs = Date.now() - raiseStart;
+      
+      // Wait 15 seconds as per requirements
+      await new Promise(resolve => setTimeout(resolve, 15000));
+      
+      // Step 2: Fetch market data to discover real lowest ask
+      const fetchStart = Date.now();
+      const marketResponse = await fetch('/api/stockx/listings/market-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          listings: [{
+            listingId: listing.listingId,
+            productId: listing.productId,
+            variantId: listing.variantId
+          }]
+        })
+      });
+      
+      if (!marketResponse.ok) throw new Error('Failed to fetch market data');
+      const marketData = await marketResponse.json();
+      result.apiResponseTimes.fetchMarketMs = Date.now() - fetchStart;
+      
+      // Extract discovered lowest ask
+      const discoveredData = marketData.marketData?.[0]?.marketData;
+      result.discoveredLowestAsk = discoveredData?.lowestAsk || listing.lowestAsk || listing.currentPrice;
+      
+      // Wait 15 seconds
+      await new Promise(resolve => setTimeout(resolve, 15000));
+      
+      // Step 3: Calculate new optimal price (lowest ask - $1)
+      result.newPrice = Math.max(1, result.discoveredLowestAsk - 1);
+      
+      // Apply min/max constraints
+      if (listing.minPrice && result.newPrice < listing.minPrice) {
+        result.newPrice = listing.minPrice;
+      }
+      if (listing.maxPrice && result.newPrice > listing.maxPrice) {
+        result.newPrice = listing.maxPrice;
+      }
+      
+      // Step 4: Set new price
+      const setStart = Date.now();
+      const setResponse = await fetch('/api/stockx/listings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update_price',
+          listingIds: [listing.listingId],
+          newPrice: result.newPrice
+        })
+      });
+      
+      if (!setResponse.ok) throw new Error('Failed to set new price');
+      result.apiResponseTimes.setPriceMs = Date.now() - setStart;
+      
+      // Wait 15 seconds
+      await new Promise(resolve => setTimeout(resolve, 15000));
+      
+      // Calculate profit gained
+      result.profitGained = result.discoveredLowestAsk - listing.lowestAsk!;
+      result.success = true;
+      
+      console.log(`✅ Market Peek successful! Discovered: $${result.discoveredLowestAsk}, New price: $${result.newPrice}`);
+      
+      // Update listing with new price and market data
+      setListings(prev => prev.map(l => 
+        l.listingId === listing.listingId 
+          ? { 
+              ...l, 
+              currentPrice: result.newPrice,
+              lowestAsk: result.discoveredLowestAsk,
+              pricingStrategy: {
+                ...l.pricingStrategy!,
+                peekSettings: {
+                  ...l.pricingStrategy?.peekSettings!,
+                  lastPeekTime: result.timestamp,
+                  isPeeking: false,
+                  peekHistory: [
+                    result,
+                    ...(l.pricingStrategy?.peekSettings?.peekHistory || []).slice(0, 9) // Keep last 10
+                  ]
+                }
+              }
+            }
+          : l
+      ));
+      
+    } catch (error: any) {
+      console.error(`❌ Market Peek failed:`, error);
+      result.success = false;
+      result.error = error.message;
+      
+      // Auto-revert to previous price on failure
+      try {
+        await fetch('/api/stockx/listings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'update_price',
+            listingIds: [listing.listingId],
+            newPrice: listing.currentPrice
+          })
+        });
+      } catch (revertError) {
+        console.error('Failed to revert price:', revertError);
+      }
+    } finally {
+      setActivePeeks(prev => ({ ...prev, [listing.listingId]: false }));
+    }
+    
+    return result;
   };
 
   const executeRepricing = async () => {
@@ -1616,6 +1904,7 @@ export default function StockXRepricing() {
                             onChange={(value) => updateListingStrategy(listing.listingId, value as any)}
                             options={[
                               { value: 'keep_current', label: 'Keep Current' },
+                              { value: 'market_peek', label: '🔍 Market Peek' },
                               { value: 'beat_lowest', label: 'Beat Lowest by $1' },
                               { value: 'match_lowest', label: 'Match Lowest' },
                               { value: 'percentage_below', label: listing.pricingStrategy?.type === 'percentage_below' ? `-${listing.pricingStrategy?.value || 5}%` : 'Below %' },
@@ -1624,6 +1913,37 @@ export default function StockXRepricing() {
                             isNeon={isNeon}
                             className="flex-1"
                           />
+                          {listing.pricingStrategy?.type === 'market_peek' && (
+                            <div className="flex items-center gap-1">
+                              <select
+                                value={listing.pricingStrategy?.peekSettings?.frequency || 'balanced'}
+                                onChange={(e) => updatePeekFrequency(listing.listingId, e.target.value as any)}
+                                className={`text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
+                                  isNeon 
+                                    ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
+                                    : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
+                                }`}
+                              >
+                                <option value="conservative">8h</option>
+                                <option value="balanced">6h</option>
+                                <option value="aggressive">4h</option>
+                              </select>
+                              <button
+                                onClick={() => manualPeekNow(listing.listingId)}
+                                disabled={activePeeks[listing.listingId]}
+                                className={`text-xs px-2 py-1 rounded transition-all ${
+                                  activePeeks[listing.listingId]
+                                    ? isNeon ? 'bg-gray-700 text-gray-500' : 'bg-gray-200 text-gray-400'
+                                    : isNeon 
+                                      ? 'bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30' 
+                                      : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                                }`}
+                                title={activePeeks[listing.listingId] ? 'Peek in progress...' : 'Peek now'}
+                              >
+                                {activePeeks[listing.listingId] ? '...' : 'Peek'}
+                              </button>
+                            </div>
+                          )}
                           {(listing.pricingStrategy?.type === 'percentage_below' ||
                             listing.pricingStrategy?.type === 'manual') && (
                             <input
@@ -1708,13 +2028,24 @@ export default function StockXRepricing() {
                       )}
                     </td>
                     <td className={`p-2 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-                      <span className={`px-2 py-1 text-xs rounded-full ${
-                        listing.status === 'ACTIVE' 
-                          ? isNeon ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-800'
-                          : isNeon ? 'bg-gray-500/20 text-gray-400' : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        {listing.status}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-1 text-xs rounded-full ${
+                          listing.status === 'ACTIVE' 
+                            ? isNeon ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-800'
+                            : isNeon ? 'bg-gray-500/20 text-gray-400' : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {listing.status}
+                        </span>
+                        {listing.pricingStrategy?.type === 'market_peek' && (
+                          <span className={`px-2 py-1 text-xs rounded-full ${
+                            activePeeks[listing.listingId]
+                              ? isNeon ? 'bg-yellow-500/20 text-yellow-400 animate-pulse' : 'bg-yellow-100 text-yellow-800 animate-pulse'
+                              : isNeon ? 'bg-cyan-500/20 text-cyan-400' : 'bg-blue-100 text-blue-700'
+                          }`}>
+                            {activePeeks[listing.listingId] ? '👀 Peeking...' : '🔍 Peek'}
+                          </span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
