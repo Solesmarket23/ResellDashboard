@@ -222,6 +222,9 @@ export default function StockXRepricing() {
         }
         return listing;
       }));
+      
+      // Force a re-render by updating a timestamp
+      setLastFetchTime(new Date());
     }
   }, [settingsLoaded, savedSettings]); // Depend on settingsLoaded flag
 
@@ -2281,7 +2284,15 @@ export default function StockXRepricing() {
                 </tr>
               </thead>
               <tbody>
-                {paginatedListings.map((listing) => (
+                {paginatedListings.map((listing) => {
+                  // Debug log to see what values are being rendered
+                  if (listing.minPrice || listing.maxPrice) {
+                    console.log(`Rendering ${listing.listingId}:`, {
+                      minPrice: listing.minPrice,
+                      maxPrice: listing.maxPrice
+                    });
+                  }
+                  return (
                   <tr key={listing.listingId} className={`border-b transition-colors ${
                     isNeon 
                       ? 'border-gray-700 hover:bg-gray-700/50' 
@@ -2477,7 +2488,8 @@ export default function StockXRepricing() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                );
+                })}
               </tbody>
             </table>
           </div>
