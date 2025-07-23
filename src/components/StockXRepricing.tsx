@@ -336,11 +336,13 @@ export default function StockXRepricing() {
       console.log('Final setting data to save:', settingData);
       
       if (existingSetting?.id) {
-        // Update existing document
-        await updateDocument('stockxPricingSettings', existingSetting.id, settingData);
+        // Update existing document with merge to preserve other fields
+        await updateDocument('stockxPricingSettings', existingSetting.id, settingData, true);
+        // Merge the new data with existing in state
+        const mergedData = { ...existingSetting, ...settingData };
         setSavedSettings(prev => ({
           ...prev,
-          [listingId]: { ...settingData, id: existingSetting.id }
+          [listingId]: mergedData
         }));
       } else {
         // Create new document

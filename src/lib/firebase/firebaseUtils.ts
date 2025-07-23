@@ -11,6 +11,7 @@ import {
   doc,
   updateDoc,
   deleteDoc,
+  setDoc,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
@@ -60,8 +61,13 @@ export const getDocuments = async (collectionName: string): Promise<any[]> => {
   }
 };
 
-export const updateDocument = (collectionName: string, id: string, data: any) =>
-  updateDoc(doc(db, collectionName, id), data);
+export const updateDocument = (collectionName: string, id: string, data: any, merge: boolean = false) => {
+  if (merge) {
+    // Use set with merge option to only update specified fields
+    return setDoc(doc(db, collectionName, id), data, { merge: true });
+  }
+  return updateDoc(doc(db, collectionName, id), data);
+};
 
 export const deleteDocument = async (collectionName: string, id: string) => {
   try {
