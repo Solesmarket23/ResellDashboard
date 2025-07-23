@@ -76,6 +76,21 @@ interface Listing {
   maxPrice?: number;
   autoDeactivate?: boolean;
   costBasis?: number; // Add cost basis for validation
+  // Inventory grouping
+  inventoryGroupId?: string; // productId + variantId
+  isGroupLeader?: boolean;
+  groupLeaderId?: string;
+}
+
+interface InventoryGroup {
+  groupId: string; // productId + variantId
+  productId: string;
+  variantId: string;
+  productName: string;
+  size: string;
+  listings: Listing[];
+  leaderId: string; // listingId of the representative
+  lastSyncTime?: string;
 }
 
 interface RepricingResult {
@@ -141,6 +156,7 @@ export default function StockXRepricing() {
   const [savingSettings, setSavingSettings] = useState(false);
   const [activePeeks, setActivePeeks] = useState<Record<string, boolean>>({});
   const [peekScheduler, setPeekScheduler] = useState<NodeJS.Timeout | null>(null);
+  const [inventoryGroups, setInventoryGroups] = useState<Map<string, InventoryGroup>>(new Map());
   
   // Pagination calculations - moved here so they're available for all functions
   const totalPages = Math.ceil(listings.length / itemsPerPage);
@@ -278,6 +294,189 @@ export default function StockXRepricing() {
     }
   };
 
+  // Process inventory groups to identify duplicates and assign representatives
+  const processInventoryGroups = (listings: Listing[]): Listing[] => {
+    const groups = new Map<string, InventoryGroup>();
+    
+    // Group listings by productId + variantId
+    listings.forEach(listing => {
+      // Only group ACTIVE listings
+      if (listing.status !== 'ACTIVE') return;
+      
+      const groupId = `${listing.productId}_${listing.variantId}`;
+      listing.inventoryGroupId = groupId;
+      
+      if (!groups.has(groupId)) {
+        groups.set(groupId, {
+          groupId,
+          productId: listing.productId,
+          variantId: listing.variantId,
+          productName: listing.productName,
+          size: listing.size,
+          listings: [],
+          leaderId: '',
+          lastSyncTime: new Date().toISOString()
+        });
+      }
+      
+      groups.get(groupId)!.listings.push(listing);
+    });
+    
+    // Process each group to select representatives
+    groups.forEach(group => {
+      if (group.listings.length === 1) {
+        // Single listing is always the leader
+        group.listings[0].isGroupLeader = true;
+        group.leaderId = group.listings[0].listingId;
+      } else {
+        // Multiple listings - choose the one with lowest price as leader
+        const sortedByPrice = [...group.listings].sort((a, b) => a.currentPrice - b.currentPrice);
+        const leader = sortedByPrice[0];
+        
+        leader.isGroupLeader = true;
+        group.leaderId = leader.listingId;
+        
+        // Mark all other listings as followers
+        group.listings.forEach(listing => {
+          listing.groupLeaderId = leader.listingId;
+          if (listing.listingId !== leader.listingId) {
+            listing.isGroupLeader = false;
+            // Sync pricing strategy from leader
+            listing.pricingStrategy = leader.pricingStrategy;
+            listing.minPrice = leader.minPrice;
+            listing.maxPrice = leader.maxPrice;
+            listing.autoDeactivate = leader.autoDeactivate;
+          }
+        });
+        
+        console.log(`🔗 Inventory group ${group.groupId}: ${group.listings.length} items, leader: ${leader.productName} @ $${leader.currentPrice}`);
+      }
+    });
+    
+    // Update inventory groups state
+    setInventoryGroups(groups);
+    
+    return listings;
+  };
+
+  // Sync prices across an inventory group
+  const syncInventoryGroup = async (groupId: string, newPrice: number, leaderId?: string) => {
+    const group = inventoryGroups.get(groupId);
+    if (!group || group.listings.length <= 1) return;
+    
+    console.log(`🔄 Syncing inventory group ${groupId} to price $${newPrice}`);
+    
+    // If leader changed, update group
+    if (leaderId && leaderId !== group.leaderId) {
+      group.leaderId = leaderId;
+      group.listings.forEach(listing => {
+        listing.isGroupLeader = listing.listingId === leaderId;
+        listing.groupLeaderId = leaderId;
+      });
+    }
+    
+    // Update all listings in the group to the same price
+    const updatePromises = group.listings.map(async (listing) => {
+      if (listing.currentPrice !== newPrice) {
+        try {
+          const response = await fetch('/api/stockx/repricing', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              listings: [{
+                listingId: listing.listingId,
+                currentPrice: listing.currentPrice,
+                newPrice: newPrice
+              }]
+            })
+          });
+          
+          if (response.ok) {
+            listing.currentPrice = newPrice;
+            console.log(`✅ Updated ${listing.listingId} to $${newPrice}`);
+          }
+        } catch (error) {
+          console.error(`❌ Failed to sync ${listing.listingId}:`, error);
+        }
+      }
+    });
+    
+    await Promise.all(updatePromises);
+    group.lastSyncTime = new Date().toISOString();
+  };
+
+  // Promote new group leader when current leader is sold/deactivated
+  const promoteNewGroupLeader = async (groupId: string, oldLeaderId: string) => {
+    const group = inventoryGroups.get(groupId);
+    if (!group || group.listings.length <= 1) return;
+    
+    // Remove old leader from group
+    group.listings = group.listings.filter(l => l.listingId !== oldLeaderId);
+    
+    if (group.listings.length === 0) {
+      // No more listings in group, remove it
+      inventoryGroups.delete(groupId);
+      return;
+    }
+    
+    // Select new leader (lowest price)
+    const sortedByPrice = [...group.listings].sort((a, b) => a.currentPrice - b.currentPrice);
+    const newLeader = sortedByPrice[0];
+    
+    console.log(`👑 Promoting ${newLeader.productName} as new group leader for ${groupId}`);
+    
+    // Update group and listings
+    group.leaderId = newLeader.listingId;
+    group.listings.forEach(listing => {
+      listing.isGroupLeader = listing.listingId === newLeader.listingId;
+      listing.groupLeaderId = newLeader.listingId;
+    });
+    
+    // Sync pricing strategy from new leader to followers
+    const followers = group.listings.filter(l => l.listingId !== newLeader.listingId);
+    followers.forEach(follower => {
+      follower.pricingStrategy = newLeader.pricingStrategy;
+      follower.minPrice = newLeader.minPrice;
+      follower.maxPrice = newLeader.maxPrice;
+      follower.autoDeactivate = newLeader.autoDeactivate;
+    });
+    
+    // Save settings for all followers
+    for (const follower of followers) {
+      await saveSettingToFirebase(follower.listingId, {
+        pricingStrategy: follower.pricingStrategy,
+        minPrice: follower.minPrice,
+        maxPrice: follower.maxPrice,
+        autoDeactivate: follower.autoDeactivate
+      });
+    }
+  };
+
+  // Handle manual price change - make that listing the new leader
+  const handleManualPriceChange = async (listingId: string, newPrice: number) => {
+    const listing = listings.find(l => l.listingId === listingId);
+    if (!listing || !listing.inventoryGroupId) return;
+    
+    const group = inventoryGroups.get(listing.inventoryGroupId);
+    if (!group || group.listings.length <= 1) return;
+    
+    // If this listing is not the leader, make it the leader
+    if (!listing.isGroupLeader) {
+      console.log(`🔄 Manual price change detected - making ${listing.productName} the new group leader`);
+      await promoteNewGroupLeader(listing.inventoryGroupId, group.leaderId);
+      
+      // Update the group with this listing as leader
+      group.leaderId = listingId;
+      group.listings.forEach(l => {
+        l.isGroupLeader = l.listingId === listingId;
+        l.groupLeaderId = listingId;
+      });
+    }
+    
+    // Sync the new price to all group members
+    await syncInventoryGroup(listing.inventoryGroupId, newPrice, listingId);
+  };
+
   const fetchListings = async (forceReload = false) => {
     console.log(`🔄 Fetching listings... (forceReload: ${forceReload})`);
     setLoading(true);
@@ -360,7 +559,10 @@ export default function StockXRepricing() {
           ...listing,
           selected: false
         }));
-        setListings(enrichedListings);
+        
+        // Process inventory groups
+        const groupedListings = processInventoryGroups(enrichedListings);
+        setListings(groupedListings);
         setLastFetchTime(new Date());
         
         // Store listing stats if available
@@ -666,18 +868,28 @@ export default function StockXRepricing() {
       } : undefined
     };
     
-    setListings(prev => prev.map(l => 
-      l.listingId === listingId 
-        ? { ...l, pricingStrategy: newStrategy }
-        : l
-    ));
+    // Check if this listing is part of a group
+    const group = listing.inventoryGroupId ? inventoryGroups.get(listing.inventoryGroupId) : null;
+    const listingsToUpdate = (group && group.listings.length > 1 && listing.isGroupLeader) 
+      ? group.listings 
+      : [listing];
     
-    // Save to Firebase
-    saveSettingToFirebase(listingId, {
-      pricingStrategy: newStrategy,
-      minPrice: listing.minPrice,
-      maxPrice: listing.maxPrice,
-      autoDeactivate: listing.autoDeactivate
+    // Update all listings in the group (if leader) or just this listing
+    setListings(prev => prev.map(l => {
+      const shouldUpdate = listingsToUpdate.some(ul => ul.listingId === l.listingId);
+      return shouldUpdate
+        ? { ...l, pricingStrategy: newStrategy }
+        : l;
+    }));
+    
+    // Save to Firebase for all updated listings
+    listingsToUpdate.forEach(l => {
+      saveSettingToFirebase(l.listingId, {
+        pricingStrategy: newStrategy,
+        minPrice: l.minPrice,
+        maxPrice: l.maxPrice,
+        autoDeactivate: l.autoDeactivate
+      });
     });
   };
 
@@ -756,18 +968,28 @@ export default function StockXRepricing() {
     
     const newMinPrice = isNaN(minPrice) ? undefined : minPrice;
     
-    setListings(prev => prev.map(l => 
-      l.listingId === listingId 
-        ? { ...l, minPrice: newMinPrice }
-        : l
-    ));
+    // Check if this listing is part of a group
+    const group = listing.inventoryGroupId ? inventoryGroups.get(listing.inventoryGroupId) : null;
+    const listingsToUpdate = (group && group.listings.length > 1 && listing.isGroupLeader) 
+      ? group.listings 
+      : [listing];
     
-    // Save to Firebase
-    saveSettingToFirebase(listingId, {
-      pricingStrategy: listing.pricingStrategy,
-      minPrice: newMinPrice,
-      maxPrice: listing.maxPrice,
-      autoDeactivate: listing.autoDeactivate
+    // Update all listings in the group (if leader) or just this listing
+    setListings(prev => prev.map(l => {
+      const shouldUpdate = listingsToUpdate.some(ul => ul.listingId === l.listingId);
+      return shouldUpdate
+        ? { ...l, minPrice: newMinPrice }
+        : l;
+    }));
+    
+    // Save to Firebase for all updated listings
+    listingsToUpdate.forEach(l => {
+      saveSettingToFirebase(l.listingId, {
+        pricingStrategy: l.pricingStrategy,
+        minPrice: newMinPrice,
+        maxPrice: l.maxPrice,
+        autoDeactivate: l.autoDeactivate
+      });
     });
   };
 
@@ -777,18 +999,28 @@ export default function StockXRepricing() {
     
     const newMaxPrice = isNaN(maxPrice) ? undefined : maxPrice;
     
-    setListings(prev => prev.map(l => 
-      l.listingId === listingId 
-        ? { ...l, maxPrice: newMaxPrice }
-        : l
-    ));
+    // Check if this listing is part of a group
+    const group = listing.inventoryGroupId ? inventoryGroups.get(listing.inventoryGroupId) : null;
+    const listingsToUpdate = (group && group.listings.length > 1 && listing.isGroupLeader) 
+      ? group.listings 
+      : [listing];
     
-    // Save to Firebase
-    saveSettingToFirebase(listingId, {
-      pricingStrategy: listing.pricingStrategy,
-      minPrice: listing.minPrice,
-      maxPrice: newMaxPrice,
-      autoDeactivate: listing.autoDeactivate
+    // Update all listings in the group (if leader) or just this listing
+    setListings(prev => prev.map(l => {
+      const shouldUpdate = listingsToUpdate.some(ul => ul.listingId === l.listingId);
+      return shouldUpdate
+        ? { ...l, maxPrice: newMaxPrice }
+        : l;
+    }));
+    
+    // Save to Firebase for all updated listings
+    listingsToUpdate.forEach(l => {
+      saveSettingToFirebase(l.listingId, {
+        pricingStrategy: l.pricingStrategy,
+        minPrice: l.minPrice,
+        maxPrice: newMaxPrice,
+        autoDeactivate: l.autoDeactivate
+      });
     });
   };
 
@@ -1168,23 +1400,36 @@ export default function StockXRepricing() {
     };
 
     try {
-      // Mark listing as peeking
-      setActivePeeks(prev => ({ ...prev, [listing.listingId]: true }));
+      // Check if this listing is part of a group and if it's the leader
+      const group = listing.inventoryGroupId ? inventoryGroups.get(listing.inventoryGroupId) : null;
+      if (group && group.listings.length > 1 && !listing.isGroupLeader) {
+        console.log(`⚠️ Skipping market peek for follower listing ${listing.listingId}. Only group leader can peek.`);
+        throw new Error('Only group leader can perform market peek');
+      }
+      
+      // Get all listings to update (leader + followers)
+      const listingsToUpdate = group && group.listings.length > 1 ? group.listings : [listing];
+      const listingIds = listingsToUpdate.map(l => l.listingId);
+      
+      // Mark all listings in group as peeking
+      listingIds.forEach(id => {
+        setActivePeeks(prev => ({ ...prev, [id]: true }));
+      });
       
       // Step 1: Calculate peek price (10x current market price, capped)
       const currentMarketPrice = listing.lowestAsk || listing.currentPrice;
       result.peekPrice = Math.min(currentMarketPrice * 10, 9999); // Cap at $9999
       
-      console.log(`🔍 Market Peek starting for ${listing.productName} - Raising to $${result.peekPrice}`);
+      console.log(`🔍 Market Peek starting for ${listing.productName} (${listingsToUpdate.length} items) - Raising to $${result.peekPrice}`);
       
-      // Step 1: Raise price to peek amount
+      // Step 1: Raise price to peek amount for ALL listings in group
       const raiseStart = Date.now();
       const raiseResponse = await fetch('/api/stockx/listings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'update_price',
-          listingIds: [listing.listingId],
+          listingIds: listingIds,
           newPrice: result.peekPrice
         })
       });
@@ -1231,14 +1476,14 @@ export default function StockXRepricing() {
         result.newPrice = listing.maxPrice;
       }
       
-      // Step 4: Set new price
+      // Step 4: Set new price for ALL listings in group
       const setStart = Date.now();
       const setResponse = await fetch('/api/stockx/listings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'update_price',
-          listingIds: [listing.listingId],
+          listingIds: listingIds,
           newPrice: result.newPrice
         })
       });
@@ -1253,44 +1498,55 @@ export default function StockXRepricing() {
       result.profitGained = result.discoveredLowestAsk - listing.lowestAsk!;
       result.success = true;
       
-      console.log(`✅ Market Peek successful! Discovered: $${result.discoveredLowestAsk}, New price: $${result.newPrice}`);
+      console.log(`✅ Market Peek successful! Discovered: $${result.discoveredLowestAsk}, New price: $${result.newPrice} for ${listingsToUpdate.length} items`);
       
-      // Update listing with new price and market data
-      setListings(prev => prev.map(l => 
-        l.listingId === listing.listingId 
-          ? { 
-              ...l, 
-              currentPrice: result.newPrice,
-              lowestAsk: result.discoveredLowestAsk,
-              pricingStrategy: {
-                ...l.pricingStrategy!,
-                peekSettings: {
-                  ...l.pricingStrategy?.peekSettings!,
-                  lastPeekTime: result.timestamp,
-                  isPeeking: false,
-                  peekHistory: [
-                    result,
-                    ...(l.pricingStrategy?.peekSettings?.peekHistory || []).slice(0, 9) // Keep last 10
-                  ]
-                }
+      // Update all listings in group with new price and market data
+      setListings(prev => prev.map(l => {
+        // Check if this listing is in the group
+        const isInGroup = listingIds.includes(l.listingId);
+        
+        if (isInGroup) {
+          const isLeader = l.listingId === listing.listingId;
+          return { 
+            ...l, 
+            currentPrice: result.newPrice,
+            lowestAsk: result.discoveredLowestAsk,
+            pricingStrategy: isLeader ? {
+              ...l.pricingStrategy!,
+              peekSettings: {
+                ...l.pricingStrategy?.peekSettings!,
+                lastPeekTime: result.timestamp,
+                isPeeking: false,
+                peekHistory: [
+                  result,
+                  ...(l.pricingStrategy?.peekSettings?.peekHistory || []).slice(0, 9) // Keep last 10
+                ]
               }
-            }
-          : l
-      ));
+            } : l.pricingStrategy
+          };
+        }
+        return l;
+      }));
+      
+      // Sync the inventory group
+      if (group && group.listings.length > 1) {
+        await syncInventoryGroup(listing.inventoryGroupId!, result.newPrice, listing.listingId);
+      }
       
     } catch (error: any) {
       console.error(`❌ Market Peek failed:`, error);
       result.success = false;
       result.error = error.message;
       
-      // Auto-revert to previous price on failure
+      // Auto-revert to previous price on failure for all listings in group
+      const listingsToRevert = group && group.listings.length > 1 ? group.listings : [listing];
       try {
         await fetch('/api/stockx/listings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             action: 'update_price',
-            listingIds: [listing.listingId],
+            listingIds: listingsToRevert.map(l => l.listingId),
             newPrice: listing.currentPrice
           })
         });
@@ -1298,7 +1554,11 @@ export default function StockXRepricing() {
         console.error('Failed to revert price:', revertError);
       }
     } finally {
-      setActivePeeks(prev => ({ ...prev, [listing.listingId]: false }));
+      // Clear peeking status for all listings in group
+      const listingsToClear = group && group.listings.length > 1 ? group.listings : [listing];
+      listingsToClear.forEach(l => {
+        setActivePeeks(prev => ({ ...prev, [l.listingId]: false }));
+      });
     }
     
     return result;
@@ -1312,15 +1572,30 @@ export default function StockXRepricing() {
       return;
     }
 
-    // Validate that all selected listings have min/max prices
-    const invalidListings = selectedListings.filter(listing => !listing.minPrice || !listing.maxPrice);
+    // Filter out follower listings - only reprice leaders (or standalone listings)
+    const listingsToReprice = selectedListings.filter(listing => {
+      // If not in a group, include it
+      if (!listing.inventoryGroupId) return true;
+      
+      const group = inventoryGroups.get(listing.inventoryGroupId);
+      // If group doesn't exist or has only 1 listing, include it
+      if (!group || group.listings.length <= 1) return true;
+      
+      // Only include if it's the group leader
+      return listing.isGroupLeader;
+    });
+
+    console.log(`🎯 Repricing ${listingsToReprice.length} items (${selectedListings.length - listingsToReprice.length} followers will be synced automatically)`);
+
+    // Validate that all listings to reprice have min/max prices
+    const invalidListings = listingsToReprice.filter(listing => !listing.minPrice || !listing.maxPrice);
     if (invalidListings.length > 0) {
       alert(`Please set min and max prices for all selected listings. ${invalidListings.length} listing(s) are missing price limits.`);
       return;
     }
 
     // Validate min < max for all listings
-    const invalidPriceRanges = selectedListings.filter(listing => 
+    const invalidPriceRanges = listingsToReprice.filter(listing => 
       listing.minPrice && listing.maxPrice && listing.minPrice >= listing.maxPrice
     );
     if (invalidPriceRanges.length > 0) {
@@ -1336,14 +1611,15 @@ export default function StockXRepricing() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          listings: selectedListings.map(listing => ({
+          listings: listingsToReprice.map(listing => ({
             ...listing,
             costBasis: listing.costBasis || listing.retailPrice || listing.originalPrice * 0.7, // Estimate cost basis if not provided
           })),
           strategy,
           dryRun,
           notificationEmail: notificationEmail || undefined,
-          useIndividualStrategies: true // Flag to indicate we're using individual strategies
+          useIndividualStrategies: true, // Flag to indicate we're using individual strategies
+          inventoryGroups: Array.from(inventoryGroups.values()) // Send inventory groups for server-side syncing
         })
       });
 
@@ -1882,11 +2158,42 @@ export default function StockXRepricing() {
                       />
                     </td>
                     <td className="p-2">
-                      <div className={`font-medium text-sm ${isNeon ? 'text-white' : 'text-gray-900'}`}>
-                        {listing.productName}
-                      </div>
-                      <div className={`text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-                        {listing.styleId || 'N/A'}
+                      <div className="flex items-center gap-2">
+                        <div>
+                          <div className={`font-medium text-sm ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+                            {listing.productName}
+                          </div>
+                          <div className={`text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                            {listing.styleId || 'N/A'}
+                          </div>
+                        </div>
+                        {/* Group Leader Indicator */}
+                        {listing.inventoryGroupId && inventoryGroups.get(listing.inventoryGroupId)?.listings.length > 1 && (
+                          <div className="flex flex-col items-center gap-1">
+                            {listing.isGroupLeader ? (
+                              <span className={`px-2 py-1 text-xs rounded-full flex items-center gap-1 ${
+                                isNeon 
+                                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' 
+                                  : 'bg-amber-100 text-amber-700 border border-amber-300'
+                              }`}
+                              title="Group Leader - Controls pricing for duplicate inventory">
+                                👑 Leader
+                              </span>
+                            ) : (
+                              <span className={`px-2 py-1 text-xs rounded-full ${
+                                isNeon 
+                                  ? 'bg-gray-600/50 text-gray-400 border border-gray-500/30' 
+                                  : 'bg-gray-100 text-gray-600 border border-gray-300'
+                              }`}
+                              title="Follower - Price synced with group leader">
+                                🔗 Synced
+                              </span>
+                            )}
+                            <span className={`text-xs ${isNeon ? 'text-gray-500' : 'text-gray-500'}`}>
+                              {inventoryGroups.get(listing.inventoryGroupId)?.listings.length} units
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td className={`p-2 text-sm ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>{listing.size}</td>
