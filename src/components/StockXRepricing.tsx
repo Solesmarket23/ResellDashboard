@@ -109,6 +109,7 @@ export default function StockXRepricing() {
   const [showBulkPricingModal, setShowBulkPricingModal] = useState(false);
   const [previewResults, setPreviewResults] = useState<RepricingResult[]>([]);
   const [isPreviewMinimized, setIsPreviewMinimized] = useState(false);
+  const [showPreviewResults, setShowPreviewResults] = useState(false);
   
   // Pagination calculations - moved here so they're available for all functions
   const totalPages = Math.ceil(listings.length / itemsPerPage);
@@ -822,12 +823,24 @@ export default function StockXRepricing() {
     setPreviewResults(previewData);
   };
 
-  // Update preview whenever selection or pricing rules change
+  // Clear preview results when switching modes
   useEffect(() => {
-    if (dryRun) {
-      calculatePreviewPrices();
+    if (!dryRun) {
+      setShowPreviewResults(false);
+      setPreviewResults([]);
     }
-  }, [listings.filter(l => l.selected).map(l => `${l.listingId}-${l.pricingStrategy?.type}-${l.pricingStrategy?.value}`).join(','), dryRun]);
+  }, [dryRun]);
+
+  const handlePreviewClick = async () => {
+    if (dryRun) {
+      // Calculate and show preview
+      await calculatePreviewPrices();
+      setShowPreviewResults(true);
+    } else {
+      // Execute repricing
+      await executeRepricing();
+    }
+  };
 
   const executeRepricing = async () => {
     const selectedListings = listings.filter(listing => listing.selected);
@@ -1621,7 +1634,14 @@ export default function StockXRepricing() {
         } shadow-2xl`}>
           {/* Minimize/Maximize Button */}
           <button
-            onClick={() => setIsPreviewMinimized(!isPreviewMinimized)}
+            onClick={() => {
+              setIsPreviewMinimized(!isPreviewMinimized);
+              if (isPreviewMinimized) {
+                // When expanding, don't auto-show results
+              } else {
+                // When minimizing, keep results state as is
+              }
+            }}
             className={`absolute -top-10 right-4 px-4 py-2 rounded-t-lg flex items-center gap-2 ${
               isNeon 
                 ? 'bg-gray-800 text-cyan-400 hover:bg-gray-700' 
@@ -1640,7 +1660,7 @@ export default function StockXRepricing() {
           </button>
 
           {/* Preview Results Table (when expanded and in dry run mode) */}
-          {!isPreviewMinimized && dryRun && previewResults.length > 0 && (
+          {!isPreviewMinimized && showPreviewResults && previewResults.length > 0 && (
             <div className={`max-h-64 overflow-y-auto border-b ${
               isNeon ? 'border-gray-700' : 'border-gray-200'
             }`}>
@@ -1739,7 +1759,7 @@ export default function StockXRepricing() {
             </div>
             
             <button
-              onClick={executeRepricing}
+              onClick={handlePreviewClick}
               disabled={loading || listings.filter(l => l.selected).length === 0}
               className={`px-6 py-3 rounded-lg font-semibold transition-all duration-200 flex items-center gap-2 disabled:opacity-50 ${
                 dryRun 
