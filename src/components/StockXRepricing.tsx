@@ -1056,12 +1056,21 @@ export default function StockXRepricing() {
       // Ensure we have a default pricing strategy if none exists
       const pricingStrategy = l.pricingStrategy || { type: 'keep_current' };
       
-      saveSettingToFirebase(l.listingId, {
+      // Build settings object with only defined values
+      const settings: any = {
         pricingStrategy: pricingStrategy,
-        minPrice: newMinPrice,
-        maxPrice: l.maxPrice,
         autoDeactivate: l.autoDeactivate || false
-      });
+      };
+      
+      // Only include prices if they have values
+      if (newMinPrice !== undefined && newMinPrice !== null) {
+        settings.minPrice = newMinPrice;
+      }
+      if (l.maxPrice !== undefined && l.maxPrice !== null) {
+        settings.maxPrice = l.maxPrice;
+      }
+      
+      saveSettingToFirebase(l.listingId, settings);
     });
   };
 
@@ -1090,12 +1099,21 @@ export default function StockXRepricing() {
       // Ensure we have a default pricing strategy if none exists
       const pricingStrategy = l.pricingStrategy || { type: 'keep_current' };
       
-      saveSettingToFirebase(l.listingId, {
+      // Build settings object with only defined values
+      const settings: any = {
         pricingStrategy: pricingStrategy,
-        minPrice: l.minPrice,
-        maxPrice: newMaxPrice,
         autoDeactivate: l.autoDeactivate || false
-      });
+      };
+      
+      // Only include prices if they have values
+      if (l.minPrice !== undefined && l.minPrice !== null) {
+        settings.minPrice = l.minPrice;
+      }
+      if (newMaxPrice !== undefined && newMaxPrice !== null) {
+        settings.maxPrice = newMaxPrice;
+      }
+      
+      saveSettingToFirebase(l.listingId, settings);
     });
   };
 
