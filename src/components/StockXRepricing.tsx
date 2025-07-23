@@ -4,6 +4,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { DollarSign, TrendingDown, Target, Zap, RefreshCw, AlertTriangle, CheckCircle, Loader, Package } from 'lucide-react';
 import NeonDropdown from './NeonDropdown';
+import { addDocument, getDocuments, updateDocument } from '@/lib/firebase/firebaseUtils';
+import { auth } from '@/lib/firebase/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 
 interface RepricingStrategy {
   type: 'competitive' | 'margin_based' | 'velocity_based' | 'hybrid';
@@ -110,6 +113,9 @@ export default function StockXRepricing() {
   const [previewResults, setPreviewResults] = useState<RepricingResult[]>([]);
   const [isPreviewMinimized, setIsPreviewMinimized] = useState(false);
   const [showPreviewResults, setShowPreviewResults] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [savedSettings, setSavedSettings] = useState<Record<string, any>>({});
+  const [savingSettings, setSavingSettings] = useState(false);
   
   // Pagination calculations - moved here so they're available for all functions
   const totalPages = Math.ceil(listings.length / itemsPerPage);
@@ -126,6 +132,101 @@ export default function StockXRepricing() {
   useEffect(() => {
     setCurrentPage(1);
   }, [listings.length]);
+
+  // Track auth state
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      if (user) {
+        loadSavedSettings(user.uid);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Apply saved settings when listings are loaded
+  useEffect(() => {
+    if (listings.length > 0 && Object.keys(savedSettings).length > 0) {
+      setListings(prev => prev.map(listing => {
+        const saved = savedSettings[listing.listingId];
+        if (saved) {
+          return {
+            ...listing,
+            pricingStrategy: saved.pricingStrategy || listing.pricingStrategy,
+            minPrice: saved.minPrice || listing.minPrice,
+            maxPrice: saved.maxPrice || listing.maxPrice,
+            autoDeactivate: saved.autoDeactivate !== undefined ? saved.autoDeactivate : listing.autoDeactivate
+          };
+        }
+        return listing;
+      }));
+    }
+  }, [listings.length, Object.keys(savedSettings).length]);
+
+  const loadSavedSettings = async (userId: string) => {
+    try {
+      const settings = await getDocuments('stockxPricingSettings');
+      const userSettings = settings.filter(s => s.userId === userId);
+      
+      // Convert to a map for easier lookup
+      const settingsMap: Record<string, any> = {};
+      userSettings.forEach(setting => {
+        settingsMap[setting.listingId] = setting;
+      });
+      
+      setSavedSettings(settingsMap);
+      
+      // Apply saved settings to listings if they exist
+      if (listings.length > 0) {
+        setListings(prev => prev.map(listing => {
+          const saved = settingsMap[listing.listingId];
+          if (saved) {
+            return {
+              ...listing,
+              pricingStrategy: saved.pricingStrategy || listing.pricingStrategy,
+              minPrice: saved.minPrice || listing.minPrice,
+              maxPrice: saved.maxPrice || listing.maxPrice,
+              autoDeactivate: saved.autoDeactivate !== undefined ? saved.autoDeactivate : listing.autoDeactivate
+            };
+          }
+          return listing;
+        }));
+      }
+    } catch (error) {
+      console.error('Error loading saved settings:', error);
+    }
+  };
+
+  const saveSettingToFirebase = async (listingId: string, settings: any) => {
+    if (!currentUser || savingSettings) return;
+    
+    setSavingSettings(true);
+    try {
+      const existingSetting = savedSettings[listingId];
+      const settingData = {
+        userId: currentUser.uid,
+        listingId,
+        ...settings,
+        updatedAt: new Date().toISOString()
+      };
+      
+      if (existingSetting?.id) {
+        // Update existing document
+        await updateDocument('stockxPricingSettings', existingSetting.id, settingData);
+      } else {
+        // Create new document
+        const docRef = await addDocument('stockxPricingSettings', settingData);
+        setSavedSettings(prev => ({
+          ...prev,
+          [listingId]: { ...settingData, id: docRef.id }
+        }));
+      }
+    } catch (error) {
+      console.error('Error saving settings:', error);
+    } finally {
+      setSavingSettings(false);
+    }
+  };
 
   const fetchListings = async (forceReload = false) => {
     console.log(`🔄 Fetching listings... (forceReload: ${forceReload})`);
@@ -500,59 +601,132 @@ export default function StockXRepricing() {
 
   // Individual listing update functions
   const updateListingStrategy = (listingId: string, type: IndividualPricingStrategy['type']) => {
-    setListings(prev => prev.map(listing => 
-      listing.listingId === listingId 
-        ? { 
-            ...listing, 
-            pricingStrategy: { 
-              ...listing.pricingStrategy, 
-              type,
-              value: type === 'beat_lowest' ? 1 : type === 'percentage_below' ? 5 : undefined,
-              manualPrice: type === 'manual' ? listing.currentPrice : undefined
-            } 
-          }
-        : listing
+    const listing = listings.find(l => l.listingId === listingId);
+    if (!listing) return;
+    
+    const newStrategy = { 
+      ...listing.pricingStrategy, 
+      type,
+      value: type === 'beat_lowest' ? 1 : type === 'percentage_below' ? 5 : undefined,
+      manualPrice: type === 'manual' ? listing.currentPrice : undefined
+    };
+    
+    setListings(prev => prev.map(l => 
+      l.listingId === listingId 
+        ? { ...l, pricingStrategy: newStrategy }
+        : l
     ));
+    
+    // Save to Firebase
+    saveSettingToFirebase(listingId, {
+      pricingStrategy: newStrategy,
+      minPrice: listing.minPrice,
+      maxPrice: listing.maxPrice,
+      autoDeactivate: listing.autoDeactivate
+    });
   };
 
   const updateStrategyValue = (listingId: string, value: number) => {
-    setListings(prev => prev.map(listing => 
-      listing.listingId === listingId 
-        ? { ...listing, pricingStrategy: { ...listing.pricingStrategy!, value } }
-        : listing
+    const listing = listings.find(l => l.listingId === listingId);
+    if (!listing) return;
+    
+    const newStrategy = { ...listing.pricingStrategy!, value };
+    
+    setListings(prev => prev.map(l => 
+      l.listingId === listingId 
+        ? { ...l, pricingStrategy: newStrategy }
+        : l
     ));
+    
+    // Save to Firebase
+    saveSettingToFirebase(listingId, {
+      pricingStrategy: newStrategy,
+      minPrice: listing.minPrice,
+      maxPrice: listing.maxPrice,
+      autoDeactivate: listing.autoDeactivate
+    });
   };
 
   const updateManualPrice = (listingId: string, manualPrice: number) => {
-    setListings(prev => prev.map(listing => 
-      listing.listingId === listingId 
-        ? { ...listing, pricingStrategy: { ...listing.pricingStrategy!, manualPrice } }
-        : listing
+    const listing = listings.find(l => l.listingId === listingId);
+    if (!listing) return;
+    
+    const newStrategy = { ...listing.pricingStrategy!, manualPrice };
+    
+    setListings(prev => prev.map(l => 
+      l.listingId === listingId 
+        ? { ...l, pricingStrategy: newStrategy }
+        : l
     ));
+    
+    // Save to Firebase
+    saveSettingToFirebase(listingId, {
+      pricingStrategy: newStrategy,
+      minPrice: listing.minPrice,
+      maxPrice: listing.maxPrice,
+      autoDeactivate: listing.autoDeactivate
+    });
   };
 
   const updateMinPrice = (listingId: string, minPrice: number) => {
-    setListings(prev => prev.map(listing => 
-      listing.listingId === listingId 
-        ? { ...listing, minPrice: isNaN(minPrice) ? undefined : minPrice }
-        : listing
+    const listing = listings.find(l => l.listingId === listingId);
+    if (!listing) return;
+    
+    const newMinPrice = isNaN(minPrice) ? undefined : minPrice;
+    
+    setListings(prev => prev.map(l => 
+      l.listingId === listingId 
+        ? { ...l, minPrice: newMinPrice }
+        : l
     ));
+    
+    // Save to Firebase
+    saveSettingToFirebase(listingId, {
+      pricingStrategy: listing.pricingStrategy,
+      minPrice: newMinPrice,
+      maxPrice: listing.maxPrice,
+      autoDeactivate: listing.autoDeactivate
+    });
   };
 
   const updateMaxPrice = (listingId: string, maxPrice: number) => {
-    setListings(prev => prev.map(listing => 
-      listing.listingId === listingId 
-        ? { ...listing, maxPrice: isNaN(maxPrice) ? undefined : maxPrice }
-        : listing
+    const listing = listings.find(l => l.listingId === listingId);
+    if (!listing) return;
+    
+    const newMaxPrice = isNaN(maxPrice) ? undefined : maxPrice;
+    
+    setListings(prev => prev.map(l => 
+      l.listingId === listingId 
+        ? { ...l, maxPrice: newMaxPrice }
+        : l
     ));
+    
+    // Save to Firebase
+    saveSettingToFirebase(listingId, {
+      pricingStrategy: listing.pricingStrategy,
+      minPrice: listing.minPrice,
+      maxPrice: newMaxPrice,
+      autoDeactivate: listing.autoDeactivate
+    });
   };
 
   const updateAutoDeactivate = (listingId: string, autoDeactivate: boolean) => {
-    setListings(prev => prev.map(listing => 
-      listing.listingId === listingId 
-        ? { ...listing, autoDeactivate }
-        : listing
+    const listing = listings.find(l => l.listingId === listingId);
+    if (!listing) return;
+    
+    setListings(prev => prev.map(l => 
+      l.listingId === listingId 
+        ? { ...l, autoDeactivate }
+        : l
     ));
+    
+    // Save to Firebase
+    saveSettingToFirebase(listingId, {
+      pricingStrategy: listing.pricingStrategy,
+      minPrice: listing.minPrice,
+      maxPrice: listing.maxPrice,
+      autoDeactivate: autoDeactivate
+    });
   };
 
   const applyPricingRule = async (rule: string, value: number) => {
@@ -1442,16 +1616,15 @@ export default function StockXRepricing() {
                             onChange={(value) => updateListingStrategy(listing.listingId, value as any)}
                             options={[
                               { value: 'keep_current', label: 'Keep Current' },
-                              { value: 'beat_lowest', label: `Beat lowest ask by $${listing.pricingStrategy?.type === 'beat_lowest' ? listing.pricingStrategy?.value || 1 : 1}` },
+                              { value: 'beat_lowest', label: 'Beat Lowest by $1' },
                               { value: 'match_lowest', label: 'Match Lowest' },
-                              { value: 'percentage_below', label: `-${listing.pricingStrategy?.type === 'percentage_below' ? listing.pricingStrategy?.value || 5 : 5}%` },
+                              { value: 'percentage_below', label: listing.pricingStrategy?.type === 'percentage_below' ? `-${listing.pricingStrategy?.value || 5}%` : 'Below %' },
                               { value: 'manual', label: 'Manual' }
                             ]}
                             isNeon={isNeon}
                             className="flex-1"
                           />
-                          {(listing.pricingStrategy?.type === 'beat_lowest' || 
-                            listing.pricingStrategy?.type === 'percentage_below' ||
+                          {(listing.pricingStrategy?.type === 'percentage_below' ||
                             listing.pricingStrategy?.type === 'manual') && (
                             <input
                               type="number"
@@ -1487,8 +1660,9 @@ export default function StockXRepricing() {
                         <input
                           type="number"
                           min="1"
+                          step="1"
                           value={listing.minPrice || ''}
-                          onChange={(e) => updateMinPrice(listing.listingId, parseFloat(e.target.value))}
+                          onChange={(e) => updateMinPrice(listing.listingId, Math.round(parseFloat(e.target.value) || 0))}
                           className={`w-16 text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
                             isNeon 
                               ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50 placeholder-gray-500' 
@@ -1506,8 +1680,9 @@ export default function StockXRepricing() {
                         <input
                           type="number"
                           min="1"
+                          step="1"
                           value={listing.maxPrice || ''}
-                          onChange={(e) => updateMaxPrice(listing.listingId, parseFloat(e.target.value))}
+                          onChange={(e) => updateMaxPrice(listing.listingId, Math.round(parseFloat(e.target.value) || 0))}
                           className={`w-16 text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
                             isNeon 
                               ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50 placeholder-gray-500' 
