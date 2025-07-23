@@ -264,9 +264,9 @@ export default function StockXRepricing() {
             return {
               ...listing,
               pricingStrategy: saved.pricingStrategy || listing.pricingStrategy,
-              minPrice: saved.minPrice !== undefined ? saved.minPrice : listing.minPrice,
-              maxPrice: saved.maxPrice !== undefined ? saved.maxPrice : listing.maxPrice,
-              autoDeactivate: saved.autoDeactivate !== undefined ? saved.autoDeactivate : listing.autoDeactivate
+              minPrice: saved.hasOwnProperty('minPrice') ? saved.minPrice : listing.minPrice,
+              maxPrice: saved.hasOwnProperty('maxPrice') ? saved.maxPrice : listing.maxPrice,
+              autoDeactivate: saved.hasOwnProperty('autoDeactivate') ? saved.autoDeactivate : listing.autoDeactivate
             };
           }
           return listing;
@@ -291,22 +291,21 @@ export default function StockXRepricing() {
       // Ensure we have a valid pricing strategy
       const pricingStrategy = settings.pricingStrategy || { type: 'keep_current' };
       
-      const settingData = {
+      const settingData: any = {
         userId: currentUser.uid,
         listingId,
         pricingStrategy: pricingStrategy,
-        minPrice: settings.minPrice,
-        maxPrice: settings.maxPrice,
         autoDeactivate: settings.autoDeactivate || false,
         updatedAt: new Date().toISOString()
       };
       
-      // Ensure we're saving the numeric values correctly
-      if (settingData.minPrice !== undefined) {
-        settingData.minPrice = Number(settingData.minPrice) || 0;
+      // Only include minPrice and maxPrice if they are defined
+      // Firebase doesn't allow undefined values
+      if (settings.minPrice !== undefined && settings.minPrice !== null && settings.minPrice !== '') {
+        settingData.minPrice = Number(settings.minPrice) || 0;
       }
-      if (settingData.maxPrice !== undefined) {
-        settingData.maxPrice = Number(settingData.maxPrice) || 0;
+      if (settings.maxPrice !== undefined && settings.maxPrice !== null && settings.maxPrice !== '') {
+        settingData.maxPrice = Number(settings.maxPrice) || 0;
       }
       
       console.log('Final setting data to save:', settingData);
@@ -617,9 +616,9 @@ export default function StockXRepricing() {
               return {
                 ...listing,
                 pricingStrategy: saved.pricingStrategy || listing.pricingStrategy,
-                minPrice: saved.minPrice !== undefined ? saved.minPrice : listing.minPrice,
-                maxPrice: saved.maxPrice !== undefined ? saved.maxPrice : listing.maxPrice,
-                autoDeactivate: saved.autoDeactivate !== undefined ? saved.autoDeactivate : listing.autoDeactivate
+                minPrice: saved.hasOwnProperty('minPrice') ? saved.minPrice : listing.minPrice,
+                maxPrice: saved.hasOwnProperty('maxPrice') ? saved.maxPrice : listing.maxPrice,
+                autoDeactivate: saved.hasOwnProperty('autoDeactivate') ? saved.autoDeactivate : listing.autoDeactivate
               };
             }
             return listing;
