@@ -278,16 +278,26 @@ export default function StockXRepricing() {
   };
 
   const saveSettingToFirebase = async (listingId: string, settings: any) => {
-    if (!currentUser || savingSettings) return;
+    if (!currentUser || savingSettings) {
+      console.log('Skipping save - no user or already saving');
+      return;
+    }
     
     console.log(`Saving settings for ${listingId}:`, settings);
     setSavingSettings(true);
     try {
       const existingSetting = savedSettings[listingId];
+      
+      // Ensure we have a valid pricing strategy
+      const pricingStrategy = settings.pricingStrategy || { type: 'keep_current' };
+      
       const settingData = {
         userId: currentUser.uid,
         listingId,
-        ...settings,
+        pricingStrategy: pricingStrategy,
+        minPrice: settings.minPrice,
+        maxPrice: settings.maxPrice,
+        autoDeactivate: settings.autoDeactivate || false,
         updatedAt: new Date().toISOString()
       };
       
@@ -1044,11 +1054,14 @@ export default function StockXRepricing() {
     
     // Save to Firebase for all updated listings
     listingsToUpdate.forEach(l => {
+      // Ensure we have a default pricing strategy if none exists
+      const pricingStrategy = l.pricingStrategy || { type: 'keep_current' };
+      
       saveSettingToFirebase(l.listingId, {
-        pricingStrategy: l.pricingStrategy,
+        pricingStrategy: pricingStrategy,
         minPrice: newMinPrice,
         maxPrice: l.maxPrice,
-        autoDeactivate: l.autoDeactivate
+        autoDeactivate: l.autoDeactivate || false
       });
     });
   };
@@ -1075,11 +1088,14 @@ export default function StockXRepricing() {
     
     // Save to Firebase for all updated listings
     listingsToUpdate.forEach(l => {
+      // Ensure we have a default pricing strategy if none exists
+      const pricingStrategy = l.pricingStrategy || { type: 'keep_current' };
+      
       saveSettingToFirebase(l.listingId, {
-        pricingStrategy: l.pricingStrategy,
+        pricingStrategy: pricingStrategy,
         minPrice: l.minPrice,
         maxPrice: newMaxPrice,
-        autoDeactivate: l.autoDeactivate
+        autoDeactivate: l.autoDeactivate || false
       });
     });
   };
