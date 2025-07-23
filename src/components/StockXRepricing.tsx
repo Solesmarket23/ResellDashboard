@@ -157,6 +157,7 @@ export default function StockXRepricing() {
   const [activePeeks, setActivePeeks] = useState<Record<string, boolean>>({});
   const [peekScheduler, setPeekScheduler] = useState<NodeJS.Timeout | null>(null);
   const [inventoryGroups, setInventoryGroups] = useState<Map<string, InventoryGroup>>(new Map());
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   
   // Pagination calculations - moved here so they're available for all functions
   const totalPages = Math.ceil(listings.length / itemsPerPage);
@@ -185,30 +186,44 @@ export default function StockXRepricing() {
     return () => unsubscribe();
   }, []);
 
-  // Apply saved settings when listings are loaded
+  // Apply saved settings when settings are loaded
   useEffect(() => {
-    if (listings.length > 0 && Object.keys(savedSettings).length > 0) {
-      console.log('Applying saved settings to listings...');
+    if (settingsLoaded && listings.length > 0 && Object.keys(savedSettings).length > 0) {
+      console.log('Settings loaded, applying to listings...');
+      console.log('Number of saved settings:', Object.keys(savedSettings).length);
+      
       setListings(prev => prev.map(listing => {
         const saved = savedSettings[listing.listingId];
         if (saved) {
-          console.log(`Applying saved settings for ${listing.listingId}:`, {
-            minPrice: saved.minPrice,
-            maxPrice: saved.maxPrice,
-            pricingStrategy: saved.pricingStrategy
+          console.log(`Applying settings to ${listing.listingId}:`, {
+            savedData: saved,
+            hasMinPrice: 'minPrice' in saved,
+            hasMaxPrice: 'maxPrice' in saved,
+            minPriceValue: saved.minPrice,
+            maxPriceValue: saved.maxPrice
           });
-          return {
+          
+          const updatedListing = {
             ...listing,
             pricingStrategy: saved.pricingStrategy || listing.pricingStrategy,
-            minPrice: saved.minPrice !== undefined ? saved.minPrice : listing.minPrice,
-            maxPrice: saved.maxPrice !== undefined ? saved.maxPrice : listing.maxPrice,
-            autoDeactivate: saved.autoDeactivate !== undefined ? saved.autoDeactivate : listing.autoDeactivate
+            minPrice: saved.hasOwnProperty('minPrice') ? saved.minPrice : listing.minPrice,
+            maxPrice: saved.hasOwnProperty('maxPrice') ? saved.maxPrice : listing.maxPrice,
+            autoDeactivate: saved.hasOwnProperty('autoDeactivate') ? saved.autoDeactivate : listing.autoDeactivate
           };
+          
+          console.log(`Updated listing ${listing.listingId}:`, {
+            oldMinPrice: listing.minPrice,
+            newMinPrice: updatedListing.minPrice,
+            oldMaxPrice: listing.maxPrice,
+            newMaxPrice: updatedListing.maxPrice
+          });
+          
+          return updatedListing;
         }
         return listing;
       }));
     }
-  }, [savedSettings]); // Only depend on savedSettings changes
+  }, [settingsLoaded, savedSettings]); // Depend on settingsLoaded flag
 
   // Market Peek Scheduler
   useEffect(() => {
@@ -249,11 +264,15 @@ export default function StockXRepricing() {
         console.log(`Loaded settings for ${setting.listingId}:`, {
           minPrice: setting.minPrice,
           maxPrice: setting.maxPrice,
+          hasMinPrice: 'minPrice' in setting,
+          hasMaxPrice: 'maxPrice' in setting,
+          fullSetting: setting,
           pricingStrategy: setting.pricingStrategy?.type
         });
       });
       
       setSavedSettings(settingsMap);
+      setSettingsLoaded(true);
       
       // Apply saved settings to listings if they exist
       if (listings.length > 0) {
@@ -261,6 +280,12 @@ export default function StockXRepricing() {
         setListings(prev => prev.map(listing => {
           const saved = settingsMap[listing.listingId];
           if (saved) {
+            console.log(`Updating listing ${listing.listingId} with saved values:`, {
+              savedMinPrice: saved.minPrice,
+              savedMaxPrice: saved.maxPrice,
+              currentMinPrice: listing.minPrice,
+              currentMaxPrice: listing.maxPrice
+            });
             return {
               ...listing,
               pricingStrategy: saved.pricingStrategy || listing.pricingStrategy,
