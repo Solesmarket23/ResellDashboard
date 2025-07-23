@@ -188,21 +188,27 @@ export default function StockXRepricing() {
   // Apply saved settings when listings are loaded
   useEffect(() => {
     if (listings.length > 0 && Object.keys(savedSettings).length > 0) {
+      console.log('Applying saved settings to listings...');
       setListings(prev => prev.map(listing => {
         const saved = savedSettings[listing.listingId];
         if (saved) {
+          console.log(`Applying saved settings for ${listing.listingId}:`, {
+            minPrice: saved.minPrice,
+            maxPrice: saved.maxPrice,
+            pricingStrategy: saved.pricingStrategy
+          });
           return {
             ...listing,
             pricingStrategy: saved.pricingStrategy || listing.pricingStrategy,
-            minPrice: saved.minPrice || listing.minPrice,
-            maxPrice: saved.maxPrice || listing.maxPrice,
+            minPrice: saved.minPrice !== undefined ? saved.minPrice : listing.minPrice,
+            maxPrice: saved.maxPrice !== undefined ? saved.maxPrice : listing.maxPrice,
             autoDeactivate: saved.autoDeactivate !== undefined ? saved.autoDeactivate : listing.autoDeactivate
           };
         }
         return listing;
       }));
     }
-  }, [listings.length, Object.keys(savedSettings).length]);
+  }, [savedSettings]); // Only depend on savedSettings changes
 
   // Market Peek Scheduler
   useEffect(() => {
@@ -231,27 +237,35 @@ export default function StockXRepricing() {
 
   const loadSavedSettings = async (userId: string) => {
     try {
+      console.log('Loading saved settings for user:', userId);
       const settings = await getDocuments('stockxPricingSettings');
       const userSettings = settings.filter(s => s.userId === userId);
+      console.log(`Found ${userSettings.length} saved settings`);
       
       // Convert to a map for easier lookup
       const settingsMap: Record<string, any> = {};
       userSettings.forEach(setting => {
         settingsMap[setting.listingId] = setting;
+        console.log(`Loaded settings for ${setting.listingId}:`, {
+          minPrice: setting.minPrice,
+          maxPrice: setting.maxPrice,
+          pricingStrategy: setting.pricingStrategy?.type
+        });
       });
       
       setSavedSettings(settingsMap);
       
       // Apply saved settings to listings if they exist
       if (listings.length > 0) {
+        console.log('Applying loaded settings to existing listings...');
         setListings(prev => prev.map(listing => {
           const saved = settingsMap[listing.listingId];
           if (saved) {
             return {
               ...listing,
               pricingStrategy: saved.pricingStrategy || listing.pricingStrategy,
-              minPrice: saved.minPrice || listing.minPrice,
-              maxPrice: saved.maxPrice || listing.maxPrice,
+              minPrice: saved.minPrice !== undefined ? saved.minPrice : listing.minPrice,
+              maxPrice: saved.maxPrice !== undefined ? saved.maxPrice : listing.maxPrice,
               autoDeactivate: saved.autoDeactivate !== undefined ? saved.autoDeactivate : listing.autoDeactivate
             };
           }
@@ -266,6 +280,7 @@ export default function StockXRepricing() {
   const saveSettingToFirebase = async (listingId: string, settings: any) => {
     if (!currentUser || savingSettings) return;
     
+    console.log(`Saving settings for ${listingId}:`, settings);
     setSavingSettings(true);
     try {
       const existingSetting = savedSettings[listingId];
@@ -276,9 +291,23 @@ export default function StockXRepricing() {
         updatedAt: new Date().toISOString()
       };
       
+      // Ensure we're saving the numeric values correctly
+      if (settingData.minPrice !== undefined) {
+        settingData.minPrice = Number(settingData.minPrice) || 0;
+      }
+      if (settingData.maxPrice !== undefined) {
+        settingData.maxPrice = Number(settingData.maxPrice) || 0;
+      }
+      
+      console.log('Final setting data to save:', settingData);
+      
       if (existingSetting?.id) {
         // Update existing document
         await updateDocument('stockxPricingSettings', existingSetting.id, settingData);
+        setSavedSettings(prev => ({
+          ...prev,
+          [listingId]: { ...settingData, id: existingSetting.id }
+        }));
       } else {
         // Create new document
         const docRef = await addDocument('stockxPricingSettings', settingData);
@@ -287,6 +316,7 @@ export default function StockXRepricing() {
           [listingId]: { ...settingData, id: docRef.id }
         }));
       }
+      console.log('Settings saved successfully');
     } catch (error) {
       console.error('Error saving settings:', error);
     } finally {
@@ -562,7 +592,31 @@ export default function StockXRepricing() {
         
         // Process inventory groups
         const groupedListings = processInventoryGroups(enrichedListings);
-        setListings(groupedListings);
+        
+        // Apply saved settings to the grouped listings
+        let finalListings = groupedListings;
+        if (currentUser && Object.keys(savedSettings).length > 0) {
+          console.log('Applying saved settings after grouping...');
+          finalListings = groupedListings.map(listing => {
+            const saved = savedSettings[listing.listingId];
+            if (saved) {
+              console.log(`Restoring settings for ${listing.listingId}:`, {
+                minPrice: saved.minPrice,
+                maxPrice: saved.maxPrice
+              });
+              return {
+                ...listing,
+                pricingStrategy: saved.pricingStrategy || listing.pricingStrategy,
+                minPrice: saved.minPrice !== undefined ? saved.minPrice : listing.minPrice,
+                maxPrice: saved.maxPrice !== undefined ? saved.maxPrice : listing.maxPrice,
+                autoDeactivate: saved.autoDeactivate !== undefined ? saved.autoDeactivate : listing.autoDeactivate
+              };
+            }
+            return listing;
+          });
+        }
+        
+        setListings(finalListings);
         setLastFetchTime(new Date());
         
         // Store listing stats if available
@@ -572,6 +626,12 @@ export default function StockXRepricing() {
             trueDuplicatesRemoved: data.trueDuplicatesRemoved,
             investigation: data.investigation
           });
+        }
+        
+        // If user is logged in but settings haven't loaded yet, load them now
+        if (currentUser && Object.keys(savedSettings).length === 0) {
+          console.log('Loading saved settings for user...');
+          loadSavedSettings(currentUser.uid);
         }
       } else if (data.error && data.error.includes('token')) {
         // Token related error
