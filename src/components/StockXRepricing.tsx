@@ -1627,37 +1627,79 @@ export default function StockXRepricing() {
 
       {/* Sticky Execution Controls */}
       <div className={`fixed bottom-0 left-0 right-0 z-40 transition-all duration-300 ${
-        isPreviewMinimized ? 'transform translate-y-[calc(100%-4rem)]' : ''
+        isPreviewMinimized ? 'transform translate-y-[calc(100%-3rem)]' : ''
       }`}>
         <div className={`${
           isNeon ? 'bg-gray-900 border-t border-gray-700' : 'bg-white border-t border-gray-200'
         } shadow-2xl`}>
-          {/* Minimize/Maximize Button */}
-          <button
-            onClick={() => {
-              setIsPreviewMinimized(!isPreviewMinimized);
-              if (isPreviewMinimized) {
-                // When expanding, don't auto-show results
-              } else {
-                // When minimizing, keep results state as is
-              }
-            }}
-            className={`absolute -top-10 right-4 px-4 py-2 rounded-t-lg flex items-center gap-2 ${
-              isNeon 
-                ? 'bg-gray-800 text-cyan-400 hover:bg-gray-700' 
-                : 'bg-white text-gray-700 hover:bg-gray-50'
-            } shadow-lg`}
-          >
-            <svg 
-              className={`w-4 h-4 transition-transform ${isPreviewMinimized ? 'rotate-180' : ''}`} 
-              fill="none" 
-              viewBox="0 0 24 24" 
-              stroke="currentColor"
+          {/* Minimized State Bar */}
+          {isPreviewMinimized && (
+            <div 
+              onClick={() => setIsPreviewMinimized(false)}
+              className={`flex items-center justify-between p-3 cursor-pointer ${
+                isNeon ? 'hover:bg-gray-800' : 'hover:bg-gray-50'
+              }`}
             >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-            {isPreviewMinimized ? 'Show' : 'Hide'} Preview
-          </button>
+              <div className="flex items-center gap-3">
+                <svg 
+                  className="w-4 h-4 rotate-180" 
+                  fill="none" 
+                  viewBox="0 0 24 24" 
+                  stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+                <span className={`font-medium ${isNeon ? 'text-cyan-400' : 'text-gray-700'}`}>
+                  Show Preview Panel
+                </span>
+                {selectedCount > 0 && (
+                  <span className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                    ({selectedCount} items selected)
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handlePreviewClick();
+                }}
+                disabled={loading || listings.filter(l => l.selected).length === 0}
+                className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all duration-200 flex items-center gap-2 disabled:opacity-50 ${
+                  dryRun 
+                    ? isNeon
+                      ? 'bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white'
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                    : isNeon
+                      ? 'bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-600 hover:to-green-600 text-white'
+                      : 'bg-green-600 text-white hover:bg-green-700'
+                }`}
+              >
+                {dryRun ? 'Preview' : 'Execute'} Repricing
+              </button>
+            </div>
+          )}
+
+          {/* Minimize Button (when expanded) */}
+          {!isPreviewMinimized && (
+            <button
+              onClick={() => setIsPreviewMinimized(true)}
+              className={`absolute -top-10 right-4 px-4 py-2 rounded-t-lg flex items-center gap-2 ${
+                isNeon 
+                  ? 'bg-gray-800 text-cyan-400 hover:bg-gray-700' 
+                  : 'bg-white text-gray-700 hover:bg-gray-50'
+              } shadow-lg`}
+            >
+              <svg 
+                className="w-4 h-4" 
+                fill="none" 
+                viewBox="0 0 24 24" 
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+              Hide Preview
+            </button>
+          )}
 
           {/* Preview Results Table (when expanded and in dry run mode) */}
           {!isPreviewMinimized && showPreviewResults && previewResults.length > 0 && (
@@ -1737,7 +1779,8 @@ export default function StockXRepricing() {
           )}
 
           {/* Control Bar */}
-          <div className="flex items-center justify-between p-4">
+          {!isPreviewMinimized && (
+            <div className="flex items-center justify-between p-4">
             <div className="flex items-center space-x-4">
               <label className="flex items-center space-x-2 cursor-pointer">
                 <input
@@ -1784,6 +1827,7 @@ export default function StockXRepricing() {
               )}
             </button>
           </div>
+          )}
         </div>
       </div>
 
