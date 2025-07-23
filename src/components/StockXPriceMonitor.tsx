@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Bell, BellRing, TrendingDown, TrendingUp, Plus, Trash2, Settings, AlertTriangle, DollarSign, Clock, Target } from 'lucide-react';
+import { Bell, BellRing, TrendingDown, TrendingUp, Plus, Trash2, Settings, AlertTriangle, DollarSign, Clock, Target, Zap, Loader2 } from 'lucide-react';
 import { usePriceMonitor } from '@/lib/contexts/PriceMonitorContext';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 
@@ -78,6 +78,15 @@ const StockXPriceMonitor: React.FC = () => {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [isBulkImporting, setIsBulkImporting] = useState(false);
+  const [bulkImportProgress, setBulkImportProgress] = useState({
+    current: 0,
+    total: 0,
+    phase: '',
+    productName: ''
+  });
+  const [showBulkImport, setShowBulkImport] = useState(false);
+  const [selectedSizeRange, setSelectedSizeRange] = useState({ min: 7, max: 13 });
 
   // Mark alerts as read when viewing the page
   useEffect(() => {
@@ -169,6 +178,290 @@ const StockXPriceMonitor: React.FC = () => {
       priceDropThreshold: '10',
       flexPriceDropThreshold: '10'
     });
+  };
+
+  const bulkImportMostActive = async (category: string = 'sneakers') => {
+    if (!isAuthenticated) {
+      alert('Please authenticate with StockX first');
+      return;
+    }
+
+    setIsBulkImporting(true);
+    setShowBulkImport(true);
+    setBulkImportProgress({
+      current: 0,
+      total: 0,
+      phase: 'Searching for most active products...',
+      productName: ''
+    });
+
+    const stockxUrl = `https://stockx.com/category/${category}?sort=most-active`;
+    const allProductsToMonitor: MonitoredProduct[] = [];
+    let totalVariantsProcessed = 0;
+
+    try {
+      // Fetch multiple pages of most active products
+      const pagesToFetch = 3; // Fetch 3 pages to get ~30 products (to then expand to hundreds of sizes)
+      const productsPerPage = 10;
+      let allProducts: any[] = [];
+
+      for (let page = 1; page <= pagesToFetch; page++) {
+        setBulkImportProgress(prev => ({
+          ...prev,
+          phase: `Fetching most active products (page ${page} of ${pagesToFetch})...`,
+          current: (page - 1) * productsPerPage,
+          total: pagesToFetch * productsPerPage
+        }));
+
+        try {
+          const response = await fetch(
+            `/api/stockx/search?query=${encodeURIComponent(stockxUrl)}&limit=${productsPerPage}&page=${page}&streaming=true`,
+            {
+              method: 'GET',
+              headers: {
+                'Accept': 'text/event-stream',
+              }
+            }
+          );
+
+          if (!response.ok) {
+            console.error(`Failed to fetch page ${page}`);
+            continue;
+          }
+
+          const reader = response.body?.getReader();
+          const decoder = new TextDecoder();
+
+          if (reader) {
+            while (true) {
+              const { value, done } = await reader.read();
+              if (done) break;
+
+              const chunk = decoder.decode(value);
+              const lines = chunk.split('\n');
+
+              for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                  try {
+                    const data = JSON.parse(line.slice(6));
+                    if (data.type === 'result' && data.data) {
+                      allProducts.push(data.data);
+                    }
+                  } catch (e) {
+                    // Ignore parse errors
+                  }
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error(`Error fetching page ${page}:`, error);
+        }
+
+        // Add delay between pages to avoid rate limiting
+        if (page < pagesToFetch) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      // Group products by productId to get unique products
+      const uniqueProductIds = new Set<string>();
+      const uniqueProductsMap = new Map();
+      
+      allProducts.forEach(product => {
+        if (!uniqueProductIds.has(product.productId)) {
+          uniqueProductIds.add(product.productId);
+          uniqueProductsMap.set(product.productId, product);
+        }
+      });
+
+      const uniqueProductsList = Array.from(uniqueProductsMap.values());
+      console.log(`Found ${uniqueProductsList.length} unique products to process`);
+
+      // Now fetch ALL variants for each unique product
+      setBulkImportProgress({
+        current: 0,
+        total: uniqueProductsList.length,
+        phase: 'Fetching all sizes for each product...',
+        productName: ''
+      });
+
+      let productIndex = 0;
+      for (const product of uniqueProductsList) {
+        productIndex++;
+        setBulkImportProgress({
+          current: productIndex,
+          total: uniqueProductsList.length,
+          phase: `Fetching sizes for ${product.title}...`,
+          productName: product.title || ''
+        });
+
+        // Skip if we already processed this product
+        const alreadyProcessedSizes = allProductsToMonitor.filter(p => p.productId === product.productId).length;
+        if (alreadyProcessedSizes > 0) {
+          console.log(`Skipping ${product.title} - already processed ${alreadyProcessedSizes} sizes`);
+          continue;
+        }
+
+        // Use the arbitrage finder to get all sizes with profit data
+        try {
+          // Search for the specific product to get all its variants
+          const searchUrl = `/api/stockx/search?query=${encodeURIComponent(product.title + ' ' + product.brand)}&limit=20&streaming=true&minSpreadPercent=0`;
+          
+          const response = await fetch(searchUrl, {
+            method: 'GET',
+            headers: {
+              'Accept': 'text/event-stream',
+            }
+          });
+
+          if (!response.ok) {
+            console.error(`Failed to fetch variants for ${product.title}`);
+            continue;
+          }
+
+          const reader = response.body?.getReader();
+          const decoder = new TextDecoder();
+          let variantsForProduct: any[] = [];
+
+          if (reader) {
+            while (true) {
+              const { value, done } = await reader.read();
+              if (done) break;
+
+              const chunk = decoder.decode(value);
+              const lines = chunk.split('\n');
+
+              for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                  try {
+                    const data = JSON.parse(line.slice(6));
+                    if (data.type === 'result' && data.data) {
+                      // Only add variants that match this product
+                      if (data.data.productId === product.productId) {
+                        variantsForProduct.push(data.data);
+                      }
+                    }
+                  } catch (e) {
+                    // Ignore parse errors
+                  }
+                }
+              }
+            }
+          }
+
+          // Process all variants found for this product
+          variantsForProduct.forEach((variant: any) => {
+            // Parse size and check if it's within range
+            let shouldAdd = false;
+            const sizeStr = variant.size || '';
+            
+            // Handle numeric sizes
+            const sizeNum = parseFloat(sizeStr);
+            if (!isNaN(sizeNum) && sizeNum >= selectedSizeRange.min && sizeNum <= selectedSizeRange.max) {
+              shouldAdd = true;
+            }
+            
+            // Also include common non-numeric sizes
+            if (['S', 'M', 'L', 'XL', 'XXL', 'One Size'].includes(sizeStr)) {
+              shouldAdd = true;
+            }
+            
+            if (shouldAdd && variant.lowestAsk > 0) {
+              const existingId = `${variant.productId}-${variant.variantId}`;
+              if (!monitoredProducts.some(p => p.id === existingId)) {
+                const newMonitoredProduct: MonitoredProduct = {
+                  id: existingId,
+                  productId: variant.productId,
+                  variantId: variant.variantId,
+                  title: variant.title,
+                  brand: variant.brand,
+                  size: variant.size,
+                  currentAsk: variant.lowestAsk,
+                  currentBid: variant.highestBid || variant.rawBid || 0,
+                  currentFlexAsk: variant.flexLowestAskAmount,
+                  targetAskPrice: undefined,
+                  targetFlexAskPrice: undefined,
+                  targetBidPrice: undefined,
+                  priceDropThreshold: 20, // Default 20% for bulk imports
+                  flexPriceDropThreshold: 20,
+                  priceHistory: [{
+                    timestamp: Date.now(),
+                    highestBid: variant.highestBid || variant.rawBid || 0,
+                    lowestAsk: variant.lowestAsk,
+                    flexLowestAsk: variant.flexLowestAskAmount
+                  }],
+                  lastChecked: Date.now(),
+                  alerts: []
+                };
+                allProductsToMonitor.push(newMonitoredProduct);
+                totalVariantsProcessed++;
+              }
+            }
+          });
+
+          console.log(`Added ${variantsForProduct.length} variants for ${product.title}`);
+          
+        } catch (error) {
+          console.error(`Error fetching variants for ${product.title}:`, error);
+        }
+
+        // Add delay between products to avoid rate limiting
+        if (productIndex < uniqueProductsList.length) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+
+      // Add all products to monitoring in batches
+      setBulkImportProgress({
+        current: 0,
+        total: allProductsToMonitor.length,
+        phase: 'Finalizing import...',
+        productName: ''
+      });
+
+      for (let i = 0; i < allProductsToMonitor.length; i++) {
+        addMonitoredProduct(allProductsToMonitor[i]);
+        setBulkImportProgress({
+          current: i + 1,
+          total: allProductsToMonitor.length,
+          phase: 'Finalizing import...',
+          productName: allProductsToMonitor[i].title
+        });
+
+        // Small delay every 20 products
+        if ((i + 1) % 20 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+      }
+
+      // Success message
+      setBulkImportProgress({
+        current: allProductsToMonitor.length,
+        total: allProductsToMonitor.length,
+        phase: `Successfully added ${allProductsToMonitor.length} items to monitor!`,
+        productName: ''
+      });
+
+      // Auto-hide after 3 seconds
+      setTimeout(() => {
+        setShowBulkImport(false);
+        setIsBulkImporting(false);
+      }, 3000);
+
+    } catch (error) {
+      console.error('Bulk import error:', error);
+      setBulkImportProgress({
+        current: 0,
+        total: 0,
+        phase: 'Import failed. Please try again.',
+        productName: ''
+      });
+      setTimeout(() => {
+        setShowBulkImport(false);
+        setIsBulkImporting(false);
+      }, 3000);
+    }
   };
 
   const getPriceChange = (product: MonitoredProduct) => {
@@ -551,16 +844,191 @@ const StockXPriceMonitor: React.FC = () => {
 
         {/* Add Product Button */}
         {!showAddForm && (
-          <div className="mb-6">
-            <button
-              onClick={() => setShowAddForm(true)}
-              disabled={isAuthenticated === false}
-              className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              Add Product to Monitor
-              {isAuthenticated === false && <span className="text-xs">(Login Required)</span>}
-            </button>
+          <div className="mb-6 space-y-4">
+            {/* Size Range Selector for Bulk Import */}
+            <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+              <div className="flex items-center justify-between flex-wrap gap-4">
+                <div className="flex items-center gap-4">
+                  <span className="text-gray-300 font-medium">Size Range for Bulk Import:</span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      value={selectedSizeRange.min}
+                      onChange={(e) => setSelectedSizeRange(prev => ({ ...prev, min: parseInt(e.target.value) || 0 }))}
+                      className="w-16 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-center"
+                      min="0"
+                      max="20"
+                      step="0.5"
+                    />
+                    <span className="text-gray-400">to</span>
+                    <input
+                      type="number"
+                      value={selectedSizeRange.max}
+                      onChange={(e) => setSelectedSizeRange(prev => ({ ...prev, max: parseInt(e.target.value) || 20 }))}
+                      className="w-16 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-center"
+                      min="0"
+                      max="20"
+                      step="0.5"
+                    />
+                  </div>
+                </div>
+                <div className="text-sm text-gray-400">
+                  This will add all sizes within this range for each product
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex flex-wrap gap-4">
+              <button
+                onClick={() => setShowAddForm(true)}
+                disabled={isAuthenticated === false}
+                className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Add Product to Monitor
+                {isAuthenticated === false && <span className="text-xs">(Login Required)</span>}
+              </button>
+              
+              {/* Bulk Import Button */}
+              {theme === 'neon' ? (
+                <button
+                  onClick={() => bulkImportMostActive('sneakers')}
+                  disabled={isAuthenticated === false || isBulkImporting}
+                  className="relative bg-black border-2 border-transparent disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-2 px-6 rounded-lg transition-all duration-300 flex items-center gap-2 overflow-hidden group"
+                  style={{
+                    background: 'linear-gradient(45deg, #000, #111)',
+                    borderImage: 'linear-gradient(45deg, #ff00ff, #00ffff, #ff00ff) 1',
+                    borderImageSlice: 1,
+                    boxShadow: '0 0 20px rgba(255, 0, 255, 0.5), 0 0 40px rgba(0, 255, 255, 0.3)',
+                  }}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-pink-500/20 via-purple-500/20 to-cyan-500/20 animate-pulse" />
+                  <Zap className="w-5 h-5 text-cyan-400 animate-pulse relative z-10" />
+                  <span className="relative z-10 bg-gradient-to-r from-pink-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
+                    Auto-Monitor Most Active
+                  </span>
+                  <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-pink-500"></span>
+                  </span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => bulkImportMostActive('sneakers')}
+                  disabled={isAuthenticated === false || isBulkImporting}
+                  className="bg-gradient-to-r from-green-500 to-cyan-500 hover:from-green-600 hover:to-cyan-600 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
+                >
+                  <Zap className="w-4 h-4" />
+                  Auto-Monitor Most Active
+                  {isAuthenticated === false && <span className="text-xs">(Login Required)</span>}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Bulk Import Progress Modal */}
+        {showBulkImport && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => !isBulkImporting && setShowBulkImport(false)} />
+            <div className={`relative w-full max-w-2xl ${
+              theme === 'neon' 
+                ? 'bg-gradient-to-br from-gray-900 via-purple-900/20 to-gray-900 border-2 border-purple-500/50 shadow-2xl shadow-purple-500/25'
+                : 'bg-gray-800 border border-gray-700'
+            } rounded-2xl p-8 transform transition-all`}>
+              {/* Neon glow effects */}
+              {theme === 'neon' && (
+                <>
+                  <div className="absolute -inset-1 bg-gradient-to-r from-pink-600 to-purple-600 rounded-2xl blur-lg opacity-25 animate-pulse" />
+                  <div className="absolute -inset-0.5 bg-gradient-to-r from-pink-600 to-purple-600 rounded-2xl opacity-10" />
+                </>
+              )}
+              
+              <div className="relative">
+                <h2 className={`text-2xl font-bold mb-6 ${
+                  theme === 'neon'
+                    ? 'bg-gradient-to-r from-pink-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent'
+                    : 'text-white'
+                }`}>
+                  {isBulkImporting ? 'Bulk Import in Progress' : 'Import Complete!'}
+                </h2>
+                
+                {/* Progress Info */}
+                <div className="mb-6">
+                  <p className={`text-lg mb-2 ${theme === 'neon' ? 'text-cyan-400' : 'text-gray-300'}`}>
+                    {bulkImportProgress.phase}
+                  </p>
+                  {bulkImportProgress.productName && (
+                    <p className="text-sm text-gray-400 truncate">
+                      {bulkImportProgress.productName}
+                    </p>
+                  )}
+                </div>
+                
+                {/* Progress Bar */}
+                <div className="mb-6">
+                  <div className={`h-6 rounded-full overflow-hidden ${
+                    theme === 'neon'
+                      ? 'bg-gray-800 border border-purple-500/30'
+                      : 'bg-gray-700'
+                  }`}>
+                    <div 
+                      className={`h-full transition-all duration-500 ease-out flex items-center justify-center text-xs font-bold ${
+                        theme === 'neon'
+                          ? 'bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-500 shadow-lg shadow-purple-500/50'
+                          : 'bg-gradient-to-r from-blue-500 to-purple-500'
+                      }`}
+                      style={{
+                        width: bulkImportProgress.total > 0 
+                          ? `${(bulkImportProgress.current / bulkImportProgress.total) * 100}%` 
+                          : '0%'
+                      }}
+                    >
+                      {bulkImportProgress.total > 0 && (
+                        <span className="text-white drop-shadow-lg">
+                          {Math.round((bulkImportProgress.current / bulkImportProgress.total) * 100)}%
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Progress Numbers */}
+                  <div className="flex justify-between mt-2 text-sm">
+                    <span className={theme === 'neon' ? 'text-pink-400' : 'text-gray-400'}>
+                      {bulkImportProgress.current} / {bulkImportProgress.total}
+                    </span>
+                    <span className={theme === 'neon' ? 'text-cyan-400' : 'text-gray-400'}>
+                      {bulkImportProgress.total > 0 
+                        ? `${Math.round((bulkImportProgress.current / bulkImportProgress.total) * 100)}%`
+                        : 'Initializing...'}
+                    </span>
+                  </div>
+                </div>
+                
+                {/* Loading Animation */}
+                {isBulkImporting && (
+                  <div className="flex justify-center mb-6">
+                    <Loader2 className={`w-8 h-8 animate-spin ${
+                      theme === 'neon' ? 'text-purple-400' : 'text-blue-400'
+                    }`} />
+                  </div>
+                )}
+                
+                {/* Close Button (only when complete) */}
+                {!isBulkImporting && (
+                  <button
+                    onClick={() => setShowBulkImport(false)}
+                    className={`w-full py-3 rounded-lg font-semibold transition-all ${
+                      theme === 'neon'
+                        ? 'bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white shadow-lg shadow-purple-500/30'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                    }`}
+                  >
+                    Close
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

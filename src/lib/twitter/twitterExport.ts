@@ -11,24 +11,32 @@ export interface ArbitrageShareData {
   affiliateUrl?: string;
   shortUrl?: string;
   backgroundVersion?: BackgroundVersion;
+  isXpressAvailable?: boolean;
+  xpressPrice?: number;
 }
 
 export function generateTwitterText(data: ArbitrageShareData): string {
   const profitEmoji = data.profit >= 100 ? '🚀' : data.profit >= 50 ? '🔥' : '💰';
   
-  let text = `${profitEmoji} StockX Arbitrage Alert!\n\n` +
+  let text = `${profitEmoji} BUY NOW on StockX!\n\n` +
     `${data.productName} (Size ${data.size})\n\n` +
-    `Highest bid: $${data.purchasePrice.toFixed(2)}\n` +
-    `Lowest ask: $${data.salePrice.toFixed(2)}\n\n` +
-    `Profit: $${data.profit.toFixed(2)} (${data.profitMargin}%)\n\n` +
-    `(estimated profit with buyer fees & selling via no-fee resale)\n\n`;
+    `✅ Available Now: $${data.salePrice.toFixed(2)}\n`;
+  
+  // Add Xpress Ship info if available
+  if (data.isXpressAvailable && data.xpressPrice) {
+    text += `⚡ Xpress Ship: $${data.xpressPrice.toFixed(2)}\n`;
+  }
+  
+  text += `\n💰 Flip Potential: $${data.profit.toFixed(2)} profit (${data.profitMargin}%)\n` +
+    `📊 Current Bid: $${data.purchasePrice.toFixed(2)}\n\n` +
+    `🏃‍♂️ Limited availability - Buy now!\n\n`;
   
   // Add short URL if available (doesn't expose API key)
   if (data.shortUrl) {
     text += `🔗 ${data.shortUrl}\n\n`;
   }
   
-  text += `#StockX #Reselling #SneakerArbitrage`;
+  text += `#StockX #Reselling #SneakerFlips #BuyNow`;
   
   return text;
 }
@@ -147,7 +155,12 @@ function drawImageWithProduct(
   ctx.font = 'bold 42px Arial';
   ctx.fillStyle = colors.primary;
   ctx.textAlign = 'left';
-  ctx.fillText('StockX Arbitrage Alert!', textStartX, 80);
+  ctx.fillText('BUY NOW on StockX!', textStartX, 80);
+  
+  // Available Now Badge
+  ctx.font = 'bold 24px Arial';
+  ctx.fillStyle = colors.profit;
+  ctx.fillText('✅ AVAILABLE NOW', textStartX, 120);
   
   // Product name
   ctx.font = '28px Arial';
@@ -157,7 +170,7 @@ function drawImageWithProduct(
   const maxWidth = contentWidth;
   const words = productText.split(' ');
   let line = '';
-  let y = 140;
+  let y = 160;
   
   for (let n = 0; n < words.length; n++) {
     const testLine = line + words[n] + ' ';
@@ -174,45 +187,52 @@ function drawImageWithProduct(
   ctx.fillText(line, textStartX, y);
   
   // Price information in a cleaner layout
-  const priceY = productImage ? 280 : 250;
+  const priceY = productImage ? 300 : 270;
   const boxHeight = 80;
   const boxGap = 20;
   
-  // Highest bid
+  // Buy Now Price
   ctx.font = '20px Arial';
   ctx.fillStyle = colors.muted;
-  ctx.fillText('HIGHEST BID', textStartX, priceY);
+  ctx.fillText('BUY NOW PRICE', textStartX, priceY);
+  ctx.font = 'bold 40px Arial';
+  ctx.fillStyle = colors.profit;
+  ctx.fillText(`$${data.salePrice.toFixed(2)}`, textStartX, priceY + 40);
+  
+  // Xpress price if available
+  if (data.isXpressAvailable && data.xpressPrice) {
+    ctx.font = '18px Arial';
+    ctx.fillStyle = colors.accent;
+    ctx.fillText(`⚡ Xpress: $${data.xpressPrice.toFixed(2)}`, textStartX, priceY + 65);
+  }
+  
+  // Current bid
+  ctx.fillStyle = colors.muted;
+  ctx.font = '20px Arial';
+  ctx.fillText('CURRENT BID', textStartX + 250, priceY);
   ctx.font = 'bold 36px Arial';
   ctx.fillStyle = colors.primary;
-  ctx.fillText(`$${data.purchasePrice.toFixed(2)}`, textStartX, priceY + 35);
-  
-  // Lowest ask
-  ctx.fillStyle = colors.muted;
-  ctx.font = '20px Arial';
-  ctx.fillText('LOWEST ASK', textStartX + 200, priceY);
-  ctx.font = 'bold 36px Arial';
-  ctx.fillStyle = colors.profit;
-  ctx.fillText(`$${data.salePrice.toFixed(2)}`, textStartX + 200, priceY + 35);
+  ctx.fillText(`$${data.purchasePrice.toFixed(2)}`, textStartX + 250, priceY + 40);
   
   // Profit
   ctx.fillStyle = colors.muted;
   ctx.font = '20px Arial';
-  ctx.fillText('PROFIT', textStartX + 400, priceY);
+  ctx.fillText('FLIP PROFIT', textStartX + 450, priceY);
   ctx.font = 'bold 36px Arial';
   ctx.fillStyle = colors.profit;
-  ctx.fillText(`$${data.profit.toFixed(2)}`, textStartX + 400, priceY + 35);
+  ctx.fillText(`$${data.profit.toFixed(2)}`, textStartX + 450, priceY + 40);
   
   // Large profit percentage
   ctx.font = 'bold 72px Arial';
   ctx.fillStyle = colors.profit;
   ctx.textAlign = 'center';
-  ctx.fillText(`+${data.profitMargin}%`, canvas.width / 2, 480);
+  ctx.fillText(`+${data.profitMargin}%`, canvas.width / 2, 500);
   
-  // Disclaimer
-  ctx.font = '18px Arial';
-  ctx.fillStyle = colors.muted;
+  // Call to action
+  ctx.font = 'bold 22px Arial';
+  ctx.fillStyle = colors.accent;
   ctx.textAlign = 'center';
-  ctx.fillText('*Estimated profit based on buyer fees & selling via no-fee resale', canvas.width / 2, 540);
+  ctx.fillText('🏃‍♂️ LIMITED AVAILABILITY - BUY NOW!', canvas.width / 2, 550);
   
   // Footer
   ctx.font = '26px Arial';
