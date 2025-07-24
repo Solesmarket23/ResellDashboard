@@ -1,0 +1,36 @@
+name: Sync Gmail Purchases
+
+on:
+  schedule:
+    # Run every hour at minute 30
+    - cron: '30 * * * *'
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Sync Gmail Purchases
+        run: |
+          echo "📧 Syncing Gmail purchases..."
+          response=$(curl -s -w "\n%{http_code}" https://solesmarket.com/api/cron/sync-purchases)
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          
+          echo "Response Code: $http_code"
+          echo "Response Body: $body"
+          
+          if [ $http_code -eq 200 ]; then
+            echo "✅ Gmail sync completed successfully"
+          else
+            echo "❌ Gmail sync failed with status $http_code"
+            # Don't fail the job for sync issues
+            echo "Continuing despite sync issues"
+          fi
+      
+      - name: Log Results
+        if: always()
+        run: |
+          echo "Timestamp: $(date)"
+          echo "Sync job completed"

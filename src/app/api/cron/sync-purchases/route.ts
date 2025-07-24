@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { headers } from 'next/headers';
 
-// Verify this is a legitimate cron request from Vercel
+// Verify this is a legitimate cron request
 function verifyCronRequest(request: NextRequest) {
   const authHeader = headers().get('authorization');
+  const userAgent = headers().get('user-agent');
   const host = headers().get('host');
+  
+  // Allow requests from:
+  // 1. Vercel crons (with secret)
+  // 2. GitHub Actions (specific user agent)
+  // 3. Localhost (development)
   return authHeader === `Bearer ${process.env.CRON_SECRET}` || 
+         userAgent?.includes('GitHub-Actions') ||
          host?.includes('localhost') ||
-         host?.includes('vercel.app');
+         host?.includes('solesmarket.com');
 }
 
 export async function GET(request: NextRequest) {

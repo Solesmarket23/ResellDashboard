@@ -1,0 +1,35 @@
+name: Monitor StockX Prices
+
+on:
+  schedule:
+    # Run every 15 minutes
+    - cron: '*/15 * * * *'
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Check StockX Prices
+        run: |
+          echo "🔍 Checking StockX prices..."
+          response=$(curl -s -w "\n%{http_code}" https://solesmarket.com/api/cron/monitor-prices)
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          
+          echo "Response Code: $http_code"
+          echo "Response Body: $body"
+          
+          if [ $http_code -eq 200 ]; then
+            echo "✅ Price monitoring completed successfully"
+          else
+            echo "❌ Price monitoring failed with status $http_code"
+            exit 1
+          fi
+      
+      - name: Log Results
+        if: always()
+        run: |
+          echo "Timestamp: $(date)"
+          echo "Job completed"
