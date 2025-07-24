@@ -25,6 +25,7 @@
     "cheerio": "^1.1.0",
     "date-fns": "^3.6.0",
     "firebase": "^10.13.0",
+    "firebase-admin": "^13.4.0",
     "framer-motion": "^11.3.31",
     "googleapis": "^150.0.1",
     "html5-qrcode": "^2.3.8",
