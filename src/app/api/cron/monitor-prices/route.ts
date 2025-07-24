@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { headers } from 'next/headers';
-import { adminDb } from '@/lib/firebase/firebaseAdmin';
 import { getStockXApiCredentials, validateApiCredentials } from '@/lib/utils/userApiKeyHelper';
 
 // Verify this is a legitimate cron request from Vercel
@@ -53,6 +52,16 @@ export async function GET(request: NextRequest) {
     // Verify this is a legitimate cron request
     if (!verifyCronRequest(request)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Import adminDb lazily to avoid initialization errors
+    const { adminDb } = await import('@/lib/firebase/firebaseAdmin');
+    
+    if (!adminDb) {
+      return NextResponse.json({ 
+        error: 'Firebase Admin not initialized',
+        message: 'Missing Firebase Admin credentials'
+      }, { status: 500 });
     }
 
     console.log('🔄 Cron job started: monitor-prices');

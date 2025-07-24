@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminDb } from '@/lib/firebase/firebaseAdmin';
 
 export async function GET(request: NextRequest) {
-  const hasAdminCredentials = !!adminDb;
+  // Check if admin can be initialized
+  let hasAdminCredentials = false;
+  try {
+    const { adminDb } = await import('@/lib/firebase/firebaseAdmin');
+    hasAdminCredentials = !!adminDb;
+  } catch (error) {
+    console.error('Failed to import Firebase Admin:', error);
+  }
   
   return NextResponse.json({
     status: hasAdminCredentials ? 'ready' : 'missing-credentials',
