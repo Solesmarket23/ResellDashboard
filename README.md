@@ -12,4 +12,4 @@ This doesn't really matter, but is useful for the AI to understand more about th
 - React with Next.js 14 App Router
 - TailwindCSS
 - Firebase Auth, Storage, and Database
-- Multiple AI endpoints including OpenAI, Anthropic, and Replicate using Vercel's AI SDK
+- Multiple AI endpoints including OpenAI, Anthropic, and Replicate using Vercel's AI SDK# Trigger Vercel deployment
