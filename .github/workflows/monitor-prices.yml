@@ -11,7 +11,27 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Check StockX Prices
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          
+      - name: Install Firebase Admin
+        run: npm install firebase-admin
+        
+      - name: Run Price Monitor
+        env:
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+        run: node scripts/monitor-prices.js
+        
+      - name: Alternative - Call API Endpoint
+        if: failure()
         run: |
           echo "🔍 Checking StockX prices..."
           
