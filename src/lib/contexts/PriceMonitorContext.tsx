@@ -125,20 +125,24 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const response = await fetch('/api/stockx/test');
+        // First check if we have cookies
+        const response = await fetch('/api/stockx/auth/status');
         if (response.ok) {
           const data = await response.json();
-          const isAuth = data.accessTokenPresent && data.summary?.hasCatalogAccess;
-          setIsAuthenticated(isAuth);
+          setIsAuthenticated(data.isAuthenticated);
         } else {
           setIsAuthenticated(false);
         }
       } catch (error) {
+        console.error('Auth check error:', error);
         setIsAuthenticated(false);
       }
     };
     
     checkAuth();
+    // Re-check auth status every minute
+    const interval = setInterval(checkAuth, 60000);
+    return () => clearInterval(interval);
   }, []);
 
   // Monitoring loop
