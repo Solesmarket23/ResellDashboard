@@ -41,6 +41,12 @@ export async function GET(request: NextRequest) {
   const storedState = request.cookies.get('stockx_state')?.value;
   const returnTo = request.cookies.get('stockx_return_to')?.value;
   
+  console.log('Cookie values:', {
+    storedState: storedState ? 'present' : 'missing',
+    returnTo: returnTo || 'not set',
+    allCookies: Array.from(request.cookies.entries()).map(([name]) => name)
+  });
+  
   // Default return URL if none specified
   const defaultReturn = '/dashboard?section=stockx-market-research';
 
@@ -110,10 +116,11 @@ export async function GET(request: NextRequest) {
       });
 
       // Store the fresh tokens (this will overwrite any existing invalid tokens)
+      const isProduction = !request.url.includes('localhost');
       const cookieOptions = {
         httpOnly: true,
-        secure: true,
-        sameSite: 'none' as const,
+        secure: isProduction,
+        sameSite: 'lax' as const,
         path: '/',
         maxAge: 2592000 // 30 days in seconds
       };

@@ -35,11 +35,12 @@ export async function GET(request: NextRequest) {
   );
 
   // Set the state cookie with secure options
+  const isProduction = !host.includes('localhost');
   const cookieOptions = {
     httpOnly: true,
-    secure: true,
-    sameSite: 'none' as const,
-    maxAge: 300, // 5 minutes
+    secure: isProduction,
+    sameSite: 'lax' as const,
+    maxAge: 600, // 10 minutes for longer auth flows
     path: '/',
   };
 
