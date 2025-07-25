@@ -35,8 +35,8 @@ export async function GET(request: NextRequest) {
       throw new Error('No access token received from Google');
     }
     
-    // Create response with redirect
-    const redirectUrl = new URL('/dashboard?gmail_connected=true', baseUrl);
+    // Create response with redirect to purchases page
+    const redirectUrl = new URL('/dashboard/purchases?gmail_connected=true', baseUrl);
     const response = NextResponse.redirect(redirectUrl);
     
     // Determine if we're in production (Vercel) or development
@@ -99,7 +99,7 @@ export async function GET(request: NextRequest) {
     console.error('Error handling OAuth callback:', error);
     const url = new URL(request.url);
     const baseUrl = `${url.protocol}//${url.host}`;
-    const errorUrl = new URL('/dashboard?gmail_error=true', baseUrl);
+    const errorUrl = new URL('/dashboard/purchases?gmail_error=true', baseUrl);
     return NextResponse.redirect(errorUrl);
   }
 } 
