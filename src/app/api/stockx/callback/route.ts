@@ -115,6 +115,10 @@ export async function GET(request: NextRequest) {
         expires_in: tokens.expires_in
       });
 
+      // Calculate token expiration time
+      const expiresIn = tokens.expires_in || 3600; // Default to 1 hour if not provided
+      const expiresAt = Date.now() + ((expiresIn - 300) * 1000); // Subtract 5 minutes for buffer
+
       // Store the fresh tokens (this will overwrite any existing invalid tokens)
       const isProduction = !request.url.includes('localhost');
       const cookieOptions = {
@@ -131,8 +135,10 @@ export async function GET(request: NextRequest) {
       // Clear any existing tokens and set fresh ones
       response.cookies.delete('stockx_access_token');
       response.cookies.delete('stockx_refresh_token');
+      response.cookies.delete('stockx_token_expires_at');
       response.cookies.set('stockx_access_token', tokens.access_token, cookieOptions);
       response.cookies.set('stockx_refresh_token', tokens.refresh_token, cookieOptions);
+      response.cookies.set('stockx_token_expires_at', expiresAt.toString(), cookieOptions);
 
       // Clean up temporary OAuth cookies
       response.cookies.delete('stockx_state');

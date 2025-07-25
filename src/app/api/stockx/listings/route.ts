@@ -55,15 +55,22 @@ export async function GET(request: NextRequest) {
     let response = await fetchPage(1, accessToken);
 
     // Handle token refresh if needed
+    let tokenRefreshed = false;
+    let newAccessToken = accessToken;
+    let newRefreshToken = refreshToken;
+    
     if (response.status === 401 && refreshToken) {
       console.log('🔄 Token expired, attempting refresh...');
       const refreshResult = await refreshStockXTokens(refreshToken);
       
       if (refreshResult.success && refreshResult.accessToken) {
-        // Store the new access token for later use
-        accessToken = refreshResult.accessToken;
+        // Store the new tokens
+        newAccessToken = refreshResult.accessToken;
+        newRefreshToken = refreshResult.refreshToken || refreshToken;
+        tokenRefreshed = true;
+        
         // Retry with new token
-        response = await fetchPage(1, accessToken);
+        response = await fetchPage(1, newAccessToken);
       } else {
         return NextResponse.json({ 
           success: false, 
@@ -716,8 +723,8 @@ export async function GET(request: NextRequest) {
     });
 
     // If we refreshed the token, set the new cookies
-    if (accessToken !== cookieStore.get('stockx_access_token')?.value) {
-      setStockXTokenCookies(successResponse, accessToken, refreshToken!);
+    if (tokenRefreshed) {
+      setStockXTokenCookies(successResponse, newAccessToken, newRefreshToken);
     }
 
     return successResponse;

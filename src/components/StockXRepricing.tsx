@@ -7,6 +7,7 @@ import NeonDropdown from './NeonDropdown';
 import { addDocument, getDocuments, updateDocument } from '@/lib/firebase/firebaseUtils';
 import { auth } from '@/lib/firebase/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { useStockXAuth } from '@/lib/hooks/useStockXAuth';
 
 interface RepricingStrategy {
   type: 'competitive' | 'margin_based' | 'velocity_based' | 'hybrid';
@@ -106,6 +107,22 @@ interface RepricingResult {
 export default function StockXRepricing() {
   const { currentTheme } = useTheme();
   const isNeon = currentTheme.name.toLowerCase() === 'neon';
+  
+  // StockX Auth Hook for automatic token refresh
+  const { startTokenRefreshInterval, checkAndRefreshToken } = useStockXAuth({
+    onAuthError: () => {
+      console.log('StockX auth error detected - need to re-authenticate');
+      setAuthError(true);
+      setAuthenticated(false);
+    },
+    onTokenRefreshed: () => {
+      console.log('StockX token refreshed successfully');
+      setAuthError(false);
+      setAuthenticated(true);
+    },
+    checkInterval: 5 * 60 * 1000, // Check every 5 minutes
+    refreshBuffer: 10 * 60 * 1000 // Refresh 10 minutes before expiry
+  });
   
   // Debug theme detection
   useEffect(() => {
@@ -583,10 +600,31 @@ export default function StockXRepricing() {
       
       // Check if authentication failed
       if (response.status === 401 || response.status === 403) {
-        setAuthenticated(false);
-        setAuthError(true);
-        setListings([]);
-        return;
+        console.log('🔐 Authentication error detected, attempting token refresh...');
+        
+        // Try to refresh the token
+        await checkAndRefreshToken();
+        
+        // Retry the request once
+        const retryResponse = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          }
+        });
+        
+        if (retryResponse.status === 401 || retryResponse.status === 403) {
+          // Still failing after refresh attempt
+          setAuthenticated(false);
+          setAuthError(true);
+          setListings([]);
+          return;
+        }
+        
+        // Use the retry response
+        response = retryResponse;
       }
       
       const data = await response.json();
@@ -926,6 +964,9 @@ export default function StockXRepricing() {
 
   // useEffect hooks after function definitions to avoid hoisting issues
   useEffect(() => {
+    // Start the token refresh interval
+    startTokenRefreshInterval();
+    
     // Check if we're returning from authentication
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('authenticated') === 'true') {
@@ -934,7 +975,7 @@ export default function StockXRepricing() {
     }
     
     fetchListings();
-  }, []);
+  }, [startTokenRefreshInterval]);
 
   // Auto-refresh ALL market prices every 15 minutes
   useEffect(() => {

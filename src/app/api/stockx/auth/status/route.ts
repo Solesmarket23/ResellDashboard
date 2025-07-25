@@ -6,6 +6,7 @@ export async function GET(request: NextRequest) {
     // Check for access token in cookies
     const accessToken = request.cookies.get('stockx_access_token')?.value;
     const refreshToken = request.cookies.get('stockx_refresh_token')?.value;
+    const tokenExpiresAt = request.cookies.get('stockx_token_expires_at')?.value;
     
     if (!accessToken) {
       return NextResponse.json({
@@ -13,6 +14,20 @@ export async function GET(request: NextRequest) {
         message: 'No access token found',
         hasRefreshToken: !!refreshToken
       });
+    }
+    
+    // Check if token is expired based on stored expiration time
+    if (tokenExpiresAt) {
+      const expiresAt = parseInt(tokenExpiresAt);
+      if (Date.now() >= expiresAt) {
+        return NextResponse.json({
+          isAuthenticated: false,
+          message: 'Token expired based on stored expiration time',
+          needsReauth: false,
+          hasRefreshToken: !!refreshToken,
+          tokenExpired: true
+        });
+      }
     }
 
     // Get user ID from request
