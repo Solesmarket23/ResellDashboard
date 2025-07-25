@@ -18,24 +18,25 @@ async function validateTokens(accessToken: string): Promise<boolean> {
 }
 
 export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const code = searchParams.get('code');
-  const state = searchParams.get('state');
-  const error = searchParams.get('error');
+  try {
+    const searchParams = request.nextUrl.searchParams;
+    const code = searchParams.get('code');
+    const state = searchParams.get('state');
+    const error = searchParams.get('error');
 
-  // Get the current host from the request
-  const host = request.headers.get('host') || '';
-  const protocol = host.includes('localhost') ? 'http' : 'https';
-  const baseUrl = `${protocol}://${host}`;
+    // Get the current host from the request
+    const host = request.headers.get('host') || '';
+    const protocol = host.includes('localhost') ? 'http' : 'https';
+    const baseUrl = `${protocol}://${host}`;
 
-  console.log('=== STOCKX CALLBACK ===');
-  console.log('Callback request from:', {
-    host,
-    baseUrl,
-    code: code ? 'present' : 'missing',
-    state: state ? 'present' : 'missing',
-    error
-  });
+    console.log('=== STOCKX CALLBACK ===');
+    console.log('Callback request from:', {
+      host,
+      baseUrl,
+      code: code ? 'present' : 'missing',
+      state: state ? 'present' : 'missing',
+      error
+    });
 
   // Get stored state and return URL from cookies
   const storedState = request.cookies.get('stockx_state')?.value;
@@ -78,35 +79,69 @@ export async function GET(request: NextRequest) {
       const clientId = process.env.STOCKX_CLIENT_ID;
       const clientSecret = process.env.STOCKX_CLIENT_SECRET;
       
+      console.log('OAuth credentials check:', {
+        clientId: clientId ? `${clientId.substring(0, 8)}...` : 'missing',
+        clientSecret: clientSecret ? 'present' : 'missing',
+        redirectUri: `${baseUrl}/api/stockx/callback`
+      });
+      
       if (!clientId || !clientSecret) {
         console.error('❌ Missing OAuth credentials');
         const redirectUrl = returnTo || defaultReturn;
         return NextResponse.redirect(`${baseUrl}${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}error=missing_credentials`);
       }
       
+      const tokenRequestBody = new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: clientId,
+        client_secret: clientSecret,
+        code: code,
+        redirect_uri: `${baseUrl}/api/stockx/callback`,
+        audience: 'gateway.stockx.com',
+      });
+      
+      console.log('Token request details:', {
+        url: 'https://accounts.stockx.com/oauth/token',
+        redirect_uri: `${baseUrl}/api/stockx/callback`,
+        code_length: code.length,
+        body_params: Array.from(tokenRequestBody.keys())
+      });
+
       const tokenResponse = await fetch('https://accounts.stockx.com/oauth/token', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: new URLSearchParams({
-          grant_type: 'authorization_code',
-          client_id: clientId,
-          client_secret: clientSecret,
-          code: code,
-          redirect_uri: `${baseUrl}/api/stockx/callback`,
-          audience: 'gateway.stockx.com',
-        }),
+        body: tokenRequestBody,
       });
 
       console.log('Token exchange response status:', tokenResponse.status);
 
       if (!tokenResponse.ok) {
         const errorText = await tokenResponse.text();
-        console.error('❌ Token exchange failed:', errorText);
+        console.error('❌ Token exchange failed:', {
+          status: tokenResponse.status,
+          statusText: tokenResponse.statusText,
+          error: errorText,
+          headers: Object.fromEntries(tokenResponse.headers.entries())
+        });
+        
+        // Try to parse error details
+        let errorDetails = 'token_exchange_failed';
+        try {
+          const errorJson = JSON.parse(errorText);
+          if (errorJson.error) {
+            errorDetails = errorJson.error;
+          }
+          if (errorJson.error_description) {
+            console.error('Error description:', errorJson.error_description);
+          }
+        } catch (e) {
+          // Not JSON, use the raw text
+        }
+        
         const redirectUrl = returnTo || defaultReturn;
-        return NextResponse.redirect(`${baseUrl}${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}error=token_exchange_failed`);
-      }
+        return NextResponse.redirect(`${baseUrl}${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}error=${errorDetails}&details=${encodeURIComponent(errorText.substring(0, 100))}`);
 
       const tokens = await tokenResponse.json();
       console.log('✅ Fresh tokens received:', {
@@ -181,4 +216,23 @@ export async function GET(request: NextRequest) {
   console.log('❌ No valid tokens found - need authentication');
   const redirectUrl = returnTo || defaultReturn;
   return NextResponse.redirect(`${baseUrl}${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}error=no_tokens&need_reauth=true`);
+  
+  } catch (error: any) {
+    console.error('❌ StockX callback error:', error);
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
+    
+    // Return a proper error response instead of throwing
+    return NextResponse.json(
+      { 
+        error: 'Internal server error', 
+        message: error.message || 'Failed to process StockX callback',
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      },
+      { status: 500 }
+    );
+  }
 } 
