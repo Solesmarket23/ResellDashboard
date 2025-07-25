@@ -155,7 +155,7 @@ export async function GET(request: NextRequest) {
       const expiresAt = Date.now() + ((expiresIn - 300) * 1000); // Subtract 5 minutes for buffer
 
       // Store the fresh tokens (this will overwrite any existing invalid tokens)
-      const isProduction = !request.url.includes('localhost');
+      const isProduction = !host.includes('localhost');
       const cookieOptions = {
         httpOnly: true,
         secure: isProduction,
