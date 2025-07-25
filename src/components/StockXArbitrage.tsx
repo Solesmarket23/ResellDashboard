@@ -537,10 +537,7 @@ const StockXArbitrage: React.FC = () => {
       flipTime: '3-5 days'
     };
     
-    // Generate the enhanced share image
-    const shareImageUrl = await generateEnhancedShareImage(enhancedShareData);
-    
-    // For Twitter, we still use the text-based share
+    // Skip image generation for now - just use text-based share
     const shareData: ArbitrageShareData = {
       productName: opportunity.productName,
       size: opportunity.size,
@@ -548,25 +545,11 @@ const StockXArbitrage: React.FC = () => {
       salePrice: opportunity.askAmount || 0,
       profit: opportunity.profit || 0,
       profitMargin: opportunity.profitMargin || 0,
-      imageUrl: shareImageUrl, // Use the generated image
+      imageUrl: undefined, // No image for now
       affiliateUrl,
       shortUrl: shortUrl || undefined,
       backgroundVersion: 'bright'
     };
-    
-    // Download the enhanced graphic
-    if (shareImageUrl) {
-      // Create a temporary link to download the enhanced image
-      const link = document.createElement('a');
-      link.href = shareImageUrl;
-      link.download = `stockx-arbitrage-enhanced-${opportunity.productName.replace(/\s+/g, '-')}.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      // Clean up the blob URL
-      setTimeout(() => URL.revokeObjectURL(shareImageUrl), 1000);
-    }
     
     // Open Twitter with pre-filled text
     shareToTwitter(shareData);
