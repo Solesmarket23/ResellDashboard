@@ -1598,9 +1598,21 @@ export default function StockXRepricing() {
         setActivePeeks(prev => ({ ...prev, [id]: true }));
       });
       
-      // Step 1: Calculate peek price (10x current market price, capped)
+      // Step 1: Calculate peek price (use max price if set, otherwise 10x current)
       const currentMarketPrice = listing.lowestAsk || listing.currentPrice;
-      result.peekPrice = Math.min(currentMarketPrice * 10, 9999); // Cap at $9999
+      // Use the maximum price if configured, otherwise fall back to 10x strategy
+      if (listing.maxPrice && listing.maxPrice > currentMarketPrice) {
+        result.peekPrice = listing.maxPrice;
+      } else {
+        // If no max price or max price is too low, use 10x but cap at $9999
+        result.peekPrice = Math.min(currentMarketPrice * 10, 9999);
+      }
+      
+      // Safety check: Don't peek if peek price is too close to current price
+      if (result.peekPrice < currentMarketPrice * 1.5) {
+        console.log(`⚠️ Peek price ($${result.peekPrice}) is too close to current price ($${currentMarketPrice}). Skipping peek.`);
+        throw new Error('Peek price too close to current price - cannot perform effective market discovery');
+      }
       
       console.log(`🔍 Market Peek starting for ${listing.productName} (${listingsToUpdate.length} items) - Raising to $${result.peekPrice}`);
       
