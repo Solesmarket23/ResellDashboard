@@ -13,6 +13,16 @@ export async function POST(request: NextRequest) {
     const accountSid = process.env.IMPACT_ACCOUNT_SID;
     const authToken = process.env.IMPACT_AUTH_TOKEN;
     const campaignId = process.env.IMPACT_CAMPAIGN_ID; // Optional
+    
+    // Debug log to server console (not visible to client)
+    console.log('Impact.com API called:', {
+      hasAccountSid: !!accountSid,
+      accountSidLength: accountSid?.length || 0,
+      hasAuthToken: !!authToken,
+      authTokenLength: authToken?.length || 0,
+      hasCampaignId: !!campaignId,
+      nodeEnv: process.env.NODE_ENV
+    });
 
     if (!accountSid || !authToken) {
       console.error('Impact.com credentials not configured');
