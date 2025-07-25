@@ -87,11 +87,37 @@ const StockXPriceMonitor: React.FC = () => {
   });
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [selectedSizeRange, setSelectedSizeRange] = useState({ min: 7, max: 13 });
+  const [showBulkImportSettings, setShowBulkImportSettings] = useState(false);
+  const [bulkImportThreshold, setBulkImportThreshold] = useState(20);
+  const [editingThresholdId, setEditingThresholdId] = useState<string | null>(null);
+  const [tempThreshold, setTempThreshold] = useState<{ ask: number; flex: number }>({ ask: 20, flex: 20 });
 
   // Mark alerts as read when viewing the page
   useEffect(() => {
     markAlertsAsRead();
   }, [markAlertsAsRead]);
+
+  // Update product threshold
+  const updateProductThreshold = (productId: string, askThreshold: number, flexThreshold: number) => {
+    setMonitoredProducts(prev => {
+      const updated = prev.map(p => {
+        if (p.id === productId) {
+          return {
+            ...p,
+            priceDropThreshold: askThreshold,
+            flexPriceDropThreshold: flexThreshold
+          };
+        }
+        return p;
+      });
+      // Update localStorage
+      const existingData = localStorage.getItem('stockx_monitored_products');
+      if (existingData) {
+        localStorage.setItem('stockx_monitored_products', JSON.stringify(updated));
+      }
+      return updated;
+    });
+  };
 
   const requestNotificationPermission = async () => {
     if ('Notification' in window) {
@@ -383,8 +409,8 @@ const StockXPriceMonitor: React.FC = () => {
                   targetAskPrice: undefined,
                   targetFlexAskPrice: undefined,
                   targetBidPrice: undefined,
-                  priceDropThreshold: 20, // Default 20% for bulk imports
-                  flexPriceDropThreshold: 20,
+                  priceDropThreshold: bulkImportThreshold, // Use user-defined threshold
+                  flexPriceDropThreshold: bulkImportThreshold,
                   priceHistory: [{
                     timestamp: Date.now(),
                     highestBid: variant.highestBid || variant.rawBid || 0,
@@ -892,7 +918,7 @@ const StockXPriceMonitor: React.FC = () => {
               {/* Bulk Import Button */}
               {theme === 'neon' ? (
                 <button
-                  onClick={() => bulkImportMostActive('sneakers')}
+                  onClick={() => setShowBulkImportSettings(true)}
                   disabled={isAuthenticated === false || isBulkImporting}
                   className="relative bg-black border-2 border-transparent disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-2 px-6 rounded-lg transition-all duration-300 flex items-center gap-2 overflow-hidden group"
                   style={{
@@ -914,7 +940,7 @@ const StockXPriceMonitor: React.FC = () => {
                 </button>
               ) : (
                 <button
-                  onClick={() => bulkImportMostActive('sneakers')}
+                  onClick={() => setShowBulkImportSettings(true)}
                   disabled={isAuthenticated === false || isBulkImporting}
                   className="bg-gradient-to-r from-green-500 to-cyan-500 hover:from-green-600 hover:to-cyan-600 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
                 >
@@ -923,6 +949,160 @@ const StockXPriceMonitor: React.FC = () => {
                   {isAuthenticated === false && <span className="text-xs">(Login Required)</span>}
                 </button>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Bulk Import Settings Modal */}
+        {showBulkImportSettings && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowBulkImportSettings(false)} />
+            <div className={`relative w-full max-w-md ${
+              theme === 'neon' 
+                ? 'bg-gradient-to-br from-gray-900 via-purple-900/20 to-gray-900 border-2 border-purple-500/50 shadow-2xl shadow-purple-500/25'
+                : 'bg-gray-800 border border-gray-700'
+            } rounded-2xl p-6 transform transition-all`}>
+              <h2 className={`text-xl font-bold mb-4 ${
+                theme === 'neon' ? 'text-cyan-400' : 'text-white'
+              }`}>
+                Bulk Import Settings
+              </h2>
+              
+              <div className="space-y-4">
+                {/* Price Drop Threshold */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Alert me when prices drop by:
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range"
+                      min="5"
+                      max="50"
+                      step="5"
+                      value={bulkImportThreshold}
+                      onChange={(e) => setBulkImportThreshold(parseInt(e.target.value))}
+                      className={`flex-1 ${theme === 'neon' ? 'accent-purple-500' : 'accent-blue-500'}`}
+                    />
+                    <div className={`w-16 text-center font-bold text-lg ${
+                      theme === 'neon' ? 'text-purple-400' : 'text-blue-400'
+                    }`}>
+                      {bulkImportThreshold}%
+                    </div>
+                  </div>
+                  <div className="flex justify-between mt-1 text-xs text-gray-500">
+                    <span>5%</span>
+                    <span>Aggressive</span>
+                    <span>Conservative</span>
+                    <span>50%</span>
+                  </div>
+                </div>
+
+                {/* Quick Presets */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Quick Presets:
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      onClick={() => setBulkImportThreshold(10)}
+                      className={`py-2 px-3 rounded-lg font-medium transition-all ${
+                        bulkImportThreshold === 10
+                          ? theme === 'neon' 
+                            ? 'bg-purple-500 text-white'
+                            : 'bg-blue-500 text-white'
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      }`}
+                    >
+                      10%
+                    </button>
+                    <button
+                      onClick={() => setBulkImportThreshold(20)}
+                      className={`py-2 px-3 rounded-lg font-medium transition-all ${
+                        bulkImportThreshold === 20
+                          ? theme === 'neon' 
+                            ? 'bg-purple-500 text-white'
+                            : 'bg-blue-500 text-white'
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      }`}
+                    >
+                      20%
+                    </button>
+                    <button
+                      onClick={() => setBulkImportThreshold(30)}
+                      className={`py-2 px-3 rounded-lg font-medium transition-all ${
+                        bulkImportThreshold === 30
+                          ? theme === 'neon' 
+                            ? 'bg-purple-500 text-white'
+                            : 'bg-blue-500 text-white'
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      }`}
+                    >
+                      30%
+                    </button>
+                  </div>
+                </div>
+
+                {/* Size Range */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Size Range:
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      value={selectedSizeRange.min}
+                      onChange={(e) => setSelectedSizeRange(prev => ({ ...prev, min: parseInt(e.target.value) || 0 }))}
+                      className="w-20 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-center"
+                      min="0"
+                      max="20"
+                      step="0.5"
+                    />
+                    <span className="text-gray-400">to</span>
+                    <input
+                      type="number"
+                      value={selectedSizeRange.max}
+                      onChange={(e) => setSelectedSizeRange(prev => ({ ...prev, max: parseInt(e.target.value) || 20 }))}
+                      className="w-20 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-center"
+                      min="0"
+                      max="20"
+                      step="0.5"
+                    />
+                  </div>
+                </div>
+
+                {/* Info */}
+                <div className={`p-3 rounded-lg ${
+                  theme === 'neon' ? 'bg-purple-900/30 border border-purple-500/30' : 'bg-blue-900/20 border border-blue-500/30'
+                }`}>
+                  <p className="text-sm text-gray-300">
+                    This will monitor the most active StockX products. Each product in the selected size range will alert you when prices drop by {bulkImportThreshold}%.
+                  </p>
+                </div>
+
+                {/* Buttons */}
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => setShowBulkImportSettings(false)}
+                    className="flex-1 py-2 px-4 rounded-lg font-medium bg-gray-700 hover:bg-gray-600 text-white transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowBulkImportSettings(false);
+                      bulkImportMostActive('sneakers');
+                    }}
+                    className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
+                      theme === 'neon'
+                        ? 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white'
+                        : 'bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white'
+                    }`}
+                  >
+                    Start Monitoring
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -1168,13 +1348,73 @@ const StockXPriceMonitor: React.FC = () => {
                           Target Bid: ${product.targetBidPrice}
                         </span>
                       )}
-                      <span className="text-yellow-400">
-                        Ask Alert: {product.priceDropThreshold}%
-                      </span>
-                      {product.currentFlexAsk && (
-                        <span className="text-orange-400">
-                          Flex Alert: {product.flexPriceDropThreshold}%
-                        </span>
+                      {editingThresholdId === product.id ? (
+                        <div className="flex items-center gap-2 bg-gray-700 rounded-lg px-3 py-1">
+                          <span className="text-gray-300 text-xs">Ask:</span>
+                          <input
+                            type="number"
+                            value={tempThreshold.ask}
+                            onChange={(e) => setTempThreshold(prev => ({ ...prev, ask: parseInt(e.target.value) || 5 }))}
+                            className="w-12 px-1 py-0.5 bg-gray-800 border border-gray-600 rounded text-white text-center text-xs"
+                            min="5"
+                            max="50"
+                            step="5"
+                          />
+                          <span className="text-gray-300 text-xs">%</span>
+                          {product.currentFlexAsk && (
+                            <>
+                              <span className="text-gray-300 text-xs ml-2">Flex:</span>
+                              <input
+                                type="number"
+                                value={tempThreshold.flex}
+                                onChange={(e) => setTempThreshold(prev => ({ ...prev, flex: parseInt(e.target.value) || 5 }))}
+                                className="w-12 px-1 py-0.5 bg-gray-800 border border-gray-600 rounded text-white text-center text-xs"
+                                min="5"
+                                max="50"
+                                step="5"
+                              />
+                              <span className="text-gray-300 text-xs">%</span>
+                            </>
+                          )}
+                          <button
+                            onClick={() => {
+                              updateProductThreshold(product.id, tempThreshold.ask, tempThreshold.flex);
+                              setEditingThresholdId(null);
+                            }}
+                            className="ml-2 px-2 py-0.5 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-medium"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => setEditingThresholdId(null)}
+                            className="px-2 py-0.5 bg-gray-600 hover:bg-gray-700 text-white rounded text-xs font-medium"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => {
+                              setEditingThresholdId(product.id);
+                              setTempThreshold({ ask: product.priceDropThreshold, flex: product.flexPriceDropThreshold });
+                            }}
+                            className="text-yellow-400 hover:text-yellow-300 cursor-pointer underline-offset-2 hover:underline"
+                          >
+                            Ask Alert: {product.priceDropThreshold}%
+                          </button>
+                          {product.currentFlexAsk && (
+                            <button
+                              onClick={() => {
+                                setEditingThresholdId(product.id);
+                                setTempThreshold({ ask: product.priceDropThreshold, flex: product.flexPriceDropThreshold });
+                              }}
+                              className="text-orange-400 hover:text-orange-300 cursor-pointer underline-offset-2 hover:underline"
+                            >
+                              Flex Alert: {product.flexPriceDropThreshold}%
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
