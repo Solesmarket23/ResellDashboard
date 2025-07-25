@@ -588,7 +588,7 @@ export default function StockXRepricing() {
       const url = `/api/stockx/listings?t=${Date.now()}&force=${forceReload}`;
       console.log(`📍 Fetching from: ${url}`);
       
-      const response = await fetch(url, {
+      let response = await fetch(url, {
         method: 'GET',
         cache: 'no-store',
         headers: {

@@ -142,6 +142,7 @@ export async function GET(request: NextRequest) {
         
         const redirectUrl = returnTo || defaultReturn;
         return NextResponse.redirect(`${baseUrl}${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}error=${errorDetails}&details=${encodeURIComponent(errorText.substring(0, 100))}`);
+      }
 
       const tokens = await tokenResponse.json();
       console.log('✅ Fresh tokens received:', {
