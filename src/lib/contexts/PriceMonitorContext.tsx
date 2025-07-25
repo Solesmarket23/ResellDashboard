@@ -26,6 +26,9 @@ interface MonitoredProduct {
   flexPriceDropThreshold: number;
   priceHistory: PriceData[];
   lastChecked: number;
+  stockxUrl?: string;
+  urlKey?: string;
+  slug?: string;
   alerts: Array<{
     id: string;
     type: 'ask_drop' | 'bid_rise' | 'target_hit' | 'flex_ask_drop' | 'flex_target_hit';

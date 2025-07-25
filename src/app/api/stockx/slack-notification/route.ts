@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
                 text: "View on StockX",
                 emoji: true
               },
-              url: `https://stockx.com/search?s=${encodeURIComponent(product.title)}`,
+              url: product.stockxUrl || `https://stockx.com/${product.slug || product.urlKey || product.title.toLowerCase().replace(/\s+/g, '-')}${product.size ? `?size=${product.size}` : ''}`,
               style: "primary"
             }
           ]

@@ -223,6 +223,9 @@ const StockXPriceMonitor: React.FC = () => {
   };
 
   const addProductToMonitor = (product: any, variant: any, marketData: any) => {
+    // Generate StockX URL
+    const stockxUrl = `https://stockx.com/${product.urlKey || product.slug || product.title.toLowerCase().replace(/\s+/g, '-')}${variant.size ? `?size=${variant.size}` : ''}`;
+    
     const newMonitoredProduct: MonitoredProduct = {
       id: `${product.productId}-${variant.variantId}`,
       productId: product.productId,
@@ -238,6 +241,9 @@ const StockXPriceMonitor: React.FC = () => {
       targetBidPrice: newProduct.targetBidPrice ? parseInt(newProduct.targetBidPrice) : undefined,
       priceDropThreshold: parseInt(newProduct.priceDropThreshold) || 10,
       flexPriceDropThreshold: parseInt(newProduct.flexPriceDropThreshold) || 10,
+      stockxUrl: stockxUrl,
+      urlKey: product.urlKey,
+      slug: product.slug,
       priceHistory: [{
         timestamp: Date.now(),
         highestBid: parseInt(marketData.highestBidAmount) || 0,
@@ -451,6 +457,9 @@ const StockXPriceMonitor: React.FC = () => {
             if (shouldAdd && variant.lowestAsk > 0) {
               const existingId = `${variant.productId}-${variant.variantId}`;
               if (!monitoredProducts.some(p => p.id === existingId)) {
+                // Generate StockX URL
+                const stockxUrl = `https://stockx.com/${variant.urlKey || variant.slug || variant.title.toLowerCase().replace(/\s+/g, '-')}${variant.size ? `?size=${variant.size}` : ''}`;
+                
                 const newMonitoredProduct: MonitoredProduct = {
                   id: existingId,
                   productId: variant.productId,
@@ -466,6 +475,9 @@ const StockXPriceMonitor: React.FC = () => {
                   targetBidPrice: undefined,
                   priceDropThreshold: bulkImportThreshold, // Use user-defined threshold
                   flexPriceDropThreshold: bulkImportThreshold,
+                  stockxUrl: stockxUrl,
+                  urlKey: variant.urlKey,
+                  slug: variant.slug,
                   priceHistory: [{
                     timestamp: Date.now(),
                     highestBid: variant.highestBid || variant.rawBid || 0,
