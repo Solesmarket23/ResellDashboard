@@ -472,13 +472,47 @@ const StockXArbitrage: React.FC = () => {
   };
 
   const handleTwitterExport = async (opportunity: ArbitrageOpportunity) => {
-    // Generate affiliate URL for this product
+    // Generate StockX URL for this product
     const stockxUrl = opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId);
-    const affiliateUrl = convertStockXLink(stockxUrl, {
-      productName: opportunity.productName,
-      productId: opportunity.productId,
-      size: opportunity.size
-    });
+    
+    // Generate Impact.com affiliate URL
+    let affiliateUrl = stockxUrl;
+    try {
+      const impactResponse = await fetch('/api/impact/create-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          stockxUrl,
+          customParams: {
+            productId: opportunity.productId,
+            size: opportunity.size,
+            source: 'twitter_share'
+          }
+        })
+      });
+      
+      if (impactResponse.ok) {
+        const impactData = await impactResponse.json();
+        affiliateUrl = impactData.trackingUrl || stockxUrl;
+        console.log('Impact.com affiliate URL created:', affiliateUrl);
+      } else {
+        console.error('Impact.com API error:', await impactResponse.text());
+        // Fallback to Sovrn if Impact fails
+        affiliateUrl = convertStockXLink(stockxUrl, {
+          productName: opportunity.productName,
+          productId: opportunity.productId,
+          size: opportunity.size
+        });
+      }
+    } catch (error) {
+      console.error('Error creating Impact.com link:', error);
+      // Fallback to Sovrn if Impact fails
+      affiliateUrl = convertStockXLink(stockxUrl, {
+        productName: opportunity.productName,
+        productId: opportunity.productId,
+        size: opportunity.size
+      });
+    }
     
     // Store the affiliate URL for this opportunity so View on StockX button can use it
     const opportunityKey = `${opportunity.productId}-${opportunity.variantId}`;
@@ -519,7 +553,7 @@ const StockXArbitrage: React.FC = () => {
       shortUrl = affiliateUrl;
     }
     
-    console.log('Final URLs:', { affiliateUrl, shortUrl });
+    console.log('Final URLs:', { stockxUrl, affiliateUrl, shortUrl });
     
     // Use enhanced graphics for better visual impact
     const enhancedShareData: EnhancedArbitrageShareData = {
@@ -1395,28 +1429,67 @@ const StockXArbitrage: React.FC = () => {
                       FlexAsk: {showFlexAsk ? 'ON' : 'OFF'} | Amount: {opportunity.flexAskAmount || 'none'}
                     </div>
                   )}
-                  <a
-                    href={(() => {
+                  <button
+                    onClick={async () => {
                       const opportunityKey = `${opportunity.productId}-${opportunity.variantId}`;
-                      const affiliateLink = affiliateLinks[opportunityKey];
-                      if (affiliateLink) {
-                        return affiliateLink;
+                      let affiliateLink = affiliateLinks[opportunityKey];
+                      
+                      // If no affiliate link stored yet, generate one using Impact.com
+                      if (!affiliateLink) {
+                        const stockxUrl = opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId);
+                        
+                        try {
+                          const impactResponse = await fetch('/api/impact/create-link', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ 
+                              stockxUrl,
+                              customParams: {
+                                productId: opportunity.productId,
+                                size: opportunity.size,
+                                source: 'view_button'
+                              }
+                            })
+                          });
+                          
+                          if (impactResponse.ok) {
+                            const impactData = await impactResponse.json();
+                            affiliateLink = impactData.trackingUrl || stockxUrl;
+                            console.log('Impact.com affiliate URL created for View button:', affiliateLink);
+                            
+                            // Store the affiliate link
+                            setAffiliateLinks(prev => ({
+                              ...prev,
+                              [opportunityKey]: affiliateLink
+                            }));
+                          } else {
+                            // Fallback to Sovrn if Impact fails
+                            affiliateLink = convertStockXLink(stockxUrl, {
+                              productName: opportunity.productName,
+                              productId: opportunity.productId,
+                              size: opportunity.size
+                            });
+                          }
+                        } catch (error) {
+                          console.error('Error creating Impact.com link:', error);
+                          // Fallback to Sovrn
+                          const stockxUrl = opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId);
+                          affiliateLink = convertStockXLink(stockxUrl, {
+                            productName: opportunity.productName,
+                            productId: opportunity.productId,
+                            size: opportunity.size
+                          });
+                        }
                       }
-                      // If no affiliate link stored yet, generate one
-                      const stockxUrl = opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId);
-                      return convertStockXLink(stockxUrl, {
-                        productName: opportunity.productName,
-                        productId: opportunity.productId,
-                        size: opportunity.size
-                      });
-                    })()}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                      
+                      // Open the affiliate link
+                      window.open(affiliateLink, '_blank', 'noopener,noreferrer');
+                    }}
                     className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
                   >
                     <ExternalLink className="w-4 h-4" />
                     View on StockX
-                  </a>
+                  </button>
                 </div>
               </div>
             </div>
