@@ -189,15 +189,27 @@ export default function StockXRepricing() {
 
   // Track previous listings length outside of effect
   const prevListingsLength = useRef(0);
+  const isInitialMount = useRef(true);
   
-  // Reset to page 1 when listings count changes significantly (not on every update)
+  // Reset to page 1 only on significant changes
   useEffect(() => {
-    // Only reset if the length changes by more than 10% or goes to/from 0
-    if (listings.length === 0 || prevListingsLength.current === 0 || 
-        Math.abs(listings.length - prevListingsLength.current) > prevListingsLength.current * 0.1) {
+    // Skip on initial mount
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      prevListingsLength.current = listings.length;
+      return;
+    }
+    
+    // Only reset if going from/to 0 or major change (>50% difference)
+    const prevLength = prevListingsLength.current;
+    const currentLength = listings.length;
+    
+    if ((prevLength === 0 && currentLength > 0) || 
+        (prevLength > 0 && currentLength === 0) ||
+        (prevLength > 0 && Math.abs(currentLength - prevLength) > prevLength * 0.5)) {
       setCurrentPage(1);
     }
-    prevListingsLength.current = listings.length;
+    prevListingsLength.current = currentLength;
   }, [listings.length]);
 
   // Track auth state
@@ -211,55 +223,19 @@ export default function StockXRepricing() {
     return () => unsubscribe();
   }, []);
 
-  // Apply saved settings when settings are loaded
-  useEffect(() => {
-    if (settingsLoaded && listings.length > 0 && Object.keys(savedSettings).length > 0) {
-      console.log('Settings loaded, applying to listings...');
-      console.log('Number of saved settings:', Object.keys(savedSettings).length);
-      
-      setListings(prev => prev.map(listing => {
-        const saved = savedSettings[listing.listingId];
-        if (saved) {
-          console.log(`Applying settings to ${listing.listingId}:`, {
-            savedData: saved,
-            hasMinPrice: 'minPrice' in saved,
-            hasMaxPrice: 'maxPrice' in saved,
-            minPriceValue: saved.minPrice,
-            maxPriceValue: saved.maxPrice
-          });
-          
-          const updatedListing = {
-            ...listing,
-            pricingStrategy: saved.pricingStrategy || listing.pricingStrategy,
-            minPrice: saved.hasOwnProperty('minPrice') ? saved.minPrice : listing.minPrice,
-            maxPrice: saved.hasOwnProperty('maxPrice') ? saved.maxPrice : listing.maxPrice,
-            autoDeactivate: saved.hasOwnProperty('autoDeactivate') ? saved.autoDeactivate : listing.autoDeactivate
-          };
-          
-          console.log(`Updated listing ${listing.listingId}:`, {
-            oldMinPrice: listing.minPrice,
-            newMinPrice: updatedListing.minPrice,
-            oldMaxPrice: listing.maxPrice,
-            newMaxPrice: updatedListing.maxPrice
-          });
-          
-          return updatedListing;
-        }
-        return listing;
-      }));
-      
-      // Don't force re-render, the state update is enough
-    }
-  }, [settingsLoaded, savedSettings]); // Depend on settingsLoaded flag
+  // Apply saved settings - removed to prevent double application
 
-  // Market Peek Scheduler
+  // Market Peek Scheduler - moved to useRef to prevent recreation
+  const peekSchedulerRef = useRef<NodeJS.Timeout | null>(null);
+  
   useEffect(() => {
-    if (peekScheduler) {
-      clearInterval(peekScheduler);
+    // Clear any existing scheduler
+    if (peekSchedulerRef.current) {
+      clearInterval(peekSchedulerRef.current);
     }
 
     // Check every minute for scheduled peeks
-    const scheduler = setInterval(() => {
+    peekSchedulerRef.current = setInterval(() => {
       const now = new Date();
       const currentHour = now.getHours();
       const currentMinute = now.getMinutes();
@@ -270,12 +246,13 @@ export default function StockXRepricing() {
       }
     }, 60000); // Check every minute
 
-    setPeekScheduler(scheduler);
-
     return () => {
-      if (scheduler) clearInterval(scheduler);
+      if (peekSchedulerRef.current) {
+        clearInterval(peekSchedulerRef.current);
+        peekSchedulerRef.current = null;
+      }
     };
-  }, []); // Empty dependency array - scheduler doesn't need to restart on listings change
+  }, []); // Empty dependency array - scheduler doesn't need to restart
 
   const loadSavedSettings = async (userId: string) => {
     try {
@@ -300,30 +277,7 @@ export default function StockXRepricing() {
       
       setSavedSettings(settingsMap);
       setSettingsLoaded(true);
-      
-      // Apply saved settings to listings if they exist
-      if (listings.length > 0) {
-        console.log('Applying loaded settings to existing listings...');
-        setListings(prev => prev.map(listing => {
-          const saved = settingsMap[listing.listingId];
-          if (saved) {
-            console.log(`Updating listing ${listing.listingId} with saved values:`, {
-              savedMinPrice: saved.minPrice,
-              savedMaxPrice: saved.maxPrice,
-              currentMinPrice: listing.minPrice,
-              currentMaxPrice: listing.maxPrice
-            });
-            return {
-              ...listing,
-              pricingStrategy: saved.pricingStrategy || listing.pricingStrategy,
-              minPrice: saved.hasOwnProperty('minPrice') ? saved.minPrice : listing.minPrice,
-              maxPrice: saved.hasOwnProperty('maxPrice') ? saved.maxPrice : listing.maxPrice,
-              autoDeactivate: saved.hasOwnProperty('autoDeactivate') ? saved.autoDeactivate : listing.autoDeactivate
-            };
-          }
-          return listing;
-        }));
-      }
+      // Don't apply settings here - let fetchListings handle it to prevent double application
     } catch (error) {
       console.error('Error loading saved settings:', error);
     }
@@ -584,7 +538,10 @@ export default function StockXRepricing() {
 
   const fetchListings = async (forceReload = false) => {
     console.log(`🔄 Fetching listings... (forceReload: ${forceReload})`);
-    setLoading(true);
+    // Only show loading on initial fetch or force reload
+    if (forceReload || listings.length === 0) {
+      setLoading(true);
+    }
     setAuthError(false);
     // Don't clear listings here - update them after successful fetch to prevent flicker
     
@@ -967,19 +924,33 @@ export default function StockXRepricing() {
   }, [listings, isBackgroundRefreshing, fetchMarketDataForListings]);
 
   // useEffect hooks after function definitions to avoid hoisting issues
+  // Initial mount effect
   useEffect(() => {
-    // Start the token refresh interval
-    startTokenRefreshInterval();
+    let mounted = true;
     
-    // Check if we're returning from authentication
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('authenticated') === 'true') {
-      // Remove the parameter from URL
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
+    const init = async () => {
+      // Start the token refresh interval
+      startTokenRefreshInterval();
+      
+      // Check if we're returning from authentication
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('authenticated') === 'true') {
+        // Remove the parameter from URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+      
+      // Only fetch if component is still mounted
+      if (mounted) {
+        await fetchListings();
+      }
+    };
     
-    fetchListings();
-  }, [startTokenRefreshInterval]);
+    init();
+    
+    return () => {
+      mounted = false;
+    };
+  }, []); // Remove startTokenRefreshInterval dependency
 
   // Auto-refresh ALL market prices every 15 minutes
   useEffect(() => {

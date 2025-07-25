@@ -16,11 +16,16 @@ export async function POST(request: NextRequest) {
 
     if (!accountSid || !authToken) {
       console.error('Impact.com credentials not configured');
+      console.log('Missing credentials:', { 
+        hasAccountSid: !!accountSid, 
+        hasAuthToken: !!authToken,
+        hasCampaignId: !!campaignId
+      });
       // Return original URL if no credentials
       return NextResponse.json({
         originalUrl: stockxUrl,
         trackingUrl: stockxUrl,
-        error: 'Impact.com not configured'
+        error: 'Impact.com not configured - missing IMPACT_ACCOUNT_SID or IMPACT_AUTH_TOKEN'
       });
     }
 

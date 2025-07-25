@@ -494,15 +494,27 @@ const StockXArbitrage: React.FC = () => {
       if (impactResponse.ok) {
         const impactData = await impactResponse.json();
         affiliateUrl = impactData.trackingUrl || stockxUrl;
-        console.log('Impact.com affiliate URL created:', affiliateUrl);
+        console.log('✅ Impact.com affiliate URL created:', {
+          original: stockxUrl,
+          affiliate: affiliateUrl,
+          hasError: !!impactData.error
+        });
+        
+        // If Impact.com returned an error, it means credentials aren't set up
+        if (impactData.error) {
+          console.warn('⚠️ Impact.com not configured:', impactData.error);
+          console.log('💡 Add IMPACT_ACCOUNT_SID and IMPACT_AUTH_TOKEN to Vercel environment variables');
+        }
       } else {
-        console.error('Impact.com API error:', await impactResponse.text());
+        const errorText = await impactResponse.text();
+        console.error('❌ Impact.com API error:', errorText);
         // Fallback to Sovrn if Impact fails
         affiliateUrl = convertStockXLink(stockxUrl, {
           productName: opportunity.productName,
           productId: opportunity.productId,
           size: opportunity.size
         });
+        console.log('↩️ Falling back to Sovrn:', affiliateUrl);
       }
     } catch (error) {
       console.error('Error creating Impact.com link:', error);

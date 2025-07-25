@@ -95,6 +95,11 @@ class ImpactClient {
 
     } catch (error) {
       console.error('Error creating Impact tracking link:', error);
+      console.log('Impact.com API error details:', {
+        error: error instanceof Error ? error.message : error,
+        accountSid: this.accountSid ? `${this.accountSid.substring(0, 4)}...` : 'missing',
+        hasAuthToken: !!this.authToken
+      });
       // Fallback to original URL if affiliate link generation fails
       return {
         originalUrl: stockxUrl,
