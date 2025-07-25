@@ -54,8 +54,10 @@ export async function GET(request: NextRequest) {
   // Handle OAuth errors
   if (error) {
     console.log('OAuth error:', error);
-    const redirectUrl = returnTo || defaultReturn;
-    return NextResponse.redirect(`${baseUrl}${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}error=oauth_error&message=${encodeURIComponent(error)}`);
+    const redirectPath = returnTo || defaultReturn;
+    const redirectUrl = `${baseUrl}${redirectPath}`;
+    const separator = redirectUrl.includes('?') ? '&' : '?';
+    return NextResponse.redirect(`${redirectUrl}${separator}error=oauth_error&message=${encodeURIComponent(error)}`);
   }
 
   console.log('State validation:', { state, storedState });
@@ -68,8 +70,10 @@ export async function GET(request: NextRequest) {
     // Validate state for security
     if (state !== storedState) {
       console.log('❌ State mismatch - security issue detected');
-      const redirectUrl = returnTo || defaultReturn;
-      return NextResponse.redirect(`${baseUrl}${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}error=state_mismatch`);
+      const redirectPath = returnTo || defaultReturn;
+      const redirectUrl = `${baseUrl}${redirectPath}`;
+      const separator = redirectUrl.includes('?') ? '&' : '?';
+      return NextResponse.redirect(`${redirectUrl}${separator}error=state_mismatch`);
     }
 
     // Exchange the new authorization code for fresh tokens
@@ -87,8 +91,10 @@ export async function GET(request: NextRequest) {
       
       if (!clientId || !clientSecret) {
         console.error('❌ Missing OAuth credentials');
-        const redirectUrl = returnTo || defaultReturn;
-        return NextResponse.redirect(`${baseUrl}${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}error=missing_credentials`);
+        const redirectPath = returnTo || defaultReturn;
+        const redirectUrl = `${baseUrl}${redirectPath}`;
+        const separator = redirectUrl.includes('?') ? '&' : '?';
+        return NextResponse.redirect(`${redirectUrl}${separator}error=missing_credentials`);
       }
       
       const tokenRequestBody = new URLSearchParams({
@@ -140,8 +146,10 @@ export async function GET(request: NextRequest) {
           // Not JSON, use the raw text
         }
         
-        const redirectUrl = returnTo || defaultReturn;
-        return NextResponse.redirect(`${baseUrl}${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}error=${errorDetails}&details=${encodeURIComponent(errorText.substring(0, 100))}`);
+        const redirectPath = returnTo || defaultReturn;
+        const redirectUrl = `${baseUrl}${redirectPath}`;
+        const separator = redirectUrl.includes('?') ? '&' : '?';
+        return NextResponse.redirect(`${redirectUrl}${separator}error=${errorDetails}&details=${encodeURIComponent(errorText.substring(0, 100))}`);
       }
 
       const tokens = await tokenResponse.json();
@@ -165,8 +173,10 @@ export async function GET(request: NextRequest) {
         maxAge: 2592000 // 30 days in seconds
       };
 
-      const finalRedirect = returnTo ? `${baseUrl}${returnTo}` : `${baseUrl}${defaultReturn}`;
-      const response = NextResponse.redirect(`${finalRedirect}${finalRedirect.includes('?') ? '&' : '?'}success=true&note=fresh_login`);
+      const finalPath = returnTo || defaultReturn;
+      const finalRedirect = `${baseUrl}${finalPath}`;
+      const separator = finalRedirect.includes('?') ? '&' : '?';
+      const response = NextResponse.redirect(`${finalRedirect}${separator}success=true&note=fresh_login`);
 
       // Clear any existing tokens and set fresh ones
       response.cookies.delete('stockx_access_token');
@@ -185,8 +195,10 @@ export async function GET(request: NextRequest) {
 
     } catch (error) {
       console.error('❌ Token exchange error:', error);
-      const redirectUrl = returnTo || defaultReturn;
-      return NextResponse.redirect(`${baseUrl}${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}error=token_exchange_error`);
+      const redirectPath = returnTo || defaultReturn;
+      const redirectUrl = `${baseUrl}${redirectPath}`;
+      const separator = redirectUrl.includes('?') ? '&' : '?';
+      return NextResponse.redirect(`${redirectUrl}${separator}error=token_exchange_error`);
     }
   }
 
@@ -204,19 +216,25 @@ export async function GET(request: NextRequest) {
     
     if (tokensValid) {
       console.log('✅ Existing tokens are valid');
-      const finalRedirect = returnTo ? `${baseUrl}${returnTo}` : `${baseUrl}${defaultReturn}`;
-      return NextResponse.redirect(`${finalRedirect}${finalRedirect.includes('?') ? '&' : '?'}success=true&note=existing_valid`);
+      const finalPath = returnTo || defaultReturn;
+      const finalRedirect = `${baseUrl}${finalPath}`;
+      const separator = finalRedirect.includes('?') ? '&' : '?';
+      return NextResponse.redirect(`${finalRedirect}${separator}success=true&note=existing_valid`);
     } else {
       console.log('❌ Existing tokens are invalid - need fresh login');
-      const redirectUrl = returnTo || defaultReturn;
-      return NextResponse.redirect(`${baseUrl}${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}error=invalid_tokens&need_reauth=true`);
+      const redirectPath = returnTo || defaultReturn;
+      const redirectUrl = `${baseUrl}${redirectPath}`;
+      const separator = redirectUrl.includes('?') ? '&' : '?';
+      return NextResponse.redirect(`${redirectUrl}${separator}error=invalid_tokens&need_reauth=true`);
     }
   }
 
   // PRIORITY 3: No valid tokens found at all
   console.log('❌ No valid tokens found - need authentication');
-  const redirectUrl = returnTo || defaultReturn;
-  return NextResponse.redirect(`${baseUrl}${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}error=no_tokens&need_reauth=true`);
+  const redirectPath = returnTo || defaultReturn;
+  const redirectUrl = `${baseUrl}${redirectPath}`;
+  const separator = redirectUrl.includes('?') ? '&' : '?';
+  return NextResponse.redirect(`${redirectUrl}${separator}error=no_tokens&need_reauth=true`);
   
   } catch (error: any) {
     console.error('❌ StockX callback error:', error);
