@@ -117,9 +117,9 @@ const StockXArbitrage: React.FC = () => {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const response = await fetch('/api/stockx/test');
+        const response = await fetch('/api/stockx/auth/status');
         const data = await response.json();
-        setIsAuthenticated(response.ok && data.accessTokenPresent);
+        setIsAuthenticated(data.isAuthenticated);
       } catch (error) {
         console.error('Auth check failed:', error);
         setIsAuthenticated(false);
@@ -167,6 +167,18 @@ const StockXArbitrage: React.FC = () => {
       url.searchParams.delete('success');
       url.searchParams.delete('note');
       window.history.replaceState({}, '', url.toString());
+      
+      // Re-check authentication status after successful login
+      const recheckAuth = async () => {
+        try {
+          const response = await fetch('/api/stockx/auth/status');
+          const data = await response.json();
+          setIsAuthenticated(data.isAuthenticated);
+        } catch (error) {
+          console.error('Auth recheck failed:', error);
+        }
+      };
+      recheckAuth();
       
       // Auto-dismiss the success message after 5 seconds
       setTimeout(() => {
