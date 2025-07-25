@@ -91,6 +91,21 @@ const StockXPriceMonitor: React.FC = () => {
   const [bulkImportThreshold, setBulkImportThreshold] = useState(20);
   const [editingThresholdId, setEditingThresholdId] = useState<string | null>(null);
   const [tempThreshold, setTempThreshold] = useState<{ ask: number; flex: number }>({ ask: 20, flex: 20 });
+  const [showBulkEdit, setShowBulkEdit] = useState(false);
+  const [bulkEditMode, setBulkEditMode] = useState<'percentage' | 'amount'>('percentage');
+  const [bulkEditValues, setBulkEditValues] = useState({
+    askPercentage: 20,
+    flexPercentage: 20,
+    askAmount: 1,
+    flexAmount: 1
+  });
+  const [showSlackSettings, setShowSlackSettings] = useState(false);
+  const [slackWebhookUrl, setSlackWebhookUrl] = useState(() => {
+    return localStorage.getItem('stockx_slack_webhook') || '';
+  });
+  const [slackEnabled, setSlackEnabled] = useState(() => {
+    return localStorage.getItem('stockx_slack_enabled') === 'true';
+  });
 
   // Mark alerts as read when viewing the page
   useEffect(() => {
@@ -110,13 +125,67 @@ const StockXPriceMonitor: React.FC = () => {
         }
         return p;
       });
-      // Update localStorage
-      const existingData = localStorage.getItem('stockx_monitored_products');
-      if (existingData) {
-        localStorage.setItem('stockx_monitored_products', JSON.stringify(updated));
-      }
+      // Always update localStorage
+      localStorage.setItem('stockx_monitored_products', JSON.stringify(updated));
       return updated;
     });
+  };
+
+  // Bulk update all product thresholds
+  const bulkUpdateThresholds = () => {
+    setMonitoredProducts(prev => {
+      const updated = prev.map(p => {
+        if (bulkEditMode === 'percentage') {
+          return {
+            ...p,
+            priceDropThreshold: bulkEditValues.askPercentage,
+            flexPriceDropThreshold: bulkEditValues.flexPercentage
+          };
+        } else {
+          // Calculate percentage based on current price
+          const askPercentage = p.currentAsk > 0 ? Math.round((bulkEditValues.askAmount / p.currentAsk) * 100) : 20;
+          const flexPercentage = p.currentFlexAsk && p.currentFlexAsk > 0 
+            ? Math.round((bulkEditValues.flexAmount / p.currentFlexAsk) * 100) 
+            : 20;
+          
+          return {
+            ...p,
+            priceDropThreshold: Math.max(1, Math.min(50, askPercentage)),
+            flexPriceDropThreshold: Math.max(1, Math.min(50, flexPercentage))
+          };
+        }
+      });
+      // Update localStorage
+      localStorage.setItem('stockx_monitored_products', JSON.stringify(updated));
+      return updated;
+    });
+    setShowBulkEdit(false);
+  };
+
+  // Save Slack settings
+  const saveSlackSettings = () => {
+    localStorage.setItem('stockx_slack_webhook', slackWebhookUrl);
+    localStorage.setItem('stockx_slack_enabled', slackEnabled.toString());
+    setShowSlackSettings(false);
+  };
+
+  // Send Slack notification
+  const sendSlackNotification = async (product: MonitoredProduct, alert: any) => {
+    if (!slackEnabled || !slackWebhookUrl) return;
+
+    try {
+      await fetch('/api/stockx/slack-notification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product,
+          alert,
+          webhookUrl: slackWebhookUrl
+        })
+      });
+    } catch (error) {
+      console.error('Failed to send Slack notification:', error);
+    }
   };
 
   const requestNotificationPermission = async () => {
@@ -949,6 +1018,30 @@ const StockXPriceMonitor: React.FC = () => {
                   {isAuthenticated === false && <span className="text-xs">(Login Required)</span>}
                 </button>
               )}
+              
+              {/* Bulk Edit Button */}
+              {monitoredProducts.length > 0 && (
+                <button
+                  onClick={() => setShowBulkEdit(true)}
+                  className="bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
+                >
+                  <Settings className="w-4 h-4" />
+                  Bulk Edit Alerts
+                </button>
+              )}
+              
+              {/* Slack Settings Button */}
+              <button
+                onClick={() => setShowSlackSettings(true)}
+                className={`font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2 ${
+                  slackEnabled 
+                    ? 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white'
+                    : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                }`}
+              >
+                <Bell className="w-4 h-4" />
+                Slack {slackEnabled ? 'Enabled' : 'Setup'}
+              </button>
             </div>
           </div>
         )}
@@ -1207,6 +1300,289 @@ const StockXPriceMonitor: React.FC = () => {
                     Close
                   </button>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Bulk Edit Modal */}
+        {showBulkEdit && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowBulkEdit(false)} />
+            <div className={`relative w-full max-w-md ${
+              theme === 'neon' 
+                ? 'bg-gradient-to-br from-gray-900 via-purple-900/20 to-gray-900 border-2 border-purple-500/50 shadow-2xl shadow-purple-500/25'
+                : 'bg-gray-800 border border-gray-700'
+            } rounded-2xl p-6 transform transition-all`}>
+              <h2 className={`text-xl font-bold mb-4 ${
+                theme === 'neon' ? 'text-cyan-400' : 'text-white'
+              }`}>
+                Bulk Edit Alert Thresholds
+              </h2>
+              
+              <div className="space-y-4">
+                {/* Mode Selection */}
+                <div className="flex gap-2 p-1 bg-gray-700 rounded-lg">
+                  <button
+                    onClick={() => setBulkEditMode('percentage')}
+                    className={`flex-1 py-2 px-3 rounded-md font-medium transition-all ${
+                      bulkEditMode === 'percentage'
+                        ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    Percentage
+                  </button>
+                  <button
+                    onClick={() => setBulkEditMode('amount')}
+                    className={`flex-1 py-2 px-3 rounded-md font-medium transition-all ${
+                      bulkEditMode === 'amount'
+                        ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    Dollar Amount
+                  </button>
+                </div>
+
+                {bulkEditMode === 'percentage' ? (
+                  <>
+                    {/* Ask Percentage */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Alert when Ask price drops by:
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="range"
+                          min="1"
+                          max="50"
+                          value={bulkEditValues.askPercentage}
+                          onChange={(e) => setBulkEditValues(prev => ({ ...prev, askPercentage: parseInt(e.target.value) }))}
+                          className="flex-1"
+                        />
+                        <input
+                          type="number"
+                          value={bulkEditValues.askPercentage}
+                          onChange={(e) => setBulkEditValues(prev => ({ ...prev, askPercentage: parseInt(e.target.value) || 1 }))}
+                          className="w-16 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-center"
+                          min="1"
+                          max="50"
+                        />
+                        <span className="text-gray-400">%</span>
+                      </div>
+                    </div>
+
+                    {/* Flex Percentage */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Alert when Flex price drops by:
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="range"
+                          min="1"
+                          max="50"
+                          value={bulkEditValues.flexPercentage}
+                          onChange={(e) => setBulkEditValues(prev => ({ ...prev, flexPercentage: parseInt(e.target.value) }))}
+                          className="flex-1"
+                        />
+                        <input
+                          type="number"
+                          value={bulkEditValues.flexPercentage}
+                          onChange={(e) => setBulkEditValues(prev => ({ ...prev, flexPercentage: parseInt(e.target.value) || 1 }))}
+                          className="w-16 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-center"
+                          min="1"
+                          max="50"
+                        />
+                        <span className="text-gray-400">%</span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* Ask Amount */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Alert when Ask price is within $X of current price:
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <span className="text-gray-400">$</span>
+                        <input
+                          type="number"
+                          value={bulkEditValues.askAmount}
+                          onChange={(e) => setBulkEditValues(prev => ({ ...prev, askAmount: parseFloat(e.target.value) || 1 }))}
+                          className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
+                          min="0.01"
+                          step="0.01"
+                          placeholder="1.00"
+                        />
+                      </div>
+                      <p className="text-xs text-gray-400 mt-1">
+                        E.g., $1 will alert when price drops to within $1 of the current price
+                      </p>
+                    </div>
+
+                    {/* Flex Amount */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Alert when Flex price is within $X of current price:
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <span className="text-gray-400">$</span>
+                        <input
+                          type="number"
+                          value={bulkEditValues.flexAmount}
+                          onChange={(e) => setBulkEditValues(prev => ({ ...prev, flexAmount: parseFloat(e.target.value) || 1 }))}
+                          className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
+                          min="0.01"
+                          step="0.01"
+                          placeholder="1.00"
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* Info */}
+                <div className={`p-3 rounded-lg ${
+                  theme === 'neon' ? 'bg-purple-900/30 border border-purple-500/30' : 'bg-blue-900/20 border border-blue-500/30'
+                }`}>
+                  <p className="text-sm text-gray-300">
+                    This will update alert thresholds for all {monitoredProducts.length} monitored products.
+                  </p>
+                </div>
+
+                {/* Buttons */}
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => setShowBulkEdit(false)}
+                    className="flex-1 py-2 px-4 rounded-lg font-medium bg-gray-700 hover:bg-gray-600 text-white transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={bulkUpdateThresholds}
+                    className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
+                      theme === 'neon'
+                        ? 'bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white shadow-lg shadow-purple-500/30'
+                        : 'bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white'
+                    }`}
+                  >
+                    Update All
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Slack Settings Modal */}
+        {showSlackSettings && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowSlackSettings(false)} />
+            <div className={`relative w-full max-w-md ${
+              theme === 'neon' 
+                ? 'bg-gradient-to-br from-gray-900 via-purple-900/20 to-gray-900 border-2 border-purple-500/50 shadow-2xl shadow-purple-500/25'
+                : 'bg-gray-800 border border-gray-700'
+            } rounded-2xl p-6 transform transition-all`}>
+              <h2 className={`text-xl font-bold mb-4 ${
+                theme === 'neon' ? 'text-cyan-400' : 'text-white'
+              }`}>
+                Slack Notifications
+              </h2>
+              
+              <div className="space-y-4">
+                {/* Enable/Disable Toggle */}
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-gray-300">
+                    Enable Slack Notifications
+                  </label>
+                  <button
+                    onClick={() => setSlackEnabled(!slackEnabled)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      slackEnabled ? 'bg-purple-500' : 'bg-gray-600'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        slackEnabled ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {/* Webhook URL Input */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Slack Webhook URL
+                  </label>
+                  <input
+                    type="text"
+                    value={slackWebhookUrl}
+                    onChange={(e) => setSlackWebhookUrl(e.target.value)}
+                    placeholder="https://hooks.slack.com/services/..."
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Get your webhook URL from Slack's Incoming Webhooks app
+                  </p>
+                </div>
+
+                {/* Test Button */}
+                {slackWebhookUrl && (
+                  <button
+                    onClick={async () => {
+                      const testAlert = {
+                        type: 'ask_drop',
+                        message: 'This is a test notification from StockX Price Monitor',
+                        oldPrice: 100,
+                        newPrice: 80,
+                        percentage: 20,
+                        timestamp: Date.now()
+                      };
+                      const testProduct = {
+                        brand: 'Test',
+                        title: 'Test Product',
+                        size: 'Test Size'
+                      };
+                      await sendSlackNotification(testProduct as any, testAlert);
+                      alert('Test notification sent! Check your Slack.');
+                    }}
+                    className="w-full py-2 px-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-all"
+                  >
+                    Send Test Notification
+                  </button>
+                )}
+
+                {/* Info */}
+                <div className={`p-3 rounded-lg ${
+                  theme === 'neon' ? 'bg-purple-900/30 border border-purple-500/30' : 'bg-blue-900/20 border border-blue-500/30'
+                }`}>
+                  <p className="text-sm text-gray-300">
+                    You'll receive Slack notifications when monitored products hit your price thresholds.
+                  </p>
+                </div>
+
+                {/* Buttons */}
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => setShowSlackSettings(false)}
+                    className="flex-1 py-2 px-4 rounded-lg font-medium bg-gray-700 hover:bg-gray-600 text-white transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={saveSlackSettings}
+                    className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
+                      theme === 'neon'
+                        ? 'bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white shadow-lg shadow-purple-500/30'
+                        : 'bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white'
+                    }`}
+                  >
+                    Save Settings
+                  </button>
+                </div>
               </div>
             </div>
           </div>

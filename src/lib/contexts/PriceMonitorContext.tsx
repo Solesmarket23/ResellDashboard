@@ -254,7 +254,7 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
             percentage: dropPercentage
           };
           alerts.unshift(alert);
-          sendNotification(`📉 ${product.title} (${product.size})`, alert.message);
+          sendNotification(`📉 ${product.title} (${product.size})`, alert.message, product, alert);
         }
       }
 
@@ -270,7 +270,7 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
           percentage: 0
         };
         alerts.unshift(alert);
-        sendNotification(`🎯 ${product.title} (${product.size})`, alert.message);
+        sendNotification(`🎯 ${product.title} (${product.size})`, alert.message, product, alert);
       }
 
       // Check for flex ask price drop
@@ -288,7 +288,7 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
             percentage: dropPercentage
           };
           alerts.unshift(alert);
-          sendNotification(`📉 FLEX ${product.title} (${product.size})`, alert.message);
+          sendNotification(`📉 FLEX ${product.title} (${product.size})`, alert.message, product, alert);
         }
       }
 
@@ -312,7 +312,7 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
     }));
   };
 
-  const sendNotification = (title: string, message: string) => {
+  const sendNotification = (title: string, message: string, product?: any, alert?: any) => {
     // Browser notification
     if ('Notification' in window && Notification.permission === 'granted') {
       new Notification(title, {
@@ -323,6 +323,26 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
 
     // In-app notification
     setNotifications(prev => [`${title}: ${message}`, ...prev.slice(0, 9)]);
+
+    // Send Slack notification if enabled
+    if (product && alert) {
+      const slackEnabled = localStorage.getItem('stockx_slack_enabled') === 'true';
+      const slackWebhookUrl = localStorage.getItem('stockx_slack_webhook');
+      
+      if (slackEnabled && slackWebhookUrl) {
+        fetch('/api/stockx/slack-notification', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            product,
+            alert,
+            webhookUrl: slackWebhookUrl
+          })
+        }).catch(error => {
+          console.error('Failed to send Slack notification:', error);
+        });
+      }
+    }
   };
 
   // Context actions
