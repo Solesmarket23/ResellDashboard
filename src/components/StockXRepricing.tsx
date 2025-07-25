@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { DollarSign, TrendingDown, Target, Zap, RefreshCw, AlertTriangle, CheckCircle, Loader, Package } from 'lucide-react';
 import NeonDropdown from './NeonDropdown';
@@ -187,9 +187,17 @@ export default function StockXRepricing() {
   const isAllSelected = paginatedListings.length > 0 && paginatedListings.every(l => l.selected);
   const isPartiallySelected = pageSelectedCount > 0 && pageSelectedCount < paginatedListings.length;
 
-  // Reset to page 1 when listings change
+  // Track previous listings length outside of effect
+  const prevListingsLength = useRef(0);
+  
+  // Reset to page 1 when listings count changes significantly (not on every update)
   useEffect(() => {
-    setCurrentPage(1);
+    // Only reset if the length changes by more than 10% or goes to/from 0
+    if (listings.length === 0 || prevListingsLength.current === 0 || 
+        Math.abs(listings.length - prevListingsLength.current) > prevListingsLength.current * 0.1) {
+      setCurrentPage(1);
+    }
+    prevListingsLength.current = listings.length;
   }, [listings.length]);
 
   // Track auth state
@@ -240,8 +248,7 @@ export default function StockXRepricing() {
         return listing;
       }));
       
-      // Force a re-render by updating a timestamp
-      setLastFetchTime(new Date());
+      // Don't force re-render, the state update is enough
     }
   }, [settingsLoaded, savedSettings]); // Depend on settingsLoaded flag
 
@@ -268,7 +275,7 @@ export default function StockXRepricing() {
     return () => {
       if (scheduler) clearInterval(scheduler);
     };
-  }, [listings]);
+  }, []); // Empty dependency array - scheduler doesn't need to restart on listings change
 
   const loadSavedSettings = async (userId: string) => {
     try {
@@ -579,9 +586,7 @@ export default function StockXRepricing() {
     console.log(`🔄 Fetching listings... (forceReload: ${forceReload})`);
     setLoading(true);
     setAuthError(false);
-    // Clear existing listings before fetching
-    setListings([]);
-    setListingStats({});
+    // Don't clear listings here - update them after successful fetch to prevent flicker
     
     try {
       // Add cache-busting timestamp to ensure fresh data
@@ -726,15 +731,14 @@ export default function StockXRepricing() {
         // Token related error
         setAuthenticated(false);
         setAuthError(true);
-        setListings([]);
+        // Keep existing listings to prevent flicker
       } else {
         console.log('No listings found or invalid response:', data);
         setListings([]);
       }
     } catch (error) {
       console.error('❌ Failed to fetch listings:', error);
-      setListings([]);
-      setLastFetchTime(new Date());
+      // Keep existing listings on error to prevent flicker
     } finally {
       setLoading(false);
       console.log(`✅ Fetch complete at ${new Date().toISOString()}`);
@@ -979,29 +983,24 @@ export default function StockXRepricing() {
 
   // Auto-refresh ALL market prices every 15 minutes
   useEffect(() => {
-    // Only run if we have listings
-    if (listings.length === 0) return;
-
     console.log('🔄 Starting auto-refresh timer for ALL market prices (15 min intervals)');
     
-    // Refresh all listings immediately on mount if listings exist
-    const timer = setTimeout(() => {
-      refreshAllMarketPrices();
-    }, 3000); // Small delay to ensure listings are loaded
+    // Don't refresh immediately on mount - let initial fetch complete first
 
     // Set up interval for periodic refresh of ALL listings
     const interval = setInterval(() => {
       console.log('⏰ Auto-refreshing ALL market prices...');
-      refreshAllMarketPrices();
+      if (listings.length > 0) {
+        refreshAllMarketPrices();
+      }
     }, 15 * 60 * 1000); // 15 minutes
 
     // Cleanup
     return () => {
-      clearTimeout(timer);
       clearInterval(interval);
       console.log('🛑 Stopped auto-refresh timer');
     };
-  }, [listings.length]); // Only depend on listings.length to avoid circular dependency
+  }, []); // Empty dependency - timer should only be set up once
 
   // Individual listing update functions
   const updateListingStrategy = (listingId: string, type: IndividualPricingStrategy['type']) => {
