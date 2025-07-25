@@ -23,11 +23,12 @@ export function generateTwitterText(data: ArbitrageShareData): string {
     `Profit: $${data.profit.toFixed(2)} (${data.profitMargin}%)\n\n` +
     `(estimated profit with buyer fees & selling via no-fee resale)\n\n`;
   
-  // Use affiliate URL directly if available, otherwise use short URL
-  if (data.affiliateUrl) {
-    text += `🔗 ${data.affiliateUrl}\n\n`;
-  } else if (data.shortUrl) {
+  // Add short URL if available (cleaner for Twitter)
+  if (data.shortUrl) {
     text += `🔗 ${data.shortUrl}\n\n`;
+  } else if (data.affiliateUrl) {
+    // Fallback to affiliate URL if no short URL
+    text += `🔗 ${data.affiliateUrl}\n\n`;
   }
   
   text += `#StockX #Reselling #SneakerArbitrage`;
