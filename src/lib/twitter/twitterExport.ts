@@ -16,27 +16,19 @@ export interface ArbitrageShareData {
 }
 
 export function generateTwitterText(data: ArbitrageShareData): string {
-  const profitEmoji = data.profit >= 100 ? '🚀' : data.profit >= 50 ? '🔥' : '💰';
-  
-  let text = `${profitEmoji} BUY NOW on StockX!\n\n` +
+  let text = `💰 StockX Arbitrage Alert!\n\n` +
     `${data.productName} (Size ${data.size})\n\n` +
-    `✅ Available Now: $${data.salePrice.toFixed(2)}\n`;
+    `Highest bid: $${data.purchasePrice.toFixed(2)}\n` +
+    `Lowest ask: $${data.salePrice.toFixed(2)}\n\n` +
+    `Profit: $${data.profit.toFixed(2)} (${data.profitMargin}%)\n\n` +
+    `(estimated profit with buyer fees & selling via no-fee resale)\n\n`;
   
-  // Add Xpress Ship info if available
-  if (data.isXpressAvailable && data.xpressPrice) {
-    text += `⚡ Xpress Ship: $${data.xpressPrice.toFixed(2)}\n`;
-  }
-  
-  text += `\n💰 Flip Potential: $${data.profit.toFixed(2)} profit (${data.profitMargin}%)\n` +
-    `📊 Current Bid: $${data.purchasePrice.toFixed(2)}\n\n` +
-    `🏃‍♂️ Limited availability - Buy now!\n\n`;
-  
-  // Add short URL if available (doesn't expose API key)
+  // Add short URL if available
   if (data.shortUrl) {
     text += `🔗 ${data.shortUrl}\n\n`;
   }
   
-  text += `#StockX #Reselling #SneakerFlips #BuyNow`;
+  text += `#StockX #Reselling #SneakerArbitrage`;
   
   return text;
 }
