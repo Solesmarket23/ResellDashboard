@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
   console.log('Cookie values:', {
     storedState: storedState ? 'present' : 'missing',
     returnTo: returnTo || 'not set',
-    allCookies: Array.from(request.cookies.entries()).map(([name]) => name)
+    cookieCount: request.cookies.size
   });
   
   // Default return URL if none specified
