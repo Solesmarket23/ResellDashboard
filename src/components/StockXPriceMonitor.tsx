@@ -60,6 +60,8 @@ const StockXPriceMonitor: React.FC = () => {
     unreadAlertCount,
     addMonitoredProduct,
     removeMonitoredProduct,
+    updateAllProductThresholds,
+    updateAllProductThresholdsByAmount,
     setIsMonitoring,
     setMonitoringInterval,
     clearNotifications,
@@ -133,32 +135,16 @@ const StockXPriceMonitor: React.FC = () => {
 
   // Bulk update all product thresholds
   const bulkUpdateThresholds = () => {
-    setMonitoredProducts(prev => {
-      const updated = prev.map(p => {
-        if (bulkEditMode === 'percentage') {
-          return {
-            ...p,
-            priceDropThreshold: bulkEditValues.askPercentage,
-            flexPriceDropThreshold: bulkEditValues.flexPercentage
-          };
-        } else {
-          // Calculate percentage based on current price
-          const askPercentage = p.currentAsk > 0 ? Math.round((bulkEditValues.askAmount / p.currentAsk) * 100) : 20;
-          const flexPercentage = p.currentFlexAsk && p.currentFlexAsk > 0 
-            ? Math.round((bulkEditValues.flexAmount / p.currentFlexAsk) * 100) 
-            : 20;
-          
-          return {
-            ...p,
-            priceDropThreshold: Math.max(1, Math.min(50, askPercentage)),
-            flexPriceDropThreshold: Math.max(1, Math.min(50, flexPercentage))
-          };
-        }
-      });
-      // Update localStorage
-      localStorage.setItem('stockx_monitored_products', JSON.stringify(updated));
-      return updated;
-    });
+    console.log('Bulk update triggered:', { bulkEditMode, bulkEditValues });
+    
+    if (bulkEditMode === 'percentage') {
+      // Use percentage values directly
+      updateAllProductThresholds(bulkEditValues.askPercentage, bulkEditValues.flexPercentage);
+    } else {
+      // Use dollar amount values
+      updateAllProductThresholdsByAmount(bulkEditValues.askAmount, bulkEditValues.flexAmount);
+    }
+    
     setShowBulkEdit(false);
   };
 
@@ -1730,11 +1716,11 @@ const StockXPriceMonitor: React.FC = () => {
                           <input
                             type="number"
                             value={tempThreshold.ask}
-                            onChange={(e) => setTempThreshold(prev => ({ ...prev, ask: parseInt(e.target.value) || 5 }))}
-                            className="w-12 px-1 py-0.5 bg-gray-800 border border-gray-600 rounded text-white text-center text-xs"
-                            min="5"
+                            onChange={(e) => setTempThreshold(prev => ({ ...prev, ask: parseFloat(e.target.value) || 0.1 }))}
+                            className="w-16 px-1 py-0.5 bg-gray-800 border border-gray-600 rounded text-white text-center text-xs"
+                            min="0.1"
                             max="50"
-                            step="5"
+                            step="0.1"
                           />
                           <span className="text-gray-300 text-xs">%</span>
                           {product.currentFlexAsk && (
@@ -1743,11 +1729,11 @@ const StockXPriceMonitor: React.FC = () => {
                               <input
                                 type="number"
                                 value={tempThreshold.flex}
-                                onChange={(e) => setTempThreshold(prev => ({ ...prev, flex: parseInt(e.target.value) || 5 }))}
-                                className="w-12 px-1 py-0.5 bg-gray-800 border border-gray-600 rounded text-white text-center text-xs"
-                                min="5"
+                                onChange={(e) => setTempThreshold(prev => ({ ...prev, flex: parseFloat(e.target.value) || 0.1 }))}
+                                className="w-16 px-1 py-0.5 bg-gray-800 border border-gray-600 rounded text-white text-center text-xs"
+                                min="0.1"
                                 max="50"
-                                step="5"
+                                step="0.1"
                               />
                               <span className="text-gray-300 text-xs">%</span>
                             </>
@@ -1777,7 +1763,7 @@ const StockXPriceMonitor: React.FC = () => {
                             }}
                             className="text-yellow-400 hover:text-yellow-300 cursor-pointer underline-offset-2 hover:underline"
                           >
-                            Ask Alert: {product.priceDropThreshold}%
+                            Ask Alert: {product.priceDropThreshold < 1 ? product.priceDropThreshold.toFixed(2) : product.priceDropThreshold.toFixed(0)}%
                           </button>
                           {product.currentFlexAsk && (
                             <button
@@ -1787,7 +1773,7 @@ const StockXPriceMonitor: React.FC = () => {
                               }}
                               className="text-orange-400 hover:text-orange-300 cursor-pointer underline-offset-2 hover:underline"
                             >
-                              Flex Alert: {product.flexPriceDropThreshold}%
+                              Flex Alert: {product.flexPriceDropThreshold < 1 ? product.flexPriceDropThreshold.toFixed(2) : product.flexPriceDropThreshold.toFixed(0)}%
                             </button>
                           )}
                         </>

@@ -48,6 +48,8 @@ interface PriceMonitorContextType {
   // Actions
   addMonitoredProduct: (product: MonitoredProduct) => void;
   removeMonitoredProduct: (productId: string) => void;
+  updateAllProductThresholds: (askThreshold: number, flexThreshold: number) => void;
+  updateAllProductThresholdsByAmount: (askAmount: number, flexAmount: number) => void;
   setIsMonitoring: (monitoring: boolean) => void;
   setMonitoringInterval: (interval: number) => void;
   clearNotifications: () => void;
@@ -354,6 +356,40 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
     setMonitoredProducts(prev => prev.filter(p => p.id !== productId));
   };
 
+  const updateAllProductThresholds = (askThreshold: number, flexThreshold: number) => {
+    setMonitoredProducts(prev => {
+      const updated = prev.map(p => ({
+        ...p,
+        priceDropThreshold: askThreshold,
+        flexPriceDropThreshold: flexThreshold
+      }));
+      // Save to localStorage
+      localStorage.setItem('stockx_monitored_products', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const updateAllProductThresholdsByAmount = (askAmount: number, flexAmount: number) => {
+    setMonitoredProducts(prev => {
+      const updated = prev.map(p => {
+        // Calculate percentage for each product based on its current price
+        const askPercentage = p.currentAsk > 0 ? (askAmount / p.currentAsk) * 100 : 1;
+        const flexPercentage = p.currentFlexAsk && p.currentFlexAsk > 0 
+          ? (flexAmount / p.currentFlexAsk) * 100 
+          : 1;
+        
+        return {
+          ...p,
+          priceDropThreshold: Math.max(0.1, Math.min(50, askPercentage)),
+          flexPriceDropThreshold: Math.max(0.1, Math.min(50, flexPercentage))
+        };
+      });
+      // Save to localStorage
+      localStorage.setItem('stockx_monitored_products', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   const clearNotifications = () => {
     setNotifications([]);
   };
@@ -373,6 +409,8 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
     unreadAlertCount,
     addMonitoredProduct,
     removeMonitoredProduct,
+    updateAllProductThresholds,
+    updateAllProductThresholdsByAmount,
     setIsMonitoring,
     setMonitoringInterval,
     clearNotifications,
