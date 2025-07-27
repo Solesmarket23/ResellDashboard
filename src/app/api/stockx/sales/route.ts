@@ -73,10 +73,8 @@ export async function GET(request: NextRequest) {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
-        'x-api-key': apiKey,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'User-Agent': 'ResellDashboard/1.0'
+        'X-API-Key': apiKey,
+        'Accept': 'application/json'
       }
     });
 
@@ -92,9 +90,7 @@ export async function GET(request: NextRequest) {
           headers: {
             'Authorization': `Bearer ${refreshResult.accessToken}`,
             'X-API-Key': apiKey,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'User-Agent': 'ResellDashboard/1.0'
+            'Accept': 'application/json'
           }
         });
 
