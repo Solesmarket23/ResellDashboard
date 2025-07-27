@@ -46,27 +46,24 @@ export async function GET(request: NextRequest) {
   try {
     // Build API URL for seller orders/sales
     const pageNumber = Math.floor(parseInt(offset) / parseInt(limit)) + 1;
-    const pageSize = Math.min(parseInt(limit), 50); // API max is 50
+    const pageSize = Math.min(parseInt(limit), 100); // API max is 100 per docs
     
+    // Use the same parameter names as the working listings endpoint
     const queryParams = new URLSearchParams({
       pageNumber: pageNumber.toString(),
       pageSize: pageSize.toString()
     });
 
-    // Add status filter if provided
-    if (status) {
-      queryParams.set('status', status);
-    }
-
-    // StockX API endpoint for seller orders - use history endpoint for completed sales
-    // and active endpoint for pending sales based on status filter
+    // StockX API endpoint - use the documented endpoints
     let apiUrl: string;
     if (status === 'completed') {
-      apiUrl = `https://api.stockx.com/v2/selling/orders/history?orderStatus=COMPLETED&${queryParams.toString()}`;
+      // Use history endpoint with COMPLETED status
+      queryParams.set('orderStatus', 'COMPLETED');
+      apiUrl = `https://api.stockx.com/v2/selling/orders/history?${queryParams.toString()}`;
     } else if (status === 'pending' || status === 'active') {
       apiUrl = `https://api.stockx.com/v2/selling/orders/active?${queryParams.toString()}`;
     } else {
-      // Default to history endpoint without status filter to get all orders
+      // Default to history endpoint to get all orders
       apiUrl = `https://api.stockx.com/v2/selling/orders/history?${queryParams.toString()}`;
     }
     console.log(`🛒 Fetching StockX seller orders: ${apiUrl}`);
@@ -94,7 +91,7 @@ export async function GET(request: NextRequest) {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${refreshResult.accessToken}`,
-            'x-api-key': apiKey,
+            'X-API-Key': apiKey,
             'Content-Type': 'application/json',
             'Accept': 'application/json',
             'User-Agent': 'ResellDashboard/1.0'
