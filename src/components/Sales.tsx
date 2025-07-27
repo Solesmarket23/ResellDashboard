@@ -1931,7 +1931,7 @@ const Sales = () => {
                   <div className="space-y-3">
                     {!syncStatus.isAuthenticated && (
                       <button
-                        onClick={() => window.location.href = '/api/stockx/auth'}
+                        onClick={() => window.location.href = '/api/stockx/auth?returnTo=/dashboard?section=sales'}
                         className={`w-full px-4 py-3 rounded-lg font-medium transition-colors ${
                           isNeon 
                             ? 'bg-green-500 hover:bg-green-600 text-white shadow-lg shadow-green-500/25' 
