@@ -35,21 +35,31 @@ export const useStockXSales = () => {
           }
         }
         
-        // Load cached sales
-        const cachedSales = await getDocuments('stockxSales');
-        const userSales = cachedSales
-          .filter(sale => sale.userId === user.uid)
-          .map(sale => sale.saleData as StockXSale)
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        // Load cached sales - handle case where collection doesn't exist yet
+        try {
+          const cachedSales = await getDocuments('stockxSales');
+          const userSales = cachedSales
+            .filter(sale => sale.userId === user.uid)
+            .map(sale => sale.saleData as StockXSale)
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          
+          setSales(userSales);
+          calculateSyncStatus(userSales);
+        } catch (error) {
+          console.log('No cached StockX sales found - this is normal for first time use');
+          setSales([]);
+          calculateSyncStatus([]);
+        }
         
-        setSales(userSales);
-        calculateSyncStatus(userSales);
-        
-        // Get last sync time
-        const syncInfo = await getDocuments('stockxSyncInfo');
-        const userSyncInfo = syncInfo.find(info => info.userId === user.uid);
-        if (userSyncInfo?.lastSyncTime) {
-          setLastSyncTime(userSyncInfo.lastSyncTime);
+        // Get last sync time - handle case where collection doesn't exist yet
+        try {
+          const syncInfo = await getDocuments('stockxSyncInfo');
+          const userSyncInfo = syncInfo.find(info => info.userId === user.uid);
+          if (userSyncInfo?.lastSyncTime) {
+            setLastSyncTime(userSyncInfo.lastSyncTime);
+          }
+        } catch (error) {
+          console.log('No sync info found - this is normal for first time use');
         }
       } catch (error) {
         console.error('Error initializing StockX data:', error);
@@ -184,7 +194,13 @@ export const useStockXSales = () => {
 
     try {
       // Get existing sales to check for duplicates
-      const existingSales = await getDocuments('stockxSales');
+      let existingSales: any[] = [];
+      try {
+        existingSales = await getDocuments('stockxSales');
+      } catch (error) {
+        console.log('No existing StockX sales found - will create new collection');
+      }
+      
       const userSalesMap = new Map(
         existingSales
           .filter(sale => sale.userId === user.uid)
@@ -225,7 +241,13 @@ export const useStockXSales = () => {
     if (!user) return;
 
     try {
-      const syncInfo = await getDocuments('stockxSyncInfo');
+      let syncInfo: any[] = [];
+      try {
+        syncInfo = await getDocuments('stockxSyncInfo');
+      } catch (error) {
+        console.log('No existing sync info found - will create new collection');
+      }
+      
       const userSyncInfo = syncInfo.find(info => info.userId === user.uid);
       
       if (userSyncInfo) {
