@@ -21,7 +21,9 @@ export async function GET(request: NextRequest) {
     hasAccessToken: !!accessToken,
     hasRefreshToken: !!refreshToken,
     hasApiKey: !!apiKey,
-    apiKeySource: process.env.STOCKX_API_KEY ? 'STOCKX_API_KEY' : 'STOCKX_CLIENT_ID'
+    apiKeySource: process.env.STOCKX_API_KEY ? 'STOCKX_API_KEY' : 'STOCKX_CLIENT_ID',
+    accessTokenPreview: accessToken ? `${accessToken.substring(0, 20)}...` : 'none',
+    apiKeyPreview: apiKey ? `${apiKey.substring(0, 8)}...` : 'none'
   });
 
   if (!accessToken) {
