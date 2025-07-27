@@ -1958,7 +1958,7 @@ const Sales = () => {
                         <button
                           onClick={async () => {
                             setIsSyncing(true);
-                            await syncStockXSales();
+                            await syncStockXSales(false, false);
                             setIsSyncing(false);
                           }}
                           disabled={isSyncing || stockxLoading}
