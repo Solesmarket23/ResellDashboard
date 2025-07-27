@@ -108,9 +108,10 @@ export const useStockXSales = () => {
       let hasMore = true;
       const pageSize = 50;
 
+      // Fetch completed sales first
       while (hasMore) {
         const offset = (pageNumber - 1) * pageSize;
-        const response = await fetch(`/api/stockx/sales?limit=${pageSize}&offset=${offset}`, {
+        const response = await fetch(`/api/stockx/sales?limit=${pageSize}&offset=${offset}&status=completed`, {
           credentials: 'include'
         });
 
@@ -135,6 +136,22 @@ export const useStockXSales = () => {
         } else {
           hasMore = false;
         }
+      }
+
+      // Also fetch active/pending sales
+      try {
+        const activeResponse = await fetch(`/api/stockx/sales?limit=50&offset=0&status=active`, {
+          credentials: 'include'
+        });
+        
+        if (activeResponse.ok) {
+          const activeData = await activeResponse.json();
+          if (activeData.success && activeData.data) {
+            allSales = allSales.concat(activeData.data);
+          }
+        }
+      } catch (error) {
+        console.log('Note: Could not fetch active sales, continuing with completed sales only');
       }
 
       // Save to Firebase

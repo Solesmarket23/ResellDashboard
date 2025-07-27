@@ -48,9 +48,18 @@ export async function GET(request: NextRequest) {
       queryParams.set('status', status);
     }
 
-    // StockX API endpoint for seller orders (based on official documentation)
-    const apiUrl = `https://api.stockx.com/v2/selling/orders?${queryParams.toString()}`;
-    console.log(`🛒 Fetching StockX seller orders (official API): ${apiUrl}`);
+    // StockX API endpoint for seller orders - use history endpoint for completed sales
+    // and active endpoint for pending sales based on status filter
+    let apiUrl: string;
+    if (status === 'completed') {
+      apiUrl = `https://api.stockx.com/v2/selling/orders/history?orderStatus=COMPLETED&${queryParams.toString()}`;
+    } else if (status === 'pending' || status === 'active') {
+      apiUrl = `https://api.stockx.com/v2/selling/orders/active?${queryParams.toString()}`;
+    } else {
+      // Default to history endpoint without status filter to get all orders
+      apiUrl = `https://api.stockx.com/v2/selling/orders/history?${queryParams.toString()}`;
+    }
+    console.log(`🛒 Fetching StockX seller orders: ${apiUrl}`);
 
     // Make API call to StockX
     const response = await fetch(apiUrl, {
@@ -60,7 +69,7 @@ export async function GET(request: NextRequest) {
         'x-api-key': apiKey,
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'User-Agent': 'FlipFlow/1.0'
+        'User-Agent': 'ResellDashboard/1.0'
       }
     });
 
@@ -70,7 +79,7 @@ export async function GET(request: NextRequest) {
       const refreshResult = await refreshStockXTokens(refreshToken);
       
       if (refreshResult.success && refreshResult.accessToken) {
-        // Retry the request with new token
+        // Retry the request with new token using the same URL
         const retryResponse = await fetch(apiUrl, {
           method: 'GET',
           headers: {
@@ -78,7 +87,7 @@ export async function GET(request: NextRequest) {
             'x-api-key': apiKey,
             'Content-Type': 'application/json',
             'Accept': 'application/json',
-            'User-Agent': 'FlipFlow/1.0'
+            'User-Agent': 'ResellDashboard/1.0'
           }
         });
 
