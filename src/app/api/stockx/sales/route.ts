@@ -10,10 +10,19 @@ export async function GET(request: NextRequest) {
   const offset = searchParams.get('offset') || '0';
   const status = searchParams.get('status') || ''; // 'completed', 'pending', 'cancelled'
 
+  console.log('📊 StockX Sales API Request:', { limit, offset, status });
+
   // Get access token from cookies
   const accessToken = request.cookies.get('stockx_access_token')?.value;
   const refreshToken = request.cookies.get('stockx_refresh_token')?.value;
-  const apiKey = process.env.STOCKX_API_KEY;
+  const apiKey = process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID;
+
+  console.log('🔑 Auth check:', {
+    hasAccessToken: !!accessToken,
+    hasRefreshToken: !!refreshToken,
+    hasApiKey: !!apiKey,
+    apiKeySource: process.env.STOCKX_API_KEY ? 'STOCKX_API_KEY' : 'STOCKX_CLIENT_ID'
+  });
 
   if (!accessToken) {
     return NextResponse.json(
@@ -27,8 +36,9 @@ export async function GET(request: NextRequest) {
   }
 
   if (!apiKey) {
+    console.error('❌ Missing API key - check STOCKX_API_KEY or STOCKX_CLIENT_ID env vars');
     return NextResponse.json(
-      { error: 'Missing StockX API key' },
+      { error: 'Missing StockX API key configuration' },
       { status: 500 }
     );
   }
@@ -92,7 +102,22 @@ export async function GET(request: NextRequest) {
         });
 
         if (retryResponse.ok) {
-          const salesData = await retryResponse.json();
+          const retryResponseText = await retryResponse.text();
+          let salesData;
+          
+          try {
+            salesData = JSON.parse(retryResponseText);
+          } catch (parseError) {
+            console.error('Failed to parse retry response as JSON:', retryResponseText);
+            return NextResponse.json(
+              { 
+                success: false,
+                error: 'Invalid response format from StockX', 
+                details: retryResponseText.substring(0, 500)
+              },
+              { status: 500 }
+            );
+          }
           
           // Process the sales data
           const processedSales = processSalesData(salesData);
@@ -155,8 +180,28 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const salesData = await response.json();
-    console.log(`✅ Successfully fetched seller orders:`, salesData);
+    const responseText = await response.text();
+    let salesData;
+    
+    try {
+      salesData = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error('Failed to parse response as JSON:', responseText);
+      return NextResponse.json(
+        { 
+          success: false,
+          error: 'Invalid response format from StockX', 
+          details: responseText.substring(0, 500)
+        },
+        { status: 500 }
+      );
+    }
+    
+    console.log(`✅ Successfully fetched seller orders:`, {
+      hasData: !!salesData,
+      dataType: typeof salesData,
+      keys: salesData ? Object.keys(salesData) : []
+    });
     
     // Process the sales data
     const processedSales = processSalesData(salesData);
