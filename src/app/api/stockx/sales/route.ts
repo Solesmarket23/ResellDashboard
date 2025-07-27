@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { refreshStockXTokens, setStockXTokenCookies } from '@/lib/stockx/tokenRefresh';
+import { getDocuments, addDocument, updateDocument } from '@/lib/firebase/firebaseUtils';
+import { auth } from '@/lib/firebase/firebase-admin';
+import { StockXSale } from '@/lib/types/stockx';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -174,7 +177,7 @@ export async function GET(request: NextRequest) {
 }
 
 // Function to process and format sales data
-function processSalesData(rawData: any) {
+function processSalesData(rawData: any): StockXSale[] {
   console.log(`🔄 Processing seller orders data:`, rawData);
   
   // Handle different response formats
@@ -187,48 +190,88 @@ function processSalesData(rawData: any) {
     orders = rawData;
   }
 
-  return orders.map((order: any) => {
-    // Extract key information from each order
-    const saleData = {
-      id: order.id || order.orderId,
-      status: order.status,
-      createdAt: order.createdAt,
-      updatedAt: order.updatedAt,
+  return orders.map((order: any): StockXSale => {
+    // Determine order type based on order number format
+    let orderType: 'STANDARD' | 'FLEX' | 'DIRECT' | 'DFS' = 'STANDARD';
+    if (order.orderNumber?.startsWith('02-')) {
+      orderType = 'FLEX';
+    } else if (order.orderNumber?.startsWith('06-')) {
+      orderType = 'DIRECT';
+    }
+
+    // Map status to our TypeScript enum
+    const mapStatus = (status: string) => {
+      const statusMap: Record<string, any> = {
+        'MATCHED': 'PENDING',
+        'SHIPPED': 'SHIPPED',
+        'RECEIVED': 'RECEIVED',
+        'AUTHENTICATING': 'AUTHENTICATING',
+        'AUTHENTICATED': 'AUTHENTICATED',
+        'PAYOUTPENDING': 'PAYOUT_PENDING',
+        'PAYOUTCOMPLETED': 'PAYOUT_COMPLETED',
+        'CANCELED': 'CANCELLED',
+        'AUTHFAILED': 'AUTHENTICATION_FAILED',
+        'RETURNED': 'RETURNED'
+      };
+      return statusMap[status] || status;
+    };
+
+    // Calculate total fees
+    const sellerFees = parseFloat(order.totalFees || '0') || 
+      (parseFloat(order.processingFee || '0') + 
+       parseFloat(order.transactionFee || '0') + 
+       parseFloat(order.shippingFee || '0'));
+
+    const saleData: StockXSale = {
+      id: order.id || order.orderId || order.orderNumber,
+      orderNumber: order.orderNumber || order.id,
+      orderType,
+      status: mapStatus(order.status),
       product: {
-        id: order.product?.id,
-        name: order.product?.name || order.productName,
-        brand: order.product?.brand,
-        colorway: order.product?.colorway,
-        imageUrl: order.product?.imageUrl,
-        sku: order.product?.sku,
+        productId: order.product?.id || order.productId || '',
+        productName: order.product?.name || order.productName || 'Unknown Product',
+        brand: order.product?.brand || order.brand || '',
+        styleId: order.product?.sku || order.sku || order.styleId,
+        retailPrice: order.product?.retailPrice,
+        imageUrl: order.product?.imageUrl || order.imageUrl,
+        category: order.product?.category,
         urlKey: order.product?.urlKey
       },
       variant: {
-        id: order.variant?.id || order.variantId,
-        size: order.variant?.size || order.size,
-        condition: order.variant?.condition || order.condition
+        variantId: order.variant?.id || order.variantId || '',
+        size: order.variant?.size || order.size || 'Unknown',
+        sizeType: order.variant?.sizeType
       },
       pricing: {
-        salePrice: order.salePrice || order.price,
-        processingFee: order.processingFee,
-        transactionFee: order.transactionFee,
-        shippingFee: order.shippingFee,
-        totalFees: order.totalFees,
-        payout: order.payout,
-        currency: order.currency || 'USD'
+        salePrice: parseFloat(order.salePrice || order.price || '0'),
+        buyerPaid: parseFloat(order.buyerPaid || order.salePrice || order.price || '0'),
+        sellerFees,
+        processingFee: parseFloat(order.processingFee || '0'),
+        shippingFee: parseFloat(order.shippingFee || '0'),
+        transactionFee: parseFloat(order.transactionFee || '0'),
+        paymentProcessingFee: parseFloat(order.paymentProcessingFee || '0'),
+        totalPayout: parseFloat(order.payout || order.totalPayout || '0'),
+        currency: order.currency || 'USD',
+        sellerLevel: order.sellerLevel,
+        feePercentage: order.feePercentage
       },
-      shipping: {
-        trackingNumber: order.trackingNumber,
-        shippingMethod: order.shippingMethod,
-        shippedAt: order.shippedAt,
-        deliveredAt: order.deliveredAt
-      },
-      buyer: {
-        // Note: Buyer info may be limited for privacy
-        region: order.buyer?.region
-      },
-      // Calculate profit if we have cost data
-      profitCalculation: calculateProfit(order)
+      authentication: order.authenticationDetails ? {
+        status: order.authenticationDetails.status || 'PENDING',
+        verificationDate: order.authenticationDetails.verifiedAt,
+        failureReason: order.authenticationDetails.failureReason
+      } : undefined,
+      shipping: order.shipping || order.shipment ? {
+        trackingNumber: order.tracking || order.shipment?.trackingNumber,
+        carrier: order.carrier || order.shipment?.carrier,
+        shippedDate: order.shippedAt || order.shipment?.shippedAt,
+        deliveredDate: order.deliveredAt || order.shipment?.deliveredAt,
+        shippingLabel: order.shippingLabel,
+        isDirectShip: orderType === 'DIRECT'
+      } : undefined,
+      createdAt: order.createdAt || order.created,
+      updatedAt: order.updatedAt || order.updated,
+      payoutDate: order.payoutDate,
+      source: 'stockx_api'
     };
 
     return saleData;

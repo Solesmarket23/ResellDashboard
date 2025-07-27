@@ -1,0 +1,260 @@
+import { useState, useEffect, useCallback } from 'react';
+import { StockXSale, StockXSyncStatus } from '@/lib/types/stockx';
+import { useAuth } from '@/lib/contexts/AuthContext';
+import { addDocument, getDocuments, updateDocument } from '@/lib/firebase/firebaseUtils';
+
+export const useStockXSales = () => {
+  const { user } = useAuth();
+  const [sales, setSales] = useState<StockXSale[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<StockXSyncStatus>({
+    isAuthenticated: false,
+    totalSales: 0,
+    totalRevenue: 0,
+    pendingPayouts: 0,
+    authenticationRate: 0
+  });
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+
+  // Load cached sales from Firebase
+  useEffect(() => {
+    if (!user) return;
+
+    const loadCachedSales = async () => {
+      try {
+        const cachedSales = await getDocuments('stockxSales');
+        const userSales = cachedSales
+          .filter(sale => sale.userId === user.uid)
+          .map(sale => sale.saleData as StockXSale)
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        
+        setSales(userSales);
+        calculateSyncStatus(userSales);
+        
+        // Get last sync time
+        const syncInfo = await getDocuments('stockxSyncInfo');
+        const userSyncInfo = syncInfo.find(info => info.userId === user.uid);
+        if (userSyncInfo?.lastSyncTime) {
+          setLastSyncTime(userSyncInfo.lastSyncTime);
+        }
+      } catch (error) {
+        console.error('Error loading cached StockX sales:', error);
+      }
+    };
+
+    loadCachedSales();
+  }, [user]);
+
+  // Calculate sync status metrics
+  const calculateSyncStatus = (salesData: StockXSale[]) => {
+    const completedSales = salesData.filter(sale => 
+      sale.status === 'PAYOUT_COMPLETED' || sale.status === 'AUTHENTICATED'
+    );
+    
+    const totalRevenue = completedSales.reduce((sum, sale) => 
+      sum + sale.pricing.totalPayout, 0
+    );
+    
+    const pendingPayouts = salesData.filter(sale => 
+      sale.status === 'PAYOUT_PENDING' || sale.status === 'AUTHENTICATED'
+    ).length;
+    
+    const authenticatedCount = salesData.filter(sale => 
+      sale.authentication?.status === 'PASSED'
+    ).length;
+    
+    const authenticationRate = salesData.length > 0 
+      ? (authenticatedCount / salesData.length) * 100 
+      : 0;
+
+    setSyncStatus({
+      isAuthenticated: true,
+      totalSales: salesData.length,
+      totalRevenue,
+      pendingPayouts,
+      authenticationRate,
+      lastSyncTime
+    });
+  };
+
+  // Sync sales from StockX API
+  const syncSales = useCallback(async (silent = false) => {
+    if (!user) {
+      setError('Please login to sync StockX sales');
+      return;
+    }
+
+    if (!silent) setLoading(true);
+    setError(null);
+
+    try {
+      // Fetch all pages of sales data
+      let allSales: StockXSale[] = [];
+      let pageNumber = 1;
+      let hasMore = true;
+      const pageSize = 50;
+
+      while (hasMore) {
+        const offset = (pageNumber - 1) * pageSize;
+        const response = await fetch(`/api/stockx/sales?limit=${pageSize}&offset=${offset}`, {
+          credentials: 'include'
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          if (response.status === 401) {
+            setError('Please authenticate with StockX to sync sales');
+            setSyncStatus(prev => ({ ...prev, isAuthenticated: false }));
+            return;
+          }
+          throw new Error(errorData.error || 'Failed to fetch StockX sales');
+        }
+
+        const data = await response.json();
+        
+        if (data.success && data.data) {
+          allSales = allSales.concat(data.data);
+          
+          // Check if there are more pages
+          hasMore = data.data.length === pageSize;
+          pageNumber++;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      // Save to Firebase
+      await saveSalesToFirebase(allSales);
+      
+      // Update local state
+      setSales(allSales);
+      calculateSyncStatus(allSales);
+      
+      // Update sync time
+      const now = new Date().toISOString();
+      setLastSyncTime(now);
+      await updateSyncTime(now);
+
+      if (!silent) {
+        console.log(`✅ Successfully synced ${allSales.length} StockX sales`);
+      }
+
+    } catch (error) {
+      console.error('Error syncing StockX sales:', error);
+      setError(error instanceof Error ? error.message : 'Failed to sync sales');
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, [user]);
+
+  // Save sales to Firebase
+  const saveSalesToFirebase = async (salesData: StockXSale[]) => {
+    if (!user) return;
+
+    try {
+      // Get existing sales to check for duplicates
+      const existingSales = await getDocuments('stockxSales');
+      const userSalesMap = new Map(
+        existingSales
+          .filter(sale => sale.userId === user.uid)
+          .map(sale => [sale.stockxOrderId, sale])
+      );
+
+      // Save each sale
+      for (const sale of salesData) {
+        const existingSale = userSalesMap.get(sale.orderNumber);
+        
+        if (existingSale) {
+          // Update existing sale if status changed
+          if (existingSale.saleData.status !== sale.status) {
+            await updateDocument('stockxSales', existingSale.id, {
+              saleData: sale,
+              updatedAt: new Date().toISOString()
+            });
+          }
+        } else {
+          // Add new sale
+          await addDocument('stockxSales', {
+            userId: user.uid,
+            stockxOrderId: sale.orderNumber,
+            saleData: sale,
+            createdAt: new Date().toISOString(),
+            source: 'stockx_api'
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error saving sales to Firebase:', error);
+      throw error;
+    }
+  };
+
+  // Update sync time in Firebase
+  const updateSyncTime = async (syncTime: string) => {
+    if (!user) return;
+
+    try {
+      const syncInfo = await getDocuments('stockxSyncInfo');
+      const userSyncInfo = syncInfo.find(info => info.userId === user.uid);
+      
+      if (userSyncInfo) {
+        await updateDocument('stockxSyncInfo', userSyncInfo.id, {
+          lastSyncTime: syncTime,
+          updatedAt: syncTime
+        });
+      } else {
+        await addDocument('stockxSyncInfo', {
+          userId: user.uid,
+          lastSyncTime: syncTime,
+          createdAt: syncTime
+        });
+      }
+    } catch (error) {
+      console.error('Error updating sync time:', error);
+    }
+  };
+
+  // Convert StockX sale to main sales format
+  const convertToMainSale = useCallback(async (stockxSale: StockXSale) => {
+    if (!user) return;
+
+    try {
+      const mainSaleData = {
+        userId: user.uid,
+        productName: stockxSale.product.productName,
+        brand: stockxSale.product.brand,
+        size: stockxSale.variant.size,
+        purchasePrice: 0, // User would need to add this manually
+        salePrice: stockxSale.pricing.salePrice,
+        tax: 0, // StockX handles tax
+        shipping: stockxSale.pricing.shippingFee,
+        fees: stockxSale.pricing.sellerFees,
+        saleDate: stockxSale.createdAt,
+        platform: 'StockX',
+        orderNumber: stockxSale.orderNumber,
+        status: stockxSale.status === 'PAYOUT_COMPLETED' ? 'completed' : 'pending',
+        imageUrl: stockxSale.product.imageUrl || '/placeholder-shoe.png',
+        stockxOrderType: stockxSale.orderType,
+        stockxAuthentication: stockxSale.authentication?.status,
+        source: 'stockx_api' as const
+      };
+
+      await addDocument('sales', mainSaleData);
+      return true;
+    } catch (error) {
+      console.error('Error converting StockX sale:', error);
+      return false;
+    }
+  }, [user]);
+
+  return {
+    sales,
+    loading,
+    error,
+    syncStatus,
+    syncSales,
+    convertToMainSale,
+    lastSyncTime
+  };
+};

@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Search, Calendar, TrendingUp, ArrowUp, ExternalLink, Plus, Sparkles, Trash2, X, ChevronDown, ChevronLeft, ChevronRight, Loader2, Wifi, WifiOff, AlertCircle, RefreshCw } from 'lucide-react';
+import { Search, Calendar, TrendingUp, ArrowUp, ExternalLink, Plus, Sparkles, Trash2, X, ChevronDown, ChevronLeft, ChevronRight, Loader2, Wifi, WifiOff, AlertCircle, RefreshCw, Package } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
 import { saveUserSale } from '../lib/firebase/userDataUtils';
 import { useSales } from '../lib/hooks/useSales';
+import { useStockXSales } from '../lib/hooks/useStockXSales';
 import { formatOrderNumberForDisplay } from '../lib/utils/orderNumberUtils';
 import confetti from 'canvas-confetti';
 
@@ -52,6 +53,19 @@ const Sales = () => {
   const datePickerRef = useRef<HTMLDivElement>(null);
 
   const [isAddingTestSale, setIsAddingTestSale] = useState(false);
+
+  // StockX sales integration
+  const {
+    sales: stockxSales,
+    loading: stockxLoading,
+    error: stockxError,
+    syncStatus,
+    syncSales: syncStockXSales,
+    convertToMainSale,
+    lastSyncTime
+  } = useStockXSales();
+  const [showStockXModal, setShowStockXModal] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Sales data is now handled by the useSales hook automatically
   
@@ -617,6 +631,20 @@ const Sales = () => {
             Clear All Sales
           </button>
           <button 
+            onClick={() => setShowStockXModal(true)}
+            disabled={isLoading || stockxLoading}
+            className={`flex items-center px-4 py-2 ${
+              isNeon 
+                ? 'bg-gradient-to-r from-green-500 to-green-600 shadow-lg shadow-green-500/25' 
+                : 'bg-green-500'
+            } text-white rounded-lg hover:bg-green-600 transition-colors ${
+              (isLoading || stockxLoading) ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
+            StockX Sales
+          </button>
+          <button 
             onClick={openRecordSaleModal}
             disabled={isLoading}
             className={`flex items-center px-4 py-2 ${
@@ -919,6 +947,163 @@ const Sales = () => {
               </table>
             </div>
           </div>
+
+          {/* StockX Sales Section */}
+          {stockxSales.length > 0 && (
+            <div className="mt-8">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className={`text-lg font-semibold ${
+                  isNeon ? 'text-white' : 'text-gray-900'
+                }`}>
+                  StockX Sales ({stockxSales.length})
+                </h3>
+                <button
+                  onClick={() => setShowStockXModal(true)}
+                  className={`text-sm ${
+                    isNeon ? 'text-cyan-400 hover:text-cyan-300' : 'text-blue-600 hover:text-blue-700'
+                  } hover:underline`}
+                >
+                  Manage StockX Integration
+                </button>
+              </div>
+              
+              <div className={`${
+                isNeon 
+                  ? 'dark-neon-card' 
+                  : `${currentTheme.colors.cardBackground} border border-gray-200`
+              } rounded-lg shadow-sm overflow-hidden`}>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className={isNeon ? 'bg-gray-800/50' : 'bg-gray-50'}>
+                      <tr>
+                        <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
+                          isNeon ? 'text-gray-300' : 'text-gray-500'
+                        }`}>Product</th>
+                        <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
+                          isNeon ? 'text-gray-300' : 'text-gray-500'
+                        }`}>Order #</th>
+                        <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
+                          isNeon ? 'text-gray-300' : 'text-gray-500'
+                        }`}>Type</th>
+                        <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
+                          isNeon ? 'text-gray-300' : 'text-gray-500'
+                        }`}>Status</th>
+                        <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
+                          isNeon ? 'text-gray-300' : 'text-gray-500'
+                        }`}>Payout</th>
+                        <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
+                          isNeon ? 'text-gray-300' : 'text-gray-500'
+                        }`}>Date</th>
+                        <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
+                          isNeon ? 'text-gray-300' : 'text-gray-500'
+                        }`}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className={`${
+                      isNeon 
+                        ? 'divide-y divide-gray-700/50' 
+                        : 'bg-white divide-y divide-gray-200'
+                    }`}>
+                      {stockxSales.slice(0, 10).map((sale) => (
+                        <tr key={sale.id} className={
+                          isNeon 
+                            ? 'hover:bg-white/5 transition-colors' 
+                            : 'hover:bg-gray-50'
+                        }>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div>
+                              <div className={`text-sm font-medium ${
+                                isNeon ? 'text-white' : 'text-gray-900'
+                              }`}>
+                                {sale.product.productName}
+                              </div>
+                              <div className={`text-sm ${
+                                isNeon ? 'text-gray-400' : 'text-gray-500'
+                              }`}>{sale.product.brand} • Size {sale.variant.size}</div>
+                            </div>
+                          </td>
+                          <td className={`px-6 py-4 whitespace-nowrap text-sm ${
+                            isNeon ? 'text-gray-300' : 'text-gray-900'
+                          }`}>{sale.orderNumber}</td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              sale.orderType === 'FLEX' 
+                                ? isNeon 
+                                  ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' 
+                                  : 'bg-purple-100 text-purple-800'
+                                : sale.orderType === 'DIRECT'
+                                  ? isNeon
+                                    ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                                    : 'bg-blue-100 text-blue-800'
+                                  : isNeon
+                                    ? 'bg-gray-500/20 text-gray-400 border border-gray-500/30'
+                                    : 'bg-gray-100 text-gray-800'
+                            }`}>
+                              {sale.orderType}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              sale.status === 'PAYOUT_COMPLETED' 
+                                ? isNeon 
+                                  ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
+                                  : 'bg-green-100 text-green-800'
+                                : sale.status === 'AUTHENTICATED'
+                                  ? isNeon
+                                    ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+                                    : 'bg-yellow-100 text-yellow-800'
+                                  : isNeon
+                                    ? 'bg-gray-500/20 text-gray-400 border border-gray-500/30'
+                                    : 'bg-gray-100 text-gray-800'
+                            }`}>
+                              {sale.status.replace(/_/g, ' ')}
+                            </span>
+                          </td>
+                          <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${
+                            isNeon ? 'text-green-400' : 'text-green-600'
+                          }`}>${sale.pricing.totalPayout.toFixed(2)}</td>
+                          <td className={`px-6 py-4 whitespace-nowrap text-sm ${
+                            isNeon ? 'text-gray-300' : 'text-gray-900'
+                          }`}>{new Date(sale.createdAt).toLocaleDateString()}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm">
+                            <button
+                              onClick={async () => {
+                                const success = await convertToMainSale(sale);
+                                if (success) {
+                                  alert('Successfully converted to main sales format!');
+                                  await forceRefresh();
+                                }
+                              }}
+                              className={`${
+                                isNeon ? 'text-cyan-400 hover:text-cyan-300' : 'text-blue-600 hover:text-blue-700'
+                              } hover:underline`}
+                            >
+                              Convert
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {stockxSales.length > 10 && (
+                  <div className={`px-6 py-3 text-center text-sm ${
+                    isNeon ? 'bg-gray-800/50 text-gray-400' : 'bg-gray-50 text-gray-600'
+                  }`}>
+                    Showing 10 of {stockxSales.length} StockX sales. 
+                    <button
+                      onClick={() => setShowStockXModal(true)}
+                      className={`ml-1 ${
+                        isNeon ? 'text-cyan-400 hover:text-cyan-300' : 'text-blue-600 hover:text-blue-700'
+                      } hover:underline`}
+                    >
+                      View all
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Delete Confirmation Modal */}
           {deleteModal.isOpen && (
@@ -1604,6 +1789,205 @@ const Sales = () => {
                   >
                     <Plus className="w-4 h-4 mr-2 inline" />
                     Record Sale
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* StockX Sales Modal */}
+          {showStockXModal && (
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+              <div className={`${
+                isNeon 
+                  ? 'bg-black/90 backdrop-blur-xl border border-cyan-500/30' 
+                  : 'bg-white'
+              } rounded-xl max-w-2xl w-full max-h-[90vh] overflow-hidden shadow-xl`}>
+                {/* Modal Header */}
+                <div className={`flex items-center justify-between p-6 border-b ${
+                  isNeon ? 'border-cyan-500/20' : 'border-gray-200'
+                }`}>
+                  <h2 className={`text-2xl font-bold ${
+                    isNeon ? 'text-white' : 'text-gray-900'
+                  }`}>StockX Sales Integration</h2>
+                  <button
+                    onClick={() => setShowStockXModal(false)}
+                    className={`p-2 rounded-lg transition-colors ${
+                      isNeon 
+                        ? 'hover:bg-white/10 text-gray-400' 
+                        : 'hover:bg-gray-100 text-gray-600'
+                    }`}
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Modal Content */}
+                <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
+                  {/* Sync Status */}
+                  <div className={`mb-6 p-4 rounded-lg ${
+                    isNeon 
+                      ? 'bg-gray-800/50 border border-gray-700/50' 
+                      : 'bg-gray-50 border border-gray-200'
+                  }`}>
+                    <h3 className={`font-semibold mb-3 ${
+                      isNeon ? 'text-white' : 'text-gray-900'
+                    }`}>Sync Status</h3>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className={isNeon ? 'text-gray-400' : 'text-gray-600'}>Authentication:</span>
+                        <span className={`ml-2 font-medium ${
+                          syncStatus.isAuthenticated 
+                            ? isNeon ? 'text-green-400' : 'text-green-600'
+                            : isNeon ? 'text-red-400' : 'text-red-600'
+                        }`}>
+                          {syncStatus.isAuthenticated ? 'Connected' : 'Not Connected'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className={isNeon ? 'text-gray-400' : 'text-gray-600'}>Last Sync:</span>
+                        <span className={`ml-2 font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+                          {lastSyncTime ? new Date(lastSyncTime).toLocaleString() : 'Never'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className={isNeon ? 'text-gray-400' : 'text-gray-600'}>Total Sales:</span>
+                        <span className={`ml-2 font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+                          {syncStatus.totalSales}
+                        </span>
+                      </div>
+                      <div>
+                        <span className={isNeon ? 'text-gray-400' : 'text-gray-600'}>Total Revenue:</span>
+                        <span className={`ml-2 font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+                          ${syncStatus.totalRevenue.toFixed(2)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className={isNeon ? 'text-gray-400' : 'text-gray-600'}>Pending Payouts:</span>
+                        <span className={`ml-2 font-medium ${isNeon ? 'text-yellow-400' : 'text-yellow-600'}`}>
+                          {syncStatus.pendingPayouts}
+                        </span>
+                      </div>
+                      <div>
+                        <span className={isNeon ? 'text-gray-400' : 'text-gray-600'}>Auth Rate:</span>
+                        <span className={`ml-2 font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+                          {syncStatus.authenticationRate.toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Error Message */}
+                  {stockxError && (
+                    <div className={`mb-4 p-3 rounded-lg ${
+                      isNeon 
+                        ? 'bg-red-500/20 border border-red-500/30 text-red-400' 
+                        : 'bg-red-50 border border-red-200 text-red-600'
+                    }`}>
+                      <AlertCircle className="w-4 h-4 inline mr-2" />
+                      {stockxError}
+                    </div>
+                  )}
+
+                  {/* Recent StockX Sales */}
+                  {stockxSales.length > 0 && (
+                    <div className="mb-6">
+                      <h3 className={`font-semibold mb-3 ${
+                        isNeon ? 'text-white' : 'text-gray-900'
+                      }`}>Recent StockX Sales</h3>
+                      <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {stockxSales.slice(0, 5).map((sale) => (
+                          <div 
+                            key={sale.id}
+                            className={`p-3 rounded-lg flex items-center justify-between ${
+                              isNeon 
+                                ? 'bg-gray-800/50 border border-gray-700/50' 
+                                : 'bg-gray-50 border border-gray-200'
+                            }`}
+                          >
+                            <div className="flex-1">
+                              <p className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+                                {sale.product.productName}
+                              </p>
+                              <p className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                                Size {sale.variant.size} • {sale.orderType} • {sale.status}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+                                ${sale.pricing.totalPayout.toFixed(2)}
+                              </p>
+                              <p className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                                {new Date(sale.createdAt).toLocaleDateString()}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="space-y-3">
+                    {!syncStatus.isAuthenticated && (
+                      <button
+                        onClick={() => window.location.href = '/api/stockx/auth'}
+                        className={`w-full px-4 py-3 rounded-lg font-medium transition-colors ${
+                          isNeon 
+                            ? 'bg-green-500 hover:bg-green-600 text-white shadow-lg shadow-green-500/25' 
+                            : 'bg-green-500 hover:bg-green-600 text-white'
+                        }`}
+                      >
+                        Connect StockX Account
+                      </button>
+                    )}
+                    
+                    {syncStatus.isAuthenticated && (
+                      <button
+                        onClick={async () => {
+                          setIsSyncing(true);
+                          await syncStockXSales();
+                          setIsSyncing(false);
+                        }}
+                        disabled={isSyncing || stockxLoading}
+                        className={`w-full px-4 py-3 rounded-lg font-medium transition-colors flex items-center justify-center ${
+                          (isSyncing || stockxLoading)
+                            ? isNeon 
+                              ? 'bg-gray-700 text-gray-500 cursor-not-allowed' 
+                              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            : isNeon 
+                              ? 'bg-blue-500 hover:bg-blue-600 text-white shadow-lg shadow-blue-500/25' 
+                              : 'bg-blue-500 hover:bg-blue-600 text-white'
+                        }`}
+                      >
+                        <RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
+                        {isSyncing ? 'Syncing...' : 'Sync StockX Sales'}
+                      </button>
+                    )}
+
+                    <p className={`text-sm text-center ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                      This will fetch your StockX sales using your existing StockX developer credentials.
+                      Sales can be converted to the main sales format or kept separate.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Modal Footer */}
+                <div className={`flex items-center justify-between p-6 border-t ${
+                  isNeon ? 'border-cyan-500/20' : 'border-gray-200'
+                }`}>
+                  <p className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                    {stockxSales.length} sales loaded from StockX
+                  </p>
+                  <button
+                    onClick={() => setShowStockXModal(false)}
+                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                      isNeon 
+                        ? 'text-gray-300 bg-gray-700 hover:bg-gray-600 border border-gray-600' 
+                        : 'text-gray-700 bg-gray-100 hover:bg-gray-200'
+                    }`}
+                  >
+                    Close
                   </button>
                 </div>
               </div>
