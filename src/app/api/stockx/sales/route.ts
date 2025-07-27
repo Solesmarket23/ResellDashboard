@@ -84,7 +84,9 @@ export async function GET(request: NextRequest) {
       method: 'GET',
       headers: {
         'x-api-key': apiKey,
-        'Authorization': `Bearer ${accessToken}`
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
       },
       signal: controller.signal
     }).finally(() => clearTimeout(timeoutId));
@@ -100,7 +102,9 @@ export async function GET(request: NextRequest) {
           method: 'GET',
           headers: {
             'x-api-key': apiKey,
-            'Authorization': `Bearer ${refreshResult.accessToken}`
+            'Authorization': `Bearer ${refreshResult.accessToken}`,
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
           }
         });
 

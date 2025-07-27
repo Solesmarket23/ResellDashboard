@@ -4,12 +4,20 @@ export async function GET(request: NextRequest) {
   const accessToken = request.cookies.get('stockx_access_token')?.value;
   const apiKey = process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID;
 
-  console.log('🔍 Debug Sales Test');
-  console.log('Access Token:', accessToken ? 'Present' : 'Missing');
-  console.log('API Key:', apiKey ? 'Present' : 'Missing');
+  // Return auth status immediately so you can see in browser
+  const authStatus = {
+    hasAccessToken: !!accessToken,
+    hasApiKey: !!apiKey,
+    tokenPreview: accessToken ? `${accessToken.substring(0, 10)}...${accessToken.slice(-5)}` : null,
+    apiKeyPreview: apiKey ? `${apiKey.substring(0, 8)}...` : null
+  };
 
   if (!accessToken || !apiKey) {
-    return NextResponse.json({ error: 'Missing auth' }, { status: 401 });
+    return NextResponse.json({ 
+      error: 'Missing authentication',
+      authStatus,
+      message: 'You need both StockX access token and API key'
+    }, { status: 200 }); // Return 200 so browser shows the JSON
   }
 
   // Test different parameter combinations
