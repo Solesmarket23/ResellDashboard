@@ -862,6 +862,15 @@ const Sales = () => {
                             isNeon ? 'text-white' : 'text-gray-900'
                           }`}>
                             {sale.product}
+                            {sale.platform === 'stockx' && (
+                              <span className={`ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                isNeon 
+                                  ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
+                                  : 'bg-green-100 text-green-800'
+                              }`}>
+                                StockX
+                              </span>
+                            )}
                             {sale.isTest && (
                               <span className={`ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                                 isNeon 
@@ -892,41 +901,43 @@ const Sales = () => {
                       }`}>{sale.size}</td>
                       <td className={`px-6 py-4 whitespace-nowrap text-sm ${
                         isNeon ? 'text-gray-300' : 'text-gray-900'
-                      }`}>{sale.market}</td>
+                      }`}>{sale.platform === 'stockx' ? 'StockX' : (sale.market || 'Manual')}</td>
                       <td className={`px-6 py-4 whitespace-nowrap text-sm ${
                         isNeon ? 'text-gray-300' : 'text-gray-900'
-                      }`}>${sale.salePrice.toFixed(2)}</td>
+                      }`}>${(parseFloat(sale.salePrice) || parseFloat(sale.amount) || 0).toFixed(2)}</td>
                                       <td className={`px-6 py-4 whitespace-nowrap text-sm ${
                   isNeon ? 'text-red-400' : 'text-red-600'
-                }`}>(${Math.abs(sale.fees).toFixed(2)})</td>
+                }`}>(${Math.abs(parseFloat(sale.fees) || 0).toFixed(2)})</td>
                       <td className={`px-6 py-4 whitespace-nowrap text-sm ${
                         isNeon ? 'text-gray-300' : 'text-gray-900'
-                      }`}>${sale.payout.toFixed(2)}</td>
+                      }`}>${(sale.payout?.amount ? parseFloat(sale.payout.amount) : (parseFloat(sale.salePrice) || parseFloat(sale.amount) || 0) - (parseFloat(sale.fees) || 0)).toFixed(2)}</td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`text-sm font-medium ${
-                          sale.profit >= 0 
+                          (parseFloat(sale.profit) || 0) >= 0 
                             ? isNeon ? 'text-emerald-400' : 'text-green-600'
                             : isNeon ? 'text-red-400' : 'text-red-600'
                         }`}>
-                          ${sale.profit.toFixed(2)}
+                          ${(parseFloat(sale.profit) || 0).toFixed(2)}
                         </span>
                       </td>
                       <td className={`px-6 py-4 whitespace-nowrap text-sm ${
                         isNeon ? 'text-gray-300' : 'text-gray-900'
-                      }`}>{sale.date}</td>
+                      }`}>{new Date(sale.date || sale.createdAt || sale.updatedAt).toLocaleDateString()}</td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center space-x-2">
-                          <button 
-                            onClick={() => window.open(`https://mail.google.com/mail/u/0/#search/"${sale.orderNumber}"`, '_blank')}
-                            className={`${
-                              isNeon 
-                                ? 'text-gray-400 hover:text-cyan-400' 
-                                : 'text-gray-400 hover:text-blue-600'
-                            } transition-colors`}
-                            title="View in Gmail"
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                          </button>
+                          {sale.orderNumber && (
+                            <button 
+                              onClick={() => window.open(`https://mail.google.com/mail/u/0/#search/"${sale.orderNumber}"`, '_blank')}
+                              className={`${
+                                isNeon 
+                                  ? 'text-gray-400 hover:text-cyan-400' 
+                                  : 'text-gray-400 hover:text-blue-600'
+                              } transition-colors`}
+                              title="View in Gmail"
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                            </button>
+                          )}
                           <button 
                             onClick={() => openDeleteModal(sale)}
                             disabled={isDeleting}
@@ -1943,31 +1954,82 @@ const Sales = () => {
                     )}
                     
                     {syncStatus.isAuthenticated && (
-                      <button
-                        onClick={async () => {
-                          setIsSyncing(true);
-                          await syncStockXSales();
-                          setIsSyncing(false);
-                        }}
-                        disabled={isSyncing || stockxLoading}
-                        className={`w-full px-4 py-3 rounded-lg font-medium transition-colors flex items-center justify-center ${
-                          (isSyncing || stockxLoading)
-                            ? isNeon 
-                              ? 'bg-gray-700 text-gray-500 cursor-not-allowed' 
-                              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                            : isNeon 
-                              ? 'bg-blue-500 hover:bg-blue-600 text-white shadow-lg shadow-blue-500/25' 
-                              : 'bg-blue-500 hover:bg-blue-600 text-white'
-                        }`}
-                      >
-                        <RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
-                        {isSyncing ? 'Syncing...' : 'Sync StockX Sales'}
-                      </button>
+                      <>
+                        <button
+                          onClick={async () => {
+                            setIsSyncing(true);
+                            await syncStockXSales();
+                            setIsSyncing(false);
+                          }}
+                          disabled={isSyncing || stockxLoading}
+                          className={`w-full px-4 py-3 rounded-lg font-medium transition-colors flex items-center justify-center ${
+                            (isSyncing || stockxLoading)
+                              ? isNeon 
+                                ? 'bg-gray-700 text-gray-500 cursor-not-allowed' 
+                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                              : isNeon 
+                                ? 'bg-blue-500 hover:bg-blue-600 text-white shadow-lg shadow-blue-500/25' 
+                                : 'bg-blue-500 hover:bg-blue-600 text-white'
+                          }`}
+                        >
+                          <RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
+                          {isSyncing ? 'Syncing...' : lastSyncTime ? 'Sync New Sales' : 'Initial Sync (Last 30 Days)'}
+                        </button>
+                        
+                        {lastSyncTime && (
+                          <button
+                            onClick={async () => {
+                              if (window.confirm('This will sync up to 90 days of sales history. This may take a while. Continue?')) {
+                                setIsSyncing(true);
+                                await syncStockXSales(false, true);
+                                setIsSyncing(false);
+                              }
+                            }}
+                            disabled={isSyncing || stockxLoading}
+                            className={`w-full px-4 py-2 rounded-lg font-medium transition-colors flex items-center justify-center text-sm ${
+                              (isSyncing || stockxLoading)
+                                ? isNeon 
+                                  ? 'bg-gray-700 text-gray-500 cursor-not-allowed' 
+                                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                : isNeon 
+                                  ? 'bg-gray-600 hover:bg-gray-700 text-gray-300 border border-gray-600' 
+                                  : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                            }`}
+                          >
+                            Full Sync (Last 90 Days)
+                          </button>
+                        )}
+                      </>
                     )}
 
+                    {syncProgress && (
+                      <div className="space-y-2">
+                        <div className={`text-sm text-center ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`}>
+                          {syncProgress.status}
+                        </div>
+                        {syncProgress.total > 0 && (
+                          <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                            <div 
+                              className={`h-full transition-all duration-300 ${
+                                isNeon ? 'bg-cyan-500' : 'bg-blue-600'
+                              }`}
+                              style={{ width: `${(syncProgress.current / syncProgress.total) * 100}%` }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
+                    {lastSyncTime && (
+                      <p className={`text-sm text-center ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                        Last synced: {new Date(lastSyncTime).toLocaleString()}
+                      </p>
+                    )}
+                    
                     <p className={`text-sm text-center ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-                      This will fetch your StockX sales using your existing StockX developer credentials.
-                      Sales can be converted to the main sales format or kept separate.
+                      {lastSyncTime 
+                        ? 'Incremental sync will fetch new sales since last sync.'
+                        : 'Initial sync will fetch sales from the last 30 days.'}
                     </p>
                   </div>
                 </div>

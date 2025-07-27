@@ -16,6 +16,7 @@ export const useStockXSales = () => {
     authenticationRate: 0
   });
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+  const [syncProgress, setSyncProgress] = useState<{ current: number; total: number; status: string } | null>(null);
 
   // Check authentication status and load cached sales from Firebase
   useEffect(() => {
@@ -105,7 +106,7 @@ export const useStockXSales = () => {
   };
 
   // Sync sales from StockX API
-  const syncSales = useCallback(async (silent = false) => {
+  const syncSales = useCallback(async (silent = false, fullSync = false) => {
     if (!user) {
       setError('Please login to sync StockX sales');
       return;
@@ -113,18 +114,51 @@ export const useStockXSales = () => {
 
     if (!silent) setLoading(true);
     setError(null);
+    setSyncProgress(null);
 
     try {
+      // Calculate date range
+      const now = new Date();
+      let fromDate: string;
+      
+      if (fullSync) {
+        // Full sync: go back 90 days max
+        const ninetyDaysAgo = new Date(now);
+        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+        fromDate = ninetyDaysAgo.toISOString();
+      } else if (lastSyncTime) {
+        // Incremental sync: from last sync time
+        fromDate = lastSyncTime;
+      } else {
+        // Initial sync: last 30 days
+        const thirtyDaysAgo = new Date(now);
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        fromDate = thirtyDaysAgo.toISOString();
+      }
+      
+      const toDate = now.toISOString();
+      
+      console.log(`🔄 StockX Sync: ${fullSync ? 'Full' : lastSyncTime ? 'Incremental' : 'Initial'} sync from ${fromDate} to ${toDate}`);
+      
       // Fetch all pages of sales data
       let allSales: StockXSale[] = [];
       let pageNumber = 1;
       let hasNextPage = true;
       const pageSize = 100; // Use maximum allowed per docs
+      const maxPages = fullSync ? 10 : 3; // Limit pages to prevent timeout
 
       // Fetch completed sales first
-      while (hasNextPage) {
+      while (hasNextPage && pageNumber <= maxPages) {
+        setSyncProgress({ 
+          current: pageNumber, 
+          total: maxPages, 
+          status: `Fetching page ${pageNumber} of completed sales...` 
+        });
+        
         const offset = (pageNumber - 1) * pageSize;
-        const response = await fetch(`/api/stockx/sales?limit=${pageSize}&offset=${offset}&status=completed`, {
+        const url = `/api/stockx/sales?limit=${pageSize}&offset=${offset}&status=completed&fromDate=${encodeURIComponent(fromDate)}&toDate=${encodeURIComponent(toDate)}`;
+        
+        const response = await fetch(url, {
           credentials: 'include'
         });
 
@@ -134,6 +168,11 @@ export const useStockXSales = () => {
             setError('Invalid StockX API credentials');
             setSyncStatus(prev => ({ ...prev, isAuthenticated: false }));
             return;
+          } else if (response.status === 504) {
+            // Timeout - try with smaller page size
+            console.log('⚠️ Timeout detected, reducing scope...');
+            setError('StockX sync timed out. Try syncing again with a shorter date range.');
+            break;
           }
           throw new Error(errorData.error || 'Failed to fetch StockX sales');
         }
@@ -142,6 +181,7 @@ export const useStockXSales = () => {
         
         if (data.success && data.data) {
           allSales = allSales.concat(data.data);
+          console.log(`✅ Fetched ${data.data.length} sales from page ${pageNumber}`);
           
           // Use hasNextPage from response
           hasNextPage = data.hasNextPage || false;
@@ -150,29 +190,51 @@ export const useStockXSales = () => {
           hasNextPage = false;
         }
       }
+      
+      if (pageNumber > maxPages && hasNextPage) {
+        console.log(`⚠️ Reached max pages limit (${maxPages}). Some sales may not be synced.`);
+      }
 
-      // Also fetch active/pending sales with pagination
+      // Also fetch active/pending sales with pagination (limited)
       pageNumber = 1;
       hasNextPage = true;
+      const maxActivePage = 1; // Only fetch 1 page of active sales to prevent timeout
       
-      while (hasNextPage) {
-        const offset = (pageNumber - 1) * pageSize;
-        const activeResponse = await fetch(`/api/stockx/sales?limit=${pageSize}&offset=${offset}&status=active`, {
-          credentials: 'include'
+      while (hasNextPage && pageNumber <= maxActivePage) {
+        setSyncProgress({ 
+          current: pageNumber + maxPages, 
+          total: maxPages + maxActivePage, 
+          status: 'Fetching active sales...' 
         });
         
-        if (activeResponse.ok) {
-          const activeData = await activeResponse.json();
-          if (activeData.success && activeData.data) {
-            allSales = allSales.concat(activeData.data);
-            hasNextPage = activeData.hasNextPage || false;
-            pageNumber++;
+        const offset = (pageNumber - 1) * pageSize;
+        const activeUrl = `/api/stockx/sales?limit=${pageSize}&offset=${offset}&status=active`;
+        
+        try {
+          const activeResponse = await fetch(activeUrl, {
+            credentials: 'include'
+          });
+          
+          if (activeResponse.ok) {
+            const activeData = await activeResponse.json();
+            if (activeData.success && activeData.data) {
+              allSales = allSales.concat(activeData.data);
+              console.log(`✅ Fetched ${activeData.data.length} active sales`);
+              hasNextPage = activeData.hasNextPage || false;
+              pageNumber++;
+            } else {
+              hasNextPage = false;
+            }
+          } else if (activeResponse.status === 504) {
+            console.log('⚠️ Timeout fetching active sales, skipping...');
+            break;
           } else {
-            hasNextPage = false;
+            // If active sales fail, just continue with completed sales
+            console.log('Note: Could not fetch active sales, continuing with completed sales only');
+            break;
           }
-        } else {
-          // If active sales fail, just continue with completed sales
-          console.log('Note: Could not fetch active sales, continuing with completed sales only');
+        } catch (error) {
+          console.log('Error fetching active sales, continuing with completed sales only:', error);
           break;
         }
       }
@@ -189,9 +251,18 @@ export const useStockXSales = () => {
       setLastSyncTime(now);
       await updateSyncTime(now);
 
+      setSyncProgress({ 
+        current: allSales.length, 
+        total: allSales.length, 
+        status: `Successfully synced ${allSales.length} sales` 
+      });
+      
       if (!silent) {
         console.log(`✅ Successfully synced ${allSales.length} StockX sales`);
       }
+      
+      // Clear progress after 3 seconds
+      setTimeout(() => setSyncProgress(null), 3000);
 
     } catch (error) {
       console.error('Error syncing StockX sales:', error);
@@ -199,7 +270,7 @@ export const useStockXSales = () => {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [user]);
+  }, [user, lastSyncTime]);
 
   // Save sales to Firebase
   const saveSalesToFirebase = async (salesData: StockXSale[]) => {
@@ -320,6 +391,7 @@ export const useStockXSales = () => {
     syncStatus,
     syncSales,
     convertToMainSale,
-    lastSyncTime
+    lastSyncTime,
+    syncProgress
   };
 };

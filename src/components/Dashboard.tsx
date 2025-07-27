@@ -45,7 +45,11 @@ const Dashboard = () => {
     inventoryCount: 0,
     inventoryValue: 0,
     avgProfitPerSale: 0,
-    recentSales: []
+    recentSales: [],
+    platformBreakdown: {
+      manual: { count: 0, revenue: 0, profit: 0 },
+      stockx: { count: 0, revenue: 0, profit: 0 }
+    }
   });
   
   const timePeriods = ['Today', 'Yesterday', 'This Month', 'This Year', 'Custom Range'];
@@ -153,9 +157,28 @@ const Dashboard = () => {
   useEffect(() => {
     if (!salesLoading && !purchasesLoading) {
       console.log('📊 Dashboard: Calculating combined metrics...');
-      calculateRealMetrics(userPurchases, sales);
+      
+      // Combine salesMetrics from useSales hook with purchase data
+      const totalSpend = userPurchases.reduce((sum, purchase) => {
+        const price = parseFloat(purchase.price?.replace(/[$,]/g, '')) || 0;
+        return sum + price;
+      }, 0);
+      
+      const inventoryCount = Math.max(0, userPurchases.length - salesMetrics.salesCount);
+      const inventoryValue = Math.max(0, totalSpend - salesMetrics.totalRevenue);
+      
+      setRealMetrics({
+        totalProfit: salesMetrics.totalProfit,
+        totalRevenue: salesMetrics.totalRevenue,
+        totalSpend,
+        inventoryCount,
+        inventoryValue,
+        avgProfitPerSale: salesMetrics.avgProfitPerSale,
+        recentSales: salesMetrics.recentSales,
+        platformBreakdown: salesMetrics.platformBreakdown
+      });
     }
-  }, [sales, userPurchases, salesLoading, purchasesLoading]);
+  }, [sales, userPurchases, salesLoading, purchasesLoading, salesMetrics]);
 
 
 
@@ -203,46 +226,7 @@ const Dashboard = () => {
     };
   }, [user]);
 
-  // Calculate real metrics from user data
-  const calculateRealMetrics = (purchases: any[], sales: any[]) => {
-    console.log('📊 Dashboard: Calculating metrics with', purchases.length, 'purchases and', sales.length, 'sales');
-    
-    // Calculate total spend from purchases
-    const totalSpend = purchases.reduce((sum, purchase) => {
-      const price = parseFloat(purchase.price?.replace(/[$,]/g, '')) || 0;
-      return sum + price;
-    }, 0);
-
-    // Calculate revenue and profit from sales
-    const totalRevenue = sales.reduce((sum, sale) => sum + (sale.salePrice || 0), 0);
-    const totalProfit = sales.reduce((sum, sale) => sum + (sale.profit || 0), 0);
-    
-    // Calculate inventory (purchases minus sales)
-    const inventoryCount = Math.max(0, purchases.length - sales.length);
-    const inventoryValue = Math.max(0, totalSpend - totalRevenue);
-    
-    // Calculate average profit per sale
-    const avgProfitPerSale = sales.length > 0 ? totalProfit / sales.length : 0;
-    
-    // Get recent sales for flip data
-    const recentSales = sales
-      .filter(sale => sale.profit && sale.profit > 0)
-      .sort((a, b) => b.profit - a.profit)
-      .slice(0, 5);
-
-    const newMetrics = {
-      totalProfit,
-      totalRevenue,
-      totalSpend,
-      inventoryCount,
-      inventoryValue,
-      avgProfitPerSale,
-      recentSales
-    };
-
-    console.log('📊 Dashboard: New metrics calculated:', newMetrics);
-    setRealMetrics(newMetrics);
-  };
+  // calculateRealMetrics function removed - now using salesMetrics from useSales hook
 
   // Load dashboard settings from Firebase
   useEffect(() => {
@@ -342,14 +326,14 @@ const Dashboard = () => {
     {
       title: 'Total Profit',
       value: `$${realMetrics.totalProfit.toLocaleString()}`,
-      subtitle: 'All time',
+      subtitle: `${realMetrics.platformBreakdown?.stockx?.count || 0} StockX, ${realMetrics.platformBreakdown?.manual?.count || 0} Manual`,
       icon: DollarSign,
       iconColor: 'text-green-600'
     },
     {
       title: 'Total Revenue',
       value: `$${realMetrics.totalRevenue.toLocaleString()}`,
-      subtitle: 'From sales',
+      subtitle: 'From all sales',
       icon: TrendingUp,
       iconColor: 'text-blue-600'
     },

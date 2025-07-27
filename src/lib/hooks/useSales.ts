@@ -13,6 +13,10 @@ export interface SaleMetrics {
   salesCount: number;
   profitMargin: number;
   recentSales: any[];
+  platformBreakdown: {
+    manual: { count: number; revenue: number; profit: number };
+    stockx: { count: number; revenue: number; profit: number };
+  };
 }
 
 export interface ConnectionState {
@@ -24,6 +28,8 @@ export interface ConnectionState {
 export const useSales = () => {
   const { user } = useAuth();
   const [sales, setSales] = useState<any[]>([]);
+  const [manualSales, setManualSales] = useState<any[]>([]);
+  const [stockxSales, setStockxSales] = useState<any[]>([]);
   const [metrics, setMetrics] = useState<SaleMetrics>({
     totalProfit: 0,
     totalRevenue: 0,
@@ -31,7 +37,11 @@ export const useSales = () => {
     avgProfitPerSale: 0,
     salesCount: 0,
     profitMargin: 0,
-    recentSales: []
+    recentSales: [],
+    platformBreakdown: {
+      manual: { count: 0, revenue: 0, profit: 0 },
+      stockx: { count: 0, revenue: 0, profit: 0 }
+    }
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -56,20 +66,67 @@ export const useSales = () => {
         avgProfitPerSale: 0,
         salesCount: 0,
         profitMargin: 0,
-        recentSales: []
+        recentSales: [],
+        platformBreakdown: {
+          manual: { count: 0, revenue: 0, profit: 0 },
+          stockx: { count: 0, revenue: 0, profit: 0 }
+        }
       };
     }
 
-    const totalRevenue = salesData.reduce((sum, sale) => sum + (parseFloat(sale.salePrice) || 0), 0);
+    const totalRevenue = salesData.reduce((sum, sale) => {
+      // Handle both manual sales (salePrice) and StockX sales (amount/payout.amount)
+      const revenue = parseFloat(sale.salePrice) || parseFloat(sale.amount) || 
+                     (sale.payout && parseFloat(sale.payout.amount)) || 0;
+      return sum + revenue;
+    }, 0);
+    
     const totalSpend = salesData.reduce((sum, sale) => sum + (parseFloat(sale.purchasePrice) || 0), 0);
     const totalFees = salesData.reduce((sum, sale) => sum + (parseFloat(sale.fees) || 0), 0);
     const totalProfit = totalRevenue - totalSpend - totalFees;
     const avgProfitPerSale = salesData.length > 0 ? totalProfit / salesData.length : 0;
     const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
     
+    // Calculate platform breakdown
+    const platformBreakdown = {
+      manual: {
+        count: 0,
+        revenue: 0,
+        profit: 0
+      },
+      stockx: {
+        count: 0,
+        revenue: 0,
+        profit: 0
+      }
+    };
+    
+    salesData.forEach(sale => {
+      const platform = sale.platform || 'manual';
+      const revenue = parseFloat(sale.salePrice) || parseFloat(sale.amount) || 
+                     (sale.payout && parseFloat(sale.payout.amount)) || 0;
+      const spend = parseFloat(sale.purchasePrice) || 0;
+      const fees = parseFloat(sale.fees) || 0;
+      const profit = revenue - spend - fees;
+      
+      if (platform === 'stockx') {
+        platformBreakdown.stockx.count++;
+        platformBreakdown.stockx.revenue += revenue;
+        platformBreakdown.stockx.profit += profit;
+      } else {
+        platformBreakdown.manual.count++;
+        platformBreakdown.manual.revenue += revenue;
+        platformBreakdown.manual.profit += profit;
+      }
+    });
+    
     // Get recent sales (last 5)
     const recentSales = salesData
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .sort((a, b) => {
+        const dateA = new Date(a.date || a.createdAt).getTime();
+        const dateB = new Date(b.date || b.createdAt).getTime();
+        return dateB - dateA;
+      })
       .slice(0, 5);
 
     return {
@@ -79,7 +136,8 @@ export const useSales = () => {
       avgProfitPerSale,
       salesCount: salesData.length,
       profitMargin,
-      recentSales
+      recentSales,
+      platformBreakdown
     };
   };
 
@@ -105,15 +163,44 @@ export const useSales = () => {
 
       console.log('🔄 useSales: Loading sales data for user:', user.uid);
       
-      // Use the dedicated getUserSales function instead of manual filtering
-      const userSalesData = await getUserSales(user.uid);
+      // Fetch both manual sales and StockX sales in parallel
+      const [manualSalesData, stockxSalesData] = await Promise.all([
+        getUserSales(user.uid),
+        getDocuments('stockxSales')
+      ]);
       
-      console.log('🔄 useSales: Found', userSalesData.length, 'sales');
-      console.log('🔄 useSales: Sales data preview:', userSalesData.slice(0, 3));
+      // Filter StockX sales for current user and add platform field
+      const userStockxSales = stockxSalesData
+        .filter((sale: any) => sale.userId === user.uid)
+        .map((sale: any) => ({
+          ...sale,
+          platform: 'stockx',
+          // Normalize date field
+          date: sale.date || sale.createdAt || sale.updatedAt,
+          // Normalize price fields for consistent calculations
+          salePrice: sale.amount || sale.payout?.amount || 0,
+          purchasePrice: sale.purchasePrice || 0,
+          fees: sale.fees || (sale.payout?.totalFee) || 0
+        }));
+      
+      // Add platform field to manual sales
+      const normalizedManualSales = manualSalesData.map((sale: any) => ({
+        ...sale,
+        platform: 'manual'
+      }));
+      
+      // Combine all sales
+      const allSales = [...normalizedManualSales, ...userStockxSales];
+      
+      console.log('🔄 useSales: Found', normalizedManualSales.length, 'manual sales');
+      console.log('🔄 useSales: Found', userStockxSales.length, 'StockX sales');
+      console.log('🔄 useSales: Total sales:', allSales.length);
       
       if (mountedRef.current) {
-        setSales(userSalesData);
-        setMetrics(calculateMetrics(userSalesData));
+        setSales(allSales);
+        setManualSales(normalizedManualSales);
+        setStockxSales(userStockxSales);
+        setMetrics(calculateMetrics(allSales));
         setConnectionState({
           status: 'connected',
           lastUpdated: new Date(),
@@ -288,6 +375,8 @@ export const useSales = () => {
 
   return {
     sales,
+    manualSales,
+    stockxSales,
     metrics,
     loading,
     error,
