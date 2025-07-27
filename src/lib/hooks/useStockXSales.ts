@@ -17,12 +17,25 @@ export const useStockXSales = () => {
   });
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
 
-  // Load cached sales from Firebase
+  // Check authentication status and load cached sales from Firebase
   useEffect(() => {
     if (!user) return;
 
-    const loadCachedSales = async () => {
+    const initializeStockXData = async () => {
       try {
+        // Check if user has StockX tokens by making a simple auth check
+        const authCheckResponse = await fetch('/api/stockx/auth-status', {
+          credentials: 'include'
+        });
+        
+        if (authCheckResponse.ok) {
+          const authData = await authCheckResponse.json();
+          if (authData.authenticated) {
+            setSyncStatus(prev => ({ ...prev, isAuthenticated: true }));
+          }
+        }
+        
+        // Load cached sales
         const cachedSales = await getDocuments('stockxSales');
         const userSales = cachedSales
           .filter(sale => sale.userId === user.uid)
@@ -39,11 +52,11 @@ export const useStockXSales = () => {
           setLastSyncTime(userSyncInfo.lastSyncTime);
         }
       } catch (error) {
-        console.error('Error loading cached StockX sales:', error);
+        console.error('Error initializing StockX data:', error);
       }
     };
 
-    loadCachedSales();
+    initializeStockXData();
   }, [user]);
 
   // Calculate sync status metrics
@@ -68,14 +81,14 @@ export const useStockXSales = () => {
       ? (authenticatedCount / salesData.length) * 100 
       : 0;
 
-    setSyncStatus({
-      isAuthenticated: true,
+    setSyncStatus(prev => ({
+      ...prev,
       totalSales: salesData.length,
       totalRevenue,
       pendingPayouts,
       authenticationRate,
       lastSyncTime
-    });
+    }));
   };
 
   // Sync sales from StockX API
