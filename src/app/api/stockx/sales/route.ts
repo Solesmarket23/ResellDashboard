@@ -46,13 +46,19 @@ export async function GET(request: NextRequest) {
   try {
     // Build API URL for seller orders/sales
     const pageNumber = Math.floor(parseInt(offset) / parseInt(limit)) + 1;
-    const pageSize = Math.min(parseInt(limit), 20); // Start with smaller page size to avoid timeouts
+    const pageSize = Math.min(parseInt(limit), 100); // Use maximum allowed per docs
     
     // Use the same parameter names as the working listings endpoint
     const queryParams = new URLSearchParams({
       pageNumber: pageNumber.toString(),
       pageSize: pageSize.toString()
     });
+    
+    // Add date filtering if provided
+    const fromDate = searchParams.get('fromDate');
+    const toDate = searchParams.get('toDate');
+    if (fromDate) queryParams.set('fromDate', fromDate);
+    if (toDate) queryParams.set('toDate', toDate);
 
     // StockX API endpoint - use the documented endpoints
     let apiUrl: string;
@@ -75,9 +81,9 @@ export async function GET(request: NextRequest) {
     const response = await fetch(apiUrl, {
       method: 'GET',
       headers: {
+        'x-api-key': apiKey,
         'Authorization': `Bearer ${accessToken}`,
-        'X-API-Key': apiKey,
-        'Accept': 'application/json'
+        'Content-Type': 'application/json'
       },
       signal: controller.signal
     }).finally(() => clearTimeout(timeoutId));
@@ -92,9 +98,9 @@ export async function GET(request: NextRequest) {
         const retryResponse = await fetch(apiUrl, {
           method: 'GET',
           headers: {
+            'x-api-key': apiKey,
             'Authorization': `Bearer ${refreshResult.accessToken}`,
-            'X-API-Key': apiKey,
-            'Accept': 'application/json'
+            'Content-Type': 'application/json'
           }
         });
 
@@ -206,11 +212,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: processedSales,
-      totalCount: salesData.totalCount || processedSales.length,
-      pageNumber,
-      pageSize,
+      totalCount: salesData.count || salesData.totalCount || processedSales.length,
+      pageNumber: salesData.pageNumber || pageNumber,
+      pageSize: salesData.pageSize || pageSize,
+      hasNextPage: salesData.hasNextPage || false,
       appliedFilters: {
-        status: status || 'all'
+        status: status || 'all',
+        fromDate: fromDate || null,
+        toDate: toDate || null
       }
     });
 

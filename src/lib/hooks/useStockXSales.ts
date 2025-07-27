@@ -23,16 +23,19 @@ export const useStockXSales = () => {
 
     const initializeStockXData = async () => {
       try {
-        // Check if user has StockX tokens by making a simple auth check
-        const authCheckResponse = await fetch('/api/stockx/auth-status', {
-          credentials: 'include'
-        });
-        
-        if (authCheckResponse.ok) {
-          const authData = await authCheckResponse.json();
-          if (authData.authenticated) {
+        // Check authentication by making a simple API call
+        try {
+          const authCheckResponse = await fetch('/api/stockx/sales?limit=1&offset=0&status=active', {
+            credentials: 'include'
+          });
+          
+          if (authCheckResponse.ok) {
             setSyncStatus(prev => ({ ...prev, isAuthenticated: true }));
+          } else if (authCheckResponse.status === 401) {
+            setSyncStatus(prev => ({ ...prev, isAuthenticated: false }));
           }
+        } catch (error) {
+          console.log('Could not verify StockX authentication status');
         }
         
         // Load cached sales - handle case where collection doesn't exist yet
@@ -115,11 +118,11 @@ export const useStockXSales = () => {
       // Fetch all pages of sales data
       let allSales: StockXSale[] = [];
       let pageNumber = 1;
-      let hasMore = true;
-      const pageSize = 20; // Smaller page size to avoid timeouts
+      let hasNextPage = true;
+      const pageSize = 100; // Use maximum allowed per docs
 
       // Fetch completed sales first
-      while (hasMore) {
+      while (hasNextPage) {
         const offset = (pageNumber - 1) * pageSize;
         const response = await fetch(`/api/stockx/sales?limit=${pageSize}&offset=${offset}&status=completed`, {
           credentials: 'include'
@@ -128,7 +131,7 @@ export const useStockXSales = () => {
         if (!response.ok) {
           const errorData = await response.json();
           if (response.status === 401) {
-            setError('Please authenticate with StockX to sync sales');
+            setError('Invalid StockX API credentials');
             setSyncStatus(prev => ({ ...prev, isAuthenticated: false }));
             return;
           }
@@ -140,17 +143,21 @@ export const useStockXSales = () => {
         if (data.success && data.data) {
           allSales = allSales.concat(data.data);
           
-          // Check if there are more pages
-          hasMore = data.data.length === pageSize;
+          // Use hasNextPage from response
+          hasNextPage = data.hasNextPage || false;
           pageNumber++;
         } else {
-          hasMore = false;
+          hasNextPage = false;
         }
       }
 
-      // Also fetch active/pending sales
-      try {
-        const activeResponse = await fetch(`/api/stockx/sales?limit=20&offset=0&status=active`, {
+      // Also fetch active/pending sales with pagination
+      pageNumber = 1;
+      hasNextPage = true;
+      
+      while (hasNextPage) {
+        const offset = (pageNumber - 1) * pageSize;
+        const activeResponse = await fetch(`/api/stockx/sales?limit=${pageSize}&offset=${offset}&status=active`, {
           credentials: 'include'
         });
         
@@ -158,10 +165,16 @@ export const useStockXSales = () => {
           const activeData = await activeResponse.json();
           if (activeData.success && activeData.data) {
             allSales = allSales.concat(activeData.data);
+            hasNextPage = activeData.hasNextPage || false;
+            pageNumber++;
+          } else {
+            hasNextPage = false;
           }
+        } else {
+          // If active sales fail, just continue with completed sales
+          console.log('Note: Could not fetch active sales, continuing with completed sales only');
+          break;
         }
-      } catch (error) {
-        console.log('Note: Could not fetch active sales, continuing with completed sales only');
       }
 
       // Save to Firebase
