@@ -475,56 +475,12 @@ const StockXArbitrage: React.FC = () => {
     // Generate StockX URL for this product
     const stockxUrl = opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId);
     
-    // Generate Impact.com affiliate URL
-    let affiliateUrl = stockxUrl;
-    try {
-      const impactResponse = await fetch('/api/impact/create-link', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          stockxUrl,
-          customParams: {
-            productId: opportunity.productId,
-            size: opportunity.size,
-            source: 'twitter_share'
-          }
-        })
-      });
-      
-      if (impactResponse.ok) {
-        const impactData = await impactResponse.json();
-        affiliateUrl = impactData.trackingUrl || stockxUrl;
-        console.log('✅ Impact.com affiliate URL created:', {
-          original: stockxUrl,
-          affiliate: affiliateUrl,
-          hasError: !!impactData.error
-        });
-        
-        // If Impact.com returned an error, it means credentials aren't set up
-        if (impactData.error) {
-          console.warn('⚠️ Impact.com not configured:', impactData.error);
-          console.log('💡 Add IMPACT_ACCOUNT_SID and IMPACT_AUTH_TOKEN to Vercel environment variables');
-        }
-      } else {
-        const errorText = await impactResponse.text();
-        console.error('❌ Impact.com API error:', errorText);
-        // Fallback to Sovrn if Impact fails
-        affiliateUrl = convertStockXLink(stockxUrl, {
-          productName: opportunity.productName,
-          productId: opportunity.productId,
-          size: opportunity.size
-        });
-        console.log('↩️ Falling back to Sovrn:', affiliateUrl);
-      }
-    } catch (error) {
-      console.error('Error creating Impact.com link:', error);
-      // Fallback to Sovrn if Impact fails
-      affiliateUrl = convertStockXLink(stockxUrl, {
-        productName: opportunity.productName,
-        productId: opportunity.productId,
-        size: opportunity.size
-      });
-    }
+    // Generate Sovrn affiliate URL
+    const affiliateUrl = convertStockXLink(stockxUrl, {
+      productName: opportunity.productName,
+      productId: opportunity.productId,
+      size: opportunity.size
+    });
     
     // Store the affiliate URL for this opportunity so View on StockX button can use it
     const opportunityKey = `${opportunity.productId}-${opportunity.variantId}`;
@@ -1441,67 +1397,28 @@ const StockXArbitrage: React.FC = () => {
                       FlexAsk: {showFlexAsk ? 'ON' : 'OFF'} | Amount: {opportunity.flexAskAmount || 'none'}
                     </div>
                   )}
-                  <button
-                    onClick={async () => {
+                  <a
+                    href={(() => {
                       const opportunityKey = `${opportunity.productId}-${opportunity.variantId}`;
-                      let affiliateLink = affiliateLinks[opportunityKey];
-                      
-                      // If no affiliate link stored yet, generate one using Impact.com
-                      if (!affiliateLink) {
-                        const stockxUrl = opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId);
-                        
-                        try {
-                          const impactResponse = await fetch('/api/impact/create-link', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ 
-                              stockxUrl,
-                              customParams: {
-                                productId: opportunity.productId,
-                                size: opportunity.size,
-                                source: 'view_button'
-                              }
-                            })
-                          });
-                          
-                          if (impactResponse.ok) {
-                            const impactData = await impactResponse.json();
-                            affiliateLink = impactData.trackingUrl || stockxUrl;
-                            console.log('Impact.com affiliate URL created for View button:', affiliateLink);
-                            
-                            // Store the affiliate link
-                            setAffiliateLinks(prev => ({
-                              ...prev,
-                              [opportunityKey]: affiliateLink
-                            }));
-                          } else {
-                            // Fallback to Sovrn if Impact fails
-                            affiliateLink = convertStockXLink(stockxUrl, {
-                              productName: opportunity.productName,
-                              productId: opportunity.productId,
-                              size: opportunity.size
-                            });
-                          }
-                        } catch (error) {
-                          console.error('Error creating Impact.com link:', error);
-                          // Fallback to Sovrn
-                          const stockxUrl = opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId);
-                          affiliateLink = convertStockXLink(stockxUrl, {
-                            productName: opportunity.productName,
-                            productId: opportunity.productId,
-                            size: opportunity.size
-                          });
-                        }
+                      const affiliateLink = affiliateLinks[opportunityKey];
+                      if (affiliateLink) {
+                        return affiliateLink;
                       }
-                      
-                      // Open the affiliate link
-                      window.open(affiliateLink, '_blank', 'noopener,noreferrer');
-                    }}
+                      // If no affiliate link stored yet, generate one using Sovrn
+                      const stockxUrl = opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId);
+                      return convertStockXLink(stockxUrl, {
+                        productName: opportunity.productName,
+                        productId: opportunity.productId,
+                        size: opportunity.size
+                      });
+                    })()}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
                   >
                     <ExternalLink className="w-4 h-4" />
                     View on StockX
-                  </button>
+                  </a>
                 </div>
               </div>
             </div>
