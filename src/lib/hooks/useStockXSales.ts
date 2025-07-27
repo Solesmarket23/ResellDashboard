@@ -247,9 +247,9 @@ export const useStockXSales = () => {
       calculateSyncStatus(allSales);
       
       // Update sync time
-      const now = new Date().toISOString();
-      setLastSyncTime(now);
-      await updateSyncTime(now);
+      const syncTime = new Date().toISOString();
+      setLastSyncTime(syncTime);
+      await updateSyncTime(syncTime);
 
       setSyncProgress({ 
         current: allSales.length, 
