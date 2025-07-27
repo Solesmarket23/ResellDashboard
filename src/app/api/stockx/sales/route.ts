@@ -39,6 +39,12 @@ export async function GET(request: NextRequest) {
 
   if (!apiKey) {
     console.error('❌ Missing API key - check STOCKX_API_KEY or STOCKX_CLIENT_ID env vars');
+    console.log('Environment check:', {
+      STOCKX_API_KEY: process.env.STOCKX_API_KEY ? 'Set' : 'Not set',
+      STOCKX_CLIENT_ID: process.env.STOCKX_CLIENT_ID ? 'Set' : 'Not set',
+      // Check all env vars that start with STOCKX
+      allStockXVars: Object.keys(process.env).filter(key => key.includes('STOCKX'))
+    });
     return NextResponse.json(
       { error: 'Missing StockX API key configuration' },
       { status: 500 }
@@ -269,6 +275,7 @@ export async function GET(request: NextRequest) {
 
   } catch (error: any) {
     console.error('Error fetching StockX sales:', error);
+    console.error('Error stack:', error.stack);
     
     // Handle timeout errors specifically
     if (error.name === 'AbortError') {
@@ -287,7 +294,9 @@ export async function GET(request: NextRequest) {
       { 
         success: false,
         error: 'Failed to fetch sales data',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: error instanceof Error ? error.message : 'Unknown error',
+        errorName: error.name,
+        errorStack: error.stack
       },
       { status: 500 }
     );
