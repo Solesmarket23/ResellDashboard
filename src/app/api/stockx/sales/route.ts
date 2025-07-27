@@ -62,11 +62,10 @@ export async function GET(request: NextRequest) {
       pageSize: pageSize.toString()
     });
     
-    // Add date filtering if provided
+    // Note: StockX API doesn't support date filtering on the orders/history endpoint
+    // We'll need to fetch all and filter after
     const fromDate = searchParams.get('fromDate');
     const toDate = searchParams.get('toDate');
-    if (fromDate) queryParams.set('fromDate', fromDate);
-    if (toDate) queryParams.set('toDate', toDate);
 
     // StockX API endpoint - use the documented endpoints
     let apiUrl: string;

@@ -138,7 +138,8 @@ export const useStockXSales = () => {
       
       const toDate = now.toISOString();
       
-      console.log(`🔄 StockX Sync: ${fullSync ? 'Full' : lastSyncTime ? 'Incremental' : 'Initial'} sync from ${fromDate} to ${toDate}`);
+      console.log(`🔄 StockX Sync: ${fullSync ? 'Full' : lastSyncTime ? 'Incremental' : 'Initial'} sync`);
+      // Note: Date filtering will be done after fetching since StockX API doesn't support it
       
       // Fetch all pages of sales data
       let allSales: StockXSale[] = [];
@@ -156,7 +157,8 @@ export const useStockXSales = () => {
         });
         
         const offset = (pageNumber - 1) * pageSize;
-        const url = `/api/stockx/sales?limit=${pageSize}&offset=${offset}&status=completed&fromDate=${encodeURIComponent(fromDate)}&toDate=${encodeURIComponent(toDate)}`;
+        // Note: Removing date params as StockX API doesn't support them
+        const url = `/api/stockx/sales?limit=${pageSize}&offset=${offset}&status=completed`;
         
         const response = await fetch(url, {
           credentials: 'include'
@@ -239,12 +241,26 @@ export const useStockXSales = () => {
         }
       }
 
+      // Apply date filtering client-side since StockX API doesn't support it
+      let filteredSales = allSales;
+      if (!fullSync && (fromDate || toDate)) {
+        const fromDateObj = fromDate ? new Date(fromDate) : new Date('1970-01-01');
+        const toDateObj = toDate ? new Date(toDate) : new Date();
+        
+        filteredSales = allSales.filter(sale => {
+          const saleDate = new Date(sale.createdAt);
+          return saleDate >= fromDateObj && saleDate <= toDateObj;
+        });
+        
+        console.log(`📅 Date filter applied: ${filteredSales.length} of ${allSales.length} sales match date range`);
+      }
+      
       // Save to Firebase
-      await saveSalesToFirebase(allSales);
+      await saveSalesToFirebase(filteredSales);
       
       // Update local state
-      setSales(allSales);
-      calculateSyncStatus(allSales);
+      setSales(filteredSales);
+      calculateSyncStatus(filteredSales);
       
       // Update sync time
       const syncTime = new Date().toISOString();
