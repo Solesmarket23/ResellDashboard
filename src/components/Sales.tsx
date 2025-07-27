@@ -62,7 +62,8 @@ const Sales = () => {
     syncStatus,
     syncSales: syncStockXSales,
     convertToMainSale,
-    lastSyncTime
+    lastSyncTime,
+    syncProgress
   } = useStockXSales();
   const [showStockXModal, setShowStockXModal] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
