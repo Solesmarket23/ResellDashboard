@@ -116,7 +116,7 @@ export const useStockXSales = () => {
       let allSales: StockXSale[] = [];
       let pageNumber = 1;
       let hasMore = true;
-      const pageSize = 50;
+      const pageSize = 20; // Smaller page size to avoid timeouts
 
       // Fetch completed sales first
       while (hasMore) {
@@ -150,7 +150,7 @@ export const useStockXSales = () => {
 
       // Also fetch active/pending sales
       try {
-        const activeResponse = await fetch(`/api/stockx/sales?limit=50&offset=0&status=active`, {
+        const activeResponse = await fetch(`/api/stockx/sales?limit=20&offset=0&status=active`, {
           credentials: 'include'
         });
         

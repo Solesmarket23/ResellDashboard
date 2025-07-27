@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
   try {
     // Build API URL for seller orders/sales
     const pageNumber = Math.floor(parseInt(offset) / parseInt(limit)) + 1;
-    const pageSize = Math.min(parseInt(limit), 100); // API max is 100 per docs
+    const pageSize = Math.min(parseInt(limit), 20); // Start with smaller page size to avoid timeouts
     
     // Use the same parameter names as the working listings endpoint
     const queryParams = new URLSearchParams({
@@ -68,15 +68,19 @@ export async function GET(request: NextRequest) {
     }
     console.log(`🛒 Fetching StockX seller orders: ${apiUrl}`);
 
-    // Make API call to StockX
+    // Make API call to StockX with timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 second timeout
+    
     const response = await fetch(apiUrl, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'X-API-Key': apiKey,
         'Accept': 'application/json'
-      }
-    });
+      },
+      signal: controller.signal
+    }).finally(() => clearTimeout(timeoutId));
 
     if (response.status === 401 && refreshToken) {
       // Access token expired, try to refresh
@@ -210,8 +214,22 @@ export async function GET(request: NextRequest) {
       }
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching StockX sales:', error);
+    
+    // Handle timeout errors specifically
+    if (error.name === 'AbortError') {
+      return NextResponse.json(
+        { 
+          success: false,
+          error: 'StockX API timeout',
+          message: 'The request took too long. Try again with a smaller page size.',
+          details: 'Request aborted after 25 seconds'
+        },
+        { status: 504 }
+      );
+    }
+    
     return NextResponse.json(
       { 
         success: false,
