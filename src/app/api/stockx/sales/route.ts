@@ -82,8 +82,7 @@ export async function GET(request: NextRequest) {
       method: 'GET',
       headers: {
         'x-api-key': apiKey,
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
+        'Authorization': `Bearer ${accessToken}`
       },
       signal: controller.signal
     }).finally(() => clearTimeout(timeoutId));
@@ -99,8 +98,7 @@ export async function GET(request: NextRequest) {
           method: 'GET',
           headers: {
             'x-api-key': apiKey,
-            'Authorization': `Bearer ${refreshResult.accessToken}`,
-            'Content-Type': 'application/json'
+            'Authorization': `Bearer ${refreshResult.accessToken}`
           }
         });
 
@@ -129,30 +127,70 @@ export async function GET(request: NextRequest) {
           const successResponse = NextResponse.json({
             success: true,
             data: processedSales,
-            totalCount: salesData.totalCount || processedSales.length,
-            pageNumber,
-            pageSize,
-            tokenRefreshed: true
+            totalCount: salesData.count || salesData.totalCount || processedSales.length,
+            pageNumber: salesData.pageNumber || pageNumber,
+            pageSize: salesData.pageSize || pageSize,
+            hasNextPage: salesData.hasNextPage || false,
+            tokenRefreshed: true,
+            appliedFilters: {
+              status: status || 'all',
+              fromDate: fromDate || null,
+              toDate: toDate || null
+            }
           });
 
           // Update tokens using helper function
           setStockXTokenCookies(successResponse, refreshResult.accessToken, refreshResult.refreshToken || refreshToken);
 
           return successResponse;
+        } else {
+          // Log the error response
+          const errorText = await retryResponse.text();
+          console.error('Retry failed:', retryResponse.status, errorText);
         }
       }
     }
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('StockX Sales API Error:', errorText);
+      console.error('StockX Sales API Error:', {
+        status: response.status,
+        statusText: response.statusText,
+        errorResponse: errorText,
+        requestUrl: apiUrl,
+        headers: {
+          'x-api-key': apiKey ? 'Present' : 'Missing',
+          'Authorization': accessToken ? 'Present' : 'Missing'
+        }
+      });
       
-      if (response.status === 401) {
+      // Try to parse error details
+      let errorDetails = errorText;
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorDetails = errorJson.message || errorJson.error || errorText;
+      } catch (e) {
+        // Use raw text if not JSON
+      }
+      
+      if (response.status === 400) {
+        return NextResponse.json(
+          { 
+            success: false,
+            error: 'Bad Request', 
+            details: errorDetails,
+            message: 'Invalid request format or parameters',
+            statusCode: 400,
+            requestUrl: apiUrl
+          },
+          { status: 400 }
+        );
+      } else if (response.status === 401) {
         return NextResponse.json(
           { 
             success: false,
             error: 'Authentication failed', 
-            details: errorText,
+            details: errorDetails,
             authRequired: true,
             message: 'Please re-authenticate with StockX',
             statusCode: 401
@@ -164,7 +202,7 @@ export async function GET(request: NextRequest) {
           { 
             success: false,
             error: 'Access forbidden', 
-            details: errorText,
+            details: errorDetails,
             message: 'You may not have seller permissions or API access',
             statusCode: 403
           },
@@ -175,7 +213,7 @@ export async function GET(request: NextRequest) {
           { 
             success: false,
             error: 'StockX API error', 
-            details: errorText,
+            details: errorDetails,
             statusCode: response.status
           },
           { status: response.status }
