@@ -2008,13 +2008,13 @@ const Sales = () => {
                         <div className={`text-sm text-center ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`}>
                           {syncProgress.status}
                         </div>
-                        {syncProgress.total > 0 && (
+                        {syncProgress && syncProgress.total > 0 && (
                           <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
                             <div 
                               className={`h-full transition-all duration-300 ${
                                 isNeon ? 'bg-cyan-500' : 'bg-blue-600'
                               }`}
-                              style={{ width: `${(syncProgress.current / syncProgress.total) * 100}%` }}
+                              style={{ width: `${syncProgress ? (syncProgress.current / syncProgress.total) * 100 : 0}%` }}
                             />
                           </div>
                         )}
