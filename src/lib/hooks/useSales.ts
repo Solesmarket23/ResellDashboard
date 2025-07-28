@@ -172,16 +172,29 @@ export const useSales = () => {
       // Filter StockX sales for current user and add platform field
       const userStockxSales = stockxSalesData
         .filter((sale: any) => sale.userId === user.uid)
-        .map((sale: any) => ({
-          ...sale,
-          platform: 'stockx',
-          // Normalize date field
-          date: sale.date || sale.createdAt || sale.updatedAt,
-          // Normalize price fields for consistent calculations
-          salePrice: sale.amount || sale.payout?.amount || 0,
-          purchasePrice: sale.purchasePrice || 0,
-          fees: sale.fees || (sale.payout?.totalFee) || 0
-        }));
+        .map((sale: any) => {
+          // StockX sales are stored with nested saleData
+          const stockxData = sale.saleData || sale;
+          return {
+            ...sale,
+            id: sale.id || stockxData.orderNumber,
+            platform: 'stockx',
+            // Map StockX fields to match manual sales structure
+            product: stockxData.product?.productName || stockxData.productName || '',
+            brand: stockxData.product?.brand || stockxData.brand || '',
+            size: stockxData.variant?.size || stockxData.size || '',
+            orderNumber: stockxData.orderNumber || '',
+            // Normalize date field
+            date: stockxData.createdAt || sale.createdAt || sale.updatedAt,
+            // Normalize price fields for consistent calculations
+            salePrice: stockxData.pricing?.salePrice || stockxData.amount || 0,
+            purchasePrice: sale.purchasePrice || 0,
+            fees: stockxData.pricing?.sellerFees || stockxData.pricing?.totalFees || 0,
+            payout: stockxData.pricing?.totalPayout || 0,
+            // Calculate profit if not provided
+            profit: (stockxData.pricing?.totalPayout || 0) - (sale.purchasePrice || 0)
+          };
+        });
       
       // Add platform field to manual sales
       const normalizedManualSales = manualSalesData.map((sale: any) => ({

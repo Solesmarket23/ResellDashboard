@@ -911,7 +911,7 @@ const Sales = () => {
                 }`}>(${Math.abs(parseFloat(sale.fees) || 0).toFixed(2)})</td>
                       <td className={`px-6 py-4 whitespace-nowrap text-sm ${
                         isNeon ? 'text-gray-300' : 'text-gray-900'
-                      }`}>${(sale.payout?.amount ? parseFloat(sale.payout.amount) : (parseFloat(sale.salePrice) || parseFloat(sale.amount) || 0) - (parseFloat(sale.fees) || 0)).toFixed(2)}</td>
+                      }`}>${(parseFloat(sale.payout) || (parseFloat(sale.salePrice) || parseFloat(sale.amount) || 0) - (parseFloat(sale.fees) || 0)).toFixed(2)}</td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`text-sm font-medium ${
                           (parseFloat(sale.profit) || 0) >= 0 
