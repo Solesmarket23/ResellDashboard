@@ -169,6 +169,11 @@ export const useSales = () => {
         getDocuments('stockxSales')
       ]);
       
+      console.log('🔍 Raw StockX sales data:', stockxSalesData.length, 'total sales');
+      if (stockxSalesData.length > 0) {
+        console.log('🔍 First StockX sale raw data:', stockxSalesData[0]);
+      }
+      
       // Filter StockX sales for current user and add platform field
       const userStockxSales = stockxSalesData
         .filter((sale: any) => sale.userId === user.uid)
@@ -180,6 +185,11 @@ export const useSales = () => {
           if (!saleData) {
             console.warn('⚠️ StockX sale missing saleData:', sale);
             return null;
+          }
+          
+          // Debug log first sale's saleData
+          if (stockxSalesData.indexOf(sale) === 0) {
+            console.log('🔍 First StockX saleData structure:', saleData);
           }
           
           // Remove debug logging
