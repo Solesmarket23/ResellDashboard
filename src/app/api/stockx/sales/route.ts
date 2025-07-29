@@ -316,6 +316,11 @@ function processSalesData(rawData: any): StockXSale[] {
     orders = rawData;
   }
 
+  // Debug: Log first order to see structure
+  if (orders.length > 0) {
+    console.log('🔍 First StockX order from API:', JSON.stringify(orders[0], null, 2));
+  }
+
   return orders.map((order: any): StockXSale => {
     // Determine order type based on order number format
     let orderType: 'STANDARD' | 'FLEX' | 'DIRECT' | 'DFS' = 'STANDARD';
