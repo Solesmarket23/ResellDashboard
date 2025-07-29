@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { StockXSale, StockXSyncStatus } from '@/lib/types/stockx';
 import { useAuth } from '@/lib/contexts/AuthContext';
-import { addDocument, getDocuments, updateDocument } from '@/lib/firebase/firebaseUtils';
+import { addDocument, getDocuments, updateDocument, deleteDocument } from '@/lib/firebase/firebaseUtils';
 
 export const useStockXSales = () => {
   const { user } = useAuth();
@@ -400,6 +400,39 @@ export const useStockXSales = () => {
     }
   }, [user]);
 
+  // Clear all StockX sales for fresh sync
+  const clearStockXSales = async () => {
+    if (!user) return false;
+    
+    try {
+      const existingSales = await getDocuments('stockxSales');
+      const userSales = existingSales.filter(sale => sale.userId === user.uid);
+      
+      console.log(`🗑️ Clearing ${userSales.length} StockX sales...`);
+      
+      for (const sale of userSales) {
+        await deleteDocument('stockxSales', sale.id);
+      }
+      
+      setSales([]);
+      calculateSyncStatus([]);
+      setLastSyncTime(null);
+      
+      // Clear sync info
+      const syncInfo = await getDocuments('stockxSyncInfo');
+      const userSyncInfo = syncInfo.find(info => info.userId === user.uid);
+      if (userSyncInfo) {
+        await deleteDocument('stockxSyncInfo', userSyncInfo.id);
+      }
+      
+      console.log('✅ StockX sales cleared successfully');
+      return true;
+    } catch (error) {
+      console.error('❌ Error clearing StockX sales:', error);
+      return false;
+    }
+  };
+
   return {
     sales,
     loading,
@@ -408,6 +441,7 @@ export const useStockXSales = () => {
     syncSales,
     convertToMainSale,
     lastSyncTime,
-    syncProgress
+    syncProgress,
+    clearStockXSales
   };
 };

@@ -360,8 +360,8 @@ function processSalesData(rawData: any): StockXSale[] {
       status: mapStatus(order.status),
       product: {
         productId: order.product?.id || order.productId || '',
-        productName: order.product?.name || order.productName || 'Unknown Product',
-        brand: order.product?.brand || order.brand || '',
+        productName: order.product?.productName || order.product?.name || order.productName || 'Unknown Product',
+        brand: order.product?.brand || order.brand || 'Unknown Brand',
         styleId: order.product?.sku || order.sku || order.styleId,
         retailPrice: order.product?.retailPrice,
         imageUrl: order.product?.imageUrl || order.imageUrl,
