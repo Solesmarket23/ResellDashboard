@@ -173,33 +173,36 @@ export const useSales = () => {
       const userStockxSales = stockxSalesData
         .filter((sale: any) => sale.userId === user.uid)
         .map((sale: any) => {
-          // StockX sales are stored with nested saleData
-          const stockxData = sale.saleData || sale;
+          // StockX sales data is stored directly in the document
+          const saleData = sale.saleData;
           
-          // Debug log to see the actual structure
-          console.log('🔍 StockX sale structure:', sale);
-          console.log('🔍 StockX saleData:', stockxData);
+          // Skip if no saleData
+          if (!saleData) {
+            console.warn('⚠️ StockX sale missing saleData:', sale);
+            return null;
+          }
           
           return {
             ...sale,
-            id: sale.id || stockxData.orderNumber,
+            id: sale.id || saleData.orderNumber,
             platform: 'stockx',
             // Map StockX fields to match manual sales structure
-            product: stockxData.product?.productName || stockxData.productName || 'Unknown Product',
-            brand: stockxData.product?.brand || stockxData.brand || 'Unknown Brand',
-            size: stockxData.variant?.size || stockxData.size || 'Unknown',
-            orderNumber: stockxData.orderNumber || sale.stockxOrderId || '',
+            product: saleData.product?.productName || 'Unknown Product',
+            brand: saleData.product?.brand || 'Unknown Brand',
+            size: saleData.variant?.size || 'Unknown',
+            orderNumber: saleData.orderNumber || sale.stockxOrderId || '',
             // Normalize date field
-            date: stockxData.createdAt || sale.createdAt || sale.updatedAt,
+            date: saleData.createdAt || sale.createdAt || sale.updatedAt,
             // Normalize price fields for consistent calculations
-            salePrice: stockxData.pricing?.salePrice || stockxData.pricing?.buyerPaid || parseFloat(stockxData.amount) || 0,
+            salePrice: saleData.pricing?.salePrice || saleData.pricing?.buyerPaid || 0,
             purchasePrice: sale.purchasePrice || 0,
-            fees: stockxData.pricing?.sellerFees || stockxData.pricing?.totalFees || 0,
-            payout: stockxData.pricing?.totalPayout || 0,
+            fees: saleData.pricing?.sellerFees || 0,
+            payout: saleData.pricing?.totalPayout || 0,
             // Calculate profit if not provided
-            profit: (stockxData.pricing?.totalPayout || 0) - (sale.purchasePrice || 0)
+            profit: (saleData.pricing?.totalPayout || 0) - (sale.purchasePrice || 0)
           };
-        });
+        })
+        .filter(sale => sale !== null); // Remove any null entries
       
       // Add platform field to manual sales
       const normalizedManualSales = manualSalesData.map((sale: any) => ({
