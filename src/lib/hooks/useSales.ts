@@ -302,16 +302,37 @@ export const useSales = () => {
       setIsDeleting(true);
       console.log('🗑️ useSales: Clearing all sales for user:', user.uid);
       
+      // Clear manual sales from 'sales' collection
       const result = await clearAllUserSales(user.uid);
       
-      if (result.success) {
-        // Refresh data after clearing
-        await loadSalesData(false);
-        console.log('✅ useSales: All sales cleared successfully');
-        return true;
-      } else {
-        throw new Error(result.error || 'Failed to clear all sales');
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to clear manual sales');
       }
+      
+      // Also clear StockX sales from 'stockxSales' collection
+      console.log('🗑️ useSales: Clearing StockX sales...');
+      const stockxSalesData = await getDocuments('stockxSales');
+      const userStockxSales = stockxSalesData.filter((sale: any) => sale.userId === user.uid);
+      
+      console.log(`🗑️ useSales: Found ${userStockxSales.length} StockX sales to clear`);
+      
+      // Delete each StockX sale
+      for (const sale of userStockxSales) {
+        await deleteDocument('stockxSales', sale.id);
+      }
+      
+      // Also clear StockX sync info
+      const syncInfo = await getDocuments('stockxSyncInfo');
+      const userSyncInfo = syncInfo.find((info: any) => info.userId === user.uid);
+      if (userSyncInfo) {
+        await deleteDocument('stockxSyncInfo', userSyncInfo.id);
+      }
+      
+      console.log('✅ useSales: All sales (manual + StockX) cleared successfully');
+      
+      // Refresh data after clearing
+      await loadSalesData(false);
+      return true;
       
     } catch (err) {
       console.error('❌ useSales: Error clearing all sales:', err);
