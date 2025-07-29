@@ -194,10 +194,13 @@ export const useSales = () => {
             // Normalize date field
             date: saleData.createdAt || sale.createdAt || sale.updatedAt,
             // Normalize price fields for consistent calculations
-            salePrice: saleData.pricing?.salePrice || saleData.pricing?.buyerPaid || 0,
+            // StockX uses 'amount' field for the sale price
+            salePrice: parseFloat(saleData.amount) || saleData.pricing?.salePrice || saleData.pricing?.buyerPaid || 0,
             purchasePrice: sale.purchasePrice || 0,
-            fees: saleData.pricing?.sellerFees || 0,
-            payout: saleData.pricing?.totalPayout || 0,
+            // StockX fees come from payout.totalFee
+            fees: saleData.payout?.totalFee || saleData.pricing?.sellerFees || 0,
+            // Payout amount is in payout.amount
+            payout: saleData.payout?.amount || saleData.pricing?.totalPayout || 0,
             // Calculate profit if not provided
             profit: (saleData.pricing?.totalPayout || 0) - (sale.purchasePrice || 0)
           };
