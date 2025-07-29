@@ -182,6 +182,15 @@ export const useSales = () => {
             return null;
           }
           
+          // Debug: log first sale to see structure
+          if (stockxSalesData.indexOf(sale) === 0) {
+            console.log('🔍 First StockX sale full structure:', sale);
+            console.log('🔍 saleData:', saleData);
+            console.log('🔍 amount:', saleData.amount, 'type:', typeof saleData.amount);
+            console.log('🔍 payout:', saleData.payout);
+            console.log('🔍 pricing:', saleData.pricing);
+          }
+          
           return {
             ...sale,
             id: sale.id || saleData.orderNumber,
