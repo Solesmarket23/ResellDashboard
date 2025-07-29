@@ -175,19 +175,24 @@ export const useSales = () => {
         .map((sale: any) => {
           // StockX sales are stored with nested saleData
           const stockxData = sale.saleData || sale;
+          
+          // Debug log to see the actual structure
+          console.log('🔍 StockX sale structure:', sale);
+          console.log('🔍 StockX saleData:', stockxData);
+          
           return {
             ...sale,
             id: sale.id || stockxData.orderNumber,
             platform: 'stockx',
             // Map StockX fields to match manual sales structure
-            product: stockxData.product?.productName || stockxData.productName || '',
-            brand: stockxData.product?.brand || stockxData.brand || '',
-            size: stockxData.variant?.size || stockxData.size || '',
-            orderNumber: stockxData.orderNumber || '',
+            product: stockxData.product?.productName || stockxData.productName || 'Unknown Product',
+            brand: stockxData.product?.brand || stockxData.brand || 'Unknown Brand',
+            size: stockxData.variant?.size || stockxData.size || 'Unknown',
+            orderNumber: stockxData.orderNumber || sale.stockxOrderId || '',
             // Normalize date field
             date: stockxData.createdAt || sale.createdAt || sale.updatedAt,
             // Normalize price fields for consistent calculations
-            salePrice: stockxData.pricing?.salePrice || stockxData.amount || 0,
+            salePrice: stockxData.pricing?.salePrice || stockxData.pricing?.buyerPaid || parseFloat(stockxData.amount) || 0,
             purchasePrice: sale.purchasePrice || 0,
             fees: stockxData.pricing?.sellerFees || stockxData.pricing?.totalFees || 0,
             payout: stockxData.pricing?.totalPayout || 0,
