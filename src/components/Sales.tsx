@@ -64,7 +64,8 @@ const Sales = () => {
     convertToMainSale,
     lastSyncTime,
     syncProgress,
-    clearStockXSales
+    clearStockXSales,
+    fixUserIdMismatch
   } = useStockXSales();
   const [showStockXModal, setShowStockXModal] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -1976,6 +1977,26 @@ const Sales = () => {
                         >
                           <RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
                           {isSyncing ? 'Syncing...' : lastSyncTime ? 'Sync New Sales' : 'Initial Sync (Last 30 Days)'}
+                        </button>
+                        
+                        {/* Temporary Fix User ID button */}
+                        <button
+                          onClick={async () => {
+                            const fixed = await fixUserIdMismatch();
+                            if (fixed) {
+                              alert('User ID mismatch fixed! Refreshing sales...');
+                              await forceRefresh();
+                            } else {
+                              alert('Failed to fix user ID mismatch');
+                            }
+                          }}
+                          className={`w-full px-4 py-2 mt-2 rounded-lg font-medium transition-colors ${
+                            isNeon 
+                              ? 'bg-yellow-600 hover:bg-yellow-700 text-white' 
+                              : 'bg-yellow-500 hover:bg-yellow-600 text-white'
+                          }`}
+                        >
+                          Fix User ID Mismatch (Temp)
                         </button>
                         
                         {lastSyncTime && (

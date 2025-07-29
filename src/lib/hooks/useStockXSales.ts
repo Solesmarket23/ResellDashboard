@@ -435,6 +435,32 @@ export const useStockXSales = () => {
     }
   };
 
+  // Fix user ID mismatch for existing sales
+  const fixUserIdMismatch = async () => {
+    if (!user) return false;
+    
+    try {
+      console.log('🔧 Fixing user ID mismatch for StockX sales...');
+      const allSales = await getDocuments('stockxSales');
+      const wrongUserSales = allSales.filter(sale => sale.userId !== user.uid);
+      
+      console.log(`🔧 Found ${wrongUserSales.length} sales with wrong user ID`);
+      
+      for (const sale of wrongUserSales) {
+        await updateDocument('stockxSales', sale.id, {
+          userId: user.uid,
+          updatedAt: new Date().toISOString()
+        });
+      }
+      
+      console.log('✅ User ID mismatch fixed');
+      return true;
+    } catch (error) {
+      console.error('❌ Error fixing user ID mismatch:', error);
+      return false;
+    }
+  };
+
   return {
     sales,
     loading,
@@ -444,6 +470,7 @@ export const useStockXSales = () => {
     convertToMainSale,
     lastSyncTime,
     syncProgress,
-    clearStockXSales
+    clearStockXSales,
+    fixUserIdMismatch
   };
 };
