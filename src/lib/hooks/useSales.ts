@@ -182,14 +182,8 @@ export const useSales = () => {
             return null;
           }
           
-          // Debug: log first sale to see structure
-          if (stockxSalesData.indexOf(sale) === 0) {
-            console.log('🔍 First StockX sale full structure:', sale);
-            console.log('🔍 saleData:', saleData);
-            console.log('🔍 amount:', saleData.amount, 'type:', typeof saleData.amount);
-            console.log('🔍 payout:', saleData.payout);
-            console.log('🔍 pricing:', saleData.pricing);
-          }
+          // Remove debug logging
+          // The issue was pricing.salesPrice vs pricing.salePrice
           
           return {
             ...sale,
@@ -203,13 +197,13 @@ export const useSales = () => {
             // Normalize date field
             date: saleData.createdAt || sale.createdAt || sale.updatedAt,
             // Normalize price fields for consistent calculations
-            // StockX uses 'amount' field for the sale price
-            salePrice: parseFloat(saleData.amount) || saleData.pricing?.salePrice || saleData.pricing?.buyerPaid || 0,
+            // Check multiple possible locations for price data
+            salePrice: saleData.pricing?.salePrice || saleData.pricing?.buyerPaid || parseFloat(saleData.amount) || 0,
             purchasePrice: sale.purchasePrice || 0,
-            // StockX fees come from payout.totalFee
-            fees: saleData.payout?.totalFee || saleData.pricing?.sellerFees || 0,
-            // Payout amount is in payout.amount
-            payout: saleData.payout?.amount || saleData.pricing?.totalPayout || 0,
+            // StockX fees
+            fees: saleData.pricing?.sellerFees || saleData.payout?.totalFee || 0,
+            // Check multiple possible locations for payout
+            payout: saleData.pricing?.totalPayout || saleData.payout?.amount || 0,
             // Calculate profit if not provided
             profit: (saleData.pricing?.totalPayout || 0) - (sale.purchasePrice || 0)
           };

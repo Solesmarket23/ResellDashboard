@@ -343,7 +343,7 @@ function processSalesData(rawData: any): StockXSale[] {
     };
 
     // Calculate total fees
-    const sellerFees = parseFloat(order.totalFees || '0') || 
+    const sellerFees = parseFloat(order.payout?.totalFee || order.totalFees || '0') || 
       (parseFloat(order.processingFee || '0') + 
        parseFloat(order.transactionFee || '0') + 
        parseFloat(order.shippingFee || '0'));
@@ -369,14 +369,14 @@ function processSalesData(rawData: any): StockXSale[] {
         sizeType: order.variant?.sizeType
       },
       pricing: {
-        salePrice: parseFloat(order.salePrice || order.price || '0'),
-        buyerPaid: parseFloat(order.buyerPaid || order.salePrice || order.price || '0'),
+        salePrice: parseFloat(order.amount || order.salePrice || order.price || '0'),
+        buyerPaid: parseFloat(order.amount || order.buyerPaid || order.salePrice || order.price || '0'),
         sellerFees,
         processingFee: parseFloat(order.processingFee || '0'),
         shippingFee: parseFloat(order.shippingFee || '0'),
         transactionFee: parseFloat(order.transactionFee || '0'),
         paymentProcessingFee: parseFloat(order.paymentProcessingFee || '0'),
-        totalPayout: parseFloat(order.payout || order.totalPayout || '0'),
+        totalPayout: parseFloat(order.payout?.amount || order.payout || order.totalPayout || '0'),
         currency: order.currency || 'USD',
         sellerLevel: order.sellerLevel,
         feePercentage: order.feePercentage
