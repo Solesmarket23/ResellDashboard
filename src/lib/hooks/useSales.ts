@@ -170,8 +170,11 @@ export const useSales = () => {
       ]);
       
       console.log('🔍 Raw StockX sales data:', stockxSalesData.length, 'total sales');
+      console.log('🔍 Current user.uid:', user.uid);
       if (stockxSalesData.length > 0) {
         console.log('🔍 First StockX sale raw data:', stockxSalesData[0]);
+        console.log('🔍 First sale userId:', stockxSalesData[0].userId);
+        console.log('🔍 UserID match?', stockxSalesData[0].userId === user.uid);
       }
       
       // Filter StockX sales for current user and add platform field

@@ -292,6 +292,8 @@ export const useStockXSales = () => {
   const saveSalesToFirebase = async (salesData: StockXSale[]) => {
     if (!user) return;
 
+    console.log('🔍 Saving StockX sales with userId:', user.uid);
+
     try {
       // Get existing sales to check for duplicates
       let existingSales: any[] = [];
