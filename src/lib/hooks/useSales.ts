@@ -193,12 +193,21 @@ export const useSales = () => {
           // Debug log first sale's saleData
           if (stockxSalesData.indexOf(sale) === 0) {
             console.log('🔍 First StockX saleData structure:', saleData);
-            console.log('🔍 Pricing details:', {
-              salePrice: saleData.pricing?.salePrice,
-              buyerPaid: saleData.pricing?.buyerPaid,
-              sellerFees: saleData.pricing?.sellerFees,
-              totalPayout: saleData.pricing?.totalPayout,
-              amount: saleData.amount
+            console.log('🔍 Pricing object:', saleData.pricing);
+            console.log('🔍 Looking for payout in:', {
+              'saleData.payout': saleData.payout,
+              'saleData.totalPayout': saleData.totalPayout,
+              'saleData.pricing.totalPayout': saleData.pricing?.totalPayout,
+              'saleData.pricing.payout': saleData.pricing?.payout,
+              'saleData.payoutAmount': saleData.payoutAmount
+            });
+            console.log('🔍 Looking for fees in:', {
+              'saleData.fees': saleData.fees,
+              'saleData.totalFees': saleData.totalFees,
+              'saleData.pricing.sellerFees': saleData.pricing?.sellerFees,
+              'saleData.pricing.fees': saleData.pricing?.fees,
+              'saleData.pricing.processingFee': saleData.pricing?.processingFee,
+              'saleData.pricing.transactionFee': saleData.pricing?.transactionFee
             });
           }
           
