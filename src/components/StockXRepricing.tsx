@@ -1568,20 +1568,17 @@ export default function StockXRepricing() {
         setActivePeeks(prev => ({ ...prev, [id]: true }));
       });
       
-      // Step 1: Calculate peek price (use max price if set, otherwise 10x current)
+      // Step 1: Calculate peek price (always 10x for proper market discovery)
       const currentMarketPrice = listing.lowestAsk || listing.currentPrice;
-      // Use the maximum price if configured, otherwise fall back to 10x strategy
-      if (listing.maxPrice && listing.maxPrice > currentMarketPrice) {
-        result.peekPrice = listing.maxPrice;
-      } else {
-        // If no max price or max price is too low, use 10x but cap at $9999
-        result.peekPrice = Math.min(currentMarketPrice * 10, 9999);
-      }
+      // Always use 10x strategy for peek, regardless of max price settings
+      // Max price will be enforced on the final price, not the temporary peek
+      result.peekPrice = Math.min(currentMarketPrice * 10, 9999);
       
-      // Safety check: Don't peek if peek price is too close to current price
+      // Safety check: Ensure we have enough separation for discovery
       if (result.peekPrice < currentMarketPrice * 1.5) {
-        console.log(`⚠️ Peek price ($${result.peekPrice}) is too close to current price ($${currentMarketPrice}). Skipping peek.`);
-        throw new Error('Peek price too close to current price - cannot perform effective market discovery');
+        // This should rarely happen unless price is already very high
+        console.log(`⚠️ Cannot achieve sufficient price separation for market discovery at this price level.`);
+        throw new Error('Price too high for effective market discovery');
       }
       
       console.log(`🔍 Market Peek starting for ${listing.productName} (${listingsToUpdate.length} items) - Raising to $${result.peekPrice}`);
@@ -1632,7 +1629,8 @@ export default function StockXRepricing() {
       // Step 3: Calculate new optimal price (lowest ask - $1)
       result.newPrice = Math.max(1, result.discoveredLowestAsk - 1);
       
-      // Apply min/max constraints
+      // Apply min/max constraints to the final selling price (not the peek price)
+      // This ensures we respect your pricing boundaries while still allowing full market discovery
       if (listing.minPrice && result.newPrice < listing.minPrice) {
         result.newPrice = listing.minPrice;
       }
