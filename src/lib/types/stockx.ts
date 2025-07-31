@@ -45,6 +45,11 @@ export interface StockXPricing {
   currency: string;
   sellerLevel?: string;
   feePercentage?: number;
+  adjustments?: Array<{
+    type: string;
+    amount: number;
+    description?: string;
+  }>;
 }
 
 export interface StockXAuthentication {

@@ -131,14 +131,18 @@ export async function GET(request: NextRequest) {
             );
           }
           
-          // Process the sales data
-          const processedSales = processSalesData(salesData);
+          // Process the sales data to get basic order info
+          const basicSales = processSalesData(salesData);
+          
+          // Fetch detailed payout information for each order
+          console.log(`📊 Fetching detailed payout info for ${basicSales.length} orders (after token refresh)...`);
+          const detailedSales = await fetchDetailedPayouts(basicSales, refreshResult.accessToken, apiKey);
           
           // Create response
           const successResponse = NextResponse.json({
             success: true,
-            data: processedSales,
-            totalCount: salesData.count || salesData.totalCount || processedSales.length,
+            data: detailedSales,
+            totalCount: salesData.count || salesData.totalCount || detailedSales.length,
             pageNumber: salesData.pageNumber || pageNumber,
             pageSize: salesData.pageSize || pageSize,
             hasNextPage: salesData.hasNextPage || false,
@@ -255,13 +259,17 @@ export async function GET(request: NextRequest) {
       keys: salesData ? Object.keys(salesData) : []
     });
     
-    // Process the sales data
-    const processedSales = processSalesData(salesData);
+    // Process the sales data to get basic order info
+    const basicSales = processSalesData(salesData);
+    
+    // Fetch detailed payout information for each order
+    console.log(`📊 Fetching detailed payout info for ${basicSales.length} orders...`);
+    const detailedSales = await fetchDetailedPayouts(basicSales, accessToken, apiKey);
 
     return NextResponse.json({
       success: true,
-      data: processedSales,
-      totalCount: salesData.count || salesData.totalCount || processedSales.length,
+      data: detailedSales,
+      totalCount: salesData.count || salesData.totalCount || detailedSales.length,
       pageNumber: salesData.pageNumber || pageNumber,
       pageSize: salesData.pageSize || pageSize,
       hasNextPage: salesData.hasNextPage || false,
@@ -436,4 +444,114 @@ function calculateProfit(order: any) {
     // profitAmount: netPayout - purchaseCost, // Would need cost tracking
     // profitMargin: ((netPayout - purchaseCost) / purchaseCost) * 100
   };
+}
+
+// Function to fetch detailed payout information for each order
+async function fetchDetailedPayouts(orders: StockXSale[], accessToken: string, apiKey: string): Promise<StockXSale[]> {
+  console.log(`🔄 Starting to fetch detailed payouts for ${orders.length} orders`);
+  
+  // Process orders in batches to avoid rate limiting
+  const batchSize = 5; // Process 5 orders at a time
+  const delayBetweenBatches = 1000; // 1 second delay between batches
+  const detailedOrders: StockXSale[] = [];
+  
+  for (let i = 0; i < orders.length; i += batchSize) {
+    const batch = orders.slice(i, i + batchSize);
+    console.log(`📦 Processing batch ${Math.floor(i / batchSize) + 1} of ${Math.ceil(orders.length / batchSize)} (orders ${i + 1}-${Math.min(i + batchSize, orders.length)})`);
+    
+    // Process batch in parallel
+    const batchPromises = batch.map(async (order) => {
+      try {
+        const orderNumber = order.orderNumber;
+        if (!orderNumber) {
+          console.warn(`⚠️ Skipping order without order number:`, order.id);
+          return order;
+        }
+        
+        // Fetch individual order details
+        const detailUrl = `https://api.stockx.com/v2/selling/orders/${orderNumber}`;
+        console.log(`🔍 Fetching details for order ${orderNumber}`);
+        
+        const response = await fetch(detailUrl, {
+          method: 'GET',
+          headers: {
+            'x-api-key': apiKey,
+            'Authorization': `Bearer ${accessToken}`,
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+          }
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`❌ Failed to fetch details for order ${orderNumber}:`, response.status, errorText);
+          // Return original order if detail fetch fails
+          return order;
+        }
+        
+        const detailData = await response.json();
+        console.log(`✅ Got detailed data for order ${orderNumber}:`, {
+          hasPayout: !!detailData.payout,
+          payoutAmount: detailData.payout?.amount,
+          totalPayout: detailData.totalPayout,
+          adjustments: detailData.adjustments?.length || 0
+        });
+        
+        // Merge detailed payout information into the order
+        const updatedOrder: StockXSale = {
+          ...order,
+          pricing: {
+            ...order.pricing,
+            // Use the accurate payout data from the detail endpoint
+            totalPayout: parseFloat(
+              detailData.payout?.amount || 
+              detailData.totalPayout || 
+              detailData.sellerPayout || 
+              order.pricing.totalPayout.toString()
+            ),
+            // Update fees if more detailed info is available
+            sellerFees: parseFloat(
+              detailData.totalAdjustments || 
+              detailData.totalFees || 
+              order.pricing.sellerFees.toString()
+            ),
+            // Add any additional fee breakdown from adjustments
+            adjustments: detailData.adjustments
+          }
+        };
+        
+        // Add any additional payout details
+        if (detailData.payout) {
+          (updatedOrder as any).payoutDetails = {
+            amount: detailData.payout.amount,
+            currency: detailData.payout.currency || 'USD',
+            status: detailData.payout.status,
+            date: detailData.payout.date || detailData.payoutDate,
+            method: detailData.payout.method,
+            adjustments: detailData.adjustments || []
+          };
+        }
+        
+        return updatedOrder;
+        
+      } catch (error) {
+        console.error(`❌ Error fetching details for order ${order.orderNumber}:`, error);
+        // Return original order if error occurs
+        return order;
+      }
+    });
+    
+    // Wait for all orders in batch to complete
+    const batchResults = await Promise.all(batchPromises);
+    detailedOrders.push(...batchResults);
+    
+    // Add delay between batches (except for last batch)
+    if (i + batchSize < orders.length) {
+      console.log(`⏳ Waiting ${delayBetweenBatches}ms before next batch...`);
+      await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+    }
+  }
+  
+  console.log(`✅ Completed fetching detailed payouts for ${detailedOrders.length} orders`);
+  return detailedOrders;
 } 
