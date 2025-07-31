@@ -247,12 +247,25 @@ export const useStockXSales = () => {
         const fromDateObj = fromDate ? new Date(fromDate) : new Date('1970-01-01');
         const toDateObj = toDate ? new Date(toDate) : new Date();
         
+        // For incremental syncs, check updatedAt to catch sales that were updated since last sync
         filteredSales = allSales.filter(sale => {
-          const saleDate = new Date(sale.createdAt);
-          return saleDate >= fromDateObj && saleDate <= toDateObj;
+          // Use updatedAt if available, otherwise fall back to createdAt
+          const saleDate = new Date(sale.updatedAt || sale.createdAt);
+          const isInRange = saleDate >= fromDateObj && saleDate <= toDateObj;
+          
+          // Also include sales created after the fromDate
+          const createdDate = new Date(sale.createdAt);
+          const isNewSale = createdDate >= fromDateObj && createdDate <= toDateObj;
+          
+          return isInRange || isNewSale;
         });
         
         console.log(`📅 Date filter applied: ${filteredSales.length} of ${allSales.length} sales match date range`);
+        console.log(`   From: ${fromDateObj.toISOString()}`);
+        console.log(`   To: ${toDateObj.toISOString()}`);
+        console.log(`   Filter type: ${lastSyncTime ? 'Incremental (checking updatedAt or createdAt)' : 'Initial (last 30 days)'}`);
+      } else if (fullSync) {
+        console.log(`🔄 Full sync: Including all ${allSales.length} sales (no date filtering)`);
       }
       
       // Save to Firebase
