@@ -194,12 +194,12 @@ export const useSales = () => {
           if (stockxSalesData.indexOf(sale) === 0) {
             console.log('🔍 First StockX saleData structure:', saleData);
             console.log('🔍 Pricing object:', saleData.pricing);
-            console.log('🔍 Looking for payout in:', {
-              'saleData.payout': saleData.payout,
-              'saleData.totalPayout': saleData.totalPayout,
-              'saleData.pricing.totalPayout': saleData.pricing?.totalPayout,
-              'saleData.pricing.payout': saleData.pricing?.payout,
-              'saleData.payoutAmount': saleData.payoutAmount
+            console.log('🔍 Payout object:', saleData.payout);
+            console.log('🔍 Looking for payout values:', {
+              'payout.totalPayout': saleData.payout?.totalPayout,
+              'payout.salePrice': saleData.payout?.salePrice,
+              'payout.totalAdjustments': saleData.payout?.totalAdjustments,
+              'payout.adjustments': saleData.payout?.adjustments
             });
             console.log('🔍 Looking for fees in:', {
               'saleData.fees': saleData.fees,
@@ -226,15 +226,15 @@ export const useSales = () => {
             // Normalize date field
             date: saleData.createdAt || sale.createdAt || sale.updatedAt,
             // Normalize price fields for consistent calculations
-            // Check multiple possible locations for price data
-            salePrice: saleData.pricing?.salePrice || saleData.pricing?.buyerPaid || parseFloat(saleData.amount) || 0,
+            // StockX has payout object with the actual financial data
+            salePrice: saleData.payout?.salePrice || saleData.pricing?.salePrice || saleData.pricing?.buyerPaid || parseFloat(saleData.amount) || 0,
             purchasePrice: sale.purchasePrice || 0,
-            // StockX fees
-            fees: saleData.pricing?.sellerFees || saleData.payout?.totalFee || 0,
-            // Check multiple possible locations for payout
-            payout: saleData.pricing?.totalPayout || saleData.payout?.amount || 0,
+            // StockX fees - totalAdjustments contains all fees
+            fees: saleData.payout?.totalAdjustments || saleData.pricing?.sellerFees || saleData.payout?.totalFee || 0,
+            // Check payout object first for actual payout amount
+            payout: saleData.payout?.totalPayout || saleData.pricing?.totalPayout || saleData.payout?.amount || 0,
             // Calculate profit if not provided
-            profit: (saleData.pricing?.totalPayout || 0) - (sale.purchasePrice || 0)
+            profit: (saleData.payout?.totalPayout || saleData.pricing?.totalPayout || 0) - (sale.purchasePrice || 0)
           };
         })
         .filter(sale => sale !== null); // Remove any null entries
