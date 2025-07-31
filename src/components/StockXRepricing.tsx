@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
-import { DollarSign, TrendingDown, Target, Zap, RefreshCw, AlertTriangle, CheckCircle, Loader, Package } from 'lucide-react';
+import { DollarSign, TrendingDown, Target, Zap, RefreshCw, AlertTriangle, CheckCircle, Loader, Package, Copy, Check } from 'lucide-react';
 import NeonDropdown from './NeonDropdown';
 import { addDocument, getDocuments, updateDocument, deleteField } from '@/lib/firebase/firebaseUtils';
 import { auth } from '@/lib/firebase/firebase';
@@ -175,6 +175,7 @@ export default function StockXRepricing() {
   const [peekScheduler, setPeekScheduler] = useState<NodeJS.Timeout | null>(null);
   const [inventoryGroups, setInventoryGroups] = useState<Map<string, InventoryGroup>>(new Map());
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [copiedStyleIds, setCopiedStyleIds] = useState<Record<string, boolean>>({});
   
   // Pagination calculations - moved here so they're available for all functions
   const totalPages = Math.ceil(listings.length / itemsPerPage);
@@ -1649,6 +1650,15 @@ export default function StockXRepricing() {
     }
   };
 
+  const copyStyleCode = (styleId: string, listingId: string) => {
+    navigator.clipboard.writeText(styleId).then(() => {
+      setCopiedStyleIds(prev => ({ ...prev, [listingId]: true }));
+      setTimeout(() => {
+        setCopiedStyleIds(prev => ({ ...prev, [listingId]: false }));
+      }, 2000);
+    });
+  };
+
   const manualPeekNow = async (listingId: string) => {
     const listing = listings.find(l => l.listingId === listingId);
     if (!listing) return;
@@ -2488,8 +2498,25 @@ export default function StockXRepricing() {
                           <div className={`font-medium text-sm ${isNeon ? 'text-white' : 'text-gray-900'}`}>
                             {listing.productName}
                           </div>
-                          <div className={`text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-                            {listing.styleId || 'N/A'}
+                          <div className={`text-xs flex items-center gap-1 ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                            <span>Style code: {listing.styleId || 'N/A'}</span>
+                            {listing.styleId && listing.styleId !== 'N/A' && (
+                              <button
+                                onClick={() => copyStyleCode(listing.styleId!, listing.listingId)}
+                                className={`p-0.5 rounded transition-all ${
+                                  copiedStyleIds[listing.listingId]
+                                    ? isNeon ? 'text-green-400' : 'text-green-600'
+                                    : isNeon ? 'text-gray-500 hover:text-cyan-400' : 'text-gray-400 hover:text-gray-600'
+                                }`}
+                                title="Copy style code"
+                              >
+                                {copiedStyleIds[listing.listingId] ? (
+                                  <Check className="w-3 h-3" />
+                                ) : (
+                                  <Copy className="w-3 h-3" />
+                                )}
+                              </button>
+                            )}
                           </div>
                         </div>
                         {/* Group Leader Indicator */}
