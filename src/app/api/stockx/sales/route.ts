@@ -131,27 +131,16 @@ export async function GET(request: NextRequest) {
             );
           }
           
-          // Process the sales data to get basic order info
-          const basicSales = processSalesData(salesData);
+          // Process the sales data - the paginated endpoints should already include payout data
+          const processedSales = processSalesData(salesData);
           
-          // Fetch detailed payout information for each order
-          // Check if we should skip detailed payout fetching
-          let detailedSales = basicSales;
-          const skipDetailedFetch = searchParams.get('skipDetails') === 'true';
-          
-          if (!skipDetailedFetch && basicSales.length <= 10) {
-            // Only fetch details for small batches to avoid rate limits
-            console.log(`📊 Fetching detailed payout info for ${basicSales.length} orders (after token refresh)...`);
-            detailedSales = await fetchDetailedPayouts(basicSales, refreshResult.accessToken, apiKey);
-          } else {
-            console.log(`⚠️ Skipping detailed payout fetch for ${basicSales.length} orders (use background refresh for accurate payouts)`);
-          }
+          console.log(`✅ Processed ${processedSales.length} sales from paginated endpoint`);
           
           // Create response
           const successResponse = NextResponse.json({
             success: true,
-            data: detailedSales,
-            totalCount: salesData.count || salesData.totalCount || detailedSales.length,
+            data: processedSales,
+            totalCount: salesData.count || salesData.totalCount || processedSales.length,
             pageNumber: salesData.pageNumber || pageNumber,
             pageSize: salesData.pageSize || pageSize,
             hasNextPage: salesData.hasNextPage || false,
@@ -268,25 +257,15 @@ export async function GET(request: NextRequest) {
       keys: salesData ? Object.keys(salesData) : []
     });
     
-    // Process the sales data to get basic order info
-    const basicSales = processSalesData(salesData);
+    // Process the sales data - the paginated endpoints should already include payout data
+    const processedSales = processSalesData(salesData);
     
-    // Check if we should skip detailed payout fetching
-    let detailedSales = basicSales;
-    const skipDetailedFetch = searchParams.get('skipDetails') === 'true';
-    
-    if (!skipDetailedFetch && basicSales.length <= 10) {
-      // Only fetch details for small batches to avoid rate limits
-      console.log(`📊 Fetching detailed payout info for ${basicSales.length} orders...`);
-      detailedSales = await fetchDetailedPayouts(basicSales, accessToken, apiKey);
-    } else {
-      console.log(`⚠️ Skipping detailed payout fetch for ${basicSales.length} orders (use background refresh for accurate payouts)`);
-    }
+    console.log(`✅ Processed ${processedSales.length} sales from paginated endpoint`);
 
     return NextResponse.json({
       success: true,
-      data: detailedSales,
-      totalCount: salesData.count || salesData.totalCount || detailedSales.length,
+      data: processedSales,
+      totalCount: salesData.count || salesData.totalCount || processedSales.length,
       pageNumber: salesData.pageNumber || pageNumber,
       pageSize: salesData.pageSize || pageSize,
       hasNextPage: salesData.hasNextPage || false,
@@ -347,14 +326,23 @@ function processSalesData(rawData: any): StockXSale[] {
     
     // Check specifically for payout data in the first order
     const firstOrder = orders[0];
-    console.log('💰 Payout data check:', {
+    console.log('💰 Payout data structure:', {
       hasPayout: !!firstOrder.payout,
       payoutKeys: firstOrder.payout ? Object.keys(firstOrder.payout) : 'No payout object',
-      totalPayout: firstOrder.payout?.totalPayout,
-      amount: firstOrder.payout?.amount,
-      salePrice: firstOrder.payout?.salePrice,
-      totalAdjustments: firstOrder.payout?.totalAdjustments
+      payoutDetails: firstOrder.payout || 'No payout data',
+      // Also check other possible locations
+      hasPayoutDetails: !!firstOrder.payoutDetails,
+      hasPricing: !!firstOrder.pricing,
+      pricingKeys: firstOrder.pricing ? Object.keys(firstOrder.pricing) : 'No pricing object',
+      // Check if payout is nested in another field
+      orderKeys: Object.keys(firstOrder)
     });
+    
+    // If we have multiple orders, check if payout data varies
+    if (orders.length > 1) {
+      const ordersWithPayout = orders.filter((o: any) => o.payout && o.payout.totalPayout);
+      console.log(`📊 ${ordersWithPayout.length} out of ${orders.length} orders have payout.totalPayout data`);
+    }
   }
 
   return orders.map((order: any): StockXSale => {
@@ -383,18 +371,29 @@ function processSalesData(rawData: any): StockXSale[] {
       return statusMap[status] || status;
     };
 
-    // Extract payout data if available
+    // Extract payout data if available per StockX documentation
+    // The payout object should contain: totalPayout, totalAdjustments, and adjustments array
     const payoutData = order.payout || order.payoutDetails || {};
     
-    // Calculate total fees from payout data or individual components
-    const processingFee = parseFloat(order.processingFee || payoutData.processingFee || '0');
-    const transactionFee = parseFloat(order.transactionFee || payoutData.transactionFee || '0');
-    const shippingFee = parseFloat(order.shippingFee || payoutData.shippingFee || '0');
-    const paymentProcessingFee = parseFloat(order.paymentProcessingFee || payoutData.paymentProcessingFee || '0');
+    // Calculate fees - prefer totalAdjustments from payout object
+    let sellerFees = 0;
     
-    // Use totalAdjustments from payout data if available
-    const sellerFees = parseFloat(payoutData.totalAdjustments || payoutData.totalFees || order.totalFees || '0') || 
-      (processingFee + transactionFee + shippingFee + paymentProcessingFee);
+    if (payoutData.totalAdjustments !== undefined) {
+      // Use the accurate totalAdjustments from payout data
+      sellerFees = Math.abs(parseFloat(payoutData.totalAdjustments || '0'));
+      console.log(`💰 Order ${order.orderNumber || order.id}: Using payout.totalAdjustments = ${sellerFees}`);
+    } else {
+      // Fallback to individual fee components
+      const processingFee = parseFloat(order.processingFee || '0');
+      const transactionFee = parseFloat(order.transactionFee || '0');
+      const shippingFee = parseFloat(order.shippingFee || '0');
+      const paymentProcessingFee = parseFloat(order.paymentProcessingFee || '0');
+      sellerFees = processingFee + transactionFee + shippingFee + paymentProcessingFee;
+      
+      if (sellerFees === 0 && order.totalFees) {
+        sellerFees = parseFloat(order.totalFees || '0');
+      }
+    }
 
     const saleData: StockXSale = {
       id: order.id || order.orderId || order.orderNumber,
@@ -420,13 +419,14 @@ function processSalesData(rawData: any): StockXSale[] {
         salePrice: parseFloat(order.amount || order.salePrice || order.price || '0'),
         buyerPaid: parseFloat(order.amount || order.buyerPaid || order.salePrice || order.price || '0'),
         sellerFees,
-        processingFee,
-        shippingFee,
-        transactionFee,
-        paymentProcessingFee,
-        // Use payout data if available, otherwise calculate
-        totalPayout: parseFloat(payoutData.totalPayout || payoutData.amount || order.totalPayout || '0') || 
-                    (parseFloat(order.amount || order.salePrice || order.price || '0') - sellerFees),
+        processingFee: parseFloat(order.processingFee || '0'),
+        shippingFee: parseFloat(order.shippingFee || '0'),
+        transactionFee: parseFloat(order.transactionFee || '0'),
+        paymentProcessingFee: parseFloat(order.paymentProcessingFee || '0'),
+        // Use payout.totalPayout if available per documentation
+        totalPayout: payoutData.totalPayout !== undefined 
+          ? parseFloat(payoutData.totalPayout || '0')
+          : (parseFloat(order.amount || order.salePrice || order.price || '0') - sellerFees),
         currency: order.currency || 'USD',
         sellerLevel: order.sellerLevel,
         feePercentage: order.feePercentage
@@ -469,114 +469,4 @@ function calculateProfit(order: any) {
     // profitAmount: netPayout - purchaseCost, // Would need cost tracking
     // profitMargin: ((netPayout - purchaseCost) / purchaseCost) * 100
   };
-}
-
-// Function to fetch detailed payout information for each order
-async function fetchDetailedPayouts(orders: StockXSale[], accessToken: string, apiKey: string): Promise<StockXSale[]> {
-  console.log(`🔄 Starting to fetch detailed payouts for ${orders.length} orders`);
-  
-  // Process orders in batches to avoid rate limiting
-  const batchSize = 5; // Process 5 orders at a time
-  const delayBetweenBatches = 1000; // 1 second delay between batches
-  const detailedOrders: StockXSale[] = [];
-  
-  for (let i = 0; i < orders.length; i += batchSize) {
-    const batch = orders.slice(i, i + batchSize);
-    console.log(`📦 Processing batch ${Math.floor(i / batchSize) + 1} of ${Math.ceil(orders.length / batchSize)} (orders ${i + 1}-${Math.min(i + batchSize, orders.length)})`);
-    
-    // Process batch in parallel
-    const batchPromises = batch.map(async (order) => {
-      try {
-        const orderNumber = order.orderNumber;
-        if (!orderNumber) {
-          console.warn(`⚠️ Skipping order without order number:`, order.id);
-          return order;
-        }
-        
-        // Fetch individual order details
-        const detailUrl = `https://api.stockx.com/v2/selling/orders/${orderNumber}`;
-        console.log(`🔍 Fetching details for order ${orderNumber}`);
-        
-        const response = await fetch(detailUrl, {
-          method: 'GET',
-          headers: {
-            'x-api-key': apiKey,
-            'Authorization': `Bearer ${accessToken}`,
-            'Accept': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-          }
-        });
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error(`❌ Failed to fetch details for order ${orderNumber}:`, response.status, errorText);
-          // Return original order if detail fetch fails
-          return order;
-        }
-        
-        const detailData = await response.json();
-        console.log(`✅ Got detailed data for order ${orderNumber}:`, {
-          hasPayout: !!detailData.payout,
-          payoutAmount: detailData.payout?.amount,
-          totalPayout: detailData.totalPayout,
-          adjustments: detailData.adjustments?.length || 0
-        });
-        
-        // Merge detailed payout information into the order
-        const updatedOrder: StockXSale = {
-          ...order,
-          pricing: {
-            ...order.pricing,
-            // Use the accurate payout data from the detail endpoint
-            totalPayout: parseFloat(
-              detailData.payout?.amount || 
-              detailData.totalPayout || 
-              detailData.sellerPayout || 
-              order.pricing.totalPayout.toString()
-            ),
-            // Update fees if more detailed info is available
-            sellerFees: parseFloat(
-              detailData.totalAdjustments || 
-              detailData.totalFees || 
-              order.pricing.sellerFees.toString()
-            ),
-            // Add any additional fee breakdown from adjustments
-            adjustments: detailData.adjustments
-          }
-        };
-        
-        // Add any additional payout details
-        if (detailData.payout) {
-          (updatedOrder as any).payoutDetails = {
-            amount: detailData.payout.amount,
-            currency: detailData.payout.currency || 'USD',
-            status: detailData.payout.status,
-            date: detailData.payout.date || detailData.payoutDate,
-            method: detailData.payout.method,
-            adjustments: detailData.adjustments || []
-          };
-        }
-        
-        return updatedOrder;
-        
-      } catch (error) {
-        console.error(`❌ Error fetching details for order ${order.orderNumber}:`, error);
-        // Return original order if error occurs
-        return order;
-      }
-    });
-    
-    // Wait for all orders in batch to complete
-    const batchResults = await Promise.all(batchPromises);
-    detailedOrders.push(...batchResults);
-    
-    // Add delay between batches (except for last batch)
-    if (i + batchSize < orders.length) {
-      console.log(`⏳ Waiting ${delayBetweenBatches}ms before next batch...`);
-      await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
-    }
-  }
-  
-  console.log(`✅ Completed fetching detailed payouts for ${detailedOrders.length} orders`);
-  return detailedOrders;
 } 
