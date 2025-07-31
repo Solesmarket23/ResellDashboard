@@ -135,8 +135,16 @@ export async function GET(request: NextRequest) {
           const basicSales = processSalesData(salesData);
           
           // Fetch detailed payout information for each order
-          console.log(`📊 Fetching detailed payout info for ${basicSales.length} orders (after token refresh)...`);
-          const detailedSales = await fetchDetailedPayouts(basicSales, refreshResult.accessToken, apiKey);
+          // Temporarily disable for bulk imports to avoid rate limits
+          let detailedSales = basicSales;
+          const skipDetailedFetch = searchParams.get('skipDetails') === 'true' || basicSales.length > 50;
+          
+          if (!skipDetailedFetch) {
+            console.log(`📊 Fetching detailed payout info for ${basicSales.length} orders (after token refresh)...`);
+            detailedSales = await fetchDetailedPayouts(basicSales, refreshResult.accessToken, apiKey);
+          } else {
+            console.log(`⚠️ Skipping detailed payout fetch for ${basicSales.length} orders to avoid rate limits`);
+          }
           
           // Create response
           const successResponse = NextResponse.json({
@@ -263,8 +271,16 @@ export async function GET(request: NextRequest) {
     const basicSales = processSalesData(salesData);
     
     // Fetch detailed payout information for each order
-    console.log(`📊 Fetching detailed payout info for ${basicSales.length} orders...`);
-    const detailedSales = await fetchDetailedPayouts(basicSales, accessToken, apiKey);
+    // Temporarily disable for bulk imports to avoid rate limits
+    let detailedSales = basicSales;
+    const skipDetailedFetch = searchParams.get('skipDetails') === 'true' || basicSales.length > 50;
+    
+    if (!skipDetailedFetch) {
+      console.log(`📊 Fetching detailed payout info for ${basicSales.length} orders...`);
+      detailedSales = await fetchDetailedPayouts(basicSales, accessToken, apiKey);
+    } else {
+      console.log(`⚠️ Skipping detailed payout fetch for ${basicSales.length} orders to avoid rate limits`);
+    }
 
     return NextResponse.json({
       success: true,
