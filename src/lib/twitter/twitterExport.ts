@@ -23,11 +23,15 @@ export function generateTwitterText(data: ArbitrageShareData): string {
     `Profit: $${data.profit.toFixed(2)} (${data.profitMargin}%)\n\n` +
     `(estimated profit with buyer fees & selling via no-fee resale)\n\n`;
   
-  // Add short URL if available (cleaner for Twitter)
-  if (data.shortUrl) {
+  // Prioritize affiliate URL over short URL for reliability
+  if (data.affiliateUrl && data.affiliateUrl.includes('viglink.com')) {
+    // Use the actual affiliate URL if it's a valid Sovrn link
+    text += `🔗 ${data.affiliateUrl}\n\n`;
+  } else if (data.shortUrl) {
+    // Use short URL as fallback
     text += `🔗 ${data.shortUrl}\n\n`;
   } else if (data.affiliateUrl) {
-    // Fallback to affiliate URL if no short URL
+    // Use any affiliate URL as last resort
     text += `🔗 ${data.affiliateUrl}\n\n`;
   }
   
