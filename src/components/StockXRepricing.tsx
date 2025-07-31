@@ -234,7 +234,7 @@ export default function StockXRepricing() {
       }
     });
     return () => unsubscribe();
-  }, [loadSavedSettings]);
+  }, []);
 
   // Fetch listings when component mounts and user is authenticated AND settings are loaded
   useEffect(() => {
@@ -275,7 +275,7 @@ export default function StockXRepricing() {
     };
   }, []); // Empty dependency array - scheduler doesn't need to restart
 
-  const loadSavedSettings = useCallback(async (userId: string) => {
+  const loadSavedSettings = async (userId: string) => {
     try {
       console.log('🔄 Loading saved settings for user:', userId);
       const settings = await getDocuments('stockxPricingSettings');
@@ -302,31 +302,11 @@ export default function StockXRepricing() {
       setSettingsLoaded(true);
       console.log('✅ Settings loaded into state.');
       
-      // If we already have listings, apply the settings to them immediately
-      if (listings.length > 0 && Object.keys(settingsMap).length > 0) {
-        console.log('🔧 Applying settings to existing listings...');
-        setListings(prevListings => prevListings.map(listing => {
-          const saved = settingsMap[listing.listingId];
-          if (saved) {
-            console.log(`✅ Applying saved settings to ${listing.listingId}:`, {
-              minPrice: saved.minPrice,
-              maxPrice: saved.maxPrice
-            });
-            return {
-              ...listing,
-              pricingStrategy: saved.pricingStrategy || listing.pricingStrategy,
-              minPrice: saved.hasOwnProperty('minPrice') ? saved.minPrice : listing.minPrice,
-              maxPrice: saved.hasOwnProperty('maxPrice') ? saved.maxPrice : listing.maxPrice,
-              autoDeactivate: saved.hasOwnProperty('autoDeactivate') ? saved.autoDeactivate : listing.autoDeactivate
-            };
-          }
-          return listing;
-        }));
-      }
+      // Don't apply settings here - let fetchListings handle it
     } catch (error) {
       console.error('❌ Error loading saved settings:', error);
     }
-  }, [listings]);
+  };
 
   const saveSettingToFirebase = async (listingId: string, settings: any) => {
     if (!currentUser || savingSettings) {
