@@ -193,6 +193,13 @@ export const useSales = () => {
           // Debug log first sale's saleData
           if (stockxSalesData.indexOf(sale) === 0) {
             console.log('🔍 First StockX saleData structure:', saleData);
+            console.log('🔍 Pricing details:', {
+              salePrice: saleData.pricing?.salePrice,
+              buyerPaid: saleData.pricing?.buyerPaid,
+              sellerFees: saleData.pricing?.sellerFees,
+              totalPayout: saleData.pricing?.totalPayout,
+              amount: saleData.amount
+            });
           }
           
           // Remove debug logging
