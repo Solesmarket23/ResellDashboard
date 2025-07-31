@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Search, Calendar, TrendingUp, ArrowUp, ExternalLink, Plus, Sparkles, Trash2, X, ChevronDown, ChevronLeft, ChevronRight, Loader2, Wifi, WifiOff, AlertCircle, RefreshCw, Package } from 'lucide-react';
+import { Search, Calendar, TrendingUp, ArrowUp, ExternalLink, Plus, Sparkles, Trash2, X, ChevronDown, ChevronLeft, ChevronRight, Loader2, Wifi, WifiOff, AlertCircle, RefreshCw, Package, DollarSign } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
 import { saveUserSale } from '../lib/firebase/userDataUtils';
