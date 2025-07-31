@@ -2508,7 +2508,7 @@ export default function StockXRepricing() {
                       ${listing.lowestAsk || '-'}
                     </td>
                     <td className="p-2">
-                      <div className="flex items-center gap-1 min-w-[220px]">
+                      <div className="flex items-center gap-1">
                         <NeonDropdown
                           value={listing.pricingStrategy?.type || 'keep_current'}
                           onChange={(value) => updateListingStrategy(listing.listingId, value as any)}
@@ -2521,51 +2521,50 @@ export default function StockXRepricing() {
                             { value: 'manual', label: 'Manual' }
                           ]}
                           isNeon={isNeon}
-                          className="flex-1 w-[140px]"
+                          className="flex-1"
                         />
-                        <div className="w-[70px]">
-                          {listing.pricingStrategy?.type === 'market_peek' && (
-                            <select
-                              value={listing.pricingStrategy?.peekSettings?.frequency || 'balanced'}
-                              onChange={(e) => updatePeekFrequency(listing.listingId, e.target.value as any)}
-                              className={`w-full text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
-                                isNeon 
-                                  ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
-                                  : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
-                              }`}
-                            >
-                              <option value="conservative">8h</option>
-                              <option value="balanced">6h</option>
-                              <option value="aggressive">4h</option>
-                            </select>
-                          )}
-                          {(listing.pricingStrategy?.type === 'percentage_below' ||
-                            listing.pricingStrategy?.type === 'manual') && (
-                            <input
-                              type="number"
-                              min="1"
-                              value={
-                                listing.pricingStrategy?.type === 'manual' 
-                                  ? listing.pricingStrategy?.manualPrice || listing.currentPrice
-                                  : listing.pricingStrategy?.value || 1
+                        {listing.pricingStrategy?.type === 'market_peek' ? (
+                          <select
+                            value={listing.pricingStrategy?.peekSettings?.frequency || 'balanced'}
+                            onChange={(e) => updatePeekFrequency(listing.listingId, e.target.value as any)}
+                            className={`w-[70px] text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
+                              isNeon 
+                                ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
+                                : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
+                            }`}
+                          >
+                            <option value="conservative">8h</option>
+                            <option value="balanced">6h</option>
+                            <option value="aggressive">4h</option>
+                          </select>
+                        ) : (listing.pricingStrategy?.type === 'percentage_below' ||
+                            listing.pricingStrategy?.type === 'manual') ? (
+                          <input
+                            type="number"
+                            min="1"
+                            value={
+                              listing.pricingStrategy?.type === 'manual' 
+                                ? listing.pricingStrategy?.manualPrice || listing.currentPrice
+                                : listing.pricingStrategy?.value || 1
+                            }
+                            onChange={(e) => {
+                              const value = parseFloat(e.target.value);
+                              if (listing.pricingStrategy?.type === 'manual') {
+                                updateManualPrice(listing.listingId, value);
+                              } else {
+                                updateStrategyValue(listing.listingId, value);
                               }
-                              onChange={(e) => {
-                                const value = parseFloat(e.target.value);
-                                if (listing.pricingStrategy?.type === 'manual') {
-                                  updateManualPrice(listing.listingId, value);
-                                } else {
-                                  updateStrategyValue(listing.listingId, value);
-                                }
-                              }}
-                              className={`w-full text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
-                                isNeon 
-                                  ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
-                                  : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
-                              }`}
-                              placeholder={listing.pricingStrategy?.type === 'manual' ? '$' : '#'}
-                            />
-                          )}
-                        </div>
+                            }}
+                            className={`w-[70px] text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
+                              isNeon 
+                                ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
+                                : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
+                            }`}
+                            placeholder={listing.pricingStrategy?.type === 'manual' ? '$' : '#'}
+                          />
+                        ) : (
+                          <div className="w-[70px]"></div>
+                        )}
                       </div>
                     </td>
                     <td className="p-2">
