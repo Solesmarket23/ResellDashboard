@@ -907,20 +907,20 @@ const Sales = () => {
                       }`}>{sale.platform === 'stockx' ? 'StockX' : (sale.market || 'Manual')}</td>
                       <td className={`px-6 py-4 whitespace-nowrap text-sm ${
                         isNeon ? 'text-gray-300' : 'text-gray-900'
-                      }`}>${(parseFloat(sale.salePrice) || parseFloat(sale.amount) || 0).toFixed(2)}</td>
+                      }`}>${(Number(sale.salePrice) || Number(sale.amount) || 0).toFixed(2)}</td>
                                       <td className={`px-6 py-4 whitespace-nowrap text-sm ${
                   isNeon ? 'text-red-400' : 'text-red-600'
-                }`}>(${Math.abs(parseFloat(sale.fees) || 0).toFixed(2)})</td>
+                }`}>(${Math.abs(Number(sale.fees) || 0).toFixed(2)})</td>
                       <td className={`px-6 py-4 whitespace-nowrap text-sm ${
                         isNeon ? 'text-gray-300' : 'text-gray-900'
-                      }`}>${(parseFloat(sale.payout) || (parseFloat(sale.salePrice) || parseFloat(sale.amount) || 0) - (parseFloat(sale.fees) || 0)).toFixed(2)}</td>
+                      }`}>${(Number(sale.payout) || (Number(sale.salePrice) || Number(sale.amount) || 0) - (Number(sale.fees) || 0)).toFixed(2)}</td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`text-sm font-medium ${
-                          (parseFloat(sale.profit) || 0) >= 0 
+                          (Number(sale.profit) || 0) >= 0 
                             ? isNeon ? 'text-emerald-400' : 'text-green-600'
                             : isNeon ? 'text-red-400' : 'text-red-600'
                         }`}>
-                          ${(parseFloat(sale.profit) || 0).toFixed(2)}
+                          ${(Number(sale.profit) || 0).toFixed(2)}
                         </span>
                       </td>
                       <td className={`px-6 py-4 whitespace-nowrap text-sm ${
@@ -1929,7 +1929,7 @@ const Sales = () => {
                             </div>
                             <div className="text-right">
                               <p className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>
-                                ${sale.pricing.totalPayout.toFixed(2)}
+                                ${(Number(sale.pricing?.totalPayout) || 0).toFixed(2)}
                               </p>
                               <p className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
                                 {new Date(sale.createdAt).toLocaleDateString()}
