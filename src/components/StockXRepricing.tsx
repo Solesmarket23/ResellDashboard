@@ -212,16 +212,37 @@ export default function StockXRepricing() {
     prevListingsLength.current = currentLength;
   }, [listings.length]);
 
+  // Component mount debugging
+  useEffect(() => {
+    console.log('🚀 StockXRepricing component mounted');
+    console.log('📊 Initial state:', {
+      listingsCount: listings.length,
+      savedSettingsCount: Object.keys(savedSettings).length,
+      settingsLoaded,
+      currentUser: currentUser?.uid
+    });
+  }, []);
+
   // Track auth state
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      console.log('👤 Auth state changed:', user ? `User ${user.uid}` : 'No user');
       setCurrentUser(user);
       if (user) {
+        console.log('🔐 User authenticated, loading settings...');
         loadSavedSettings(user.uid);
       }
     });
     return () => unsubscribe();
   }, []);
+
+  // Fetch listings when component mounts and user is authenticated
+  useEffect(() => {
+    if (currentUser && !loading && listings.length === 0) {
+      console.log('📋 Initial load - fetching listings...');
+      fetchListings();
+    }
+  }, [currentUser]); // Only depend on currentUser to avoid infinite loops
 
   // Apply saved settings - removed to prevent double application
 
@@ -574,6 +595,12 @@ export default function StockXRepricing() {
 
   const fetchListings = async (forceReload = false) => {
     console.log(`🔄 Fetching listings... (forceReload: ${forceReload})`);
+    console.log('📊 Current state before fetch:', {
+      settingsLoaded,
+      savedSettingsCount: Object.keys(savedSettings).length,
+      currentUser: currentUser?.uid,
+      hasListings: listings.length > 0
+    });
     // Only show loading on initial fetch or force reload
     if (forceReload || listings.length === 0) {
       setLoading(true);
