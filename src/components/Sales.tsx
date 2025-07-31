@@ -1979,24 +1979,26 @@ const Sales = () => {
                           {isSyncing ? 'Syncing...' : lastSyncTime ? 'Sync New Sales' : 'Initial Sync (Last 30 Days)'}
                         </button>
                         
-                        {/* Temporary Fix User ID button */}
+                        {/* Clear Sync History button */}
                         <button
                           onClick={async () => {
-                            const fixed = await fixUserIdMismatch();
-                            if (fixed) {
-                              alert('User ID mismatch fixed! Refreshing sales...');
-                              await forceRefresh();
-                            } else {
-                              alert('Failed to fix user ID mismatch');
+                            if (window.confirm('This will clear your sync history and treat the next sync as an initial sync. Continue?')) {
+                              const cleared = await clearStockXSales();
+                              if (cleared) {
+                                alert('Sync history cleared! You can now do a fresh initial sync.');
+                                await forceRefresh();
+                              } else {
+                                alert('Failed to clear sync history');
+                              }
                             }
                           }}
-                          className={`w-full px-4 py-2 mt-2 rounded-lg font-medium transition-colors ${
+                          className={`w-full px-4 py-2 rounded-lg font-medium transition-colors text-sm ${
                             isNeon 
-                              ? 'bg-yellow-600 hover:bg-yellow-700 text-white' 
-                              : 'bg-yellow-500 hover:bg-yellow-600 text-white'
+                              ? 'bg-red-600 hover:bg-red-700 text-white border border-red-500' 
+                              : 'bg-red-100 hover:bg-red-200 text-red-700'
                           }`}
                         >
-                          Fix User ID Mismatch (Temp)
+                          Clear Sync History & Start Fresh
                         </button>
                         
                         {lastSyncTime && (
