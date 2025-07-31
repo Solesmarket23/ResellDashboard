@@ -343,7 +343,28 @@ export default function StockXRepricing() {
         cleanPricingStrategy.manualPrice = pricingStrategy.manualPrice;
       }
       if (pricingStrategy.peekSettings) {
-        cleanPricingStrategy.peekSettings = pricingStrategy.peekSettings;
+        // Clean peekSettings to remove undefined values
+        const cleanPeekSettings: any = {};
+        if (pricingStrategy.peekSettings.frequency) {
+          cleanPeekSettings.frequency = pricingStrategy.peekSettings.frequency;
+        }
+        if (pricingStrategy.peekSettings.lastPeekTime !== undefined && pricingStrategy.peekSettings.lastPeekTime !== null) {
+          cleanPeekSettings.lastPeekTime = pricingStrategy.peekSettings.lastPeekTime;
+        }
+        if (pricingStrategy.peekSettings.nextScheduledPeek !== undefined && pricingStrategy.peekSettings.nextScheduledPeek !== null) {
+          cleanPeekSettings.nextScheduledPeek = pricingStrategy.peekSettings.nextScheduledPeek;
+        }
+        if (pricingStrategy.peekSettings.isPeeking !== undefined) {
+          cleanPeekSettings.isPeeking = pricingStrategy.peekSettings.isPeeking;
+        }
+        if (pricingStrategy.peekSettings.peekHistory && Array.isArray(pricingStrategy.peekSettings.peekHistory)) {
+          cleanPeekSettings.peekHistory = pricingStrategy.peekSettings.peekHistory;
+        }
+        
+        // Only add peekSettings if it has at least one property
+        if (Object.keys(cleanPeekSettings).length > 0) {
+          cleanPricingStrategy.peekSettings = cleanPeekSettings;
+        }
       }
       
       const settingData: any = {
@@ -1096,9 +1117,12 @@ export default function StockXRepricing() {
     } else if (type === 'market_peek') {
       newStrategy.peekSettings = {
         frequency: listing.pricingStrategy?.peekSettings?.frequency || 'balanced',
-        lastPeekTime: listing.pricingStrategy?.peekSettings?.lastPeekTime,
         peekHistory: listing.pricingStrategy?.peekSettings?.peekHistory || []
       };
+      // Only add lastPeekTime if it exists
+      if (listing.pricingStrategy?.peekSettings?.lastPeekTime) {
+        newStrategy.peekSettings.lastPeekTime = listing.pricingStrategy.peekSettings.lastPeekTime;
+      }
     }
     
     // Check if this listing is part of a group
@@ -1841,7 +1865,7 @@ export default function StockXRepricing() {
             pricingStrategy: isLeader ? {
               ...l.pricingStrategy!,
               peekSettings: {
-                ...l.pricingStrategy?.peekSettings!,
+                frequency: l.pricingStrategy?.peekSettings?.frequency || 'balanced',
                 lastPeekTime: result.timestamp,
                 isPeeking: false,
                 peekHistory: [
