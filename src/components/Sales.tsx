@@ -65,7 +65,8 @@ const Sales = () => {
     lastSyncTime,
     syncProgress,
     clearStockXSales,
-    fixUserIdMismatch
+    fixUserIdMismatch,
+    refreshPayoutsInBackground
   } = useStockXSales();
   const [showStockXModal, setShowStockXModal] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
