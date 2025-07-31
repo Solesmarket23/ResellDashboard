@@ -2508,7 +2508,7 @@ export default function StockXRepricing() {
                       ${listing.lowestAsk || '-'}
                     </td>
                     <td className="p-2">
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 min-w-[220px]">
                         <NeonDropdown
                           value={listing.pricingStrategy?.type || 'keep_current'}
                           onChange={(value) => updateListingStrategy(listing.listingId, value as any)}
@@ -2521,14 +2521,14 @@ export default function StockXRepricing() {
                             { value: 'manual', label: 'Manual' }
                           ]}
                           isNeon={isNeon}
-                          className="flex-1"
+                          className="flex-1 w-[140px]"
                         />
-                        {listing.pricingStrategy?.type === 'market_peek' && (
-                          <div className="flex items-center gap-1">
+                        <div className="w-[70px]">
+                          {listing.pricingStrategy?.type === 'market_peek' && (
                             <select
                               value={listing.pricingStrategy?.peekSettings?.frequency || 'balanced'}
                               onChange={(e) => updatePeekFrequency(listing.listingId, e.target.value as any)}
-                              className={`text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
+                              className={`w-full text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
                                 isNeon 
                                   ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
                                   : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
@@ -2538,48 +2538,34 @@ export default function StockXRepricing() {
                               <option value="balanced">6h</option>
                               <option value="aggressive">4h</option>
                             </select>
-                            <button
-                              onClick={() => manualPeekNow(listing.listingId)}
-                              disabled={activePeeks[listing.listingId]}
-                              className={`text-xs px-2 py-1 rounded transition-all ${
-                                activePeeks[listing.listingId]
-                                  ? isNeon ? 'bg-gray-700 text-gray-500' : 'bg-gray-200 text-gray-400'
-                                  : isNeon 
-                                    ? 'bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30' 
-                                    : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                              }`}
-                              title={activePeeks[listing.listingId] ? 'Peek in progress...' : 'Peek now'}
-                            >
-                              {activePeeks[listing.listingId] ? '...' : 'Peek'}
-                            </button>
-                          </div>
-                        )}
-                        {(listing.pricingStrategy?.type === 'percentage_below' ||
-                          listing.pricingStrategy?.type === 'manual') && (
-                          <input
-                            type="number"
-                            min="1"
-                            value={
-                              listing.pricingStrategy?.type === 'manual' 
-                                ? listing.pricingStrategy?.manualPrice || listing.currentPrice
-                                : listing.pricingStrategy?.value || 1
-                            }
-                            onChange={(e) => {
-                              const value = parseFloat(e.target.value);
-                              if (listing.pricingStrategy?.type === 'manual') {
-                                updateManualPrice(listing.listingId, value);
-                              } else {
-                                updateStrategyValue(listing.listingId, value);
+                          )}
+                          {(listing.pricingStrategy?.type === 'percentage_below' ||
+                            listing.pricingStrategy?.type === 'manual') && (
+                            <input
+                              type="number"
+                              min="1"
+                              value={
+                                listing.pricingStrategy?.type === 'manual' 
+                                  ? listing.pricingStrategy?.manualPrice || listing.currentPrice
+                                  : listing.pricingStrategy?.value || 1
                               }
-                            }}
-                            className={`w-16 text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
-                              isNeon 
-                                ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
-                                : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
-                            }`}
-                            placeholder={listing.pricingStrategy?.type === 'manual' ? '$' : '#'}
-                          />
-                        )}
+                              onChange={(e) => {
+                                const value = parseFloat(e.target.value);
+                                if (listing.pricingStrategy?.type === 'manual') {
+                                  updateManualPrice(listing.listingId, value);
+                                } else {
+                                  updateStrategyValue(listing.listingId, value);
+                                }
+                              }}
+                              className={`w-full text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
+                                isNeon 
+                                  ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
+                                  : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
+                              }`}
+                              placeholder={listing.pricingStrategy?.type === 'manual' ? '$' : '#'}
+                            />
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="p-2">
@@ -2648,13 +2634,18 @@ export default function StockXRepricing() {
                           {listing.status}
                         </span>
                         {listing.pricingStrategy?.type === 'market_peek' && (
-                          <span className={`px-2 py-1 text-xs rounded-full ${
-                            activePeeks[listing.listingId]
-                              ? isNeon ? 'bg-yellow-500/20 text-yellow-400 animate-pulse' : 'bg-yellow-100 text-yellow-800 animate-pulse'
-                              : isNeon ? 'bg-cyan-500/20 text-cyan-400' : 'bg-blue-100 text-blue-700'
-                          }`}>
+                          <button
+                            onClick={() => manualPeekNow(listing.listingId)}
+                            disabled={activePeeks[listing.listingId]}
+                            className={`px-2 py-1 text-xs rounded-full transition-all ${
+                              activePeeks[listing.listingId]
+                                ? isNeon ? 'bg-yellow-500/20 text-yellow-400 animate-pulse cursor-not-allowed' : 'bg-yellow-100 text-yellow-800 animate-pulse cursor-not-allowed'
+                                : isNeon ? 'bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 cursor-pointer' : 'bg-blue-100 text-blue-700 hover:bg-blue-200 cursor-pointer'
+                            }`}
+                            title={activePeeks[listing.listingId] ? 'Peek in progress...' : 'Click to peek now'}
+                          >
                             {activePeeks[listing.listingId] ? '👀 Peeking...' : '🔍 Peek'}
-                          </span>
+                          </button>
                         )}
                       </div>
                     </td>
