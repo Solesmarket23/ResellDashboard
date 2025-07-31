@@ -244,12 +244,17 @@ const StockXArbitrage: React.FC = () => {
     }
   }, []);
 
-  // Helper function to generate StockX URL
-  const generateStockXUrl = (productName: string, variantId: string) => {
+  // Helper function to generate StockX URL with size
+  const generateStockXUrl = (productName: string, variantId: string, size?: string) => {
     const slug = productName.toLowerCase()
       .replace(/[^a-z0-9\s-]/g, '')
       .replace(/\s+/g, '-')
       .replace(/-+/g, '-');
+    
+    // Include size in URL if provided
+    if (size) {
+      return `https://stockx.com/${slug}?size=${encodeURIComponent(size)}`;
+    }
     return `https://stockx.com/${slug}`;
   };
 
@@ -473,7 +478,7 @@ const StockXArbitrage: React.FC = () => {
 
   const handleTwitterExport = async (opportunity: ArbitrageOpportunity) => {
     // Generate StockX URL for this product
-    const stockxUrl = opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId);
+    const stockxUrl = opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId, opportunity.size);
     
     // Generate Sovrn affiliate URL
     const affiliateUrl = convertStockXLink(stockxUrl, {
@@ -1405,7 +1410,7 @@ const StockXArbitrage: React.FC = () => {
                         return affiliateLink;
                       }
                       // If no affiliate link stored yet, generate one using Sovrn
-                      const stockxUrl = opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId);
+                      const stockxUrl = opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId, opportunity.size);
                       return convertStockXLink(stockxUrl, {
                         productName: opportunity.productName,
                         productId: opportunity.productId,
