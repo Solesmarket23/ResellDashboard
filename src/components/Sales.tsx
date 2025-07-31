@@ -555,8 +555,8 @@ const Sales = () => {
 
   // Calculate updated metrics based on current sales data
   const totalSales = salesData.length;
-  const totalRevenue = salesData.reduce((sum, sale) => sum + sale.salePrice, 0);
-  const totalProfit = salesData.reduce((sum, sale) => sum + sale.profit, 0);
+  const totalRevenue = salesData.reduce((sum, sale) => sum + (Number(sale.salePrice) || Number(sale.amount) || 0), 0);
+  const totalProfit = salesData.reduce((sum, sale) => sum + (Number(sale.profit) || 0), 0);
   const avgProfit = totalSales > 0 ? Math.round(totalProfit / totalSales) : 0;
 
   const metricsDisplay = [
@@ -1075,7 +1075,7 @@ const Sales = () => {
                           </td>
                           <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${
                             isNeon ? 'text-green-400' : 'text-green-600'
-                          }`}>${sale.pricing.totalPayout.toFixed(2)}</td>
+                          }`}>${(Number(sale.pricing?.totalPayout) || 0).toFixed(2)}</td>
                           <td className={`px-6 py-4 whitespace-nowrap text-sm ${
                             isNeon ? 'text-gray-300' : 'text-gray-900'
                           }`}>{new Date(sale.createdAt).toLocaleDateString()}</td>
