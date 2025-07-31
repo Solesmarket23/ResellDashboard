@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { TrendingUp, DollarSign, Package, Clock, CheckCircle, AlertCircle, Filter, ExternalLink, RefreshCw, List, Search, Calculator, BarChart3 } from 'lucide-react';
+import StockXPayoutRefresher from './StockXPayoutRefresher';
 
 interface SaleData {
   id: string;
@@ -54,6 +55,7 @@ const StockXSales: React.FC = () => {
   const [totalCount, setTotalCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(20);
+  const [showPayoutRefresher, setShowPayoutRefresher] = useState(false);
 
   // Stats calculation
   const stats = React.useMemo(() => {
@@ -61,7 +63,7 @@ const StockXSales: React.FC = () => {
     const totalSales = completedSales.length;
     const totalRevenue = completedSales.reduce((sum, sale) => sum + sale.pricing.salePrice, 0);
     const totalFees = completedSales.reduce((sum, sale) => sum + sale.pricing.totalFees, 0);
-    const totalPayout = completedSales.reduce((sum, sale) => sum + sale.pricing.netPayout, 0);
+    const totalPayout = completedSales.reduce((sum, sale) => sum + sale.pricing.payout, 0);
     const avgSalePrice = totalSales > 0 ? totalRevenue / totalSales : 0;
     const totalProfit = totalPayout; // Would need cost tracking for real profit
 
@@ -84,7 +86,8 @@ const StockXSales: React.FC = () => {
       const offset = (page - 1) * pageSize;
       const params = new URLSearchParams({
         limit: pageSize.toString(),
-        offset: offset.toString()
+        offset: offset.toString(),
+        skipDetails: 'true' // Skip detailed payout fetch to avoid rate limits
       });
 
       if (status) {
@@ -335,7 +338,16 @@ const StockXSales: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            {sales.length > 0 && (
+              <button
+                onClick={() => setShowPayoutRefresher(!showPayoutRefresher)}
+                className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
+              >
+                <DollarSign className="w-4 h-4" />
+                {showPayoutRefresher ? 'Hide' : 'Refresh'} Payouts
+              </button>
+            )}
             <button
               onClick={() => alert('Listings feature coming soon! This will show your active StockX listings.')}
               className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
@@ -360,6 +372,19 @@ const StockXSales: React.FC = () => {
             </button>
           </div>
         </div>
+
+        {/* Payout Refresher */}
+        {sales.length > 0 && showPayoutRefresher && (
+          <div className="mb-6">
+            <StockXPayoutRefresher 
+              onRefreshComplete={() => {
+                // Refresh the sales list to show updated payouts
+                fetchSales(currentPage, statusFilter);
+              }}
+              skipCompleted={true}
+            />
+          </div>
+        )}
 
         {/* Stats */}
         {sales.length > 0 && (
@@ -428,7 +453,7 @@ const StockXSales: React.FC = () => {
                   </div>
                   <div className="text-right">
                     <p className="text-xl font-bold text-green-400">{formatCurrency(sale.pricing.salePrice)}</p>
-                    <p className="text-sm text-gray-400">Payout: {formatCurrency(sale.pricing.netPayout)}</p>
+                    <p className="text-sm text-gray-400">Payout: {formatCurrency(sale.pricing.payout)}</p>
                   </div>
                 </div>
               </div>
@@ -444,7 +469,7 @@ const StockXSales: React.FC = () => {
                 </div>
                 <div className="bg-gray-700/50 rounded-lg p-3">
                   <p className="text-xs text-gray-400 mb-1">Net Payout</p>
-                  <p className="text-sm text-green-400 font-semibold">{formatCurrency(sale.pricing.netPayout)}</p>
+                  <p className="text-sm text-green-400 font-semibold">{formatCurrency(sale.pricing.payout)}</p>
                 </div>
               </div>
 

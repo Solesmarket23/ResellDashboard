@@ -135,15 +135,16 @@ export async function GET(request: NextRequest) {
           const basicSales = processSalesData(salesData);
           
           // Fetch detailed payout information for each order
-          // Temporarily disable for bulk imports to avoid rate limits
+          // Check if we should skip detailed payout fetching
           let detailedSales = basicSales;
-          const skipDetailedFetch = searchParams.get('skipDetails') === 'true' || basicSales.length > 50;
+          const skipDetailedFetch = searchParams.get('skipDetails') === 'true';
           
-          if (!skipDetailedFetch) {
+          if (!skipDetailedFetch && basicSales.length <= 10) {
+            // Only fetch details for small batches to avoid rate limits
             console.log(`📊 Fetching detailed payout info for ${basicSales.length} orders (after token refresh)...`);
             detailedSales = await fetchDetailedPayouts(basicSales, refreshResult.accessToken, apiKey);
           } else {
-            console.log(`⚠️ Skipping detailed payout fetch for ${basicSales.length} orders to avoid rate limits`);
+            console.log(`⚠️ Skipping detailed payout fetch for ${basicSales.length} orders (use background refresh for accurate payouts)`);
           }
           
           // Create response
@@ -270,16 +271,16 @@ export async function GET(request: NextRequest) {
     // Process the sales data to get basic order info
     const basicSales = processSalesData(salesData);
     
-    // Fetch detailed payout information for each order
-    // Temporarily disable for bulk imports to avoid rate limits
+    // Check if we should skip detailed payout fetching
     let detailedSales = basicSales;
-    const skipDetailedFetch = searchParams.get('skipDetails') === 'true' || basicSales.length > 50;
+    const skipDetailedFetch = searchParams.get('skipDetails') === 'true';
     
-    if (!skipDetailedFetch) {
+    if (!skipDetailedFetch && basicSales.length <= 10) {
+      // Only fetch details for small batches to avoid rate limits
       console.log(`📊 Fetching detailed payout info for ${basicSales.length} orders...`);
       detailedSales = await fetchDetailedPayouts(basicSales, accessToken, apiKey);
     } else {
-      console.log(`⚠️ Skipping detailed payout fetch for ${basicSales.length} orders to avoid rate limits`);
+      console.log(`⚠️ Skipping detailed payout fetch for ${basicSales.length} orders (use background refresh for accurate payouts)`);
     }
 
     return NextResponse.json({
