@@ -1653,6 +1653,12 @@ export default function StockXRepricing() {
     const listing = listings.find(l => l.listingId === listingId);
     if (!listing) return;
 
+    // Check if already peeking
+    if (activePeeks[listingId]) {
+      console.log('Already peeking this listing');
+      return;
+    }
+
     // Check if a peek was done in the last 2 hours
     const lastPeek = listing.pricingStrategy?.peekSettings?.lastPeekTime;
     if (lastPeek) {
@@ -1664,11 +1670,26 @@ export default function StockXRepricing() {
     }
 
     console.log(`👆 Manual peek triggered for ${listing.productName}`);
-    const result = await executeMarketPeek(listing);
     
-    if (result.success) {
-      setBulkActionMessage(`Market peek successful! Discovered price: $${result.discoveredLowestAsk}, New price: $${result.newPrice}`);
-      setTimeout(() => setBulkActionMessage(null), 5000);
+    // Set a maximum timeout to clear the peeking state after 30 seconds
+    const timeoutId = setTimeout(() => {
+      console.log('⏱️ Market peek timeout - clearing state');
+      setActivePeeks(prev => ({ ...prev, [listingId]: false }));
+    }, 30000);
+
+    try {
+      const result = await executeMarketPeek(listing);
+      
+      if (result.success) {
+        setBulkActionMessage(`Market peek successful! Discovered price: $${result.discoveredLowestAsk}, New price: $${result.newPrice}`);
+        setTimeout(() => setBulkActionMessage(null), 5000);
+      } else {
+        setBulkActionMessage(`Market peek failed: ${result.error || 'Unknown error'}`);
+        setTimeout(() => setBulkActionMessage(null), 5000);
+      }
+    } finally {
+      // Clear the timeout since the operation completed
+      clearTimeout(timeoutId);
     }
   };
 
@@ -1757,8 +1778,8 @@ export default function StockXRepricing() {
       const discoveredData = marketData.marketData?.[0]?.marketData;
       result.discoveredLowestAsk = discoveredData?.lowestAsk || listing.lowestAsk || listing.currentPrice;
       
-      // Wait 15 seconds
-      await new Promise(resolve => setTimeout(resolve, 15000));
+      // Wait 3 seconds for the market to react
+      await new Promise(resolve => setTimeout(resolve, 3000));
       
       // Step 3: Calculate new optimal price (lowest ask - $1)
       result.newPrice = Math.max(1, result.discoveredLowestAsk - 1);
@@ -1787,8 +1808,8 @@ export default function StockXRepricing() {
       if (!setResponse.ok) throw new Error('Failed to set new price');
       result.apiResponseTimes.setPriceMs = Date.now() - setStart;
       
-      // Wait 15 seconds
-      await new Promise(resolve => setTimeout(resolve, 15000));
+      // Wait 3 seconds before completing
+      await new Promise(resolve => setTimeout(resolve, 3000));
       
       // Calculate profit gained
       result.profitGained = result.discoveredLowestAsk - listing.lowestAsk!;
