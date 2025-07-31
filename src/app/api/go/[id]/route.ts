@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Redis } from '@upstash/redis';
+import { shortLinks } from '../../shorten/route';
 
 export async function GET(
   request: NextRequest,
@@ -8,60 +8,8 @@ export async function GET(
   try {
     const { id } = params;
     
-    // Initialize Redis
-    let redis: Redis | null = null;
-    try {
-      redis = Redis.fromEnv();
-    } catch (e) {
-      return new NextResponse(
-        `<!DOCTYPE html>
-        <html>
-          <head>
-            <title>Service Unavailable</title>
-            <style>
-              body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-              h1 { color: #333; }
-              p { color: #666; }
-            </style>
-          </head>
-          <body>
-            <h1>Service Temporarily Unavailable</h1>
-            <p>URL shortening service is not configured.</p>
-          </body>
-        </html>`,
-        { 
-          status: 503,
-          headers: { 'Content-Type': 'text/html' }
-        }
-      );
-    }
-    
-    if (!redis) {
-      return new NextResponse(
-        `<!DOCTYPE html>
-        <html>
-          <head>
-            <title>Service Unavailable</title>
-            <style>
-              body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-              h1 { color: #333; }
-              p { color: #666; }
-            </style>
-          </head>
-          <body>
-            <h1>Service Temporarily Unavailable</h1>
-            <p>URL shortening service is not configured.</p>
-          </body>
-        </html>`,
-        { 
-          status: 503,
-          headers: { 'Content-Type': 'text/html' }
-        }
-      );
-    }
-    
-    // Get the full URL from Redis storage
-    const fullUrl = await redis.get<string>(`short:${id}`);
+    // Get the full URL from our in-memory storage
+    const fullUrl = shortLinks.get(id);
     
     if (!fullUrl) {
       // Return a 404 page

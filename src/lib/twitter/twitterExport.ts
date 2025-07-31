@@ -16,23 +16,18 @@ export interface ArbitrageShareData {
 }
 
 export function generateTwitterText(data: ArbitrageShareData): string {
-  let text = `💰 StockX Arbitrage Alert!\n\n` +
+  const profitEmoji = data.profit >= 100 ? '🚀' : data.profit >= 50 ? '🔥' : '💰';
+  
+  let text = `${profitEmoji} StockX Arbitrage Alert!\n\n` +
     `${data.productName} (Size ${data.size})\n\n` +
     `Highest bid: $${data.purchasePrice.toFixed(2)}\n` +
     `Lowest ask: $${data.salePrice.toFixed(2)}\n\n` +
     `Profit: $${data.profit.toFixed(2)} (${data.profitMargin}%)\n\n` +
     `(estimated profit with buyer fees & selling via no-fee resale)\n\n`;
   
-  // Prioritize affiliate URL over short URL for reliability
-  if (data.affiliateUrl && data.affiliateUrl.includes('viglink.com')) {
-    // Use the actual affiliate URL if it's a valid Sovrn link
-    text += `🔗 ${data.affiliateUrl}\n\n`;
-  } else if (data.shortUrl) {
-    // Use short URL as fallback
+  // Add short URL if available (doesn't expose API key)
+  if (data.shortUrl) {
     text += `🔗 ${data.shortUrl}\n\n`;
-  } else if (data.affiliateUrl) {
-    // Use any affiliate URL as last resort
-    text += `🔗 ${data.affiliateUrl}\n\n`;
   }
   
   text += `#StockX #Reselling #SneakerArbitrage`;
