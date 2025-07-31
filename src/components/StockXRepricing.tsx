@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
-import { DollarSign, TrendingDown, Target, Zap, RefreshCw, AlertTriangle, CheckCircle, Loader, Package, Copy, Check } from 'lucide-react';
+import { DollarSign, TrendingDown, Target, Zap, RefreshCw, AlertTriangle, CheckCircle, Loader, Package, Copy, Check, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import NeonDropdown from './NeonDropdown';
 import { addDocument, getDocuments, updateDocument, deleteField } from '@/lib/firebase/firebaseUtils';
 import { auth } from '@/lib/firebase/firebase';
@@ -176,12 +176,52 @@ export default function StockXRepricing() {
   const [inventoryGroups, setInventoryGroups] = useState<Map<string, InventoryGroup>>(new Map());
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [copiedStyleIds, setCopiedStyleIds] = useState<Record<string, boolean>>({});
+  const [sortColumn, setSortColumn] = useState<'product' | 'size' | 'price' | 'market' | 'status' | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   
+  // Sorting logic
+  const sortedListings = [...listings].sort((a, b) => {
+    if (!sortColumn) return 0;
+    
+    let aValue: any;
+    let bValue: any;
+    
+    switch (sortColumn) {
+      case 'product':
+        aValue = a.productName.toLowerCase();
+        bValue = b.productName.toLowerCase();
+        break;
+      case 'size':
+        // Convert sizes to sortable format
+        aValue = convertSizeToNumber(a.size);
+        bValue = convertSizeToNumber(b.size);
+        break;
+      case 'price':
+        aValue = a.currentPrice;
+        bValue = b.currentPrice;
+        break;
+      case 'market':
+        aValue = a.lowestAsk || 0;
+        bValue = b.lowestAsk || 0;
+        break;
+      case 'status':
+        aValue = a.status || '';
+        bValue = b.status || '';
+        break;
+      default:
+        return 0;
+    }
+    
+    if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+    if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+    return 0;
+  });
+
   // Pagination calculations - moved here so they're available for all functions
-  const totalPages = Math.ceil(listings.length / itemsPerPage);
+  const totalPages = Math.ceil(sortedListings.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const paginatedListings = listings.slice(startIndex, endIndex);
+  const paginatedListings = sortedListings.slice(startIndex, endIndex);
   
   const selectedCount = listings.filter(l => l.selected).length;
   const pageSelectedCount = paginatedListings.filter(l => l.selected).length;
@@ -1674,6 +1714,33 @@ export default function StockXRepricing() {
     }
   };
 
+  const convertSizeToNumber = (size: string): number => {
+    // Handle clothing sizes
+    const sizeMap: { [key: string]: number } = {
+      'XXS': 1, 'XS': 2, 'S': 3, 'M': 4, 'L': 5, 'XL': 6, 'XXL': 7, 'XXXL': 8,
+      'XXS/XS': 1.5, 'XS/S': 2.5, 'S/M': 3.5, 'M/L': 4.5, 'L/XL': 5.5, 'XL/XXL': 6.5
+    };
+    
+    const upperSize = size.toUpperCase();
+    if (sizeMap[upperSize]) return sizeMap[upperSize];
+    
+    // Handle shoe sizes (numeric)
+    const numericSize = parseFloat(size);
+    if (!isNaN(numericSize)) return numericSize;
+    
+    // Handle W (women's) or Y/GS (youth) prefixes
+    const sizeMatch = size.match(/^[WYC]?(\d+\.?\d*)/i);
+    if (sizeMatch) {
+      const baseSize = parseFloat(sizeMatch[1]);
+      if (size.toUpperCase().startsWith('W')) return baseSize + 100; // Women's sizes sort after men's
+      if (size.toUpperCase().startsWith('Y') || size.toUpperCase().includes('GS')) return baseSize - 100; // Youth sizes sort before men's
+      return baseSize;
+    }
+    
+    // Default to alphabetical for unknown formats
+    return 999;
+  };
+
   const copyStyleCode = (styleId: string, listingId: string) => {
     navigator.clipboard.writeText(styleId).then(() => {
       setCopiedStyleIds(prev => ({ ...prev, [listingId]: true }));
@@ -1681,6 +1748,19 @@ export default function StockXRepricing() {
         setCopiedStyleIds(prev => ({ ...prev, [listingId]: false }));
       }, 2000);
     });
+  };
+
+  const handleSort = (column: 'product' | 'size' | 'price' | 'market' | 'status') => {
+    if (sortColumn === column) {
+      // Toggle direction if clicking the same column
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      // Set new column and default to ascending
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+    // Reset to first page when sorting
+    setCurrentPage(1);
   };
 
   const manualPeekNow = async (listingId: string) => {
@@ -2482,15 +2562,75 @@ export default function StockXRepricing() {
                       />
                     </div>
                   </th>
-                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Product</th>
-                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Size</th>
-                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>My Price</th>
-                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Market</th>
+                  <th 
+                    className={`text-left p-3 cursor-pointer select-none hover:bg-opacity-10 hover:bg-gray-500 transition-colors ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}
+                    onClick={() => handleSort('product')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Product
+                      {sortColumn === 'product' ? (
+                        sortDirection === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
+                      ) : (
+                        <ChevronsUpDown className="w-4 h-4 opacity-50" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className={`text-left p-3 cursor-pointer select-none hover:bg-opacity-10 hover:bg-gray-500 transition-colors ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}
+                    onClick={() => handleSort('size')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Size
+                      {sortColumn === 'size' ? (
+                        sortDirection === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
+                      ) : (
+                        <ChevronsUpDown className="w-4 h-4 opacity-50" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className={`text-left p-3 cursor-pointer select-none hover:bg-opacity-10 hover:bg-gray-500 transition-colors ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}
+                    onClick={() => handleSort('price')}
+                  >
+                    <div className="flex items-center gap-1">
+                      My Price
+                      {sortColumn === 'price' ? (
+                        sortDirection === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
+                      ) : (
+                        <ChevronsUpDown className="w-4 h-4 opacity-50" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className={`text-left p-3 cursor-pointer select-none hover:bg-opacity-10 hover:bg-gray-500 transition-colors ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}
+                    onClick={() => handleSort('market')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Market
+                      {sortColumn === 'market' ? (
+                        sortDirection === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
+                      ) : (
+                        <ChevronsUpDown className="w-4 h-4 opacity-50" />
+                      )}
+                    </div>
+                  </th>
                   <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Pricing Rule</th>
                   <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Min</th>
                   <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Max</th>
                   <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Auto Off</th>
-                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Status</th>
+                  <th 
+                    className={`text-left p-3 cursor-pointer select-none hover:bg-opacity-10 hover:bg-gray-500 transition-colors ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}
+                    onClick={() => handleSort('status')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Status
+                      {sortColumn === 'status' ? (
+                        sortDirection === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
+                      ) : (
+                        <ChevronsUpDown className="w-4 h-4 opacity-50" />
+                      )}
+                    </div>
+                  </th>
                 </tr>
               </thead>
               <tbody>
