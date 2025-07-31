@@ -474,6 +474,56 @@ export const useStockXSales = () => {
     }
   };
 
+  // Refresh payouts in background
+  const refreshPayoutsInBackground = async () => {
+    if (!user) return;
+    
+    try {
+      const eventSource = new EventSource(`/api/stockx/refresh-payouts?userId=${user.uid}`);
+      
+      eventSource.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        
+        if (data.type === 'progress') {
+          setSyncProgress({
+            current: data.current,
+            total: data.total,
+            status: `Refreshing payouts: ${data.current}/${data.total} (${Math.round((data.current / data.total) * 100)}%)`
+          });
+        } else if (data.type === 'complete') {
+          console.log('✅ Payout refresh complete!');
+          setSyncProgress({
+            current: data.total,
+            total: data.total,
+            status: 'All payouts updated successfully!'
+          });
+          
+          // Reload sales data to show updated payouts
+          loadSalesData(false);
+          
+          // Clear progress after 5 seconds
+          setTimeout(() => setSyncProgress(null), 5000);
+          eventSource.close();
+        } else if (data.type === 'error') {
+          console.error('❌ Payout refresh error:', data.message);
+          setError(data.message);
+          setSyncProgress(null);
+          eventSource.close();
+        }
+      };
+      
+      eventSource.onerror = (error) => {
+        console.error('❌ EventSource error:', error);
+        eventSource.close();
+        setSyncProgress(null);
+      };
+      
+    } catch (error) {
+      console.error('Error starting payout refresh:', error);
+      setSyncProgress(null);
+    }
+  };
+
   return {
     sales,
     loading,
@@ -484,6 +534,7 @@ export const useStockXSales = () => {
     lastSyncTime,
     syncProgress,
     clearStockXSales,
-    fixUserIdMismatch
+    fixUserIdMismatch,
+    refreshPayoutsInBackground
   };
 };

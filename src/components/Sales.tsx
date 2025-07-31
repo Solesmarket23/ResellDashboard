@@ -2024,6 +2024,26 @@ const Sales = () => {
                             Full Sync (Last 90 Days)
                           </button>
                         )}
+                        
+                        {/* Refresh Payouts Button */}
+                        {stockxSales.length > 0 && (
+                          <button
+                            onClick={() => refreshPayoutsInBackground()}
+                            disabled={isSyncing || stockxLoading}
+                            className={`w-full px-4 py-3 rounded-lg font-medium transition-colors flex items-center justify-center ${
+                              (isSyncing || stockxLoading)
+                                ? isNeon 
+                                  ? 'bg-gray-700 text-gray-500 cursor-not-allowed' 
+                                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                : isNeon 
+                                  ? 'bg-green-500 hover:bg-green-600 text-white shadow-lg shadow-green-500/25' 
+                                  : 'bg-green-500 hover:bg-green-600 text-white'
+                            }`}
+                          >
+                            <DollarSign className="w-4 h-4 mr-2" />
+                            Refresh Accurate Payouts
+                          </button>
+                        )}
                       </>
                     )}
 
