@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { kv } from '@vercel/kv';
 import crypto from 'crypto';
 
-// Simple in-memory storage for short URLs (will reset on server restart)
-// This is the implementation that was working perfectly 2 weeks ago
+// Fallback in-memory storage for development/testing
 const shortLinks = new Map<string, string>();
 
 export async function POST(request: NextRequest) {
@@ -14,31 +14,59 @@ export async function POST(request: NextRequest) {
     if (!url || typeof url !== 'string') {
       return NextResponse.json({ error: 'Invalid URL' }, { status: 400 });
     }
-    
+
+    // Try to use Vercel KV for persistent storage
+    let useKV = false;
+    try {
+      await kv.ping();
+      useKV = true;
+      console.log('✅ Using Vercel KV for persistent URL storage');
+    } catch (e) {
+      console.log('⚠️ Vercel KV not available, using in-memory storage (URLs will expire on restart)');
+    }
+
     // Generate a hash of the URL for deduplication
     const urlHash = crypto.createHash('md5').update(url).digest('hex');
     
-    // Check if this URL already has a short link in our memory storage
-    const existingShortId = Array.from(shortLinks.entries()).find(([_, fullUrl]) => fullUrl === url)?.[0];
-    if (existingShortId) {
+    if (useKV) {
+      // Check if this URL already exists in KV
+      const existingShortId = await kv.get(`url:${urlHash}`);
+      if (existingShortId) {
+        const domain = process.env.NEXT_PUBLIC_DOMAIN || 'solesmarket.com';
+        return NextResponse.json({ 
+          shortUrl: `https://${domain}/go/${existingShortId}` 
+        });
+      }
+      
+      // Generate a short ID
+      const shortId = crypto.randomBytes(4).toString('hex');
+      
+      // Store both mappings in KV with 30-day expiry
+      await kv.set(`url:${urlHash}`, shortId, { ex: 60 * 60 * 24 * 30 });
+      await kv.set(`short:${shortId}`, url, { ex: 60 * 60 * 24 * 30 });
+      
       const domain = process.env.NEXT_PUBLIC_DOMAIN || 'solesmarket.com';
       return NextResponse.json({ 
-        shortUrl: `https://${domain}/go/${existingShortId}` 
+        shortUrl: `https://${domain}/go/${shortId}` 
+      });
+    } else {
+      // Fallback to in-memory storage
+      const existingShortId = Array.from(shortLinks.entries()).find(([_, fullUrl]) => fullUrl === url)?.[0];
+      if (existingShortId) {
+        const domain = process.env.NEXT_PUBLIC_DOMAIN || 'solesmarket.com';
+        return NextResponse.json({ 
+          shortUrl: `https://${domain}/go/${existingShortId}` 
+        });
+      }
+      
+      const shortId = crypto.randomBytes(4).toString('hex');
+      shortLinks.set(shortId, url);
+      
+      const domain = process.env.NEXT_PUBLIC_DOMAIN || 'solesmarket.com';
+      return NextResponse.json({ 
+        shortUrl: `https://${domain}/go/${shortId}` 
       });
     }
-    
-    // Generate a short ID
-    const shortId = crypto.randomBytes(4).toString('hex');
-    
-    // Store in memory
-    shortLinks.set(shortId, url);
-    
-    // Use custom domain
-    const domain = process.env.NEXT_PUBLIC_DOMAIN || 'solesmarket.com';
-    
-    return NextResponse.json({ 
-      shortUrl: `https://${domain}/go/${shortId}` 
-    });
   } catch (error: any) {
     console.error('Error creating short URL:', error);
     return NextResponse.json({ 
@@ -49,5 +77,5 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Export the shortLinks map so the redirect handler can access it
+// Export the shortLinks map for the redirect handler fallback
 export { shortLinks };

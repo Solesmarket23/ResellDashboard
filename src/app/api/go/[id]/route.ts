@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { kv } from '@vercel/kv';
 import { shortLinks } from '../../shorten/route';
 
 export async function GET(
@@ -8,8 +9,19 @@ export async function GET(
   try {
     const { id } = params;
     
-    // Get the full URL from our in-memory storage
-    const fullUrl = shortLinks.get(id);
+    let fullUrl: string | null = null;
+    
+    // Try Vercel KV first for persistent storage
+    try {
+      fullUrl = await kv.get<string>(`short:${id}`);
+      if (fullUrl) {
+        console.log('✅ Found URL in Vercel KV');
+      }
+    } catch (e) {
+      console.log('⚠️ KV not available, checking in-memory storage');
+      // Fallback to in-memory storage
+      fullUrl = shortLinks.get(id) || null;
+    }
     
     if (!fullUrl) {
       // Return a 404 page
