@@ -25,8 +25,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        {/* Sovrn Commerce JavaScript - Automatically converts links */}
-        {process.env.NEXT_PUBLIC_SOVRN_API_KEY && (
+        {/* Sovrn Commerce JavaScript - Commented out to use Impact.com instead */}
+        {/* {process.env.NEXT_PUBLIC_SOVRN_API_KEY && (
           <Script
             id="sovrn-commerce"
             strategy="afterInteractive"
@@ -49,7 +49,7 @@ export default function RootLayout({
               `
             }}
           />
-        )}
+        )} */}
       </head>
       <body className={inter.className}>
         <AuthProvider>
