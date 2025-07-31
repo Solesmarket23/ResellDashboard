@@ -224,10 +224,8 @@ export const useSales = () => {
             purchasePrice: sale.purchasePrice || 0,
             // StockX fees - check multiple locations
             fees: saleData.pricing?.sellerFees || saleData.fees || saleData.totalFees || saleData.sellerFees || 0,
-            // For payout, if we have pricing data, calculate it. Otherwise check direct fields
-            payout: saleData.pricing?.totalPayout || saleData.totalPayout || 
-                   (saleData.pricing?.salePrice && saleData.pricing?.sellerFees !== undefined ? 
-                    saleData.pricing.salePrice - saleData.pricing.sellerFees : 0),
+            // For payout, use the totalPayout from pricing which is now calculated in the API
+            payout: saleData.pricing?.totalPayout || saleData.totalPayout || 0,
             // Calculate profit if not provided
             profit: (saleData.pricing?.totalPayout || saleData.totalPayout || 0) - (sale.purchasePrice || 0)
           };

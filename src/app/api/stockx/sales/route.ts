@@ -316,9 +316,16 @@ function processSalesData(rawData: any): StockXSale[] {
     orders = rawData;
   }
 
-  // Debug: Log first order to see structure
+  // Debug: Log first few orders to see structure
   if (orders.length > 0) {
     console.log('🔍 First StockX order from API:', JSON.stringify(orders[0], null, 2));
+    // Log any order that has payout info
+    const orderWithPayout = orders.find(o => o.payout || o.totalPayout || o.payoutAmount);
+    if (orderWithPayout) {
+      console.log('🔍 Order with payout info:', JSON.stringify(orderWithPayout, null, 2));
+    } else {
+      console.log('⚠️ No orders found with payout information in fields: payout, totalPayout, payoutAmount');
+    }
   }
 
   return orders.map((order: any): StockXSale => {
@@ -347,11 +354,14 @@ function processSalesData(rawData: any): StockXSale[] {
       return statusMap[status] || status;
     };
 
-    // Calculate total fees
+    // Calculate total fees from individual fee components or total
+    const processingFee = parseFloat(order.processingFee || '0');
+    const transactionFee = parseFloat(order.transactionFee || '0');
+    const shippingFee = parseFloat(order.shippingFee || '0');
+    const paymentProcessingFee = parseFloat(order.paymentProcessingFee || '0');
+    
     const sellerFees = parseFloat(order.payout?.totalFee || order.totalFees || '0') || 
-      (parseFloat(order.processingFee || '0') + 
-       parseFloat(order.transactionFee || '0') + 
-       parseFloat(order.shippingFee || '0'));
+      (processingFee + transactionFee + shippingFee + paymentProcessingFee);
 
     const saleData: StockXSale = {
       id: order.id || order.orderId || order.orderNumber,
@@ -377,11 +387,13 @@ function processSalesData(rawData: any): StockXSale[] {
         salePrice: parseFloat(order.amount || order.salePrice || order.price || '0'),
         buyerPaid: parseFloat(order.amount || order.buyerPaid || order.salePrice || order.price || '0'),
         sellerFees,
-        processingFee: parseFloat(order.processingFee || '0'),
-        shippingFee: parseFloat(order.shippingFee || '0'),
-        transactionFee: parseFloat(order.transactionFee || '0'),
-        paymentProcessingFee: parseFloat(order.paymentProcessingFee || '0'),
-        totalPayout: parseFloat(order.payout?.amount || order.payout || order.totalPayout || '0'),
+        processingFee,
+        shippingFee,
+        transactionFee,
+        paymentProcessingFee,
+        // Calculate totalPayout: salePrice - all fees
+        totalPayout: parseFloat(order.payout?.amount || order.payout || order.totalPayout || '0') || 
+                    (parseFloat(order.amount || order.salePrice || order.price || '0') - sellerFees),
         currency: order.currency || 'USD',
         sellerLevel: order.sellerLevel,
         feePercentage: order.feePercentage
