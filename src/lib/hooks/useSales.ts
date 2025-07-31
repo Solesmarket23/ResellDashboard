@@ -192,22 +192,15 @@ export const useSales = () => {
           
           // Debug log first sale's saleData
           if (stockxSalesData.indexOf(sale) === 0) {
-            console.log('🔍 First StockX saleData structure:', saleData);
-            console.log('🔍 Pricing object:', saleData.pricing);
-            console.log('🔍 Payout object:', saleData.payout);
-            console.log('🔍 Looking for payout values:', {
-              'payout.totalPayout': saleData.payout?.totalPayout,
-              'payout.salePrice': saleData.payout?.salePrice,
-              'payout.totalAdjustments': saleData.payout?.totalAdjustments,
-              'payout.adjustments': saleData.payout?.adjustments
-            });
-            console.log('🔍 Looking for fees in:', {
-              'saleData.fees': saleData.fees,
-              'saleData.totalFees': saleData.totalFees,
-              'saleData.pricing.sellerFees': saleData.pricing?.sellerFees,
-              'saleData.pricing.fees': saleData.pricing?.fees,
-              'saleData.pricing.processingFee': saleData.pricing?.processingFee,
-              'saleData.pricing.transactionFee': saleData.pricing?.transactionFee
+            console.log('🔍 Full StockX sale data:', JSON.stringify(saleData, null, 2));
+            console.log('🔍 Key fields check:', {
+              'pricing': saleData.pricing,
+              'payout': saleData.payout,
+              'amount': saleData.amount,
+              'salePrice': saleData.salePrice,
+              'totalPayout': saleData.totalPayout,
+              'fees': saleData.fees,
+              'sellerFees': saleData.sellerFees
             });
           }
           
@@ -226,15 +219,17 @@ export const useSales = () => {
             // Normalize date field
             date: saleData.createdAt || sale.createdAt || sale.updatedAt,
             // Normalize price fields for consistent calculations
-            // StockX has payout object with the actual financial data
-            salePrice: saleData.payout?.salePrice || saleData.pricing?.salePrice || saleData.pricing?.buyerPaid || parseFloat(saleData.amount) || 0,
+            // Try multiple locations for the sale price
+            salePrice: saleData.pricing?.salePrice || saleData.pricing?.buyerPaid || saleData.salePrice || parseFloat(saleData.amount) || 0,
             purchasePrice: sale.purchasePrice || 0,
-            // StockX fees - totalAdjustments contains all fees
-            fees: saleData.payout?.totalAdjustments || saleData.pricing?.sellerFees || saleData.payout?.totalFee || 0,
-            // Check payout object first for actual payout amount
-            payout: saleData.payout?.totalPayout || saleData.pricing?.totalPayout || saleData.payout?.amount || 0,
+            // StockX fees - check multiple locations
+            fees: saleData.pricing?.sellerFees || saleData.fees || saleData.totalFees || saleData.sellerFees || 0,
+            // For payout, if we have pricing data, calculate it. Otherwise check direct fields
+            payout: saleData.pricing?.totalPayout || saleData.totalPayout || 
+                   (saleData.pricing?.salePrice && saleData.pricing?.sellerFees !== undefined ? 
+                    saleData.pricing.salePrice - saleData.pricing.sellerFees : 0),
             // Calculate profit if not provided
-            profit: (saleData.payout?.totalPayout || saleData.pricing?.totalPayout || 0) - (sale.purchasePrice || 0)
+            profit: (saleData.pricing?.totalPayout || saleData.totalPayout || 0) - (sale.purchasePrice || 0)
           };
         })
         .filter(sale => sale !== null); // Remove any null entries
