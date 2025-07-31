@@ -12,6 +12,7 @@ import {
   updateDoc,
   deleteDoc,
   setDoc,
+  deleteField,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
@@ -94,3 +95,6 @@ export const uploadFile = async (file: File, path: string) => {
   await uploadBytes(storageRef, file);
   return getDownloadURL(storageRef);
 };
+
+// Export deleteField for use in other components
+export { deleteField };
