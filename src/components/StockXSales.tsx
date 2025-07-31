@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TrendingUp, DollarSign, Package, Clock, CheckCircle, AlertCircle, Filter, ExternalLink, RefreshCw, List, Search, Calculator, BarChart3 } from 'lucide-react';
 import StockXPayoutRefresher from './StockXPayoutRefresher';
+import StockXExportAll from './StockXExportAll';
 
 interface SaleData {
   id: string;
@@ -385,6 +386,11 @@ const StockXSales: React.FC = () => {
             />
           </div>
         )}
+
+        {/* Export All Sales */}
+        <div className="mb-6">
+          <StockXExportAll />
+        </div>
 
         {/* Stats */}
         {sales.length > 0 && (
