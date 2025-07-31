@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { refreshStockXTokens, setStockXTokenCookies } from '@/lib/stockx/tokenRefresh';
 import { getDocuments, updateDocument } from '@/lib/firebase/firebaseUtils';
-import { auth } from '@/lib/firebase/firebase-admin';
 import { StockXSale } from '@/lib/types/stockx';
 
 // Use Server-Sent Events (SSE) for real-time progress updates
@@ -26,20 +25,16 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Get authorization header to identify user
-  const authHeader = request.headers.get('authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
+  // Get userId from query parameter (in a production app, this should be from authenticated session)
+  const userId = searchParams.get('userId');
+  if (!userId) {
     return NextResponse.json(
-      { error: 'Missing authorization header' },
-      { status: 401 }
+      { error: 'Missing userId parameter' },
+      { status: 400 }
     );
   }
 
   try {
-    // Verify the Firebase ID token
-    const idToken = authHeader.substring(7);
-    const decodedToken = await auth.verifyIdToken(idToken);
-    const userId = decodedToken.uid;
 
     // Set up SSE response
     const encoder = new TextEncoder();
