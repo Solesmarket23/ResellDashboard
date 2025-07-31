@@ -234,15 +234,15 @@ export default function StockXRepricing() {
       }
     });
     return () => unsubscribe();
-  }, []);
+  }, [loadSavedSettings]);
 
-  // Fetch listings when component mounts and user is authenticated
+  // Fetch listings when component mounts and user is authenticated AND settings are loaded
   useEffect(() => {
-    if (currentUser && !loading && listings.length === 0) {
-      console.log('📋 Initial load - fetching listings...');
+    if (currentUser && settingsLoaded && !loading && listings.length === 0) {
+      console.log('📋 Initial load - fetching listings after settings loaded...');
       fetchListings();
     }
-  }, [currentUser]); // Only depend on currentUser to avoid infinite loops
+  }, [currentUser, settingsLoaded]); // Depend on both user and settings loaded state
 
   // Apply saved settings - removed to prevent double application
 
@@ -275,7 +275,7 @@ export default function StockXRepricing() {
     };
   }, []); // Empty dependency array - scheduler doesn't need to restart
 
-  const loadSavedSettings = async (userId: string) => {
+  const loadSavedSettings = useCallback(async (userId: string) => {
     try {
       console.log('🔄 Loading saved settings for user:', userId);
       const settings = await getDocuments('stockxPricingSettings');
@@ -300,12 +300,33 @@ export default function StockXRepricing() {
       
       setSavedSettings(settingsMap);
       setSettingsLoaded(true);
-      console.log('✅ Settings loaded into state. Will be applied when listings are fetched.');
-      // Don't apply settings here - let fetchListings handle it to prevent double application
+      console.log('✅ Settings loaded into state.');
+      
+      // If we already have listings, apply the settings to them immediately
+      if (listings.length > 0 && Object.keys(settingsMap).length > 0) {
+        console.log('🔧 Applying settings to existing listings...');
+        setListings(prevListings => prevListings.map(listing => {
+          const saved = settingsMap[listing.listingId];
+          if (saved) {
+            console.log(`✅ Applying saved settings to ${listing.listingId}:`, {
+              minPrice: saved.minPrice,
+              maxPrice: saved.maxPrice
+            });
+            return {
+              ...listing,
+              pricingStrategy: saved.pricingStrategy || listing.pricingStrategy,
+              minPrice: saved.hasOwnProperty('minPrice') ? saved.minPrice : listing.minPrice,
+              maxPrice: saved.hasOwnProperty('maxPrice') ? saved.maxPrice : listing.maxPrice,
+              autoDeactivate: saved.hasOwnProperty('autoDeactivate') ? saved.autoDeactivate : listing.autoDeactivate
+            };
+          }
+          return listing;
+        }));
+      }
     } catch (error) {
       console.error('❌ Error loading saved settings:', error);
     }
-  };
+  }, [listings]);
 
   const saveSettingToFirebase = async (listingId: string, settings: any) => {
     if (!currentUser || savingSettings) {
@@ -1029,7 +1050,7 @@ export default function StockXRepricing() {
   }, [listings, isBackgroundRefreshing, fetchMarketDataForListings]);
 
   // useEffect hooks after function definitions to avoid hoisting issues
-  // Initial mount effect
+  // Initial mount effect - only handle URL params and token refresh, not fetching
   useEffect(() => {
     let mounted = true;
     
@@ -1044,10 +1065,8 @@ export default function StockXRepricing() {
         window.history.replaceState({}, document.title, window.location.pathname);
       }
       
-      // Only fetch if component is still mounted
-      if (mounted) {
-        await fetchListings();
-      }
+      // Don't fetch listings here - let the auth/settings useEffect handle it
+      console.log('🚀 Component initialized, waiting for auth and settings...');
     };
     
     init();
