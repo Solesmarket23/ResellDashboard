@@ -776,9 +776,17 @@ const StockXPriceMonitor: React.FC = () => {
                   <input
                     type="number"
                     value={newProduct.targetAskPrice}
-                    onChange={(e) => setNewProduct(prev => ({ ...prev, targetAskPrice: e.target.value }))}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      // Only allow whole numbers
+                      if (value === '' || /^\d+$/.test(value)) {
+                        setNewProduct(prev => ({ ...prev, targetAskPrice: value }));
+                      }
+                    }}
                     placeholder="Alert when ask drops below"
                     className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                    step="1"
+                    min="0"
                   />
                 </div>
                 
@@ -789,9 +797,17 @@ const StockXPriceMonitor: React.FC = () => {
                   <input
                     type="number"
                     value={newProduct.targetFlexAskPrice}
-                    onChange={(e) => setNewProduct(prev => ({ ...prev, targetFlexAskPrice: e.target.value }))}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      // Only allow whole numbers
+                      if (value === '' || /^\d+$/.test(value)) {
+                        setNewProduct(prev => ({ ...prev, targetFlexAskPrice: value }));
+                      }
+                    }}
                     placeholder="Alert when flex ask drops below"
                     className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                    step="1"
+                    min="0"
                   />
                 </div>
                 
@@ -802,9 +818,17 @@ const StockXPriceMonitor: React.FC = () => {
                   <input
                     type="number"
                     value={newProduct.targetBidPrice}
-                    onChange={(e) => setNewProduct(prev => ({ ...prev, targetBidPrice: e.target.value }))}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      // Only allow whole numbers
+                      if (value === '' || /^\d+$/.test(value)) {
+                        setNewProduct(prev => ({ ...prev, targetBidPrice: value }));
+                      }
+                    }}
                     placeholder="Alert when bid rises above"
                     className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                    step="1"
+                    min="0"
                   />
                 </div>
                 
@@ -1418,11 +1442,16 @@ const StockXPriceMonitor: React.FC = () => {
                         <input
                           type="number"
                           value={bulkEditValues.askAmount}
-                          onChange={(e) => setBulkEditValues(prev => ({ ...prev, askAmount: parseFloat(e.target.value) || 1 }))}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            if (value === '' || /^\d+$/.test(value)) {
+                              setBulkEditValues(prev => ({ ...prev, askAmount: parseInt(value) || 1 }));
+                            }
+                          }}
                           className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
-                          min="0.01"
-                          step="0.01"
-                          placeholder="1.00"
+                          min="1"
+                          step="1"
+                          placeholder="1"
                         />
                       </div>
                       <p className="text-xs text-gray-400 mt-1">
@@ -1440,11 +1469,16 @@ const StockXPriceMonitor: React.FC = () => {
                         <input
                           type="number"
                           value={bulkEditValues.flexAmount}
-                          onChange={(e) => setBulkEditValues(prev => ({ ...prev, flexAmount: parseFloat(e.target.value) || 1 }))}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            if (value === '' || /^\d+$/.test(value)) {
+                              setBulkEditValues(prev => ({ ...prev, flexAmount: parseInt(value) || 1 }));
+                            }
+                          }}
                           className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
-                          min="0.01"
-                          step="0.01"
-                          placeholder="1.00"
+                          min="1"
+                          step="1"
+                          placeholder="1"
                         />
                       </div>
                     </div>
@@ -1677,7 +1711,7 @@ const StockXPriceMonitor: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-3">
                       <div className="flex items-center gap-2">
                         <span className="text-gray-400 text-sm">Ask:</span>
-                        <span className="text-cyan-400 font-semibold">${product.currentAsk}</span>
+                        <span className="text-cyan-400 font-semibold">${Math.round(product.currentAsk)}</span>
                         {priceChange && priceChange.askChange !== 0 && (
                           <span className={`text-xs px-2 py-1 rounded ${
                             priceChange.askChange < 0 ? 'bg-green-900/20 text-green-400' : 'bg-red-900/20 text-red-400'
@@ -1690,7 +1724,7 @@ const StockXPriceMonitor: React.FC = () => {
                       {product.currentFlexAsk && (
                         <div className="flex items-center gap-2">
                           <span className="text-gray-400 text-sm">Flex Ask:</span>
-                          <span className="text-purple-400 font-semibold">${product.currentFlexAsk}</span>
+                          <span className="text-purple-400 font-semibold">${Math.round(product.currentFlexAsk || 0)}</span>
                           {priceChange && priceChange.flexAskChange !== 0 && (
                             <span className={`text-xs px-2 py-1 rounded ${
                               priceChange.flexAskChange < 0 ? 'bg-green-900/20 text-green-400' : 'bg-red-900/20 text-red-400'
@@ -1703,7 +1737,7 @@ const StockXPriceMonitor: React.FC = () => {
                       
                       <div className="flex items-center gap-2">
                         <span className="text-gray-400 text-sm">Bid:</span>
-                        <span className="text-green-400 font-semibold">${product.currentBid}</span>
+                        <span className="text-green-400 font-semibold">${Math.round(product.currentBid)}</span>
                         {priceChange && priceChange.bidChange !== 0 && (
                           <span className={`text-xs px-2 py-1 rounded ${
                             priceChange.bidChange > 0 ? 'bg-green-900/20 text-green-400' : 'bg-red-900/20 text-red-400'
@@ -1718,17 +1752,17 @@ const StockXPriceMonitor: React.FC = () => {
                     <div className="flex flex-wrap items-center gap-4 mt-2 text-sm">
                       {product.targetAskPrice && (
                         <span className="text-blue-400">
-                          Target Ask: ${product.targetAskPrice}
+                          Target Ask: ${Math.round(product.targetAskPrice || 0)}
                         </span>
                       )}
                       {product.targetFlexAskPrice && (
                         <span className="text-purple-400">
-                          Target Flex Ask: ${product.targetFlexAskPrice}
+                          Target Flex Ask: ${Math.round(product.targetFlexAskPrice || 0)}
                         </span>
                       )}
                       {product.targetBidPrice && (
                         <span className="text-green-400">
-                          Target Bid: ${product.targetBidPrice}
+                          Target Bid: ${Math.round(product.targetBidPrice || 0)}
                         </span>
                       )}
                       {editingThresholdId === product.id ? (
