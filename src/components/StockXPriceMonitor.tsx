@@ -27,6 +27,9 @@ interface MonitoredProduct {
   targetBidPrice?: number;
   priceDropThreshold: number;
   flexPriceDropThreshold: number;
+  thresholdType?: 'percentage' | 'amount'; // Track whether thresholds are percentages or dollar amounts
+  askThresholdAmount?: number; // Store dollar amount if using amount mode
+  flexThresholdAmount?: number; // Store dollar amount if using amount mode
   priceHistory: PriceData[];
   lastChecked: number;
   alerts: Array<{
@@ -111,7 +114,6 @@ const StockXPriceMonitor: React.FC = () => {
   const [slackEnabled, setSlackEnabled] = useState(() => {
     return localStorage.getItem('stockx_slack_enabled') === 'true';
   });
-  const [affiliateLinks, setAffiliateLinks] = useState<{ [key: string]: string }>({});
 
   // Mark alerts as read when viewing the page
   useEffect(() => {
@@ -1836,7 +1838,9 @@ const StockXPriceMonitor: React.FC = () => {
                             }}
                             className="text-yellow-400 hover:text-yellow-300 cursor-pointer underline-offset-2 hover:underline"
                           >
-                            Ask Alert: {product.priceDropThreshold < 1 ? product.priceDropThreshold.toFixed(2) : product.priceDropThreshold.toFixed(0)}%
+                            Ask Alert: {product.thresholdType === 'amount' && product.askThresholdAmount 
+                              ? `$${product.askThresholdAmount}` 
+                              : `${product.priceDropThreshold < 1 ? product.priceDropThreshold.toFixed(2) : product.priceDropThreshold.toFixed(0)}%`}
                           </button>
                           {product.currentFlexAsk && (
                             <button
@@ -1846,7 +1850,9 @@ const StockXPriceMonitor: React.FC = () => {
                               }}
                               className="text-orange-400 hover:text-orange-300 cursor-pointer underline-offset-2 hover:underline"
                             >
-                              Flex Alert: {product.flexPriceDropThreshold < 1 ? product.flexPriceDropThreshold.toFixed(2) : product.flexPriceDropThreshold.toFixed(0)}%
+                              Flex Alert: {product.thresholdType === 'amount' && product.flexThresholdAmount 
+                                ? `$${product.flexThresholdAmount}` 
+                                : `${product.flexPriceDropThreshold < 1 ? product.flexPriceDropThreshold.toFixed(2) : product.flexPriceDropThreshold.toFixed(0)}%`}
                             </button>
                           )}
                         </>
@@ -1903,57 +1909,21 @@ const StockXPriceMonitor: React.FC = () => {
                     
                     {/* View on StockX button */}
                     <button
-                      onClick={async () => {
-                        const productKey = `${product.productId}-${product.variantId}`;
-                        let affiliateLink = affiliateLinks[productKey];
+                      onClick={() => {
+                        // Generate StockX URL
+                        const stockxUrl = product.stockxUrl || generateStockXUrl(product.title, product.productId, product.size);
                         
-                        if (!affiliateLink) {
-                          // Generate StockX URL
-                          const stockxUrl = product.stockxUrl || generateStockXUrl(product.title, product.productId, product.size);
-                          
-                          try {
-                            const impactResponse = await fetch('/api/impact/create-link', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ 
-                                stockxUrl,
-                                customParams: {
-                                  productId: product.productId,
-                                  size: product.size,
-                                  source: 'price_monitor'
-                                }
-                              })
-                            });
-                            
-                            if (impactResponse.ok) {
-                              const impactData = await impactResponse.json();
-                              affiliateLink = impactData.trackingUrl || stockxUrl;
-                              
-                              // Cache the affiliate link
-                              setAffiliateLinks(prev => ({
-                                ...prev,
-                                [productKey]: affiliateLink
-                              }));
-                            } else {
-                              affiliateLink = stockxUrl;
-                            }
-                          } catch (error) {
-                            console.error('Error creating Impact.com link:', error);
-                            affiliateLink = stockxUrl;
-                          }
-                        }
-                        
-                        // Open the affiliate link
-                        window.open(affiliateLink, '_blank', 'noopener,noreferrer');
+                        // Open the StockX URL
+                        window.open(stockxUrl, '_blank', 'noopener,noreferrer');
                       }}
-                      className={`p-2 rounded-lg transition-all duration-200 flex items-center gap-2 ${
+                      className={`px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2 font-semibold ${
                         theme === 'neon'
-                          ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-lg shadow-purple-500/30'
-                          : 'bg-purple-600 hover:bg-purple-700 text-white'
+                          ? 'bg-gradient-to-r from-purple-500 via-pink-500 to-purple-600 hover:from-purple-400 hover:via-pink-400 hover:to-purple-500 text-white shadow-lg shadow-purple-500/50 animate-pulse'
+                          : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white'
                       }`}
-                      title="View on StockX"
                     >
                       <ExternalLink className="w-4 h-4" />
+                      View on StockX
                     </button>
                   </div>
                 </div>

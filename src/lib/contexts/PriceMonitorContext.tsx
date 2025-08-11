@@ -24,6 +24,9 @@ interface MonitoredProduct {
   targetBidPrice?: number;
   priceDropThreshold: number;
   flexPriceDropThreshold: number;
+  thresholdType?: 'percentage' | 'amount'; // Track whether thresholds are percentages or dollar amounts
+  askThresholdAmount?: number; // Store dollar amount if using amount mode
+  flexThresholdAmount?: number; // Store dollar amount if using amount mode
   priceHistory: PriceData[];
   lastChecked: number;
   stockxUrl?: string;
@@ -246,13 +249,23 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
 
       // Check for ask price drop
       if (newAsk < product.currentAsk) {
+        const dropAmount = product.currentAsk - newAsk;
         const dropPercentage = ((product.currentAsk - newAsk) / product.currentAsk) * 100;
         
-        if (dropPercentage >= product.priceDropThreshold) {
+        // Check based on threshold type
+        const thresholdMet = product.thresholdType === 'amount' && product.askThresholdAmount
+          ? dropAmount >= product.askThresholdAmount
+          : dropPercentage >= product.priceDropThreshold;
+        
+        if (thresholdMet) {
+          const dropDescription = product.thresholdType === 'amount' && product.askThresholdAmount
+            ? `$${dropAmount.toFixed(0)}`
+            : `${dropPercentage.toFixed(1)}%`;
+            
           const alert = {
             id: `${productId}-${now}`,
             type: 'ask_drop' as const,
-            message: `Ask price dropped ${dropPercentage.toFixed(1)}% from $${product.currentAsk} to $${newAsk}`,
+            message: `Ask price dropped ${dropDescription} from $${product.currentAsk} to $${newAsk}`,
             timestamp: now,
             oldPrice: product.currentAsk,
             newPrice: newAsk,
@@ -280,13 +293,23 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
 
       // Check for flex ask price drop
       if (newFlexAsk && product.currentFlexAsk && newFlexAsk < product.currentFlexAsk) {
+        const dropAmount = product.currentFlexAsk - newFlexAsk;
         const dropPercentage = ((product.currentFlexAsk - newFlexAsk) / product.currentFlexAsk) * 100;
         
-        if (dropPercentage >= product.flexPriceDropThreshold) {
+        // Check based on threshold type
+        const thresholdMet = product.thresholdType === 'amount' && product.flexThresholdAmount
+          ? dropAmount >= product.flexThresholdAmount
+          : dropPercentage >= product.flexPriceDropThreshold;
+        
+        if (thresholdMet) {
+          const dropDescription = product.thresholdType === 'amount' && product.flexThresholdAmount
+            ? `$${dropAmount.toFixed(0)}`
+            : `${dropPercentage.toFixed(1)}%`;
+            
           const alert = {
             id: `${productId}-flex-${now}`,
             type: 'flex_ask_drop' as const,
-            message: `Flex ask dropped ${dropPercentage.toFixed(1)}% from $${product.currentFlexAsk} to $${newFlexAsk}`,
+            message: `Flex ask dropped ${dropDescription} from $${product.currentFlexAsk} to $${newFlexAsk}`,
             timestamp: now,
             oldPrice: product.currentFlexAsk,
             newPrice: newFlexAsk,
@@ -364,7 +387,10 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
       const updated = prev.map(p => ({
         ...p,
         priceDropThreshold: askThreshold,
-        flexPriceDropThreshold: flexThreshold
+        flexPriceDropThreshold: flexThreshold,
+        thresholdType: 'percentage' as const,
+        askThresholdAmount: undefined,
+        flexThresholdAmount: undefined
       }));
       // Save to localStorage
       localStorage.setItem('stockx_monitored_products', JSON.stringify(updated));
@@ -384,7 +410,13 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
         return {
           ...p,
           priceDropThreshold: Math.max(0.1, Math.min(50, askPercentage)),
-          flexPriceDropThreshold: Math.max(0.1, Math.min(50, flexPercentage))
+          flexPriceDropThreshold: Math.max(0.1, Math.min(50, flexPercentage)),
+          thresholdType: 'amount' as const,
+          askThresholdAmount: askAmount,
+          flexThresholdAmount: flexAmount,
+          // Update target prices based on dollar amount thresholds
+          targetAskPrice: p.currentAsk > askAmount ? p.currentAsk - askAmount : p.currentAsk * 0.9,
+          targetFlexAskPrice: p.currentFlexAsk && p.currentFlexAsk > flexAmount ? p.currentFlexAsk - flexAmount : p.currentFlexAsk ? p.currentFlexAsk * 0.9 : undefined
         };
       });
       // Save to localStorage
