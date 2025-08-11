@@ -122,10 +122,16 @@ const StockXPriceMonitor: React.FC = () => {
 
   // Helper function to generate StockX URL with size
   const generateStockXUrl = (productName: string, productId: string, size?: string) => {
-    const slug = productName.toLowerCase()
+    let slug = productName.toLowerCase()
       .replace(/[^a-z0-9\s-]/g, '')
       .replace(/\s+/g, '-')
       .replace(/-+/g, '-');
+    
+    // Fix common StockX URL patterns
+    if (slug.startsWith('jordan-')) {
+      // Add 'air-' prefix for Jordan products if not already present
+      slug = 'air-' + slug;
+    }
     
     // Include size in URL if provided
     if (size) {
