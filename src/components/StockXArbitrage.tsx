@@ -102,16 +102,39 @@ const StockXArbitrage: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showFlexAsk, setShowFlexAsk] = useState(true); // Toggle for flex ask display - enabled by default
 
-  // Check authentication status on component mount
+  // Check authentication status on component mount and prompt login if needed
   useEffect(() => {
     const checkAuth = async () => {
       try {
         const response = await fetch('/api/stockx/auth/status');
         const data = await response.json();
         setIsAuthenticated(data.isAuthenticated);
+        
+        // If not authenticated, automatically redirect to login
+        if (!data.isAuthenticated) {
+          // Check if we're not already coming back from an auth attempt
+          const urlParams = new URLSearchParams(window.location.search);
+          const hasAuthParams = urlParams.has('success') || urlParams.has('error') || urlParams.has('disconnected') || urlParams.has('tokens_cleared');
+          
+          if (!hasAuthParams) {
+            // Small delay to let the UI render first
+            setTimeout(() => {
+              setErrorMessage('You need to authenticate with StockX to use the arbitrage finder.');
+              setIsAuthError(true);
+              // Optionally auto-redirect after showing the message
+              setTimeout(() => {
+                const currentUrl = window.location.href;
+                const authUrl = `/api/stockx/auth?returnTo=${encodeURIComponent(currentUrl)}`;
+                window.location.href = authUrl;
+              }, 2000); // 2 second delay to show the message
+            }, 500);
+          }
+        }
       } catch (error) {
         console.error('Auth check failed:', error);
         setIsAuthenticated(false);
+        setErrorMessage('Failed to check StockX authentication status. Please try refreshing the page.');
+        setIsAuthError(true);
       }
     };
     
@@ -1192,18 +1215,14 @@ const StockXArbitrage: React.FC = () => {
             <div className="bg-gray-800 rounded-lg p-8">
               <div className="text-6xl mb-4">🔍</div>
               <h3 className="text-xl font-semibold text-gray-300 mb-2">Ready to Find Arbitrage Opportunities</h3>
-              <p className="text-gray-400 max-w-md mx-auto mb-4">
+              <p className="text-gray-400 max-w-md mx-auto">
                 Search by popular brands like "Fear of God Essentials" or "Supreme", or paste StockX trending URLs like "https://stockx.com/category/apparel?sort=most-active" to discover what's currently hot on StockX. Set your minimum profit percentage to find profitable opportunities.
               </p>
-              <div className="flex justify-center gap-3">
-                <button
-                  onClick={handleStockXLogin}
-                  className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
-                >
-                  <LogIn className="w-4 h-4" />
-                  Login to StockX First
-                </button>
-              </div>
+              {!isAuthenticated && (
+                <p className="text-yellow-400 text-sm mt-4">
+                  Checking StockX authentication...
+                </p>
+              )}
             </div>
           </div>
         )}
