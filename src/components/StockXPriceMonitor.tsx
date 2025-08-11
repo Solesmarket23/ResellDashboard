@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Bell, BellRing, TrendingDown, TrendingUp, Plus, Trash2, Settings, AlertTriangle, DollarSign, Clock, Target, Zap, Loader2 } from 'lucide-react';
+import { Bell, BellRing, TrendingDown, TrendingUp, Plus, Trash2, Settings, AlertTriangle, DollarSign, Clock, Target, Zap, Loader2, ExternalLink } from 'lucide-react';
 import { usePriceMonitor } from '@/lib/contexts/PriceMonitorContext';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 
@@ -38,6 +38,9 @@ interface MonitoredProduct {
     newPrice: number;
     percentage: number;
   }>;
+  stockxUrl?: string;
+  urlKey?: string;
+  slug?: string;
 }
 
 interface NewProductForm {
@@ -108,11 +111,26 @@ const StockXPriceMonitor: React.FC = () => {
   const [slackEnabled, setSlackEnabled] = useState(() => {
     return localStorage.getItem('stockx_slack_enabled') === 'true';
   });
+  const [affiliateLinks, setAffiliateLinks] = useState<{ [key: string]: string }>({});
 
   // Mark alerts as read when viewing the page
   useEffect(() => {
     markAlertsAsRead();
   }, [markAlertsAsRead]);
+
+  // Helper function to generate StockX URL with size
+  const generateStockXUrl = (productName: string, productId: string, size?: string) => {
+    const slug = productName.toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-');
+    
+    // Include size in URL if provided
+    if (size) {
+      return `https://stockx.com/${slug}?size=${encodeURIComponent(size)}`;
+    }
+    return `https://stockx.com/${slug}`;
+  };
 
   // Update product threshold
   const updateProductThreshold = (productId: string, askThreshold: number, flexThreshold: number) => {
@@ -1882,6 +1900,61 @@ const StockXPriceMonitor: React.FC = () => {
                         <Trash2 className="w-4 h-4" />
                       </button>
                     )}
+                    
+                    {/* View on StockX button */}
+                    <button
+                      onClick={async () => {
+                        const productKey = `${product.productId}-${product.variantId}`;
+                        let affiliateLink = affiliateLinks[productKey];
+                        
+                        if (!affiliateLink) {
+                          // Generate StockX URL
+                          const stockxUrl = product.stockxUrl || generateStockXUrl(product.title, product.productId, product.size);
+                          
+                          try {
+                            const impactResponse = await fetch('/api/impact/create-link', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ 
+                                stockxUrl,
+                                customParams: {
+                                  productId: product.productId,
+                                  size: product.size,
+                                  source: 'price_monitor'
+                                }
+                              })
+                            });
+                            
+                            if (impactResponse.ok) {
+                              const impactData = await impactResponse.json();
+                              affiliateLink = impactData.trackingUrl || stockxUrl;
+                              
+                              // Cache the affiliate link
+                              setAffiliateLinks(prev => ({
+                                ...prev,
+                                [productKey]: affiliateLink
+                              }));
+                            } else {
+                              affiliateLink = stockxUrl;
+                            }
+                          } catch (error) {
+                            console.error('Error creating Impact.com link:', error);
+                            affiliateLink = stockxUrl;
+                          }
+                        }
+                        
+                        // Open the affiliate link
+                        window.open(affiliateLink, '_blank', 'noopener,noreferrer');
+                      }}
+                      className={`p-2 rounded-lg transition-all duration-200 flex items-center gap-2 ${
+                        theme === 'neon'
+                          ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-lg shadow-purple-500/30'
+                          : 'bg-purple-600 hover:bg-purple-700 text-white'
+                      }`}
+                      title="View on StockX"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
 
