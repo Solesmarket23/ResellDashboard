@@ -160,18 +160,23 @@ const StockXPriceMonitor: React.FC = () => {
   };
 
   // Bulk update all product thresholds
-  const bulkUpdateThresholds = () => {
+  const bulkUpdateThresholds = async () => {
     console.log('Bulk update triggered:', { bulkEditMode, bulkEditValues });
     
-    if (bulkEditMode === 'percentage') {
-      // Use percentage values directly
-      updateAllProductThresholds(bulkEditValues.askPercentage, bulkEditValues.flexPercentage);
-    } else {
-      // Use dollar amount values
-      updateAllProductThresholdsByAmount(bulkEditValues.askAmount, bulkEditValues.flexAmount);
+    try {
+      if (bulkEditMode === 'percentage') {
+        // Use percentage values directly
+        await updateAllProductThresholds(bulkEditValues.askPercentage, bulkEditValues.flexPercentage);
+      } else {
+        // Use dollar amount values
+        await updateAllProductThresholdsByAmount(bulkEditValues.askAmount, bulkEditValues.flexAmount);
+      }
+      
+      setShowBulkEdit(false);
+    } catch (error) {
+      console.error('Error updating thresholds:', error);
+      alert('Failed to update thresholds. Please try again.');
     }
-    
-    setShowBulkEdit(false);
   };
 
   // Save Slack settings
@@ -1877,9 +1882,14 @@ const StockXPriceMonitor: React.FC = () => {
                           theme === 'neon' ? 'text-red-300' : 'text-red-400'
                         }`}>Delete?</span>
                         <button
-                          onClick={() => {
-                            removeMonitoredProduct(product.id);
-                            setConfirmDeleteId(null);
+                          onClick={async () => {
+                            try {
+                              await removeMonitoredProduct(product.id!);
+                              setConfirmDeleteId(null);
+                            } catch (error) {
+                              console.error('Error removing product:', error);
+                              alert('Failed to remove product. Please try again.');
+                            }
                           }}
                           className={`px-3 py-1 rounded text-sm font-semibold transition-all duration-200 ${
                             theme === 'neon'

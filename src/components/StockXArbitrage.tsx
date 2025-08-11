@@ -8,6 +8,7 @@ import { generateEnhancedShareImage, EnhancedArbitrageShareData } from '@/lib/tw
 // Removed Sovrn imports - using Impact.com instead
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useSiteAuth } from '@/lib/hooks/useSiteAuth';
+import { usePriceMonitor } from '@/lib/contexts/PriceMonitorContext';
 
 // Enhanced placeholder component for StockX products since images aren't publicly accessible
 interface FallbackImageProps {
@@ -78,6 +79,7 @@ const StockXArbitrage: React.FC = () => {
   const isNeon = currentTheme.name.toLowerCase() === 'neon';
   const auth = useAuth();
   const siteAuth = useSiteAuth(); // Use site auth for password-protected users
+  const { addMonitoredProduct, monitoredProducts: firebaseMonitoredProducts } = usePriceMonitor();
   
   const [opportunities, setOpportunities] = useState<ArbitrageOpportunity[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -141,33 +143,21 @@ const StockXArbitrage: React.FC = () => {
     checkAuth();
   }, []);
 
-  // Load existing monitored products from localStorage
+  // Load existing monitored products from Firebase context
   useEffect(() => {
-    const loadMonitoredProducts = () => {
-      try {
-        const existingItems = localStorage.getItem('stockx_monitored_products');
-        if (existingItems) {
-          const monitoredItems = JSON.parse(existingItems);
-          const monitoredIds = new Set<string>();
-          
-          // Extract the monitor button IDs from stored products
-          monitoredItems.forEach((item: any) => {
-            if (item.productId && item.variantId) {
-              const buttonId = `monitor-${item.productId}-${item.variantId}`;
-              monitoredIds.add(buttonId);
-            }
-          });
-          
-          setMonitoredProducts(monitoredIds);
-          console.log('📊 Loaded monitored products:', monitoredIds.size, 'items');
-        }
-      } catch (error) {
-        console.error('Failed to load monitored products:', error);
-      }
-    };
+    const monitoredIds = new Set<string>();
     
-    loadMonitoredProducts();
-  }, []);
+    // Extract the monitor button IDs from Firebase products
+    firebaseMonitoredProducts.forEach((item: any) => {
+      if (item.productId && item.variantId) {
+        const buttonId = `monitor-${item.productId}-${item.variantId}`;
+        monitoredIds.add(buttonId);
+      }
+    });
+    
+    setMonitoredProducts(monitoredIds);
+    console.log('📊 Loaded monitored products from Firebase:', monitoredIds.size, 'items');
+  }, [firebaseMonitoredProducts]);
 
   // Check for success message on component mount
   useEffect(() => {
@@ -604,12 +594,8 @@ const StockXArbitrage: React.FC = () => {
     const buttonId = `monitor-${opportunity.productId}-${opportunity.variantId}`;
     setClickedButtons(prev => new Set(prev).add(buttonId));
     
-    // Get existing monitored products from localStorage
-    const existingItems = localStorage.getItem('stockx_monitored_products');
-    const monitoredItems = existingItems ? JSON.parse(existingItems) : [];
-    
-    // Check if already monitored
-    const isAlreadyMonitored = monitoredItems.some((item: any) => 
+    // Check if already monitored in Firebase
+    const isAlreadyMonitored = firebaseMonitoredProducts.some((item: any) => 
       item.productId === opportunity.productId && item.variantId === opportunity.variantId
     );
     
@@ -651,26 +637,35 @@ const StockXArbitrage: React.FC = () => {
       alerts: []
     };
     
-    // Add to monitored products
-    monitoredItems.push(newMonitoredProduct);
-    localStorage.setItem('stockx_monitored_products', JSON.stringify(monitoredItems));
-    
-    // Dispatch custom event to notify other components
-    window.dispatchEvent(new CustomEvent('stockx_products_updated'));
-    
-    // Update state
-    setMonitoredProducts(new Set([...monitoredProducts, buttonId]));
-    
-    // Start monitoring if not already active
-    const isMonitoringActive = localStorage.getItem('stockx_monitoring_active') === 'true';
-    if (!isMonitoringActive) {
-      localStorage.setItem('stockx_monitoring_active', 'true');
+    try {
+      // Add to Firebase using context
+      await addMonitoredProduct(newMonitoredProduct);
+      
+      // Update local state
+      setMonitoredProducts(new Set([...monitoredProducts, buttonId]));
+      
+      // Start monitoring if not already active
+      const isMonitoringActive = localStorage.getItem('stockx_monitoring_active') === 'true';
+      if (!isMonitoringActive) {
+        localStorage.setItem('stockx_monitoring_active', 'true');
+      }
+      
+      setTrackingMessage(`✅ Now monitoring ${opportunity.productName} for ${threshold}% price drops`);
+      setTimeout(() => {
+        setTrackingMessage(null);
+      }, 5000);
+    } catch (error) {
+      console.error('Error adding to price monitor:', error);
+      setTrackingMessage('❌ Error adding product to monitor. Please try again.');
+      setTimeout(() => {
+        setTrackingMessage(null);
+        setClickedButtons(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(buttonId);
+          return newSet;
+        });
+      }, 4000);
     }
-    
-    setTrackingMessage(`✅ Now monitoring ${opportunity.productName} for ${threshold}% price drops`);
-    setTimeout(() => {
-      setTrackingMessage(null);
-    }, 5000);
   };
 
   const addToFlexAskMonitor = (opportunity: ArbitrageOpportunity) => {

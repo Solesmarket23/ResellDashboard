@@ -13,6 +13,10 @@ import {
   deleteDoc,
   setDoc,
   deleteField,
+  query,
+  where,
+  onSnapshot,
+  Unsubscribe,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
@@ -94,6 +98,64 @@ export const uploadFile = async (file: File, path: string) => {
   const storageRef = ref(storage, path);
   await uploadBytes(storageRef, file);
   return getDownloadURL(storageRef);
+};
+
+// Query functions
+export const getDocumentsWhere = async (
+  collectionName: string, 
+  fieldPath: string, 
+  operator: any, 
+  value: any
+): Promise<any[]> => {
+  if (!db) {
+    console.warn('🔧 Firebase not initialized - returning empty array');
+    return [];
+  }
+  
+  try {
+    const q = query(collection(db, collectionName), where(fieldPath, operator, value));
+    const querySnapshot = await getDocs(q);
+    const documents = querySnapshot.docs.map(doc => ({
+      ...doc.data(),
+      id: doc.id,
+    }));
+    
+    console.log(`📄 getDocumentsWhere: Loaded ${documents.length} documents from ${collectionName}`);
+    return documents;
+  } catch (error) {
+    console.error(`❌ Error loading documents with query from ${collectionName}:`, error);
+    throw error;
+  }
+};
+
+// Real-time listener
+export const subscribeToCollection = (
+  collectionName: string,
+  userId: string | null,
+  callback: (documents: any[]) => void
+): Unsubscribe | null => {
+  if (!db || !userId) {
+    console.warn('🔧 Firebase not initialized or no user ID - skipping subscription');
+    return null;
+  }
+
+  try {
+    const q = query(collection(db, collectionName), where('userId', '==', userId));
+    
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const documents = querySnapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id,
+      }));
+      console.log(`📄 Real-time update: ${documents.length} documents from ${collectionName}`);
+      callback(documents);
+    });
+
+    return unsubscribe;
+  } catch (error) {
+    console.error(`❌ Error subscribing to ${collectionName}:`, error);
+    return null;
+  }
 };
 
 // Export deleteField for use in other components

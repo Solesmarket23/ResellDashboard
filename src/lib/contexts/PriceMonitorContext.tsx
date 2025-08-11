@@ -1,6 +1,9 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useRef, ReactNode } from "react";
+import { addDocument, updateDocument, deleteDocument, subscribeToCollection } from "@/lib/firebase/firebaseUtils";
+import { useAuth } from "@/lib/hooks/useAuth";
+import { Unsubscribe } from "firebase/firestore";
 
 interface PriceData {
   timestamp: number;
@@ -10,7 +13,8 @@ interface PriceData {
 }
 
 interface MonitoredProduct {
-  id: string;
+  id?: string; // Firebase document ID
+  userId: string; // User ID for Firebase queries
   productId: string;
   variantId: string;
   title: string;
@@ -73,6 +77,7 @@ export const usePriceMonitor = () => {
 };
 
 export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
+  const { user } = useAuth();
   const [monitoredProducts, setMonitoredProducts] = useState<MonitoredProduct[]>([]);
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [monitoringInterval, setMonitoringInterval] = useState(300000); // 5 minutes default
@@ -83,68 +88,64 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
   
   const monitoredProductsRef = useRef<MonitoredProduct[]>([]);
   const isCheckingRef = useRef(false);
+  const unsubscribeRef = useRef<Unsubscribe | null>(null);
 
-  // Load saved data from localStorage
+  // Subscribe to Firebase monitored products
   useEffect(() => {
-    const loadFromLocalStorage = () => {
-      const saved = localStorage.getItem('stockx_monitored_products');
-      if (saved) {
-        setMonitoredProducts(JSON.parse(saved));
+    if (!user?.uid) {
+      console.log('No user ID, skipping Firebase subscription');
+      return;
+    }
+
+    console.log('Setting up Firebase subscription for monitored products');
+    
+    // Subscribe to real-time updates from Firebase
+    const unsubscribe = subscribeToCollection(
+      'monitored_products',
+      user.uid,
+      (products: MonitoredProduct[]) => {
+        console.log(`Received ${products.length} monitored products from Firebase`);
+        setMonitoredProducts(products);
+        
+        // Calculate unread alerts
+        const unreadCount = products.reduce((count, product) => {
+          return count + (product.alerts?.filter(alert => alert.timestamp > lastReadTimestamp).length || 0);
+        }, 0);
+        setUnreadAlertCount(unreadCount);
       }
+    );
 
-      const savedMonitoring = localStorage.getItem('stockx_monitoring_active');
-      if (savedMonitoring === 'true') {
-        setIsMonitoring(true);
-      }
+    if (unsubscribe) {
+      unsubscribeRef.current = unsubscribe;
+    }
 
-      const savedInterval = localStorage.getItem('stockx_monitoring_interval');
-      if (savedInterval) {
-        setMonitoringInterval(parseInt(savedInterval));
-      }
+    // Load user preferences from localStorage (these can stay local)
+    const savedMonitoring = localStorage.getItem('stockx_monitoring_active');
+    if (savedMonitoring === 'true') {
+      setIsMonitoring(true);
+    }
 
-      const savedLastRead = localStorage.getItem('stockx_last_read_timestamp');
-      if (savedLastRead) {
-        setLastReadTimestamp(parseInt(savedLastRead));
-      }
-    };
+    const savedInterval = localStorage.getItem('stockx_monitoring_interval');
+    if (savedInterval) {
+      setMonitoringInterval(parseInt(savedInterval));
+    }
 
-    // Initial load
-    loadFromLocalStorage();
-
-    // Listen for changes from other tabs/components
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'stockx_monitored_products' && e.newValue) {
-        console.log('Detected change to monitored products from another source');
-        setMonitoredProducts(JSON.parse(e.newValue));
-      }
-    };
-
-    // Also listen for custom events from same tab
-    const handleCustomStorageChange = (e: CustomEvent) => {
-      console.log('Detected custom storage change event');
-      loadFromLocalStorage();
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    window.addEventListener('stockx_products_updated', handleCustomStorageChange as EventListener);
+    const savedLastRead = localStorage.getItem('stockx_last_read_timestamp');
+    if (savedLastRead) {
+      setLastReadTimestamp(parseInt(savedLastRead));
+    }
 
     return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('stockx_products_updated', handleCustomStorageChange as EventListener);
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+      }
     };
-  }, []);
+  }, [user?.uid]);
 
-  // Save products to localStorage and update ref
+  // Update ref when products change
   useEffect(() => {
-    localStorage.setItem('stockx_monitored_products', JSON.stringify(monitoredProducts));
     monitoredProductsRef.current = monitoredProducts;
-    
-    // Calculate unread alerts
-    const unreadCount = monitoredProducts.reduce((count, product) => {
-      return count + product.alerts.filter(alert => alert.timestamp > lastReadTimestamp).length;
-    }, 0);
-    setUnreadAlertCount(unreadCount);
-  }, [monitoredProducts, lastReadTimestamp]);
+  }, [monitoredProducts]);
 
   // Save monitoring state
   useEffect(() => {
@@ -401,65 +402,98 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
   };
 
   // Context actions
-  const addMonitoredProduct = (product: MonitoredProduct) => {
-    setMonitoredProducts(prev => {
-      const updated = [...prev, product];
-      // Save to localStorage
-      localStorage.setItem('stockx_monitored_products', JSON.stringify(updated));
-      return updated;
-    });
+  const addMonitoredProduct = async (product: MonitoredProduct) => {
+    if (!user?.uid) {
+      console.error('No user ID available');
+      return;
+    }
+
+    try {
+      // Add userId to product
+      const productWithUser = {
+        ...product,
+        userId: user.uid,
+        lastChecked: Date.now()
+      };
+      
+      // Remove id field before adding to Firebase
+      const { id, ...productData } = productWithUser;
+      
+      // Add to Firebase
+      await addDocument('monitored_products', productData);
+      console.log('Product added to Firebase');
+    } catch (error) {
+      console.error('Error adding product to Firebase:', error);
+      throw error;
+    }
   };
 
-  const removeMonitoredProduct = (productId: string) => {
-    setMonitoredProducts(prev => {
-      const updated = prev.filter(p => p.id !== productId);
-      // Save to localStorage
-      localStorage.setItem('stockx_monitored_products', JSON.stringify(updated));
-      return updated;
-    });
+  const removeMonitoredProduct = async (productId: string) => {
+    try {
+      // Delete from Firebase
+      await deleteDocument('monitored_products', productId);
+      console.log('Product removed from Firebase');
+    } catch (error) {
+      console.error('Error removing product from Firebase:', error);
+      throw error;
+    }
   };
 
-  const updateAllProductThresholds = (askThreshold: number, flexThreshold: number) => {
-    setMonitoredProducts(prev => {
-      const updated = prev.map(p => ({
-        ...p,
-        priceDropThreshold: askThreshold,
-        flexPriceDropThreshold: flexThreshold,
-        thresholdType: 'percentage' as const,
-        askThresholdAmount: undefined,
-        flexThresholdAmount: undefined
-      }));
-      // Save to localStorage
-      localStorage.setItem('stockx_monitored_products', JSON.stringify(updated));
-      return updated;
-    });
-  };
-
-  const updateAllProductThresholdsByAmount = (askAmount: number, flexAmount: number) => {
-    setMonitoredProducts(prev => {
-      const updated = prev.map(p => {
-        // Calculate percentage for each product based on its current price
-        const askPercentage = p.currentAsk > 0 ? (askAmount / p.currentAsk) * 100 : 1;
-        const flexPercentage = p.currentFlexAsk && p.currentFlexAsk > 0 
-          ? (flexAmount / p.currentFlexAsk) * 100 
-          : 1;
-        
-        return {
-          ...p,
-          priceDropThreshold: Math.max(0.1, Math.min(50, askPercentage)),
-          flexPriceDropThreshold: Math.max(0.1, Math.min(50, flexPercentage)),
-          thresholdType: 'amount' as const,
-          askThresholdAmount: askAmount,
-          flexThresholdAmount: flexAmount,
-          // Update target prices based on dollar amount thresholds
-          targetAskPrice: p.currentAsk > askAmount ? p.currentAsk - askAmount : p.currentAsk * 0.9,
-          targetFlexAskPrice: p.currentFlexAsk && p.currentFlexAsk > flexAmount ? p.currentFlexAsk - flexAmount : p.currentFlexAsk ? p.currentFlexAsk * 0.9 : undefined
-        };
+  const updateAllProductThresholds = async (askThreshold: number, flexThreshold: number) => {
+    try {
+      // Update each product in Firebase
+      const updatePromises = monitoredProducts.map(product => {
+        if (product.id) {
+          return updateDocument('monitored_products', product.id, {
+            priceDropThreshold: askThreshold,
+            flexPriceDropThreshold: flexThreshold,
+            thresholdType: 'percentage',
+            askThresholdAmount: null,
+            flexThresholdAmount: null
+          }, true); // Use merge to only update these fields
+        }
+        return Promise.resolve();
       });
-      // Save to localStorage
-      localStorage.setItem('stockx_monitored_products', JSON.stringify(updated));
-      return updated;
-    });
+      
+      await Promise.all(updatePromises);
+      console.log('All product thresholds updated in Firebase');
+    } catch (error) {
+      console.error('Error updating thresholds:', error);
+      throw error;
+    }
+  };
+
+  const updateAllProductThresholdsByAmount = async (askAmount: number, flexAmount: number) => {
+    try {
+      // Update each product in Firebase with calculated percentages
+      const updatePromises = monitoredProducts.map(product => {
+        if (product.id) {
+          // Calculate percentage for each product based on its current price
+          const askPercentage = product.currentAsk > 0 ? (askAmount / product.currentAsk) * 100 : 1;
+          const flexPercentage = product.currentFlexAsk && product.currentFlexAsk > 0 
+            ? (flexAmount / product.currentFlexAsk) * 100 
+            : 1;
+          
+          return updateDocument('monitored_products', product.id, {
+            priceDropThreshold: Math.max(0.1, Math.min(50, askPercentage)),
+            flexPriceDropThreshold: Math.max(0.1, Math.min(50, flexPercentage)),
+            thresholdType: 'amount',
+            askThresholdAmount: askAmount,
+            flexThresholdAmount: flexAmount,
+            // Update target prices based on dollar amount thresholds
+            targetAskPrice: product.currentAsk > askAmount ? product.currentAsk - askAmount : product.currentAsk * 0.9,
+            targetFlexAskPrice: product.currentFlexAsk && product.currentFlexAsk > flexAmount ? product.currentFlexAsk - flexAmount : product.currentFlexAsk ? product.currentFlexAsk * 0.9 : null
+          }, true); // Use merge
+        }
+        return Promise.resolve();
+      });
+      
+      await Promise.all(updatePromises);
+      console.log('All product thresholds updated by amount in Firebase');
+    } catch (error) {
+      console.error('Error updating thresholds by amount:', error);
+      throw error;
+    }
   };
 
   const clearNotifications = () => {
