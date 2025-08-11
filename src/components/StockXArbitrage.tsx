@@ -655,6 +655,9 @@ const StockXArbitrage: React.FC = () => {
     monitoredItems.push(newMonitoredProduct);
     localStorage.setItem('stockx_monitored_products', JSON.stringify(monitoredItems));
     
+    // Dispatch custom event to notify other components
+    window.dispatchEvent(new CustomEvent('stockx_products_updated'));
+    
     // Update state
     setMonitoredProducts(new Set([...monitoredProducts, buttonId]));
     

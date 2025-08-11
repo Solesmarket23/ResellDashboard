@@ -86,25 +86,52 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
 
   // Load saved data from localStorage
   useEffect(() => {
-    const saved = localStorage.getItem('stockx_monitored_products');
-    if (saved) {
-      setMonitoredProducts(JSON.parse(saved));
-    }
+    const loadFromLocalStorage = () => {
+      const saved = localStorage.getItem('stockx_monitored_products');
+      if (saved) {
+        setMonitoredProducts(JSON.parse(saved));
+      }
 
-    const savedMonitoring = localStorage.getItem('stockx_monitoring_active');
-    if (savedMonitoring === 'true') {
-      setIsMonitoring(true);
-    }
+      const savedMonitoring = localStorage.getItem('stockx_monitoring_active');
+      if (savedMonitoring === 'true') {
+        setIsMonitoring(true);
+      }
 
-    const savedInterval = localStorage.getItem('stockx_monitoring_interval');
-    if (savedInterval) {
-      setMonitoringInterval(parseInt(savedInterval));
-    }
+      const savedInterval = localStorage.getItem('stockx_monitoring_interval');
+      if (savedInterval) {
+        setMonitoringInterval(parseInt(savedInterval));
+      }
 
-    const savedLastRead = localStorage.getItem('stockx_last_read_timestamp');
-    if (savedLastRead) {
-      setLastReadTimestamp(parseInt(savedLastRead));
-    }
+      const savedLastRead = localStorage.getItem('stockx_last_read_timestamp');
+      if (savedLastRead) {
+        setLastReadTimestamp(parseInt(savedLastRead));
+      }
+    };
+
+    // Initial load
+    loadFromLocalStorage();
+
+    // Listen for changes from other tabs/components
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'stockx_monitored_products' && e.newValue) {
+        console.log('Detected change to monitored products from another source');
+        setMonitoredProducts(JSON.parse(e.newValue));
+      }
+    };
+
+    // Also listen for custom events from same tab
+    const handleCustomStorageChange = (e: CustomEvent) => {
+      console.log('Detected custom storage change event');
+      loadFromLocalStorage();
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('stockx_products_updated', handleCustomStorageChange as EventListener);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('stockx_products_updated', handleCustomStorageChange as EventListener);
+    };
   }, []);
 
   // Save products to localStorage and update ref
@@ -375,11 +402,21 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
 
   // Context actions
   const addMonitoredProduct = (product: MonitoredProduct) => {
-    setMonitoredProducts(prev => [...prev, product]);
+    setMonitoredProducts(prev => {
+      const updated = [...prev, product];
+      // Save to localStorage
+      localStorage.setItem('stockx_monitored_products', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   const removeMonitoredProduct = (productId: string) => {
-    setMonitoredProducts(prev => prev.filter(p => p.id !== productId));
+    setMonitoredProducts(prev => {
+      const updated = prev.filter(p => p.id !== productId);
+      // Save to localStorage
+      localStorage.setItem('stockx_monitored_products', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   const updateAllProductThresholds = (askThreshold: number, flexThreshold: number) => {
