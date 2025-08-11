@@ -884,7 +884,26 @@ const StockXArbitrage: React.FC = () => {
               <input
                 type="number"
                 value={minSpreadPercentage}
-                onChange={(e) => setMinSpreadPercentage(Number(e.target.value))}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  // Handle empty input
+                  if (value === '') {
+                    setMinSpreadPercentage(0);
+                  } else {
+                    // Parse as number to remove leading zeros
+                    const numValue = parseInt(value, 10);
+                    // Ensure value is within bounds
+                    if (!isNaN(numValue)) {
+                      setMinSpreadPercentage(Math.min(100, Math.max(0, numValue)));
+                    }
+                  }
+                }}
+                onBlur={(e) => {
+                  // If empty on blur, set to default
+                  if (e.target.value === '' || e.target.value === '0') {
+                    setMinSpreadPercentage(10);
+                  }
+                }}
                 className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
                 placeholder="10"
                 min="0"
