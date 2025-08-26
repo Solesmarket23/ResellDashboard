@@ -35,6 +35,59 @@ body {
   color: white;
 }
 
+/* Neon Notification Animations */
+@keyframes animate-progress {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}
+
+@keyframes pulse-glow-green {
+  0%, 100% {
+    filter: drop-shadow(0 0 20px rgba(74, 222, 128, 0.8));
+  }
+  50% {
+    filter: drop-shadow(0 0 40px rgba(74, 222, 128, 1));
+  }
+}
+
+@keyframes pulse-glow-red {
+  0%, 100% {
+    filter: drop-shadow(0 0 20px rgba(248, 113, 113, 0.8));
+  }
+  50% {
+    filter: drop-shadow(0 0 40px rgba(248, 113, 113, 1));
+  }
+}
+
+@keyframes pulse-glow-yellow {
+  0%, 100% {
+    filter: drop-shadow(0 0 20px rgba(250, 204, 21, 0.8));
+  }
+  50% {
+    filter: drop-shadow(0 0 40px rgba(250, 204, 21, 1));
+  }
+}
+
+.animate-progress {
+  animation: animate-progress linear forwards;
+}
+
+.animate-pulse-glow-green {
+  animation: pulse-glow-green 2s ease-in-out infinite;
+}
+
+.animate-pulse-glow-red {
+  animation: pulse-glow-red 2s ease-in-out infinite;
+}
+
+.animate-pulse-glow-yellow {
+  animation: pulse-glow-yellow 2s ease-in-out infinite;
+}
+
 /* Neon Card Styles */
 .dark-neon-card {
   background: rgba(255, 255, 255, 0.05);

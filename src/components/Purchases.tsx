@@ -18,6 +18,7 @@ import SimpleAutoSync from './SimpleAutoSync';
 import GmailBatchedSync from './GmailBatchedSync';
 import StatusUpdater from './StatusUpdater';
 import FixItemProducts from './FixItemProducts';
+import NeonNotification, { NotificationType } from './NeonNotification';
 
 const Purchases = () => {
   const [sortBy, setSortBy] = useState('Purchase Date');
@@ -43,6 +44,11 @@ const Purchases = () => {
   const [isAutoStatusEnabled, setIsAutoStatusEnabled] = useState(false);
   const [lastAutoStatusUpdate, setLastAutoStatusUpdate] = useState<Date | null>(null);
   const [showFixItemProducts, setShowFixItemProducts] = useState(false);
+  const [notification, setNotification] = useState<{
+    isVisible: boolean;
+    message: string;
+    type: NotificationType;
+  }>({ isVisible: false, message: '', type: 'success' });
   const [imagePreview, setImagePreview] = useState<{
     isOpen: boolean;
     imageUrl: string;
@@ -248,6 +254,11 @@ const Purchases = () => {
       window.removeEventListener('emailConfigUpdated', handleConfigUpdate);
     };
   }, [gmailConnected]);
+
+  // Show notification helper
+  const showNotification = (message: string, type: NotificationType) => {
+    setNotification({ isVisible: true, message, type });
+  };
 
   // Handle batched Gmail sync updates
   const handleBatchedPurchasesUpdate = async (allPurchases: any[]) => {
@@ -1476,7 +1487,12 @@ const Purchases = () => {
       />
 
       {/* Add Purchase Modal */}
-      {showAddPurchaseModal && <AddPurchaseModal />}
+      {showAddPurchaseModal && (
+        <AddPurchaseModal 
+          onClose={() => setShowAddPurchaseModal(false)}
+          onSuccess={showNotification}
+        />
+      )}
 
       {/* Batched Gmail Sync Modal */}
       {showBatchedSync && (
@@ -1501,15 +1517,23 @@ const Purchases = () => {
           </div>
         </div>
       )}
+      
+      {/* Neon Notification */}
+      {notification.isVisible && (
+        <NeonNotification
+          message={notification.message}
+          type={notification.type}
+          onClose={() => setNotification({ ...notification, isVisible: false })}
+        />
+      )}
     </div>
   );
 };
 
 // Add Purchase Modal Component
-const AddPurchaseModal = () => {
+const AddPurchaseModal = ({ onClose, onSuccess }: { onClose: () => void; onSuccess: (message: string, type: NotificationType) => void }) => {
   const { currentTheme } = useTheme();
   const { user } = useAuth();
-  const [showAddPurchaseModal, setShowAddPurchaseModal] = useState(true);
   const [formData, setFormData] = useState({
     productName: '',
     brand: '',
@@ -1526,7 +1550,7 @@ const AddPurchaseModal = () => {
     e.preventDefault();
     
     if (!user) {
-      alert('Please sign in to add purchases');
+      onSuccess('Please sign in to add purchases', 'error');
       return;
     }
 
@@ -1563,14 +1587,14 @@ const AddPurchaseModal = () => {
       };
       
       await addDocument('purchases', purchaseData);
-      alert('✅ Purchase added successfully!');
-      setShowAddPurchaseModal(false);
+      onSuccess('Purchase added successfully!', 'success');
+      onClose();
       
       // Refresh the page to show new purchase
       window.location.reload();
     } catch (error) {
       console.error('Error adding purchase:', error);
-      alert('❌ Error adding purchase. Please try again.');
+      onSuccess('Error adding purchase. Please try again.', 'error');
     }
   };
 
@@ -1580,7 +1604,7 @@ const AddPurchaseModal = () => {
         <div className="flex items-center justify-between mb-4">
           <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>Add Purchase</h3>
           <button
-            onClick={() => setShowAddPurchaseModal(false)}
+            onClick={onClose}
             className={`${currentTheme.colors.textSecondary} hover:${currentTheme.colors.textPrimary}`}
           >
             ✕
@@ -1759,7 +1783,7 @@ const AddPurchaseModal = () => {
           <div className="flex justify-end space-x-3 pt-4">
             <button
               type="button"
-              onClick={() => setShowAddPurchaseModal(false)}
+              onClick={onClose}
               className={`px-4 py-2 ${
                 currentTheme.name === 'Neon' 
                   ? 'bg-white/10 hover:bg-white/20 text-gray-300 border border-white/20' 
