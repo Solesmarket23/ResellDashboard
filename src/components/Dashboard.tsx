@@ -506,58 +506,8 @@ const Dashboard = () => {
           </div>
         </div>
         
-        {/* Refresh, Reset Data & Theme Selector */}
+        {/* Theme Selector Only */}
         <div className="flex items-center space-x-4">
-          {/* Refresh Data Button */}
-          <button
-            onClick={() => {
-              console.log('🔄 Manual refresh button clicked');
-              loadPurchasesData();
-              refreshSales();
-            }}
-            disabled={salesLoading || purchasesLoading}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-              currentTheme.name === 'Neon'
-                ? 'bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/30 disabled:opacity-50'
-                : 'bg-blue-100 hover:bg-blue-200 text-blue-700 border border-blue-300 disabled:opacity-50'
-            }`}
-            title="Refresh dashboard data"
-          >
-            <RefreshCw className={`w-4 h-4 ${(salesLoading || purchasesLoading) ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
-          </button>
-
-          {/* Test Event Button - Remove this after testing */}
-          <button
-            onClick={() => {
-              console.log('🧪 Test: Dispatching salesDataChanged event manually');
-              window.dispatchEvent(new CustomEvent('salesDataChanged'));
-            }}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-              currentTheme.name === 'Neon'
-                ? 'bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 border border-yellow-500/30'
-                : 'bg-yellow-100 hover:bg-yellow-200 text-yellow-700 border border-yellow-300'
-            }`}
-            title="Test event communication"
-          >
-            <span>🧪</span>
-            <span>Test Event</span>
-          </button>
-
-          {/* Reset All Data Button */}
-          <button
-            onClick={() => setShowResetConfirm(true)}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-              currentTheme.name === 'Neon'
-                ? 'bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30'
-                : 'bg-red-100 hover:bg-red-200 text-red-700 border border-red-300'
-            }`}
-            title="Reset all your data to start fresh"
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span>Reset Data</span>
-          </button>
-
           {/* Theme Number Selector */}
           <div className="flex items-center space-x-2">
             <span className={`text-sm font-medium ${currentTheme.colors.textSecondary} mr-2`}>Theme:</span>
