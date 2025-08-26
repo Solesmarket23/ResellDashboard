@@ -35,6 +35,9 @@ import StockXTrends from '../../components/StockXTrends';
 import StockXAlerts from '../../components/StockXAlerts';
 import StockXListingCreator from '../../components/StockXListingCreator';
 import OnboardingQuestionnaire from '../../components/OnboardingQuestionnaire';
+import AliasInventory from '../../components/AliasInventory';
+import AliasListingCreator from '../../components/AliasListingCreator';
+import AliasOrderManagement from '../../components/AliasOrderManagement';
 
 export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -238,6 +241,34 @@ export default function DashboardPage() {
         return <StockXListingCreator />;
       case 'onboarding-questionnaire':
         return <OnboardingQuestionnaire onComplete={() => handleItemClick('dashboard')} />;
+      case 'alias-inventory':
+        return <AliasInventory />;
+      case 'alias-listings':
+        return <AliasListingCreator />;
+      case 'alias-orders':
+        return <AliasOrderManagement />;
+      case 'alias-pricing':
+        return (
+          <div className={`flex-1 p-4 sm:p-8 ${currentTheme.colors.background}`}>
+            <h1 className={`text-2xl sm:text-3xl font-bold ${
+              isNeon ? 'text-white' : 'text-gray-900'
+            }`}>Alias Pricing Insights</h1>
+            <p className={`mt-4 ${
+              isNeon ? 'text-slate-400' : 'text-gray-600'
+            }`}>Advanced pricing analytics and market insights for Alias marketplace. Coming soon...</p>
+          </div>
+        );
+      case 'alias-arbitrage':
+        return (
+          <div className={`flex-1 p-4 sm:p-8 ${currentTheme.colors.background}`}>
+            <h1 className={`text-2xl sm:text-3xl font-bold ${
+              isNeon ? 'text-white' : 'text-gray-900'
+            }`}>Cross-Platform Arbitrage</h1>
+            <p className={`mt-4 ${
+              isNeon ? 'text-slate-400' : 'text-gray-600'
+            }`}>Find profitable arbitrage opportunities between Alias, StockX, and other marketplaces. Coming soon...</p>
+          </div>
+        );
       default:
         return (
           <div className={`flex-1 p-4 sm:p-8 ${currentTheme.colors.background}`}>

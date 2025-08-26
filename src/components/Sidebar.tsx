@@ -26,7 +26,8 @@ import {
   DollarSign,
   Truck,
   User,
-  LogOut
+  LogOut,
+  Plus
 } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
@@ -84,6 +85,16 @@ const navigationItems = [
       { id: 'stockx-profit-calc', label: 'Enhanced Profit Calc', icon: Calculator },
       { id: 'stockx-trends', label: 'Market Trends', icon: LineChart },
       { id: 'stockx-alerts', label: 'Alert System', icon: Bell },
+    ]
+  },
+  {
+    section: 'ALIAS INTEGRATION',
+    items: [
+      { id: 'alias-inventory', label: 'Inventory Manager', icon: Package },
+      { id: 'alias-listings', label: 'Create Listing', icon: Plus },
+      { id: 'alias-orders', label: 'Order Management', icon: Truck },
+      { id: 'alias-pricing', label: 'Pricing Insights', icon: LineChart },
+      { id: 'alias-arbitrage', label: 'Cross-Platform Arbitrage', icon: ArrowLeftRight },
     ]
   },
   {

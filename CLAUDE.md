@@ -146,6 +146,8 @@ NEXT_PUBLIC_FIREBASE_APP_ID
 STOCKX_CLIENT_ID
 STOCKX_CLIENT_SECRET
 
+ALIAS_BEARER_TOKEN
+
 GMAIL_CLIENT_ID
 GMAIL_CLIENT_SECRET
 
@@ -166,6 +168,29 @@ REPLICATE_API_TOKEN
 2. Use OAuth flow for authentication
 3. Implement error handling for API limits
 4. Test with sandbox/test endpoints first
+
+### Alias API Integration
+1. **Authentication**: Uses Bearer token authentication (stored in ALIAS_BEARER_TOKEN env var)
+2. **API Routes**: Located in `src/app/api/alias/`
+   - `/auth` - Test API connection
+   - `/catalog` - Search product catalog
+   - `/listings` - Manage listings (CRUD operations)
+   - `/orders` - Track and manage orders
+   - `/pricing` - Get pricing insights
+   - `/batch` - Batch operations for bulk listing management
+3. **Components**: Located in `src/components/`
+   - `AliasInventory.tsx` - View and manage all listings
+   - `AliasListingCreator.tsx` - Create new listings
+   - `AliasOrderManagement.tsx` - Track orders and generate labels
+4. **Data Storage**: Firebase collections
+   - `aliasListings` - Store listing data
+   - `aliasOrders` - Track order information
+5. **Key Features**:
+   - Catalog search with product details
+   - Create/update/delete listings
+   - Batch operations (up to 1,000 items)
+   - Order tracking and label generation
+   - Pricing insights and market data
 
 ### Adding New Dashboard Metrics
 1. Update calculation logic in `Dashboard.tsx`
