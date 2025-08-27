@@ -370,6 +370,8 @@ function processSalesData(rawData: any): StockXSale[] {
     // Debug: Check where size data might be
     console.log('📏 Size data debug:', {
       productName: firstOrder.product?.productName || firstOrder.product?.name || firstOrder.productName,
+      variant_variantValue: firstOrder.variant?.variantValue, // THIS IS WHERE SIZE SHOULD BE!
+      variant_variantName: firstOrder.variant?.variantName,
       variant_size: firstOrder.variant?.size,
       root_size: firstOrder.size,
       productSize: firstOrder.productSize,
@@ -388,6 +390,7 @@ function processSalesData(rawData: any): StockXSale[] {
     // Log the variant structure if it exists
     if (firstOrder.variant) {
       console.log('🔍 Variant structure:', JSON.stringify(firstOrder.variant, null, 2));
+      console.log('✅ SIZE FOUND:', firstOrder.variant.variantValue || 'NOT IN variantValue');
     }
     
     // If we have multiple orders, check if payout data varies
@@ -463,9 +466,11 @@ function processSalesData(rawData: any): StockXSale[] {
         urlKey: order.product?.urlKey
       },
       variant: {
-        variantId: order.variant?.id || order.variantId || '',
-        // StockX selling API doesn't include size, so we try multiple fallbacks
-        size: order.variant?.size || 
+        variantId: order.variant?.variantId || order.variant?.id || order.variantId || '',
+        // According to StockX API docs, size is in variant.variantValue
+        size: order.variant?.variantValue || 
+              order.variantValue ||
+              order.variant?.size || 
               order.size || 
               order.productSize || 
               order.product?.size || 
@@ -476,7 +481,8 @@ function processSalesData(rawData: any): StockXSale[] {
               // If we have a product title, try to extract size from it
               extractSizeFromTitle(order.product?.productName || order.product?.name || order.productName || '') ||
               'Size not available',
-        sizeType: order.variant?.sizeType || order.sizeType
+        sizeType: order.variant?.sizeType || order.sizeType,
+        variantName: order.variant?.variantName
       },
       pricing: {
         salePrice: parseFloat(order.amount || order.salePrice || order.price || '0'),

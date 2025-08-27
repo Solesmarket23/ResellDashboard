@@ -109,10 +109,14 @@ export async function GET(request: NextRequest) {
         orderDetails: orderDetails,
         // Specifically check for size data
         sizeLocations: {
+          variantValue: firstOrder.variant?.variantValue, // THIS IS WHERE SIZE SHOULD BE!
+          variantName: firstOrder.variant?.variantName,
           inVariant: firstOrder.variant?.size,
           inRoot: firstOrder.size,
           inProduct: firstOrder.product?.size,
           inItem: firstOrder.item?.size,
+          hasVariant: !!firstOrder.variant,
+          variantKeys: firstOrder.variant ? Object.keys(firstOrder.variant) : [],
           allKeys: Object.keys(firstOrder),
           // Deep search results
           allSizeFields: allSizeFields,

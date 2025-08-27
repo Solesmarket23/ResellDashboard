@@ -709,10 +709,14 @@ const Sales = () => {
 StockX Order Debug Info:
 
 Size Locations Checked:
+- variant.variantValue: ${data.sizeLocations.variantValue || 'Not found'} ← SIZE SHOULD BE HERE!
+- variant.variantName: ${data.sizeLocations.variantName || 'Not found'}
 - variant.size: ${data.sizeLocations.inVariant || 'Not found'}
 - root size: ${data.sizeLocations.inRoot || 'Not found'}
 - product.size: ${data.sizeLocations.inProduct || 'Not found'}
 - item.size: ${data.sizeLocations.inItem || 'Not found'}
+- Has variant object: ${data.sizeLocations.hasVariant ? 'Yes' : 'No'}
+- Variant keys: ${data.sizeLocations.variantKeys?.join(', ') || 'None'}
 
 All Size Fields Found:
 ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `- ${key}: ${value}`).join('\n') || 'No size fields found'}`;
