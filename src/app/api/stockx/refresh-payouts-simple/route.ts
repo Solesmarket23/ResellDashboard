@@ -53,13 +53,22 @@ export async function GET(request: NextRequest) {
     
     // If no sales found for user, return helpful message
     if (userSales.length === 0) {
+      console.log('🚨 No sales found for user. Checking why...');
+      console.log('🔍 All user IDs in collection:', [...new Set(allSales.map(s => s.userId))]);
+      console.log('🔍 Looking for userId:', userId);
+      
       return NextResponse.json({
         success: false,
-        message: 'No StockX sales found for your account. Please sync your StockX sales first.',
+        message: 'No StockX sales found for your account. Please click "Sync StockX Sales" first to import your sales.',
         updated: 0,
         failed: 0,
         total: 0,
-        needsSync: true
+        needsSync: true,
+        debug: {
+          totalSalesInDB: allSales.length,
+          uniqueUserIds: [...new Set(allSales.map(s => s.userId))].length,
+          requestedUserId: userId
+        }
       });
     }
     
