@@ -705,7 +705,7 @@ const Sales = () => {
                   console.log('📏 Size Locations Found:', data.sizeLocations);
                   
                   // Create a detailed alert showing where size might be
-                  const sizeInfo = `
+                  let sizeInfo = `
 StockX Order Debug Info:
 
 Size Locations Checked:
@@ -715,10 +715,28 @@ Size Locations Checked:
 - item.size: ${data.sizeLocations.inItem || 'Not found'}
 
 All Size Fields Found:
-${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `- ${key}: ${value}`).join('\n') || 'No size fields found'}
+${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `- ${key}: ${value}`).join('\n') || 'No size fields found'}`;
 
-Check browser console for full order structure.
-                  `.trim();
+                  // Add details API info if available
+                  if (data.sizeLocations.detailsApiInfo) {
+                    const detailsInfo = data.sizeLocations.detailsApiInfo;
+                    if (detailsInfo.hasDetails) {
+                      sizeInfo += `\n\nOrder Details API Results:`;
+                      if (detailsInfo.sizeFieldsInDetails && Object.keys(detailsInfo.sizeFieldsInDetails).length > 0) {
+                        sizeInfo += `\nSize Fields in Details:`;
+                        Object.entries(detailsInfo.sizeFieldsInDetails).forEach(([key, value]) => {
+                          sizeInfo += `\n- ${key}: ${value}`;
+                        });
+                      } else {
+                        sizeInfo += `\nNo size fields found in details either.`;
+                      }
+                    } else {
+                      sizeInfo += `\n\nCould not fetch order details: ${detailsInfo.error}`;
+                    }
+                  }
+
+                  sizeInfo += `\n\nCheck browser console for full order structure.`;
+                  sizeInfo = sizeInfo.trim();
                   
                   alert(sizeInfo);
                 } else if (data.error === 'Missing authentication') {

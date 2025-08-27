@@ -54,10 +54,59 @@ export async function GET(request: NextRequest) {
       
       const allSizeFields = findSizeFields(firstOrder);
       
+      // If no size found, try to fetch individual order details
+      let orderDetails = null;
+      let detailsSizeInfo = {};
+      
+      if (Object.keys(allSizeFields).length === 0 && firstOrder.id) {
+        console.log('📝 No size found in list response, fetching order details...');
+        
+        try {
+          // Fetch individual order details
+          const detailsResponse = await fetch(`https://api.stockx.com/v2/selling/orders/${firstOrder.id}`, {
+            method: 'GET',
+            headers: {
+              'x-api-key': apiKey,
+              'Authorization': `Bearer ${accessToken}`,
+              'Accept': 'application/json',
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+            }
+          });
+          
+          if (detailsResponse.ok) {
+            orderDetails = await detailsResponse.json();
+            console.log('✅ Got order details:', JSON.stringify(orderDetails, null, 2));
+            
+            // Search for size in the detailed response
+            const detailsSizeFields = findSizeFields(orderDetails);
+            detailsSizeInfo = {
+              hasDetails: true,
+              sizeFieldsInDetails: detailsSizeFields,
+              variant: orderDetails.variant,
+              product: orderDetails.product,
+              item: orderDetails.item
+            };
+          } else {
+            console.log('❌ Could not fetch order details:', detailsResponse.status);
+            detailsSizeInfo = {
+              hasDetails: false,
+              error: `Status ${detailsResponse.status}`
+            };
+          }
+        } catch (err) {
+          console.error('Error fetching order details:', err);
+          detailsSizeInfo = {
+            hasDetails: false,
+            error: err.message
+          };
+        }
+      }
+      
       return NextResponse.json({
         success: true,
         totalOrders: rawData.orders.length,
         firstOrder: firstOrder,
+        orderDetails: orderDetails,
         // Specifically check for size data
         sizeLocations: {
           inVariant: firstOrder.variant?.size,
@@ -74,7 +123,9 @@ export async function GET(request: NextRequest) {
             'product.traits.size': firstOrder.product?.traits?.size,
             'metadata.size': firstOrder.metadata?.size,
             'attributes.size': firstOrder.attributes?.size
-          }
+          },
+          // Details API results
+          detailsApiInfo: detailsSizeInfo
         }
       });
     }
