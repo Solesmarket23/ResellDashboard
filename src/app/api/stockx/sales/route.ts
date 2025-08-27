@@ -505,16 +505,26 @@ function processSalesData(rawData: any): StockXSale[] {
             payout = salePrice - sellerFees;
           }
           
-          // Apply StockX $5 minimum transaction fee for sales ≤$71
-          // This ensures accurate payouts matching StockX's actual calculations
-          if (salePrice > 0 && salePrice <= 71 && payout > 0) {
-            const expectedMinimumFee = 5.00;
-            const currentFees = salePrice - payout;
-            
-            // If current fees are less than $5, adjust payout
-            if (currentFees < expectedMinimumFee) {
-              payout = salePrice - expectedMinimumFee;
-              console.log(`💵 Order ${order.orderNumber || order.id}: Applied $5 minimum fee for $${salePrice} sale. Payout: $${payout.toFixed(2)}`);
+          // Apply StockX fee structure for accurate payouts when API data is incomplete
+          // For sales ≤$71: $5 minimum transaction fee + 3% processing + shipping (from API)
+          if (salePrice > 0 && payout > 0) {
+            // If we don't have complete fee data from API, calculate based on StockX rules
+            if (!payoutData.totalPayout) {
+              const transactionFee = salePrice <= 71 ? 5.00 : (salePrice * 0.095); // 9.5% or $5 minimum
+              const processingFee = salePrice * 0.03; // 3% payment processing
+              // Use shipping fee from API data, default to 0 if not provided (free shipping)
+              const shippingFee = parseFloat(order.shippingFee || order.shipping?.fee || '0');
+              const totalFees = transactionFee + processingFee + shippingFee;
+              
+              const calculatedPayout = salePrice - totalFees;
+              
+              // Only apply if it results in a lower payout (more accurate)
+              if (calculatedPayout < payout || payout === 0) {
+                console.log(`💵 Order ${order.orderNumber || order.id}: Applying StockX fee structure for $${salePrice} sale`);
+                console.log(`   Transaction: $${transactionFee.toFixed(2)}, Processing: $${processingFee.toFixed(2)}, Shipping: $${shippingFee.toFixed(2)}`);
+                console.log(`   Total fees: $${totalFees.toFixed(2)}, Payout: $${calculatedPayout.toFixed(2)}`);
+                payout = calculatedPayout;
+              }
             }
           }
           

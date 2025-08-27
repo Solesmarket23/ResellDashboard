@@ -28,19 +28,22 @@ export async function GET(request: NextRequest) {
       const salePrice = sale.saleData.pricing.salePrice;
       const currentPayout = sale.saleData.pricing.totalPayout;
       
-      // Check if this sale qualifies for minimum fee and needs correction
-      if (salePrice > 0 && salePrice <= 71 && currentPayout > 0) {
-        const expectedMinimumFee = 5.00;
-        const currentFees = salePrice - currentPayout;
+      // Check if this sale needs fee structure correction
+      if (salePrice > 0 && currentPayout > 0) {
+        const transactionFee = salePrice <= 71 ? 5.00 : (salePrice * 0.095); // 9.5% or $5 minimum
+        const processingFee = salePrice * 0.03; // 3% payment processing
+        const shippingFee = parseFloat(sale.saleData.pricing.shippingFee || '0');
+        const totalFees = transactionFee + processingFee + shippingFee;
+        const correctPayout = salePrice - totalFees;
         
-        // If current fees are less than $5, we need to update
-        if (currentFees < expectedMinimumFee) {
+        // If the current payout doesn't match our calculation, update it
+        if (Math.abs(currentPayout - correctPayout) > 0.01) { // Allow 1 cent tolerance
           needsUpdate++;
-          const correctPayout = salePrice - expectedMinimumFee;
           
           console.log(`💵 Order ${sale.saleData.orderNumber}: Fixing payout for $${salePrice} sale`);
-          console.log(`   Current payout: $${currentPayout.toFixed(2)} (fees: $${currentFees.toFixed(2)})`);
-          console.log(`   Correct payout: $${correctPayout.toFixed(2)} (fees: $${expectedMinimumFee.toFixed(2)})`);
+          console.log(`   Current payout: $${currentPayout.toFixed(2)}`);
+          console.log(`   Correct payout: $${correctPayout.toFixed(2)}`);
+          console.log(`   Fees - Transaction: $${transactionFee.toFixed(2)}, Processing: $${processingFee.toFixed(2)}, Shipping: $${shippingFee.toFixed(2)}`);
           
           // Update the sale data
           const updatedSaleData = {
@@ -48,9 +51,11 @@ export async function GET(request: NextRequest) {
             pricing: {
               ...sale.saleData.pricing,
               totalPayout: correctPayout,
-              sellerFees: expectedMinimumFee,
-              // Add a note about the correction
-              minimumFeeApplied: true
+              sellerFees: totalFees,
+              transactionFee: transactionFee,
+              paymentProcessingFee: processingFee,
+              // Note about the correction
+              feeStructureApplied: true
             },
             payoutCorrectedAt: new Date().toISOString()
           };

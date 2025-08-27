@@ -174,19 +174,26 @@ export async function GET(request: NextRequest) {
             totalAdjustments = orderData.totalFees;
           }
           
-          // Apply StockX $5 minimum transaction fee for sales ≤$71
+          // Apply StockX fee structure when we don't have complete payout data
           let adjustedPayout = totalPayout;
           const salePrice = sale.saleData.pricing.salePrice;
           
-          if (adjustedPayout !== null && salePrice > 0 && salePrice <= 71) {
-            const expectedMinimumFee = 5.00;
-            const currentFees = salePrice - adjustedPayout;
+          // If we don't have payout data from API, calculate it
+          if (adjustedPayout === null && salePrice > 0) {
+            const transactionFee = salePrice <= 71 ? 5.00 : (salePrice * 0.095); // 9.5% or $5 minimum
+            const processingFee = salePrice * 0.03; // 3% payment processing
+            // Use shipping fee from existing data or from the order detail response
+            const shippingFee = parseFloat(
+              orderData.shippingFee || 
+              sale.saleData.pricing.shippingFee || 
+              '0'
+            );
+            const totalFees = transactionFee + processingFee + shippingFee;
             
-            // If current fees are less than $5, adjust payout
-            if (currentFees < expectedMinimumFee) {
-              adjustedPayout = salePrice - expectedMinimumFee;
-              console.log(`💵 Order ${orderNumber}: Applied $5 minimum fee for $${salePrice} sale. Adjusted payout from $${totalPayout} to $${adjustedPayout.toFixed(2)}`);
-            }
+            adjustedPayout = salePrice - totalFees;
+            console.log(`💵 Order ${orderNumber}: Calculated payout for $${salePrice} sale`);
+            console.log(`   Transaction: $${transactionFee.toFixed(2)}, Processing: $${processingFee.toFixed(2)}, Shipping: $${shippingFee.toFixed(2)}`);
+            console.log(`   Total fees: $${totalFees.toFixed(2)}, Payout: $${adjustedPayout.toFixed(2)}`);
           }
           
           const updatedSaleData = {
