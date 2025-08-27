@@ -505,26 +505,23 @@ function processSalesData(rawData: any): StockXSale[] {
             payout = salePrice - sellerFees;
           }
           
-          // Apply StockX fee structure for accurate payouts when API data is incomplete
-          // For sales ≤$71: $5 minimum transaction fee + 3% processing + shipping (from API)
-          if (salePrice > 0 && payout > 0) {
-            // If we don't have complete fee data from API, calculate based on StockX rules
-            if (!payoutData.totalPayout) {
-              const transactionFee = salePrice <= 71 ? 5.00 : (salePrice * 0.095); // 9.5% or $5 minimum
-              const processingFee = salePrice * 0.03; // 3% payment processing
-              // Use shipping fee from API data, default to 0 if not provided (free shipping)
-              const shippingFee = parseFloat(order.shippingFee || order.shipping?.fee || '0');
-              const totalFees = transactionFee + processingFee + shippingFee;
-              
-              const calculatedPayout = salePrice - totalFees;
-              
-              // Only apply if it results in a lower payout (more accurate)
-              if (calculatedPayout < payout || payout === 0) {
-                console.log(`💵 Order ${order.orderNumber || order.id}: Applying StockX fee structure for $${salePrice} sale`);
-                console.log(`   Transaction: $${transactionFee.toFixed(2)}, Processing: $${processingFee.toFixed(2)}, Shipping: $${shippingFee.toFixed(2)}`);
-                console.log(`   Total fees: $${totalFees.toFixed(2)}, Payout: $${calculatedPayout.toFixed(2)}`);
-                payout = calculatedPayout;
-              }
+          // Apply StockX minimum fee rule ONLY for sales ≤$71
+          // For sales above $71, we rely on API data only
+          if (salePrice > 0 && salePrice <= 71 && payout > 0) {
+            // For sales ≤$71, ensure the $5 minimum transaction fee is applied
+            const minimumTransactionFee = 5.00;
+            const processingFee = salePrice * 0.03; // 3% payment processing
+            const shippingFee = parseFloat(order.shippingFee || order.shipping?.fee || '0');
+            const minimumTotalFees = minimumTransactionFee + processingFee + shippingFee;
+            
+            const currentFees = salePrice - payout;
+            
+            // If current fees are less than what they should be with the minimum, adjust
+            if (currentFees < minimumTotalFees) {
+              payout = salePrice - minimumTotalFees;
+              console.log(`💵 Order ${order.orderNumber || order.id}: Applied minimum fee structure for $${salePrice} sale`);
+              console.log(`   Min Transaction: $${minimumTransactionFee.toFixed(2)}, Processing: $${processingFee.toFixed(2)}, Shipping: $${shippingFee.toFixed(2)}`);
+              console.log(`   Adjusted payout: $${payout.toFixed(2)}`);
             }
           }
           

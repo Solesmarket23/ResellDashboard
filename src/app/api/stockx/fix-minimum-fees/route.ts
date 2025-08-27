@@ -28,22 +28,22 @@ export async function GET(request: NextRequest) {
       const salePrice = sale.saleData.pricing.salePrice;
       const currentPayout = sale.saleData.pricing.totalPayout;
       
-      // Check if this sale needs fee structure correction
-      if (salePrice > 0 && currentPayout > 0) {
-        const transactionFee = salePrice <= 71 ? 5.00 : (salePrice * 0.095); // 9.5% or $5 minimum
+      // Check if this sale needs minimum fee correction (ONLY for sales ≤$71)
+      if (salePrice > 0 && salePrice <= 71 && currentPayout > 0) {
+        const minimumTransactionFee = 5.00;
         const processingFee = salePrice * 0.03; // 3% payment processing
         const shippingFee = parseFloat(sale.saleData.pricing.shippingFee || '0');
-        const totalFees = transactionFee + processingFee + shippingFee;
-        const correctPayout = salePrice - totalFees;
+        const minimumTotalFees = minimumTransactionFee + processingFee + shippingFee;
+        const correctPayout = salePrice - minimumTotalFees;
         
-        // If the current payout doesn't match our calculation, update it
-        if (Math.abs(currentPayout - correctPayout) > 0.01) { // Allow 1 cent tolerance
+        // If the current payout is too high (fees too low), update it
+        if (currentPayout > correctPayout) {
           needsUpdate++;
           
           console.log(`💵 Order ${sale.saleData.orderNumber}: Fixing payout for $${salePrice} sale`);
           console.log(`   Current payout: $${currentPayout.toFixed(2)}`);
           console.log(`   Correct payout: $${correctPayout.toFixed(2)}`);
-          console.log(`   Fees - Transaction: $${transactionFee.toFixed(2)}, Processing: $${processingFee.toFixed(2)}, Shipping: $${shippingFee.toFixed(2)}`);
+          console.log(`   Fees - Transaction: $${minimumTransactionFee.toFixed(2)}, Processing: $${processingFee.toFixed(2)}, Shipping: $${shippingFee.toFixed(2)}`);
           
           // Update the sale data
           const updatedSaleData = {
@@ -51,8 +51,8 @@ export async function GET(request: NextRequest) {
             pricing: {
               ...sale.saleData.pricing,
               totalPayout: correctPayout,
-              sellerFees: totalFees,
-              transactionFee: transactionFee,
+              sellerFees: minimumTotalFees,
+              transactionFee: minimumTransactionFee,
               paymentProcessingFee: processingFee,
               // Note about the correction
               feeStructureApplied: true

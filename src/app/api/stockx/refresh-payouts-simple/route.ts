@@ -174,26 +174,29 @@ export async function GET(request: NextRequest) {
             totalAdjustments = orderData.totalFees;
           }
           
-          // Apply StockX fee structure when we don't have complete payout data
+          // Apply StockX minimum fee rule ONLY for sales ≤$71
           let adjustedPayout = totalPayout;
           const salePrice = sale.saleData.pricing.salePrice;
           
-          // If we don't have payout data from API, calculate it
-          if (adjustedPayout === null && salePrice > 0) {
-            const transactionFee = salePrice <= 71 ? 5.00 : (salePrice * 0.095); // 9.5% or $5 minimum
+          // Only adjust payout for sales ≤$71 to ensure minimum fees
+          if (adjustedPayout !== null && salePrice > 0 && salePrice <= 71) {
+            const minimumTransactionFee = 5.00;
             const processingFee = salePrice * 0.03; // 3% payment processing
-            // Use shipping fee from existing data or from the order detail response
             const shippingFee = parseFloat(
               orderData.shippingFee || 
               sale.saleData.pricing.shippingFee || 
               '0'
             );
-            const totalFees = transactionFee + processingFee + shippingFee;
+            const minimumTotalFees = minimumTransactionFee + processingFee + shippingFee;
+            const currentFees = salePrice - adjustedPayout;
             
-            adjustedPayout = salePrice - totalFees;
-            console.log(`💵 Order ${orderNumber}: Calculated payout for $${salePrice} sale`);
-            console.log(`   Transaction: $${transactionFee.toFixed(2)}, Processing: $${processingFee.toFixed(2)}, Shipping: $${shippingFee.toFixed(2)}`);
-            console.log(`   Total fees: $${totalFees.toFixed(2)}, Payout: $${adjustedPayout.toFixed(2)}`);
+            // If fees are less than minimum, adjust the payout
+            if (currentFees < minimumTotalFees) {
+              adjustedPayout = salePrice - minimumTotalFees;
+              console.log(`💵 Order ${orderNumber}: Applied minimum fees for $${salePrice} sale`);
+              console.log(`   Previous payout: $${totalPayout?.toFixed(2)}, Adjusted: $${adjustedPayout.toFixed(2)}`);
+              console.log(`   Min fees: Transaction $5, Processing $${processingFee.toFixed(2)}, Shipping $${shippingFee.toFixed(2)}`);
+            }
           }
           
           const updatedSaleData = {
