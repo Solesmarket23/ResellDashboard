@@ -430,31 +430,25 @@ function processSalesData(rawData: any): StockXSale[] {
     // The payout object should contain: totalPayout, totalAdjustments, and adjustments array
     const payoutData = order.payout || order.payoutDetails || {};
     
-    // Calculate fees - prefer totalAdjustments from payout object
-    let sellerFees = 0;
+    // Only use actual payout data from StockX - no calculations
     const salePrice = parseFloat(order.amount || order.salePrice || order.price || '0');
+    let sellerFees = 0;
+    let hasFeeData = false;
     
     if (payoutData.totalAdjustments !== undefined) {
-      // Use the accurate totalAdjustments from payout data
+      // Use the actual totalAdjustments from payout data
       sellerFees = Math.abs(parseFloat(payoutData.totalAdjustments || '0'));
+      hasFeeData = true;
       console.log(`💰 Order ${order.orderNumber || order.id}: Using payout.totalAdjustments = ${sellerFees}`);
-    } else {
-      // Fallback to individual fee components
-      const processingFee = parseFloat(order.processingFee || '0');
-      const transactionFee = parseFloat(order.transactionFee || '0');
-      const shippingFee = parseFloat(order.shippingFee || '0');
-      const paymentProcessingFee = parseFloat(order.paymentProcessingFee || '0');
-      sellerFees = processingFee + transactionFee + shippingFee + paymentProcessingFee;
-      
-      if (sellerFees === 0 && order.totalFees) {
-        sellerFees = parseFloat(order.totalFees || '0');
-      }
-      
-      // If still no fees, mark this order as needing payout data refresh
-      if (sellerFees === 0 && salePrice > 0) {
-        console.warn(`⚠️ Order ${order.orderNumber || order.id}: No fee data available - needs payout refresh`);
-        // We'll mark this in the data so the UI can show it needs refresh
-      }
+    } else if (order.totalFees) {
+      // Only use if explicitly provided by StockX
+      sellerFees = parseFloat(order.totalFees || '0');
+      hasFeeData = true;
+    }
+    
+    // Log when no fee data is available
+    if (!hasFeeData && salePrice > 0) {
+      console.warn(`⚠️ Order ${order.orderNumber || order.id}: No fee data from StockX API - needs payout refresh`);
     }
 
     const saleData: StockXSale = {
@@ -499,10 +493,10 @@ function processSalesData(rawData: any): StockXSale[] {
         shippingFee: parseFloat(order.shippingFee || '0'),
         transactionFee: parseFloat(order.transactionFee || '0'),
         paymentProcessingFee: parseFloat(order.paymentProcessingFee || '0'),
-        // Use payout.totalPayout if available per documentation
+        // Only use actual payout data from StockX - no calculations
         totalPayout: payoutData.totalPayout !== undefined 
           ? parseFloat(payoutData.totalPayout || '0')
-          : (salePrice - sellerFees),
+          : (hasFeeData ? salePrice - sellerFees : 0), // Only calculate if we have actual fee data
         currency: order.currency || 'USD',
         sellerLevel: order.sellerLevel,
         feePercentage: order.feePercentage
@@ -525,7 +519,7 @@ function processSalesData(rawData: any): StockXSale[] {
       payoutDate: order.payoutDate,
       source: 'stockx_api',
       // Flag to indicate if this order needs payout data refresh
-      needsPayoutRefresh: sellerFees === 0 && salePrice > 0
+      needsPayoutRefresh: !hasFeeData && salePrice > 0
     };
 
     return saleData;
