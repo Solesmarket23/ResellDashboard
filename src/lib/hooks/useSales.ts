@@ -293,7 +293,7 @@ export const useSales = () => {
         throw new Error(`Invalid sale ID type: ${typeof saleId}. Expected string.`);
       }
       
-      await deleteDocument('sales', saleId);
+      await deleteDocument('user_sales', saleId);
       
       console.log('✅ useSales: Sale deleted from Firebase');
       

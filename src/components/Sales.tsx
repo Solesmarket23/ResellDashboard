@@ -300,7 +300,7 @@ const Sales = () => {
     
     if (!deleteModal.sale || !user) {
       console.error('❌ Missing sale or user for deletion');
-      alert('Error: Missing sale or user information');
+      showNotification('Error: Missing sale or user information', 'error');
       return;
     }
 
@@ -310,7 +310,7 @@ const Sales = () => {
       
       if (!deleteModal.sale.id) {
         console.error('❌ Sale missing Firebase document ID:', deleteModal.sale);
-        alert('Error: Sale is missing a document ID and cannot be deleted.');
+        showNotification('Error: Sale is missing a document ID and cannot be deleted.', 'error');
         return;
       }
 
@@ -324,17 +324,16 @@ const Sales = () => {
       if (deleteSuccess) {
         console.log('✅ Sale deleted successfully');
         closeDeleteModal();
-        // Optional: Show success message
-        // alert('Sale deleted successfully!');
+        showNotification('Sale deleted successfully! 🗑️', 'success');
       } else {
         console.error('❌ Delete operation failed');
-        alert('Failed to delete sale. Please try again.');
+        showNotification('Failed to delete sale. Please try again.', 'error');
       }
       
     } catch (error) {
       console.error('❌ Error in confirmDelete:', error);
       console.error('Sale data:', deleteModal.sale);
-      alert(`Error deleting sale: ${error.message}. Please try again.`);
+      showNotification(`Error deleting sale: ${error.message}. Please try again.`, 'error');
     }
   };
 
