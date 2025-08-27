@@ -502,8 +502,21 @@ export const useStockXSales = () => {
           status: `Updated ${result.updated} payouts successfully!`
         });
         
-        // Reload sales data to show updated payouts
-        await loadSalesData(false);
+        // Reload sales data from Firebase to show updated payouts
+        if (user) {
+          try {
+            const cachedSales = await getDocuments('stockxSales');
+            const userSales = cachedSales
+              .filter(sale => sale.userId === user.uid)
+              .map(sale => sale.saleData as StockXSale)
+              .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+            
+            setSales(userSales);
+            calculateSyncStatus(userSales);
+          } catch (error) {
+            console.error('Error reloading sales after payout refresh:', error);
+          }
+        }
         
         // Clear progress after 5 seconds
         setTimeout(() => setSyncProgress(null), 5000);
