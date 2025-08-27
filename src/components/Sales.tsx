@@ -9,6 +9,7 @@ import { useSales } from '../lib/hooks/useSales';
 import { useStockXSales } from '../lib/hooks/useStockXSales';
 import { formatOrderNumberForDisplay } from '../lib/utils/orderNumberUtils';
 import confetti from 'canvas-confetti';
+import NeonNotification from './NeonNotification';
 
 const Sales = () => {
   const [activeFilter, setActiveFilter] = useState('All Time');
@@ -47,6 +48,13 @@ const Sales = () => {
     fees: '',
     date: new Date().toISOString().split('T')[0]
   });
+  
+  // Notification state
+  const [notification, setNotification] = useState<{
+    isVisible: boolean;
+    message: string;
+    type: 'success' | 'error' | 'warning';
+  }>({ isVisible: false, message: '', type: 'success' });
   
   // Refs for dropdowns
   const marketplaceDropdownRef = useRef<HTMLDivElement>(null);
@@ -439,16 +447,21 @@ const Sales = () => {
     return Math.round(salePrice * 0.1 * 100) / 100; // 10% fee, rounded to 2 decimals
   };
 
+  // Helper function to show notifications
+  const showNotification = (message: string, type: 'success' | 'error' | 'warning' = 'success') => {
+    setNotification({ isVisible: true, message, type });
+  };
+
   // Function to submit new sale
   const submitNewSale = async () => {
     if (!user) {
-      alert('Please sign in to save sales');
+      showNotification('Please sign in to save sales', 'error');
       return;
     }
 
     // Basic validation
     if (!newSale.product || !newSale.brand || !newSale.size || !newSale.salePrice || !newSale.purchasePrice) {
-      alert('Please fill in all required fields');
+      showNotification('Please fill in all required fields', 'warning');
       return;
     }
 
@@ -456,7 +469,7 @@ const Sales = () => {
     const purchasePrice = parseFloat(newSale.purchasePrice);
     
     if (isNaN(salePrice) || isNaN(purchasePrice)) {
-      alert('Please enter valid numbers for sale price and purchase price');
+      showNotification('Please enter valid numbers for sale price and purchase price', 'warning');
       return;
     }
 
@@ -510,7 +523,7 @@ const Sales = () => {
       closeRecordSaleModal();
       
       // Show success message immediately
-      alert('Sale recorded successfully!');
+      showNotification('Sale recorded successfully! 💰', 'success');
       
       // Wait a shorter time for Firebase to fully process the document
       console.log('⏳ Waiting for Firebase to process (500ms)...');
@@ -539,7 +552,7 @@ const Sales = () => {
         saleData,
         userId: user.uid
       });
-      alert(`Error saving sale: ${error.message}. Please try again.`);
+      showNotification(`Error saving sale: ${error.message}. Please try again.`, 'error');
     }
   };
 
@@ -2165,6 +2178,15 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
             </div>
           )}
         </>
+      )}
+
+      {/* Neon Notification */}
+      {notification.isVisible && (
+        <NeonNotification
+          message={notification.message}
+          type={notification.type}
+          onClose={() => setNotification(prev => ({ ...prev, isVisible: false }))}
+        />
       )}
     </div>
   );
