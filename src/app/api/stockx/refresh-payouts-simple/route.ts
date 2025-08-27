@@ -174,11 +174,26 @@ export async function GET(request: NextRequest) {
             totalAdjustments = orderData.totalFees;
           }
           
+          // Apply StockX $5 minimum transaction fee for sales ≤$71
+          let adjustedPayout = totalPayout;
+          const salePrice = sale.saleData.pricing.salePrice;
+          
+          if (adjustedPayout !== null && salePrice > 0 && salePrice <= 71) {
+            const expectedMinimumFee = 5.00;
+            const currentFees = salePrice - adjustedPayout;
+            
+            // If current fees are less than $5, adjust payout
+            if (currentFees < expectedMinimumFee) {
+              adjustedPayout = salePrice - expectedMinimumFee;
+              console.log(`💵 Order ${orderNumber}: Applied $5 minimum fee for $${salePrice} sale. Adjusted payout from $${totalPayout} to $${adjustedPayout.toFixed(2)}`);
+            }
+          }
+          
           const updatedSaleData = {
             ...sale.saleData,
             pricing: {
               ...sale.saleData.pricing,
-              totalPayout: totalPayout !== null ? totalPayout : sale.saleData.pricing.totalPayout,
+              totalPayout: adjustedPayout !== null ? adjustedPayout : sale.saleData.pricing.totalPayout,
               sellerFees: totalAdjustments ? 
                 Math.abs(parseFloat(totalAdjustments)) : 
                 sale.saleData.pricing.sellerFees,
@@ -187,7 +202,7 @@ export async function GET(request: NextRequest) {
               paymentProcessingFee: orderData.paymentProcessingFee || sale.saleData.pricing.paymentProcessingFee,
               shippingFee: orderData.shippingFee || sale.saleData.pricing.shippingFee
             },
-            needsPayoutRefresh: totalPayout === null, // Only clear flag if we got payout data
+            needsPayoutRefresh: adjustedPayout === null, // Only clear flag if we got payout data
             payoutLastRefreshed: new Date().toISOString()
           };
 

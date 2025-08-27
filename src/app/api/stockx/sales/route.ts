@@ -493,10 +493,33 @@ function processSalesData(rawData: any): StockXSale[] {
         shippingFee: parseFloat(order.shippingFee || '0'),
         transactionFee: parseFloat(order.transactionFee || '0'),
         paymentProcessingFee: parseFloat(order.paymentProcessingFee || '0'),
-        // Only use actual payout data from StockX - no calculations
-        totalPayout: payoutData.totalPayout !== undefined 
-          ? parseFloat(payoutData.totalPayout || '0')
-          : (hasFeeData ? salePrice - sellerFees : 0), // Only calculate if we have actual fee data
+        // Only use actual payout data from StockX - with minimum fee adjustment
+        totalPayout: (() => {
+          let payout = 0;
+          
+          // If we have payout data from API, use it
+          if (payoutData.totalPayout !== undefined) {
+            payout = parseFloat(payoutData.totalPayout || '0');
+          } else if (hasFeeData) {
+            // Calculate payout if we have fee data
+            payout = salePrice - sellerFees;
+          }
+          
+          // Apply StockX $5 minimum transaction fee for sales ≤$71
+          // This ensures accurate payouts matching StockX's actual calculations
+          if (salePrice > 0 && salePrice <= 71 && payout > 0) {
+            const expectedMinimumFee = 5.00;
+            const currentFees = salePrice - payout;
+            
+            // If current fees are less than $5, adjust payout
+            if (currentFees < expectedMinimumFee) {
+              payout = salePrice - expectedMinimumFee;
+              console.log(`💵 Order ${order.orderNumber || order.id}: Applied $5 minimum fee for $${salePrice} sale. Payout: $${payout.toFixed(2)}`);
+            }
+          }
+          
+          return payout;
+        })(),
         currency: order.currency || 'USD',
         sellerLevel: order.sellerLevel,
         feePercentage: order.feePercentage
