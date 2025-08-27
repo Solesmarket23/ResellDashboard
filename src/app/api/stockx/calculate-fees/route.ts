@@ -2,26 +2,24 @@ import { NextRequest, NextResponse } from 'next/server';
 
 // StockX fee structure by seller level
 const STOCKX_FEES = {
-  1: { transactionFee: 0.10, paymentProcessing: 0.03 }, // 10% + 3%
-  2: { transactionFee: 0.095, paymentProcessing: 0.03 }, // 9.5% + 3%
-  3: { transactionFee: 0.09, paymentProcessing: 0.03 }, // 9% + 3%
-  4: { transactionFee: 0.085, paymentProcessing: 0.03 }, // 8.5% + 3%
-  5: { transactionFee: 0.08, paymentProcessing: 0.03 }, // 8% + 3%
-  // Your level appears to be 7% based on your screenshots
-  premium: { transactionFee: 0.07, paymentProcessing: 0.03 } // 7% + 3%
+  1: { transactionFee: 0.09, paymentProcessing: 0.03 },  // 9% + 3%
+  2: { transactionFee: 0.085, paymentProcessing: 0.03 }, // 8.5% + 3%
+  3: { transactionFee: 0.08, paymentProcessing: 0.03 },  // 8% + 3%
+  4: { transactionFee: 0.075, paymentProcessing: 0.03 }, // 7.5% + 3%
+  5: { transactionFee: 0.07, paymentProcessing: 0.03 },  // 7% + 3%
 };
 
 const SHIPPING_FEE = 4.00; // Standard StockX shipping fee
 
 export async function POST(request: NextRequest) {
   try {
-    const { salePrice, sellerLevel = 'premium' } = await request.json();
+    const { salePrice, sellerLevel = 5 } = await request.json();
     
     if (!salePrice || salePrice <= 0) {
       return NextResponse.json({ error: 'Invalid sale price' }, { status: 400 });
     }
     
-    const fees = STOCKX_FEES[sellerLevel as keyof typeof STOCKX_FEES] || STOCKX_FEES.premium;
+    const fees = STOCKX_FEES[sellerLevel as keyof typeof STOCKX_FEES] || STOCKX_FEES[5];
     
     const transactionFee = salePrice * fees.transactionFee;
     const paymentProcessingFee = salePrice * fees.paymentProcessing;
