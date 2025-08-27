@@ -694,6 +694,47 @@ const Sales = () => {
           >
             Force Refresh
           </button>
+          <button
+            onClick={async () => {
+              try {
+                const response = await fetch('/api/stockx/debug-sales-raw');
+                const data = await response.json();
+                
+                if (data.success && data.firstOrder) {
+                  console.log('🔍 StockX Order Structure:', data.firstOrder);
+                  console.log('📏 Size Locations Found:', data.sizeLocations);
+                  
+                  // Create a detailed alert showing where size might be
+                  const sizeInfo = `
+StockX Order Debug Info:
+
+Size Locations Checked:
+- variant.size: ${data.sizeLocations.inVariant || 'Not found'}
+- root size: ${data.sizeLocations.inRoot || 'Not found'}
+- product.size: ${data.sizeLocations.inProduct || 'Not found'}
+- item.size: ${data.sizeLocations.inItem || 'Not found'}
+
+All Size Fields Found:
+${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `- ${key}: ${value}`).join('\n') || 'No size fields found'}
+
+Check browser console for full order structure.
+                  `.trim();
+                  
+                  alert(sizeInfo);
+                } else if (data.error === 'Missing authentication') {
+                  alert('Please authenticate with StockX first');
+                } else {
+                  alert('No orders found to debug. Make sure you have sales on StockX.');
+                }
+              } catch (error) {
+                console.error('Debug error:', error);
+                alert('Failed to debug. Check console for details.');
+              }
+            }}
+            className="px-2 py-1 bg-yellow-500 text-white rounded text-xs hover:bg-yellow-600"
+          >
+            Debug StockX Size
+          </button>
         </div>
       </div>
 
