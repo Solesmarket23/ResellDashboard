@@ -485,78 +485,42 @@ export const useStockXSales = () => {
     setSyncProgress({
       current: 0,
       total: 0,
-      status: 'Connecting to payout refresh service...'
+      status: 'Starting payout refresh...'
     });
     
     try {
-      const eventSource = new EventSource(`/api/stockx/refresh-payouts?userId=${user.uid}`);
+      // Use simple fetch approach that works on Vercel
+      const response = await fetch(`/api/stockx/refresh-payouts-simple?userId=${user.uid}`);
       
-      eventSource.onmessage = (event) => {
-        const data = JSON.parse(event.data);
+      if (response.ok) {
+        const result = await response.json();
+        console.log('✅ Payout refresh completed:', result);
         
-        if (data.type === 'progress') {
-          setSyncProgress({
-            current: data.current,
-            total: data.total,
-            status: `Refreshing payouts: ${data.current}/${data.total} (${Math.round((data.current / data.total) * 100)}%)`
-          });
-        } else if (data.type === 'complete') {
-          console.log('✅ Payout refresh complete!');
-          setSyncProgress({
-            current: data.total,
-            total: data.total,
-            status: 'All payouts updated successfully!'
-          });
-          
-          // Reload sales data to show updated payouts
-          loadSalesData(false);
-          
-          // Clear progress after 5 seconds
-          setTimeout(() => setSyncProgress(null), 5000);
-          eventSource.close();
-        } else if (data.type === 'error') {
-          console.error('❌ Payout refresh error:', data.message);
-          setError(data.message);
-          setSyncProgress(null);
-          eventSource.close();
+        setSyncProgress({
+          current: result.updated,
+          total: result.total,
+          status: `Updated ${result.updated} payouts successfully!`
+        });
+        
+        // Reload sales data to show updated payouts
+        await loadSalesData(false);
+        
+        // Clear progress after 5 seconds
+        setTimeout(() => setSyncProgress(null), 5000);
+        
+        if (result.failed > 0) {
+          setError(`Updated ${result.updated} payouts, but ${result.failed} failed. Check console for details.`);
         }
-      };
-      
-      eventSource.onerror = (error) => {
-        console.error('❌ EventSource error:', error);
-        console.error('Error details:', error);
-        setError('Failed to connect to payout refresh service. Please try again.');
-        eventSource.close();
+      } else {
+        const error = await response.text();
+        console.error('❌ Payout refresh failed:', error);
+        setError('Failed to refresh payouts. Please check console.');
         setSyncProgress(null);
-      };
-      
-      eventSource.onopen = () => {
-        console.log('✅ Connected to payout refresh service');
-      };
-      
-    } catch (error) {
-      console.error('Error starting payout refresh:', error);
-      setError('Failed to start payout refresh. Check console for details.');
-      setSyncProgress(null);
-      
-      // Fallback: Try a simple fetch approach
-      console.log('🔄 Trying fallback payout refresh method...');
-      try {
-        const response = await fetch(`/api/stockx/refresh-payouts-simple?userId=${user.uid}`);
-        if (response.ok) {
-          const result = await response.json();
-          console.log('✅ Fallback payout refresh completed:', result);
-          console.log('✅ Payout refresh completed successfully');
-          // Reload sales data
-          await loadSalesData(false);
-        } else {
-          const error = await response.text();
-          console.error('❌ Fallback refresh failed:', error);
-          setError('Failed to refresh payouts. Please check console.');
-        }
-      } catch (fallbackError) {
-        console.error('❌ Fallback also failed:', fallbackError);
       }
+    } catch (error) {
+      console.error('❌ Error refreshing payouts:', error);
+      setError('Failed to refresh payouts. Please check console for details.');
+      setSyncProgress(null);
     }
   };
 

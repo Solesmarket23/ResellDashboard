@@ -26,11 +26,18 @@ export async function GET(request: NextRequest) {
     
     console.log(`Found ${userSales.length} sales to refresh`);
     
+    // Filter only sales that need payout refresh
+    const salesNeedingRefresh = userSales.filter(sale => 
+      sale.saleData?.needsPayoutRefresh || !sale.saleData?.pricing?.totalPayout
+    );
+    
+    console.log(`${salesNeedingRefresh.length} sales need payout refresh`);
+    
     let updated = 0;
     let failed = 0;
     
-    // Process each sale
-    for (const sale of userSales) {
+    // Process each sale that needs refresh
+    for (const sale of salesNeedingRefresh) {
       const orderNumber = sale.saleData?.orderNumber || sale.stockxOrderId;
       
       if (!orderNumber) {
@@ -56,6 +63,17 @@ export async function GET(request: NextRequest) {
           const orderData = await response.json();
           
           // Update the sale data with fresh payout information
+          // Log the payout data we're getting
+          if (orderData.payout) {
+            console.log(`📊 Order ${orderNumber} payout data:`, {
+              totalPayout: orderData.payout.totalPayout,
+              totalAdjustments: orderData.payout.totalAdjustments,
+              adjustments: orderData.payout.adjustments
+            });
+          } else {
+            console.warn(`⚠️ Order ${orderNumber} has no payout data in response`);
+          }
+          
           const updatedSaleData = {
             ...sale.saleData,
             pricing: {
@@ -69,7 +87,7 @@ export async function GET(request: NextRequest) {
               paymentProcessingFee: orderData.paymentProcessingFee || sale.saleData.pricing.paymentProcessingFee,
               shippingFee: orderData.shippingFee || sale.saleData.pricing.shippingFee
             },
-            needsPayoutRefresh: false, // Clear the flag
+            needsPayoutRefresh: !orderData.payout?.totalPayout, // Only clear flag if we got payout data
             payoutLastRefreshed: new Date().toISOString()
           };
 
