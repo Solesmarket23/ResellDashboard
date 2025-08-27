@@ -459,7 +459,11 @@ const StockXSales: React.FC = () => {
                   </div>
                   <div className="text-right">
                     <p className="text-xl font-bold text-green-400">{formatCurrency(sale.pricing.salePrice)}</p>
-                    <p className="text-sm text-gray-400">Payout: {formatCurrency(sale.pricing.payout)}</p>
+                    {sale.needsPayoutRefresh ? (
+                      <p className="text-sm text-yellow-400">Payout: Needs refresh ⚠️</p>
+                    ) : (
+                      <p className="text-sm text-gray-400">Payout: {formatCurrency(sale.pricing.payout)}</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -475,7 +479,11 @@ const StockXSales: React.FC = () => {
                 </div>
                 <div className="bg-gray-700/50 rounded-lg p-3">
                   <p className="text-xs text-gray-400 mb-1">Net Payout</p>
-                  <p className="text-sm text-green-400 font-semibold">{formatCurrency(sale.pricing.payout)}</p>
+                  {sale.needsPayoutRefresh ? (
+                    <p className="text-sm text-yellow-400 font-semibold">Needs refresh ⚠️</p>
+                  ) : (
+                    <p className="text-sm text-green-400 font-semibold">{formatCurrency(sale.pricing.payout)}</p>
+                  )}
                 </div>
               </div>
 

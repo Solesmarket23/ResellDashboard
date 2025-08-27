@@ -14,6 +14,7 @@ export interface StockXSale {
   updatedAt: string;
   payoutDate?: string;
   source: 'stockx_api';
+  needsPayoutRefresh?: boolean;
 }
 
 export interface StockXProduct {

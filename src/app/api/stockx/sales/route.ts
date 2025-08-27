@@ -450,15 +450,10 @@ function processSalesData(rawData: any): StockXSale[] {
         sellerFees = parseFloat(order.totalFees || '0');
       }
       
-      // If still no fees and we have a sale price, calculate standard StockX fees
-      // This prevents showing $103 payout for $103 sale
+      // If still no fees, mark this order as needing payout data refresh
       if (sellerFees === 0 && salePrice > 0) {
-        // Standard StockX fees: 7% transaction + 3% payment processing + $4 shipping
-        const calculatedTransactionFee = salePrice * 0.07;
-        const calculatedPaymentFee = salePrice * 0.03;
-        const calculatedShippingFee = 4.00;
-        sellerFees = calculatedTransactionFee + calculatedPaymentFee + calculatedShippingFee;
-        console.log(`⚠️ Order ${order.orderNumber || order.id}: No fees provided, calculated standard fees = ${sellerFees.toFixed(2)}`);
+        console.warn(`⚠️ Order ${order.orderNumber || order.id}: No fee data available - needs payout refresh`);
+        // We'll mark this in the data so the UI can show it needs refresh
       }
     }
 
@@ -528,7 +523,9 @@ function processSalesData(rawData: any): StockXSale[] {
       createdAt: order.createdAt || order.created,
       updatedAt: order.updatedAt || order.updated,
       payoutDate: order.payoutDate,
-      source: 'stockx_api'
+      source: 'stockx_api',
+      // Flag to indicate if this order needs payout data refresh
+      needsPayoutRefresh: sellerFees === 0 && salePrice > 0
     };
 
     return saleData;
