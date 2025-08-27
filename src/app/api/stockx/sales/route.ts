@@ -432,6 +432,7 @@ function processSalesData(rawData: any): StockXSale[] {
     
     // Calculate fees - prefer totalAdjustments from payout object
     let sellerFees = 0;
+    const salePrice = parseFloat(order.amount || order.salePrice || order.price || '0');
     
     if (payoutData.totalAdjustments !== undefined) {
       // Use the accurate totalAdjustments from payout data
@@ -447,6 +448,17 @@ function processSalesData(rawData: any): StockXSale[] {
       
       if (sellerFees === 0 && order.totalFees) {
         sellerFees = parseFloat(order.totalFees || '0');
+      }
+      
+      // If still no fees and we have a sale price, calculate standard StockX fees
+      // This prevents showing $103 payout for $103 sale
+      if (sellerFees === 0 && salePrice > 0) {
+        // Standard StockX fees: 7% transaction + 3% payment processing + $4 shipping
+        const calculatedTransactionFee = salePrice * 0.07;
+        const calculatedPaymentFee = salePrice * 0.03;
+        const calculatedShippingFee = 4.00;
+        sellerFees = calculatedTransactionFee + calculatedPaymentFee + calculatedShippingFee;
+        console.log(`⚠️ Order ${order.orderNumber || order.id}: No fees provided, calculated standard fees = ${sellerFees.toFixed(2)}`);
       }
     }
 
@@ -485,8 +497,8 @@ function processSalesData(rawData: any): StockXSale[] {
         variantName: order.variant?.variantName
       },
       pricing: {
-        salePrice: parseFloat(order.amount || order.salePrice || order.price || '0'),
-        buyerPaid: parseFloat(order.amount || order.buyerPaid || order.salePrice || order.price || '0'),
+        salePrice: salePrice,
+        buyerPaid: salePrice,
         sellerFees,
         processingFee: parseFloat(order.processingFee || '0'),
         shippingFee: parseFloat(order.shippingFee || '0'),
@@ -495,7 +507,7 @@ function processSalesData(rawData: any): StockXSale[] {
         // Use payout.totalPayout if available per documentation
         totalPayout: payoutData.totalPayout !== undefined 
           ? parseFloat(payoutData.totalPayout || '0')
-          : (parseFloat(order.amount || order.salePrice || order.price || '0') - sellerFees),
+          : (salePrice - sellerFees),
         currency: order.currency || 'USD',
         sellerLevel: order.sellerLevel,
         feePercentage: order.feePercentage
