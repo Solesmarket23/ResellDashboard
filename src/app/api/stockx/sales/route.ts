@@ -338,6 +338,20 @@ function processSalesData(rawData: any): StockXSale[] {
       orderKeys: Object.keys(firstOrder)
     });
     
+    // Debug: Check where size data might be
+    console.log('📏 Size data locations:', {
+      variant_size: firstOrder.variant?.size,
+      root_size: firstOrder.size,
+      productSize: firstOrder.productSize,
+      product_size: firstOrder.product?.size,
+      item_size: firstOrder.item?.size,
+      // Check all keys that might contain size
+      allKeysWithSize: Object.keys(firstOrder).filter(key => 
+        key.toLowerCase().includes('size') || 
+        (typeof firstOrder[key] === 'object' && firstOrder[key] && 'size' in firstOrder[key])
+      )
+    });
+    
     // If we have multiple orders, check if payout data varies
     if (orders.length > 1) {
       const ordersWithPayout = orders.filter((o: any) => o.payout && o.payout.totalPayout);
@@ -412,8 +426,8 @@ function processSalesData(rawData: any): StockXSale[] {
       },
       variant: {
         variantId: order.variant?.id || order.variantId || '',
-        size: order.variant?.size || order.size || 'Unknown',
-        sizeType: order.variant?.sizeType
+        size: order.variant?.size || order.size || order.productSize || order.product?.size || order.item?.size || 'N/A',
+        sizeType: order.variant?.sizeType || order.sizeType
       },
       pricing: {
         salePrice: parseFloat(order.amount || order.salePrice || order.price || '0'),

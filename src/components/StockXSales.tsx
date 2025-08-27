@@ -364,6 +364,45 @@ const StockXSales: React.FC = () => {
               Test API Access
             </button>
             <button
+              onClick={async () => {
+                try {
+                  const response = await fetch('/api/stockx/debug-sales-raw');
+                  const data = await response.json();
+                  
+                  if (data.success && data.firstOrder) {
+                    console.log('🔍 StockX Order Structure:', data.firstOrder);
+                    console.log('📏 Size Locations Found:', data.sizeLocations);
+                    
+                    // Create a detailed alert showing where size might be
+                    const sizeInfo = `
+StockX Order Debug Info:
+
+Size Locations Checked:
+- variant.size: ${data.sizeLocations.inVariant || 'Not found'}
+- root size: ${data.sizeLocations.inRoot || 'Not found'}
+- product.size: ${data.sizeLocations.inProduct || 'Not found'}
+- item.size: ${data.sizeLocations.inItem || 'Not found'}
+
+Order Keys: ${data.sizeLocations.allKeys.join(', ')}
+
+Check browser console for full order structure.
+                    `.trim();
+                    
+                    alert(sizeInfo);
+                  } else {
+                    alert('No orders found to debug. Make sure you have sales on StockX.');
+                  }
+                } catch (error) {
+                  console.error('Debug error:', error);
+                  alert('Failed to debug. Check console for details.');
+                }
+              }}
+              className="bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
+            >
+              <AlertCircle className="w-4 h-4" />
+              Debug Size Issue
+            </button>
+            <button
               onClick={() => fetchSales(currentPage, statusFilter)}
               disabled={isLoading}
               className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 flex items-center gap-2"
