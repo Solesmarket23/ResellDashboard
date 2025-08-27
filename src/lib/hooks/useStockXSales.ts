@@ -496,33 +496,57 @@ export const useStockXSales = () => {
         const result = await response.json();
         console.log('✅ Payout refresh completed:', result);
         
-        setSyncProgress({
-          current: result.updated,
-          total: result.total,
-          status: `Updated ${result.updated} payouts successfully!`
-        });
-        
-        // Reload sales data from Firebase to show updated payouts
-        if (user) {
-          try {
-            const cachedSales = await getDocuments('stockxSales');
-            const userSales = cachedSales
-              .filter(sale => sale.userId === user.uid)
-              .map(sale => sale.saleData as StockXSale)
-              .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-            
-            setSales(userSales);
-            calculateSyncStatus(userSales);
-          } catch (error) {
-            console.error('Error reloading sales after payout refresh:', error);
-          }
+        // Handle case where no sales were found
+        if (result.needsSync) {
+          setSyncProgress({
+            current: 0,
+            total: 0,
+            status: 'No StockX sales found. Please sync your sales first.'
+          });
+          setError('No StockX sales found. Please sync your StockX sales first.');
+          setTimeout(() => setSyncProgress(null), 5000);
+          return;
         }
         
-        // Clear progress after 5 seconds
-        setTimeout(() => setSyncProgress(null), 5000);
-        
-        if (result.failed > 0) {
-          setError(`Updated ${result.updated} payouts, but ${result.failed} failed. Check console for details.`);
+        // Handle success response
+        if (result.success || result.updated > 0) {
+          setSyncProgress({
+            current: result.updated,
+            total: result.total,
+            status: result.updated === 0 
+              ? 'All payouts are up to date!'
+              : `Updated ${result.updated} payouts successfully!`
+          });
+          
+          // Reload sales data from Firebase to show updated payouts
+          if (user && result.updated > 0) {
+            try {
+              const cachedSales = await getDocuments('stockxSales');
+              const userSales = cachedSales
+                .filter(sale => sale.userId === user.uid)
+                .map(sale => sale.saleData as StockXSale)
+                .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+              
+              setSales(userSales);
+              calculateSyncStatus(userSales);
+            } catch (error) {
+              console.error('Error reloading sales after payout refresh:', error);
+            }
+          }
+          
+          // Clear progress after 5 seconds
+          setTimeout(() => setSyncProgress(null), 5000);
+          
+          if (result.failed > 0) {
+            setError(`Updated ${result.updated} payouts, but ${result.failed} failed. Check console for details.`);
+          }
+        } else {
+          setSyncProgress({
+            current: 0,
+            total: 0,
+            status: result.message || 'No payouts needed refresh.'
+          });
+          setTimeout(() => setSyncProgress(null), 5000);
         }
       } else {
         const error = await response.text();

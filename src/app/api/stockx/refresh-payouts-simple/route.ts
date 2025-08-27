@@ -21,17 +21,71 @@ export async function GET(request: NextRequest) {
 
   try {
     // Get user's StockX sales from Firebase
-    const allSales = await getDocuments('stockxSales');
-    const userSales = allSales.filter(sale => sale.userId === userId);
+    let allSales: any[] = [];
+    try {
+      allSales = await getDocuments('stockxSales');
+      console.log(`📊 Total documents in stockxSales collection: ${allSales.length}`);
+    } catch (error) {
+      console.warn('⚠️ stockxSales collection might not exist yet:', error.message);
+      // Return early with helpful message
+      return NextResponse.json({
+        success: false,
+        message: 'No StockX sales found. Please sync your StockX sales first.',
+        updated: 0,
+        failed: 0,
+        total: 0,
+        needsSync: true
+      });
+    }
     
-    console.log(`Found ${userSales.length} sales to refresh`);
+    // Debug: Log structure of first sale
+    if (allSales.length > 0) {
+      console.log('🔍 First sale structure:', {
+        userId: allSales[0].userId,
+        hasStockxOrderId: !!allSales[0].stockxOrderId,
+        hasSaleData: !!allSales[0].saleData,
+        saleDataKeys: allSales[0].saleData ? Object.keys(allSales[0].saleData) : []
+      });
+    }
+    
+    const userSales = allSales.filter(sale => sale.userId === userId);
+    console.log(`👤 Found ${userSales.length} sales for user ${userId}`);
+    
+    // If no sales found for user, return helpful message
+    if (userSales.length === 0) {
+      return NextResponse.json({
+        success: false,
+        message: 'No StockX sales found for your account. Please sync your StockX sales first.',
+        updated: 0,
+        failed: 0,
+        total: 0,
+        needsSync: true
+      });
+    }
+    
+    // Debug: Log a few sales to understand data structure
+    if (userSales.length > 0) {
+      console.log('🔍 Sample user sales:', userSales.slice(0, 2).map(sale => ({
+        id: sale.id,
+        orderNumber: sale.saleData?.orderNumber || sale.stockxOrderId,
+        needsRefresh: sale.saleData?.needsPayoutRefresh,
+        hasTotalPayout: !!sale.saleData?.pricing?.totalPayout,
+        totalPayout: sale.saleData?.pricing?.totalPayout,
+        status: sale.saleData?.status
+      })));
+    }
     
     // Filter only sales that need payout refresh
-    const salesNeedingRefresh = userSales.filter(sale => 
-      sale.saleData?.needsPayoutRefresh || !sale.saleData?.pricing?.totalPayout
-    );
+    const salesNeedingRefresh = userSales.filter(sale => {
+      // Check both needsPayoutRefresh flag and missing totalPayout
+      const needsRefresh = sale.saleData?.needsPayoutRefresh === true;
+      const missingPayout = !sale.saleData?.pricing?.totalPayout || sale.saleData?.pricing?.totalPayout === 0;
+      const eligibleStatus = ['PAYOUT_COMPLETED', 'AUTHENTICATED', 'SHIPPED', 'RECEIVED'].includes(sale.saleData?.status);
+      
+      return (needsRefresh || missingPayout) && eligibleStatus;
+    });
     
-    console.log(`${salesNeedingRefresh.length} sales need payout refresh`);
+    console.log(`🎯 ${salesNeedingRefresh.length} sales need payout refresh (needsRefresh flag or missing payout)`);
     
     let updated = 0;
     let failed = 0;
@@ -62,6 +116,17 @@ export async function GET(request: NextRequest) {
         if (response.ok) {
           const orderData = await response.json();
           
+          // Log full response structure to understand what we're getting
+          console.log(`📦 Full response for order ${orderNumber}:`, {
+            hasOrderData: !!orderData,
+            keys: Object.keys(orderData || {}),
+            hasPayout: !!orderData.payout,
+            hasSellerPayout: !!orderData.sellerPayout,
+            hasTotalPayout: !!orderData.totalPayout,
+            hasAdjustments: !!orderData.adjustments,
+            status: orderData.status
+          });
+          
           // Update the sale data with fresh payout information
           // Log the payout data we're getting
           if (orderData.payout) {
@@ -70,24 +135,50 @@ export async function GET(request: NextRequest) {
               totalAdjustments: orderData.payout.totalAdjustments,
               adjustments: orderData.payout.adjustments
             });
+          } else if (orderData.sellerPayout) {
+            console.log(`💰 Order ${orderNumber} has sellerPayout:`, orderData.sellerPayout);
+          } else if (orderData.totalPayout) {
+            console.log(`💵 Order ${orderNumber} has totalPayout:`, orderData.totalPayout);
           } else {
             console.warn(`⚠️ Order ${orderNumber} has no payout data in response`);
+          }
+          
+          // Extract payout data from various possible locations in the response
+          let totalPayout = null;
+          let totalAdjustments = null;
+          
+          if (orderData.payout?.totalPayout !== undefined) {
+            totalPayout = parseFloat(orderData.payout.totalPayout);
+            totalAdjustments = orderData.payout.totalAdjustments;
+          } else if (orderData.sellerPayout !== undefined) {
+            totalPayout = parseFloat(orderData.sellerPayout);
+          } else if (orderData.totalPayout !== undefined) {
+            totalPayout = parseFloat(orderData.totalPayout);
+          }
+          
+          // Look for adjustments/fees in different locations
+          if (!totalAdjustments && orderData.adjustments) {
+            totalAdjustments = orderData.adjustments;
+          } else if (!totalAdjustments && orderData.totalAdjustments) {
+            totalAdjustments = orderData.totalAdjustments;
+          } else if (!totalAdjustments && orderData.totalFees) {
+            totalAdjustments = orderData.totalFees;
           }
           
           const updatedSaleData = {
             ...sale.saleData,
             pricing: {
               ...sale.saleData.pricing,
-              totalPayout: orderData.payout?.totalPayout || sale.saleData.pricing.totalPayout,
-              sellerFees: orderData.payout?.totalAdjustments ? 
-                Math.abs(parseFloat(orderData.payout.totalAdjustments)) : 
+              totalPayout: totalPayout !== null ? totalPayout : sale.saleData.pricing.totalPayout,
+              sellerFees: totalAdjustments ? 
+                Math.abs(parseFloat(totalAdjustments)) : 
                 sale.saleData.pricing.sellerFees,
               // Update individual fees if available
               transactionFee: orderData.transactionFee || sale.saleData.pricing.transactionFee,
               paymentProcessingFee: orderData.paymentProcessingFee || sale.saleData.pricing.paymentProcessingFee,
               shippingFee: orderData.shippingFee || sale.saleData.pricing.shippingFee
             },
-            needsPayoutRefresh: !orderData.payout?.totalPayout, // Only clear flag if we got payout data
+            needsPayoutRefresh: totalPayout === null, // Only clear flag if we got payout data
             payoutLastRefreshed: new Date().toISOString()
           };
 
