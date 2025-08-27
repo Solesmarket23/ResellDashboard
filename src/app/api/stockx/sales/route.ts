@@ -306,6 +306,35 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// Helper function to extract size from product title
+function extractSizeFromTitle(title: string): string | null {
+  if (!title) return null;
+  
+  // Common size patterns in sneaker titles
+  const patterns = [
+    /\bSize\s+([\d.]+)/i,              // "Size 10"
+    /\bSZ\s+([\d.]+)/i,                // "SZ 10"
+    /\s+([\d.]+)(?:\s*[MWY])?$/,       // "10" or "10M" at end
+    /\s+\(([\d.]+)\)/,                 // "(10)"
+    /\s+([\d.]+)\s+(?:US|UK|EU)/i,    // "10 US"
+    /(?:^|\s)([\d.]+)(?:\s|$)/         // Any standalone number
+  ];
+  
+  for (const pattern of patterns) {
+    const match = title.match(pattern);
+    if (match && match[1]) {
+      const size = match[1];
+      // Validate it's a reasonable shoe size
+      const numSize = parseFloat(size);
+      if (numSize >= 3.5 && numSize <= 18) {
+        return size;
+      }
+    }
+  }
+  
+  return null;
+}
+
 // Function to process and format sales data
 function processSalesData(rawData: any): StockXSale[] {
   console.log(`🔄 Processing seller orders data:`, rawData);
@@ -339,18 +368,27 @@ function processSalesData(rawData: any): StockXSale[] {
     });
     
     // Debug: Check where size data might be
-    console.log('📏 Size data locations:', {
+    console.log('📏 Size data debug:', {
+      productName: firstOrder.product?.productName || firstOrder.product?.name || firstOrder.productName,
       variant_size: firstOrder.variant?.size,
       root_size: firstOrder.size,
       productSize: firstOrder.productSize,
       product_size: firstOrder.product?.size,
       item_size: firstOrder.item?.size,
+      lineItem_size: firstOrder.lineItem?.size,
       // Check all keys that might contain size
       allKeysWithSize: Object.keys(firstOrder).filter(key => 
         key.toLowerCase().includes('size') || 
         (typeof firstOrder[key] === 'object' && firstOrder[key] && 'size' in firstOrder[key])
-      )
+      ),
+      // Try to extract from title
+      extractedFromTitle: extractSizeFromTitle(firstOrder.product?.productName || firstOrder.product?.name || firstOrder.productName || '')
     });
+    
+    // Log the variant structure if it exists
+    if (firstOrder.variant) {
+      console.log('🔍 Variant structure:', JSON.stringify(firstOrder.variant, null, 2));
+    }
     
     // If we have multiple orders, check if payout data varies
     if (orders.length > 1) {
@@ -426,7 +464,18 @@ function processSalesData(rawData: any): StockXSale[] {
       },
       variant: {
         variantId: order.variant?.id || order.variantId || '',
-        size: order.variant?.size || order.size || order.productSize || order.product?.size || order.item?.size || 'N/A',
+        // StockX selling API doesn't include size, so we try multiple fallbacks
+        size: order.variant?.size || 
+              order.size || 
+              order.productSize || 
+              order.product?.size || 
+              order.item?.size || 
+              order.lineItem?.size ||
+              order.metadata?.size ||
+              order.attributes?.size ||
+              // If we have a product title, try to extract size from it
+              extractSizeFromTitle(order.product?.productName || order.product?.name || order.productName || '') ||
+              'Size not available',
         sizeType: order.variant?.sizeType || order.sizeType
       },
       pricing: {
