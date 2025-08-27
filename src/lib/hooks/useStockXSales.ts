@@ -476,7 +476,17 @@ export const useStockXSales = () => {
 
   // Refresh payouts in background
   const refreshPayoutsInBackground = async () => {
-    if (!user) return;
+    if (!user) {
+      console.error('❌ No user found for payout refresh');
+      return;
+    }
+    
+    console.log('🔄 Starting payout refresh for user:', user.uid);
+    setSyncProgress({
+      current: 0,
+      total: 0,
+      status: 'Connecting to payout refresh service...'
+    });
     
     try {
       const eventSource = new EventSource(`/api/stockx/refresh-payouts?userId=${user.uid}`);
@@ -514,13 +524,39 @@ export const useStockXSales = () => {
       
       eventSource.onerror = (error) => {
         console.error('❌ EventSource error:', error);
+        console.error('Error details:', error);
+        setError('Failed to connect to payout refresh service. Please try again.');
         eventSource.close();
         setSyncProgress(null);
       };
       
+      eventSource.onopen = () => {
+        console.log('✅ Connected to payout refresh service');
+      };
+      
     } catch (error) {
       console.error('Error starting payout refresh:', error);
+      setError('Failed to start payout refresh. Check console for details.');
       setSyncProgress(null);
+      
+      // Fallback: Try a simple fetch approach
+      console.log('🔄 Trying fallback payout refresh method...');
+      try {
+        const response = await fetch(`/api/stockx/refresh-payouts-simple?userId=${user.uid}`);
+        if (response.ok) {
+          const result = await response.json();
+          console.log('✅ Fallback payout refresh completed:', result);
+          console.log('✅ Payout refresh completed successfully');
+          // Reload sales data
+          await loadSalesData(false);
+        } else {
+          const error = await response.text();
+          console.error('❌ Fallback refresh failed:', error);
+          setError('Failed to refresh payouts. Please check console.');
+        }
+      } catch (fallbackError) {
+        console.error('❌ Fallback also failed:', fallbackError);
+      }
     }
   };
 
