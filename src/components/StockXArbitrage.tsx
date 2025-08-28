@@ -1452,48 +1452,10 @@ const StockXArbitrage: React.FC = () => {
                     </div>
                   )}
                   <button
-                    onClick={async () => {
-                      const opportunityKey = `${opportunity.productId}-${opportunity.variantId}`;
-                      let affiliateLink = affiliateLinks[opportunityKey];
-                      
-                      if (!affiliateLink) {
-                        // Generate Impact.com affiliate link on-demand
-                        const stockxUrl = opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId, opportunity.size);
-                        
-                        try {
-                          const impactResponse = await fetch('/api/impact/create-link', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ 
-                              stockxUrl,
-                              customParams: {
-                                productId: opportunity.productId,
-                                size: opportunity.size,
-                                source: 'view_button'
-                              }
-                            })
-                          });
-                          
-                          if (impactResponse.ok) {
-                            const impactData = await impactResponse.json();
-                            affiliateLink = impactData.trackingUrl || stockxUrl;
-                            
-                            // Cache the affiliate link
-                            setAffiliateLinks(prev => ({
-                              ...prev,
-                              [opportunityKey]: affiliateLink
-                            }));
-                          } else {
-                            affiliateLink = stockxUrl;
-                          }
-                        } catch (error) {
-                          console.error('Error creating Impact.com link:', error);
-                          affiliateLink = stockxUrl;
-                        }
-                      }
-                      
-                      // Open the affiliate link
-                      window.open(affiliateLink, '_blank', 'noopener,noreferrer');
+                    onClick={() => {
+                      // Disabled affiliate links - using regular StockX URL
+                      const stockxUrl = opportunity.stockxUrl || generateStockXUrl(opportunity.productName, opportunity.variantId, opportunity.size);
+                      window.open(stockxUrl, '_blank', 'noopener,noreferrer');
                     }}
                     className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
                   >
