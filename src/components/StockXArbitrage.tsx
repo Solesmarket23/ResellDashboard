@@ -20,7 +20,10 @@ interface FallbackImageProps {
 }
 
 const FallbackImage: React.FC<FallbackImageProps> = ({ imageUrls, alt, className, productTitle, brand }) => {
-  // Since StockX images aren't publicly accessible, create an informative placeholder
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [imageError, setImageError] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
   const getBrandInitial = (brandName?: string) => {
     if (!brandName) return '?';
     return brandName.charAt(0).toUpperCase();
@@ -39,16 +42,67 @@ const FallbackImage: React.FC<FallbackImageProps> = ({ imageUrls, alt, className
     return colors[Math.abs(hash) % colors.length];
   };
 
-  return (
-    <div className={`${className} ${getBrandColor(brand)} flex items-center justify-center rounded-lg`}>
-      <div className="text-center">
-        <div className="text-white font-bold text-lg">
-          {getBrandInitial(brand)}
-        </div>
-        <div className="text-white text-xs opacity-75">
-          StockX
+  const handleImageError = () => {
+    // Try next image URL if available
+    if (currentImageIndex < imageUrls.length - 1) {
+      setCurrentImageIndex(currentImageIndex + 1);
+    } else {
+      // All images failed, show placeholder
+      setImageError(true);
+      setIsLoading(false);
+    }
+  };
+
+  const handleImageLoad = () => {
+    setIsLoading(false);
+    setImageError(false);
+  };
+
+  // Reset when imageUrls change
+  useEffect(() => {
+    setCurrentImageIndex(0);
+    setImageError(false);
+    setIsLoading(true);
+  }, [imageUrls]);
+
+  // Show placeholder if no valid URLs or all failed
+  if (!imageUrls || imageUrls.length === 0 || imageUrls[0] === '/placeholder-shoe.png' || imageError) {
+    return (
+      <div className={`${className} ${getBrandColor(brand)} flex items-center justify-center rounded-lg`}>
+        <div className="text-center">
+          <div className="text-white font-bold text-lg">
+            {getBrandInitial(brand)}
+          </div>
+          <div className="text-white text-xs opacity-75">
+            StockX
+          </div>
         </div>
       </div>
+    );
+  }
+
+  // Try to load actual image
+  return (
+    <div className={`${className} relative overflow-hidden rounded-lg`}>
+      {/* Loading state */}
+      {isLoading && (
+        <div className={`absolute inset-0 ${getBrandColor(brand)} flex items-center justify-center`}>
+          <div className="text-center">
+            <div className="text-white font-bold text-lg animate-pulse">
+              {getBrandInitial(brand)}
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Actual image */}
+      <img
+        src={imageUrls[currentImageIndex]}
+        alt={alt}
+        className={`${className} ${isLoading ? 'opacity-0' : 'opacity-100'} transition-opacity duration-200`}
+        onError={handleImageError}
+        onLoad={handleImageLoad}
+      />
     </div>
   );
 };
@@ -60,6 +114,7 @@ interface ArbitrageOpportunity {
   productName: string;
   size: string;
   imageUrl: string;
+  brand?: string;
   costPrice: number;
   sellingPrice: number;
   totalCost: number; // Including fees
@@ -374,6 +429,7 @@ const StockXArbitrage: React.FC = () => {
                 productName: data.data.title || '',
                 size: data.data.size || '',
                 imageUrl: data.data.imageUrl || '',
+                brand: data.data.brand || '',
                 costPrice: data.data.rawBid || 0,
                 sellingPrice: data.data.lowestAsk || 0,
                 totalCost: data.data.estimatedTotalBuyerCost || 0,
@@ -1270,6 +1326,7 @@ const StockXArbitrage: React.FC = () => {
                       alt={opportunity.productName}
                       className="w-12 h-12 sm:w-16 sm:h-16 rounded-lg flex-shrink-0"
                       productTitle={opportunity.productName}
+                      brand={opportunity.brand}
                     />
                     {uploadedImages[opportunity.productId] && (
                       <div className="absolute -top-1 -right-1 bg-green-500 rounded-full p-1">
