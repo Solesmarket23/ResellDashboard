@@ -88,6 +88,17 @@ const Sales = () => {
 
   // Sales data is now handled by the useSales hook automatically
   
+  // Refresh sales data when StockX sync completes
+  useEffect(() => {
+    if (syncProgress?.status?.includes('Successfully synced')) {
+      console.log('🔄 StockX sync completed, refreshing sales data...');
+      // Small delay to ensure Firebase write is complete
+      setTimeout(() => {
+        forceRefresh();
+      }, 1000);
+    }
+  }, [syncProgress, forceRefresh]);
+  
   // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -756,11 +767,22 @@ const Sales = () => {
             {connectionState.lastSync && (
               <span>Last sync: {connectionState.lastSync.toLocaleTimeString()}</span>
             )}
-            <div className="flex items-center space-x-1">
-              {connectionState.status === 'connected' && <Wifi className="w-4 h-4 text-green-500" />}
-              {connectionState.status === 'connecting' && <RefreshCw className="w-4 h-4 text-yellow-500 animate-spin" />}
-              {connectionState.status === 'error' && <AlertCircle className="w-4 h-4 text-red-500" />}
-              {connectionState.status === 'disconnected' && <WifiOff className="w-4 h-4 text-gray-500" />}
+            <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-1">
+                {connectionState.status === 'connected' && <Wifi className="w-4 h-4 text-green-500" />}
+                {connectionState.status === 'connecting' && <RefreshCw className="w-4 h-4 text-yellow-500 animate-spin" />}
+                {connectionState.status === 'error' && <AlertCircle className="w-4 h-4 text-red-500" />}
+                {connectionState.status === 'disconnected' && <WifiOff className="w-4 h-4 text-gray-500" />}
+              </div>
+              <button
+                onClick={() => {
+                  console.log('🔄 Manual refresh triggered');
+                  forceRefresh();
+                }}
+                className="px-2 py-1 bg-blue-500 text-white rounded text-xs hover:bg-blue-600"
+              >
+                Refresh
+              </button>
             </div>
           </div>
         </div>

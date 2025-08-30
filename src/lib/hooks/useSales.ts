@@ -245,6 +245,18 @@ export const useSales = () => {
       console.log('🔄 useSales: Found', userStockxSales.length, 'StockX sales');
       console.log('🔄 useSales: Total sales:', allSales.length);
       
+      // Additional debug: Log sample of processed StockX sales
+      if (userStockxSales.length > 0) {
+        console.log('🔍 Sample processed StockX sale:', {
+          id: userStockxSales[0].id,
+          platform: userStockxSales[0].platform,
+          product: userStockxSales[0].product,
+          salePrice: userStockxSales[0].salePrice,
+          date: userStockxSales[0].date,
+          profit: userStockxSales[0].profit
+        });
+      }
+      
       if (mountedRef.current) {
         setSales(allSales);
         setManualSales(normalizedManualSales);
