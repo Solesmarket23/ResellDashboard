@@ -404,44 +404,46 @@ export const useSales = () => {
         clearInterval(refreshIntervalRef.current);
       }
 
-      // Set up new interval for auto-refresh every 30 seconds
+      // Set up new interval for auto-refresh every 60 seconds (reduced frequency)
       refreshIntervalRef.current = setInterval(() => {
         // Only refresh if document is visible (user is actively using the app)
         if (!document.hidden && mountedRef.current) {
-          console.log('🔄 useSales: Auto-refresh triggered (30s interval)');
+          console.log('🔄 useSales: Auto-refresh triggered (60s interval)');
           loadSalesData(false);
         }
-      }, 30000); // 30 seconds
+      }, 60000); // 60 seconds (reduced from 30)
     };
 
     setupAutoRefresh();
 
-    // Handle visibility change
-    const handleVisibilityChange = () => {
-      if (!document.hidden && mountedRef.current) {
-        console.log('🔄 useSales: Page became visible - refreshing');
-        loadSalesData(false);
-      }
-    };
+    // Temporarily disabled automatic refresh on visibility/focus changes
+    // to prevent flickering issues
+    
+    // const handleVisibilityChange = () => {
+    //   if (!document.hidden && mountedRef.current) {
+    //     console.log('🔄 useSales: Page became visible - refreshing');
+    //     loadSalesData(false);
+    //   }
+    // };
 
-    // Handle window focus
-    const handleFocus = () => {
-      if (mountedRef.current) {
-        console.log('🔄 useSales: Window focused - refreshing');
-        loadSalesData(false);
-      }
-    };
+    // const handleFocus = () => {
+    //   if (mountedRef.current) {
+    //     console.log('🔄 useSales: Window focused - refreshing');
+    //     loadSalesData(false);
+    //   }
+    // };
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleFocus);
+    // document.addEventListener('visibilitychange', handleVisibilityChange);
+    // window.addEventListener('focus', handleFocus);
 
     return () => {
       // Cleanup
       if (refreshIntervalRef.current) {
         clearInterval(refreshIntervalRef.current);
       }
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleFocus);
+      // Temporarily disabled event listeners
+      // document.removeEventListener('visibilitychange', handleVisibilityChange);
+      // window.removeEventListener('focus', handleFocus);
     };
   }, [user]);
 

@@ -56,6 +56,9 @@ const Sales = () => {
   });
   const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
   
+  // Track if we've already refreshed for the current sync to prevent loops
+  const lastSyncRefreshRef = useRef<string | null>(null);
+  
   // Notification state
   const [notification, setNotification] = useState<{
     isVisible: boolean;
@@ -88,16 +91,20 @@ const Sales = () => {
 
   // Sales data is now handled by the useSales hook automatically
   
-  // Refresh sales data when StockX sync completes
-  useEffect(() => {
-    if (syncProgress?.status?.includes('Successfully synced')) {
-      console.log('🔄 StockX sync completed, refreshing sales data...');
-      // Small delay to ensure Firebase write is complete
-      setTimeout(() => {
-        forceRefresh();
-      }, 1000);
-    }
-  }, [syncProgress, forceRefresh]);
+  // Temporarily disabled automatic refresh to prevent flickering
+  // Users can manually refresh using the button in debug section
+  // useEffect(() => {
+  //   // Track when StockX sales data changes (indicating a successful sync)
+  //   if (stockxSales.length > 0 && lastSyncRefreshRef.current !== stockxSales.length.toString()) {
+  //     console.log('🔄 StockX sales data changed, refreshing unified sales data...');
+  //     lastSyncRefreshRef.current = stockxSales.length.toString();
+  //     
+  //     // Small delay to ensure all data is processed
+  //     setTimeout(() => {
+  //       forceRefresh();
+  //     }, 500);
+  //   }
+  // }, [stockxSales.length]); // Watch for changes in StockX sales count
   
   // Close dropdowns when clicking outside
   useEffect(() => {
