@@ -1714,15 +1714,6 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                             isNeon ? 'text-white' : 'text-gray-900'
                           }`}>
                             {sale.product}
-                            {sale.platform === 'stockx' && (
-                              <span className={`ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                isNeon 
-                                  ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
-                                  : 'bg-green-100 text-green-800'
-                              }`}>
-                                StockX
-                              </span>
-                            )}
                             {sale.isTest && (
                               <span className={`ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                                 isNeon 
