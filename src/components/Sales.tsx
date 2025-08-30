@@ -324,13 +324,17 @@ const Sales = () => {
     const context = canvas.getContext('2d');
     if (!context) return columnWidths[columnKey as keyof typeof columnWidths];
 
-    // Set font to match table font
-    context.font = '14px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif';
+    // Set font to match table font (match actual table styling)
+    context.font = '14px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 
-    let maxWidth = context.measureText(headerText).width + 60; // Header + padding + sort icon
+    let maxWidth = context.measureText(headerText).width + 80; // Header + padding + sort icon + extra space
+    let longestContent = headerText;
 
+    // Use ALL sales data, not just filtered/sorted to ensure we check everything
+    const allSales = salesData || [];
+    
     // Check each row's content for this column
-    sortedSales.forEach(sale => {
+    allSales.forEach(sale => {
       let cellContent = '';
       
       switch (columnKey) {
@@ -369,12 +373,25 @@ const Sales = () => {
           cellContent = '';
       }
 
-      const textWidth = context.measureText(cellContent).width + 32; // Content + padding
-      maxWidth = Math.max(maxWidth, textWidth);
+      const textWidth = context.measureText(cellContent).width + 40; // Content + padding
+      if (textWidth > maxWidth) {
+        maxWidth = textWidth;
+        longestContent = cellContent;
+      }
     });
 
-    // Add some extra padding and set reasonable min/max bounds
-    return Math.min(Math.max(maxWidth + 20, 80), 400);
+    // Add extra padding and set reasonable min/max bounds (increased max for long product names)
+    const finalWidth = Math.min(Math.max(maxWidth + 30, 100), 600);
+    
+    console.log(`Auto-resize ${columnKey}:`, {
+      headerText,
+      longestContent,
+      measuredWidth: maxWidth,
+      finalWidth,
+      totalSales: allSales.length
+    });
+
+    return finalWidth;
   };
 
   const handleDoubleClickResize = (columnKey: string, headerText: string) => {
