@@ -272,6 +272,9 @@ const Sales = () => {
   
   // Sorting functionality
   const handleSort = (column: string) => {
+    // Don't sort if we're currently resizing
+    if (isResizing) return;
+    
     if (sortBy === column) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
     } else {
