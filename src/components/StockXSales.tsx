@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { TrendingUp, DollarSign, Package, Clock, CheckCircle, AlertCircle, Filter, ExternalLink, RefreshCw, List, Search, Calculator, BarChart3 } from 'lucide-react';
 import StockXPayoutRefresher from './StockXPayoutRefresher';
 import StockXExportAll from './StockXExportAll';
+import StockXCompleteImport from './StockXCompleteImport';
+import { useAuth } from '@/lib/contexts/AuthContext';
 
 interface SaleData {
   id: string;
@@ -48,6 +50,7 @@ interface SaleData {
 }
 
 const StockXSales: React.FC = () => {
+  const { user } = useAuth();
   const [sales, setSales] = useState<SaleData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -383,6 +386,67 @@ const StockXSales: React.FC = () => {
                 fetchSales(currentPage, statusFilter);
               }}
               skipCompleted={true}
+            />
+          </div>
+        )}
+
+        {/* Complete Import - Only show if user is authenticated */}
+        {user && !sales.length && !isLoading && !errorMessage && (
+          <div className="mb-6">
+            <StockXCompleteImport 
+              userId={user.uid}
+              onImportComplete={(importedSales) => {
+                // Handle the imported sales
+                if (importedSales.length > 0) {
+                  // Convert to the format expected by this component
+                  const formattedSales = importedSales.map(sale => ({
+                    id: sale.id,
+                    status: sale.status.toLowerCase(),
+                    createdAt: sale.createdAt,
+                    updatedAt: sale.updatedAt,
+                    product: {
+                      id: sale.product.productId,
+                      name: sale.product.productName,
+                      brand: sale.product.brand,
+                      colorway: sale.product.colorway || '',
+                      imageUrl: sale.product.imageUrl || '',
+                      sku: sale.product.styleId || '',
+                      urlKey: sale.product.urlKey || ''
+                    },
+                    variant: {
+                      id: sale.variant.variantId,
+                      size: sale.variant.size,
+                      condition: 'new'
+                    },
+                    pricing: {
+                      salePrice: sale.pricing.salePrice,
+                      processingFee: sale.pricing.processingFee,
+                      transactionFee: sale.pricing.transactionFee,
+                      shippingFee: sale.pricing.shippingFee,
+                      totalFees: sale.pricing.sellerFees,
+                      payout: sale.pricing.totalPayout,
+                      currency: sale.pricing.currency
+                    },
+                    shipping: {
+                      trackingNumber: sale.shipping?.trackingNumber || '',
+                      shippingMethod: sale.shipping?.carrier || '',
+                      shippedAt: sale.shipping?.shippedDate || '',
+                      deliveredAt: sale.shipping?.deliveredDate || ''
+                    },
+                    buyer: {
+                      region: 'US'
+                    },
+                    profitCalculation: {
+                      salePrice: sale.pricing.salePrice,
+                      totalFees: sale.pricing.sellerFees,
+                      netPayout: sale.pricing.totalPayout
+                    },
+                    needsPayoutRefresh: sale.needsPayoutRefresh
+                  }));
+                  setSales(formattedSales);
+                  setTotalCount(formattedSales.length);
+                }
+              }}
             />
           </div>
         )}
