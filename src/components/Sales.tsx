@@ -60,20 +60,43 @@ const Sales = () => {
   // Track if we've already refreshed for the current sync to prevent loops
   const lastSyncRefreshRef = useRef<string | null>(null);
   
-  // Column width state for resizable columns
-  const [columnWidths, setColumnWidths] = useState({
-    product: 300,
-    brand: 120,
-    size: 80,
-    soldOn: 120,
-    purchasedFrom: 140,
-    salePrice: 100,
-    purchasePrice: 120,
-    fees: 80,
-    profit: 100,
-    date: 120,
-    actions: 100
-  });
+  // Column width state for resizable columns with localStorage persistence
+  const getStoredColumnWidths = () => {
+    try {
+      const stored = localStorage.getItem('sales-column-widths');
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (error) {
+      console.warn('Failed to load column widths from localStorage:', error);
+    }
+    // Default widths
+    return {
+      product: 300,
+      brand: 120,
+      size: 80,
+      soldOn: 120,
+      purchasedFrom: 140,
+      salePrice: 100,
+      purchasePrice: 120,
+      fees: 80,
+      profit: 100,
+      date: 120,
+      actions: 100
+    };
+  };
+
+  const [columnWidths, setColumnWidths] = useState(getStoredColumnWidths());
+
+  // Save column widths to localStorage whenever they change
+  const updateColumnWidths = (newWidths: typeof columnWidths) => {
+    setColumnWidths(newWidths);
+    try {
+      localStorage.setItem('sales-column-widths', JSON.stringify(newWidths));
+    } catch (error) {
+      console.warn('Failed to save column widths to localStorage:', error);
+    }
+  };
   
   const [isResizing, setIsResizing] = useState(false);
   const [resizingColumn, setResizingColumn] = useState<string | null>(null);
@@ -374,10 +397,10 @@ const Sales = () => {
       const diff = e.clientX - startX;
       const newWidth = Math.max(60, startWidth + diff);
       
-      setColumnWidths(prev => ({
-        ...prev,
+      updateColumnWidths({
+        ...columnWidths,
         [columnKey]: newWidth
-      }));
+      });
     };
     
     const handleMouseUp = () => {

@@ -65,20 +65,43 @@ const Purchases = () => {
   const { currentTheme } = useTheme();
   const { user } = useAuth();
   
-  // Column width state
-  const [columnWidths, setColumnWidths] = useState({
-    checkbox: 50,
-    product: 300,
-    orderNumber: 150,
-    status: 120,
-    tracking: 150,
-    market: 100,
-    price: 130,
-    purchaseDate: 120,
-    dateAdded: 120,
-    verified: 80,
-    edit: 80
-  });
+  // Column width state with localStorage persistence
+  const getStoredColumnWidths = () => {
+    try {
+      const stored = localStorage.getItem('purchases-column-widths');
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (error) {
+      console.warn('Failed to load column widths from localStorage:', error);
+    }
+    // Default widths
+    return {
+      checkbox: 50,
+      product: 300,
+      orderNumber: 150,
+      status: 120,
+      tracking: 150,
+      market: 100,
+      price: 130,
+      purchaseDate: 120,
+      dateAdded: 120,
+      verified: 80,
+      edit: 80
+    };
+  };
+
+  const [columnWidths, setColumnWidths] = useState(getStoredColumnWidths());
+
+  // Save column widths to localStorage whenever they change
+  const updateColumnWidths = (newWidths: typeof columnWidths) => {
+    setColumnWidths(newWidths);
+    try {
+      localStorage.setItem('purchases-column-widths', JSON.stringify(newWidths));
+    } catch (error) {
+      console.warn('Failed to save column widths to localStorage:', error);
+    }
+  };
   
   const [isResizing, setIsResizing] = useState(false);
   const [resizingColumn, setResizingColumn] = useState<string | null>(null);
@@ -224,10 +247,10 @@ const Purchases = () => {
       const diff = e.clientX - startX;
       const newWidth = Math.max(60, startWidth + diff);
       
-      setColumnWidths(prev => ({
-        ...prev,
+      updateColumnWidths({
+        ...columnWidths,
         [columnKey]: newWidth
-      }));
+      });
     };
     
     const handleMouseUp = () => {
