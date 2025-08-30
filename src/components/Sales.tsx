@@ -316,6 +316,74 @@ const Sales = () => {
     }
     handleSort(column);
   };
+
+  // Auto-resize column to fit content
+  const calculateOptimalWidth = (columnKey: string, headerText: string): number => {
+    // Create a temporary canvas to measure text width
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) return columnWidths[columnKey as keyof typeof columnWidths];
+
+    // Set font to match table font
+    context.font = '14px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif';
+
+    let maxWidth = context.measureText(headerText).width + 60; // Header + padding + sort icon
+
+    // Check each row's content for this column
+    sortedSales.forEach(sale => {
+      let cellContent = '';
+      
+      switch (columnKey) {
+        case 'product':
+          cellContent = sale.product || '';
+          break;
+        case 'brand':
+          cellContent = sale.brand || '';
+          break;
+        case 'size':
+          cellContent = sale.size || '';
+          break;
+        case 'soldOn':
+          cellContent = sale.soldOn || sale.market || '';
+          break;
+        case 'purchasedFrom':
+          cellContent = sale.purchasedFrom || '';
+          break;
+        case 'salePrice':
+          cellContent = sale.salePrice ? `$${parseFloat(sale.salePrice).toFixed(2)}` : '';
+          break;
+        case 'purchasePrice':
+          cellContent = sale.purchasePrice ? `$${parseFloat(sale.purchasePrice).toFixed(2)}` : '';
+          break;
+        case 'fees':
+          cellContent = sale.fees ? `$${parseFloat(sale.fees).toFixed(2)}` : '';
+          break;
+        case 'profit':
+          const profit = (parseFloat(sale.salePrice || '0') - parseFloat(sale.purchasePrice || '0') - parseFloat(sale.fees || '0'));
+          cellContent = `$${profit.toFixed(2)}`;
+          break;
+        case 'date':
+          cellContent = sale.date ? new Date(sale.date).toLocaleDateString() : '';
+          break;
+        default:
+          cellContent = '';
+      }
+
+      const textWidth = context.measureText(cellContent).width + 32; // Content + padding
+      maxWidth = Math.max(maxWidth, textWidth);
+    });
+
+    // Add some extra padding and set reasonable min/max bounds
+    return Math.min(Math.max(maxWidth + 20, 80), 400);
+  };
+
+  const handleDoubleClickResize = (columnKey: string, headerText: string) => {
+    const optimalWidth = calculateOptimalWidth(columnKey, headerText);
+    updateColumnWidths({
+      ...columnWidths,
+      [columnKey]: optimalWidth
+    });
+  };
   
   // Sort filtered sales
   const sortedSales = [...filteredSales].sort((a, b) => {
@@ -1290,7 +1358,11 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                           e.stopPropagation();
                           handleMouseDown(e, 'product');
                         }}
-                        title="Drag to resize column"
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          handleDoubleClickResize('product', 'Product');
+                        }}
+                        title="Drag to resize column, double-click to auto-fit"
                       />
                     </th>
                     
@@ -1318,7 +1390,11 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                           e.stopPropagation();
                           handleMouseDown(e, 'brand');
                         }}
-                        title="Drag to resize column"
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          handleDoubleClickResize('brand', 'Brand');
+                        }}
+                        title="Drag to resize column, double-click to auto-fit"
                       />
                     </th>
                     
@@ -1346,7 +1422,11 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                           e.stopPropagation();
                           handleMouseDown(e, 'size');
                         }}
-                        title="Drag to resize column"
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          handleDoubleClickResize('size', 'Size');
+                        }}
+                        title="Drag to resize column, double-click to auto-fit"
                       />
                     </th>
                     
@@ -1374,7 +1454,11 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                           e.stopPropagation();
                           handleMouseDown(e, 'soldOn');
                         }}
-                        title="Drag to resize column"
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          handleDoubleClickResize('soldOn', 'Sold On');
+                        }}
+                        title="Drag to resize column, double-click to auto-fit"
                       />
                     </th>
                     
@@ -1402,7 +1486,11 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                           e.stopPropagation();
                           handleMouseDown(e, 'purchasedFrom');
                         }}
-                        title="Drag to resize column"
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          handleDoubleClickResize('purchasedFrom', 'Purchased From');
+                        }}
+                        title="Drag to resize column, double-click to auto-fit"
                       />
                     </th>
                     
@@ -1430,7 +1518,11 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                           e.stopPropagation();
                           handleMouseDown(e, 'salePrice');
                         }}
-                        title="Drag to resize column"
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          handleDoubleClickResize('salePrice', 'Sale Price');
+                        }}
+                        title="Drag to resize column, double-click to auto-fit"
                       />
                     </th>
                     
@@ -1458,7 +1550,11 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                           e.stopPropagation();
                           handleMouseDown(e, 'purchasePrice');
                         }}
-                        title="Drag to resize column"
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          handleDoubleClickResize('purchasePrice', 'Purchase Price');
+                        }}
+                        title="Drag to resize column, double-click to auto-fit"
                       />
                     </th>
                     
@@ -1486,7 +1582,11 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                           e.stopPropagation();
                           handleMouseDown(e, 'fees');
                         }}
-                        title="Drag to resize column"
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          handleDoubleClickResize('fees', 'Fees');
+                        }}
+                        title="Drag to resize column, double-click to auto-fit"
                       />
                     </th>
                     
@@ -1514,7 +1614,11 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                           e.stopPropagation();
                           handleMouseDown(e, 'profit');
                         }}
-                        title="Drag to resize column"
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          handleDoubleClickResize('profit', 'Profit');
+                        }}
+                        title="Drag to resize column, double-click to auto-fit"
                       />
                     </th>
                     
@@ -1542,7 +1646,11 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                           e.stopPropagation();
                           handleMouseDown(e, 'date');
                         }}
-                        title="Drag to resize column"
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          handleDoubleClickResize('date', 'Date');
+                        }}
+                        title="Drag to resize column, double-click to auto-fit"
                       />
                     </th>
                     

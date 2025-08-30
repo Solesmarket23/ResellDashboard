@@ -187,6 +187,73 @@ const Purchases = () => {
     }
     handleSort(column);
   };
+
+  // Auto-resize column to fit content
+  const calculateOptimalWidth = (columnKey: string, headerText: string): number => {
+    // Create a temporary canvas to measure text width
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) return columnWidths[columnKey as keyof typeof columnWidths];
+
+    // Set font to match table font
+    context.font = '14px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif';
+
+    let maxWidth = context.measureText(headerText).width + 60; // Header + padding + sort icon
+
+    // Get sorted purchases to check content
+    const sortedPurchases = getSortedPurchases();
+
+    // Check each row's content for this column
+    sortedPurchases.forEach(purchase => {
+      let cellContent = '';
+      
+      switch (columnKey) {
+        case 'product':
+          cellContent = purchase.product?.name || '';
+          break;
+        case 'orderNumber':
+          cellContent = formatOrderNumberForDisplay(purchase.orderNumber) || '';
+          break;
+        case 'status':
+          cellContent = purchase.deliveryStatus || purchase.status || '';
+          break;
+        case 'tracking':
+          cellContent = purchase.trackingNumber || '';
+          break;
+        case 'market':
+          cellContent = purchase.marketplace || purchase.market || '';
+          break;
+        case 'price':
+          cellContent = purchase.orderTotal ? `$${parseFloat(purchase.orderTotal).toFixed(2)}` : '';
+          break;
+        case 'purchaseDate':
+          cellContent = purchase.purchaseDate ? new Date(purchase.purchaseDate).toLocaleDateString() : '';
+          break;
+        case 'dateAdded':
+          cellContent = purchase.dateAdded ? new Date(purchase.dateAdded).toLocaleDateString() : '';
+          break;
+        case 'verified':
+          cellContent = purchase.verified ? 'Yes' : 'No';
+          break;
+        default:
+          cellContent = '';
+      }
+
+      const textWidth = context.measureText(cellContent).width + 32; // Content + padding
+      maxWidth = Math.max(maxWidth, textWidth);
+    });
+
+    // Add some extra padding and set reasonable min/max bounds
+    return Math.min(Math.max(maxWidth + 20, 80), 400);
+  };
+
+  const handleDoubleClickResize = (columnKey: string, headerText: string) => {
+    const optimalWidth = calculateOptimalWidth(columnKey, headerText);
+    updateColumnWidths({
+      ...columnWidths,
+      [columnKey]: optimalWidth
+    });
+  };
   
   // Get sorted purchases
   const getSortedPurchases = () => {
@@ -1102,7 +1169,11 @@ const Purchases = () => {
                       e.stopPropagation();
                       handleMouseDown(e, 'product');
                     }}
-                    title="Drag to resize column"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      handleDoubleClickResize('product', 'Product');
+                    }}
+                    title="Drag to resize column, double-click to auto-fit"
                   />
                 </th>
                 <th 
@@ -1126,7 +1197,11 @@ const Purchases = () => {
                       e.stopPropagation();
                       handleMouseDown(e, 'orderNumber');
                     }}
-                    title="Drag to resize column"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      handleDoubleClickResize('orderNumber', 'Order Number');
+                    }}
+                    title="Drag to resize column, double-click to auto-fit"
                   />
                 </th>
                 <th 
@@ -1150,7 +1225,11 @@ const Purchases = () => {
                       e.stopPropagation();
                       handleMouseDown(e, 'status');
                     }}
-                    title="Drag to resize column"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      handleDoubleClickResize('status', 'Status');
+                    }}
+                    title="Drag to resize column, double-click to auto-fit"
                   />
                 </th>
                 <th 
@@ -1174,7 +1253,11 @@ const Purchases = () => {
                       e.stopPropagation();
                       handleMouseDown(e, 'tracking');
                     }}
-                    title="Drag to resize column"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      handleDoubleClickResize('tracking', 'Tracking');
+                    }}
+                    title="Drag to resize column, double-click to auto-fit"
                   />
                 </th>
                 <th 
@@ -1198,7 +1281,11 @@ const Purchases = () => {
                       e.stopPropagation();
                       handleMouseDown(e, 'market');
                     }}
-                    title="Drag to resize column"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      handleDoubleClickResize('market', 'Market');
+                    }}
+                    title="Drag to resize column, double-click to auto-fit"
                   />
                 </th>
                 <th 
@@ -1222,7 +1309,11 @@ const Purchases = () => {
                       e.stopPropagation();
                       handleMouseDown(e, 'price');
                     }}
-                    title="Drag to resize column"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      handleDoubleClickResize('price', 'Price');
+                    }}
+                    title="Drag to resize column, double-click to auto-fit"
                   />
                 </th>
                 <th 
@@ -1246,7 +1337,11 @@ const Purchases = () => {
                       e.stopPropagation();
                       handleMouseDown(e, 'purchaseDate');
                     }}
-                    title="Drag to resize column"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      handleDoubleClickResize('purchaseDate', 'Purchase Date');
+                    }}
+                    title="Drag to resize column, double-click to auto-fit"
                   />
                 </th>
                 <th 
@@ -1270,7 +1365,11 @@ const Purchases = () => {
                       e.stopPropagation();
                       handleMouseDown(e, 'dateAdded');
                     }}
-                    title="Drag to resize column"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      handleDoubleClickResize('dateAdded', 'Date Added');
+                    }}
+                    title="Drag to resize column, double-click to auto-fit"
                   />
                 </th>
                 <th 
@@ -1294,7 +1393,11 @@ const Purchases = () => {
                       e.stopPropagation();
                       handleMouseDown(e, 'verified');
                     }}
-                    title="Drag to resize column"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      handleDoubleClickResize('verified', 'Verified');
+                    }}
+                    title="Drag to resize column, double-click to auto-fit"
                   />
                 </th>
                 <th 
@@ -1314,7 +1417,11 @@ const Purchases = () => {
                       e.stopPropagation();
                       handleMouseDown(e, 'edit');
                     }}
-                    title="Drag to resize column"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      handleDoubleClickResize('edit', 'Edit');
+                    }}
+                    title="Drag to resize column, double-click to auto-fit"
                   />
                 </th>
               </tr>
