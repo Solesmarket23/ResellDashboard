@@ -82,6 +82,7 @@ const Purchases = () => {
   
   const [isResizing, setIsResizing] = useState(false);
   const [resizingColumn, setResizingColumn] = useState<string | null>(null);
+  const [justClickedResize, setJustClickedResize] = useState(false);
   const tableRef = useRef<HTMLTableElement>(null);
   
   // Helper function to sort purchases
@@ -143,8 +144,8 @@ const Purchases = () => {
   
   // Handle column header click for sorting
   const handleSort = (column: string) => {
-    // Don't sort if we're currently resizing
-    if (isResizing) return;
+    // Don't sort if we're currently resizing or just clicked a resize handle
+    if (isResizing || justClickedResize) return;
     
     if (sortBy === column) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -197,6 +198,12 @@ const Purchases = () => {
   // Handle mouse down on resize handle
   const handleMouseDown = (e: React.MouseEvent, columnKey: string) => {
     e.preventDefault();
+    e.stopPropagation(); // Prevent event bubbling
+    
+    // Set flag to prevent sorting for a short time
+    setJustClickedResize(true);
+    setTimeout(() => setJustClickedResize(false), 200);
+    
     setIsResizing(true);
     setResizingColumn(columnKey);
     
