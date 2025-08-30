@@ -43,6 +43,7 @@ const Sales = () => {
     brand: '',
     size: '',
     market: 'StockX',
+    purchasedFrom: '',
     salePrice: '',
     purchasePrice: '',
     fees: '',
@@ -58,6 +59,29 @@ const Sales = () => {
   
   // Track if we've already refreshed for the current sync to prevent loops
   const lastSyncRefreshRef = useRef<string | null>(null);
+  
+  // Column width state for resizable columns
+  const [columnWidths, setColumnWidths] = useState({
+    product: 300,
+    brand: 120,
+    size: 80,
+    soldOn: 120,
+    purchasedFrom: 140,
+    salePrice: 100,
+    purchasePrice: 120,
+    fees: 80,
+    profit: 100,
+    date: 120,
+    actions: 100
+  });
+  
+  const [isResizing, setIsResizing] = useState(false);
+  const [resizingColumn, setResizingColumn] = useState<string | null>(null);
+  const tableRef = useRef<HTMLTableElement>(null);
+  
+  // Sorting state
+  const [sortBy, setSortBy] = useState('date');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   
   // Notification state
   const [notification, setNotification] = useState<{
@@ -245,6 +269,126 @@ const Sales = () => {
   
   // Get filtered sales data
   const filteredSales = getFilteredSales();
+  
+  // Sorting functionality
+  const handleSort = (column: string) => {
+    if (sortBy === column) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(column);
+      setSortDirection('asc');
+    }
+  };
+  
+  // Sort filtered sales
+  const sortedSales = [...filteredSales].sort((a, b) => {
+    let aValue: any;
+    let bValue: any;
+    
+    switch (sortBy) {
+      case 'product':
+        aValue = a.product?.toLowerCase() || '';
+        bValue = b.product?.toLowerCase() || '';
+        break;
+      case 'brand':
+        aValue = a.brand?.toLowerCase() || '';
+        bValue = b.brand?.toLowerCase() || '';
+        break;
+      case 'size':
+        aValue = a.size?.toLowerCase() || '';
+        bValue = b.size?.toLowerCase() || '';
+        break;
+      case 'soldOn':
+        aValue = a.platform?.toLowerCase() || a.market?.toLowerCase() || '';
+        bValue = b.platform?.toLowerCase() || b.market?.toLowerCase() || '';
+        break;
+      case 'purchasedFrom':
+        aValue = a.purchasedFrom?.toLowerCase() || '';
+        bValue = b.purchasedFrom?.toLowerCase() || '';
+        break;
+      case 'salePrice':
+        aValue = parseFloat(a.salePrice) || 0;
+        bValue = parseFloat(b.salePrice) || 0;
+        break;
+      case 'purchasePrice':
+        aValue = parseFloat(a.purchasePrice) || 0;
+        bValue = parseFloat(b.purchasePrice) || 0;
+        break;
+      case 'fees':
+        aValue = parseFloat(a.fees) || 0;
+        bValue = parseFloat(b.fees) || 0;
+        break;
+      case 'profit':
+        aValue = parseFloat(a.profit) || 0;
+        bValue = parseFloat(b.profit) || 0;
+        break;
+      case 'date':
+        aValue = new Date(a.date || a.createdAt).getTime();
+        bValue = new Date(b.date || b.createdAt).getTime();
+        break;
+      default:
+        return 0;
+    }
+    
+    if (typeof aValue === 'string') {
+      return sortDirection === 'asc' 
+        ? aValue.localeCompare(bValue)
+        : bValue.localeCompare(aValue);
+    } else {
+      return sortDirection === 'asc' 
+        ? aValue - bValue
+        : bValue - aValue;
+    }
+  });
+  
+  // Column resizing functionality
+  const handleMouseDown = (e: React.MouseEvent, columnKey: string) => {
+    e.preventDefault();
+    setIsResizing(true);
+    setResizingColumn(columnKey);
+    
+    const startX = e.clientX;
+    const startWidth = columnWidths[columnKey as keyof typeof columnWidths];
+    
+    const handleMouseMove = (e: MouseEvent) => {
+      const diff = e.clientX - startX;
+      const newWidth = Math.max(60, startWidth + diff);
+      
+      setColumnWidths(prev => ({
+        ...prev,
+        [columnKey]: newWidth
+      }));
+    };
+    
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      setResizingColumn(null);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+  
+  // Sort icon component
+  const SortIcon = ({ column }: { column: string }) => {
+    if (sortBy !== column) {
+      return (
+        <div className="flex flex-col ml-1 opacity-30">
+          <div className="w-0 h-0 border-l-2 border-r-2 border-b-2 border-transparent border-b-current transform -translate-y-px"></div>
+          <div className="w-0 h-0 border-l-2 border-r-2 border-t-2 border-transparent border-t-current transform translate-y-px"></div>
+        </div>
+      );
+    }
+    
+    return (
+      <div className="flex flex-col ml-1">
+        <div className={`w-0 h-0 border-l-2 border-r-2 border-b-2 border-transparent ${sortDirection === 'asc' ? 'border-b-current' : 'border-b-current opacity-30'} transform -translate-y-px`}></div>
+        <div className={`w-0 h-0 border-l-2 border-r-2 border-t-2 border-transparent ${sortDirection === 'desc' ? 'border-t-current' : 'border-t-current opacity-30'} transform translate-y-px`}></div>
+      </div>
+    );
+  };
   
   const marketplaceOptions = [
     'StockX',
@@ -478,6 +622,7 @@ const Sales = () => {
       brand: '',
       size: '',
       market: 'StockX',
+      purchasedFrom: '',
       salePrice: '',
       purchasePrice: '',
       fees: '',
@@ -587,6 +732,7 @@ const Sales = () => {
       orderNumber: `MANUAL-${Date.now()}`,
       size: newSale.size,
       market: newSale.market,
+      purchasedFrom: newSale.purchasedFrom,
       salePrice: salePrice,
       purchasePrice: purchasePrice,
       fees: -fees,
@@ -654,9 +800,9 @@ const Sales = () => {
   };
 
   // Calculate updated metrics based on filtered sales data
-  const totalSales = filteredSales.length;
-  const totalRevenue = filteredSales.reduce((sum, sale) => sum + (Number(sale.salePrice) || Number(sale.amount) || 0), 0);
-  const totalProfit = filteredSales.reduce((sum, sale) => sum + (Number(sale.profit) || 0), 0);
+  const totalSales = sortedSales.length;
+  const totalRevenue = sortedSales.reduce((sum, sale) => sum + (Number(sale.salePrice) || Number(sale.amount) || 0), 0);
+  const totalProfit = sortedSales.reduce((sum, sale) => sum + (Number(sale.profit) || 0), 0);
   const avgProfit = totalSales > 0 ? Math.round(totalProfit / totalSales) : 0;
 
   const metricsDisplay = [
@@ -1065,40 +1211,317 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
               ? 'dark-neon-card' 
               : `${currentTheme.colors.cardBackground} border border-gray-200`
           } rounded-lg shadow-sm overflow-hidden`}>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className={isNeon ? 'bg-gray-800/50' : 'bg-gray-50'}>
-                  <tr>
-                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
-                      isNeon ? 'text-gray-300' : 'text-gray-500'
-                    }`}>Product</th>
-                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
-                      isNeon ? 'text-gray-300' : 'text-gray-500'
-                    }`}>Order #</th>
-                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
-                      isNeon ? 'text-gray-300' : 'text-gray-500'
-                    }`}>Size</th>
-                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
-                      isNeon ? 'text-gray-300' : 'text-gray-500'
-                    }`}>Market</th>
-                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
-                      isNeon ? 'text-gray-300' : 'text-gray-500'
-                    }`}>Sale Price</th>
-                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
-                      isNeon ? 'text-gray-300' : 'text-gray-500'
-                    }`}>Fees</th>
-                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
-                      isNeon ? 'text-gray-300' : 'text-gray-500'
-                    }`}>Payout</th>
-                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
-                      isNeon ? 'text-gray-300' : 'text-gray-500'
-                    }`}>Profit</th>
-                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
-                      isNeon ? 'text-gray-300' : 'text-gray-500'
-                    }`}>Date</th>
-                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
-                      isNeon ? 'text-gray-300' : 'text-gray-500'
-                    }`}>Actions</th>
+            <div className="overflow-x-auto max-h-[70vh]">
+              <table ref={tableRef} className="w-full" style={{ tableLayout: 'fixed' }}>
+                <thead className={`${
+                  isNeon 
+                    ? 'bg-gray-900 border-b border-white/10' 
+                    : 'bg-gray-50 border-b border-gray-200'
+                } sticky top-0 z-10`}>
+                  <tr className="h-10">
+                    {/* Product Column */}
+                    <th 
+                      className={`relative px-3 py-0 h-10 align-middle text-left text-xs font-medium ${
+                        isNeon ? 'text-gray-300' : 'text-gray-500'
+                      } uppercase tracking-wider cursor-pointer select-none ${
+                        isNeon ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                      } transition-colors`} 
+                      style={{ width: `${columnWidths.product}px` }}
+                      onClick={() => handleSort('product')}
+                    >
+                      <div className="flex items-center justify-between h-full">
+                        <div className="flex items-center">
+                          Product
+                          <SortIcon column="product" />
+                        </div>
+                      </div>
+                      <div 
+                        className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                          isNeon ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                        } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          handleMouseDown(e, 'product');
+                        }}
+                        title="Drag to resize column"
+                      />
+                    </th>
+                    
+                    {/* Brand Column */}
+                    <th 
+                      className={`relative px-3 py-0 h-10 align-middle text-left text-xs font-medium ${
+                        isNeon ? 'text-gray-300' : 'text-gray-500'
+                      } uppercase tracking-wider cursor-pointer select-none ${
+                        isNeon ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                      } transition-colors`} 
+                      style={{ width: `${columnWidths.brand}px` }}
+                      onClick={() => handleSort('brand')}
+                    >
+                      <div className="flex items-center justify-between h-full">
+                        <div className="flex items-center">
+                          Brand
+                          <SortIcon column="brand" />
+                        </div>
+                      </div>
+                      <div 
+                        className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                          isNeon ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                        } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          handleMouseDown(e, 'brand');
+                        }}
+                        title="Drag to resize column"
+                      />
+                    </th>
+                    
+                    {/* Size Column */}
+                    <th 
+                      className={`relative px-3 py-0 h-10 align-middle text-left text-xs font-medium ${
+                        isNeon ? 'text-gray-300' : 'text-gray-500'
+                      } uppercase tracking-wider cursor-pointer select-none ${
+                        isNeon ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                      } transition-colors`} 
+                      style={{ width: `${columnWidths.size}px` }}
+                      onClick={() => handleSort('size')}
+                    >
+                      <div className="flex items-center justify-between h-full">
+                        <div className="flex items-center">
+                          Size
+                          <SortIcon column="size" />
+                        </div>
+                      </div>
+                      <div 
+                        className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                          isNeon ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                        } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          handleMouseDown(e, 'size');
+                        }}
+                        title="Drag to resize column"
+                      />
+                    </th>
+                    
+                    {/* Sold On Column */}
+                    <th 
+                      className={`relative px-3 py-0 h-10 align-middle text-left text-xs font-medium ${
+                        isNeon ? 'text-gray-300' : 'text-gray-500'
+                      } uppercase tracking-wider cursor-pointer select-none ${
+                        isNeon ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                      } transition-colors`} 
+                      style={{ width: `${columnWidths.soldOn}px` }}
+                      onClick={() => handleSort('soldOn')}
+                    >
+                      <div className="flex items-center justify-between h-full">
+                        <div className="flex items-center">
+                          Sold On
+                          <SortIcon column="soldOn" />
+                        </div>
+                      </div>
+                      <div 
+                        className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                          isNeon ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                        } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          handleMouseDown(e, 'soldOn');
+                        }}
+                        title="Drag to resize column"
+                      />
+                    </th>
+                    
+                    {/* Purchased From Column */}
+                    <th 
+                      className={`relative px-3 py-0 h-10 align-middle text-left text-xs font-medium ${
+                        isNeon ? 'text-gray-300' : 'text-gray-500'
+                      } uppercase tracking-wider cursor-pointer select-none ${
+                        isNeon ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                      } transition-colors`} 
+                      style={{ width: `${columnWidths.purchasedFrom}px` }}
+                      onClick={() => handleSort('purchasedFrom')}
+                    >
+                      <div className="flex items-center justify-between h-full">
+                        <div className="flex items-center">
+                          Purchased From
+                          <SortIcon column="purchasedFrom" />
+                        </div>
+                      </div>
+                      <div 
+                        className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                          isNeon ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                        } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          handleMouseDown(e, 'purchasedFrom');
+                        }}
+                        title="Drag to resize column"
+                      />
+                    </th>
+                    
+                    {/* Sale Price Column */}
+                    <th 
+                      className={`relative px-3 py-0 h-10 align-middle text-left text-xs font-medium ${
+                        isNeon ? 'text-gray-300' : 'text-gray-500'
+                      } uppercase tracking-wider cursor-pointer select-none ${
+                        isNeon ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                      } transition-colors`} 
+                      style={{ width: `${columnWidths.salePrice}px` }}
+                      onClick={() => handleSort('salePrice')}
+                    >
+                      <div className="flex items-center justify-between h-full">
+                        <div className="flex items-center">
+                          Sale Price
+                          <SortIcon column="salePrice" />
+                        </div>
+                      </div>
+                      <div 
+                        className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                          isNeon ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                        } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          handleMouseDown(e, 'salePrice');
+                        }}
+                        title="Drag to resize column"
+                      />
+                    </th>
+                    
+                    {/* Purchase Price Column */}
+                    <th 
+                      className={`relative px-3 py-0 h-10 align-middle text-left text-xs font-medium ${
+                        isNeon ? 'text-gray-300' : 'text-gray-500'
+                      } uppercase tracking-wider cursor-pointer select-none ${
+                        isNeon ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                      } transition-colors`} 
+                      style={{ width: `${columnWidths.purchasePrice}px` }}
+                      onClick={() => handleSort('purchasePrice')}
+                    >
+                      <div className="flex items-center justify-between h-full">
+                        <div className="flex items-center">
+                          Purchase Price
+                          <SortIcon column="purchasePrice" />
+                        </div>
+                      </div>
+                      <div 
+                        className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                          isNeon ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                        } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          handleMouseDown(e, 'purchasePrice');
+                        }}
+                        title="Drag to resize column"
+                      />
+                    </th>
+                    
+                    {/* Fees Column */}
+                    <th 
+                      className={`relative px-3 py-0 h-10 align-middle text-left text-xs font-medium ${
+                        isNeon ? 'text-gray-300' : 'text-gray-500'
+                      } uppercase tracking-wider cursor-pointer select-none ${
+                        isNeon ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                      } transition-colors`} 
+                      style={{ width: `${columnWidths.fees}px` }}
+                      onClick={() => handleSort('fees')}
+                    >
+                      <div className="flex items-center justify-between h-full">
+                        <div className="flex items-center">
+                          Fees
+                          <SortIcon column="fees" />
+                        </div>
+                      </div>
+                      <div 
+                        className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                          isNeon ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                        } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          handleMouseDown(e, 'fees');
+                        }}
+                        title="Drag to resize column"
+                      />
+                    </th>
+                    
+                    {/* Profit Column */}
+                    <th 
+                      className={`relative px-3 py-0 h-10 align-middle text-left text-xs font-medium ${
+                        isNeon ? 'text-gray-300' : 'text-gray-500'
+                      } uppercase tracking-wider cursor-pointer select-none ${
+                        isNeon ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                      } transition-colors`} 
+                      style={{ width: `${columnWidths.profit}px` }}
+                      onClick={() => handleSort('profit')}
+                    >
+                      <div className="flex items-center justify-between h-full">
+                        <div className="flex items-center">
+                          Profit
+                          <SortIcon column="profit" />
+                        </div>
+                      </div>
+                      <div 
+                        className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                          isNeon ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                        } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          handleMouseDown(e, 'profit');
+                        }}
+                        title="Drag to resize column"
+                      />
+                    </th>
+                    
+                    {/* Date Column */}
+                    <th 
+                      className={`relative px-3 py-0 h-10 align-middle text-left text-xs font-medium ${
+                        isNeon ? 'text-gray-300' : 'text-gray-500'
+                      } uppercase tracking-wider cursor-pointer select-none ${
+                        isNeon ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                      } transition-colors`} 
+                      style={{ width: `${columnWidths.date}px` }}
+                      onClick={() => handleSort('date')}
+                    >
+                      <div className="flex items-center justify-between h-full">
+                        <div className="flex items-center">
+                          Date
+                          <SortIcon column="date" />
+                        </div>
+                      </div>
+                      <div 
+                        className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                          isNeon ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                        } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          handleMouseDown(e, 'date');
+                        }}
+                        title="Drag to resize column"
+                      />
+                    </th>
+                    
+                    {/* Actions Column */}
+                    <th 
+                      className={`relative px-3 py-0 h-10 align-middle text-left text-xs font-medium ${
+                        isNeon ? 'text-gray-300' : 'text-gray-500'
+                      } uppercase tracking-wider`} 
+                      style={{ width: `${columnWidths.actions}px` }}
+                    >
+                      <div className="flex items-center justify-between h-full">
+                        <div className="flex items-center">
+                          Actions
+                        </div>
+                      </div>
+                      <div 
+                        className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                          isNeon ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                        } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          handleMouseDown(e, 'actions');
+                        }}
+                        title="Drag to resize column"
+                      />
+                    </th>
                   </tr>
                 </thead>
                 <tbody className={`${
@@ -1106,13 +1529,14 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                     ? 'divide-y divide-gray-700/50' 
                     : 'bg-white divide-y divide-gray-200'
                 }`}>
-                  {filteredSales.map((sale) => (
+                  {sortedSales.map((sale) => (
                     <tr key={sale.id} className={
                       isNeon 
                         ? 'hover:bg-white/5 transition-colors' 
                         : 'hover:bg-gray-50'
                     }>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      {/* Product */}
+                      <td className="px-3 py-4 whitespace-nowrap" style={{ width: `${columnWidths.product}px` }}>
                         <div>
                           <div className={`text-sm font-medium ${
                             isNeon ? 'text-white' : 'text-gray-900'
@@ -1137,37 +1561,60 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                               </span>
                             )}
                           </div>
-                          <div className={`text-sm ${
-                            isNeon ? 'text-gray-400' : 'text-gray-500'
-                          }`}>{sale.brand} • Size {sale.size}</div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <button 
-                          onClick={() => window.open(`https://mail.google.com/mail/u/0/#search/"${sale.orderNumber}"`, '_blank')}
-                          className={`text-sm ${
-                            isNeon ? 'text-cyan-400 hover:text-cyan-300' : 'text-blue-600 hover:text-blue-700'
-                          } hover:underline cursor-pointer transition-colors`}
-                        >
-                          {formatOrderNumberForDisplay(sale.orderNumber)}
-                        </button>
+                      
+                      {/* Brand */}
+                      <td className={`px-3 py-4 whitespace-nowrap text-sm ${
+                        isNeon ? 'text-gray-300' : 'text-gray-900'
+                      }`} style={{ width: `${columnWidths.brand}px` }}>
+                        {sale.brand}
                       </td>
-                      <td className={`px-6 py-4 whitespace-nowrap text-sm ${
+                      
+                      {/* Size */}
+                      <td className={`px-3 py-4 whitespace-nowrap text-sm ${
                         isNeon ? 'text-gray-300' : 'text-gray-900'
-                      }`}>{sale.size}</td>
-                      <td className={`px-6 py-4 whitespace-nowrap text-sm ${
+                      }`} style={{ width: `${columnWidths.size}px` }}>
+                        {sale.size}
+                      </td>
+                      
+                      {/* Sold On */}
+                      <td className={`px-3 py-4 whitespace-nowrap text-sm ${
                         isNeon ? 'text-gray-300' : 'text-gray-900'
-                      }`}>{sale.platform === 'stockx' ? 'StockX' : (sale.market || 'Manual')}</td>
-                      <td className={`px-6 py-4 whitespace-nowrap text-sm ${
+                      }`} style={{ width: `${columnWidths.soldOn}px` }}>
+                        {sale.platform === 'stockx' ? 'StockX' : (sale.market || 'Manual')}
+                      </td>
+                      
+                      {/* Purchased From */}
+                      <td className={`px-3 py-4 whitespace-nowrap text-sm ${
                         isNeon ? 'text-gray-300' : 'text-gray-900'
-                      }`}>${(Number(sale.salePrice) || Number(sale.amount) || 0).toFixed(2)}</td>
-                                      <td className={`px-6 py-4 whitespace-nowrap text-sm ${
-                  isNeon ? 'text-red-400' : 'text-red-600'
-                }`}>(${Math.abs(Number(sale.fees) || 0).toFixed(2)})</td>
-                      <td className={`px-6 py-4 whitespace-nowrap text-sm ${
+                      }`} style={{ width: `${columnWidths.purchasedFrom}px` }}>
+                        {sale.purchasedFrom || '-'}
+                      </td>
+                      
+                      {/* Sale Price */}
+                      <td className={`px-3 py-4 whitespace-nowrap text-sm ${
                         isNeon ? 'text-gray-300' : 'text-gray-900'
-                      }`}>${(Number(sale.payout) || 0).toFixed(2)}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      }`} style={{ width: `${columnWidths.salePrice}px` }}>
+                        ${(Number(sale.salePrice) || Number(sale.amount) || 0).toFixed(2)}
+                      </td>
+                      
+                      {/* Purchase Price */}
+                      <td className={`px-3 py-4 whitespace-nowrap text-sm ${
+                        isNeon ? 'text-gray-300' : 'text-gray-900'
+                      }`} style={{ width: `${columnWidths.purchasePrice}px` }}>
+                        ${(Number(sale.purchasePrice) || 0).toFixed(2)}
+                      </td>
+                      
+                      {/* Fees */}
+                      <td className={`px-3 py-4 whitespace-nowrap text-sm ${
+                        isNeon ? 'text-red-400' : 'text-red-600'
+                      }`} style={{ width: `${columnWidths.fees}px` }}>
+                        (${Math.abs(Number(sale.fees) || 0).toFixed(2)})
+                      </td>
+                      
+                      {/* Profit */}
+                      <td className="px-3 py-4 whitespace-nowrap" style={{ width: `${columnWidths.profit}px` }}>
                         <span className={`text-sm font-medium ${
                           (Number(sale.profit) || 0) >= 0 
                             ? isNeon ? 'text-emerald-400' : 'text-green-600'
@@ -1176,10 +1623,15 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                           ${(Number(sale.profit) || 0).toFixed(2)}
                         </span>
                       </td>
-                      <td className={`px-6 py-4 whitespace-nowrap text-sm ${
+                      
+                      {/* Date */}
+                      <td className={`px-3 py-4 whitespace-nowrap text-sm ${
                         isNeon ? 'text-gray-300' : 'text-gray-900'
-                      }`}>{new Date(sale.date || sale.createdAt || sale.updatedAt).toLocaleDateString()}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      }`} style={{ width: `${columnWidths.date}px` }}>
+                        {new Date(sale.date || sale.createdAt || sale.updatedAt).toLocaleDateString()}
+                      </td>
+                      {/* Actions */}
+                      <td className="px-3 py-4 whitespace-nowrap" style={{ width: `${columnWidths.actions}px` }}>
                         <div className="flex items-center space-x-2">
                           {sale.orderNumber && (
                             <button 
@@ -1214,7 +1666,7 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
               </table>
               
               {/* Empty State for Filtered Sales */}
-              {filteredSales.length === 0 && salesData.length > 0 && (
+              {sortedSales.length === 0 && salesData.length > 0 && (
                 <div className="text-center py-12">
                   <div className={`text-lg font-medium mb-2 ${
                     isNeon ? 'text-gray-300' : 'text-gray-600'
@@ -1645,6 +2097,26 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                         ))}
                       </div>
                     )}
+                  </div>
+
+                  {/* Purchased From */}
+                  <div>
+                    <label className={`block text-sm font-medium mb-2 ${
+                      isNeon ? 'text-gray-300' : 'text-gray-700'
+                    }`}>
+                      Purchased From
+                    </label>
+                    <input
+                      type="text"
+                      value={newSale.purchasedFrom}
+                      onChange={(e) => handleInputChange('purchasedFrom', e.target.value)}
+                      placeholder="e.g., Nike SNKRS, Footlocker, StockX, GOAT"
+                      className={`w-full px-4 py-3 rounded-lg transition-all duration-200 ${
+                        isNeon 
+                          ? 'input-premium focus:border-cyan-400 focus:shadow-lg focus:shadow-cyan-400/20' 
+                          : 'border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+                      }`}
+                    />
                   </div>
 
                   {/* Pricing Row */}
