@@ -49,6 +49,13 @@ const Sales = () => {
     date: new Date().toISOString().split('T')[0]
   });
   
+  // Custom date range state
+  const [customDateRange, setCustomDateRange] = useState({
+    startDate: '',
+    endDate: ''
+  });
+  const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
+  
   // Notification state
   const [notification, setNotification] = useState<{
     isVisible: boolean;
@@ -158,6 +165,68 @@ const Sales = () => {
   const isNeon = currentTheme.name === 'Neon';
   
   const filterOptions = ['All Time', 'Today', 'This Week', 'This Month', 'This Year', 'Custom Range'];
+  
+  // Date filtering utility functions
+  const getDateRange = (filter: string) => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    switch (filter) {
+      case 'Today':
+        return {
+          start: today,
+          end: new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1) // End of today
+        };
+      case 'This Week':
+        const weekStart = new Date(today);
+        weekStart.setDate(today.getDate() - today.getDay()); // Start of week (Sunday)
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 6);
+        weekEnd.setHours(23, 59, 59, 999); // End of Saturday
+        return { start: weekStart, end: weekEnd };
+      case 'This Month':
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        monthEnd.setHours(23, 59, 59, 999);
+        return { start: monthStart, end: monthEnd };
+      case 'This Year':
+        const yearStart = new Date(now.getFullYear(), 0, 1);
+        const yearEnd = new Date(now.getFullYear(), 11, 31);
+        yearEnd.setHours(23, 59, 59, 999);
+        return { start: yearStart, end: yearEnd };
+      case 'Custom Range':
+        if (customDateRange.startDate && customDateRange.endDate) {
+          const start = new Date(customDateRange.startDate);
+          const end = new Date(customDateRange.endDate);
+          end.setHours(23, 59, 59, 999);
+          return { start, end };
+        }
+        return null;
+      default: // 'All Time'
+        return null;
+    }
+  };
+  
+  // Filter sales data based on active filter
+  const getFilteredSales = () => {
+    if (activeFilter === 'All Time') {
+      return salesData;
+    }
+    
+    const dateRange = getDateRange(activeFilter);
+    if (!dateRange) {
+      return salesData;
+    }
+    
+    return salesData.filter(sale => {
+      // Get sale date from various possible fields
+      const saleDate = new Date(sale.date || sale.createdAt || sale.updatedAt);
+      return saleDate >= dateRange.start && saleDate <= dateRange.end;
+    });
+  };
+  
+  // Get filtered sales data
+  const filteredSales = getFilteredSales();
   
   const marketplaceOptions = [
     'StockX',
@@ -566,10 +635,10 @@ const Sales = () => {
     }
   };
 
-  // Calculate updated metrics based on current sales data
-  const totalSales = salesData.length;
-  const totalRevenue = salesData.reduce((sum, sale) => sum + (Number(sale.salePrice) || Number(sale.amount) || 0), 0);
-  const totalProfit = salesData.reduce((sum, sale) => sum + (Number(sale.profit) || 0), 0);
+  // Calculate updated metrics based on filtered sales data
+  const totalSales = filteredSales.length;
+  const totalRevenue = filteredSales.reduce((sum, sale) => sum + (Number(sale.salePrice) || Number(sale.amount) || 0), 0);
+  const totalProfit = filteredSales.reduce((sum, sale) => sum + (Number(sale.profit) || 0), 0);
   const avgProfit = totalSales > 0 ? Math.round(totalProfit / totalSales) : 0;
 
   const metricsDisplay = [
@@ -682,7 +751,7 @@ const Sales = () => {
         <div className="flex items-center justify-between mb-2">
           <span className="font-semibold">Sales Debug Info</span>
           <div className="flex items-center space-x-4">
-            <span>Sales: {salesData.length}</span>
+            <span>Sales: {filteredSales.length}/{salesData.length}</span>
             <span>Connection: {connectionState.status}</span>
             {connectionState.lastSync && (
               <span>Last sync: {connectionState.lastSync.toLocaleTimeString()}</span>
@@ -804,7 +873,14 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
               {filterOptions.map((filter) => (
                 <button
                   key={filter}
-                  onClick={() => setActiveFilter(filter)}
+                  onClick={() => {
+                    setActiveFilter(filter);
+                    if (filter === 'Custom Range') {
+                      setShowCustomDatePicker(true);
+                    } else {
+                      setShowCustomDatePicker(false);
+                    }
+                  }}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     activeFilter === filter
                       ? isNeon
@@ -819,6 +895,76 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                 </button>
               ))}
             </div>
+            
+            {/* Custom Date Range Picker */}
+            {showCustomDatePicker && (
+              <div className={`mt-4 p-4 rounded-lg border ${
+                isNeon 
+                  ? 'bg-gray-800/50 border-cyan-500/30' 
+                  : 'bg-gray-50 border-gray-200'
+              }`}>
+                <div className="flex items-center space-x-4">
+                  <div>
+                    <label className={`block text-sm font-medium mb-1 ${
+                      isNeon ? 'text-gray-300' : 'text-gray-700'
+                    }`}>
+                      Start Date
+                    </label>
+                    <input
+                      type="date"
+                      value={customDateRange.startDate}
+                      onChange={(e) => setCustomDateRange(prev => ({ ...prev, startDate: e.target.value }))}
+                      className={`px-3 py-2 rounded border text-sm ${
+                        isNeon 
+                          ? 'bg-gray-700/50 border-gray-600 text-white focus:border-cyan-400' 
+                          : 'bg-white border-gray-300 focus:border-blue-500'
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <label className={`block text-sm font-medium mb-1 ${
+                      isNeon ? 'text-gray-300' : 'text-gray-700'
+                    }`}>
+                      End Date
+                    </label>
+                    <input
+                      type="date"
+                      value={customDateRange.endDate}
+                      onChange={(e) => setCustomDateRange(prev => ({ ...prev, endDate: e.target.value }))}
+                      className={`px-3 py-2 rounded border text-sm ${
+                        isNeon 
+                          ? 'bg-gray-700/50 border-gray-600 text-white focus:border-cyan-400' 
+                          : 'bg-white border-gray-300 focus:border-blue-500'
+                      }`}
+                    />
+                  </div>
+                  <div className="flex items-end space-x-2">
+                    <button
+                      onClick={() => {
+                        // Reset custom date range
+                        setCustomDateRange({ startDate: '', endDate: '' });
+                        setActiveFilter('All Time');
+                        setShowCustomDatePicker(false);
+                      }}
+                      className={`px-3 py-2 rounded text-sm ${
+                        isNeon 
+                          ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' 
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+                {customDateRange.startDate && customDateRange.endDate && (
+                  <div className={`mt-2 text-sm ${
+                    isNeon ? 'text-cyan-400' : 'text-blue-600'
+                  }`}>
+                    Showing sales from {new Date(customDateRange.startDate).toLocaleDateString()} to {new Date(customDateRange.endDate).toLocaleDateString()}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Metrics Cards */}
@@ -929,7 +1075,7 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                     ? 'divide-y divide-gray-700/50' 
                     : 'bg-white divide-y divide-gray-200'
                 }`}>
-                  {salesData.map((sale) => (
+                  {filteredSales.map((sale) => (
                     <tr key={sale.id} className={
                       isNeon 
                         ? 'hover:bg-white/5 transition-colors' 
@@ -1035,6 +1181,38 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                   ))}
                 </tbody>
               </table>
+              
+              {/* Empty State for Filtered Sales */}
+              {filteredSales.length === 0 && salesData.length > 0 && (
+                <div className="text-center py-12">
+                  <div className={`text-lg font-medium mb-2 ${
+                    isNeon ? 'text-gray-300' : 'text-gray-600'
+                  }`}>
+                    No sales found for "{activeFilter}"
+                  </div>
+                  <div className={`text-sm ${
+                    isNeon ? 'text-gray-400' : 'text-gray-500'
+                  }`}>
+                    Try selecting a different date range or "All Time" to see your sales.
+                  </div>
+                </div>
+              )}
+              
+              {/* Empty State for No Sales */}
+              {salesData.length === 0 && (
+                <div className="text-center py-12">
+                  <div className={`text-lg font-medium mb-2 ${
+                    isNeon ? 'text-gray-300' : 'text-gray-600'
+                  }`}>
+                    No sales recorded yet
+                  </div>
+                  <div className={`text-sm ${
+                    isNeon ? 'text-gray-400' : 'text-gray-500'
+                  }`}>
+                    Record your first sale using the "Record Sale" button above.
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
