@@ -284,6 +284,16 @@ const Sales = () => {
     }
   };
   
+  // Wrapper for onClick events to prevent sorting during resize
+  const handleHeaderClick = (e: React.MouseEvent, column: string) => {
+    if (justClickedResize || isResizing) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    handleSort(column);
+  };
+  
   // Sort filtered sales
   const sortedSales = [...filteredSales].sort((a, b) => {
     let aValue: any;
@@ -375,6 +385,10 @@ const Sales = () => {
       setResizingColumn(null);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+      
+      // Extend the resize block to prevent sort on mouse release
+      setJustClickedResize(true);
+      setTimeout(() => setJustClickedResize(false), 100);
     };
     
     document.addEventListener('mousemove', handleMouseMove);
@@ -1237,7 +1251,7 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                         isNeon ? 'hover:bg-white/5' : 'hover:bg-gray-100'
                       } transition-colors`} 
                       style={{ width: `${columnWidths.product}px` }}
-                      onClick={() => handleSort('product')}
+                      onClick={(e) => handleHeaderClick(e, 'product')}
                     >
                       <div className="flex items-center justify-between h-full">
                         <div className="flex items-center">
@@ -1265,7 +1279,7 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                         isNeon ? 'hover:bg-white/5' : 'hover:bg-gray-100'
                       } transition-colors`} 
                       style={{ width: `${columnWidths.brand}px` }}
-                      onClick={() => handleSort('brand')}
+                      onClick={(e) => handleHeaderClick(e, 'brand')}
                     >
                       <div className="flex items-center justify-between h-full">
                         <div className="flex items-center">
@@ -1293,7 +1307,7 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                         isNeon ? 'hover:bg-white/5' : 'hover:bg-gray-100'
                       } transition-colors`} 
                       style={{ width: `${columnWidths.size}px` }}
-                      onClick={() => handleSort('size')}
+                      onClick={(e) => handleHeaderClick(e, 'size')}
                     >
                       <div className="flex items-center justify-between h-full">
                         <div className="flex items-center">
@@ -1321,7 +1335,7 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                         isNeon ? 'hover:bg-white/5' : 'hover:bg-gray-100'
                       } transition-colors`} 
                       style={{ width: `${columnWidths.soldOn}px` }}
-                      onClick={() => handleSort('soldOn')}
+                      onClick={(e) => handleHeaderClick(e, 'soldOn')}
                     >
                       <div className="flex items-center justify-between h-full">
                         <div className="flex items-center">
@@ -1349,7 +1363,7 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                         isNeon ? 'hover:bg-white/5' : 'hover:bg-gray-100'
                       } transition-colors`} 
                       style={{ width: `${columnWidths.purchasedFrom}px` }}
-                      onClick={() => handleSort('purchasedFrom')}
+                      onClick={(e) => handleHeaderClick(e, 'purchasedFrom')}
                     >
                       <div className="flex items-center justify-between h-full">
                         <div className="flex items-center">
@@ -1377,7 +1391,7 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                         isNeon ? 'hover:bg-white/5' : 'hover:bg-gray-100'
                       } transition-colors`} 
                       style={{ width: `${columnWidths.salePrice}px` }}
-                      onClick={() => handleSort('salePrice')}
+                      onClick={(e) => handleHeaderClick(e, 'salePrice')}
                     >
                       <div className="flex items-center justify-between h-full">
                         <div className="flex items-center">
@@ -1405,7 +1419,7 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                         isNeon ? 'hover:bg-white/5' : 'hover:bg-gray-100'
                       } transition-colors`} 
                       style={{ width: `${columnWidths.purchasePrice}px` }}
-                      onClick={() => handleSort('purchasePrice')}
+                      onClick={(e) => handleHeaderClick(e, 'purchasePrice')}
                     >
                       <div className="flex items-center justify-between h-full">
                         <div className="flex items-center">
@@ -1433,7 +1447,7 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                         isNeon ? 'hover:bg-white/5' : 'hover:bg-gray-100'
                       } transition-colors`} 
                       style={{ width: `${columnWidths.fees}px` }}
-                      onClick={() => handleSort('fees')}
+                      onClick={(e) => handleHeaderClick(e, 'fees')}
                     >
                       <div className="flex items-center justify-between h-full">
                         <div className="flex items-center">
@@ -1461,7 +1475,7 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                         isNeon ? 'hover:bg-white/5' : 'hover:bg-gray-100'
                       } transition-colors`} 
                       style={{ width: `${columnWidths.profit}px` }}
-                      onClick={() => handleSort('profit')}
+                      onClick={(e) => handleHeaderClick(e, 'profit')}
                     >
                       <div className="flex items-center justify-between h-full">
                         <div className="flex items-center">
@@ -1489,7 +1503,7 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                         isNeon ? 'hover:bg-white/5' : 'hover:bg-gray-100'
                       } transition-colors`} 
                       style={{ width: `${columnWidths.date}px` }}
-                      onClick={() => handleSort('date')}
+                      onClick={(e) => handleHeaderClick(e, 'date')}
                     >
                       <div className="flex items-center justify-between h-full">
                         <div className="flex items-center">

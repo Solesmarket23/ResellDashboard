@@ -155,6 +155,16 @@ const Purchases = () => {
     }
   };
   
+  // Wrapper for onClick events to prevent sorting during resize
+  const handleHeaderClick = (e: React.MouseEvent, column: string) => {
+    if (justClickedResize || isResizing) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    handleSort(column);
+  };
+  
   // Get sorted purchases
   const getSortedPurchases = () => {
     const allPurchases = [...purchases, ...manualPurchases];
@@ -225,6 +235,10 @@ const Purchases = () => {
       setResizingColumn(null);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+      
+      // Extend the resize block to prevent sort on mouse release
+      setJustClickedResize(true);
+      setTimeout(() => setJustClickedResize(false), 100);
     };
     
     document.addEventListener('mousemove', handleMouseMove);
