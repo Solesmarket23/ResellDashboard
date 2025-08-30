@@ -797,6 +797,8 @@ const Sales = () => {
           <span>From cache: {connectionState.fromCache ? 'Yes' : 'No'}</span>
           <span>Pending writes: {connectionState.hasPendingWrites ? 'Yes' : 'No'}</span>
           <span>Deleting: {isDeleting ? 'Yes' : 'No'}</span>
+          <span className="text-red-600 font-bold">StockX Hook: {stockxSales.length}</span>
+          <span className="text-blue-600 font-bold">Unified Hook: {salesData.length}</span>
           {salesError && <span className="text-red-500">Error: {salesError}</span>}
           <button
             onClick={forceRefresh}
