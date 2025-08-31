@@ -4,6 +4,8 @@ import StockXPayoutRefresher from './StockXPayoutRefresher';
 import StockXExportAll from './StockXExportAll';
 import StockXCompleteImport from './StockXCompleteImport';
 import { useAuth } from '@/lib/contexts/AuthContext';
+import { getDocuments } from '@/lib/firebase/firebaseUtils';
+import { StockXSale } from '@/lib/types/stockx';
 
 interface SaleData {
   id: string;
@@ -60,26 +62,6 @@ const StockXSales: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(20);
   const [showPayoutRefresher, setShowPayoutRefresher] = useState(false);
-
-  // Stats calculation
-  const stats = React.useMemo(() => {
-    const completedSales = sales.filter(sale => sale.status === 'completed');
-    const totalSales = completedSales.length;
-    const totalRevenue = completedSales.reduce((sum, sale) => sum + sale.pricing.salePrice, 0);
-    const totalFees = completedSales.reduce((sum, sale) => sum + sale.pricing.totalFees, 0);
-    const totalPayout = completedSales.reduce((sum, sale) => sum + sale.pricing.payout, 0);
-    const avgSalePrice = totalSales > 0 ? totalRevenue / totalSales : 0;
-    const totalProfit = totalPayout; // Would need cost tracking for real profit
-
-    return {
-      totalSales,
-      totalRevenue,
-      totalFees,
-      totalPayout,
-      avgSalePrice,
-      totalProfit
-    };
-  }, [sales]);
 
   const fetchSales = async (page: number = 1, status: string = '') => {
     setIsLoading(true);
@@ -150,8 +132,51 @@ const StockXSales: React.FC = () => {
 
   const handleFilterChange = (newStatus: string) => {
     setStatusFilter(newStatus);
-    fetchSales(1, newStatus);
+    // Filtering is now handled by displayedSales memo
   };
+
+  // Filter sales based on status
+  const displayedSales = React.useMemo(() => {
+    if (!statusFilter) return sales;
+    
+    const filterValue = statusFilter.toUpperCase();
+    return sales.filter(sale => {
+      const saleStatus = sale.status.toUpperCase();
+      
+      // Handle different status mappings
+      if (filterValue === 'COMPLETED') {
+        return saleStatus === 'COMPLETED' || saleStatus === 'PAYOUT_COMPLETED' || saleStatus === 'AUTHENTICATED';
+      } else if (filterValue === 'ACTIVE' || filterValue === 'PENDING') {
+        return saleStatus === 'PENDING' || saleStatus === 'ACTIVE' || saleStatus === 'MATCHED' || saleStatus === 'PAYOUT_PENDING';
+      } else if (filterValue === 'SHIPPED') {
+        return saleStatus === 'SHIPPED' || saleStatus === 'RECEIVED' || saleStatus === 'AUTHENTICATING';
+      }
+      
+      return saleStatus.includes(filterValue);
+    });
+  }, [sales, statusFilter]);
+
+  // Stats calculation
+  const stats = React.useMemo(() => {
+    const completedSales = displayedSales.filter(sale => 
+      sale.status === 'completed' || sale.status === 'payout_completed' || sale.status === 'authenticated'
+    );
+    const totalSales = completedSales.length;
+    const totalRevenue = completedSales.reduce((sum, sale) => sum + sale.pricing.salePrice, 0);
+    const totalFees = completedSales.reduce((sum, sale) => sum + sale.pricing.totalFees, 0);
+    const totalPayout = completedSales.reduce((sum, sale) => sum + sale.pricing.payout, 0);
+    const avgSalePrice = totalSales > 0 ? totalRevenue / totalSales : 0;
+    const totalProfit = totalPayout; // Would need cost tracking for real profit
+
+    return {
+      totalSales,
+      totalRevenue,
+      totalFees,
+      totalPayout,
+      avgSalePrice,
+      totalProfit
+    };
+  }, [displayedSales]);
 
   const testStockXEndpoints = async () => {
     try {
@@ -208,11 +233,89 @@ const StockXSales: React.FC = () => {
     }).format(amount || 0);
   };
 
-  // Disabled auto-loading to prevent 403 errors
-  // Users can manually click "Load Sales" if they have seller permissions
-  // useEffect(() => {
-  //   fetchSales(1, statusFilter);
-  // }, []);
+  // Load sales from Firebase on mount
+  const loadSalesFromFirebase = async () => {
+    if (!user) return;
+    
+    setIsLoading(true);
+    setErrorMessage('');
+    
+    try {
+      // Load from Firebase
+      const firebaseSales = await getDocuments('stockxSales');
+      const userSales = firebaseSales
+        .filter(sale => sale.userId === user.uid)
+        .map(sale => {
+          const stockxSale = sale.saleData as StockXSale;
+          // Convert to the format expected by this component
+          return {
+            id: stockxSale.id,
+            status: stockxSale.status.toLowerCase(),
+            createdAt: stockxSale.createdAt,
+            updatedAt: stockxSale.updatedAt,
+            product: {
+              id: stockxSale.product.productId,
+              name: stockxSale.product.productName,
+              brand: stockxSale.product.brand,
+              colorway: stockxSale.product.colorway || '',
+              imageUrl: stockxSale.product.imageUrl || '',
+              sku: stockxSale.product.styleId || '',
+              urlKey: stockxSale.product.urlKey || ''
+            },
+            variant: {
+              id: stockxSale.variant.variantId,
+              size: stockxSale.variant.size,
+              condition: 'new'
+            },
+            pricing: {
+              salePrice: stockxSale.pricing.salePrice,
+              processingFee: stockxSale.pricing.processingFee,
+              transactionFee: stockxSale.pricing.transactionFee,
+              shippingFee: stockxSale.pricing.shippingFee,
+              totalFees: stockxSale.pricing.sellerFees,
+              payout: stockxSale.pricing.totalPayout,
+              currency: stockxSale.pricing.currency
+            },
+            shipping: {
+              trackingNumber: stockxSale.shipping?.trackingNumber || '',
+              shippingMethod: stockxSale.shipping?.carrier || '',
+              shippedAt: stockxSale.shipping?.shippedDate || '',
+              deliveredAt: stockxSale.shipping?.deliveredDate || ''
+            },
+            buyer: {
+              region: 'US'
+            },
+            profitCalculation: {
+              salePrice: stockxSale.pricing.salePrice,
+              totalFees: stockxSale.pricing.sellerFees,
+              netPayout: stockxSale.pricing.totalPayout
+            },
+            needsPayoutRefresh: stockxSale.needsPayoutRefresh
+          };
+        })
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      
+      setSales(userSales);
+      setTotalCount(userSales.length);
+      
+      if (userSales.length === 0) {
+        setErrorMessage('No sales found. Use the import button below to sync your StockX sales.');
+      }
+    } catch (error) {
+      console.error('Error loading sales from Firebase:', error);
+      // If Firebase fails, don't show error - just show empty state
+      setSales([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Load sales from Firebase on mount
+  useEffect(() => {
+    if (user) {
+      loadSalesFromFirebase();
+    }
+  }, [user]);
 
   return (
     <div className="p-4 sm:p-6 bg-gray-900 text-white min-h-screen">
@@ -367,7 +470,7 @@ const StockXSales: React.FC = () => {
               Test API Access
             </button>
             <button
-              onClick={() => fetchSales(currentPage, statusFilter)}
+              onClick={() => loadSalesFromFirebase()}
               disabled={isLoading}
               className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 flex items-center gap-2"
             >
@@ -396,55 +499,10 @@ const StockXSales: React.FC = () => {
             <StockXCompleteImport 
               userId={user.uid}
               onImportComplete={(importedSales) => {
-                // Handle the imported sales
+                // The import component now saves to Firebase, so we reload from there
                 if (importedSales.length > 0) {
-                  // Convert to the format expected by this component
-                  const formattedSales = importedSales.map(sale => ({
-                    id: sale.id,
-                    status: sale.status.toLowerCase(),
-                    createdAt: sale.createdAt,
-                    updatedAt: sale.updatedAt,
-                    product: {
-                      id: sale.product.productId,
-                      name: sale.product.productName,
-                      brand: sale.product.brand,
-                      colorway: sale.product.colorway || '',
-                      imageUrl: sale.product.imageUrl || '',
-                      sku: sale.product.styleId || '',
-                      urlKey: sale.product.urlKey || ''
-                    },
-                    variant: {
-                      id: sale.variant.variantId,
-                      size: sale.variant.size,
-                      condition: 'new'
-                    },
-                    pricing: {
-                      salePrice: sale.pricing.salePrice,
-                      processingFee: sale.pricing.processingFee,
-                      transactionFee: sale.pricing.transactionFee,
-                      shippingFee: sale.pricing.shippingFee,
-                      totalFees: sale.pricing.sellerFees,
-                      payout: sale.pricing.totalPayout,
-                      currency: sale.pricing.currency
-                    },
-                    shipping: {
-                      trackingNumber: sale.shipping?.trackingNumber || '',
-                      shippingMethod: sale.shipping?.carrier || '',
-                      shippedAt: sale.shipping?.shippedDate || '',
-                      deliveredAt: sale.shipping?.deliveredDate || ''
-                    },
-                    buyer: {
-                      region: 'US'
-                    },
-                    profitCalculation: {
-                      salePrice: sale.pricing.salePrice,
-                      totalFees: sale.pricing.sellerFees,
-                      netPayout: sale.pricing.totalPayout
-                    },
-                    needsPayoutRefresh: sale.needsPayoutRefresh
-                  }));
-                  setSales(formattedSales);
-                  setTotalCount(formattedSales.length);
+                  // Reload from Firebase to show the saved data
+                  loadSalesFromFirebase();
                 }
               }}
             />
@@ -457,7 +515,7 @@ const StockXSales: React.FC = () => {
         </div>
 
         {/* Stats */}
-        {sales.length > 0 && (
+        {displayedSales.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
             <div className="bg-gray-800 rounded-lg p-6">
               <div className="flex items-center justify-between">
@@ -500,7 +558,7 @@ const StockXSales: React.FC = () => {
 
         {/* Sales List */}
         <div className="space-y-4">
-          {sales.map((sale) => (
+          {displayedSales.map((sale) => (
             <div key={sale.id} className="bg-gray-800 rounded-lg p-4 sm:p-6">
               <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                 <div className="flex items-center gap-4">
@@ -586,7 +644,7 @@ const StockXSales: React.FC = () => {
         </div>
 
         {/* Empty State */}
-        {sales.length === 0 && !isLoading && !errorMessage && (
+        {displayedSales.length === 0 && !isLoading && !errorMessage && (
           <div className="text-center py-12">
             <Package className="w-16 h-16 text-gray-600 mx-auto mb-4" />
             <h3 className="text-xl font-semibold text-gray-400 mb-2">No Sales Found</h3>
@@ -667,30 +725,7 @@ const StockXSales: React.FC = () => {
           </div>
         )}
 
-        {/* Pagination */}
-        {totalCount > pageSize && (
-          <div className="mt-8 flex justify-center">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => fetchSales(currentPage - 1, statusFilter)}
-                disabled={currentPage <= 1 || isLoading}
-                className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white disabled:opacity-50 hover:bg-gray-700 transition-colors"
-              >
-                Previous
-              </button>
-              <span className="px-4 py-2 text-gray-400">
-                Page {currentPage} of {Math.ceil(totalCount / pageSize)}
-              </span>
-              <button
-                onClick={() => fetchSales(currentPage + 1, statusFilter)}
-                disabled={currentPage >= Math.ceil(totalCount / pageSize) || isLoading}
-                className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white disabled:opacity-50 hover:bg-gray-700 transition-colors"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        )}
+        {/* Note: Pagination removed as we're loading all sales from Firebase */}
       </div>
     </div>
   );

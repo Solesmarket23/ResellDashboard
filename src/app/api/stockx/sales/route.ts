@@ -140,19 +140,47 @@ export async function POST(request: NextRequest) {
       });
     }
     
-    // Phase 2: Optionally fetch complete payout data
+    // Phase 2: Enrich with brand data from catalog API
     let enhancedSales = allSales;
+    
+    if (allSales.length > 0) {
+      // Check remaining time for brand enrichment
+      const remainingTime = MAX_EXECUTION_TIME - (Date.now() - startTime);
+      
+      if (remainingTime > 2000) { // Need at least 2 seconds
+        console.log(`🏷️ Enriching ${allSales.length} sales with brand data...`);
+        
+        try {
+          enhancedSales = await enrichSalesWithBrandData(
+            allSales, 
+            currentAccessToken, 
+            refreshToken!, 
+            apiKey!,
+            Math.min(remainingTime - 1500, 4000) // Leave 1.5s buffer, max 4s for brands
+          );
+          console.log(`✅ Brand enrichment completed for ${enhancedSales.length} sales`);
+        } catch (error) {
+          console.error('❌ Brand enrichment failed:', error);
+          // Continue with original sales data
+          enhancedSales = allSales;
+        }
+      } else {
+        console.warn('⏱️ Not enough time for brand enrichment, skipping');
+      }
+    }
+    
+    // Phase 3: Optionally fetch complete payout data
     let salesWithPayouts = 0;
     
-    if (!skipPayoutEnrichment && allSales.length > 0) {
+    if (!skipPayoutEnrichment && enhancedSales.length > 0) {
       // Check remaining time
       const remainingTime = MAX_EXECUTION_TIME - (Date.now() - startTime);
       const estimatedTimePerSale = 300; // 300ms per sale
       const maxEnrichableSales = Math.floor(remainingTime / estimatedTimePerSale);
       
       if (maxEnrichableSales > 0) {
-        const salesToEnrich = allSales.slice(0, Math.min(maxEnrichableSales, allSales.length));
-        console.log(`💰 Enriching ${salesToEnrich.length} of ${allSales.length} sales with payout data`);
+        const salesToEnrich = enhancedSales.slice(0, Math.min(maxEnrichableSales, enhancedSales.length));
+        console.log(`💰 Enriching ${salesToEnrich.length} of ${enhancedSales.length} sales with payout data`);
         
         enhancedSales = await fetchCompletePayoutDataWithTimeout(
           salesToEnrich,
@@ -163,8 +191,9 @@ export async function POST(request: NextRequest) {
         );
         
         // Merge enriched with non-enriched
-        if (salesToEnrich.length < allSales.length) {
-          enhancedSales = [...enhancedSales, ...allSales.slice(salesToEnrich.length)];
+        if (salesToEnrich.length < enhancedSales.length) {
+          const payoutEnrichedSales = enhancedSales;
+          enhancedSales = [...payoutEnrichedSales.slice(0, salesToEnrich.length), ...enhancedSales.slice(salesToEnrich.length)];
         }
       } else {
         console.warn('⏱️ Insufficient time for payout enrichment');
@@ -1046,4 +1075,140 @@ function calculateProfit(order: any) {
     // profitAmount: netPayout - purchaseCost, // Would need cost tracking
     // profitMargin: ((netPayout - purchaseCost) / purchaseCost) * 100
   };
+}
+
+// Function to enrich sales with brand data from catalog API
+async function enrichSalesWithBrandData(
+  sales: StockXSale[], 
+  accessToken: string, 
+  refreshToken: string, 
+  apiKey: string,
+  timeLimit: number
+): Promise<StockXSale[]> {
+  console.log(`🏷️ Starting brand enrichment for ${sales.length} sales with ${timeLimit}ms time limit`);
+  
+  const startTime = Date.now();
+  
+  try {
+    // Step 1: Extract unique product IDs
+    const uniqueProductIds = [...new Set(
+      sales
+        .map(sale => sale.product.productId)
+        .filter(id => id && id !== '')
+    )];
+    
+    console.log(`🔍 Found ${uniqueProductIds.length} unique products to enrich`);
+    
+    if (uniqueProductIds.length === 0) {
+      console.log('ℹ️ No product IDs found, skipping brand enrichment');
+      return sales;
+    }
+    
+    // Step 2: Fetch brand data for each unique product ID
+    const productBrandMap: Record<string, any> = {};
+    const maxProductsToEnrich = Math.min(uniqueProductIds.length, 20); // Limit to prevent timeout
+    const productsToEnrich = uniqueProductIds.slice(0, maxProductsToEnrich);
+    
+    console.log(`🔄 Fetching brand data for ${productsToEnrich.length} products (limited from ${uniqueProductIds.length})`);
+    
+    // Process products in smaller batches with rate limiting
+    const BATCH_SIZE = 5;
+    let successCount = 0;
+    
+    for (let i = 0; i < productsToEnrich.length; i += BATCH_SIZE) {
+      // Check time remaining
+      if (Date.now() - startTime > timeLimit - 500) {
+        console.warn(`⏱️ Brand enrichment timeout reached, stopping at ${successCount} products`);
+        break;
+      }
+      
+      const batch = productsToEnrich.slice(i, i + BATCH_SIZE);
+      
+      // Fetch batch concurrently with rate limiting
+      const batchPromises = batch.map(async (productId, index) => {
+        try {
+          // Stagger requests to respect rate limits
+          await new Promise(resolve => setTimeout(resolve, index * 100));
+          
+          const catalogUrl = `https://api.stockx.com/v2/catalog/products/${productId}`;
+          const response = await fetch(catalogUrl, {
+            headers: {
+              'x-api-key': apiKey,
+              'Authorization': `Bearer ${accessToken}`,
+              'Accept': 'application/json',
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+            }
+          });
+          
+          if (response.ok) {
+            const productData = await response.json();
+            const product = productData.product || productData;
+            
+            if (product && (product.brand || product.brandName)) {
+              productBrandMap[productId] = product;
+              return true;
+            }
+          } else if (response.status === 404) {
+            // Product not found, skip silently
+            return false;
+          } else {
+            console.warn(`⚠️ Failed to fetch product ${productId}: ${response.status}`);
+          }
+          
+          return false;
+        } catch (error) {
+          console.error(`❌ Error fetching product ${productId}:`, error);
+          return false;
+        }
+      });
+      
+      const batchResults = await Promise.all(batchPromises);
+      successCount += batchResults.filter(Boolean).length;
+      
+      console.log(`📊 Batch ${Math.floor(i / BATCH_SIZE) + 1} complete: ${successCount} successful enrichments`);
+    }
+    
+    console.log(`✅ Retrieved brand data for ${Object.keys(productBrandMap).length} products`);
+    
+    // Step 3: Merge brand data back into sales
+    const enrichedSales = sales.map(sale => {
+      const productId = sale.product.productId;
+      const productData = productBrandMap[productId];
+      
+      if (productData && (productData.brand || productData.brandName)) {
+        const brand = productData.brand || productData.brandName;
+        
+        return {
+          ...sale,
+          product: {
+            ...sale.product,
+            brand: brand,
+            // Also update other fields if available
+            productName: productData.productName || productData.name || sale.product.productName,
+            category: productData.category || sale.product.category,
+            retailPrice: productData.retailPrice || sale.product.retailPrice,
+            imageUrl: productData.imageUrl || productData.image || sale.product.imageUrl
+          }
+        };
+      }
+      
+      return sale; // Return unchanged if no brand data found
+    });
+    
+    const enrichedCount = enrichedSales.filter(sale => 
+      sale.product.brand !== 'Unknown Brand'
+    ).length;
+    
+    const elapsed = Date.now() - startTime;
+    console.log(`🎉 Brand enrichment completed: ${enrichedCount}/${sales.length} sales enriched in ${elapsed}ms`);
+    
+    return enrichedSales;
+    
+  } catch (error) {
+    const elapsed = Date.now() - startTime;
+    console.error(`❌ Brand enrichment failed after ${elapsed}ms:`, error);
+    
+    // Return original sales data on error
+    return sales;
+  }
 } 

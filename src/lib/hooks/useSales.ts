@@ -5,6 +5,36 @@ import { useAuth } from '../contexts/AuthContext';
 import { getDocuments, deleteDocument } from '../firebase/firebaseUtils';
 import { clearAllUserSales, getUserSales } from '../firebase/userDataUtils';
 
+// Helper function to extract brand from product name
+const extractBrandFromProductName = (productName: string): string | null => {
+  if (!productName) return null;
+  
+  // Common sneaker brands to look for at the beginning of product names
+  const brands = [
+    'Nike', 'Jordan', 'Adidas', 'Yeezy', 'New Balance', 'Asics', 'Puma', 
+    'Vans', 'Converse', 'Reebok', 'Under Armour', 'Fear of God', 'Polo Ralph Lauren',
+    'Off-White', 'Travis Scott', 'Stone Island', 'Supreme', 'BAPE', 'Kith',
+    'UGG', 'Timberland', 'Dr. Martens', 'Balenciaga', 'Gucci', 'Louis Vuitton',
+    'Dior', 'Chrome Hearts', 'Golf Wang', 'A Bathing Ape', 'Human Made'
+  ];
+  
+  const productNameLower = productName.toLowerCase();
+  
+  for (const brand of brands) {
+    if (productNameLower.startsWith(brand.toLowerCase())) {
+      return brand;
+    }
+  }
+  
+  // If no match found, try to get first word if it looks like a brand
+  const firstWord = productName.split(' ')[0];
+  if (firstWord && firstWord.length > 2) {
+    return firstWord;
+  }
+  
+  return null;
+};
+
 export interface SaleMetrics {
   totalProfit: number;
   totalRevenue: number;
@@ -184,6 +214,11 @@ export const useSales = () => {
           // StockX sales data is stored directly in the document
           const saleData = sale.saleData;
           
+          // Debug: Check if brand data is available
+          if (!saleData.product?.brand && !saleData.brand) {
+            console.log('ℹ️ No brand data in StockX sale:', saleData.orderNumber);
+          }
+          
           // Skip if no saleData
           if (!saleData) {
             console.warn('⚠️ StockX sale missing saleData:', sale);
@@ -213,7 +248,7 @@ export const useSales = () => {
             platform: 'stockx',
             // Map StockX fields to match manual sales structure
             product: saleData.product?.productName || 'Unknown Product',
-            brand: saleData.product?.brand || 'Unknown Brand',
+            brand: saleData.product?.brand || saleData.brand || extractBrandFromProductName(saleData.product?.productName) || 'Unknown Brand',
             size: saleData.variant?.size || 'Unknown',
             orderNumber: saleData.orderNumber || sale.stockxOrderId || '',
             // Normalize date field

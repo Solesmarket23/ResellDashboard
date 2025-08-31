@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { RefreshCw, Package, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { addDocument, getDocuments, updateDocument } from '@/lib/firebase/firebaseUtils';
+import { StockXSale } from '@/lib/types/stockx';
 
 interface ImportProgress {
   phase: 'fetching' | 'enriching' | 'complete' | 'error';
@@ -75,6 +77,108 @@ const StockXCompleteImport: React.FC<StockXCompleteImportProps> = ({ onImportCom
 
       if (data.success) {
         setImportedSales(data.data);
+        
+        // Save to Firebase
+        try {
+          setProgress({
+            phase: 'enriching',
+            message: 'Saving sales to database...',
+            totalCount: data.totalCount,
+            processedCount: 0,
+            successCount: 0,
+            errorCount: 0
+          });
+
+          // Get existing sales to check for duplicates
+          let existingSales: any[] = [];
+          try {
+            existingSales = await getDocuments('stockxSales');
+          } catch (error) {
+            console.log('No existing StockX sales found - will create new collection');
+          }
+          
+          const userSalesMap = new Map(
+            existingSales
+              .filter(sale => sale.userId === userId)
+              .map(sale => [sale.stockxOrderId, sale])
+          );
+
+          let savedCount = 0;
+          let updatedCount = 0;
+
+          // Save each sale to Firebase
+          for (const sale of data.data) {
+            const existingSale = userSalesMap.get(sale.orderNumber);
+            
+            if (existingSale) {
+              // Update existing sale if status changed
+              if (existingSale.saleData.status !== sale.status || 
+                  existingSale.saleData.pricing.totalPayout !== sale.pricing.totalPayout) {
+                await updateDocument('stockxSales', existingSale.id, {
+                  saleData: sale,
+                  updatedAt: new Date().toISOString()
+                });
+                updatedCount++;
+              }
+            } else {
+              // Add new sale
+              await addDocument('stockxSales', {
+                userId: userId,
+                stockxOrderId: sale.orderNumber,
+                saleData: sale,
+                createdAt: new Date().toISOString(),
+                source: 'stockx_api'
+              });
+              savedCount++;
+            }
+
+            // Update progress
+            const processed = savedCount + updatedCount;
+            setProgress({
+              phase: 'enriching',
+              message: `Saving sales to database... (${processed}/${data.totalCount})`,
+              totalCount: data.totalCount,
+              processedCount: processed,
+              successCount: processed,
+              errorCount: 0
+            });
+          }
+
+          console.log(`✅ Saved ${savedCount} new sales and updated ${updatedCount} existing sales to Firebase`);
+
+          // Update sync time
+          try {
+            let syncInfo: any[] = [];
+            try {
+              syncInfo = await getDocuments('stockxSyncInfo');
+            } catch (error) {
+              console.log('No existing sync info found - will create new collection');
+            }
+            
+            const userSyncInfo = syncInfo.find(info => info.userId === userId);
+            const syncTime = new Date().toISOString();
+            
+            if (userSyncInfo) {
+              await updateDocument('stockxSyncInfo', userSyncInfo.id, {
+                lastSyncTime: syncTime,
+                updatedAt: syncTime
+              });
+            } else {
+              await addDocument('stockxSyncInfo', {
+                userId: userId,
+                lastSyncTime: syncTime,
+                createdAt: syncTime
+              });
+            }
+          } catch (error) {
+            console.error('Error updating sync time:', error);
+          }
+
+        } catch (error) {
+          console.error('Error saving to Firebase:', error);
+          setError('Sales imported but failed to save to database. They may not persist.');
+        }
+
         setProgress({
           phase: 'complete',
           totalCount: data.totalCount,
@@ -237,9 +341,16 @@ const StockXCompleteImport: React.FC<StockXCompleteImportProps> = ({ onImportCom
           <div className="space-y-1 text-sm text-green-300">
             <p>• Total sales imported: {progress.totalCount}</p>
             <p>• Sales with payout data: {progress.successCount}</p>
+            <p>• Sales saved to database: {progress.totalCount}</p>
             {progress.errorCount > 0 && (
               <p>• Failed to fetch payout data: {progress.errorCount}</p>
             )}
+          </div>
+          <div className="mt-3 p-2 bg-blue-900/20 border border-blue-500/30 rounded">
+            <p className="text-blue-300 text-xs">
+              💡 Tip: Your sales are now saved and will persist across page refreshes. 
+              To view them with Firebase sync, use the "My Sales" option in the StockX Integration menu.
+            </p>
           </div>
         </div>
       )}
