@@ -214,10 +214,16 @@ export const useSales = () => {
           // StockX sales data is stored directly in the document
           const saleData = sale.saleData;
           
-          // Debug: Check if brand data is available
-          if (!saleData.product?.brand && !saleData.brand) {
-            console.log('ℹ️ No brand data in StockX sale:', saleData.orderNumber);
-          }
+          // Debug: Check brand data and enrichment status
+          console.log('🔍 StockX sale brand debug:', {
+            orderNumber: saleData.orderNumber,
+            productName: saleData.product?.productName,
+            brand: saleData.product?.brand,
+            alternativeBrand: saleData.brand,
+            hasEnrichment: !!saleData.product?.brand && saleData.product.brand !== 'Unknown Brand',
+            productId: saleData.product?.productId,
+            createdAt: sale.createdAt || saleData.createdAt
+          });
           
           // Skip if no saleData
           if (!saleData) {

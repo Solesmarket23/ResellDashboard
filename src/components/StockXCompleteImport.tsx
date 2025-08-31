@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { RefreshCw, Package, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
-import { addDocument, getDocuments, updateDocument } from '@/lib/firebase/firebaseUtils';
+import { RefreshCw, Package, CheckCircle, AlertCircle, Loader2, Trash2 } from 'lucide-react';
+import { addDocument, getDocuments, updateDocument, deleteDocument } from '@/lib/firebase/firebaseUtils';
 import { StockXSale } from '@/lib/types/stockx';
 
 interface ImportProgress {
@@ -26,6 +26,41 @@ const StockXCompleteImport: React.FC<StockXCompleteImportProps> = ({ onImportCom
   const [error, setError] = useState<string | null>(null);
   const [importedSales, setImportedSales] = useState<any[]>([]);
   const [maxSales, setMaxSales] = useState(500); // Configurable limit
+  const [isClearing, setIsClearing] = useState(false);
+
+  const handleClearSales = async () => {
+    if (!userId) return;
+    
+    setIsClearing(true);
+    try {
+      // Get existing sales to delete
+      const existingSales = await getDocuments('stockxSales');
+      const userSales = existingSales.filter((sale: any) => sale.userId === userId);
+      
+      console.log(`🗑️ Clearing ${userSales.length} existing StockX sales...`);
+      
+      // Delete each sale
+      for (const sale of userSales) {
+        await deleteDocument('stockxSales', sale.id);
+      }
+      
+      // Clear sync info
+      const syncInfo = await getDocuments('stockxSyncInfo');
+      const userSyncInfo = syncInfo.find((info: any) => info.userId === userId);
+      if (userSyncInfo) {
+        await deleteDocument('stockxSyncInfo', userSyncInfo.id);
+      }
+      
+      console.log('✅ Old sales cleared successfully');
+      alert('✅ Old sales cleared! Now you can re-import with brand data.');
+      
+    } catch (error) {
+      console.error('❌ Error clearing sales:', error);
+      alert('❌ Error clearing sales. Please try again.');
+    } finally {
+      setIsClearing(false);
+    }
+  };
 
   const handleCompleteImport = async () => {
     setIsImporting(true);
@@ -235,7 +270,10 @@ const StockXCompleteImport: React.FC<StockXCompleteImportProps> = ({ onImportCom
             Complete Sales Import
           </h3>
           <p className="text-gray-400 text-sm mt-1">
-            Import all sales with complete fee and payout data in one go
+            Import all sales with complete fee, payout, and brand data in one go
+          </p>
+          <p className="text-yellow-400 text-xs mt-1">
+            💡 If you see "Unknown Brand", try clearing old sales first and re-importing
           </p>
         </div>
         
@@ -249,15 +287,34 @@ const StockXCompleteImport: React.FC<StockXCompleteImportProps> = ({ onImportCom
               min="50"
               max="2000"
               step="50"
-              disabled={isImporting}
+              disabled={isImporting || isClearing}
               className="bg-gray-700 text-white rounded-lg px-3 py-1 w-20 text-sm border border-gray-600 focus:border-green-500 focus:outline-none"
               title="Maximum number of sales to import (50-2000)"
             />
           </div>
           
           <button
+            onClick={handleClearSales}
+            disabled={isImporting || isClearing}
+            className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 disabled:from-gray-600 disabled:to-gray-700 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
+            title="Clear old sales data to re-import with brand information"
+          >
+            {isClearing ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Clearing...
+              </>
+            ) : (
+              <>
+                <Trash2 className="w-4 h-4" />
+                Clear Old
+              </>
+            )}
+          </button>
+          
+          <button
           onClick={handleCompleteImport}
-          disabled={isImporting}
+          disabled={isImporting || isClearing}
           className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 disabled:from-gray-600 disabled:to-gray-700 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
         >
           {isImporting ? (
