@@ -25,6 +25,7 @@ const StockXCompleteImport: React.FC<StockXCompleteImportProps> = ({ onImportCom
   const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [importedSales, setImportedSales] = useState<any[]>([]);
+  const [maxSales, setMaxSales] = useState(500); // Configurable limit
 
   const handleCompleteImport = async () => {
     setIsImporting(true);
@@ -61,7 +62,7 @@ const StockXCompleteImport: React.FC<StockXCompleteImportProps> = ({ onImportCom
         body: JSON.stringify({
           status: 'completed',
           userId: userId,
-          maxSales: 50, // Safe limit for Vercel Hobby tier
+          maxSales: maxSales, // User configurable limit
           skipPayoutEnrichment: false
         }),
       });
@@ -237,7 +238,24 @@ const StockXCompleteImport: React.FC<StockXCompleteImportProps> = ({ onImportCom
             Import all sales with complete fee and payout data in one go
           </p>
         </div>
-        <button
+        
+        <div className="flex items-center gap-4">
+          <div className="flex flex-col items-end">
+            <label className="text-gray-400 text-sm mb-1">Max Sales</label>
+            <input
+              type="number"
+              value={maxSales}
+              onChange={(e) => setMaxSales(parseInt(e.target.value) || 500)}
+              min="50"
+              max="2000"
+              step="50"
+              disabled={isImporting}
+              className="bg-gray-700 text-white rounded-lg px-3 py-1 w-20 text-sm border border-gray-600 focus:border-green-500 focus:outline-none"
+              title="Maximum number of sales to import (50-2000)"
+            />
+          </div>
+          
+          <button
           onClick={handleCompleteImport}
           disabled={isImporting}
           className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 disabled:from-gray-600 disabled:to-gray-700 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2"
@@ -253,7 +271,8 @@ const StockXCompleteImport: React.FC<StockXCompleteImportProps> = ({ onImportCom
               Import All Sales
             </>
           )}
-        </button>
+          </button>
+        </div>
       </div>
 
       {/* Progress Display */}
