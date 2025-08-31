@@ -110,6 +110,7 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
       });
 
       // Call completion callback
+      console.log('🔄 StockXSalesImport: Calling onImportComplete with:', { success: true, count: data.totalCount });
       onImportComplete?.(true, data.totalCount);
 
       // Reset after a delay

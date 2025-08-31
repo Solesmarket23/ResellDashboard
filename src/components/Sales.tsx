@@ -1051,8 +1051,9 @@ const Sales = () => {
             userId={user.uid}
             onImportComplete={(success, salesCount) => {
               if (success) {
-                console.log(`✅ Successfully imported ${salesCount} StockX sales`);
+                console.log(`✅ Successfully imported ${salesCount} StockX sales - triggering forceRefresh`);
                 forceRefresh(); // Refresh the sales data to show new imports
+                console.log(`🔄 Sales: forceRefresh() called after import completion`);
               }
             }}
           />

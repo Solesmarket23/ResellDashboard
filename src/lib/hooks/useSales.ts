@@ -308,6 +308,7 @@ export const useSales = () => {
           lastUpdated: new Date(),
           error: null
         });
+        console.log('🔄 useSales: Sales state updated - total sales:', allSales.length);
       }
       
     } catch (err) {
@@ -422,7 +423,9 @@ export const useSales = () => {
   // Force refresh function
   const forceRefresh = async () => {
     console.log('🔄 useSales: Force refresh requested');
+    console.log('🔄 useSales: Current sales count before refresh:', sales.length);
     await loadSalesData(true);
+    console.log('🔄 useSales: Force refresh completed');
   };
 
   // Initial load and user change handling
