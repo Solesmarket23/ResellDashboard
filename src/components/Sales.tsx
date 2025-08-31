@@ -1651,7 +1651,7 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                     >
                       <div className="flex items-center justify-between h-full">
                         <div className="flex items-center">
-                          Date
+                          Sale Date
                           <SortIcon column="date" />
                         </div>
                       </div>
@@ -1665,7 +1665,7 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                         }}
                         onDoubleClick={(e) => {
                           e.stopPropagation();
-                          handleDoubleClickResize('date', 'Date');
+                          handleDoubleClickResize('date', 'Sale Date');
                         }}
                         title="Drag to resize column, double-click to auto-fit"
                       />
