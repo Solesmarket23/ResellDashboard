@@ -710,7 +710,11 @@ const Sales = () => {
   const confirmClearAllSales = async () => {
     if (!user) {
       console.error('❌ No user found when trying to clear sales');
-      alert('Please sign in to clear sales.');
+      setNotification({
+        isVisible: true,
+        message: 'Please sign in to clear sales.',
+        type: 'error'
+      });
       return;
     }
 
@@ -723,6 +727,12 @@ const Sales = () => {
       
       setClearAllModal(false);
       
+      setNotification({
+        isVisible: true,
+        message: '✅ All sales cleared successfully!',
+        type: 'success'
+      });
+      
       console.log('✅ All sales cleared successfully - data refreshed');
       
     } catch (error) {
@@ -730,7 +740,11 @@ const Sales = () => {
       console.error('Error details:', error);
       console.error('User ID:', user?.uid);
       console.error('Sales data length:', salesData.length);
-      alert(`Error clearing sales: ${error.message}. Please try again.`);
+      setNotification({
+        isVisible: true,
+        message: `Error clearing sales: ${error.message}. Please try again.`,
+        type: 'error'
+      });
     }
   };
 

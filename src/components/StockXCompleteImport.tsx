@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { RefreshCw, Package, CheckCircle, AlertCircle, Loader2, Trash2 } from 'lucide-react';
 import { addDocument, getDocuments, updateDocument, deleteDocument } from '@/lib/firebase/firebaseUtils';
 import { StockXSale } from '@/lib/types/stockx';
+import NeonNotification, { NotificationType } from './NeonNotification';
 
 interface ImportProgress {
   phase: 'fetching' | 'enriching' | 'complete' | 'error';
@@ -27,6 +28,11 @@ const StockXCompleteImport: React.FC<StockXCompleteImportProps> = ({ onImportCom
   const [importedSales, setImportedSales] = useState<any[]>([]);
   const [maxSales, setMaxSales] = useState(500); // Configurable limit
   const [isClearing, setIsClearing] = useState(false);
+  const [notification, setNotification] = useState<{
+    isVisible: boolean;
+    message: string;
+    type: NotificationType;
+  }>({ isVisible: false, message: '', type: 'success' });
 
   const handleClearSales = async () => {
     if (!userId) return;
@@ -52,11 +58,19 @@ const StockXCompleteImport: React.FC<StockXCompleteImportProps> = ({ onImportCom
       }
       
       console.log('✅ Old sales cleared successfully');
-      alert('✅ Old sales cleared! Now you can re-import with brand data.');
+      setNotification({
+        isVisible: true,
+        message: '✅ Old sales cleared! Now you can re-import with brand data.',
+        type: 'success'
+      });
       
     } catch (error) {
       console.error('❌ Error clearing sales:', error);
-      alert('❌ Error clearing sales. Please try again.');
+      setNotification({
+        isVisible: true,
+        message: '❌ Error clearing sales. Please try again.',
+        type: 'error'
+      });
     } finally {
       setIsClearing(false);
     }
@@ -262,9 +276,17 @@ const StockXCompleteImport: React.FC<StockXCompleteImportProps> = ({ onImportCom
   };
 
   return (
-    <div className="bg-gray-800 rounded-lg p-6">
-      <div className="flex items-center justify-between mb-4">
-        <div>
+    <>
+      <NeonNotification
+        isVisible={notification.isVisible}
+        message={notification.message}
+        type={notification.type}
+        onClose={() => setNotification({ ...notification, isVisible: false })}
+      />
+      
+      <div className="bg-gray-800 rounded-lg p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
           <h3 className="text-lg font-semibold text-white flex items-center gap-2">
             <Package className="w-5 h-5 text-green-400" />
             Complete Sales Import
@@ -437,6 +459,7 @@ const StockXCompleteImport: React.FC<StockXCompleteImportProps> = ({ onImportCom
         <p>The process may take a few minutes for large inventories as it retrieves detailed payout information for each sale.</p>
       </div>
     </div>
+    </>
   );
 };
 
