@@ -10,6 +10,7 @@ import { useStockXSales } from '../lib/hooks/useStockXSales';
 import { formatOrderNumberForDisplay } from '../lib/utils/orderNumberUtils';
 import confetti from 'canvas-confetti';
 import NeonNotification from './NeonNotification';
+import StockXSalesImport from './StockXSalesImport';
 
 const Sales = () => {
   const [activeFilter, setActiveFilter] = useState('All Time');
@@ -1025,20 +1026,7 @@ const Sales = () => {
             <Trash2 className="w-4 h-4 mr-2" />
             Clear All Sales
           </button>
-          <button 
-            onClick={() => setShowStockXModal(true)}
-            disabled={isLoading || stockxLoading}
-            className={`flex items-center px-4 py-2 ${
-              isNeon 
-                ? 'bg-gradient-to-r from-green-500 to-green-600 shadow-lg shadow-green-500/25' 
-                : 'bg-green-500'
-            } text-white rounded-lg hover:bg-green-600 transition-colors ${
-              (isLoading || stockxLoading) ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
-          >
-            <RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
-            StockX Sales
-          </button>
+
           <button 
             onClick={openRecordSaleModal}
             disabled={isLoading}
@@ -1055,6 +1043,21 @@ const Sales = () => {
           </button>
         </div>
       </div>
+
+      {/* Streamlined StockX Sales Import */}
+      {user && (
+        <div className="mb-6">
+          <StockXSalesImport 
+            userId={user.uid}
+            onImportComplete={(success, salesCount) => {
+              if (success) {
+                console.log(`✅ Successfully imported ${salesCount} StockX sales`);
+                forceRefresh(); // Refresh the sales data to show new imports
+              }
+            }}
+          />
+        </div>
+      )}
 
       {/* Debug Info Section - Remove in production */}
       <div className="mb-6 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm">
