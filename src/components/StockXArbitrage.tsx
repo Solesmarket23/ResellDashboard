@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { TrendingUp, TrendingDown, DollarSign, ExternalLink, Search, AlertCircle, BarChart3, LogIn, CheckCircle, Bell, Twitter, Upload, Image, X } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, ExternalLink, Search, AlertCircle, BarChart3, LogIn, CheckCircle, Bell, Twitter, Upload, Image, X, Filter, SortAsc, SortDesc, TrendingUpIcon, Activity, Clock, Zap, Target, Gauge } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { shareToTwitter, generateShareImage, ArbitrageShareData } from '@/lib/twitter/twitterExport';
 import { generateEnhancedShareImage, EnhancedArbitrageShareData } from '@/lib/twitter/enhancedGraphics';
@@ -9,6 +9,7 @@ import { generateEnhancedShareImage, EnhancedArbitrageShareData } from '@/lib/tw
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useSiteAuth } from '@/lib/hooks/useSiteAuth';
 import { usePriceMonitor } from '@/lib/contexts/PriceMonitorContext';
+import MiniPriceChart from './MiniPriceChart';
 
 // Enhanced placeholder component for StockX products since images aren't publicly accessible
 interface FallbackImageProps {
@@ -125,8 +126,40 @@ interface ArbitrageOpportunity {
   variantId: string;
   bidAmount?: number;
   askAmount?: number;
-  stockxUrl?: string; // Add the stockxUrl field
-  flexAskAmount?: number; // Add flex ask amount
+  stockxUrl?: string;
+  flexAskAmount?: number;
+  
+  // Enhanced data
+  category?: string;
+  releaseDate?: string;
+  bidAskVolume?: number; // Volume of bids/asks
+  priceHistory?: PricePoint[];
+  volatilityScore?: number; // 0-100 price volatility
+  velocityScore?: number; // How fast it sells
+  riskScore?: number; // Overall risk assessment
+  lastSalePrice?: number;
+  salesVolume24h?: number;
+  trendDirection?: 'up' | 'down' | 'stable';
+  estimatedSellTime?: string; // "2-3 days", "1 week", etc.
+}
+
+interface PricePoint {
+  timestamp: number;
+  price: number;
+  type: 'ask' | 'bid' | 'sale';
+}
+
+interface SearchFilters {
+  minSpreadPercentage: number;
+  priceRange: { min: number; max: number };
+  profitRange: { min: number; max: number };
+  selectedCategories: string[];
+  selectedSizes: string[];
+  excludedBrands: string[];
+  onlyRecentReleases: boolean;
+  minBidAskVolume: number;
+  sortBy: string;
+  sortOrder: 'asc' | 'desc';
 }
 
 const StockXArbitrage: React.FC = () => {
@@ -141,6 +174,17 @@ const StockXArbitrage: React.FC = () => {
   const [minSpreadPercentage, setMinSpreadPercentage] = useState(10);
   const [excludedBrandTags, setExcludedBrandTags] = useState<string[]>([]);
   const [excludedBrandInput, setExcludedBrandInput] = useState('');
+  
+  // Advanced Filtering
+  const [priceRange, setPriceRange] = useState({ min: 0, max: 1000 });
+  const [profitRange, setProfitRange] = useState({ min: 0, max: 500 });
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
+  const [sortBy, setSortBy] = useState<string>('profit'); // profit, margin, volume, velocity
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [onlyRecentReleases, setOnlyRecentReleases] = useState(false);
+  const [minBidAskVolume, setMinBidAskVolume] = useState(0);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isAuthError, setIsAuthError] = useState(false);
@@ -724,6 +768,108 @@ const StockXArbitrage: React.FC = () => {
     }
   };
 
+  // Enhanced filtering and sorting functions
+  const applyFiltersAndSorting = (opportunities: ArbitrageOpportunity[]): ArbitrageOpportunity[] => {
+    let filtered = [...opportunities];
+    
+    // Apply filters
+    filtered = filtered.filter(opp => {
+      // Price range filter
+      if (opp.askAmount && (opp.askAmount < priceRange.min || opp.askAmount > priceRange.max)) {
+        return false;
+      }
+      
+      // Profit range filter
+      if (opp.profit < profitRange.min || opp.profit > profitRange.max) {
+        return false;
+      }
+      
+      // Category filter
+      if (selectedCategories.length > 0 && opp.category && !selectedCategories.includes(opp.category)) {
+        return false;
+      }
+      
+      // Size filter
+      if (selectedSizes.length > 0 && !selectedSizes.includes(opp.size)) {
+        return false;
+      }
+      
+      // Volume filter
+      if (opp.bidAskVolume && opp.bidAskVolume < minBidAskVolume) {
+        return false;
+      }
+      
+      // Recent releases filter
+      if (onlyRecentReleases && opp.releaseDate) {
+        const releaseDate = new Date(opp.releaseDate);
+        const threeMonthsAgo = new Date();
+        threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+        if (releaseDate < threeMonthsAgo) {
+          return false;
+        }
+      }
+      
+      return true;
+    });
+    
+    // Apply sorting
+    filtered.sort((a, b) => {
+      let aValue: number = 0;
+      let bValue: number = 0;
+      
+      switch (sortBy) {
+        case 'profit':
+          aValue = a.profit;
+          bValue = b.profit;
+          break;
+        case 'margin':
+          aValue = a.profitMargin;
+          bValue = b.profitMargin;
+          break;
+        case 'volume':
+          aValue = a.bidAskVolume || 0;
+          bValue = b.bidAskVolume || 0;
+          break;
+        case 'velocity':
+          aValue = a.velocityScore || 0;
+          bValue = b.velocityScore || 0;
+          break;
+        case 'risk':
+          aValue = a.riskScore || 50;
+          bValue = b.riskScore || 50;
+          break;
+        case 'volatility':
+          aValue = a.volatilityScore || 0;
+          bValue = b.volatilityScore || 0;
+          break;
+        case 'price':
+          aValue = a.askAmount || 0;
+          bValue = b.askAmount || 0;
+          break;
+        default:
+          aValue = a.profit;
+          bValue = b.profit;
+      }
+      
+      return sortOrder === 'desc' ? bValue - aValue : aValue - bValue;
+    });
+    
+    return filtered;
+  };
+
+  // Get popular sizes for filters
+  const getPopularSizes = () => {
+    return ['7', '7.5', '8', '8.5', '9', '9.5', '10', '10.5', '11', '11.5', '12', '13'];
+  };
+
+  // Get categories for filters
+  const getCategories = () => {
+    return ['Sneakers', 'Apparel', 'Accessories', 'Collectibles', 'Electronics'];
+  };
+
+  // Apply filters to displayed opportunities
+  const filteredOpportunities = applyFiltersAndSorting(opportunities);
+
   const addToFlexAskMonitor = (opportunity: ArbitrageOpportunity) => {
     console.log('🔔 Track Flex Ask button clicked!');
     console.log('🔔 Adding to Flex Ask Monitor:', opportunity.productName, opportunity.size, 'Flex Ask:', opportunity.flexAskAmount);
@@ -1039,45 +1185,281 @@ const StockXArbitrage: React.FC = () => {
                 </button>
               </div>
             </div>
+            
+            {/* Sorting Controls */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
-                Display Options
+                Sort Results
               </label>
-              <div className="flex items-center justify-between p-3 bg-gray-800 border border-gray-700 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-300">Show Flex Ask Prices</span>
-                  <div className="text-xs text-gray-400">(when available)</div>
-                </div>
-                <button
-                  onClick={() => setShowFlexAsk(!showFlexAsk)}
-                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                    showFlexAsk 
-                      ? 'bg-gradient-to-r from-purple-500 to-pink-500' 
-                      : 'bg-gray-600'
-                  }`}
+              <div className="flex gap-2">
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  className="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
                 >
-                  <span
-                    className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
-                      showFlexAsk ? 'translate-x-5' : 'translate-x-1'
-                    }`}
-                  />
+                  <option value="profit">💰 Profit</option>
+                  <option value="margin">📊 Margin %</option>
+                  <option value="velocity">⚡ Velocity</option>
+                  <option value="volume">📈 Volume</option>
+                  <option value="risk">⚠️ Risk</option>
+                  <option value="price">💵 Price</option>
+                  <option value="volatility">📉 Volatility</option>
+                </select>
+                <button
+                  onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
+                  className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white hover:bg-gray-600 transition-colors"
+                  title={sortOrder === 'desc' ? 'Sort Ascending' : 'Sort Descending'}
+                >
+                  {sortOrder === 'desc' ? <SortDesc className="w-4 h-4" /> : <SortAsc className="w-4 h-4" />}
                 </button>
               </div>
-              <div className="mt-1 text-xs text-gray-400">
-                Flex asks are faster-selling prices that may include additional fees. When enabled, "Track Flex Ask" buttons will appear on items with flex pricing.
-              </div>
             </div>
+            
             <div className="flex items-end">
-              <div className="text-sm text-gray-400">
-                <p className="mb-1">📊 Features:</p>
-                <ul className="text-xs space-y-0.5">
-                  <li>• Brand filtering for focused results</li>
-                  <li>• Flex ask prices for faster sales</li>
-                  <li>• Real-time profit calculations</li>
-                </ul>
-              </div>
+              <button
+                onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                className="w-full bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center justify-center gap-2"
+              >
+                <Filter className="w-4 h-4" />
+                {showAdvancedFilters ? 'Hide' : 'Show'} Advanced Filters
+              </button>
             </div>
           </div>
+
+          {/* Advanced Filters Panel */}
+          {showAdvancedFilters && (
+            <div className="mt-4 p-6 bg-gray-800/50 border border-gray-700 rounded-lg space-y-6">
+              <div className="flex items-center gap-2 mb-4">
+                <Filter className="w-5 h-5 text-cyan-400" />
+                <h3 className="text-lg font-semibold text-white">Advanced Filters</h3>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {/* Price Range */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Price Range: ${priceRange.min} - ${priceRange.max}
+                  </label>
+                  <div className="space-y-2">
+                    <input
+                      type="range"
+                      min="0"
+                      max="2000"
+                      step="50"
+                      value={priceRange.max}
+                      onChange={(e) => setPriceRange(prev => ({ ...prev, max: parseInt(e.target.value) }))}
+                      className="w-full"
+                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        value={priceRange.min}
+                        onChange={(e) => setPriceRange(prev => ({ ...prev, min: parseInt(e.target.value) || 0 }))}
+                        className="w-20 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-xs"
+                        placeholder="Min"
+                      />
+                      <input
+                        type="number"
+                        value={priceRange.max}
+                        onChange={(e) => setPriceRange(prev => ({ ...prev, max: parseInt(e.target.value) || 2000 }))}
+                        className="w-20 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-xs"
+                        placeholder="Max"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Profit Range */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Profit Range: ${profitRange.min} - ${profitRange.max}
+                  </label>
+                  <div className="space-y-2">
+                    <input
+                      type="range"
+                      min="0"
+                      max="500"
+                      step="10"
+                      value={profitRange.max}
+                      onChange={(e) => setProfitRange(prev => ({ ...prev, max: parseInt(e.target.value) }))}
+                      className="w-full"
+                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        value={profitRange.min}
+                        onChange={(e) => setProfitRange(prev => ({ ...prev, min: parseInt(e.target.value) || 0 }))}
+                        className="w-20 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-xs"
+                        placeholder="Min"
+                      />
+                      <input
+                        type="number"
+                        value={profitRange.max}
+                        onChange={(e) => setProfitRange(prev => ({ ...prev, max: parseInt(e.target.value) || 500 }))}
+                        className="w-20 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-xs"
+                        placeholder="Max"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Size Filter */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Sizes ({selectedSizes.length} selected)
+                  </label>
+                  <div className="max-h-32 overflow-y-auto border border-gray-600 rounded p-2 bg-gray-700">
+                    <div className="grid grid-cols-3 gap-1">
+                      {getPopularSizes().map(size => (
+                        <label key={size} className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={selectedSizes.includes(size)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedSizes([...selectedSizes, size]);
+                              } else {
+                                setSelectedSizes(selectedSizes.filter(s => s !== size));
+                              }
+                            }}
+                            className="w-3 h-3"
+                          />
+                          {size}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Category Filter */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Categories ({selectedCategories.length} selected)
+                  </label>
+                  <div className="space-y-1">
+                    {getCategories().map(category => (
+                      <label key={category} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={selectedCategories.includes(category)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedCategories([...selectedCategories, category]);
+                            } else {
+                              setSelectedCategories(selectedCategories.filter(c => c !== category));
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        {category}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Volume Filter */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Min Bid/Ask Volume: {minBidAskVolume}
+                  </label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="5"
+                    value={minBidAskVolume}
+                    onChange={(e) => setMinBidAskVolume(parseInt(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="text-xs text-gray-400 mt-1">
+                    Higher volume = more liquid market
+                  </div>
+                </div>
+
+                {/* Recent Releases */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Release Timing
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={onlyRecentReleases}
+                      onChange={(e) => setOnlyRecentReleases(e.target.checked)}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-gray-300">Only Recent Releases (3 months)</span>
+                  </label>
+                  <div className="text-xs text-gray-400 mt-1">
+                    Focus on recently released items with higher demand
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Presets */}
+              <div className="border-t border-gray-600 pt-4">
+                <p className="text-sm font-medium text-gray-300 mb-3">Quick Filter Presets:</p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => {
+                      setSortBy('profit');
+                      setProfitRange({ min: 50, max: 500 });
+                      setPriceRange({ min: 0, max: 500 });
+                      setSelectedSizes(['9', '9.5', '10', '10.5', '11']);
+                    }}
+                    className="px-3 py-1 bg-green-600/20 border border-green-500/30 rounded text-green-400 text-xs hover:bg-green-600/30 transition-colors"
+                  >
+                    💰 High Profit
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSortBy('velocity');
+                      setOnlyRecentReleases(true);
+                      setSelectedCategories(['Sneakers']);
+                    }}
+                    className="px-3 py-1 bg-blue-600/20 border border-blue-500/30 rounded text-blue-400 text-xs hover:bg-blue-600/30 transition-colors"
+                  >
+                    ⚡ Fast Movers
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSortBy('risk');
+                      setSortOrder('asc');
+                      setMinBidAskVolume(20);
+                    }}
+                    className="px-3 py-1 bg-yellow-600/20 border border-yellow-500/30 rounded text-yellow-400 text-xs hover:bg-yellow-600/30 transition-colors"
+                  >
+                    🛡️ Low Risk
+                  </button>
+                  <button
+                    onClick={() => {
+                      setPriceRange({ min: 0, max: 200 });
+                      setMinSpreadPercentage(20);
+                    }}
+                    className="px-3 py-1 bg-purple-600/20 border border-purple-500/30 rounded text-purple-400 text-xs hover:bg-purple-600/30 transition-colors"
+                  >
+                    🎯 Budget Friendly
+                  </button>
+                  <button
+                    onClick={() => {
+                      // Reset all filters
+                      setPriceRange({ min: 0, max: 1000 });
+                      setProfitRange({ min: 0, max: 500 });
+                      setSelectedCategories([]);
+                      setSelectedSizes([]);
+                      setMinBidAskVolume(0);
+                      setOnlyRecentReleases(false);
+                      setSortBy('profit');
+                      setSortOrder('desc');
+                    }}
+                    className="px-3 py-1 bg-gray-600/20 border border-gray-500/30 rounded text-gray-400 text-xs hover:bg-gray-600/30 transition-colors"
+                  >
+                    🔄 Reset All
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Success Message */}
@@ -1232,53 +1614,112 @@ const StockXArbitrage: React.FC = () => {
           </div>
         )}
 
-        {/* Stats */}
+        {/* Enhanced Stats */}
         {opportunities.length > 0 && (
-          <div className={`grid grid-cols-1 gap-4 sm:gap-6 mb-6 sm:mb-8 ${showFlexAsk ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
-            <div className="bg-gray-800 rounded-lg p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-gray-400 text-sm">Total Opportunities</p>
-                  <p className="text-2xl font-bold text-cyan-400">{opportunities.length}</p>
+          <div className="mb-6 sm:mb-8">
+            {/* Filter Summary */}
+            {(selectedSizes.length > 0 || selectedCategories.length > 0 || priceRange.min > 0 || profitRange.min > 0) && (
+              <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4 mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Filter className="w-4 h-4 text-blue-400" />
+                  <span className="text-blue-300 text-sm font-medium">Active Filters:</span>
                 </div>
-                <TrendingUp className="w-8 h-8 text-cyan-400" />
-              </div>
-            </div>
-            <div className="bg-gray-800 rounded-lg p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-gray-400 text-sm">Avg Profit Margin</p>
-                  <p className="text-2xl font-bold text-emerald-400">
-                    {Math.round(opportunities.reduce((sum, opp) => sum + (opp.profitMargin || 0), 0) / opportunities.length)}%
-                  </p>
-                </div>
-                <DollarSign className="w-8 h-8 text-emerald-400" />
-              </div>
-            </div>
-            <div className="bg-gray-800 rounded-lg p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-gray-400 text-sm">Total Potential Profit</p>
-                  <p className="text-2xl font-bold text-green-400">
-                    ${opportunities.reduce((sum, opp) => sum + (opp.profit || 0), 0).toLocaleString()}
-                  </p>
-                </div>
-                <TrendingUp className="w-8 h-8 text-green-400" />
-              </div>
-            </div>
-            {showFlexAsk && (
-              <div className="bg-gray-800 rounded-lg p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-gray-400 text-sm">Flex Ask Available</p>
-                    <p className="text-2xl font-bold text-purple-400">
-                      {opportunities.filter(opp => opp.flexAskAmount && opp.flexAskAmount > 0).length}
-                    </p>
-                  </div>
-                  <div className="w-8 h-8 flex items-center justify-center text-purple-400 text-xl">🚀</div>
+                <div className="flex flex-wrap gap-2 text-xs">
+                  {selectedSizes.length > 0 && (
+                    <span className="px-2 py-1 bg-blue-500/20 border border-blue-500/30 rounded text-blue-300">
+                      Sizes: {selectedSizes.join(', ')}
+                    </span>
+                  )}
+                  {selectedCategories.length > 0 && (
+                    <span className="px-2 py-1 bg-blue-500/20 border border-blue-500/30 rounded text-blue-300">
+                      Categories: {selectedCategories.join(', ')}
+                    </span>
+                  )}
+                  {(priceRange.min > 0 || priceRange.max < 1000) && (
+                    <span className="px-2 py-1 bg-blue-500/20 border border-blue-500/30 rounded text-blue-300">
+                      Price: ${priceRange.min} - ${priceRange.max}
+                    </span>
+                  )}
+                  {(profitRange.min > 0 || profitRange.max < 500) && (
+                    <span className="px-2 py-1 bg-blue-500/20 border border-blue-500/30 rounded text-blue-300">
+                      Profit: ${profitRange.min} - ${profitRange.max}
+                    </span>
+                  )}
+                  <span className="px-2 py-1 bg-gray-500/20 border border-gray-500/30 rounded text-gray-300">
+                    Showing {filteredOpportunities.length} of {opportunities.length}
+                  </span>
                 </div>
               </div>
             )}
+            
+            {/* Main Stats Grid */}
+            <div className={`grid grid-cols-1 gap-4 sm:gap-6 ${showFlexAsk ? 'md:grid-cols-5' : 'md:grid-cols-4'}`}>
+              <div className="bg-gray-800 rounded-lg p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-400 text-sm">Found / Filtered</p>
+                    <p className="text-2xl font-bold text-cyan-400">
+                      {filteredOpportunities.length} / {opportunities.length}
+                    </p>
+                  </div>
+                  <TrendingUp className="w-8 h-8 text-cyan-400" />
+                </div>
+              </div>
+              
+              <div className="bg-gray-800 rounded-lg p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-400 text-sm">Avg Profit</p>
+                    <p className="text-2xl font-bold text-emerald-400">
+                      ${filteredOpportunities.length > 0 ? 
+                        Math.round(filteredOpportunities.reduce((sum, opp) => sum + (opp.profit || 0), 0) / filteredOpportunities.length) 
+                        : 0}
+                    </p>
+                  </div>
+                  <DollarSign className="w-8 h-8 text-emerald-400" />
+                </div>
+              </div>
+              
+              <div className="bg-gray-800 rounded-lg p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-400 text-sm">Avg Margin</p>
+                    <p className="text-2xl font-bold text-green-400">
+                      {filteredOpportunities.length > 0 ? 
+                        Math.round(filteredOpportunities.reduce((sum, opp) => sum + (opp.profitMargin || 0), 0) / filteredOpportunities.length) 
+                        : 0}%
+                    </p>
+                  </div>
+                  <BarChart3 className="w-8 h-8 text-green-400" />
+                </div>
+              </div>
+              
+              <div className="bg-gray-800 rounded-lg p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-400 text-sm">Total Value</p>
+                    <p className="text-2xl font-bold text-yellow-400">
+                      ${filteredOpportunities.reduce((sum, opp) => sum + (opp.profit || 0), 0).toLocaleString()}
+                    </p>
+                  </div>
+                  <Target className="w-8 h-8 text-yellow-400" />
+                </div>
+              </div>
+              
+              {showFlexAsk && (
+                <div className="bg-gray-800 rounded-lg p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-gray-400 text-sm">Fast Sellers</p>
+                      <p className="text-2xl font-bold text-purple-400">
+                        {filteredOpportunities.filter(opp => opp.flexAskAmount && opp.flexAskAmount > 0).length}
+                      </p>
+                    </div>
+                    <Zap className="w-8 h-8 text-purple-400" />
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -1316,7 +1757,7 @@ const StockXArbitrage: React.FC = () => {
 
         {/* Opportunities List */}
         <div className="space-y-4">
-          {opportunities.map((opportunity) => (
+          {filteredOpportunities.map((opportunity) => (
             <div key={opportunity.id} className="bg-gray-800 rounded-lg p-4 sm:p-6">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-4">
                 <div className="flex items-center gap-3 sm:gap-4">
@@ -1349,14 +1790,25 @@ const StockXArbitrage: React.FC = () => {
                 </div>
               </div>
 
-              <div className={`grid gap-3 sm:gap-4 mb-4 ${showFlexAsk && opportunity.flexAskAmount ? 'grid-cols-3' : 'grid-cols-2'}`}>
+              <div className={`grid gap-3 sm:gap-4 mb-4 ${showFlexAsk && opportunity.flexAskAmount ? 'grid-cols-4' : 'grid-cols-3'}`}>
                 <div className="text-center p-3 bg-gray-700 rounded-lg">
                   <p className="text-xs sm:text-sm text-gray-400 mb-1">Cost Price</p>
                   <p className="text-base sm:text-lg font-semibold text-green-400">${(opportunity.costPrice || 0).toFixed(2)}</p>
+                  {opportunity.bidAmount && (
+                    <p className="text-xs text-gray-400 mt-1">Bid: ${opportunity.bidAmount.toFixed(2)}</p>
+                  )}
                 </div>
                 <div className="text-center p-3 bg-gray-700 rounded-lg">
                   <p className="text-xs sm:text-sm text-gray-400 mb-1">Standard Ask</p>
                   <p className="text-base sm:text-lg font-semibold text-cyan-400">${(opportunity.sellingPrice || 0).toFixed(2)}</p>
+                  {opportunity.lastSalePrice && (
+                    <p className="text-xs text-gray-400 mt-1">Last: ${opportunity.lastSalePrice.toFixed(2)}</p>
+                  )}
+                </div>
+                <div className="text-center p-3 bg-emerald-900/30 border border-emerald-500/30 rounded-lg">
+                  <p className="text-xs sm:text-sm text-emerald-300 mb-1">Net Profit</p>
+                  <p className="text-base sm:text-lg font-semibold text-emerald-400">${(opportunity.profit || 0).toFixed(2)}</p>
+                  <p className="text-xs text-emerald-300 mt-1">{(opportunity.profitMargin || 0).toFixed(1)}% margin</p>
                 </div>
                 {showFlexAsk && opportunity.flexAskAmount && (
                   <div className="text-center p-3 bg-purple-900/30 border border-purple-500/30 rounded-lg">
@@ -1367,10 +1819,91 @@ const StockXArbitrage: React.FC = () => {
                 )}
               </div>
 
+              {/* Enhanced Metrics Row */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4 text-xs">
+                <div className="flex items-center gap-1 text-gray-400">
+                  <Activity className="w-3 h-3" />
+                  <span>Volume: {opportunity.bidAskVolume || 'N/A'}</span>
+                </div>
+                <div className="flex items-center gap-1 text-gray-400">
+                  <Gauge className="w-3 h-3" />
+                  <span>Velocity: {opportunity.velocityScore || 'N/A'}</span>
+                </div>
+                <div className="flex items-center gap-1 text-gray-400">
+                  <Clock className="w-3 h-3" />
+                  <span>Est. Time: {opportunity.estimatedSellTime || 'Unknown'}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <TrendingUp className="w-3 h-3" />
+                  <span className={`
+                    ${opportunity.trendDirection === 'up' ? 'text-green-400' : 
+                      opportunity.trendDirection === 'down' ? 'text-red-400' : 'text-gray-400'}
+                  `}>
+                    Trend: {opportunity.trendDirection || 'stable'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Risk Assessment */}
+              {opportunity.riskScore !== undefined && (
+                <div className="mb-4 p-3 bg-gray-700/50 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-gray-300">Risk Assessment</span>
+                    <span className={`text-sm font-semibold ${
+                      opportunity.riskScore <= 30 ? 'text-green-400' :
+                      opportunity.riskScore <= 60 ? 'text-yellow-400' : 'text-red-400'
+                    }`}>
+                      {opportunity.riskScore <= 30 ? 'Low' :
+                       opportunity.riskScore <= 60 ? 'Medium' : 'High'} Risk
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-600 rounded-full h-2">
+                    <div 
+                      className={`h-2 rounded-full ${
+                        opportunity.riskScore <= 30 ? 'bg-green-400' :
+                        opportunity.riskScore <= 60 ? 'bg-yellow-400' : 'bg-red-400'
+                      }`}
+                      style={{ width: `${opportunity.riskScore}%` }}
+                    ></div>
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-400 mt-1">
+                    <span>Safe</span>
+                    <span>Risky</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Price History Chart */}
+              {opportunity.priceHistory && opportunity.priceHistory.length > 0 && (
+                <div className="mb-4 p-3 bg-gray-700/30 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-gray-300">Price Trend (7 days)</span>
+                    <div className="flex items-center gap-2">
+                      <MiniPriceChart 
+                        priceHistory={opportunity.priceHistory} 
+                        width={100} 
+                        height={30}
+                        className="rounded"
+                      />
+                      <span className={`text-xs ${
+                        opportunity.trendDirection === 'up' ? 'text-green-400' : 
+                        opportunity.trendDirection === 'down' ? 'text-red-400' : 'text-gray-400'
+                      }`}>
+                        {opportunity.trendDirection === 'up' ? '↗' : 
+                         opportunity.trendDirection === 'down' ? '↘' : '→'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="flex justify-between items-center">
                 <div className="text-sm text-gray-400">
                   <p>Product ID: {opportunity.productId}</p>
                   <p>Variant ID: {opportunity.variantId}</p>
+                  {opportunity.category && (
+                    <p className="text-blue-400 mt-1">Category: {opportunity.category}</p>
+                  )}
                   {showFlexAsk && opportunity.flexAskAmount && (
                     <p className="text-purple-400 mt-1">
                       🚀 Flex Ask Available: ${opportunity.flexAskAmount.toFixed(2)}
@@ -1537,7 +2070,7 @@ const StockXArbitrage: React.FC = () => {
               {isLoadingMore ? 'Loading More...' : 'Load More Results'}
             </button>
             <p className="text-gray-400 text-sm mt-2">
-              Showing {opportunities.length} results - Page {currentPage}
+              Showing {filteredOpportunities.length} filtered of {opportunities.length} total results - Page {currentPage}
             </p>
           </div>
         )}
