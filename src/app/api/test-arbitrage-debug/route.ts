@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     
     // Test actual StockX search call
     const baseUrl = 'https://www.solesmarket.com';
-    const stockxApiUrl = `${baseUrl}/api/stockx/search?query=${encodeURIComponent(stockxQuery)}&limit=5`;
+    const stockxApiUrl = `${baseUrl}/api/stockx/public-search?query=${encodeURIComponent(stockxQuery)}&limit=10`;
     debugLog.push(`StockX API URL: ${stockxApiUrl}`);
     
     const stockxResponse = await fetch(stockxApiUrl, {

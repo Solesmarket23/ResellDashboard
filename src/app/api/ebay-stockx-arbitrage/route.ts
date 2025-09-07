@@ -224,7 +224,7 @@ async function searchStockXForProduct(query: string): Promise<any[]> {
     
     // Fix: Use the correct domain instead of env variable that might be undefined
     const baseUrl = 'https://www.solesmarket.com';
-    const apiUrl = `${baseUrl}/api/stockx/search?query=${encodeURIComponent(query)}&limit=5`;
+    const apiUrl = `${baseUrl}/api/stockx/public-search?query=${encodeURIComponent(query)}&limit=10`;
     
     console.log(`🌐 StockX API URL: ${apiUrl}`);
     
