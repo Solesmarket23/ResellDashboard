@@ -407,22 +407,6 @@ export async function GET(request: NextRequest) {
     // Step 2: Process each eBay listing
     const opportunities: ArbitrageOpportunity[] = [];
     
-    // TEMPORARY: Add a mock opportunity to test the UI works
-    if (query.toLowerCase().includes('test')) {
-      opportunities.push({
-        ebayTitle: 'TEST: Nike Air Jordan 4 Retro "Bred" 2019 Size 10',
-        ebayPrice: 200,
-        ebayUrl: 'https://ebay.com/item/test',
-        stockxPrice: 280,
-        stockxUrl: 'https://stockx.com/test',
-        profit: 50,
-        profitMargin: 25,
-        totalFees: 30,
-        roi: 25,
-        confidence: 85,
-        matchedProduct: 'Air Jordan 4 Retro Bred (2019)'
-      });
-    }
     
     for (const listing of ebayListings) {
       // Skip if over max price
@@ -482,6 +466,24 @@ export async function GET(request: NextRequest) {
     opportunities.sort((a, b) => b.profit - a.profit);
     
     console.log(`🎯 Found ${opportunities.length} profitable opportunities`);
+    
+    // TEMPORARY: Add debug opportunity if none found to help troubleshoot
+    if (opportunities.length === 0) {
+      console.log(`🔧 No opportunities found, adding debug opportunity to show pipeline is working`);
+      opportunities.push({
+        ebayTitle: `DEBUG: Found ${ebayListings.length} eBay listings for "${query}" but no profitable matches`,
+        ebayPrice: 150,
+        ebayUrl: 'https://ebay.com/item/debug',
+        stockxPrice: 200,
+        stockxUrl: 'https://stockx.com/debug',
+        profit: 25,
+        profitMargin: 16.7,
+        totalFees: 25,
+        roi: 16.7,
+        confidence: 50,
+        matchedProduct: `Debug: Check StockX matching or profit calculations for "${query}"`
+      });
+    }
     
     return NextResponse.json({
       success: true,
