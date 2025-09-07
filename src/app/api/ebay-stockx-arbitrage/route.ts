@@ -222,15 +222,24 @@ async function searchStockXForProduct(query: string): Promise<any[]> {
   try {
     console.log(`🔍 Searching StockX for: ${query}`);
     
-    // Use the same endpoint that the working StockX components use
-    const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/stockx/search?query=${encodeURIComponent(query)}&limit=5`, {
+    // Fix: Use the correct domain instead of env variable that might be undefined
+    const baseUrl = 'https://www.solesmarket.com';
+    const apiUrl = `${baseUrl}/api/stockx/search?query=${encodeURIComponent(query)}&limit=5`;
+    
+    console.log(`🌐 StockX API URL: ${apiUrl}`);
+    
+    const response = await fetch(apiUrl, {
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (compatible; solesmarket-arbitrage)'
       }
     });
     
+    console.log(`📡 StockX API response status: ${response.status}`);
+    
     if (response.ok) {
       const data = await response.json();
+      console.log(`📦 StockX API response data:`, data);
       
       // Handle the response format from the working StockX search API
       if (data.success && data.data?.products?.length > 0) {
@@ -242,6 +251,7 @@ async function searchStockXForProduct(query: string): Promise<any[]> {
         return data.products;
       } else {
         console.log(`⚠️ No StockX products found for: ${query}`);
+        console.log(`📄 Full StockX response:`, JSON.stringify(data, null, 2));
         return [];
       }
     } else {

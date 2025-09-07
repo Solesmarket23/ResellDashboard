@@ -38,7 +38,16 @@ export async function GET(request: NextRequest) {
     debugLog.push(`StockX query: "${stockxQuery}"`);
     
     // Test actual StockX search call
-    const stockxResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/stockx/search?query=${encodeURIComponent(stockxQuery)}&limit=5`);
+    const baseUrl = 'https://www.solesmarket.com';
+    const stockxApiUrl = `${baseUrl}/api/stockx/search?query=${encodeURIComponent(stockxQuery)}&limit=5`;
+    debugLog.push(`StockX API URL: ${stockxApiUrl}`);
+    
+    const stockxResponse = await fetch(stockxApiUrl, {
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (compatible; solesmarket-debug)'
+      }
+    });
     debugLog.push(`StockX API status: ${stockxResponse.status}`);
     
     if (stockxResponse.ok) {
