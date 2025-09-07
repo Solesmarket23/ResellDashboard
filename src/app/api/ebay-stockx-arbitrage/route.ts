@@ -474,6 +474,32 @@ export async function GET(request: NextRequest) {
       
       if (stockxProducts.length === 0) {
         console.log(`⚠️ No StockX matches found for: "${stockxQuery}"`);
+        
+        // Create a "no match" entry for debugging so users can see what was processed
+        opportunities.push({
+          productId: `ebay-${listing.itemId}`,
+          variantId: 'no-match',
+          productName: listing.title,
+          brand: parsedDetails.brand || 'Unknown',
+          size: parsedDetails.size || 'Unknown',
+          imageUrl: listing.image,
+          costPrice: listing.price + (listing.shipping || 0),
+          askAmount: 0,
+          bidAmount: 0,
+          profit: -999, // Clearly unprofitable
+          profitMargin: -100,
+          fees: {
+            ebayFee: 0,
+            paypalFee: 0,
+            stockxFee: 0,
+            shippingCost: listing.shipping || 0
+          },
+          ebayUrl: listing.url,
+          stockxUrl: '',
+          confidence: 100, // High confidence that this listing was processed (for debugging display)
+          source: 'ebay',
+          notes: `No StockX match found for query: "${stockxQuery}"`
+        });
         continue;
       }
       
