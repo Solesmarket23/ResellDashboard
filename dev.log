@@ -2,13 +2,71 @@
 > template-2@0.1.0 dev
 > next dev -H 0.0.0.0
 
+ ⚠ Port 3000 is in use, trying 3001 instead.
   ▲ Next.js 14.2.7
-  - Local:        http://localhost:3000
-  - Network:      http://0.0.0.0:3000
-  - Environments: .env.local
+  - Local:        http://localhost:3001
+  - Network:      http://0.0.0.0:3001
+  - Environments: .env.development.local, .env.local
   - Experiments (use with caution):
     · forceSwcTransforms
 
  ✓ Starting...
- ✓ Ready in 1205ms
-   Reload env: .env.local
+ ✓ Ready in 1470ms
+ ✓ Compiled /src/middleware in 269ms (116 modules)
+🔐 Middleware checking path: /api/ebay-stockx-arbitrage
+✅ Public route, allowing access
+ ✓ Compiled /api/ebay-stockx-arbitrage in 182ms (100 modules)
+🔍 Searching eBay for: "jordan" with minProfit: -50%, maxPrice: $2000
+⚠️ No eBay App ID found, using mock data for development
+📦 Found 3 eBay listings
+📦 Sample listing: {
+  title: 'Nike Air Jordan 1 High OG "Bred Toe" Size 10 NEW',
+  price: 180,
+  currency: 'USD',
+  image: '/placeholder-shoe.png',
+  url: 'https://ebay.com/item/mock1',
+  seller: 'sneaker_connect',
+  condition: 'New',
+  source: 'eBay (Mock)',
+  itemId: 'mock1',
+  shipping: 12
+}
+🔍 Processing: Nike Air Jordan 1 High OG "Bred Toe" Size 10 NEW
+📝 Parsed details: {
+  brand: 'nike',
+  model: 'Air Jordan 1 High OG Bred Toe',
+  size: '10',
+  possibleSizes: [ '10' ]
+}
+🔍 StockX query: "nike Air Jordan 1 High OG Bred Toe"
+📈 Found 0 StockX matches
+🔍 Processing: Adidas Yeezy Boost 350 V2 "Zebra" Size 9.5
+📝 Parsed details: {
+  brand: 'adidas',
+  model: 'Yeezy Boost 350 V2 Zebra',
+  size: '9.5',
+  possibleSizes: [ '9.5' ]
+}
+🔍 StockX query: "adidas Yeezy Boost 350 V2 Zebra"
+📈 Found 0 StockX matches
+🔍 Processing: Nike Dunk Low "Panda" Black White Size 11
+📝 Parsed details: {
+  brand: 'nike',
+  model: 'Dunk Low Panda Black White',
+  size: '11',
+  possibleSizes: [ '11' ]
+}
+🔍 StockX query: "nike Dunk Low Panda Black White"
+📈 Found 0 StockX matches
+🎯 Found 0 profitable opportunities
+ GET /api/ebay-stockx-arbitrage?query=jordan&minProfitMargin=-50&maxPrice=2000 200 in 1615ms
+🔐 Middleware checking path: /api/stockx/search
+✅ Public route, allowing access
+ ○ Compiling /api/stockx/search ...
+ ✓ Compiled /api/stockx/search in 851ms (353 modules)
+🔧 Firebase not initialized - server-side rendering
+ GET /api/stockx/search?query=nike+air+jordan+1 401 in 1034ms
+🔐 Middleware checking path: /api/stockx/search
+✅ Public route, allowing access
+ GET /api/stockx/search?query=nike+air+jordan+1 401 in 8ms
+[?25h

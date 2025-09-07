@@ -188,11 +188,13 @@ function generateStockXQuery(ebayTitle: string, parsedDetails: { brand?: string;
   }
 }
 
-// Search StockX for matching products
+// Search StockX for matching products using the same endpoint as the working StockX arbitrage finder
 async function searchStockXForProduct(query: string): Promise<any[]> {
   try {
-    // Use your existing StockX search API
-    const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/stockx/public-search?query=${encodeURIComponent(query)}&limit=5`, {
+    console.log(`🔍 Searching StockX for: ${query}`);
+    
+    // Use the same endpoint that the working StockX components use
+    const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/stockx/search?query=${encodeURIComponent(query)}&limit=5`, {
       headers: {
         'Content-Type': 'application/json'
       }
@@ -200,14 +202,31 @@ async function searchStockXForProduct(query: string): Promise<any[]> {
     
     if (response.ok) {
       const data = await response.json();
-      return data.products || [];
+      
+      // Handle the response format from the working StockX search API
+      if (data.success && data.data?.products?.length > 0) {
+        console.log(`✅ Found ${data.data.products.length} StockX products`);
+        return data.data.products;
+      } else if (data.products?.length > 0) {
+        // Alternative response format
+        console.log(`✅ Found ${data.products.length} StockX products (alt format)`);
+        return data.products;
+      } else {
+        console.log(`⚠️ No StockX products found for: ${query}`);
+        return [];
+      }
+    } else {
+      const errorData = await response.text();
+      console.log(`❌ StockX search failed (${response.status}): ${errorData}`);
+      return [];
     }
+    
   } catch (error) {
-    console.log('StockX search error:', error);
+    console.log('❌ StockX search error:', error);
+    return [];
   }
-  
-  return [];
 }
+
 
 // Get StockX market data for a specific product and size
 async function getStockXMarketData(productId: string, size?: string): Promise<StockXPriceData | null> {
