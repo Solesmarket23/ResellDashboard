@@ -477,28 +477,26 @@ export async function GET(request: NextRequest) {
         
         // Create a "no match" entry for debugging so users can see what was processed
         opportunities.push({
-          productId: `ebay-${listing.itemId}`,
-          variantId: 'no-match',
-          productName: listing.title,
-          brand: parsedDetails.brand || 'Unknown',
-          size: parsedDetails.size || 'Unknown',
-          imageUrl: listing.image,
-          costPrice: listing.price + (listing.shipping || 0),
-          askAmount: 0,
-          bidAmount: 0,
+          ebayListing: {
+            itemId: listing.itemId,
+            title: listing.title,
+            price: listing.price,
+            currency: listing.currency,
+            image: listing.image,
+            url: listing.url,
+            seller: listing.seller,
+            condition: listing.condition,
+            shipping: listing.shipping,
+            source: 'ebay'
+          },
+          stockxData: null,
           profit: -999, // Clearly unprofitable
           profitMargin: -100,
-          fees: {
-            ebayFee: 0,
-            paypalFee: 0,
-            stockxFee: 0,
-            shippingCost: listing.shipping || 0
-          },
-          ebayUrl: listing.url,
-          stockxUrl: '',
-          confidence: 100, // High confidence that this listing was processed (for debugging display)
-          source: 'ebay',
-          notes: `No StockX match found for query: "${stockxQuery}"`
+          totalCost: listing.price + (listing.shipping || 0),
+          netRevenue: 0,
+          roi: -100,
+          matchedProduct: `No StockX match found for query: "${stockxQuery}"`,
+          confidence: 100 // High confidence that this listing was processed (for debugging display)
         });
         continue;
       }
