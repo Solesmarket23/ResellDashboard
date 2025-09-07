@@ -37,6 +37,31 @@ interface ArbitrageOpportunity {
   confidence: number; // 0-100 confidence in the match
 }
 
+// Generate eBay application token from App ID
+async function getEbayApplicationToken(appId: string): Promise<string | null> {
+  try {
+    const response = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${Buffer.from(`${appId}:`).toString('base64')}`
+      },
+      body: 'grant_type=client_credentials&scope=https://api.ebay.com/oauth/api_scope'
+    });
+
+    if (!response.ok) {
+      console.error('eBay token error:', response.status, await response.text());
+      return null;
+    }
+
+    const data = await response.json();
+    return data.access_token;
+  } catch (error) {
+    console.error('eBay token generation failed:', error);
+    return null;
+  }
+}
+
 // Enhanced eBay search with better product parsing
 async function searchEbayForShoes(query: string, limit: number = 50): Promise<EbayListing[]> {
   const ebayAppId = process.env.EBAY_APP_ID;
@@ -47,6 +72,14 @@ async function searchEbayForShoes(query: string, limit: number = 50): Promise<Eb
   }
 
   try {
+    // Get application token
+    const accessToken = await getEbayApplicationToken(ebayAppId);
+    
+    if (!accessToken) {
+      console.log('⚠️ Could not get eBay access token, using mock data');
+      return generateMockEbayListings(query, limit);
+    }
+
     // Search in sneakers category (15709) and athletic shoes (3034)
     const categoryIds = '15709,3034';
     const apiUrl = `https://api.ebay.com/buy/browse/v1/item_summary/search`;
@@ -62,7 +95,7 @@ async function searchEbayForShoes(query: string, limit: number = 50): Promise<Eb
 
     const response = await fetch(`${apiUrl}?${params}`, {
       headers: {
-        'Authorization': `Bearer ${ebayAppId}`,
+        'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
         'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
       }
@@ -337,11 +370,12 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    console.log(`🔍 Searching eBay for: "${query}"`);
+    console.log(`🔍 Searching eBay for: "${query}" with minProfit: ${minProfitMargin}%, maxPrice: $${maxPrice}`);
     
     // Step 1: Search eBay for listings
     const ebayListings = await searchEbayForShoes(query, limit);
     console.log(`📦 Found ${ebayListings.length} eBay listings`);
+    console.log(`📦 Sample listing:`, ebayListings[0] || 'None');
     
     if (ebayListings.length === 0) {
       return NextResponse.json({
@@ -353,6 +387,23 @@ export async function GET(request: NextRequest) {
     
     // Step 2: Process each eBay listing
     const opportunities: ArbitrageOpportunity[] = [];
+    
+    // TEMPORARY: Add a mock opportunity to test the UI works
+    if (query.toLowerCase().includes('test')) {
+      opportunities.push({
+        ebayTitle: 'TEST: Nike Air Jordan 4 Retro "Bred" 2019 Size 10',
+        ebayPrice: 200,
+        ebayUrl: 'https://ebay.com/item/test',
+        stockxPrice: 280,
+        stockxUrl: 'https://stockx.com/test',
+        profit: 50,
+        profitMargin: 25,
+        totalFees: 30,
+        roi: 25,
+        confidence: 85,
+        matchedProduct: 'Air Jordan 4 Retro Bred (2019)'
+      });
+    }
     
     for (const listing of ebayListings) {
       // Skip if over max price
@@ -384,13 +435,19 @@ export async function GET(request: NextRequest) {
             // Calculate arbitrage opportunity
             const arbitrage = calculateArbitrage(listing, marketData);
             
-            if (arbitrage && arbitrage.profitMargin >= minProfitMargin && arbitrage.profit > 0) {
-              // Calculate match confidence
-              arbitrage.confidence = calculateMatchConfidence(listing.title, stockxProduct.title, parsedDetails);
-              arbitrage.matchedProduct = stockxProduct.title;
+            if (arbitrage) {
+              console.log(`💡 Arbitrage calc: Profit $${arbitrage.profit.toFixed(2)} (${arbitrage.profitMargin.toFixed(1)}%) - Min required: ${minProfitMargin}%`);
               
-              opportunities.push(arbitrage);
-              console.log(`✅ Opportunity: $${arbitrage.profit.toFixed(2)} profit (${arbitrage.profitMargin.toFixed(1)}%)`);
+              if (arbitrage.profitMargin >= minProfitMargin && arbitrage.profit > 0) {
+                // Calculate match confidence
+                arbitrage.confidence = calculateMatchConfidence(listing.title, stockxProduct.title, parsedDetails);
+                arbitrage.matchedProduct = stockxProduct.title;
+                
+                opportunities.push(arbitrage);
+                console.log(`✅ Opportunity: $${arbitrage.profit.toFixed(2)} profit (${arbitrage.profitMargin.toFixed(1)}%)`);
+              } else {
+                console.log(`❌ Filtered out: Profit too low or negative`);
+              }
             }
           }
         } catch (error) {

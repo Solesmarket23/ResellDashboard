@@ -47,6 +47,7 @@ const navigationItems = [
     items: [
       { id: 'dashboard', label: 'Dashboard', icon: Home },
       { id: 'purchases', label: 'Purchases', icon: ShoppingCart },
+      { id: 'purchase-management', label: 'Purchase Manager', icon: Package },
       { id: 'deliveries', label: 'Deliveries', icon: Truck },
       { id: 'sales', label: 'Sales', icon: TrendingUp },
       { id: 'profit-calculator', label: 'Profit Calculator', icon: Calculator },

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { TrendingUp, TrendingDown, DollarSign, ExternalLink, Search, AlertCircle, BarChart3, LogIn, CheckCircle, Bell, Twitter, Upload, Image, X, Filter, SortAsc, SortDesc, TrendingUpIcon, Activity, Clock, Zap, Target, Gauge } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, ExternalLink, Search, AlertCircle, BarChart3, LogIn, CheckCircle, Bell, Twitter, Upload, Image, X, Filter, SortAsc, SortDesc, TrendingUpIcon, Activity, Clock, Zap, Target, Gauge, Link, ShoppingCart, Receipt } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { shareToTwitter, generateShareImage, ArbitrageShareData } from '@/lib/twitter/twitterExport';
 import { generateEnhancedShareImage, EnhancedArbitrageShareData } from '@/lib/twitter/enhancedGraphics';
@@ -10,6 +10,8 @@ import { useAuth } from '@/lib/contexts/AuthContext';
 import { useSiteAuth } from '@/lib/hooks/useSiteAuth';
 import { usePriceMonitor } from '@/lib/contexts/PriceMonitorContext';
 import MiniPriceChart from './MiniPriceChart';
+import PurchaseLinkPopup from './PurchaseLinkPopup';
+import HistoricalSalesViewer from './HistoricalSalesViewer';
 
 // Enhanced placeholder component for StockX products since images aren't publicly accessible
 interface FallbackImageProps {
@@ -162,6 +164,24 @@ interface SearchFilters {
   sortOrder: 'asc' | 'desc';
 }
 
+interface PurchaseData {
+  orderNumber: string;
+  purchasePrice: number;
+  purchaseDate: string;
+  purchaseSource: string;
+  shippingCost?: number;
+  taxAmount?: number;
+  notes?: string;
+}
+
+interface LinkedPurchase {
+  opportunityId: string;
+  productId: string;
+  variantId: string;
+  purchaseData: PurchaseData;
+  linkedAt: string;
+}
+
 const StockXArbitrage: React.FC = () => {
   const { currentTheme } = useTheme();
   const isNeon = currentTheme.name.toLowerCase() === 'neon';
@@ -188,6 +208,15 @@ const StockXArbitrage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isAuthError, setIsAuthError] = useState(false);
+  
+  // Purchase tracking state
+  const [linkedPurchases, setLinkedPurchases] = useState<LinkedPurchase[]>([]);
+  const [showPurchasePopup, setShowPurchasePopup] = useState(false);
+  const [selectedOpportunity, setSelectedOpportunity] = useState<ArbitrageOpportunity | null>(null);
+  
+  // Historical sales state
+  const [showHistoricalSales, setShowHistoricalSales] = useState<{[key: string]: boolean}>({});
+  const [selectedHistoricalProduct, setSelectedHistoricalProduct] = useState<ArbitrageOpportunity | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [trackingMessage, setTrackingMessage] = useState<string | null>(null); // Separate message for tracking confirmations
   const [clickedButtons, setClickedButtons] = useState<Set<string>>(new Set()); // Track which buttons were clicked
@@ -869,6 +898,93 @@ const StockXArbitrage: React.FC = () => {
 
   // Apply filters to displayed opportunities
   const filteredOpportunities = applyFiltersAndSorting(opportunities);
+
+  // Load linked purchases from localStorage on component mount
+  useEffect(() => {
+    const savedPurchases = localStorage.getItem('linkedPurchases');
+    if (savedPurchases) {
+      try {
+        const purchases = JSON.parse(savedPurchases);
+        setLinkedPurchases(purchases);
+      } catch (error) {
+        console.error('Error loading linked purchases:', error);
+      }
+    }
+  }, []);
+
+  // Save linked purchases to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('linkedPurchases', JSON.stringify(linkedPurchases));
+  }, [linkedPurchases]);
+
+  // Function to get linked purchase for an opportunity
+  const getLinkedPurchase = (opportunity: ArbitrageOpportunity): LinkedPurchase | null => {
+    return linkedPurchases.find(
+      purchase => purchase.productId === opportunity.productId && 
+                  purchase.variantId === opportunity.variantId
+    ) || null;
+  };
+
+  // Function to calculate actual profit using linked purchase data
+  const calculateActualProfit = (opportunity: ArbitrageOpportunity): number | null => {
+    const linkedPurchase = getLinkedPurchase(opportunity);
+    if (!linkedPurchase || !opportunity.askAmount) return null;
+
+    const totalCost = linkedPurchase.purchaseData.purchasePrice + 
+                     (linkedPurchase.purchaseData.shippingCost || 0) + 
+                     (linkedPurchase.purchaseData.taxAmount || 0);
+    
+    const stockxFees = (opportunity.askAmount * 0.095) + 3; // Approximate StockX seller fees
+    
+    return opportunity.askAmount - stockxFees - totalCost;
+  };
+
+  // Function to handle purchase linking
+  const handleLinkPurchase = (opportunity: ArbitrageOpportunity) => {
+    setSelectedOpportunity(opportunity);
+    setShowPurchasePopup(true);
+  };
+
+  // Function to save purchase data
+  const handleSavePurchase = async (opportunity: ArbitrageOpportunity, purchaseData: PurchaseData) => {
+    const newLinkedPurchase: LinkedPurchase = {
+      opportunityId: opportunity.id,
+      productId: opportunity.productId,
+      variantId: opportunity.variantId,
+      purchaseData,
+      linkedAt: new Date().toISOString()
+    };
+
+    // Remove any existing purchase for this product/variant and add the new one
+    setLinkedPurchases(prev => {
+      const filtered = prev.filter(
+        p => !(p.productId === opportunity.productId && p.variantId === opportunity.variantId)
+      );
+      return [...filtered, newLinkedPurchase];
+    });
+
+    setSuccessMessage(`✅ Purchase linked successfully! Order #${purchaseData.orderNumber}`);
+    setTimeout(() => setSuccessMessage(null), 5000);
+  };
+
+  // Function to remove a linked purchase
+  const handleRemovePurchase = (opportunity: ArbitrageOpportunity) => {
+    setLinkedPurchases(prev => 
+      prev.filter(p => !(p.productId === opportunity.productId && p.variantId === opportunity.variantId))
+    );
+    setSuccessMessage(`🗑️ Purchase link removed for ${opportunity.title}`);
+    setTimeout(() => setSuccessMessage(null), 3000);
+  };
+
+  // Function to toggle historical sales view
+  const toggleHistoricalSales = (opportunity: ArbitrageOpportunity) => {
+    const key = `${opportunity.productId}-${opportunity.variantId}`;
+    setShowHistoricalSales(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+    setSelectedHistoricalProduct(opportunity);
+  };
 
   const addToFlexAskMonitor = (opportunity: ArbitrageOpportunity) => {
     console.log('🔔 Track Flex Ask button clicked!');
@@ -1653,7 +1769,7 @@ const StockXArbitrage: React.FC = () => {
             )}
             
             {/* Main Stats Grid */}
-            <div className={`grid grid-cols-1 gap-4 sm:gap-6 ${showFlexAsk ? 'md:grid-cols-5' : 'md:grid-cols-4'}`}>
+            <div className={`grid grid-cols-1 gap-4 sm:gap-6 ${showFlexAsk ? 'md:grid-cols-6' : 'md:grid-cols-5'}`}>
               <div className="bg-gray-800 rounded-lg p-6">
                 <div className="flex items-center justify-between">
                   <div>
@@ -1703,6 +1819,18 @@ const StockXArbitrage: React.FC = () => {
                     </p>
                   </div>
                   <Target className="w-8 h-8 text-yellow-400" />
+                </div>
+              </div>
+              
+              <div className="bg-gray-800 rounded-lg p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-400 text-sm">Linked Purchases</p>
+                    <p className="text-2xl font-bold text-orange-400">
+                      {filteredOpportunities.filter(opp => getLinkedPurchase(opp)).length}
+                    </p>
+                  </div>
+                  <ShoppingCart className="w-8 h-8 text-orange-400" />
                 </div>
               </div>
               
@@ -1911,6 +2039,49 @@ const StockXArbitrage: React.FC = () => {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
+                  {/* Purchase Tracking Button */}
+                  {(() => {
+                    const linkedPurchase = getLinkedPurchase(opportunity);
+                    const actualProfit = calculateActualProfit(opportunity);
+                    
+                    return linkedPurchase ? (
+                      <div className="flex items-center gap-2">
+                        <div className="text-right text-sm">
+                          <p className="text-green-400 font-semibold">
+                            Actual: ${actualProfit?.toFixed(2) || 'N/A'}
+                          </p>
+                          <p className="text-gray-400 text-xs">
+                            Order #{linkedPurchase.purchaseData.orderNumber}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleLinkPurchase(opportunity)}
+                          className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-3 rounded-lg transition-colors flex items-center gap-2"
+                          title="Edit Purchase"
+                        >
+                          <Receipt className="w-4 h-4" />
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleRemovePurchase(opportunity)}
+                          className="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-2 rounded-lg transition-colors"
+                          title="Remove Purchase Link"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => handleLinkPurchase(opportunity)}
+                        className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
+                        title="Link Purchase"
+                      >
+                        <Link className="w-4 h-4" />
+                        Link Purchase
+                      </button>
+                    );
+                  })()}
+                  
                   <button
                     onClick={() => handleTwitterExport(opportunity)}
                     className="bg-black hover:bg-gray-900 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2 border border-gray-700"
@@ -1918,6 +2089,15 @@ const StockXArbitrage: React.FC = () => {
                   >
                     <Twitter className="w-4 h-4" />
                     Share
+                  </button>
+                  
+                  <button
+                    onClick={() => toggleHistoricalSales(opportunity)}
+                    className="bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
+                    title="View Sales History"
+                  >
+                    <BarChart3 className="w-4 h-4" />
+                    Sales History
                   </button>
                   
                   {/* Price Monitor Button */}
@@ -2054,6 +2234,18 @@ const StockXArbitrage: React.FC = () => {
                   </button>
                 </div>
               </div>
+
+              {/* Historical Sales Viewer */}
+              {showHistoricalSales[`${opportunity.productId}-${opportunity.variantId}`] && (
+                <div className="mt-6 border-t border-gray-700 pt-6">
+                  <HistoricalSalesViewer
+                    productId={opportunity.productId}
+                    variantId={opportunity.variantId}
+                    productName={opportunity.productName}
+                    size={opportunity.size}
+                  />
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -2083,6 +2275,18 @@ const StockXArbitrage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Purchase Link Popup */}
+      <PurchaseLinkPopup
+        isOpen={showPurchasePopup}
+        onClose={() => {
+          setShowPurchasePopup(false);
+          setSelectedOpportunity(null);
+        }}
+        opportunity={selectedOpportunity}
+        onSavePurchase={handleSavePurchase}
+        existingPurchase={selectedOpportunity ? getLinkedPurchase(selectedOpportunity)?.purchaseData : null}
+      />
     </div>
   );
 };

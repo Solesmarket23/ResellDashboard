@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, DollarSign, Package, Clock, CheckCircle, AlertCircle, Filter, ExternalLink, RefreshCw, List, Search, Calculator, BarChart3 } from 'lucide-react';
+import { TrendingUp, DollarSign, Package, Clock, CheckCircle, AlertCircle, Filter, ExternalLink, RefreshCw, List, Search, Calculator, BarChart3, Link, Receipt, ShoppingCart } from 'lucide-react';
 import StockXPayoutRefresher from './StockXPayoutRefresher';
 import StockXExportAll from './StockXExportAll';
 import StockXCompleteImport from './StockXCompleteImport';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { getDocuments } from '@/lib/firebase/firebaseUtils';
 import { StockXSale } from '@/lib/types/stockx';
+import PurchaseLinkPopup from './PurchaseLinkPopup';
 
 interface SaleData {
   id: string;
@@ -62,6 +63,12 @@ const StockXSales: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(20);
   const [showPayoutRefresher, setShowPayoutRefresher] = useState(false);
+  
+  // Purchase tracking state
+  const [linkedPurchases, setLinkedPurchases] = useState<any[]>([]);
+  const [showPurchasePopup, setShowPurchasePopup] = useState(false);
+  const [selectedSale, setSelectedSale] = useState<SaleData | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const fetchSales = async (page: number = 1, status: string = '') => {
     setIsLoading(true);
@@ -133,6 +140,80 @@ const StockXSales: React.FC = () => {
   const handleFilterChange = (newStatus: string) => {
     setStatusFilter(newStatus);
     // Filtering is now handled by displayedSales memo
+  };
+
+  // Purchase tracking functions
+  useEffect(() => {
+    const savedPurchases = localStorage.getItem('allPurchases');
+    if (savedPurchases) {
+      try {
+        setLinkedPurchases(JSON.parse(savedPurchases));
+      } catch (error) {
+        console.error('Error loading purchases:', error);
+      }
+    }
+  }, []);
+
+  const getLinkedPurchase = (sale: SaleData) => {
+    return linkedPurchases.find(purchase => 
+      purchase.productId === sale.product.id && 
+      purchase.variantId === sale.variant.id
+    );
+  };
+
+  const calculateActualProfit = (sale: SaleData) => {
+    const linkedPurchase = getLinkedPurchase(sale);
+    if (!linkedPurchase) return null;
+
+    const totalCost = linkedPurchase.purchaseData.purchasePrice + 
+                     (linkedPurchase.purchaseData.shippingCost || 0) + 
+                     (linkedPurchase.purchaseData.taxAmount || 0);
+    
+    return sale.pricing.payout - totalCost;
+  };
+
+  const handleLinkPurchase = (sale: SaleData) => {
+    setSelectedSale(sale);
+    setShowPurchasePopup(true);
+  };
+
+  const handleSavePurchase = async (saleData: any, purchaseData: any) => {
+    // Update the purchases in localStorage through the purchase management system
+    const allPurchases = JSON.parse(localStorage.getItem('allPurchases') || '[]');
+    
+    const newPurchase = {
+      id: `${saleData.product.id}-${saleData.variant.id}`,
+      productId: saleData.product.id,
+      variantId: saleData.variant.id,
+      productName: saleData.product.name,
+      brand: saleData.product.brand,
+      size: saleData.variant.size,
+      imageUrl: saleData.product.imageUrl,
+      purchaseData,
+      linkedAt: new Date().toISOString(),
+      status: 'sold',
+      soldPrice: saleData.pricing.salePrice,
+      soldDate: saleData.createdAt,
+      soldPlatform: 'StockX',
+      fees: saleData.pricing.totalFees,
+      actualProfit: saleData.pricing.payout - (
+        purchaseData.purchasePrice + 
+        (purchaseData.shippingCost || 0) + 
+        (purchaseData.taxAmount || 0)
+      )
+    };
+
+    // Remove existing and add new
+    const filteredPurchases = allPurchases.filter((p: any) => 
+      !(p.productId === saleData.product.id && p.variantId === saleData.variant.id)
+    );
+    
+    const updatedPurchases = [...filteredPurchases, newPurchase];
+    localStorage.setItem('allPurchases', JSON.stringify(updatedPurchases));
+    setLinkedPurchases(updatedPurchases);
+
+    setSuccessMessage(`✅ Purchase linked to sale: ${purchaseData.orderNumber}`);
+    setTimeout(() => setSuccessMessage(null), 5000);
   };
 
   // Filter sales based on status
@@ -626,8 +707,47 @@ const StockXSales: React.FC = () => {
                 </div>
               )}
 
-              {sale.product.urlKey && (
-                <div className="mt-4 flex justify-end">
+              <div className="mt-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                {/* Purchase Tracking */}
+                <div className="flex items-center gap-3">
+                  {(() => {
+                    const linkedPurchase = getLinkedPurchase(sale);
+                    const actualProfit = calculateActualProfit(sale);
+                    
+                    return linkedPurchase ? (
+                      <div className="flex items-center gap-3">
+                        <div className="text-left">
+                          <p className="text-green-400 font-semibold text-sm">
+                            Actual Profit: ${actualProfit?.toFixed(2) || 'N/A'}
+                          </p>
+                          <p className="text-gray-400 text-xs">
+                            Order #{linkedPurchase.purchaseData.orderNumber}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleLinkPurchase(sale)}
+                          className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-3 rounded-lg transition-colors flex items-center gap-2"
+                          title="Edit Purchase"
+                        >
+                          <Receipt className="w-4 h-4" />
+                          Edit
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => handleLinkPurchase(sale)}
+                        className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
+                        title="Link Purchase"
+                      >
+                        <Link className="w-4 h-4" />
+                        Link Purchase
+                      </button>
+                    );
+                  })()}
+                </div>
+
+                {/* StockX Link */}
+                {sale.product.urlKey && (
                   <a
                     href={`https://stockx.com/${sale.product.urlKey}`}
                     target="_blank"
@@ -637,8 +757,8 @@ const StockXSales: React.FC = () => {
                     <ExternalLink className="w-4 h-4" />
                     View on StockX
                   </a>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -727,6 +847,34 @@ const StockXSales: React.FC = () => {
 
         {/* Note: Pagination removed as we're loading all sales from Firebase */}
       </div>
+
+      {/* Success Message */}
+      {successMessage && (
+        <div className="fixed top-4 right-4 z-50 p-4 bg-green-900/20 border border-green-500/30 rounded-lg text-green-400 flex items-center gap-2">
+          <CheckCircle className="w-5 h-5" />
+          {successMessage}
+        </div>
+      )}
+
+      {/* Purchase Link Popup */}
+      <PurchaseLinkPopup
+        isOpen={showPurchasePopup}
+        onClose={() => {
+          setShowPurchasePopup(false);
+          setSelectedSale(null);
+        }}
+        opportunity={selectedSale ? {
+          id: selectedSale.id,
+          productId: selectedSale.product.id,
+          variantId: selectedSale.variant.id,
+          title: selectedSale.product.name,
+          size: selectedSale.variant.size,
+          imageUrl: selectedSale.product.imageUrl,
+          sellingPrice: selectedSale.pricing.salePrice
+        } : null}
+        onSavePurchase={handleSavePurchase}
+        existingPurchase={selectedSale ? getLinkedPurchase(selectedSale)?.purchaseData : null}
+      />
     </div>
   );
 };

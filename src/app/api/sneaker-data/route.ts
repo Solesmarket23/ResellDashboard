@@ -45,6 +45,31 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// Generate eBay application token from App ID
+async function getEbayApplicationToken(appId: string): Promise<string | null> {
+  try {
+    const response = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${Buffer.from(`${appId}:`).toString('base64')}`
+      },
+      body: 'grant_type=client_credentials&scope=https://api.ebay.com/oauth/api_scope'
+    });
+
+    if (!response.ok) {
+      console.error('eBay token error:', response.status, await response.text());
+      return null;
+    }
+
+    const data = await response.json();
+    return data.access_token;
+  } catch (error) {
+    console.error('eBay token generation failed:', error);
+    return null;
+  }
+}
+
 // eBay API - Much easier to access
 async function searchEbay(query: string) {
   const ebayAppId = process.env.EBAY_APP_ID; // Much easier to get than StockX
@@ -55,12 +80,21 @@ async function searchEbay(query: string) {
   }
 
   try {
+    // Get application token
+    const accessToken = await getEbayApplicationToken(ebayAppId);
+    
+    if (!accessToken) {
+      console.log('⚠️ Could not get eBay access token, using mock data');
+      return generateMockEbayData(query);
+    }
+
     const response = await fetch(
       `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&category_ids=15709&limit=20`,
       {
         headers: {
-          'Authorization': `Bearer ${ebayAppId}`,
-          'Content-Type': 'application/json'
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
         }
       }
     );

@@ -498,6 +498,15 @@ export async function GET(request: NextRequest) {
                     if (spreadPercentNum >= minSpreadPercent) {
                       console.log(`💰 Found profitable opportunity: ${product.title} (${size}) - Best Ask: $${ask}, Total Cost: $${estimatedTotalBuyerCost.toFixed(2)}, Profit: $${spread.toFixed(2)} (${spreadPercent}%)`);
                       
+                      // Calculate enhanced metrics
+                      const bidAskVolume = calculateBidAskVolume(marketEntry, product);
+                      const velocityScore = calculateVelocityScore(product, marketEntry, size);
+                      const riskScore = calculateRiskScore(product, marketEntry, spread, spreadPercent);
+                      const volatilityScore = calculateVolatilityScore(product, marketEntry);
+                      const priceHistory = generateMockPriceHistory(ask / 100, 7); // Mock 7-day history
+                      const trendDirection = calculateTrendDirection(priceHistory);
+                      const estimatedSellTime = calculateSellTime(velocityScore, bidAskVolume);
+
                       const opportunity = {
                         productId: product.productId,
                         variantId: marketEntry.variantId,
@@ -522,7 +531,19 @@ export async function GET(request: NextRequest) {
                         stockxUrl: generateStockXUrl(product.urlKey, size), // Generate StockX URL with size parameter
                         colorway: product.productAttributes?.colorway || null,
                         releaseDate: product.productAttributes?.releaseDate || null,
-                        retailPrice: product.productAttributes?.retailPrice || null
+                        retailPrice: product.productAttributes?.retailPrice || null,
+                        
+                        // Enhanced analytics
+                        category: product.productType || 'Sneakers',
+                        bidAskVolume,
+                        velocityScore,
+                        riskScore,
+                        volatilityScore,
+                        priceHistory,
+                        trendDirection,
+                        estimatedSellTime,
+                        lastSalePrice: ask / 100, // Mock last sale price
+                        salesVolume24h: Math.floor(bidAskVolume / 10) // Estimate daily volume
                       };
                       
                       opportunities.push(opportunity);
@@ -678,4 +699,186 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+// Enhanced analytics calculation functions
+
+function calculateBidAskVolume(marketEntry: any, product: any): number {
+  // Estimate volume based on bid-ask spread and product popularity
+  const spread = Math.abs((marketEntry.lowestAskAmount || 0) - (marketEntry.highestBidAmount || 0));
+  const relativeSpread = spread / (marketEntry.lowestAskAmount || 1);
+  
+  let baseVolume = 50; // Base volume
+  
+  // Popular brands get higher volume
+  const brand = product.brand?.toLowerCase() || '';
+  if (brand.includes('jordan') || brand.includes('nike')) baseVolume *= 2;
+  if (brand.includes('yeezy') || brand.includes('off-white')) baseVolume *= 2.5;
+  if (brand.includes('travis scott') || brand.includes('fragment')) baseVolume *= 3;
+  
+  // Tighter spreads indicate higher liquidity
+  if (relativeSpread < 0.05) baseVolume *= 1.5; // <5% spread
+  if (relativeSpread > 0.2) baseVolume *= 0.7;   // >20% spread
+  
+  // Add some randomness
+  const randomFactor = 0.8 + Math.random() * 0.4;
+  
+  return Math.floor(baseVolume * randomFactor);
+}
+
+function calculateVelocityScore(product: any, marketEntry: any, size: string): number {
+  // Velocity score: 0-100 (higher = sells faster)
+  let score = 50; // Base score
+  
+  const brand = product.brand?.toLowerCase() || '';
+  const title = product.title?.toLowerCase() || '';
+  
+  // Brand velocity factors
+  if (brand.includes('jordan') || title.includes('jordan')) score += 20;
+  if (brand.includes('yeezy') || title.includes('yeezy')) score += 25;
+  if (brand.includes('off-white')) score += 30;
+  if (brand.includes('travis scott') || title.includes('travis scott')) score += 35;
+  if (brand.includes('nike') && !title.includes('jordan')) score += 10;
+  if (brand.includes('adidas') && !title.includes('yeezy')) score += 8;
+  
+  // Size popularity (most popular sizes sell faster)
+  const popularSizes = ['9', '9.5', '10', '10.5', '11'];
+  if (popularSizes.includes(size)) score += 15;
+  if (size === '10' || size === '10.5') score += 5; // Most popular
+  
+  // Price point affects velocity
+  const askPrice = (marketEntry.lowestAskAmount || 0) / 100;
+  if (askPrice < 200) score += 10;  // Affordable items move faster
+  if (askPrice > 1000) score -= 15; // Expensive items move slower
+  
+  // Flex availability indicates higher demand/velocity
+  if (marketEntry.flexLowestAskAmount && marketEntry.flexLowestAskAmount > 0) {
+    score += 10;
+  }
+  
+  // Recent releases tend to have higher velocity
+  if (product.productAttributes?.releaseDate) {
+    const releaseDate = new Date(product.productAttributes.releaseDate);
+    const monthsOld = (Date.now() - releaseDate.getTime()) / (1000 * 60 * 60 * 24 * 30);
+    if (monthsOld < 3) score += 15;  // Less than 3 months old
+    if (monthsOld < 1) score += 10;  // Less than 1 month old
+  }
+  
+  // Bid-ask ratio (higher ratio = more demand = higher velocity)
+  const bidAskRatio = (marketEntry.highestBidAmount || 0) / (marketEntry.lowestAskAmount || 1);
+  if (bidAskRatio > 0.9) score += 10; // Very close bid/ask
+  if (bidAskRatio > 0.95) score += 5; // Extremely close
+  
+  return Math.min(100, Math.max(0, score));
+}
+
+function calculateRiskScore(product: any, marketEntry: any, spread: number, spreadPercent: string): number {
+  // Risk score: 0-100 (higher = more risky)
+  let risk = 30; // Base risk
+  
+  const askPrice = (marketEntry.lowestAskAmount || 0) / 100;
+  const spreadPercentNum = parseFloat(spreadPercent);
+  
+  // High spread % = higher risk
+  if (spreadPercentNum > 50) risk += 20;
+  if (spreadPercentNum > 30) risk += 10;
+  if (spreadPercentNum < 15) risk -= 5;
+  
+  // Price level risk
+  if (askPrice > 1000) risk += 15; // Expensive = harder to sell
+  if (askPrice < 100) risk += 10;  // Too cheap = authenticity concerns
+  
+  // Brand reliability
+  const brand = product.brand?.toLowerCase() || '';
+  if (brand.includes('jordan') || brand.includes('nike')) risk -= 10;
+  if (brand.includes('yeezy')) risk -= 8;
+  if (brand.includes('off-white')) risk -= 5;
+  
+  // Market liquidity (tighter spreads = lower risk)
+  const bidAskSpread = Math.abs((marketEntry.lowestAskAmount || 0) - (marketEntry.highestBidAmount || 0));
+  const relativeSpread = bidAskSpread / (marketEntry.lowestAskAmount || 1);
+  if (relativeSpread > 0.3) risk += 15; // Wide spread = illiquid = risky
+  if (relativeSpread < 0.1) risk -= 10; // Tight spread = liquid = safer
+  
+  // Flex availability reduces risk (more selling options)
+  if (marketEntry.flexLowestAskAmount && marketEntry.flexLowestAskAmount > 0) {
+    risk -= 5;
+  }
+  
+  return Math.min(100, Math.max(0, risk));
+}
+
+function calculateVolatilityScore(product: any, marketEntry: any): number {
+  // Volatility score: 0-100 (higher = more price swings)
+  let volatility = 25; // Base volatility
+  
+  const brand = product.brand?.toLowerCase() || '';
+  const title = product.title?.toLowerCase() || '';
+  
+  // Hype brands tend to be more volatile
+  if (brand.includes('off-white') || title.includes('travis scott')) volatility += 30;
+  if (brand.includes('yeezy')) volatility += 20;
+  if (brand.includes('jordan') && (title.includes('retro') || title.includes('og'))) volatility += 15;
+  
+  // Recent releases are more volatile
+  if (product.productAttributes?.releaseDate) {
+    const releaseDate = new Date(product.productAttributes.releaseDate);
+    const monthsOld = (Date.now() - releaseDate.getTime()) / (1000 * 60 * 60 * 24 * 30);
+    if (monthsOld < 1) volatility += 25;
+    if (monthsOld < 6) volatility += 15;
+  }
+  
+  // Price level affects volatility
+  const askPrice = (marketEntry.lowestAskAmount || 0) / 100;
+  if (askPrice > 500) volatility += 10; // Expensive items more volatile
+  if (askPrice < 150) volatility -= 10; // Cheaper items more stable
+  
+  return Math.min(100, Math.max(0, volatility));
+}
+
+function generateMockPriceHistory(currentPrice: number, days: number): any[] {
+  const history = [];
+  const now = Date.now();
+  
+  for (let i = days - 1; i >= 0; i--) {
+    const date = now - (i * 24 * 60 * 60 * 1000);
+    const trend = Math.sin(i / 3) * 10; // Some trending pattern
+    const noise = (Math.random() - 0.5) * 20; // Random daily variation
+    const price = Math.max(currentPrice * 0.8, currentPrice + trend + noise);
+    
+    history.push({
+      timestamp: date,
+      price: Math.round(price),
+      type: 'sale'
+    });
+  }
+  
+  return history;
+}
+
+function calculateTrendDirection(priceHistory: any[]): 'up' | 'down' | 'stable' {
+  if (priceHistory.length < 2) return 'stable';
+  
+  const recent = priceHistory.slice(-3); // Last 3 data points
+  const older = priceHistory.slice(0, 3); // First 3 data points
+  
+  const recentAvg = recent.reduce((sum, p) => sum + p.price, 0) / recent.length;
+  const olderAvg = older.reduce((sum, p) => sum + p.price, 0) / older.length;
+  
+  const change = (recentAvg - olderAvg) / olderAvg;
+  
+  if (change > 0.05) return 'up';
+  if (change < -0.05) return 'down';
+  return 'stable';
+}
+
+function calculateSellTime(velocityScore: number, volume: number): string {
+  // Estimate how long it will take to sell based on velocity and volume
+  if (velocityScore > 80 && volume > 100) return '1-2 days';
+  if (velocityScore > 70 && volume > 80) return '2-3 days';
+  if (velocityScore > 60 && volume > 60) return '3-5 days';
+  if (velocityScore > 50 && volume > 40) return '1 week';
+  if (velocityScore > 40) return '1-2 weeks';
+  if (velocityScore > 30) return '2-4 weeks';
+  return '1+ months';
 } 

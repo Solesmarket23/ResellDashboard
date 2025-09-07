@@ -39,6 +39,7 @@ import OnboardingQuestionnaire from '../../components/OnboardingQuestionnaire';
 import AliasInventory from '../../components/AliasInventory';
 import AliasListingCreator from '../../components/AliasListingCreator';
 import AliasOrderManagement from '../../components/AliasOrderManagement';
+import PurchaseManagement from '../../components/PurchaseManagement';
 
 export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -153,6 +154,8 @@ export default function DashboardPage() {
         );
       case 'purchases':
         return <Purchases />;
+      case 'purchase-management':
+        return <PurchaseManagement />;
       case 'deliveries':
         return <Deliveries />;
       case 'sales':
