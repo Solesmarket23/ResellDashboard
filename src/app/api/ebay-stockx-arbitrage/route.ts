@@ -131,8 +131,27 @@ async function searchEbayForShoes(query: string, limit: number = 50): Promise<Eb
 }
 
 // Parse shoe details from eBay listing title
-function parseShoeDetails(title: string): { brand?: string; model?: string; size?: string; possibleSizes: string[] } {
+function parseShoeDetails(title: string): { brand?: string; model?: string; size?: string; styleCode?: string; possibleSizes: string[] } {
   const normalizedTitle = title.toLowerCase();
+  
+  // Extract style code - look for common Nike/Adidas style patterns
+  const styleCodePatterns = [
+    /\b([A-Z]{2}\d{4}-\d{3})\b/i,  // Nike pattern: DJ0950-101
+    /\b([A-Z]\d{5})\b/i,           // Adidas pattern: H01234
+    /\b([A-Z]{2}\d{4})\b/i,        // Alternative Nike: DJ0950
+    /\b(\d{6}-\d{3})\b/i,          // Numeric: 123456-789
+    /\b([A-Z]{1,3}\d{3,5}-?\d{0,3})\b/i // General pattern
+  ];
+  
+  let styleCode = undefined;
+  for (const pattern of styleCodePatterns) {
+    const match = title.match(pattern);
+    if (match) {
+      styleCode = match[1].toUpperCase();
+      console.log(`🏷️ Found style code in eBay title: ${styleCode}`);
+      break;
+    }
+  }
   
   // Common shoe brands
   const brands = ['nike', 'jordan', 'adidas', 'yeezy', 'new balance', 'vans', 'converse', 'puma', 'reebok', 'asics', 'supreme', 'off-white', 'fear of god'];
@@ -171,21 +190,31 @@ function parseShoeDetails(title: string): { brand?: string; model?: string; size
       .substring(0, 50); // Limit length
   }
   
-  return { brand, model, size, possibleSizes };
+  return { brand, model, size, styleCode, possibleSizes };
 }
 
-// Generate StockX search query from eBay listing
-function generateStockXQuery(ebayTitle: string, parsedDetails: { brand?: string; model?: string }): string {
-  const { brand, model } = parsedDetails;
+// Generate StockX search query from eBay listing - supports both style codes and product names
+function generateStockXQuery(ebayTitle: string, parsedDetails: { brand?: string; model?: string; styleCode?: string }): string {
+  const { brand, model, styleCode } = parsedDetails;
   
+  // Priority 1: Use style code if available (most accurate)
+  if (styleCode) {
+    console.log(`🎯 Using style code for StockX search: ${styleCode}`);
+    return styleCode;
+  }
+  
+  // Priority 2: Use brand + model
   if (brand && model) {
     return `${brand} ${model}`.trim();
-  } else if (brand) {
+  } 
+  
+  // Priority 3: Use just brand
+  if (brand) {
     return brand;
-  } else {
-    // Fallback to first few words of title
-    return ebayTitle.split(' ').slice(0, 3).join(' ');
-  }
+  } 
+  
+  // Fallback: Use first few words of title
+  return ebayTitle.split(' ').slice(0, 3).join(' ');
 }
 
 // Search StockX for matching products using the same endpoint as the working StockX arbitrage finder
@@ -408,11 +437,18 @@ export async function GET(request: NextRequest) {
     const opportunities: ArbitrageOpportunity[] = [];
     
     
-    for (const listing of ebayListings) {
-      // Skip if over max price
-      if (listing.price > maxPrice) continue;
+    console.log(`🔄 Starting to process ${ebayListings.length} eBay listings...`);
+    
+    for (let i = 0; i < ebayListings.length; i++) {
+      const listing = ebayListings[i];
+      console.log(`\n--- Processing eBay listing ${i + 1}/${ebayListings.length} ---`);
+      console.log(`📦 eBay listing: ${listing.title} - $${listing.price}`);
       
-      console.log(`🔍 Processing: ${listing.title}`);
+      // Skip if over max price
+      if (listing.price > maxPrice) {
+        console.log(`❌ Skipping: Price $${listing.price} exceeds max $${maxPrice}`);
+        continue;
+      }
       
       // Parse shoe details from title
       const parsedDetails = parseShoeDetails(listing.title);
@@ -425,6 +461,11 @@ export async function GET(request: NextRequest) {
       // Search StockX for matching products
       const stockxProducts = await searchStockXForProduct(stockxQuery);
       console.log(`📈 Found ${stockxProducts.length} StockX matches`);
+      
+      if (stockxProducts.length === 0) {
+        console.log(`⚠️ No StockX matches found for: "${stockxQuery}"`);
+        continue;
+      }
       
       // Process each StockX match
       for (const stockxProduct of stockxProducts) {
