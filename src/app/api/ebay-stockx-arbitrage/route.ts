@@ -193,28 +193,58 @@ function parseShoeDetails(title: string): { brand?: string; model?: string; size
   return { brand, model, size, styleCode, possibleSizes };
 }
 
-// Generate StockX search query from eBay listing - supports both style codes and product names
-function generateStockXQuery(ebayTitle: string, parsedDetails: { brand?: string; model?: string; styleCode?: string }): string {
+// Generate multiple StockX search queries from eBay listing - try different variations
+function generateStockXQueries(ebayTitle: string, parsedDetails: { brand?: string; model?: string; styleCode?: string }): string[] {
   const { brand, model, styleCode } = parsedDetails;
+  const queries: string[] = [];
   
   // Priority 1: Use style code if available (most accurate)
   if (styleCode) {
-    console.log(`🎯 Using style code for StockX search: ${styleCode}`);
-    return styleCode;
+    queries.push(styleCode);
+    console.log(`🎯 Style code query: ${styleCode}`);
   }
   
-  // Priority 2: Use brand + model
+  // Priority 2: Try common Nike Air Jordan variations
+  const title = ebayTitle.toLowerCase();
+  if (title.includes('air jordan 1') && title.includes('bred toe')) {
+    queries.push('Air Jordan 1 Bred Toe');
+    queries.push('Jordan 1 Bred Toe');
+    queries.push('AJ1 Bred Toe');
+  } else if (title.includes('air jordan 1')) {
+    // Extract the colorway/model
+    const colorwayMatch = title.match(/air jordan 1.*?"([^"]+)"/);
+    if (colorwayMatch) {
+      queries.push(`Air Jordan 1 ${colorwayMatch[1]}`);
+      queries.push(`Jordan 1 ${colorwayMatch[1]}`);
+    }
+  }
+  
+  // Priority 3: Use brand + model
   if (brand && model) {
-    return `${brand} ${model}`.trim();
+    const cleanModel = model.replace(/["]/g, '').trim(); // Remove quotes
+    queries.push(`${brand} ${cleanModel}`);
   } 
   
-  // Priority 3: Use just brand
+  // Priority 4: Extract key product terms (brand + main product name)
   if (brand) {
-    return brand;
-  } 
+    const words = ebayTitle.split(' ').filter(word => 
+      word.length > 2 && 
+      !['size', 'new', 'used', 'mens', 'womens'].includes(word.toLowerCase())
+    );
+    if (words.length >= 3) {
+      queries.push(words.slice(0, 4).join(' ')); // First 4 meaningful words
+    }
+    queries.push(brand);
+  }
   
-  // Fallback: Use first few words of title
-  return ebayTitle.split(' ').slice(0, 3).join(' ');
+  // Remove duplicates and return
+  return [...new Set(queries)];
+}
+
+// Generate StockX search query from eBay listing - supports both style codes and product names
+function generateStockXQuery(ebayTitle: string, parsedDetails: { brand?: string; model?: string; styleCode?: string }): string {
+  const queries = generateStockXQueries(ebayTitle, parsedDetails);
+  return queries[0] || ebayTitle.split(' ').slice(0, 3).join(' ');
 }
 
 // Search StockX for matching products using the same endpoint as the working StockX arbitrage finder
@@ -464,16 +494,30 @@ export async function GET(request: NextRequest) {
       const parsedDetails = parseShoeDetails(listing.title);
       console.log(`📝 Parsed details:`, parsedDetails);
       
-      // Generate StockX search query
-      const stockxQuery = generateStockXQuery(listing.title, parsedDetails);
-      console.log(`🔍 StockX query: "${stockxQuery}"`);
+      // Generate multiple StockX search queries to try
+      const stockxQueries = generateStockXQueries(listing.title, parsedDetails);
+      console.log(`🔍 Generated ${stockxQueries.length} StockX queries:`, stockxQueries);
       
-      // Search StockX for matching products
-      const stockxProducts = await searchStockXForProduct(stockxQuery);
-      console.log(`📈 Found ${stockxProducts.length} StockX matches`);
+      let stockxProducts: any[] = [];
+      let usedQuery = '';
+      
+      // Try each query until we find matches
+      for (const query of stockxQueries) {
+        console.log(`🔍 Trying StockX query: "${query}"`);
+        stockxProducts = await searchStockXForProduct(query);
+        console.log(`📈 Found ${stockxProducts.length} StockX matches for "${query}"`);
+        
+        if (stockxProducts.length > 0) {
+          usedQuery = query;
+          break;
+        }
+        
+        // Small delay between searches to be respectful
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
       
       if (stockxProducts.length === 0) {
-        console.log(`⚠️ No StockX matches found for: "${stockxQuery}"`);
+        console.log(`⚠️ No StockX matches found after trying ${stockxQueries.length} queries:`, stockxQueries);
         
         // Create a "no match" entry for debugging so users can see what was processed
         opportunities.push({
@@ -495,7 +539,7 @@ export async function GET(request: NextRequest) {
           totalCost: listing.price + (listing.shipping || 0),
           netRevenue: 0,
           roi: -100,
-          matchedProduct: `No StockX match found for query: "${stockxQuery}"`,
+          matchedProduct: `No StockX match found. Tried: ${stockxQueries.join(', ')}`,
           confidence: 100 // High confidence that this listing was processed (for debugging display)
         });
         continue;
@@ -518,7 +562,7 @@ export async function GET(request: NextRequest) {
               
               // Calculate match confidence
               arbitrage.confidence = calculateMatchConfidence(listing.title, stockxProduct.title, parsedDetails);
-              arbitrage.matchedProduct = stockxProduct.title;
+              arbitrage.matchedProduct = `${stockxProduct.title} (found with: "${usedQuery}")`;
               
               // TEMPORARILY: Show ALL matches regardless of profitability for debugging
               opportunities.push(arbitrage);
