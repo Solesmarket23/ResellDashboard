@@ -66,6 +66,9 @@ async function getEbayApplicationToken(appId: string): Promise<string | null> {
 async function searchEbayForShoes(query: string, limit: number = 100): Promise<EbayListing[]> {
   const ebayAppId = process.env.EBAY_APP_ID;
   
+  console.log(`🔍 eBay search called with query: "${query}"`);
+  console.log(`🔑 eBay App ID configured: ${ebayAppId ? 'YES' : 'NO'}`);
+  
   if (!ebayAppId) {
     console.log('⚠️ No eBay App ID found, using mock data for development');
     return generateMockEbayListings(query, limit);
@@ -93,6 +96,8 @@ async function searchEbayForShoes(query: string, limit: number = 100): Promise<E
       fieldgroups: 'MATCHING_ITEMS,EXTENDED'
     });
 
+    console.log(`🌐 eBay API URL: ${apiUrl}?${params}`);
+    
     const response = await fetch(`${apiUrl}?${params}`, {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
@@ -101,14 +106,18 @@ async function searchEbayForShoes(query: string, limit: number = 100): Promise<E
       }
     });
 
+    console.log(`📡 eBay API response status: ${response.status}`);
+
     if (!response.ok) {
-      console.error('eBay API error:', response.status, await response.text());
+      const errorText = await response.text();
+      console.error('❌ eBay API error:', response.status, errorText);
       return generateMockEbayListings(query, limit);
     }
 
     const data = await response.json();
+    console.log(`📦 eBay API raw response:`, JSON.stringify(data, null, 2));
     
-    return (data.itemSummaries || []).map((item: any) => ({
+    const mappedResults = (data.itemSummaries || []).map((item: any) => ({
       title: item.title,
       price: parseFloat(item.price?.value || '0'),
       currency: item.price?.currency || 'USD',
@@ -123,6 +132,11 @@ async function searchEbayForShoes(query: string, limit: number = 100): Promise<E
       endTime: item.itemEndDate,
       buyItNowPrice: item.buyItNowPrice ? parseFloat(item.buyItNowPrice.value) : undefined
     }));
+    
+    console.log(`✅ eBay search successful: Found ${mappedResults.length} listings for "${query}"`);
+    console.log(`📝 Sample listing:`, mappedResults[0] || 'None');
+    
+    return mappedResults;
 
   } catch (error) {
     console.error('eBay search error:', error);
@@ -404,6 +418,14 @@ function calculateMatchConfidence(ebayTitle: string, stockxTitle: string, parsed
 
 // Mock data for development
 function generateMockEbayListings(query: string, limit: number): EbayListing[] {
+  console.log(`🎭 Generating mock eBay listings for query: "${query}"`);
+  
+  // If searching for a specific style code, return empty results to simulate no matches
+  if (query.match(/^[A-Z]{2}\d{4}-\d{3}$/i)) {
+    console.log(`📝 Style code detected: ${query} - returning empty results`);
+    return [];
+  }
+  
   const mockListings: EbayListing[] = [
     {
       title: 'Nike Air Jordan 1 High OG "Bred Toe" Size 10 NEW',
@@ -443,6 +465,7 @@ function generateMockEbayListings(query: string, limit: number): EbayListing[] {
     }
   ];
   
+  console.log(`🎭 Returning ${Math.min(mockListings.length, limit)} mock listings`);
   return mockListings.slice(0, limit);
 }
 
