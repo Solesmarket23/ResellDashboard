@@ -87,11 +87,16 @@ const EbayStockXArbitrage: React.FC = () => {
       return;
     }
 
+    console.log(`🔍 Starting eBay-StockX arbitrage search for: "${searchQuery}"`);
+    console.log(`📊 Filters: minProfit=${minProfitMargin}%, maxPrice=$${maxPrice}, minConfidence=${minConfidence}%`);
+
     setIsLoading(true);
     setErrorMessage(null);
     setSuccessMessage(null);
     setOpportunities([]);
     setStats(null);
+
+    const startTime = Date.now();
 
     try {
       const params = new URLSearchParams({
@@ -101,13 +106,30 @@ const EbayStockXArbitrage: React.FC = () => {
         limit: '30'
       });
 
+      console.log(`🌐 Making API call to: /api/ebay-stockx-arbitrage?${params.toString()}`);
+      
       const response = await fetch(`/api/ebay-stockx-arbitrage?${params.toString()}`);
+      
+      const elapsedTime = Date.now() - startTime;
+      console.log(`⏱️ API response received in ${elapsedTime}ms with status: ${response.status}`);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`❌ HTTP error ${response.status}:`, errorText);
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const data = await response.json();
+      console.log(`📦 Raw API response:`, data);
 
       if (data.success) {
-        const filteredOpportunities = data.opportunities.filter(
+        const allOpportunities = data.opportunities || [];
+        console.log(`📋 Total opportunities from API: ${allOpportunities.length}`);
+        
+        const filteredOpportunities = allOpportunities.filter(
           (opp: ArbitrageOpportunity) => opp.confidence >= minConfidence
         );
+        console.log(`🔍 After confidence filter (≥${minConfidence}%): ${filteredOpportunities.length} opportunities`);
         
         setOpportunities(filteredOpportunities);
         setStats({
@@ -123,12 +145,15 @@ const EbayStockXArbitrage: React.FC = () => {
           setSuccessMessage('Search completed, but no opportunities found matching your criteria. Try adjusting your filters.');
         }
       } else {
-        setErrorMessage(data.error || 'Failed to search for opportunities');
+        console.error(`❌ API returned error:`, data);
+        setErrorMessage(data.error || data.message || 'Failed to search for opportunities');
       }
     } catch (error) {
-      console.error('Search error:', error);
+      console.error('❌ Search error:', error);
       setErrorMessage('An error occurred while searching. Please try again.');
     } finally {
+      const totalTime = Date.now() - startTime;
+      console.log(`🏁 Search completed in ${totalTime}ms`);
       setIsLoading(false);
     }
   };
