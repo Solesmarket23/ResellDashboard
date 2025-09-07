@@ -441,15 +441,17 @@ export async function GET(request: NextRequest) {
             if (arbitrage) {
               console.log(`💡 Arbitrage calc: Profit $${arbitrage.profit.toFixed(2)} (${arbitrage.profitMargin.toFixed(1)}%) - Min required: ${minProfitMargin}%`);
               
+              // Calculate match confidence
+              arbitrage.confidence = calculateMatchConfidence(listing.title, stockxProduct.title, parsedDetails);
+              arbitrage.matchedProduct = stockxProduct.title;
+              
+              // TEMPORARILY: Show ALL matches regardless of profitability for debugging
+              opportunities.push(arbitrage);
+              
               if (arbitrage.profitMargin >= minProfitMargin && arbitrage.profit > 0) {
-                // Calculate match confidence
-                arbitrage.confidence = calculateMatchConfidence(listing.title, stockxProduct.title, parsedDetails);
-                arbitrage.matchedProduct = stockxProduct.title;
-                
-                opportunities.push(arbitrage);
-                console.log(`✅ Opportunity: $${arbitrage.profit.toFixed(2)} profit (${arbitrage.profitMargin.toFixed(1)}%)`);
+                console.log(`✅ Profitable opportunity: $${arbitrage.profit.toFixed(2)} profit (${arbitrage.profitMargin.toFixed(1)}%)`);
               } else {
-                console.log(`❌ Filtered out: Profit too low or negative`);
+                console.log(`🔍 Unprofitable match (showing for debugging): $${arbitrage.profit.toFixed(2)} profit (${arbitrage.profitMargin.toFixed(1)}%)`);
               }
             }
           }
@@ -465,25 +467,7 @@ export async function GET(request: NextRequest) {
     // Sort by profit descending
     opportunities.sort((a, b) => b.profit - a.profit);
     
-    console.log(`🎯 Found ${opportunities.length} profitable opportunities`);
-    
-    // TEMPORARY: Add debug opportunity if none found to help troubleshoot
-    if (opportunities.length === 0) {
-      console.log(`🔧 No opportunities found, adding debug opportunity to show pipeline is working`);
-      opportunities.push({
-        ebayTitle: `DEBUG: Found ${ebayListings.length} eBay listings for "${query}" but no profitable matches`,
-        ebayPrice: 150,
-        ebayUrl: 'https://ebay.com/item/debug',
-        stockxPrice: 200,
-        stockxUrl: 'https://stockx.com/debug',
-        profit: 25,
-        profitMargin: 16.7,
-        totalFees: 25,
-        roi: 16.7,
-        confidence: 50,
-        matchedProduct: `Debug: Check StockX matching or profit calculations for "${query}"`
-      });
-    }
+    console.log(`🎯 Found ${opportunities.length} total matches (including unprofitable ones for debugging)`);
     
     return NextResponse.json({
       success: true,

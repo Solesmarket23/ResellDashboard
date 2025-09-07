@@ -126,10 +126,11 @@ const EbayStockXArbitrage: React.FC = () => {
         const allOpportunities = data.opportunities || [];
         console.log(`📋 Total opportunities from API: ${allOpportunities.length}`);
         
+        // TEMPORARILY: Lower confidence filter to see more matches for debugging
         const filteredOpportunities = allOpportunities.filter(
-          (opp: ArbitrageOpportunity) => opp.confidence >= minConfidence
+          (opp: ArbitrageOpportunity) => opp.confidence >= Math.min(minConfidence, 25) // Use 25% minimum for debugging
         );
-        console.log(`🔍 After confidence filter (≥${minConfidence}%): ${filteredOpportunities.length} opportunities`);
+        console.log(`🔍 After confidence filter (≥${Math.min(minConfidence, 25)}% for debugging): ${filteredOpportunities.length} opportunities`);
         
         setOpportunities(filteredOpportunities);
         setStats({
