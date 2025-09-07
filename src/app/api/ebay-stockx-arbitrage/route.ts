@@ -63,7 +63,7 @@ async function getEbayApplicationToken(appId: string): Promise<string | null> {
 }
 
 // Enhanced eBay search with better product parsing
-async function searchEbayForShoes(query: string, limit: number = 50): Promise<EbayListing[]> {
+async function searchEbayForShoes(query: string, limit: number = 100): Promise<EbayListing[]> {
   const ebayAppId = process.env.EBAY_APP_ID;
   
   if (!ebayAppId) {
@@ -89,7 +89,7 @@ async function searchEbayForShoes(query: string, limit: number = 50): Promise<Eb
       category_ids: categoryIds,
       limit: limit.toString(),
       sort: 'price', // Sort by price ascending to find deals
-      filter: 'conditions:{NEW}', // Only new items
+      filter: 'conditions:{NEW,USED_EXCELLENT,USED_VERY_GOOD}', // Include excellent/very good condition items
       fieldgroups: 'MATCHING_ITEMS,EXTENDED'
     });
 
@@ -421,7 +421,7 @@ export async function GET(request: NextRequest) {
   const query = searchParams.get('query') || '';
   const minProfitMargin = parseFloat(searchParams.get('minProfitMargin') || '15');
   const maxPrice = parseFloat(searchParams.get('maxPrice') || '1000');
-  const limit = parseInt(searchParams.get('limit') || '20');
+  const limit = parseInt(searchParams.get('limit') || '50');
 
   if (!query) {
     return NextResponse.json({ error: 'Query parameter required' }, { status: 400 });

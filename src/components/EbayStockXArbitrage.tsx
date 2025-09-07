@@ -103,7 +103,7 @@ const EbayStockXArbitrage: React.FC = () => {
         query: searchQuery,
         minProfitMargin: minProfitMargin.toString(),
         maxPrice: maxPrice.toString(),
-        limit: '30'
+        limit: '50'
       });
 
       console.log(`🌐 Making API call to: /api/ebay-stockx-arbitrage?${params.toString()}`);
