@@ -9,16 +9,20 @@ export async function GET(request: NextRequest) {
   
   // Check environment variables
   const ebayAppId = process.env.EBAY_APP_ID;
+  const ebayClientSecret = process.env.EBAY_CLIENT_SECRET;
   console.log('🔑 eBay App ID exists:', !!ebayAppId);
+  console.log('🔑 eBay Client Secret exists:', !!ebayClientSecret);
   console.log('🔑 eBay App ID (masked):', ebayAppId ? `${ebayAppId.substring(0, 8)}...` : 'NOT SET');
+  console.log('🔑 eBay Client Secret (masked):', ebayClientSecret ? `${ebayClientSecret.substring(0, 8)}...` : 'NOT SET');
   
-  if (!ebayAppId) {
+  if (!ebayAppId || !ebayClientSecret) {
     return NextResponse.json({
       success: false,
-      error: 'eBay App ID not configured',
-      details: 'Please set EBAY_APP_ID in your environment variables',
+      error: 'eBay credentials not configured',
+      details: 'Please set both EBAY_APP_ID and EBAY_CLIENT_SECRET in your environment variables',
       debugInfo: {
-        hasAppId: false,
+        hasAppId: !!ebayAppId,
+        hasClientSecret: !!ebayClientSecret,
         query
       }
     });
@@ -28,11 +32,14 @@ export async function GET(request: NextRequest) {
     // Step 1: Get eBay Application Token
     console.log('🔄 Step 1: Getting eBay application token...');
     
+    const credentials = `${ebayAppId}:${ebayClientSecret}`;
+    const encodedCredentials = Buffer.from(credentials).toString('base64');
+    
     const tokenResponse = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': `Basic ${Buffer.from(`${ebayAppId}:`).toString('base64')}`
+        'Authorization': `Basic ${encodedCredentials}`
       },
       body: 'grant_type=client_credentials&scope=https://api.ebay.com/oauth/api_scope'
     });

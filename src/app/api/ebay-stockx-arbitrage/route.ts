@@ -37,27 +37,34 @@ interface ArbitrageOpportunity {
   confidence: number; // 0-100 confidence in the match
 }
 
-// Generate eBay application token from App ID
-async function getEbayApplicationToken(appId: string): Promise<string | null> {
+// Generate eBay application token from App ID and Cert ID
+async function getEbayApplicationToken(appId: string, certId: string): Promise<string | null> {
   try {
+    const credentials = `${appId}:${certId}`;
+    const encodedCredentials = Buffer.from(credentials).toString('base64');
+    
+    console.log(`🔐 eBay credentials: App ID length ${appId.length}, Cert ID length ${certId.length}`);
+    
     const response = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': `Basic ${Buffer.from(`${appId}:`).toString('base64')}`
+        'Authorization': `Basic ${encodedCredentials}`
       },
       body: 'grant_type=client_credentials&scope=https://api.ebay.com/oauth/api_scope'
     });
 
     if (!response.ok) {
-      console.error('eBay token error:', response.status, await response.text());
+      const errorText = await response.text();
+      console.error('❌ eBay token error:', response.status, errorText);
       return null;
     }
 
     const data = await response.json();
+    console.log('✅ eBay token generated successfully');
     return data.access_token;
   } catch (error) {
-    console.error('eBay token generation failed:', error);
+    console.error('❌ eBay token generation error:', error);
     return null;
   }
 }
@@ -65,36 +72,49 @@ async function getEbayApplicationToken(appId: string): Promise<string | null> {
 // Enhanced eBay search with better product parsing
 async function searchEbayForShoes(query: string, limit: number = 100): Promise<EbayListing[]> {
   const ebayAppId = process.env.EBAY_APP_ID;
+  const ebayClientSecret = process.env.EBAY_CLIENT_SECRET;
   
   console.log(`🔍 eBay search called with query: "${query}"`);
   console.log(`🔑 eBay App ID configured: ${ebayAppId ? 'YES' : 'NO'}`);
+  console.log(`🔑 eBay Client Secret configured: ${ebayClientSecret ? 'YES' : 'NO'}`);
   
-  if (!ebayAppId) {
-    console.log('⚠️ No eBay App ID found, using mock data for development');
-    return generateMockEbayListings(query, limit);
+  if (!ebayAppId || !ebayClientSecret) {
+    console.log('❌ CRITICAL: Missing eBay credentials in environment variables');
+    console.log('❌ Required: EBAY_APP_ID and EBAY_CLIENT_SECRET');
+    throw new Error('eBay credentials not configured - need both EBAY_APP_ID and EBAY_CLIENT_SECRET');
   }
 
   try {
     // Get application token
-    const accessToken = await getEbayApplicationToken(ebayAppId);
+    const accessToken = await getEbayApplicationToken(ebayAppId, ebayClientSecret);
     
     if (!accessToken) {
-      console.log('⚠️ Could not get eBay access token, using mock data');
-      return generateMockEbayListings(query, limit);
+      console.log('❌ CRITICAL: Could not get eBay access token');
+      throw new Error('Failed to authenticate with eBay API - check your credentials');
     }
 
-    // Search in sneakers category (15709) and athletic shoes (3034)
-    const categoryIds = '15709,3034';
-    const apiUrl = `https://api.ebay.com/buy/browse/v1/item_summary/search`;
-    
-    const params = new URLSearchParams({
-      q: query,
-      category_ids: categoryIds,
-      limit: limit.toString(),
-      sort: 'price', // Sort by price ascending to find deals
-      filter: 'conditions:{NEW,USED_EXCELLENT,USED_VERY_GOOD}', // Include excellent/very good condition items
-      fieldgroups: 'MATCHING_ITEMS,EXTENDED'
-    });
+      const apiUrl = `https://api.ebay.com/buy/browse/v1/item_summary/search`;
+      
+      // For style codes, search broadly without category restrictions
+      const isStyleCode = query.match(/^[A-Z]{2}\d{4}-\d{3}$/i);
+      
+      const params = new URLSearchParams({
+        q: query,
+        limit: limit.toString(),
+        sort: 'price', // Sort by price ascending to find deals
+        fieldgroups: 'MATCHING_ITEMS,EXTENDED'
+      });
+
+      // Only add category filter for non-style code searches
+      if (!isStyleCode) {
+        // Search in sneakers category (15709) and athletic shoes (3034)
+        params.append('category_ids', '15709,3034');
+        params.append('filter', 'conditions:{NEW,USED_EXCELLENT,USED_VERY_GOOD}');
+      }
+      
+      console.log(`🎯 Search type: ${isStyleCode ? 'Style Code' : 'Product Name'}`);
+      console.log(`📋 Category filter: ${isStyleCode ? 'None (broad search)' : 'Sneakers & Athletic Shoes'}`);
+      console.log(`🔍 Condition filter: ${isStyleCode ? 'All conditions' : 'NEW,USED_EXCELLENT,USED_VERY_GOOD'}`)
 
     console.log(`🌐 eBay API URL: ${apiUrl}?${params}`);
     
@@ -111,7 +131,7 @@ async function searchEbayForShoes(query: string, limit: number = 100): Promise<E
     if (!response.ok) {
       const errorText = await response.text();
       console.error('❌ eBay API error:', response.status, errorText);
-      return generateMockEbayListings(query, limit);
+      throw new Error(`eBay API failed with status ${response.status}: ${errorText}`);
     }
 
     const data = await response.json();
@@ -139,8 +159,8 @@ async function searchEbayForShoes(query: string, limit: number = 100): Promise<E
     return mappedResults;
 
   } catch (error) {
-    console.error('eBay search error:', error);
-    return generateMockEbayListings(query, limit);
+    console.error('❌ eBay search error:', error);
+    throw error; // Don't fall back to mock data
   }
 }
 
@@ -416,58 +436,7 @@ function calculateMatchConfidence(ebayTitle: string, stockxTitle: string, parsed
   return Math.min(confidence, 100);
 }
 
-// Mock data for development
-function generateMockEbayListings(query: string, limit: number): EbayListing[] {
-  console.log(`🎭 Generating mock eBay listings for query: "${query}"`);
-  
-  // If searching for a specific style code, return empty results to simulate no matches
-  if (query.match(/^[A-Z]{2}\d{4}-\d{3}$/i)) {
-    console.log(`📝 Style code detected: ${query} - returning empty results`);
-    return [];
-  }
-  
-  const mockListings: EbayListing[] = [
-    {
-      title: 'Nike Air Jordan 1 High OG "Bred Toe" Size 10 NEW',
-      price: 180,
-      currency: 'USD',
-      image: '/placeholder-shoe.png',
-      url: 'https://ebay.com/item/mock1',
-      seller: 'sneaker_connect',
-      condition: 'New',
-      source: 'eBay (Mock)',
-      itemId: 'mock1',
-      shipping: 12
-    },
-    {
-      title: 'Adidas Yeezy Boost 350 V2 "Zebra" Size 9.5',
-      price: 320,
-      currency: 'USD',
-      image: '/placeholder-shoe.png',
-      url: 'https://ebay.com/item/mock2',
-      seller: 'yeezy_outlet',
-      condition: 'New',
-      source: 'eBay (Mock)',
-      itemId: 'mock2',
-      shipping: 15
-    },
-    {
-      title: 'Nike Dunk Low "Panda" Black White Size 11',
-      price: 85,
-      currency: 'USD',
-      image: '/placeholder-shoe.png',
-      url: 'https://ebay.com/item/mock3',
-      seller: 'kicks_dealer',
-      condition: 'New',
-      source: 'eBay (Mock)',
-      itemId: 'mock3',
-      shipping: 10
-    }
-  ];
-  
-  console.log(`🎭 Returning ${Math.min(mockListings.length, limit)} mock listings`);
-  return mockListings.slice(0, limit);
-}
+// No more mock data - real eBay API only
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
