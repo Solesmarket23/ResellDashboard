@@ -592,6 +592,7 @@ export async function GET(request: NextRequest) {
   const minProfitMargin = parseFloat(searchParams.get('minProfitMargin') || '15');
   const maxPrice = parseFloat(searchParams.get('maxPrice') || '1000');
   const limit = parseInt(searchParams.get('limit') || '50');
+  const newItemsOnly = searchParams.get('newItemsOnly') === 'true';
 
   if (!query) {
     return NextResponse.json({ error: 'Query parameter required' }, { status: 400 });
@@ -647,6 +648,17 @@ export async function GET(request: NextRequest) {
       if (!hasSneakerBrand && !query.match(/^[A-Z]{2}\d{4}-\d{3}$/i)) {
         console.log(`❌ Skipping non-sneaker brand: ${listing.title}`);
         continue;
+      }
+      
+      // Skip used items if newItemsOnly filter is enabled
+      if (newItemsOnly) {
+        const condition = listing.condition.toLowerCase();
+        const isNewItem = condition.includes('new') || condition.includes('brand new') || condition.includes('new with box') || condition.includes('new with tags') || condition.includes('new without box');
+        
+        if (!isNewItem) {
+          console.log(`❌ Skipping used item (newItemsOnly=true): ${listing.title} - Condition: ${listing.condition}`);
+          continue;
+        }
       }
       
       // Parse product details from listing (enhanced with GTIN support)

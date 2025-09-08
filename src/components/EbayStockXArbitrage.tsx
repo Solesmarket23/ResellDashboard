@@ -74,12 +74,19 @@ const EbayStockXArbitrage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [searchStatus, setSearchStatus] = useState<string>('');
+  const [searchProgress, setSearchProgress] = useState<{
+    ebayFound: number;
+    stockxMatched: number;
+    currentStep: string;
+  }>({ ebayFound: 0, stockxMatched: 0, currentStep: '' });
   
   // Filter states
   const [minProfitMargin, setMinProfitMargin] = useState(15);
   const [maxPrice, setMaxPrice] = useState(500);
   const [minConfidence, setMinConfidence] = useState(60);
   const [showFilters, setShowFilters] = useState(false);
+  const [newItemsOnly, setNewItemsOnly] = useState(true); // Default to new items only since StockX requires new
   const [stockxAuthStatus, setStockxAuthStatus] = useState<'checking' | 'authenticated' | 'not_authenticated'>('checking');
 
   // Check StockX authentication status on component mount
@@ -131,6 +138,8 @@ const EbayStockXArbitrage: React.FC = () => {
     setSuccessMessage(null);
     setOpportunities([]);
     setStats(null);
+    setSearchStatus('Searching eBay listings...');
+    setSearchProgress({ ebayFound: 0, stockxMatched: 0, currentStep: 'Searching eBay' });
 
     const startTime = Date.now();
 
@@ -139,7 +148,8 @@ const EbayStockXArbitrage: React.FC = () => {
         query: searchQuery,
         minProfitMargin: minProfitMargin.toString(),
         maxPrice: maxPrice.toString(),
-        limit: '50'
+        limit: '50',
+        newItemsOnly: newItemsOnly.toString()
       });
 
       console.log(`🌐 Making API call to: /api/ebay-stockx-arbitrage?${params.toString()}`);
@@ -161,6 +171,15 @@ const EbayStockXArbitrage: React.FC = () => {
       if (data.success) {
         const allOpportunities = data.opportunities || [];
         console.log(`📋 Total opportunities from API: ${allOpportunities.length}`);
+        
+        // Update progress with eBay results
+        setSearchProgress(prev => ({ 
+          ...prev, 
+          ebayFound: data.totalEbayListings || 0,
+          stockxMatched: data.totalOpportunities || 0,
+          currentStep: 'Processing results'
+        }));
+        setSearchStatus(`Found ${data.totalEbayListings || 0} eBay listings, ${data.totalOpportunities || 0} with StockX matches`);
         
         // TEMPORARILY: Show ALL results for debugging (no confidence filter)
         const filteredOpportunities = allOpportunities; // Show everything for debugging
@@ -190,6 +209,14 @@ const EbayStockXArbitrage: React.FC = () => {
       const totalTime = Date.now() - startTime;
       console.log(`🏁 Search completed in ${totalTime}ms`);
       setIsLoading(false);
+      
+      if (!errorMessage) {
+        // Clear status after a short delay if no errors
+        setTimeout(() => {
+          setSearchStatus('');
+          setSearchProgress({ ebayFound: 0, stockxMatched: 0, currentStep: '' });
+        }, 3000);
+      }
     }
   };
 
@@ -414,6 +441,25 @@ const EbayStockXArbitrage: React.FC = () => {
                     <span>100%</span>
                   </div>
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Item Condition
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-2 text-sm text-gray-300">
+                      <input
+                        type="checkbox"
+                        checked={newItemsOnly}
+                        onChange={(e) => setNewItemsOnly(e.target.checked)}
+                        className="rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500"
+                      />
+                      New items only
+                    </label>
+                  </div>
+                  <div className="text-xs text-gray-400 mt-1">
+                    StockX only accepts new items
+                  </div>
+                </div>
                 <div className="flex items-end">
                   <div className="text-sm text-gray-400 w-full">
                     <p className="mb-1">🎯 Filter Tips:</p>
@@ -448,12 +494,43 @@ const EbayStockXArbitrage: React.FC = () => {
           </div>
         )}
 
-        {/* Loading State */}
+        {/* Loading State with Progress */}
         {isLoading && (
           <div className="text-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-            <p className="text-gray-300">Searching eBay and cross-referencing with StockX prices...</p>
-            <p className="text-gray-400 text-sm mt-2">This may take 30-60 seconds</p>
+            
+            {/* Dynamic Status Message */}
+            <p className="text-gray-300 text-lg mb-2">
+              {searchStatus || 'Searching eBay and cross-referencing with StockX prices...'}
+            </p>
+            
+            {/* Progress Details */}
+            {searchProgress.currentStep && (
+              <div className="max-w-md mx-auto">
+                <div className="bg-gray-800 rounded-lg p-4 mb-4">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-400">Current Step:</span>
+                    <span className="text-blue-300">{searchProgress.currentStep}</span>
+                  </div>
+                  
+                  {searchProgress.ebayFound > 0 && (
+                    <div className="flex items-center justify-between text-sm mt-2">
+                      <span className="text-gray-400">eBay Listings Found:</span>
+                      <span className="text-green-400">{searchProgress.ebayFound}</span>
+                    </div>
+                  )}
+                  
+                  {searchProgress.stockxMatched > 0 && (
+                    <div className="flex items-center justify-between text-sm mt-2">
+                      <span className="text-gray-400">StockX Matches:</span>
+                      <span className="text-emerald-400">{searchProgress.stockxMatched}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            <p className="text-gray-400 text-sm">This may take 30-60 seconds</p>
           </div>
         )}
 
