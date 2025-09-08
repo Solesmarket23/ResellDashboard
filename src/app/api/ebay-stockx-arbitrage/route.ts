@@ -439,35 +439,35 @@ async function searchStockXForProduct(query: string, request: NextRequest): Prom
   try {
     console.log(`🔍 Searching StockX for: ${query}`);
     
-    // Fix: Use the correct domain instead of env variable that might be undefined
-    const baseUrl = 'https://www.solesmarket.com';
-    const apiUrl = `${baseUrl}/api/stockx/search?query=${encodeURIComponent(query)}&limit=10`;
+    // Import the StockX search function to call it directly instead of making HTTP request
+    // This way we use the same authentication context as the working StockX arbitrage finder
+    const { GET: stockxSearchHandler } = await import('../stockx/search/route');
     
-    console.log(`🌐 StockX API URL: ${apiUrl}`);
-    
-    // Forward the user's authentication cookies to the StockX API
-    const cookies = request.cookies.toString();
-    console.log(`🍪 Request has cookies: ${cookies ? 'YES' : 'NO'}`);
-    console.log(`🍪 Cookie length: ${cookies.length}`);
-    
-    // Check for specific StockX cookies
-    const stockxAccessToken = request.cookies.get('stockx_access_token')?.value;
-    const stockxRefreshToken = request.cookies.get('stockx_refresh_token')?.value;
-    console.log(`🔑 StockX access token: ${stockxAccessToken ? 'Present' : 'Missing'}`);
-    console.log(`🔑 StockX refresh token: ${stockxRefreshToken ? 'Present' : 'Missing'}`);
-    
-    const response = await fetch(apiUrl, {
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (compatible; solesmarket-arbitrage)',
-        'Cookie': cookies // Forward authentication cookies
-      }
+    // Create a mock request for the StockX search API with the same query parameters
+    const mockUrl = new URL(`http://localhost:3000/api/stockx/search?query=${encodeURIComponent(query)}&limit=10`);
+    const mockRequest = new Request(mockUrl.toString(), {
+      method: 'GET',
+      headers: request.headers,
     });
     
-    console.log(`📡 StockX API response status: ${response.status}`);
-    console.log(`📋 StockX Response Headers:`, Object.fromEntries(response.headers.entries()));
+    // Copy over the NextRequest properties that the StockX handler needs
+    Object.defineProperty(mockRequest, 'nextUrl', {
+      value: mockUrl,
+      writable: false
+    });
+    Object.defineProperty(mockRequest, 'cookies', {
+      value: request.cookies,
+      writable: false
+    });
     
-    if (response.ok) {
+    console.log(`🔗 Calling StockX API directly (same as working arbitrage finder)`);
+    console.log(`🔑 Using request cookies: ${request.cookies.toString() ? 'Present' : 'Missing'}`);
+    
+    const response = await stockxSearchHandler(mockRequest as NextRequest);
+    
+    console.log(`📡 StockX API response status: ${response.status}`);
+    
+    if (response.status === 200) {
       const data = await response.json();
       console.log(`📦 StockX API response:`, JSON.stringify(data, null, 2));
       
@@ -477,27 +477,28 @@ async function searchStockXForProduct(query: string, request: NextRequest): Prom
         return [];
       }
       
-      // Handle successful response with products
-      if (data.products?.length > 0) {
-        console.log(`✅ Found ${data.products.length} StockX products`);
+      // Handle successful response with products - check both data.products and data.data.products
+      const products = data.products || data.data?.products || [];
+      if (products.length > 0) {
+        console.log(`✅ Found ${products.length} StockX products`);
         
         // Log first few products for debugging
-        console.log(`📋 Sample StockX products:`, data.products.slice(0, 3).map(p => ({
+        console.log(`📋 Sample StockX products:`, products.slice(0, 3).map(p => ({
           id: p.id,
           title: p.title,
           brand: p.brand,
           urlKey: p.urlKey
         })));
         
-        return data.products;
+        return products;
       } else {
         console.log(`⚠️ No StockX products found for: ${query}`);
         console.log(`📊 Response structure:`, Object.keys(data));
         return [];
       }
     } else {
-      const errorData = await response.text();
-      console.log(`❌ StockX search failed (${response.status}): ${errorData}`);
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      console.log(`❌ StockX search failed (${response.status}):`, errorData);
       return [];
     }
     
