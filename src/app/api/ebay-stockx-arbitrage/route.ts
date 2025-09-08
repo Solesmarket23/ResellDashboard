@@ -107,8 +107,8 @@ async function searchEbayForShoes(query: string, limit: number = 100): Promise<E
 
       // Only add category filter for non-style code searches
       if (!isStyleCode) {
-        // Search in sneakers category (15709) and athletic shoes (3034)
-        params.append('category_ids', '15709,3034');
+        // Search in sneakers category only (eBay allows max 1 category)
+        params.append('category_ids', '15709');
         params.append('filter', 'conditions:{NEW,USED_EXCELLENT,USED_VERY_GOOD}');
       }
       

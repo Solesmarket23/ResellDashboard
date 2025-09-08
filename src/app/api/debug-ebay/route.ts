@@ -67,12 +67,19 @@ export async function GET(request: NextRequest) {
     // Step 2: Test eBay Browse API
     console.log('🔄 Step 2: Testing eBay Browse API search...');
     
+    // For style codes, search broadly without category restrictions
+    const isStyleCode = query.match(/^[A-Z]{2}\d{4}-\d{3}$/i);
+    
     const params = new URLSearchParams({
       q: query,
-      category_ids: '15709,3034', // Sneakers categories
       limit: '10',
       sort: 'price'
     });
+
+    // Only add category filter for non-style code searches, and use only one category
+    if (!isStyleCode) {
+      params.append('category_ids', '15709'); // Just sneakers category
+    }
     
     const apiUrl = 'https://api.ebay.com/buy/browse/v1/item_summary/search';
     console.log('🌐 eBay API URL:', `${apiUrl}?${params}`);
