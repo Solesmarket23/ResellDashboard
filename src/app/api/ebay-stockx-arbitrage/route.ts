@@ -468,37 +468,32 @@ async function searchStockXForProduct(query: string, request: NextRequest): Prom
   try {
     console.log(`🔍 Searching StockX for: ${query}`);
     
-    // Import the StockX search function to call it directly instead of making HTTP request
-    // This way we use the same authentication context as the working StockX arbitrage finder
-    const { GET: stockxSearchHandler } = await import('../stockx/search/route');
+    // Make HTTP request to our StockX search API
+    const stockxUrl = `${request.nextUrl.origin}/api/stockx/search?query=${encodeURIComponent(query)}&limit=10`;
+    console.log(`🌐 Calling StockX API via HTTP: ${stockxUrl}`);
     
-    // Create a mock request for the StockX search API with the same query parameters
-    const mockUrl = new URL(`http://localhost:3000/api/stockx/search?query=${encodeURIComponent(query)}&limit=10`);
-    const mockRequest = new Request(mockUrl.toString(), {
+    const response = await fetch(stockxUrl, {
       method: 'GET',
-      headers: request.headers,
+      headers: {
+        'Content-Type': 'application/json',
+        // Forward relevant headers from the original request
+        'Cookie': request.headers.get('Cookie') || '',
+        'Authorization': request.headers.get('Authorization') || '',
+        'User-Agent': request.headers.get('User-Agent') || 'Mozilla/5.0'
+      }
     });
-    
-    // Copy over the NextRequest properties that the StockX handler needs
-    Object.defineProperty(mockRequest, 'nextUrl', {
-      value: mockUrl,
-      writable: false
-    });
-    Object.defineProperty(mockRequest, 'cookies', {
-      value: request.cookies,
-      writable: false
-    });
-    
-    console.log(`🔗 Calling StockX API directly (same as working arbitrage finder)`);
-    console.log(`🔑 Using request cookies: ${request.cookies.toString() ? 'Present' : 'Missing'}`);
-    
-    const response = await stockxSearchHandler(mockRequest as NextRequest);
     
     console.log(`📡 StockX API response status: ${response.status}`);
     
     if (response.status === 200) {
       const data = await response.json();
-      console.log(`📦 StockX API response:`, JSON.stringify(data, null, 2));
+      console.log(`📦 StockX response summary:`, {
+        hasProducts: !!data.products,
+        productCount: data.products?.length || 0,
+        hasError: !!data.error,
+        authRequired: !!data.authRequired,
+        keys: Object.keys(data)
+      });
       
       // Check for authentication error
       if (data.error && data.authRequired) {
@@ -506,15 +501,15 @@ async function searchStockXForProduct(query: string, request: NextRequest): Prom
         return [];
       }
       
-      // Handle successful response with products - check both data.products and data.data.products
+      // Handle successful response with products
       const products = data.products || data.data?.products || [];
       if (products.length > 0) {
         console.log(`✅ Found ${products.length} StockX products`);
         
         // Log first few products for debugging
-        console.log(`📋 Sample StockX products:`, products.slice(0, 3).map(p => ({
-          id: p.id,
-          title: p.title,
+        console.log(`📋 Sample StockX products:`, products.slice(0, 3).map((p: any) => ({
+          id: p.id || p.uuid,
+          title: p.title || p.name,
           brand: p.brand,
           urlKey: p.urlKey
         })));
@@ -522,12 +517,11 @@ async function searchStockXForProduct(query: string, request: NextRequest): Prom
         return products;
       } else {
         console.log(`⚠️ No StockX products found for: ${query}`);
-        console.log(`📊 Response structure:`, Object.keys(data));
         return [];
       }
     } else {
-      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-      console.log(`❌ StockX search failed (${response.status}):`, errorData);
+      const errorText = await response.text();
+      console.log(`❌ StockX search failed (${response.status}): ${errorText}`);
       return [];
     }
     
