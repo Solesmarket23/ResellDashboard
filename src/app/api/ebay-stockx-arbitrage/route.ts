@@ -447,6 +447,14 @@ async function searchStockXForProduct(query: string, request: NextRequest): Prom
     
     // Forward the user's authentication cookies to the StockX API
     const cookies = request.cookies.toString();
+    console.log(`🍪 Request has cookies: ${cookies ? 'YES' : 'NO'}`);
+    console.log(`🍪 Cookie length: ${cookies.length}`);
+    
+    // Check for specific StockX cookies
+    const stockxAccessToken = request.cookies.get('stockx_access_token')?.value;
+    const stockxRefreshToken = request.cookies.get('stockx_refresh_token')?.value;
+    console.log(`🔑 StockX access token: ${stockxAccessToken ? 'Present' : 'Missing'}`);
+    console.log(`🔑 StockX refresh token: ${stockxRefreshToken ? 'Present' : 'Missing'}`);
     
     const response = await fetch(apiUrl, {
       headers: {
@@ -457,10 +465,11 @@ async function searchStockXForProduct(query: string, request: NextRequest): Prom
     });
     
     console.log(`📡 StockX API response status: ${response.status}`);
+    console.log(`📋 StockX Response Headers:`, Object.fromEntries(response.headers.entries()));
     
     if (response.ok) {
       const data = await response.json();
-      console.log(`📦 StockX API response:`, data);
+      console.log(`📦 StockX API response:`, JSON.stringify(data, null, 2));
       
       // Check for authentication error
       if (data.error && data.authRequired) {
@@ -471,9 +480,19 @@ async function searchStockXForProduct(query: string, request: NextRequest): Prom
       // Handle successful response with products
       if (data.products?.length > 0) {
         console.log(`✅ Found ${data.products.length} StockX products`);
+        
+        // Log first few products for debugging
+        console.log(`📋 Sample StockX products:`, data.products.slice(0, 3).map(p => ({
+          id: p.id,
+          title: p.title,
+          brand: p.brand,
+          urlKey: p.urlKey
+        })));
+        
         return data.products;
       } else {
         console.log(`⚠️ No StockX products found for: ${query}`);
+        console.log(`📊 Response structure:`, Object.keys(data));
         return [];
       }
     } else {
