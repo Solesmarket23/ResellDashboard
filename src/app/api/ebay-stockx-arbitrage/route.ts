@@ -110,19 +110,29 @@ async function searchEbayForShoes(query: string, limit: number = 100, authentici
       
       console.log(`🔍 Enhanced eBay query: "${enhancedQuery}"`);
 
+      // Build filters array
+      const filters = [];
+      
       // Only add category filter for non-style code searches
       if (!isStyleCode) {
         // Search in sneakers category only (eBay allows max 1 category)
         params.append('category_ids', '15709');
-        params.append('filter', 'conditions:{NEW,USED_EXCELLENT,USED_VERY_GOOD}');
+        filters.push('conditions:{NEW,USED_EXCELLENT,USED_VERY_GOOD}');
         
         // Try to exclude box-only listings at the eBay API level
-        params.append('filter', 'excludeCategoryIds:{177915}'); // Exclude sports memorabilia which includes boxes
+        filters.push('excludeCategoryIds:{177915}'); // Exclude sports memorabilia which includes boxes
       }
       
       // Add authenticity guarantee filter if requested
       if (authenticityGuaranteeOnly) {
-        params.append('filter', 'qualifiedPrograms:{AUTHENTICITY_GUARANTEE}');
+        filters.push('qualifiedPrograms:{AUTHENTICITY_GUARANTEE}');
+        filters.push('deliveryCountry:US');
+        filters.push('deliveryPostalCode:90210'); // Default to US postal code
+      }
+      
+      // Add all filters as a single parameter
+      if (filters.length > 0) {
+        params.append('filter', filters.join(','));
       }
       
       console.log(`🎯 Search type: ${isStyleCode ? 'Style Code' : 'Product Name'}`);
