@@ -80,10 +80,46 @@ const EbayStockXArbitrage: React.FC = () => {
   const [maxPrice, setMaxPrice] = useState(500);
   const [minConfidence, setMinConfidence] = useState(60);
   const [showFilters, setShowFilters] = useState(false);
+  const [stockxAuthStatus, setStockxAuthStatus] = useState<'checking' | 'authenticated' | 'not_authenticated'>('checking');
+
+  // Check StockX authentication status on component mount
+  useEffect(() => {
+    const checkStockXAuth = async () => {
+      try {
+        const response = await fetch('/api/stockx/auth/status');
+        if (response.ok) {
+          const data = await response.json();
+          setStockxAuthStatus(data.isAuthenticated ? 'authenticated' : 'not_authenticated');
+        } else {
+          setStockxAuthStatus('not_authenticated');
+        }
+      } catch (error) {
+        console.error('Error checking StockX auth status:', error);
+        setStockxAuthStatus('not_authenticated');
+      }
+    };
+
+    checkStockXAuth();
+    
+    // Check for auth success in URL params (when returning from StockX OAuth)
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('success') === 'true') {
+      // Remove the success param from URL
+      window.history.replaceState({}, '', window.location.pathname + '?section=ebay-stockx-arbitrage');
+      // Refresh auth status
+      setTimeout(checkStockXAuth, 1000);
+    }
+  }, []);
 
   const searchArbitrageOpportunities = async () => {
     if (!searchQuery.trim()) {
       setErrorMessage('Please enter a search query');
+      return;
+    }
+
+    // If not authenticated, show auth message
+    if (stockxAuthStatus === 'not_authenticated') {
+      setErrorMessage('Please connect to StockX first to enable price comparisons');
       return;
     }
 
@@ -214,6 +250,42 @@ const EbayStockXArbitrage: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* StockX Authentication Status */}
+        {stockxAuthStatus === 'not_authenticated' && (
+          <div className="mb-6 p-4 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <AlertCircle className="w-5 h-5 text-yellow-400" />
+                <div>
+                  <p className="text-yellow-300 font-medium">StockX Authentication Required</p>
+                  <p className="text-yellow-200 text-sm">
+                    Connect to StockX to see price comparisons and profit calculations
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  const returnUrl = encodeURIComponent(window.location.href);
+                  window.location.href = `/api/stockx/auth?returnTo=${returnUrl}`;
+                }}
+                className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-medium transition-colors"
+              >
+                Connect StockX
+              </button>
+            </div>
+          </div>
+        )}
+
+        {stockxAuthStatus === 'authenticated' && (
+          <div className="mb-6 p-4 bg-green-900/20 border border-green-500/30 rounded-lg">
+            <div className="flex items-center gap-3">
+              <CheckCircle className="w-5 h-5 text-green-400" />
+              <p className="text-green-300 font-medium">StockX Connected</p>
+              <span className="text-green-200 text-sm">• Ready to find arbitrage opportunities</span>
+            </div>
+          </div>
+        )}
 
         {/* Search and Filters */}
         <div className="space-y-4 mb-6 sm:mb-8">
