@@ -630,12 +630,26 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    console.log(`🔍 === ARBITRAGE SEARCH DEBUG START ===`);
     console.log(`🔍 Searching eBay for: "${query}" with minProfit: ${minProfitMargin}%, maxPrice: $${maxPrice}, newOnly: ${newItemsOnly}, authenticityGuarantee: ${authenticityGuaranteeOnly}`);
     
     // Step 1: Search eBay for listings
     const ebayListings = await searchEbayForShoes(query, limit, authenticityGuaranteeOnly);
     console.log(`📦 Found ${ebayListings.length} eBay listings`);
     console.log(`📦 Sample listing:`, ebayListings[0] || 'None');
+    
+    if (ebayListings.length === 0) {
+      console.log(`❌ No eBay listings found - search term might be too specific or no results`);
+      return NextResponse.json({
+        success: true,
+        opportunities: [],
+        searchQuery: query,
+        totalEbayListings: 0,
+        totalOpportunities: 0,
+        message: 'No eBay listings found for this search',
+        debugInfo: 'eBay search returned 0 results'
+      });
+    }
     
     if (ebayListings.length === 0) {
       return NextResponse.json({
