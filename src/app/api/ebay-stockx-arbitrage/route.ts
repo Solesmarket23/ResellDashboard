@@ -227,6 +227,51 @@ function parseShoeDetails(title: string): { brand?: string; model?: string; size
   return { brand, model, size, styleCode, possibleSizes };
 }
 
+// Extract GTIN (UPC/EAN) from eBay listing title or description
+function extractGTINFromTitle(title: string): string | undefined {
+  // Look for UPC (12 digits) or EAN (13 digits)
+  const upcMatch = title.match(/\b(\d{12})\b/);
+  if (upcMatch) return upcMatch[1];
+  
+  const eanMatch = title.match(/\b(\d{13})\b/);
+  if (eanMatch) return eanMatch[1];
+  
+  return undefined;
+}
+
+// Extract colorway from eBay listing title
+function extractColorway(title: string): string | undefined {
+  const normalizedTitle = title.toLowerCase();
+  
+  // Look for quoted colorways first
+  const quotedMatch = title.match(/"([^"]+)"/);
+  if (quotedMatch) return quotedMatch[1];
+  
+  // Common sneaker colorways
+  const colorways = [
+    'panda', 'bred', 'chicago', 'royal', 'shadow', 'pine green', 'court purple', 
+    'obsidian', 'unc', 'fragment', 'travis scott', 'off white', 'triple white', 
+    'triple black', 'core black', 'cloud white', 'zebra', 'butter', 'sesame', 
+    'cream', 'bred toe', 'shattered backboard', 'game royal', 'storm blue'
+  ];
+  
+  for (const colorway of colorways) {
+    if (normalizedTitle.includes(colorway)) {
+      return colorway.split(' ').map(word => 
+        word.charAt(0).toUpperCase() + word.slice(1)
+      ).join(' ');
+    }
+  }
+  
+  // Look for basic color combinations
+  const colorMatch = title.match(/\b(black|white|red|blue|green|yellow|orange|purple|pink|grey|gray|brown)\s+(black|white|red|blue|green|yellow|orange|purple|pink|grey|gray|brown)\b/i);
+  if (colorMatch) {
+    return colorMatch[0];
+  }
+  
+  return undefined;
+}
+
 // Generate multiple StockX search queries from eBay listing - try different variations
 function generateStockXQueries(ebayTitle: string, parsedDetails: { brand?: string; model?: string; styleCode?: string }): string[] {
   const { brand, model, styleCode } = parsedDetails;
@@ -335,6 +380,45 @@ function generateStockXQueries(ebayTitle: string, parsedDetails: { brand?: strin
   // Remove duplicates and return
   const uniqueQueries = [...new Set(queries)];
   console.log(`🔍 Generated ${uniqueQueries.length} queries for "${ebayTitle}": ${uniqueQueries.join(', ')}`);
+  return uniqueQueries;
+}
+
+// Enhanced query generation using all available identifiers
+function generateEnhancedStockXQueries(productDetails: any): string[] {
+  const queries: string[] = [];
+  
+  // Priority 1: GTIN (most accurate if available)
+  if (productDetails.gtin) {
+    queries.push(productDetails.gtin);
+    console.log(`🎯 Added GTIN query: ${productDetails.gtin}`);
+  }
+  
+  // Priority 2: Style code
+  if (productDetails.styleCode) {
+    queries.push(productDetails.styleCode);
+    console.log(`🎯 Added style code query: ${productDetails.styleCode}`);
+  }
+  
+  // Priority 3: Brand + Model + Colorway combinations
+  if (productDetails.brand && productDetails.model) {
+    const baseQuery = `${productDetails.brand} ${productDetails.model}`;
+    queries.push(baseQuery);
+    
+    if (productDetails.colorway) {
+      queries.push(`${baseQuery} ${productDetails.colorway}`);
+      queries.push(`${productDetails.brand} ${productDetails.model} "${productDetails.colorway}"`);
+      // Try colorway first (some StockX listings lead with colorway)
+      queries.push(`${productDetails.brand} ${productDetails.colorway} ${productDetails.model}`);
+    }
+  }
+  
+  // Priority 4: Use the original enhanced pattern matching
+  const originalQueries = generateStockXQueries(productDetails.originalTitle, productDetails);
+  queries.push(...originalQueries);
+  
+  // Remove duplicates and return
+  const uniqueQueries = [...new Set(queries)];
+  console.log(`🔍 Enhanced query generation for "${productDetails.originalTitle}": ${uniqueQueries.join(', ')}`);
   return uniqueQueries;
 }
 
@@ -565,13 +649,25 @@ export async function GET(request: NextRequest) {
         continue;
       }
       
-      // Parse shoe details from title
+      // Parse product details from listing (enhanced with GTIN support)
       const parsedDetails = parseShoeDetails(listing.title);
-      console.log(`📝 Parsed details:`, parsedDetails);
       
-      // Generate multiple StockX search queries to try
-      const stockxQueries = generateStockXQueries(listing.title, parsedDetails);
-      console.log(`🔍 Generated ${stockxQueries.length} StockX queries:`, stockxQueries);
+      // Enhanced: Extract additional identifiers from eBay listing
+      const enhancedDetails = {
+        ...parsedDetails,
+        originalTitle: listing.title,
+        // TODO: Extract from eBay item specifics when available
+        gtin: extractGTINFromTitle(listing.title),
+        colorway: extractColorway(listing.title),
+        condition: listing.condition,
+        seller: listing.seller
+      };
+      
+      console.log(`📝 Enhanced details:`, enhancedDetails);
+      
+      // Generate multiple StockX search queries to try (enhanced with GTIN/colorway)
+      const stockxQueries = generateEnhancedStockXQueries(enhancedDetails);
+      console.log(`🔍 Generated ${stockxQueries.length} enhanced StockX queries:`, stockxQueries);
       
       let stockxProducts: any[] = [];
       let usedQuery = '';
