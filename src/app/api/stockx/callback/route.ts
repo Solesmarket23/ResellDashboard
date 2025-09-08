@@ -17,6 +17,13 @@ async function validateTokens(accessToken: string): Promise<boolean> {
   }
 }
 
+// Helper function to build redirect URL safely
+function buildRedirectUrl(baseUrl: string, returnTo?: string, defaultReturn?: string): string {
+  const path = returnTo || defaultReturn || '/dashboard';
+  // If returnTo is already a full URL, use it directly
+  return returnTo && returnTo.startsWith('http') ? returnTo : `${baseUrl}${path}`;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -54,8 +61,7 @@ export async function GET(request: NextRequest) {
   // Handle OAuth errors
   if (error) {
     console.log('OAuth error:', error);
-    const redirectPath = returnTo || defaultReturn;
-    const redirectUrl = `${baseUrl}${redirectPath}`;
+    const redirectUrl = buildRedirectUrl(baseUrl, returnTo, defaultReturn);
     const separator = redirectUrl.includes('?') ? '&' : '?';
     return NextResponse.redirect(`${redirectUrl}${separator}error=oauth_error&message=${encodeURIComponent(error)}`);
   }
@@ -70,8 +76,7 @@ export async function GET(request: NextRequest) {
     // Validate state for security
     if (state !== storedState) {
       console.log('❌ State mismatch - security issue detected');
-      const redirectPath = returnTo || defaultReturn;
-      const redirectUrl = `${baseUrl}${redirectPath}`;
+      const redirectUrl = buildRedirectUrl(baseUrl, returnTo, defaultReturn);
       const separator = redirectUrl.includes('?') ? '&' : '?';
       return NextResponse.redirect(`${redirectUrl}${separator}error=state_mismatch`);
     }
@@ -91,8 +96,7 @@ export async function GET(request: NextRequest) {
       
       if (!clientId || !clientSecret) {
         console.error('❌ Missing OAuth credentials');
-        const redirectPath = returnTo || defaultReturn;
-        const redirectUrl = `${baseUrl}${redirectPath}`;
+        const redirectUrl = buildRedirectUrl(baseUrl, returnTo, defaultReturn);
         const separator = redirectUrl.includes('?') ? '&' : '?';
         return NextResponse.redirect(`${redirectUrl}${separator}error=missing_credentials`);
       }
@@ -146,8 +150,7 @@ export async function GET(request: NextRequest) {
           // Not JSON, use the raw text
         }
         
-        const redirectPath = returnTo || defaultReturn;
-        const redirectUrl = `${baseUrl}${redirectPath}`;
+        const redirectUrl = buildRedirectUrl(baseUrl, returnTo, defaultReturn);
         const separator = redirectUrl.includes('?') ? '&' : '?';
         return NextResponse.redirect(`${redirectUrl}${separator}error=${errorDetails}&details=${encodeURIComponent(errorText.substring(0, 100))}`);
       }
@@ -173,8 +176,7 @@ export async function GET(request: NextRequest) {
         maxAge: 2592000 // 30 days in seconds
       };
 
-      const finalPath = returnTo || defaultReturn;
-      const finalRedirect = `${baseUrl}${finalPath}`;
+      const finalRedirect = buildRedirectUrl(baseUrl, returnTo, defaultReturn);
       const separator = finalRedirect.includes('?') ? '&' : '?';
       const response = NextResponse.redirect(`${finalRedirect}${separator}success=true&note=fresh_login`);
 
@@ -195,8 +197,7 @@ export async function GET(request: NextRequest) {
 
     } catch (error) {
       console.error('❌ Token exchange error:', error);
-      const redirectPath = returnTo || defaultReturn;
-      const redirectUrl = `${baseUrl}${redirectPath}`;
+      const redirectUrl = buildRedirectUrl(baseUrl, returnTo, defaultReturn);
       const separator = redirectUrl.includes('?') ? '&' : '?';
       return NextResponse.redirect(`${redirectUrl}${separator}error=token_exchange_error`);
     }
@@ -216,14 +217,12 @@ export async function GET(request: NextRequest) {
     
     if (tokensValid) {
       console.log('✅ Existing tokens are valid');
-      const finalPath = returnTo || defaultReturn;
-      const finalRedirect = `${baseUrl}${finalPath}`;
+      const finalRedirect = buildRedirectUrl(baseUrl, returnTo, defaultReturn);
       const separator = finalRedirect.includes('?') ? '&' : '?';
       return NextResponse.redirect(`${finalRedirect}${separator}success=true&note=existing_valid`);
     } else {
       console.log('❌ Existing tokens are invalid - need fresh login');
-      const redirectPath = returnTo || defaultReturn;
-      const redirectUrl = `${baseUrl}${redirectPath}`;
+      const redirectUrl = buildRedirectUrl(baseUrl, returnTo, defaultReturn);
       const separator = redirectUrl.includes('?') ? '&' : '?';
       return NextResponse.redirect(`${redirectUrl}${separator}error=invalid_tokens&need_reauth=true`);
     }
@@ -231,8 +230,7 @@ export async function GET(request: NextRequest) {
 
   // PRIORITY 3: No valid tokens found at all
   console.log('❌ No valid tokens found - need authentication');
-  const redirectPath = returnTo || defaultReturn;
-  const redirectUrl = `${baseUrl}${redirectPath}`;
+  const redirectUrl = buildRedirectUrl(baseUrl, returnTo, defaultReturn);
   const separator = redirectUrl.includes('?') ? '&' : '?';
   return NextResponse.redirect(`${redirectUrl}${separator}error=no_tokens&need_reauth=true`);
   
