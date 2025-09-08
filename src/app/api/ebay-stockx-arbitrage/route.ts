@@ -98,18 +98,26 @@ async function searchEbayForShoes(query: string, limit: number = 100, authentici
       // For style codes, search broadly without category restrictions
       const isStyleCode = query.match(/^[A-Z]{2}\d{4}-\d{3}$/i);
       
+      // Enhance query to find actual shoes, not boxes
+      const enhancedQuery = isStyleCode ? query : `${query} sneakers shoes -box -"box only" -empty`;
+      
       const params = new URLSearchParams({
-        q: query,
+        q: enhancedQuery,
         limit: limit.toString(),
         sort: 'price', // Sort by price ascending to find deals
         fieldgroups: 'MATCHING_ITEMS,EXTENDED'
       });
+      
+      console.log(`🔍 Enhanced eBay query: "${enhancedQuery}"`);
 
       // Only add category filter for non-style code searches
       if (!isStyleCode) {
         // Search in sneakers category only (eBay allows max 1 category)
         params.append('category_ids', '15709');
         params.append('filter', 'conditions:{NEW,USED_EXCELLENT,USED_VERY_GOOD}');
+        
+        // Try to exclude box-only listings at the eBay API level
+        params.append('filter', 'excludeCategoryIds:{177915}'); // Exclude sports memorabilia which includes boxes
       }
       
       // Add authenticity guarantee filter if requested
@@ -679,8 +687,20 @@ export async function GET(request: NextRequest) {
       // Skip obviously irrelevant listings
       const title = listing.title.toLowerCase();
       
-      // Skip box-only listings
-      if (title.includes('box only') && !title.includes('with box')) {
+      // Skip box-only listings (more comprehensive check)
+      const isBoxOnly = (
+        title.includes('box only') ||
+        title.includes('empty box') ||
+        title.includes('shoe box only') ||
+        title.includes('replacement box') ||
+        (title.includes('box') && !title.includes('with box') && !title.includes('new box') && (
+          title.includes('just') || 
+          title.includes('only') ||
+          title.includes('empty')
+        ))
+      );
+      
+      if (isBoxOnly) {
         console.log(`❌ Skipping box-only listing: ${listing.title}`);
         continue;
       }
