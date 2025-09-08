@@ -114,14 +114,20 @@ async function searchEbayForShoes(query: string, limit: number = 100, authentici
       if (!isStyleCode) {
         // Search in sneakers category only (eBay allows max 1 category)
         params.append('category_ids', '15709');
+        // Use proper filter format as per eBay documentation
         params.append('filter', 'conditions:{NEW,USED_EXCELLENT,USED_VERY_GOOD}');
+        
+        // Add price range filter to avoid very expensive items by default
+        params.append('filter', 'price:[..1000]'); // Under $1000
       }
       
-      // TEMPORARILY DISABLE authenticity guarantee filter due to eBay API requirements
-      // TODO: Fix authenticity guarantee filter implementation
+      // Add authenticity guarantee filter if requested (now properly implemented)
       if (authenticityGuaranteeOnly) {
-        console.log('⚠️ Authenticity Guarantee filter temporarily disabled - searching all items');
-        // Note: We'll filter out non-authentic items manually if needed
+        // According to eBay docs, delivery location is required for authenticity guarantee
+        params.append('filter', 'deliveryCountry:US');
+        params.append('filter', 'deliveryPostalCode:90210');
+        params.append('filter', 'qualifiedPrograms:{AUTHENTICITY_GUARANTEE}');
+        console.log('✅ Authenticity Guarantee filter enabled with proper delivery location');
       }
       
       console.log(`🎯 Search type: ${isStyleCode ? 'Style Code' : 'Product Name'}`);
@@ -135,7 +141,8 @@ async function searchEbayForShoes(query: string, limit: number = 100, authentici
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
-        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
+        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+        'X-EBAY-C-ENDUSERCTX': 'contextualLocation=country%3DUS%2Czip%3D90210'
       }
     });
 

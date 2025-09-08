@@ -487,7 +487,7 @@ const EbayStockXArbitrage: React.FC = () => {
                     </label>
                   </div>
                   <div className="text-xs text-gray-400 mt-1">
-                    Only show eBay items with authenticity guarantee (temporarily disabled)
+                    Only show eBay items with authenticity guarantee
                   </div>
                 </div>
                 <div className="flex items-end">
