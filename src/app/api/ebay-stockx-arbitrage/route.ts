@@ -742,8 +742,14 @@ export async function GET(request: NextRequest) {
       // Process each StockX match
       for (const stockxProduct of stockxProducts) {
         try {
+          console.log(`🎯 Processing StockX product: ${stockxProduct.title || stockxProduct.name}`);
+          console.log(`🆔 StockX Product ID: ${stockxProduct.id || stockxProduct.productId || stockxProduct.uuid}`);
+          
           // Get market data for this product
-          const marketData = await getStockXMarketData(stockxProduct.id, parsedDetails.size);
+          const productId = stockxProduct.id || stockxProduct.productId || stockxProduct.uuid;
+          console.log(`📊 Getting market data for product ID: ${productId}, size: ${parsedDetails.size}`);
+          
+          const marketData = await getStockXMarketData(productId, parsedDetails.size);
           
           if (marketData) {
             console.log(`💰 Market data: Ask $${marketData.lowestAsk}, Bid $${marketData.highestBid}`);
