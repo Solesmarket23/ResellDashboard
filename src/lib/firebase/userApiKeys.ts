@@ -1,14 +1,35 @@
-import { db } from './firebase';
-import { 
-  collection, 
-  doc, 
-  setDoc, 
-  getDoc, 
-  deleteDoc,
-  query,
-  where,
-  getDocs
-} from 'firebase/firestore';
+// Use admin Firebase for server-side operations, fallback to client-side for browser
+let db;
+let doc, getDoc, setDoc, deleteDoc, collection, query, where, getDocs;
+
+if (typeof window === 'undefined') {
+  // Server-side: use Firebase Admin
+  try {
+    const { adminDb } = require('./admin');
+    db = adminDb;
+    // Firebase Admin uses different API
+    doc = (db: any, path: string, ...segments: string[]) => db.doc([path, ...segments].join('/'));
+    getDoc = (docRef: any) => docRef.get();
+    setDoc = (docRef: any, data: any) => docRef.set(data);
+    deleteDoc = (docRef: any) => docRef.delete();
+    collection = (db: any, path: string) => db.collection(path);
+  } catch (error) {
+    console.error('❌ Failed to load Firebase Admin:', error);
+  }
+} else {
+  // Client-side: use regular Firebase
+  const { db: clientDb } = require('./firebase');
+  const firestore = require('firebase/firestore');
+  db = clientDb;
+  doc = firestore.doc;
+  getDoc = firestore.getDoc;
+  setDoc = firestore.setDoc;
+  deleteDoc = firestore.deleteDoc;
+  collection = firestore.collection;
+  query = firestore.query;
+  where = firestore.where;
+  getDocs = firestore.getDocs;
+}
 import crypto from 'crypto';
 
 // Simple encryption/decryption for API keys
@@ -109,14 +130,21 @@ export const getUserStockXKeys = async (userId: string): Promise<{
       throw new Error('User ID is required');
     }
 
-    const userApiKeysRef = doc(db, `users/${userId}/apiKeys`, 'stockx');
-    const docSnap = await getDoc(userApiKeysRef);
-
-    if (!docSnap.exists()) {
+    if (!db) {
+      console.warn('⚠️ Firebase not available, using fallback');
       return { isConfigured: false };
     }
 
-    const data = docSnap.data() as UserApiKeys;
+    const userApiKeysRef = doc(db, `users/${userId}/apiKeys`, 'stockx');
+    const docSnap = await getDoc(userApiKeysRef);
+
+    // Handle both client-side and admin Firebase API differences
+    const exists = typeof window === 'undefined' ? docSnap.exists : docSnap.exists();
+    if (!exists) {
+      return { isConfigured: false };
+    }
+
+    const data = (typeof window === 'undefined' ? docSnap.data() : docSnap.data()) as UserApiKeys;
     
     if (!data.isActive || !data.stockxApiKey) {
       return { isConfigured: false };
