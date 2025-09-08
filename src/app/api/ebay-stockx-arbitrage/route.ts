@@ -429,7 +429,7 @@ function generateStockXQuery(ebayTitle: string, parsedDetails: { brand?: string;
 }
 
 // Search StockX for matching products using the same endpoint as the working StockX arbitrage finder
-async function searchStockXForProduct(query: string): Promise<any[]> {
+async function searchStockXForProduct(query: string, request: NextRequest): Promise<any[]> {
   try {
     console.log(`🔍 Searching StockX for: ${query}`);
     
@@ -439,10 +439,14 @@ async function searchStockXForProduct(query: string): Promise<any[]> {
     
     console.log(`🌐 StockX API URL: ${apiUrl}`);
     
+    // Forward the user's authentication cookies to the StockX API
+    const cookies = request.cookies.toString();
+    
     const response = await fetch(apiUrl, {
       headers: {
         'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (compatible; solesmarket-arbitrage)'
+        'User-Agent': 'Mozilla/5.0 (compatible; solesmarket-arbitrage)',
+        'Cookie': cookies // Forward authentication cookies
       }
     });
     
@@ -687,7 +691,7 @@ export async function GET(request: NextRequest) {
       // Try each query until we find matches
       for (const query of stockxQueries) {
         console.log(`🔍 Trying StockX query: "${query}"`);
-        stockxProducts = await searchStockXForProduct(query);
+        stockxProducts = await searchStockXForProduct(query, request);
         console.log(`📈 Found ${stockxProducts.length} StockX matches for "${query}"`);
         
         if (stockxProducts.length > 0) {
