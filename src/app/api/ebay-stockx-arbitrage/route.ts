@@ -110,24 +110,32 @@ async function searchEbayForShoes(query: string, limit: number = 100, authentici
       
       console.log(`🔍 Enhanced eBay query: "${enhancedQuery}"`);
 
+      // Build filters array and combine into single filter parameter
+      const filters = [];
+      
       // Only add category filter for non-style code searches
       if (!isStyleCode) {
         // Search in sneakers category only (eBay allows max 1 category)
         params.append('category_ids', '15709');
-        // Use proper filter format as per eBay documentation
-        params.append('filter', 'conditions:{NEW,USED_EXCELLENT,USED_VERY_GOOD}');
-        
-        // Add price range filter to avoid very expensive items by default
-        params.append('filter', 'price:[..1000]'); // Under $1000
+        // Add condition filter
+        filters.push('conditions:{NEW,USED_EXCELLENT,USED_VERY_GOOD}');
+        // Add price range filter to avoid very expensive items
+        filters.push('price:[..1000]');
       }
       
-      // Add authenticity guarantee filter if requested (now properly implemented)
+      // Add authenticity guarantee filter if requested
       if (authenticityGuaranteeOnly) {
         // According to eBay docs, delivery location is required for authenticity guarantee
-        params.append('filter', 'deliveryCountry:US');
-        params.append('filter', 'deliveryPostalCode:90210');
-        params.append('filter', 'qualifiedPrograms:{AUTHENTICITY_GUARANTEE}');
+        filters.push('deliveryCountry:US');
+        filters.push('deliveryPostalCode:90210');
+        filters.push('qualifiedPrograms:{AUTHENTICITY_GUARANTEE}');
         console.log('✅ Authenticity Guarantee filter enabled with proper delivery location');
+      }
+      
+      // Combine all filters into single parameter
+      if (filters.length > 0) {
+        params.append('filter', filters.join(','));
+        console.log(`🔍 Combined filters: ${filters.join(',')}`);
       }
       
       console.log(`🎯 Search type: ${isStyleCode ? 'Style Code' : 'Product Name'}`);
@@ -151,6 +159,13 @@ async function searchEbayForShoes(query: string, limit: number = 100, authentici
     if (!response.ok) {
       const errorText = await response.text();
       console.error('❌ eBay API error:', response.status, errorText);
+      console.error(`🔍 Request URL: ${apiUrl}?${params}`);
+      console.error(`📋 Request headers:`, {
+        'Authorization': `Bearer ${accessToken?.slice(0, 20)}...`,
+        'Content-Type': 'application/json',
+        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+        'X-EBAY-C-ENDUSERCTX': 'contextualLocation=country%3DUS%2Czip%3D90210'
+      });
       throw new Error(`eBay API failed with status ${response.status}: ${errorText}`);
     }
 
