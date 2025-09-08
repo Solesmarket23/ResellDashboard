@@ -5,7 +5,7 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const query = searchParams.get('query') || 'Nike Air Jordan';
   
-  console.log('🔍 eBay Debug: Starting test...');
+  console.log('🔍 eBay Debug: Starting test v2...');
   
   // Check environment variables
   const ebayAppId = process.env.EBAY_APP_ID;
