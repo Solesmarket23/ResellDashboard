@@ -231,6 +231,7 @@ function parseShoeDetails(title: string): { brand?: string; model?: string; size
 function generateStockXQueries(ebayTitle: string, parsedDetails: { brand?: string; model?: string; styleCode?: string }): string[] {
   const { brand, model, styleCode } = parsedDetails;
   const queries: string[] = [];
+  const title = ebayTitle.toLowerCase();
   
   // Priority 1: Use style code if available (most accurate)
   if (styleCode) {
@@ -238,41 +239,103 @@ function generateStockXQueries(ebayTitle: string, parsedDetails: { brand?: strin
     console.log(`🎯 Style code query: ${styleCode}`);
   }
   
-  // Priority 2: Try common Nike Air Jordan variations
-  const title = ebayTitle.toLowerCase();
-  if (title.includes('air jordan 1') && title.includes('bred toe')) {
-    queries.push('Air Jordan 1 Bred Toe');
-    queries.push('Jordan 1 Bred Toe');
-    queries.push('AJ1 Bred Toe');
-  } else if (title.includes('air jordan 1')) {
-    // Extract the colorway/model
-    const colorwayMatch = title.match(/air jordan 1.*?"([^"]+)"/);
-    if (colorwayMatch) {
-      queries.push(`Air Jordan 1 ${colorwayMatch[1]}`);
-      queries.push(`Jordan 1 ${colorwayMatch[1]}`);
+  // Priority 2: Specific Nike product patterns
+  if (title.includes('nike')) {
+    // Nike Dunk Low patterns
+    if (title.includes('dunk') && title.includes('low')) {
+      if (title.includes('panda') || (title.includes('black') && title.includes('white'))) {
+        queries.push('Nike Dunk Low Panda');
+        queries.push('Nike Dunk Low White Black');
+        queries.push('Dunk Low Panda');
+      } else {
+        queries.push('Nike Dunk Low');
+        queries.push('Dunk Low');
+      }
+    }
+    // Nike Dunk High
+    else if (title.includes('dunk') && title.includes('high')) {
+      queries.push('Nike Dunk High');
+      queries.push('Dunk High');
+    }
+    // Air Jordan patterns
+    else if (title.includes('air jordan') || title.includes('jordan')) {
+      if (title.includes('bred toe')) {
+        queries.push('Air Jordan 1 Bred Toe');
+        queries.push('Jordan 1 Bred Toe');
+      } else if (title.includes('jordan 1')) {
+        queries.push('Air Jordan 1');
+        queries.push('Jordan 1');
+      } else if (title.includes('jordan 4')) {
+        queries.push('Air Jordan 4');
+        queries.push('Jordan 4');
+      } else if (title.includes('jordan')) {
+        const jordanMatch = title.match(/jordan\s+(\d+)/);
+        if (jordanMatch) {
+          queries.push(`Air Jordan ${jordanMatch[1]}`);
+          queries.push(`Jordan ${jordanMatch[1]}`);
+        }
+      }
+    }
+    // Nike Air Force 1
+    else if (title.includes('air force') || title.includes('af1')) {
+      queries.push('Nike Air Force 1');
+      queries.push('Air Force 1');
+    }
+    // Nike Blazer
+    else if (title.includes('blazer')) {
+      queries.push('Nike Blazer');
+      queries.push('Blazer');
     }
   }
   
-  // Priority 3: Use brand + model
-  if (brand && model) {
-    const cleanModel = model.replace(/["]/g, '').trim(); // Remove quotes
-    queries.push(`${brand} ${cleanModel}`);
-  } 
-  
-  // Priority 4: Extract key product terms (brand + main product name)
-  if (brand) {
-    const words = ebayTitle.split(' ').filter(word => 
-      word.length > 2 && 
-      !['size', 'new', 'used', 'mens', 'womens'].includes(word.toLowerCase())
-    );
-    if (words.length >= 3) {
-      queries.push(words.slice(0, 4).join(' ')); // First 4 meaningful words
+  // Priority 3: Adidas patterns
+  if (title.includes('adidas')) {
+    if (title.includes('yeezy')) {
+      if (title.includes('350')) {
+        queries.push('Adidas Yeezy Boost 350');
+        queries.push('Yeezy 350');
+      } else if (title.includes('700')) {
+        queries.push('Adidas Yeezy Boost 700');
+        queries.push('Yeezy 700');
+      } else {
+        queries.push('Adidas Yeezy');
+        queries.push('Yeezy');
+      }
     }
+    else if (title.includes('ultraboost')) {
+      queries.push('Adidas Ultraboost');
+      queries.push('Ultraboost');
+    }
+  }
+  
+  // Priority 4: Use brand + model if available
+  if (brand && model) {
+    const cleanModel = model.replace(/["]/g, '').trim();
+    queries.push(`${brand} ${cleanModel}`);
+  }
+  
+  // Priority 5: Extract key sneaker terms only
+  const sneakerKeywords = ['nike', 'adidas', 'jordan', 'dunk', 'yeezy', 'boost', 'air', 'force', 'blazer', 'cortez'];
+  const words = ebayTitle.split(' ').filter(word => {
+    const w = word.toLowerCase();
+    return w.length > 2 && 
+           !['size', 'new', 'used', 'mens', 'womens', 'men', 'women', 'box', 'only', 'shoe', 'shoes'].includes(w) &&
+           sneakerKeywords.some(keyword => w.includes(keyword) || ebayTitle.toLowerCase().includes(keyword));
+  });
+  
+  if (words.length >= 2) {
+    queries.push(words.slice(0, 3).join(' ')); // First 3 meaningful sneaker words
+  }
+  
+  // Priority 6: Brand only as last resort (only for major sneaker brands)
+  if (brand && ['nike', 'adidas', 'jordan'].includes(brand.toLowerCase()) && queries.length === 0) {
     queries.push(brand);
   }
   
   // Remove duplicates and return
-  return [...new Set(queries)];
+  const uniqueQueries = [...new Set(queries)];
+  console.log(`🔍 Generated ${uniqueQueries.length} queries for "${ebayTitle}": ${uniqueQueries.join(', ')}`);
+  return uniqueQueries;
 }
 
 // Generate StockX search query from eBay listing - supports both style codes and product names
@@ -480,6 +543,25 @@ export async function GET(request: NextRequest) {
       // Skip if over max price
       if (listing.price > maxPrice) {
         console.log(`❌ Skipping: Price $${listing.price} exceeds max $${maxPrice}`);
+        continue;
+      }
+      
+      // Skip obviously irrelevant listings
+      const title = listing.title.toLowerCase();
+      
+      // Skip box-only listings
+      if (title.includes('box only') && !title.includes('with box')) {
+        console.log(`❌ Skipping box-only listing: ${listing.title}`);
+        continue;
+      }
+      
+      // Skip non-sneaker brands (unless searching for a specific style code)
+      const hasSneakerBrand = ['nike', 'adidas', 'jordan', 'yeezy', 'puma', 'new balance', 'vans', 'converse'].some(brand => 
+        title.includes(brand)
+      );
+      
+      if (!hasSneakerBrand && !query.match(/^[A-Z]{2}\d{4}-\d{3}$/i)) {
+        console.log(`❌ Skipping non-sneaker brand: ${listing.title}`);
         continue;
       }
       
