@@ -653,7 +653,7 @@ export async function GET(request: NextRequest) {
     
     for (let i = 0; i < ebayListings.length; i++) {
       const listing = ebayListings[i];
-      console.log(`\n--- Processing eBay listing ${i + 1}/${ebayListings.length} ---`);
+      console.log(`\n🔄 === Processing eBay listing ${i + 1}/${ebayListings.length} ===`);
       console.log(`📦 eBay listing: ${listing.title} - $${listing.price}`);
       
       // Skip if over max price
@@ -718,12 +718,16 @@ export async function GET(request: NextRequest) {
       // Try each query until we find matches
       for (const query of stockxQueries) {
         console.log(`🔍 Trying StockX query: "${query}"`);
-        stockxProducts = await searchStockXForProduct(query, request);
-        console.log(`📈 Found ${stockxProducts.length} StockX matches for "${query}"`);
-        
-        if (stockxProducts.length > 0) {
-          usedQuery = query;
-          break;
+        try {
+          stockxProducts = await searchStockXForProduct(query, request);
+          console.log(`📈 Found ${stockxProducts.length} StockX matches for "${query}"`);
+          
+          if (stockxProducts.length > 0) {
+            usedQuery = query;
+            break;
+          }
+        } catch (error) {
+          console.error(`❌ Error searching StockX for "${query}":`, error);
         }
         
         // Small delay between searches to be respectful
