@@ -732,29 +732,9 @@ export async function GET(request: NextRequest) {
       if (stockxProducts.length === 0) {
         console.log(`⚠️ No StockX matches found after trying ${stockxQueries.length} queries:`, stockxQueries);
         
-        // Create a "no match" entry for debugging so users can see what was processed
-        opportunities.push({
-          ebayListing: {
-            itemId: listing.itemId,
-            title: listing.title,
-            price: listing.price,
-            currency: listing.currency,
-            image: listing.image,
-            url: listing.url,
-            seller: listing.seller,
-            condition: listing.condition,
-            shipping: listing.shipping,
-            source: 'ebay'
-          },
-          stockxData: null,
-          profit: -999, // Clearly unprofitable
-          profitMargin: -100,
-          totalCost: listing.price + (listing.shipping || 0),
-          netRevenue: 0,
-          roi: -100,
-          matchedProduct: `No StockX match found. Tried: ${stockxQueries.join(', ')}`,
-          confidence: 100 // High confidence that this listing was processed (for debugging display)
-        });
+        // Skip this listing if no StockX matches found (don't add placeholder entries)
+        console.log(`⚠️ Skipping eBay listing (no StockX matches): ${listing.title}`);
+        console.log(`   Tried queries: ${stockxQueries.join(', ')}`);
         continue;
       }
       

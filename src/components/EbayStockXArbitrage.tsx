@@ -174,6 +174,17 @@ const EbayStockXArbitrage: React.FC = () => {
         const allOpportunities = data.opportunities || [];
         console.log(`📋 Total opportunities from API: ${allOpportunities.length}`);
         
+        // Debug: Log the first few opportunities to see what we're getting
+        if (allOpportunities.length > 0) {
+          console.log(`🔍 Sample opportunities:`, allOpportunities.slice(0, 3).map(opp => ({
+            ebayTitle: opp.ebayListing?.title,
+            stockxMatch: opp.stockxData?.title || 'No match',
+            profit: opp.profit,
+            confidence: opp.confidence,
+            hasRealMatch: opp.profit > -500 // Real matches should have reasonable profit, not -999
+          })));
+        }
+        
         // Update progress with eBay results
         setSearchProgress(prev => ({ 
           ...prev, 
