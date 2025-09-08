@@ -70,7 +70,7 @@ async function getEbayApplicationToken(appId: string, certId: string): Promise<s
 }
 
 // Enhanced eBay search with better product parsing
-async function searchEbayForShoes(query: string, limit: number = 100): Promise<EbayListing[]> {
+async function searchEbayForShoes(query: string, limit: number = 100, authenticityGuaranteeOnly: boolean = false): Promise<EbayListing[]> {
   const ebayAppId = process.env.EBAY_APP_ID;
   const ebayClientSecret = process.env.EBAY_CLIENT_SECRET;
   
@@ -112,9 +112,15 @@ async function searchEbayForShoes(query: string, limit: number = 100): Promise<E
         params.append('filter', 'conditions:{NEW,USED_EXCELLENT,USED_VERY_GOOD}');
       }
       
+      // Add authenticity guarantee filter if requested
+      if (authenticityGuaranteeOnly) {
+        params.append('filter', 'qualifiedPrograms:{AUTHENTICITY_GUARANTEE}');
+      }
+      
       console.log(`🎯 Search type: ${isStyleCode ? 'Style Code' : 'Product Name'}`);
       console.log(`📋 Category filter: ${isStyleCode ? 'None (broad search)' : 'Sneakers & Athletic Shoes'}`);
-      console.log(`🔍 Condition filter: ${isStyleCode ? 'All conditions' : 'NEW,USED_EXCELLENT,USED_VERY_GOOD'}`)
+      console.log(`🔍 Condition filter: ${isStyleCode ? 'All conditions' : 'NEW,USED_EXCELLENT,USED_VERY_GOOD'}`);
+      console.log(`🛡️ Authenticity Guarantee: ${authenticityGuaranteeOnly ? 'Required' : 'Not required'}`);
 
     console.log(`🌐 eBay API URL: ${apiUrl}?${params}`);
     
@@ -597,16 +603,17 @@ export async function GET(request: NextRequest) {
   const maxPrice = parseFloat(searchParams.get('maxPrice') || '1000');
   const limit = parseInt(searchParams.get('limit') || '50');
   const newItemsOnly = searchParams.get('newItemsOnly') === 'true';
+  const authenticityGuaranteeOnly = searchParams.get('authenticityGuaranteeOnly') === 'true';
 
   if (!query) {
     return NextResponse.json({ error: 'Query parameter required' }, { status: 400 });
   }
 
   try {
-    console.log(`🔍 Searching eBay for: "${query}" with minProfit: ${minProfitMargin}%, maxPrice: $${maxPrice}`);
+    console.log(`🔍 Searching eBay for: "${query}" with minProfit: ${minProfitMargin}%, maxPrice: $${maxPrice}, newOnly: ${newItemsOnly}, authenticityGuarantee: ${authenticityGuaranteeOnly}`);
     
     // Step 1: Search eBay for listings
-    const ebayListings = await searchEbayForShoes(query, limit);
+    const ebayListings = await searchEbayForShoes(query, limit, authenticityGuaranteeOnly);
     console.log(`📦 Found ${ebayListings.length} eBay listings`);
     console.log(`📦 Sample listing:`, ebayListings[0] || 'None');
     

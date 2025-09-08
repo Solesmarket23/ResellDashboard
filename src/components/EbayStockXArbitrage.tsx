@@ -87,6 +87,7 @@ const EbayStockXArbitrage: React.FC = () => {
   const [minConfidence, setMinConfidence] = useState(60);
   const [showFilters, setShowFilters] = useState(false);
   const [newItemsOnly, setNewItemsOnly] = useState(true); // Default to new items only since StockX requires new
+  const [authenticityGuaranteeOnly, setAuthenticityGuaranteeOnly] = useState(false);
   const [stockxAuthStatus, setStockxAuthStatus] = useState<'checking' | 'authenticated' | 'not_authenticated'>('checking');
 
   // Check StockX authentication status on component mount
@@ -149,7 +150,8 @@ const EbayStockXArbitrage: React.FC = () => {
         minProfitMargin: minProfitMargin.toString(),
         maxPrice: maxPrice.toString(),
         limit: '50',
-        newItemsOnly: newItemsOnly.toString()
+        newItemsOnly: newItemsOnly.toString(),
+        authenticityGuaranteeOnly: authenticityGuaranteeOnly.toString()
       });
 
       console.log(`🌐 Making API call to: /api/ebay-stockx-arbitrage?${params.toString()}`);
@@ -458,6 +460,23 @@ const EbayStockXArbitrage: React.FC = () => {
                   </div>
                   <div className="text-xs text-gray-400 mt-1">
                     StockX only accepts new items
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <label className="flex items-center space-x-2 text-sm text-gray-300">
+                      <input
+                        type="checkbox"
+                        checked={authenticityGuaranteeOnly}
+                        onChange={(e) => setAuthenticityGuaranteeOnly(e.target.checked)}
+                        className="rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500"
+                      />
+                      Authenticity Guarantee only
+                    </label>
+                  </div>
+                  <div className="text-xs text-gray-400 mt-1">
+                    Only show eBay items with authenticity guarantee
                   </div>
                 </div>
                 <div className="flex items-end">
