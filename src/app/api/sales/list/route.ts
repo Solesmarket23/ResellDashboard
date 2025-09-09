@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminDocuments } from '@/src/lib/firebase/firebaseAdmin';
-import { COLLECTIONS } from '@/src/lib/firebase/collections';
+import { getAdminDocuments } from '@/lib/firebase/firebaseAdmin';
+import { COLLECTIONS } from '@/lib/firebase/collections';
 
 export async function GET(request: NextRequest) {
   try {
