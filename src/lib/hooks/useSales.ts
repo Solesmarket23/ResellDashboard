@@ -194,13 +194,29 @@ export const useSales = () => {
       console.log('🔄 useSales: Loading sales data for user:', user.uid);
       
       // Fetch sales from server (admin) to guarantee we read what the API wrote
-      console.log('🔎 useSales: Fetching server sales via /api/sales/list');
-      const serverSalesResp = await fetch(`/api/sales/list?userId=${encodeURIComponent(user.uid)}&limit=800`, {
-        cache: 'no-store'
-      });
-      console.log('🔎 useSales: Server sales response OK?', serverSalesResp.ok, 'status:', serverSalesResp.status);
-      const serverSalesJson = serverSalesResp.ok ? await serverSalesResp.json() : { success: false, sales: [] };
-      console.log('🔎 useSales: Server sales payload:', { success: serverSalesJson.success, count: serverSalesJson.sales?.length });
+      console.log('🔎 useSales: Fetching server sales via /api/sales/list (paged)');
+      const pageSize = 400;
+      let cursorId: string | null = null;
+      let aggregatedSales: any[] = [];
+      let page = 0;
+      do {
+        const url = `/api/sales/list?userId=${encodeURIComponent(user.uid)}&limit=${pageSize}${cursorId ? `&cursorId=${cursorId}` : ''}`;
+        const resp = await fetch(url, { cache: 'no-store' });
+        if (!resp.ok) {
+          console.warn('⚠️ useSales: Server sales page fetch failed', resp.status);
+          break;
+        }
+        const json = await resp.json();
+        if (!json.success) break;
+        aggregatedSales = aggregatedSales.concat(json.sales || []);
+        cursorId = json.nextCursorId;
+        page++;
+        // Soft cap to avoid too many sequential reads in one refresh
+        if (page >= 3) break;
+      } while (cursorId);
+
+      console.log('🔎 useSales: Server sales aggregated count:', aggregatedSales.length);
+      const serverSalesJson = { success: true, sales: aggregatedSales };
       const manualSalesData = serverSalesJson.success ? serverSalesJson.sales : [];
       // Keep reading stockxSales client-side for supplemental data
       const stockxSalesData = await getDocuments('stockxSales');
