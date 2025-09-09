@@ -44,6 +44,10 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
       return;
     }
 
+    console.log('🚀 Starting StockX sales import');
+    console.log('👤 User ID:', userId);
+    console.log('⏰ Start time:', new Date().toISOString());
+
     setIsImporting(true);
     setProgress({
       phase: 'fetching',
@@ -52,6 +56,9 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
     });
 
     try {
+      console.log('📡 Making request to bulk-import-stream endpoint');
+      console.log('📋 Request body:', { userId, maxSales: 2000 });
+      
       // Use Server-Sent Events for real-time progress updates
       const response = await fetch('/api/stockx/sales/bulk-import-stream', {
         method: 'POST',
@@ -64,26 +71,47 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
         }),
       });
 
+      console.log('📨 Response received:', {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries())
+      });
+
       if (!response.ok) {
         const errorText = await response.text();
+        console.error('❌ Response not OK:', { status: response.status, statusText: response.statusText, errorText });
         throw new Error(`Import failed: ${response.statusText} - ${errorText}`);
       }
 
       // Set up EventSource-like processing for the response stream
+      console.log('🔄 Setting up SSE stream reader');
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
 
       if (!reader) {
+        console.error('❌ Failed to get response stream reader');
         throw new Error('Failed to get response stream');
       }
 
       let buffer = '';
       let finalResult: any = null;
+      let streamStartTime = Date.now();
+      let lastUpdateTime = Date.now();
+      let updateCount = 0;
+
+      console.log('🔄 Starting stream reading loop');
 
       while (true) {
+        const currentTime = Date.now();
         const { done, value } = await reader.read();
         
-        if (done) break;
+        console.log(`📖 Stream read: done=${done}, valueLength=${value?.length || 0}, elapsed=${currentTime - streamStartTime}ms`);
+        
+        if (done) {
+          console.log('✅ Stream reading completed');
+          break;
+        }
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
@@ -93,6 +121,19 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6));
+              updateCount++;
+              lastUpdateTime = currentTime;
+              
+              console.log(`📊 SSE Update #${updateCount}:`, {
+                type: data.type,
+                phase: data.phase,
+                message: data.message,
+                progress: data.progress,
+                salesFound: data.salesFound,
+                currentPage: data.currentPage,
+                pageResults: data.pageResults,
+                elapsed: currentTime - streamStartTime
+              });
               
               // Update progress based on the event type
               if (data.type === 'status' || data.type === 'progress') {
@@ -116,16 +157,22 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
                 console.error('❌ Import error:', data.message);
                 throw new Error(data.message);
               } else if (data.type === 'complete') {
+                console.log('🎉 Import completed successfully:', data);
                 finalResult = data;
                 break;
               }
             } catch (parseError) {
-              console.warn('Failed to parse SSE data:', parseError);
+              console.warn('Failed to parse SSE data:', parseError, 'Raw line:', line);
             }
           }
         }
 
         if (finalResult) break;
+
+        // Timeout check - warn if no updates for too long
+        if (currentTime - lastUpdateTime > 15000) {
+          console.warn(`⚠️ No updates received for ${(currentTime - lastUpdateTime) / 1000}s`);
+        }
       }
 
       if (!finalResult) {
@@ -165,7 +212,15 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
       }, 3000);
 
     } catch (error) {
-      console.error('StockX import error:', error);
+      console.error('❌ StockX import failed with detailed error:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        name: error instanceof Error ? error.name : 'Unknown',
+        cause: error instanceof Error ? error.cause : undefined,
+        fullError: error,
+        timestamp: new Date().toISOString()
+      });
+      
       setProgress({
         phase: 'error',
         message: `❌ Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -189,6 +244,7 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
         });
       }, 5000);
     } finally {
+      console.log('🏁 Import process finished at:', new Date().toISOString());
       setIsImporting(false);
     }
   };

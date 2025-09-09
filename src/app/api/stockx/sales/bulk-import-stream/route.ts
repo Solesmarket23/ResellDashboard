@@ -4,16 +4,37 @@ import { getDocuments, addDocument, updateDocument } from '@/lib/firebase/fireba
 import { StockXSale } from '@/lib/types/stockx';
 
 export async function POST(request: NextRequest) {
+  const startTime = Date.now();
   const { userId, maxSales = 2000 } = await request.json();
 
   console.log('🚀 Starting streaming bulk StockX sales import for user:', userId);
+  console.log('📋 Request details:', {
+    userId,
+    maxSales,
+    timestamp: new Date().toISOString(),
+    userAgent: request.headers.get('User-Agent'),
+    origin: request.headers.get('Origin')
+  });
 
   // Get access token from cookies
   const accessToken = request.cookies.get('stockx_access_token')?.value;
   const refreshToken = request.cookies.get('stockx_refresh_token')?.value;
   const apiKey = process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID;
 
+  console.log('🔐 Authentication check:', {
+    hasAccessToken: !!accessToken,
+    accessTokenLength: accessToken?.length || 0,
+    hasRefreshToken: !!refreshToken,
+    refreshTokenLength: refreshToken?.length || 0,
+    hasApiKey: !!apiKey,
+    apiKeyLength: apiKey?.length || 0
+  });
+
   if (!accessToken || !apiKey) {
+    console.error('❌ Authentication failed:', { 
+      accessToken: !!accessToken, 
+      apiKey: !!apiKey 
+    });
     return NextResponse.json(
       { 
         error: 'Missing authentication', 
@@ -200,7 +221,15 @@ export async function POST(request: NextRequest) {
         });
 
       } catch (error: any) {
-        console.error('❌ Streaming import failed:', error);
+        console.error('❌ Streaming import failed with detailed error:', {
+          message: error.message,
+          stack: error.stack,
+          name: error.name,
+          cause: error.cause,
+          timestamp: new Date().toISOString(),
+          elapsed: Date.now() - startTime
+        });
+        
         sendUpdate({
           type: 'error',
           phase: 'failed',
@@ -209,6 +238,7 @@ export async function POST(request: NextRequest) {
           progress: 100
         });
       } finally {
+        console.log('🏁 Streaming import finished, closing controller');
         controller.close();
       }
     }
