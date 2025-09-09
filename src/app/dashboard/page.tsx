@@ -27,7 +27,6 @@ import StockXInventory from '../../components/StockXInventory';
 import StockXArbitrage from '../../components/StockXArbitrage';
 import EbayStockXArbitrage from '../../components/EbayStockXArbitrage';
 import StockXRepricing from '../../components/StockXRepricing';
-import StockXSales from '../../components/StockXSales';
 import StockXReleases from '../../components/StockXReleases';
 import StockXPriceMonitor from '../../components/StockXPriceMonitor';
 import StockXFlexAskMonitor from '../../components/StockXFlexAskMonitor';
@@ -229,8 +228,6 @@ export default function DashboardPage() {
         return <EbayStockXArbitrage />;
       case 'stockx-repricing':
         return <StockXRepricing />;
-      case 'stockx-sales':
-        return <StockXSales />;
       case 'stockx-releases':
         return <StockXReleases />;
       case 'stockx-price-monitor':
