@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Search, Calendar, TrendingUp, ArrowUp, ExternalLink, Plus, Sparkles, Trash2, X, ChevronDown, ChevronLeft, ChevronRight, Loader2, Wifi, WifiOff, AlertCircle, RefreshCw, Package, DollarSign } from 'lucide-react';
+import { Search, Calendar, TrendingUp, ArrowUp, ExternalLink, Plus, Sparkles, Trash2, X, ChevronDown, ChevronLeft, ChevronRight, Loader2, Wifi, WifiOff, AlertCircle, RefreshCw, Package, DollarSign, Link } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
 import { saveUserSale } from '../lib/firebase/userDataUtils';
@@ -11,6 +11,7 @@ import { formatOrderNumberForDisplay } from '../lib/utils/orderNumberUtils';
 import confetti from 'canvas-confetti';
 import NeonNotification from './NeonNotification';
 import StockXSalesImport from './StockXSalesImport';
+import PurchaseLinkPopup from './PurchaseLinkPopup';
 
 const Sales = () => {
   const [activeFilter, setActiveFilter] = useState('All Time');
@@ -36,6 +37,12 @@ const Sales = () => {
   const [clearAllModal, setClearAllModal] = useState(false);
   const [recordSaleModal, setRecordSaleModal] = useState(false);
   const [marketplaceDropdownOpen, setMarketplaceDropdownOpen] = useState(false);
+  
+  // Purchase linking state
+  const [linkedPurchases, setLinkedPurchases] = useState<any[]>([]);
+  const [showPurchasePopup, setShowPurchasePopup] = useState(false);
+  const [selectedSale, setSelectedSale] = useState<any | null>(null);
+  const [purchaseLinkSuccessMessage, setPurchaseLinkSuccessMessage] = useState<string | null>(null);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [calendarMonth, setCalendarMonth] = useState(new Date());
@@ -60,6 +67,111 @@ const Sales = () => {
   
   // Track if we've already refreshed for the current sync to prevent loops
   const lastSyncRefreshRef = useRef<string | null>(null);
+
+  // Purchase linking functions
+  const loadLinkedPurchases = () => {
+    const savedPurchases = localStorage.getItem('allPurchases');
+    if (savedPurchases) {
+      try {
+        setLinkedPurchases(JSON.parse(savedPurchases));
+      } catch (error) {
+        console.error('Error loading linked purchases:', error);
+      }
+    }
+  };
+
+  // Load linked purchases on mount
+  React.useEffect(() => {
+    loadLinkedPurchases();
+  }, []);
+
+  const getLinkedPurchase = (sale: any) => {
+    // For sales with IDs, match by ID; for manual sales, match by product+brand+size
+    return linkedPurchases.find(purchase => {
+      if (sale.id) {
+        return purchase.saleId === sale.id;
+      } else {
+        return purchase.productName?.toLowerCase().includes(sale.product?.toLowerCase()) &&
+               purchase.brand?.toLowerCase() === sale.brand?.toLowerCase() &&
+               purchase.size === sale.size;
+      }
+    });
+  };
+
+  const calculateActualProfit = (sale: any) => {
+    const linkedPurchase = getLinkedPurchase(sale);
+    if (!linkedPurchase) return null;
+
+    const totalCost = linkedPurchase.purchaseData.purchasePrice + 
+                     (linkedPurchase.purchaseData.shippingCost || 0) + 
+                     (linkedPurchase.purchaseData.taxAmount || 0);
+    
+    const salePrice = sale.salePrice || sale.sellingPrice || 0;
+    const fees = sale.fees || sale.totalFees || 0;
+    
+    return salePrice - fees - totalCost;
+  };
+
+  const handleLinkPurchase = (sale: any) => {
+    setSelectedSale(sale);
+    setShowPurchasePopup(true);
+  };
+
+  const handleSavePurchase = async (saleData: any, purchaseData: any) => {
+    const allPurchases = JSON.parse(localStorage.getItem('allPurchases') || '[]');
+    
+    const newPurchase = {
+      id: `${saleData.id || Date.now()}-purchase`,
+      saleId: saleData.id,
+      productName: saleData.product || saleData.title,
+      brand: saleData.brand,
+      size: saleData.size,
+      imageUrl: saleData.imageUrl,
+      purchaseData,
+      linkedAt: new Date().toISOString(),
+      status: 'sold',
+      soldPrice: saleData.salePrice || saleData.sellingPrice,
+      soldDate: saleData.date,
+      soldPlatform: saleData.market || saleData.platform || 'Unknown',
+      fees: saleData.fees || saleData.totalFees || 0,
+      actualProfit: (saleData.salePrice || saleData.sellingPrice || 0) - 
+                   (saleData.fees || saleData.totalFees || 0) - 
+                   (purchaseData.purchasePrice + 
+                    (purchaseData.shippingCost || 0) + 
+                    (purchaseData.taxAmount || 0))
+    };
+
+    // Remove existing and add new
+    const filteredPurchases = allPurchases.filter((p: any) => 
+      p.saleId !== saleData.id && 
+      !(p.productName?.toLowerCase().includes(saleData.product?.toLowerCase()) &&
+        p.brand?.toLowerCase() === saleData.brand?.toLowerCase() &&
+        p.size === saleData.size)
+    );
+    
+    const updatedPurchases = [...filteredPurchases, newPurchase];
+    localStorage.setItem('allPurchases', JSON.stringify(updatedPurchases));
+    setLinkedPurchases(updatedPurchases);
+
+    setPurchaseLinkSuccessMessage(`✅ Purchase linked to sale: ${purchaseData.orderNumber}`);
+    setTimeout(() => setPurchaseLinkSuccessMessage(null), 5000);
+  };
+
+  const handleRemovePurchase = (sale: any) => {
+    const allPurchases = JSON.parse(localStorage.getItem('allPurchases') || '[]');
+    const filteredPurchases = allPurchases.filter((p: any) => 
+      p.saleId !== sale.id && 
+      !(p.productName?.toLowerCase().includes(sale.product?.toLowerCase()) &&
+        p.brand?.toLowerCase() === sale.brand?.toLowerCase() &&
+        p.size === sale.size)
+    );
+    
+    localStorage.setItem('allPurchases', JSON.stringify(filteredPurchases));
+    setLinkedPurchases(filteredPurchases);
+    
+    setPurchaseLinkSuccessMessage(`🗑️ Purchase link removed for ${sale.product || sale.title}`);
+    setTimeout(() => setPurchaseLinkSuccessMessage(null), 3000);
+  };
   
   // Column width state for resizable columns with localStorage persistence
   const getStoredColumnWidths = () => {
@@ -1796,13 +1908,38 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                       
                       {/* Profit */}
                       <td className="px-3 py-4 whitespace-nowrap" style={{ width: `${columnWidths.profit}px` }}>
-                        <span className={`text-sm font-medium ${
-                          (Number(sale.profit) || 0) >= 0 
-                            ? isNeon ? 'text-emerald-400' : 'text-green-600'
-                            : isNeon ? 'text-red-400' : 'text-red-600'
-                        }`}>
-                          ${(Number(sale.profit) || 0).toFixed(2)}
-                        </span>
+                        {(() => {
+                          const actualProfit = calculateActualProfit(sale);
+                          const estimatedProfit = Number(sale.profit) || 0;
+                          const displayProfit = actualProfit !== null ? actualProfit : estimatedProfit;
+                          const isActual = actualProfit !== null;
+                          
+                          return (
+                            <div className="flex flex-col">
+                              <span className={`text-sm font-medium ${
+                                displayProfit >= 0 
+                                  ? isNeon ? 'text-emerald-400' : 'text-green-600'
+                                  : isNeon ? 'text-red-400' : 'text-red-600'
+                              }`}>
+                                ${displayProfit.toFixed(2)}
+                                {isActual && (
+                                  <span className={`ml-1 text-xs ${
+                                    isNeon ? 'text-green-400' : 'text-green-500'
+                                  }`}>
+                                    ✓
+                                  </span>
+                                )}
+                              </span>
+                              {isActual && estimatedProfit !== displayProfit && (
+                                <span className={`text-xs ${
+                                  isNeon ? 'text-gray-400' : 'text-gray-500'
+                                }`}>
+                                  Est: ${estimatedProfit.toFixed(2)}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
                       
                       {/* Date */}
@@ -1827,6 +1964,18 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                               <ExternalLink className="w-4 h-4" />
                             </button>
                           )}
+                          {/* Link Purchase Button */}
+                          <button 
+                            onClick={() => handleLinkPurchase(sale)}
+                            className={`${
+                              isNeon 
+                                ? 'text-gray-400 hover:text-green-400' 
+                                : 'text-gray-400 hover:text-green-600'
+                            } transition-colors`}
+                            title={getLinkedPurchase(sale) ? "Edit Linked Purchase" : "Link Purchase"}
+                          >
+                            <Link className={`w-4 h-4 ${getLinkedPurchase(sale) ? 'text-green-500' : ''}`} />
+                          </button>
                           <button 
                             onClick={() => openDeleteModal(sale)}
                             disabled={isDeleting}
@@ -2885,6 +3034,37 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
           )}
         </>
       )}
+
+      {/* Purchase Link Success Message */}
+      {purchaseLinkSuccessMessage && (
+        <div className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg ${
+          isNeon 
+            ? 'bg-green-500/20 border border-green-500/30 text-green-400' 
+            : 'bg-green-100 border border-green-200 text-green-800'
+        }`}>
+          {purchaseLinkSuccessMessage}
+        </div>
+      )}
+
+      {/* Purchase Link Popup */}
+      <PurchaseLinkPopup
+        isOpen={showPurchasePopup}
+        onClose={() => {
+          setShowPurchasePopup(false);
+          setSelectedSale(null);
+        }}
+        opportunity={selectedSale ? {
+          id: selectedSale.id,
+          productId: selectedSale.id,
+          variantId: selectedSale.id,
+          title: selectedSale.product,
+          size: selectedSale.size,
+          imageUrl: selectedSale.imageUrl,
+          sellingPrice: selectedSale.salePrice || selectedSale.sellingPrice
+        } : null}
+        onSavePurchase={handleSavePurchase}
+        existingPurchase={selectedSale ? getLinkedPurchase(selectedSale)?.purchaseData : null}
+      />
 
       {/* Neon Notification */}
       {notification.isVisible && (
