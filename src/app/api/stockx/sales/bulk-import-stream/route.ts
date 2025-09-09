@@ -5,22 +5,24 @@ import { COLLECTIONS } from '@/lib/firebase/collections';
 import { StockXSale } from '@/lib/types/stockx';
 
 export async function POST(request: NextRequest) {
-  const startTime = Date.now();
-  const { userId, maxSales = 100 } = await request.json();
+  try {
+    const startTime = Date.now();
+    const { userId, maxSales = 100 } = await request.json();
 
-  console.log('🚀 Starting streaming bulk StockX sales import for user:', userId);
-  console.log('📋 Request details:', {
-    userId,
-    maxSales,
-    timestamp: new Date().toISOString(),
-    userAgent: request.headers.get('User-Agent'),
-    origin: request.headers.get('Origin')
-  });
+    console.log('🚀 Starting streaming bulk StockX sales import for user:', userId);
+    console.log('📋 Request details:', {
+      userId,
+      maxSales,
+      timestamp: new Date().toISOString(),
+      userAgent: request.headers.get('User-Agent'),
+      origin: request.headers.get('Origin')
+    });
 
   // Get access token from cookies
   const accessToken = request.cookies.get('stockx_access_token')?.value;
   const refreshToken = request.cookies.get('stockx_refresh_token')?.value;
-  const apiKey = process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID;
+  // Use CLIENT_ID as the API key for v2 endpoints
+  const apiKey = process.env.STOCKX_CLIENT_ID;
 
   console.log('🔐 Authentication check:', {
     hasAccessToken: !!accessToken,
@@ -28,13 +30,21 @@ export async function POST(request: NextRequest) {
     hasRefreshToken: !!refreshToken,
     refreshTokenLength: refreshToken?.length || 0,
     hasApiKey: !!apiKey,
-    apiKeyLength: apiKey?.length || 0
+    apiKeyLength: apiKey?.length || 0,
+    clientId: process.env.STOCKX_CLIENT_ID ? 'present' : 'missing',
+    clientSecret: process.env.STOCKX_CLIENT_SECRET ? 'present' : 'missing'
   });
 
   if (!accessToken || !apiKey) {
     console.error('❌ Authentication failed:', { 
       accessToken: !!accessToken, 
-      apiKey: !!apiKey 
+      apiKey: !!apiKey,
+      clientId: !!process.env.STOCKX_CLIENT_ID,
+      envVars: {
+        STOCKX_CLIENT_ID: process.env.STOCKX_CLIENT_ID ? 'set' : 'missing',
+        STOCKX_CLIENT_SECRET: process.env.STOCKX_CLIENT_SECRET ? 'set' : 'missing',
+        STOCKX_API_KEY: process.env.STOCKX_API_KEY ? 'set' : 'missing'
+      }
     });
     return NextResponse.json(
       { 
@@ -146,6 +156,18 @@ export async function POST(request: NextRequest) {
             statusText: response.statusText,
             headers: Object.fromEntries(response.headers.entries())
           });
+
+          // Log error response body if not OK
+          if (!response.ok && response.status !== 401) {
+            const errorBody = await response.text();
+            console.error('❌ StockX API Error Response:', {
+              status: response.status,
+              statusText: response.statusText,
+              body: errorBody,
+              url: apiUrl
+            });
+            throw new Error(`StockX API Error ${response.status}: ${errorBody || response.statusText}`);
+          }
 
             if (response.status === 401 && refreshToken) {
               sendUpdate({
@@ -401,6 +423,22 @@ export async function POST(request: NextRequest) {
       'Connection': 'keep-alive',
     },
   });
+  } catch (error) {
+    console.error('❌ Fatal error in StockX import route:', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+      timestamp: new Date().toISOString()
+    });
+    
+    return NextResponse.json(
+      { 
+        error: 'Internal server error', 
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        details: process.env.NODE_ENV === 'development' ? error : undefined
+      },
+      { status: 500 }
+    );
+  }
 }
 
 function processSalesData(orders: any[]): StockXSale[] {
