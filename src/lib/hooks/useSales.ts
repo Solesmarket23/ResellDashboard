@@ -193,11 +193,14 @@ export const useSales = () => {
 
       console.log('🔄 useSales: Loading sales data for user:', user.uid);
       
-      // Fetch both manual sales and StockX sales in parallel
-      const [manualSalesData, stockxSalesData] = await Promise.all([
-        getUserSales(user.uid),
-        getDocuments('stockxSales')
-      ]);
+      // Fetch sales from server (admin) to guarantee we read what the API wrote
+      const serverSalesResp = await fetch(`/api/sales/list?userId=${encodeURIComponent(user.uid)}`, {
+        cache: 'no-store'
+      });
+      const serverSalesJson = serverSalesResp.ok ? await serverSalesResp.json() : { success: false, sales: [] };
+      const manualSalesData = serverSalesJson.success ? serverSalesJson.sales : [];
+      // Keep reading stockxSales client-side for supplemental data
+      const stockxSalesData = await getDocuments('stockxSales');
       
       console.log('🔍 Raw StockX sales data:', stockxSalesData.length, 'total sales');
       console.log('🔍 Current user.uid:', user.uid);
@@ -273,10 +276,10 @@ export const useSales = () => {
         })
         .filter(sale => sale !== null); // Remove any null entries
       
-      // Add platform field to manual sales
+      // Add platform field to admin-fetched sales (these already include imported StockX mapped entries)
       const normalizedManualSales = manualSalesData.map((sale: any) => ({
         ...sale,
-        platform: 'manual'
+        platform: sale.platform || (sale.source?.includes('stockx') ? 'stockx' : 'manual')
       }));
       
       // Combine all sales
