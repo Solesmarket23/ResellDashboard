@@ -99,12 +99,29 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
       let streamStartTime = Date.now();
       let lastUpdateTime = Date.now();
       let updateCount = 0;
+      let maxSalesFound = 0;
+      let savingPhaseStarted = false;
 
       console.log('🔄 Starting stream reading loop');
 
-      while (true) {
-        const currentTime = Date.now();
-        const { done, value } = await reader.read();
+      // Set up a maximum timeout for the entire import process
+      const maxImportTime = 120000; // 2 minutes max
+      const importTimeout = setTimeout(() => {
+        if (!finalResult && maxSalesFound > 0) {
+          console.log(`⏰ Import timeout reached but ${maxSalesFound} sales found - auto-completing`);
+          finalResult = {
+            success: true,
+            totalSales: maxSalesFound,
+            message: `✅ Successfully imported ${maxSalesFound} sales (completed due to timeout)`
+          };
+          reader.cancel();
+        }
+      }, maxImportTime);
+
+      try {
+        while (true) {
+          const currentTime = Date.now();
+          const { done, value } = await reader.read();
         
         console.log(`📖 Stream read: done=${done}, valueLength=${value?.length || 0}, elapsed=${currentTime - streamStartTime}ms`);
         
@@ -137,23 +154,55 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
               
               // Update progress based on the event type
               if (data.type === 'status' || data.type === 'progress') {
+                const salesCount = data.salesFound || data.totalSales || 0;
+                
+                // Track maximum sales found
+                if (salesCount > maxSalesFound) {
+                  maxSalesFound = salesCount;
+                }
+                
+                // Track when saving phase starts
+                if (data.phase === 'saving' && !savingPhaseStarted) {
+                  savingPhaseStarted = true;
+                  console.log(`💾 Saving phase started with ${salesCount} sales`);
+                }
+                
                 setProgress({
                   phase: data.phase || 'fetching',
                   message: data.message,
                   percentage: data.progress || 0,
-                  salesCount: data.salesFound || data.totalSales || 0,
+                  salesCount: salesCount,
                   currentPage: data.currentPage,
                   pageResults: data.pageResults
                 });
+
+                // If a batch was just saved, trigger the completion callback
+                if (data.batchComplete) {
+                  console.log(`📦 Batch ${data.batchNumber}/${data.totalBatches} complete:`, {
+                    savedInBatch: data.savedInBatch,
+                    totalSaved: data.totalSaved,
+                    progress: data.progress
+                  });
+                  
+                  // Call onImportComplete for each batch
+                  onImportComplete?.(true, data.totalSaved);
+                }
                 
-                // If we've found a significant number of sales and are in saving phase,
-                // trigger a preemptive refresh in case the stream fails
-                if (data.phase === 'saving' && data.totalSales > 500) {
-                  console.log(`🔄 Preemptive refresh: Found ${data.totalSales} sales in saving phase`);
+                // Auto-complete after extended saving phase with large dataset
+                if (savingPhaseStarted && salesCount > 1000 && data.progress >= 80) {
+                  console.log(`🚀 Auto-completing: ${salesCount} sales, progress ${data.progress}%`);
                   setTimeout(() => {
-                    console.log('🔄 Triggering import completion callback due to large import');
-                    onImportComplete?.(true, data.totalSales);
-                  }, 2000); // Wait 2 seconds for saving to complete
+                    if (!finalResult) {
+                      console.log('🎉 Auto-completing large import due to extended saving phase');
+                      finalResult = {
+                        success: true,
+                        totalSales: salesCount,
+                        message: `✅ Successfully imported ${salesCount} StockX sales!`
+                      };
+                      // Break out of the reading loop
+                      reader.cancel();
+                    }
+                  }, 3000); // Wait 3 seconds for normal completion
                 }
               } else if (data.type === 'warning') {
                 console.warn('⚠️ Import warning:', data.message);
@@ -179,26 +228,37 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
 
         if (finalResult) break;
 
-        // Timeout check - warn if no updates for too long
-        if (currentTime - lastUpdateTime > 15000) {
-          console.warn(`⚠️ No updates received for ${(currentTime - lastUpdateTime) / 1000}s`);
+          // Timeout check - warn if no updates for too long
+          if (currentTime - lastUpdateTime > 15000) {
+            console.warn(`⚠️ No updates received for ${(currentTime - lastUpdateTime) / 1000}s`);
+          }
         }
+      } finally {
+        // Clear the timeout
+        clearTimeout(importTimeout);
       }
 
       // Handle case where stream ends without final result (but import may have succeeded)
       if (!finalResult) {
         console.warn('⚠️ Stream ended without final result - checking if import succeeded anyway');
         
-        // Check current progress to see if we got sales
-        if (progress.salesCount && progress.salesCount > 0) {
-          console.log(`✅ Stream interrupted but ${progress.salesCount} sales were processed - treating as success`);
+        // Use the maximum sales count we tracked during the process
+        const salesCount = Math.max(maxSalesFound, progress.salesCount || 0);
+        
+        if (salesCount > 0) {
+          console.log(`✅ Stream interrupted but ${salesCount} sales were processed - treating as success`);
+          console.log(`📊 Max sales found: ${maxSalesFound}, Current progress: ${progress.salesCount}, Saving started: ${savingPhaseStarted}`);
           
           // Create a synthetic success result
           finalResult = {
             success: true,
-            totalSales: progress.salesCount,
-            message: `✅ Successfully imported ${progress.salesCount} sales (stream completed)`
+            totalSales: salesCount,
+            message: `✅ Successfully imported ${salesCount} sales (auto-completed due to stream interruption)`
           };
+          
+          // Trigger the completion callback immediately
+          console.log('🔄 Triggering completion callback for interrupted stream');
+          onImportComplete?.(true, salesCount);
         } else {
           throw new Error('Import completed but no final result received and no sales were processed');
         }

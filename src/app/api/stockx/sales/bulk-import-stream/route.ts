@@ -356,6 +356,25 @@ function processSalesData(orders: any[]): StockXSale[] {
     const sellerFees = Math.abs(parseFloat(payoutData.totalAdjustments || '0'));
     const totalPayout = parseFloat(payoutData.totalPayout || payoutData.payout || '0');
 
+    // Debug logging for brand and size data
+    console.log('🔍 Order data structure:', {
+      orderNumber: order.orderNumber || order.id,
+      productName: order.product?.productName || order.product?.name || order.productName,
+      brand: {
+        fromProduct: order.product?.brand,
+        fromRoot: order.brand,
+        fromBrandName: order.brandName,
+        extracted: extractBrandFromName(order.product?.productName || order.product?.name || '')
+      },
+      size: {
+        fromVariantValue: order.variant?.variantValue,
+        fromVariantSize: order.variant?.size,
+        fromRoot: order.size,
+        fromSku: order.skuSize,
+        fromProduct: order.productSize
+      }
+    });
+
     return {
       id: order.id || order.orderId || order.orderNumber,
       orderNumber: order.orderNumber || order.id,
@@ -364,7 +383,7 @@ function processSalesData(orders: any[]): StockXSale[] {
       product: {
         productId: order.product?.id || order.productId || '',
         productName: order.product?.productName || order.product?.name || order.productName || 'Unknown Product',
-        brand: order.product?.brand || order.brand || extractBrandFromName(order.product?.productName || order.product?.name || ''),
+        brand: order.product?.brand || order.brand || order.brandName || extractBrandFromName(order.product?.productName || order.product?.name || ''),
         styleId: order.product?.sku || order.sku || order.styleId,
         retailPrice: order.product?.retailPrice,
         imageUrl: order.product?.imageUrl || order.imageUrl,
@@ -373,8 +392,8 @@ function processSalesData(orders: any[]): StockXSale[] {
       },
       variant: {
         variantId: order.variant?.variantId || order.variant?.id || order.variantId || '',
-        size: order.variant?.variantValue || order.size || order.variant?.size || 'Unknown',
-        sizeType: order.variant?.sizeType || order.sizeType,
+        size: order.variant?.variantValue || order.variant?.size || order.size || order.skuSize || order.productSize || 'Unknown',
+        sizeType: order.variant?.sizeType || order.sizeType || order.sizingCategory || order.sizingSystem,
         variantName: order.variant?.variantName
       },
       pricing: {
@@ -400,17 +419,57 @@ function processSalesData(orders: any[]): StockXSale[] {
 }
 
 function extractBrandFromName(productName: string): string {
-  const brands = ['Nike', 'Jordan', 'Adidas', 'Yeezy', 'New Balance', 'Puma', 'Vans', 'Converse', 'Reebok', 'ASICS'];
+  // Comprehensive list of sneaker and apparel brands
+  const brands = [
+    'Nike', 'Jordan', 'Air Jordan', 'Adidas', 'Yeezy', 'New Balance', 
+    'Puma', 'Vans', 'Converse', 'Reebok', 'ASICS', 'Saucony', 
+    'Under Armour', 'Supreme', 'Bape', 'A Bathing Ape', 'Palace',
+    'Off-White', 'Travis Scott', 'Fear of God', 'FOG', 'Essential',
+    'The North Face', 'Timberland', 'UGG', 'Dr. Martens', 'Crocs',
+    'Balenciaga', 'Gucci', 'Louis Vuitton', 'LV', 'Dior', 'AMI',
+    'Stone Island', 'Chrome Hearts', 'Represent', 'Gallery Dept',
+    'KAWS', 'Human Made', 'Stussy', 'Anti Social Social Club', 'ASSC'
+  ];
+
+  // Special cases for brand variations
+  const brandAliases: { [key: string]: string } = {
+    'AIR JORDAN': 'Jordan',
+    'NIKE ACG': 'Nike',
+    'NIKE SB': 'Nike',
+    'YEEZY': 'Adidas',
+    'FEAR OF GOD ESSENTIALS': 'Fear of God',
+    'FOG ESSENTIALS': 'Fear of God',
+    'A BATHING APE': 'Bape',
+    'LV': 'Louis Vuitton',
+    'ASSC': 'Anti Social Social Club'
+  };
+
+  if (!productName) return 'Unknown Brand';
+  
   const upperName = productName.toUpperCase();
   
+  // First check for exact brand matches
   for (const brand of brands) {
     if (upperName.includes(brand.toUpperCase())) {
       return brand;
     }
   }
-  
+
+  // Then check for brand aliases
+  for (const [alias, brand] of Object.entries(brandAliases)) {
+    if (upperName.includes(alias)) {
+      return brand;
+    }
+  }
+
+  // If no match found, try the first word but verify it's not a common prefix
   const firstWord = productName.split(' ')[0];
-  return firstWord || 'Unknown Brand';
+  const commonPrefixes = ['THE', 'NEW', 'ALL', 'MENS', "MEN'S", 'WOMENS', "WOMEN'S", 'KIDS', 'YOUTH'];
+  if (firstWord && !commonPrefixes.includes(firstWord.toUpperCase())) {
+    return firstWord;
+  }
+
+  return 'Unknown Brand';
 }
 
 async function saveSalesToStockxCollection(sales: StockXSale[], userId: string, sendUpdate: Function) {
@@ -472,60 +531,91 @@ async function saveSalesToMainCollection(sales: StockXSale[], userId: string, se
   let savedCount = 0;
   let updatedCount = 0;
   const total = sales.length;
+  const batchSize = 10; // Process in batches of 10
+  
+  console.log(`🔄 Starting to save ${total} sales to main collection`);
 
-  for (let i = 0; i < sales.length; i++) {
-    const sale = sales[i];
-    const existingSale = userSalesMap.get(sale.orderNumber);
-    
-    const mainSaleData = {
-      userId: userId,
-      product: sale.product.productName,
-      brand: sale.product.brand,
-      size: sale.variant.size,
-      orderNumber: sale.orderNumber,
-      salePrice: sale.pricing.salePrice,
-      purchasePrice: 0,
-      fees: sale.pricing.sellerFees,
-      profit: sale.pricing.totalPayout,
-      date: sale.createdAt,
-      platform: 'stockx',
-      market: 'StockX',
-      status: sale.status === 'PAYOUT_COMPLETED' ? 'completed' : 'pending',
-      imageUrl: sale.product.imageUrl || '',
-      source: 'stockx_bulk_import_stream',
-      stockxData: {
-        orderType: sale.orderType,
-        productId: sale.product.productId,
-        variantId: sale.variant.variantId,
-        totalPayout: sale.pricing.totalPayout,
-        originalStatus: sale.status
+  // Process sales in batches
+  for (let i = 0; i < sales.length; i += batchSize) {
+    const batch = sales.slice(i, i + batchSize);
+    const batchPromises = [];
+    const batchSavedIds = [];
+
+    console.log(`📦 Processing batch ${i/batchSize + 1}/${Math.ceil(total/batchSize)} (${batch.length} sales)`);
+
+    for (const sale of batch) {
+      const existingSale = userSalesMap.get(sale.orderNumber);
+      
+      const mainSaleData = {
+        userId: userId,
+        product: sale.product.productName,
+        brand: sale.product.brand,
+        size: sale.variant.size,
+        orderNumber: sale.orderNumber,
+        salePrice: sale.pricing.salePrice,
+        purchasePrice: 0,
+        fees: sale.pricing.sellerFees,
+        profit: sale.pricing.totalPayout,
+        date: sale.createdAt,
+        platform: 'stockx',
+        market: 'StockX',
+        status: sale.status === 'PAYOUT_COMPLETED' ? 'completed' : 'pending',
+        imageUrl: sale.product.imageUrl || '',
+        source: 'stockx_bulk_import_stream',
+        stockxData: {
+          orderType: sale.orderType,
+          productId: sale.product.productId,
+          variantId: sale.variant.variantId,
+          totalPayout: sale.pricing.totalPayout,
+          originalStatus: sale.status
+        }
+      };
+      
+      if (existingSale) {
+        if (existingSale.status !== mainSaleData.status) {
+          batchPromises.push(
+            updateDocument('sales', existingSale.id, {
+              ...mainSaleData,
+              updatedAt: new Date().toISOString()
+            }).then(() => {
+              updatedCount++;
+              batchSavedIds.push(existingSale.id);
+            })
+          );
+        }
+      } else {
+        batchPromises.push(
+          addDocument('sales', {
+            ...mainSaleData,
+            createdAt: new Date().toISOString()
+          }).then((docId) => {
+            savedCount++;
+            batchSavedIds.push(docId);
+          })
+        );
       }
-    };
-    
-    if (existingSale) {
-      if (existingSale.status !== mainSaleData.status) {
-        await updateDocument('sales', existingSale.id, {
-          ...mainSaleData,
-          updatedAt: new Date().toISOString()
-        });
-        updatedCount++;
-      }
-    } else {
-      await addDocument('sales', {
-        ...mainSaleData,
-        createdAt: new Date().toISOString()
-      });
-      savedCount++;
     }
 
-    // Send progress update every 10 sales
-    if (i % 10 === 0 || i === sales.length - 1) {
-      sendUpdate({
-        type: 'progress',
-        phase: 'saving',
-        message: `Saving to main sales table: ${i + 1}/${total} (${savedCount} new, ${updatedCount} updated)`,
-        progress: 85 + Math.floor((i / total) * 10)
-      });
-    }
+    // Wait for batch to complete
+    await Promise.all(batchPromises);
+    
+    // Send detailed progress update after each batch
+    const processedCount = Math.min(i + batchSize, total);
+    console.log(`✅ Batch complete: ${processedCount}/${total} processed (${savedCount} new, ${updatedCount} updated)`);
+    
+    sendUpdate({
+      type: 'progress',
+      phase: 'saving',
+      message: `Saving to main sales table: ${processedCount}/${total} (${savedCount} new, ${updatedCount} updated)`,
+      progress: 85 + Math.floor((processedCount / total) * 10),
+      batchComplete: true,
+      batchNumber: Math.floor(i/batchSize) + 1,
+      totalBatches: Math.ceil(total/batchSize),
+      savedInBatch: batchSavedIds.length,
+      totalSaved: savedCount + updatedCount
+    });
+
+    // Small delay between batches to allow frontend to update
+    await new Promise(resolve => setTimeout(resolve, 100));
   }
 }
