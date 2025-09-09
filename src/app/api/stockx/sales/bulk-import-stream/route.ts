@@ -154,7 +154,30 @@ export async function POST(request: NextRequest) {
               if (data.orders && Array.isArray(data.orders)) {
                 // Log the first order's complete data structure
                 if (data.orders.length > 0 && pageNumber === 1) {
-                  console.log('📦 First StockX order complete data structure:', JSON.stringify(data.orders[0], null, 2));
+                  const firstOrder = data.orders[0];
+                  console.log('📦 StockX API Data Structure:', {
+                    order: {
+                      id: firstOrder.id,
+                      orderNumber: firstOrder.orderNumber,
+                      status: firstOrder.status
+                    },
+                    product: {
+                      ...firstOrder.product,
+                      name: firstOrder.product?.name,
+                      title: firstOrder.product?.title,
+                      brand: firstOrder.product?.brand,
+                      brandName: firstOrder.brandName,
+                      primaryCategory: firstOrder.product?.primaryCategory,
+                      secondaryCategory: firstOrder.product?.secondaryCategory
+                    },
+                    variant: {
+                      ...firstOrder.variant,
+                      size: firstOrder.variant?.size,
+                      sizeType: firstOrder.variant?.sizeType,
+                      variantName: firstOrder.variant?.variantName
+                    },
+                    raw: firstOrder
+                  });
                 }
                 
                 const pageSales = processSalesData(data.orders);
@@ -362,15 +385,22 @@ function processSalesData(orders: any[]): StockXSale[] {
     const totalPayout = parseFloat(payoutData.totalPayout || payoutData.payout || '0');
 
     // Debug logging for brand and size data
-    console.log('🔍 Raw StockX order data:', {
+    console.log('🔍 Brand Data Sources:', {
       orderNumber: order.orderNumber || order.id,
-      rawOrder: order,
-      rawProduct: order.product,
-      rawBrand: order.brand,
-      rawBrandInfo: order.brandInfo,
-      rawProductInfo: order.productInfo,
-      rawMetadata: order.metadata,
-      rawDetails: order.details
+      productName: order.product?.name || order.product?.title || order.productName,
+      brandSources: {
+        fromProduct: order.product?.brand,
+        fromBrandName: order.brandName,
+        fromBrandInfo: order.brandInfo?.name,
+        fromMetadata: order.metadata?.brand,
+        fromCategory: order.product?.primaryCategory
+      },
+      sizeData: {
+        fromVariant: order.variant?.size,
+        fromSizeType: order.variant?.sizeType,
+        fromVarValue: order.variant?.variantValue,
+        fromProduct: order.product?.size
+      }
     });
 
     return {
