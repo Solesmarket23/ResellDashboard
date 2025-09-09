@@ -184,8 +184,11 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
                     progress: data.progress
                   });
                   
-                  // Call onImportComplete for each batch
+                  // Call onImportComplete for each batch to refresh the table
                   onImportComplete?.(true, data.totalSaved);
+                  
+                  // Small delay to allow Firebase to sync
+                  await new Promise(resolve => setTimeout(resolve, 500));
                 }
                 
                 // Auto-complete after extended saving phase with large dataset
