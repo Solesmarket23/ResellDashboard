@@ -15,7 +15,8 @@ export async function GET(request: NextRequest) {
 
     // Query only this user's sales to reduce reads
     const db = getAdminDb();
-    const limitParam = Number.parseInt(request.nextUrl.searchParams.get('limit') || '2500', 10);
+    // Default to a conservative limit to avoid quota spikes; client can raise if needed
+    const limitParam = Number.parseInt(request.nextUrl.searchParams.get('limit') || '800', 10);
     const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 5000) : 2500;
     const snapshot = await db
       .collection(COLLECTIONS.SALES)

@@ -195,7 +195,7 @@ export const useSales = () => {
       
       // Fetch sales from server (admin) to guarantee we read what the API wrote
       console.log('🔎 useSales: Fetching server sales via /api/sales/list');
-      const serverSalesResp = await fetch(`/api/sales/list?userId=${encodeURIComponent(user.uid)}`, {
+      const serverSalesResp = await fetch(`/api/sales/list?userId=${encodeURIComponent(user.uid)}&limit=800`, {
         cache: 'no-store'
       });
       console.log('🔎 useSales: Server sales response OK?', serverSalesResp.ok, 'status:', serverSalesResp.status);
