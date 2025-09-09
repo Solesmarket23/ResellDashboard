@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminDocuments } from '@/lib/firebase/firebaseAdmin';
+import { getAdminDb } from '@/lib/firebase/firebaseAdmin';
 import { COLLECTIONS } from '@/lib/firebase/collections';
 
 export const runtime = 'nodejs';
@@ -13,11 +13,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Missing userId' }, { status: 400 });
     }
 
-    // Read from server-side Firestore to avoid client/server project mismatches
-    const allSales = await getAdminDocuments(COLLECTIONS.SALES);
-    const userSales = allSales
-      .filter((s: any) => s.userId === userId)
-      .map((s: any) => ({ ...s }));
+    // Query only this user's sales to reduce reads
+    const db = getAdminDb();
+    const limitParam = Number.parseInt(request.nextUrl.searchParams.get('limit') || '2500', 10);
+    const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 5000) : 2500;
+    const snapshot = await db
+      .collection(COLLECTIONS.SALES)
+      .where('userId', '==', userId)
+      .limit(limit)
+      .get();
+
+    const userSales = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
     return NextResponse.json({ success: true, sales: userSales });
   } catch (error: any) {
