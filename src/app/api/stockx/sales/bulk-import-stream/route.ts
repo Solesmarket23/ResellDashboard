@@ -6,7 +6,7 @@ import { StockXSale } from '@/lib/types/stockx';
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
-  const { userId, maxSales = 2000 } = await request.json();
+  const { userId, maxSales = 100 } = await request.json();
 
   console.log('🚀 Starting streaming bulk StockX sales import for user:', userId);
   console.log('📋 Request details:', {

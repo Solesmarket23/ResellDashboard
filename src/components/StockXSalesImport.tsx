@@ -57,7 +57,7 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
 
     try {
       console.log('📡 Making request to bulk-import-stream endpoint');
-      console.log('📋 Request body:', { userId, maxSales: 2000 });
+      console.log('📋 Request body:', { userId, maxSales: 100 });
       
       // Use Server-Sent Events for real-time progress updates
       const response = await fetch('/api/stockx/sales/bulk-import-stream', {
@@ -67,7 +67,7 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
         },
         body: JSON.stringify({
           userId: userId,
-          maxSales: 2000 // Import up to 2000 sales
+          maxSales: 100 // Temporary: import up to 100 for faster iteration
         }),
       });
 
