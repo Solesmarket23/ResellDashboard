@@ -50,17 +50,15 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
     });
 
     try {
-      // Phase 1: Fetch sales with brand enrichment and payout data
-      const response = await fetch('/api/stockx/sales', {
+      // Phase 1: Fetch sales using the new bulk import endpoint
+      const response = await fetch('/api/stockx/sales/bulk-import', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          status: 'completed',
           userId: userId,
-          maxSales: 500,
-          skipPayoutEnrichment: false // Get complete data
+          maxSales: 2000 // Import up to 2000 sales
         }),
       });
 
@@ -77,41 +75,42 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
 
       setProgress({
         phase: 'enriching',
-        message: `Processing ${data.totalCount} sales with brand and payout data...`,
-        percentage: 40,
-        salesCount: data.totalCount
+        message: `Processing ${data.totalSales} sales with complete data...`,
+        percentage: 50,
+        salesCount: data.totalSales
       });
 
-      // Phase 2: Save to Firebase (this happens in the API, but we simulate progress)
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      setProgress({
-        phase: 'saving',
-        message: 'Saving sales to database...',
-        percentage: 70,
-        salesCount: data.totalCount
-      });
+      // Show breakdown if available
+      if (data.breakdown) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        setProgress({
+          phase: 'saving',
+          message: `Saving to database: ${data.breakdown.completed} completed, ${data.breakdown.authenticated} authenticated, ${data.breakdown.other} other...`,
+          percentage: 80,
+          salesCount: data.totalSales
+        });
+      }
 
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       // Phase 3: Complete
       setProgress({
         phase: 'complete',
-        message: `✅ Successfully imported ${data.totalCount} sales with complete data!`,
+        message: `✅ Successfully imported ${data.totalSales} sales with complete data!`,
         percentage: 100,
-        salesCount: data.totalCount,
-        enrichedCount: data.enrichedCount || 0
+        salesCount: data.totalSales,
+        enrichedCount: data.totalSales || 0
       });
 
       setNotification({
         isVisible: true,
-        message: `🎉 Imported ${data.totalCount} StockX sales with brands, payouts, and complete product data!`,
+        message: `🎉 Imported ${data.totalSales} StockX sales and added them to your main sales table!`,
         type: 'success'
       });
 
       // Call completion callback
-      console.log('🔄 StockXSalesImport: Calling onImportComplete with:', { success: true, count: data.totalCount });
-      onImportComplete?.(true, data.totalCount);
+      console.log('🔄 StockXSalesImport: Calling onImportComplete with:', { success: true, count: data.totalSales });
+      onImportComplete?.(true, data.totalSales);
 
       // Reset after a delay
       setTimeout(() => {
@@ -193,7 +192,7 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
             <p className={`text-sm mt-1 ${
               isNeon ? 'text-gray-400' : 'text-gray-600'
             }`}>
-              Import all your StockX sales with brands, payouts, and complete product data
+              Import ALL your StockX sales (up to 2000) and add them to your main sales table
             </p>
           </div>
 
