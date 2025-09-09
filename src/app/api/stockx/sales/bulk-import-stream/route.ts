@@ -123,13 +123,29 @@ export async function POST(request: NextRequest) {
             const apiUrl = `https://api.stockx.com/v2/selling/orders/history?${queryParams.toString()}`;
 
           try {
-            const response = await fetch(apiUrl, {
-              headers: {
-                'x-api-key': apiKey,
-                'Authorization': `Bearer ${currentAccessToken}`,
-                'Accept': 'application/json'
-              }
-            });
+          console.log('🌐 Making StockX API request:', {
+            url: apiUrl,
+            headers: {
+              'x-api-key': 'present',
+              'Authorization': 'present',
+              'Accept': 'application/json'
+            }
+          });
+
+          const response = await fetch(apiUrl, {
+            headers: {
+              'x-api-key': apiKey,
+              'Authorization': `Bearer ${currentAccessToken}`,
+              'Accept': 'application/json'
+            }
+          });
+
+          // Log response headers
+          console.log('📥 StockX API Response Headers:', {
+            status: response.status,
+            statusText: response.statusText,
+            headers: Object.fromEntries(response.headers.entries())
+          });
 
             if (response.status === 401 && refreshToken) {
               sendUpdate({
@@ -151,12 +167,26 @@ export async function POST(request: NextRequest) {
 
             if (response.ok) {
               const responseText = await response.text();
-              console.log('📦 Raw API Response Text:', responseText);
+              console.log('📦 Raw API Response Text (first 500 chars):', responseText.substring(0, 500));
               
               let data;
               try {
                 data = JSON.parse(responseText);
-                console.log('📦 Parsed API Response:', data);
+                console.log('📦 First Order from API:', data.orders?.[0]);
+                console.log('📦 Order Structure:', {
+                  // Basic info
+                  orderInfo: {
+                    id: data.orders?.[0]?.id,
+                    orderNumber: data.orders?.[0]?.orderNumber,
+                    status: data.orders?.[0]?.status
+                  },
+                  // Product info
+                  productInfo: data.orders?.[0]?.product,
+                  // Variant info
+                  variantInfo: data.orders?.[0]?.variant,
+                  // All available fields
+                  availableFields: data.orders?.[0] ? Object.keys(data.orders[0]) : []
+                });
               } catch (error) {
                 console.error('❌ Failed to parse API response:', error);
                 throw error;
