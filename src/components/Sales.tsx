@@ -185,9 +185,10 @@ const Sales = () => {
     }
     // Default widths
     return {
-      product: 300,
+      product: 280,
       brand: 120,
       size: 80,
+      orderNumber: 140,
       soldOn: 120,
       purchasedFrom: 140,
       salePrice: 100,
@@ -1577,6 +1578,38 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                       />
                     </th>
                     
+                    {/* Order Number Column */}
+                    <th 
+                      className={`relative px-3 py-0 h-10 align-middle text-left text-xs font-medium ${
+                        isNeon ? 'text-gray-300' : 'text-gray-500'
+                      } uppercase tracking-wider cursor-pointer select-none ${
+                        isNeon ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                      } transition-colors`} 
+                      style={{ width: `${columnWidths.orderNumber}px` }}
+                      onClick={(e) => handleHeaderClick(e, 'orderNumber')}
+                    >
+                      <div className="flex items-center justify-between h-full">
+                        <div className="flex items-center">
+                          Order Number
+                          <SortIcon column="orderNumber" />
+                        </div>
+                      </div>
+                      <div 
+                        className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                          isNeon ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                        } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          handleMouseDown(e, 'orderNumber');
+                        }}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          handleDoubleClickResize('orderNumber', 'Order Number');
+                        }}
+                        title="Drag to resize column, double-click to auto-fit"
+                      />
+                    </th>
+                    
                     {/* Sold On Column */}
                     <th 
                       className={`relative px-3 py-0 h-10 align-middle text-left text-xs font-medium ${
@@ -1869,6 +1902,23 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                         isNeon ? 'text-gray-300' : 'text-gray-900'
                       }`} style={{ width: `${columnWidths.size}px` }}>
                         {sale.size}
+                      </td>
+                      
+                      {/* Order Number */}
+                      <td className={`px-3 py-4 whitespace-nowrap text-sm ${
+                        isNeon ? 'text-gray-300' : 'text-gray-900'
+                      }`} style={{ width: `${columnWidths.orderNumber}px` }}>
+                        <div className="font-mono text-xs">
+                          {sale.orderNumber ? (
+                            <span className={`${isNeon ? 'text-cyan-400' : 'text-blue-600'}`}>
+                              {sale.orderNumber}
+                            </span>
+                          ) : (
+                            <span className={`${isNeon ? 'text-gray-500' : 'text-gray-400'}`}>
+                              -
+                            </span>
+                          )}
+                        </div>
                       </td>
                       
                       {/* Sold On */}
