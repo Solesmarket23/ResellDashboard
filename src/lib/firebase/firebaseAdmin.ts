@@ -9,12 +9,27 @@ const initializeFirebaseAdmin = () => {
       return getFirestore();
     }
 
-    // Initialize with service account
+    // Initialize with service account (prefer server vars, fall back to NEXT_PUBLIC for projectId)
+    const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+    const rawPrivateKey = process.env.FIREBASE_PRIVATE_KEY;
+    const privateKey = rawPrivateKey?.includes('\n') ? rawPrivateKey : rawPrivateKey?.replace(/\\n/g, '\n');
+
+    if (!projectId) {
+      throw new Error('Missing FIREBASE_PROJECT_ID (or NEXT_PUBLIC_FIREBASE_PROJECT_ID)');
+    }
+    if (!clientEmail) {
+      throw new Error('Missing FIREBASE_CLIENT_EMAIL');
+    }
+    if (!privateKey) {
+      throw new Error('Missing FIREBASE_PRIVATE_KEY');
+    }
+
     const serviceAccount = {
-      projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n')
-    };
+      projectId,
+      clientEmail,
+      privateKey
+    } as { projectId: string; clientEmail: string; privateKey: string };
 
     initializeApp({
       credential: cert(serviceAccount)
