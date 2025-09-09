@@ -5,7 +5,7 @@ export const COLLECTIONS = {
   STOCKX_SALES: 'stockxSales',
   PURCHASES: 'purchases',
   
-  // User related collections
+  // User data collections
   PROFILES: 'profiles',
   THEMES: 'themes',
   EMAIL_CONFIGS: 'emailConfigs',
@@ -16,8 +16,7 @@ export const COLLECTIONS = {
   STOCKX_SYNC_INFO: 'stockxSyncInfo',
   VERIFICATION_STATUS: 'verificationStatus',
   
-  // Other collections
-  LISTINGS: 'listings',
-  ORDERS: 'orders',
-  INVENTORY: 'inventory'
+  // API keys and credentials
+  API_KEYS: 'apiKeys',
+  CREDENTIALS: 'credentials'
 } as const;
