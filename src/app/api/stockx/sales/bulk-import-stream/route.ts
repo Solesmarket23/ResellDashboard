@@ -74,24 +74,52 @@ export async function POST(request: NextRequest) {
           progress: 10
         });
 
-        // Phase 1: Fetch all sales with real-time updates
-        while (hasNextPage && allSales.length < maxSales) {
+        // Phase 1: Fetch all sales from ALL statuses with real-time updates
+        const statusesToCheck = ['COMPLETED', 'AUTHENTICATED', 'PAYOUT_PENDING', 'SHIPPED', 'RECEIVED', 'AUTHENTICATING'];
+        let currentStatusIndex = 0;
+        let currentStatus = statusesToCheck[currentStatusIndex];
+        
+        sendUpdate({
+          type: 'status',
+          phase: 'fetching',
+          message: `Fetching from all order statuses to get complete history (${statusesToCheck.length} statuses to check)...`,
+          progress: 12
+        });
+
+        while (currentStatusIndex < statusesToCheck.length && allSales.length < maxSales) {
+          hasNextPage = true;
+          pageNumber = 1;
+          currentStatus = statusesToCheck[currentStatusIndex];
+          
           sendUpdate({
             type: 'progress',
             phase: 'fetching',
-            message: `Fetching page ${pageNumber}... (${allSales.length} sales found so far)`,
-            currentPage: pageNumber,
-            salesFound: allSales.length,
-            progress: Math.min(10 + (pageNumber * 2), 60)
+            message: `Checking ${currentStatus} orders... (${allSales.length} total sales found so far)`,
+            currentStatus: currentStatus,
+            statusProgress: currentStatusIndex + 1,
+            totalStatuses: statusesToCheck.length,
+            progress: Math.min(15 + (currentStatusIndex * 8), 60)
           });
 
-          const queryParams = new URLSearchParams({
-            pageNumber: pageNumber.toString(),
-            pageSize: pageSize.toString(),
-            orderStatus: 'COMPLETED'
-          });
+          // Fetch all pages for current status
+          while (hasNextPage && allSales.length < maxSales) {
+            sendUpdate({
+              type: 'progress',
+              phase: 'fetching',
+              message: `${currentStatus} - Page ${pageNumber}... (${allSales.length} total sales found)`,
+              currentPage: pageNumber,
+              currentStatus: currentStatus,
+              salesFound: allSales.length,
+              progress: Math.min(15 + (currentStatusIndex * 8) + (pageNumber * 0.5), 60)
+            });
 
-          const apiUrl = `https://api.stockx.com/v2/selling/orders/history?${queryParams.toString()}`;
+            const queryParams = new URLSearchParams({
+              pageNumber: pageNumber.toString(),
+              pageSize: pageSize.toString(),
+              orderStatus: currentStatus
+            });
+
+            const apiUrl = `https://api.stockx.com/v2/selling/orders/history?${queryParams.toString()}`;
 
           try {
             const response = await fetch(apiUrl, {
@@ -130,19 +158,20 @@ export async function POST(request: NextRequest) {
                 sendUpdate({
                   type: 'progress',
                   phase: 'fetching',
-                  message: `Page ${pageNumber} processed: +${pageSales.length} sales (Total: ${allSales.length})`,
+                  message: `${currentStatus} - Page ${pageNumber}: +${pageSales.length} sales (Total: ${allSales.length})`,
                   currentPage: pageNumber,
+                  currentStatus: currentStatus,
                   salesFound: allSales.length,
                   pageResults: pageSales.length,
-                  progress: Math.min(10 + (pageNumber * 2), 60)
+                  progress: Math.min(15 + (currentStatusIndex * 8) + (pageNumber * 0.5), 60)
                 });
                 
                 hasNextPage = data.hasNextPage && data.orders.length > 0;
               } else {
                 sendUpdate({
                   type: 'warning',
-                  message: `Page ${pageNumber}: No orders found or invalid format`,
-                  progress: Math.min(10 + (pageNumber * 2), 60)
+                  message: `${currentStatus} - Page ${pageNumber}: No orders found or invalid format`,
+                  progress: Math.min(15 + (currentStatusIndex * 8) + (pageNumber * 0.5), 60)
                 });
                 hasNextPage = false;
               }
@@ -159,17 +188,41 @@ export async function POST(request: NextRequest) {
             sendUpdate({
               type: 'error',
               phase: 'fetching',
-              message: `Error on page ${pageNumber}: ${error.message}`,
-              progress: Math.min(10 + (pageNumber * 2), 60)
+              message: `Error on ${currentStatus} page ${pageNumber}: ${error.message}`,
+              progress: Math.min(15 + (currentStatusIndex * 8) + (pageNumber * 0.5), 60)
             });
             hasNextPage = false;
           }
         }
+        
+        // Move to next status
+        currentStatusIndex++;
+        
+        // Send update when finishing a status
+        if (currentStatusIndex < statusesToCheck.length) {
+          sendUpdate({
+            type: 'status',
+            phase: 'fetching',
+            message: `Finished ${currentStatus} status. Moving to ${statusesToCheck[currentStatusIndex]}... (${allSales.length} total sales found)`,
+            progress: Math.min(15 + (currentStatusIndex * 8), 60)
+          });
+        }
+      }
 
+        // Remove duplicates by orderNumber since we might get same sales across different statuses
+        const uniqueSalesMap = new Map();
+        for (const sale of allSales) {
+          const key = sale.orderNumber || sale.id;
+          if (!uniqueSalesMap.has(key)) {
+            uniqueSalesMap.set(key, sale);
+          }
+        }
+        allSales = Array.from(uniqueSalesMap.values());
+        
         sendUpdate({
           type: 'status',
           phase: 'saving',
-          message: `Fetching complete! Found ${allSales.length} sales. Now saving to database...`,
+          message: `Fetching complete! Found ${allSales.length} unique sales (removed duplicates). Now saving to database...`,
           totalSales: allSales.length,
           progress: 70
         });
