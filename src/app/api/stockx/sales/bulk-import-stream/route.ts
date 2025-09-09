@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
             }
           });
 
-          const response = await fetch(apiUrl, {
+          let response = await fetch(apiUrl, {
             headers: {
               'x-api-key': apiKey,
               'Authorization': `Bearer ${currentAccessToken}`,
@@ -157,7 +157,52 @@ export async function POST(request: NextRequest) {
             headers: Object.fromEntries(response.headers.entries())
           });
 
-          // Log error response body if not OK
+          // Handle 401 - Token refresh
+          if (response.status === 401) {
+            if (!refreshToken) {
+              console.error('❌ No refresh token available');
+              throw new Error('Authentication expired. Please reconnect to StockX.');
+            }
+            
+            console.log('🔄 Token expired, attempting refresh...');
+            sendUpdate({
+              type: 'status',
+              phase: 'refreshing',
+              message: 'Refreshing authentication...',
+              progress: Math.min(10 + (pageNumber * 2), 60)
+            });
+
+            const refreshResult = await refreshStockXTokens(refreshToken);
+            
+            if (refreshResult.success && refreshResult.accessToken) {
+              console.log('✅ Token refresh successful, retrying request...');
+              currentAccessToken = refreshResult.accessToken;
+              
+              // Retry the request with the new token
+              response = await fetch(apiUrl, {
+                headers: {
+                  'x-api-key': apiKey,
+                  'Authorization': `Bearer ${currentAccessToken}`,
+                  'Accept': 'application/json'
+                }
+              });
+              
+              console.log('📥 Retry Response:', {
+                status: response.status,
+                statusText: response.statusText
+              });
+              
+              // If still 401 after refresh, authentication has failed
+              if (response.status === 401) {
+                throw new Error('Authentication failed after token refresh. Please reconnect to StockX.');
+              }
+            } else {
+              console.error('❌ Token refresh failed:', refreshResult.error);
+              throw new Error(`Token refresh failed: ${refreshResult.error || 'Unknown error'}`);
+            }
+          }
+          
+          // Handle other non-OK responses
           if (!response.ok && response.status !== 401) {
             const errorBody = await response.text();
             console.error('❌ StockX API Error Response:', {
@@ -169,25 +214,7 @@ export async function POST(request: NextRequest) {
             throw new Error(`StockX API Error ${response.status}: ${errorBody || response.statusText}`);
           }
 
-            if (response.status === 401 && refreshToken) {
-              sendUpdate({
-                type: 'status',
-                phase: 'refreshing',
-                message: 'Refreshing authentication...',
-                progress: Math.min(10 + (pageNumber * 2), 60)
-              });
-
-              const refreshResult = await refreshStockXTokens(refreshToken);
-              
-              if (refreshResult.success) {
-                currentAccessToken = refreshResult.accessToken;
-                continue;
-              } else {
-                throw new Error('Token refresh failed');
-              }
-            }
-
-            if (response.ok) {
+          if (response.ok) {
               const responseText = await response.text();
               console.log('📦 Raw API Response Text (first 500 chars):', responseText.substring(0, 500));
               
