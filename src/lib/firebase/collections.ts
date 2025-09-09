@@ -14,9 +14,5 @@ export const COLLECTIONS = {
   
   // Sync and status collections
   STOCKX_SYNC_INFO: 'stockxSyncInfo',
-  VERIFICATION_STATUS: 'verificationStatus',
-  
-  // API keys and credentials
-  API_KEYS: 'apiKeys',
-  CREDENTIALS: 'credentials'
+  VERIFICATION_STATUS: 'verificationStatus'
 } as const;
