@@ -186,6 +186,9 @@ export async function POST(request: NextRequest) {
           return;
         }
 
+        // Send multiple progress updates during saving to maintain connection
+        let saveProgress = 75;
+
         // Phase 2: Save to Firebase with progress updates
         sendUpdate({
           type: 'status',
@@ -211,14 +214,27 @@ export async function POST(request: NextRequest) {
           other: allSales.filter(s => !['PAYOUT_COMPLETED', 'AUTHENTICATED'].includes(s.status)).length
         };
 
-        sendUpdate({
+        // Send completion message multiple times to ensure delivery
+        const completionMessage = {
           type: 'complete',
           success: true,
           message: `✅ Successfully imported ${allSales.length} StockX sales!`,
           totalSales: allSales.length,
           breakdown,
           progress: 100
+        };
+        
+        console.log('📤 Sending completion message:', completionMessage);
+        sendUpdate(completionMessage);
+        
+        // Send a second completion message with slight delay to ensure delivery
+        await new Promise(resolve => setTimeout(resolve, 100));
+        sendUpdate({
+          ...completionMessage,
+          message: `✅ Import complete: ${allSales.length} sales saved to database!`
         });
+        
+        console.log('✅ Import completed successfully - sent completion messages');
 
       } catch (error: any) {
         console.error('❌ Streaming import failed with detailed error:', {
