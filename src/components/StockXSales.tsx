@@ -3,6 +3,7 @@ import { TrendingUp, DollarSign, Package, Clock, CheckCircle, AlertCircle, Filte
 import StockXPayoutRefresher from './StockXPayoutRefresher';
 import StockXExportAll from './StockXExportAll';
 import StockXCompleteImport from './StockXCompleteImport';
+import StockXBulkImport from './StockXBulkImport';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { getDocuments } from '@/lib/firebase/firebaseUtils';
 import { StockXSale } from '@/lib/types/stockx';
@@ -574,7 +575,21 @@ const StockXSales: React.FC = () => {
           </div>
         )}
 
-        {/* Complete Import - Only show if user is authenticated */}
+        {/* Bulk Import - Enhanced import for all sales */}
+        {user && !isLoading && !errorMessage && (
+          <div className="mb-6">
+            <StockXBulkImport 
+              onImportComplete={(success, count) => {
+                if (success) {
+                  // Reload from Firebase to show the imported data
+                  loadSalesFromFirebase();
+                }
+              }}
+            />
+          </div>
+        )}
+
+        {/* Complete Import - Only show if user is authenticated and no sales yet */}
         {user && !sales.length && !isLoading && !errorMessage && (
           <div className="mb-6">
             <StockXCompleteImport 
