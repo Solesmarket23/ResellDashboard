@@ -616,7 +616,7 @@ async function saveSalesToStockxCollection(sales: StockXSale[], userId: string, 
     if (existingSale) {
       if (existingSale.saleData.status !== sale.status || 
           existingSale.saleData.pricing.totalPayout !== sale.pricing.totalPayout) {
-        await updateDocument('stockxSales', existingSale.id, {
+        await updateAdminDocument(COLLECTIONS.STOCKX_SALES, existingSale.id, {
           saleData: sale,
           updatedAt: new Date().toISOString()
         });
@@ -699,7 +699,7 @@ async function saveSalesToMainCollection(sales: StockXSale[], userId: string, se
       if (existingSale) {
         // Always update existing sales to ensure we have the latest data
         batchPromises.push(
-          updateDocument('sales', existingSale.id, {
+          updateAdminDocument(COLLECTIONS.SALES, existingSale.id, {
             ...mainSaleData,
             updatedAt: new Date().toISOString()
           }).then(() => {
