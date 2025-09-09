@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Search, Calendar, TrendingUp, ArrowUp, ExternalLink, Plus, Sparkles, Trash2, X, ChevronDown, ChevronLeft, ChevronRight, Loader2, Wifi, WifiOff, AlertCircle, RefreshCw, Package, DollarSign, Link } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
@@ -81,7 +81,7 @@ const Sales = () => {
   };
 
   // Load linked purchases on mount
-  React.useEffect(() => {
+  useEffect(() => {
     loadLinkedPurchases();
   }, []);
 
