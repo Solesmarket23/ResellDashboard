@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="22225" systemVersion="23B74" minimumToolsVersion="Automatic" sourceLanguage="Swift" usedWithCloudKit="YES" userDefinedModelVersionIdentifier="">
+    <entity name="Achievement" representedClassName="Achievement" syncable="YES" codeGenerationType="class">
+        <attribute name="achievementType" optional="YES" attributeType="String"/>
+        <attribute name="dateEarned" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="isUnlocked" optional="YES" attributeType="Boolean" usesScalarValueType="YES"/>
+        <attribute name="progress" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
+        <relationship name="user" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="User" inverseName="achievements" inverseEntity="User"/>
+    </entity>
+    <entity name="Envelope" representedClassName="Envelope" syncable="YES" codeGenerationType="class">
+        <attribute name="color" optional="YES" attributeType="String"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="currentAmount" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
+        <attribute name="icon" optional="YES" attributeType="String"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="isActive" optional="YES" attributeType="Boolean" defaultValueString="YES" usesScalarValueType="YES"/>
+        <attribute name="lastRefillDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="name" optional="YES" attributeType="String"/>
+        <attribute name="notes" optional="YES" attributeType="String"/>
+        <attribute name="order" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="targetAmount" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
+        <relationship name="transactions" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="Transaction" inverseName="envelope" inverseEntity="Transaction"/>
+        <relationship name="user" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="User" inverseName="envelopes" inverseEntity="User"/>
+    </entity>
+    <entity name="PaydayTemplate" representedClassName="PaydayTemplate" syncable="YES" codeGenerationType="class">
+        <attribute name="allocations" optional="YES" attributeType="Binary"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="name" optional="YES" attributeType="String"/>
+        <relationship name="user" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="User" inverseName="paydayTemplates" inverseEntity="User"/>
+    </entity>
+    <entity name="Transaction" representedClassName="Transaction" syncable="YES" codeGenerationType="class">
+        <attribute name="amount" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
+        <attribute name="category" optional="YES" attributeType="String"/>
+        <attribute name="date" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="isRecurring" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="merchant" optional="YES" attributeType="String"/>
+        <attribute name="notes" optional="YES" attributeType="String"/>
+        <attribute name="receiptImageData" optional="YES" attributeType="Binary"/>
+        <attribute name="type" optional="YES" attributeType="String"/>
+        <relationship name="envelope" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Envelope" inverseName="transactions" inverseEntity="Envelope"/>
+    </entity>
+    <entity name="User" representedClassName="User" syncable="YES" codeGenerationType="class">
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="currentStreak" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="email" optional="YES" attributeType="String"/>
+        <attribute name="hasCompletedOnboarding" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="isPremium" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="lastActiveDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="longestStreak" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="name" optional="YES" attributeType="String"/>
+        <attribute name="profileImageData" optional="YES" attributeType="Binary"/>
+        <attribute name="referralCode" optional="YES" attributeType="String"/>
+        <attribute name="subscriptionExpiryDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <relationship name="achievements" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="Achievement" inverseName="user" inverseEntity="Achievement"/>
+        <relationship name="envelopes" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="Envelope" inverseName="user" inverseEntity="Envelope"/>
+        <relationship name="paydayTemplates" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="PaydayTemplate" inverseName="user" inverseEntity="PaydayTemplate"/>
+    </entity>
+</model>

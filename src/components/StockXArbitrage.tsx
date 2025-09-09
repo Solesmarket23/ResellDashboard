@@ -844,47 +844,7 @@ const StockXArbitrage: React.FC = () => {
       return true;
     });
     
-    // Apply sorting
-    filtered.sort((a, b) => {
-      let aValue: number = 0;
-      let bValue: number = 0;
-      
-      switch (sortBy) {
-        case 'profit':
-          aValue = a.profit;
-          bValue = b.profit;
-          break;
-        case 'margin':
-          aValue = a.profitMargin;
-          bValue = b.profitMargin;
-          break;
-        case 'volume':
-          aValue = a.bidAskVolume || 0;
-          bValue = b.bidAskVolume || 0;
-          break;
-        case 'velocity':
-          aValue = a.velocityScore || 0;
-          bValue = b.velocityScore || 0;
-          break;
-        case 'risk':
-          aValue = a.riskScore || 50;
-          bValue = b.riskScore || 50;
-          break;
-        case 'volatility':
-          aValue = a.volatilityScore || 0;
-          bValue = b.volatilityScore || 0;
-          break;
-        case 'price':
-          aValue = a.askAmount || 0;
-          bValue = b.askAmount || 0;
-          break;
-        default:
-          aValue = a.profit;
-          bValue = b.profit;
-      }
-      
-      return sortOrder === 'desc' ? bValue - aValue : aValue - bValue;
-    });
+    // Sorting removed - maintaining original API order
     
     return filtered;
   };
@@ -931,10 +891,10 @@ const StockXArbitrage: React.FC = () => {
       })
     : applyFiltersAndSorting(opportunities);
 
-  // Reset preserveOrder when filters or sorting changes
+  // Reset preserveOrder when filters change
   useEffect(() => {
     setPreserveOrder(false);
-  }, [sortBy, sortOrder, priceRange, profitRange, selectedCategories, selectedSizes, minBidAskVolume, onlyRecentReleases]);
+  }, [priceRange, profitRange, selectedCategories, selectedSizes, minBidAskVolume, onlyRecentReleases]);
 
   // Load linked purchases from localStorage on component mount
   useEffect(() => {
@@ -1339,35 +1299,6 @@ const StockXArbitrage: React.FC = () => {
               </div>
             </div>
             
-            {/* Sorting Controls */}
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Sort Results
-              </label>
-              <div className="flex gap-2">
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value)}
-                  className="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                >
-                  <option value="profit">💰 Profit</option>
-                  <option value="margin">📊 Margin %</option>
-                  <option value="velocity">⚡ Velocity</option>
-                  <option value="volume">📈 Volume</option>
-                  <option value="risk">⚠️ Risk</option>
-                  <option value="price">💵 Price</option>
-                  <option value="volatility">📉 Volatility</option>
-                </select>
-                <button
-                  onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
-                  className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white hover:bg-gray-600 transition-colors"
-                  title={sortOrder === 'desc' ? 'Sort Ascending' : 'Sort Descending'}
-                >
-                  {sortOrder === 'desc' ? <SortDesc className="w-4 h-4" /> : <SortAsc className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-            
             <div className="flex items-end">
               <button
                 onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
@@ -1555,7 +1486,6 @@ const StockXArbitrage: React.FC = () => {
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => {
-                      setSortBy('profit');
                       setProfitRange({ min: 50, max: 500 });
                       setPriceRange({ min: 0, max: 500 });
                       setSelectedSizes(['9', '9.5', '10', '10.5', '11']);
@@ -1566,23 +1496,20 @@ const StockXArbitrage: React.FC = () => {
                   </button>
                   <button
                     onClick={() => {
-                      setSortBy('velocity');
                       setOnlyRecentReleases(true);
                       setSelectedCategories(['Sneakers']);
                     }}
                     className="px-3 py-1 bg-blue-600/20 border border-blue-500/30 rounded text-blue-400 text-xs hover:bg-blue-600/30 transition-colors"
                   >
-                    ⚡ Fast Movers
+                    ⚡ Recent Releases
                   </button>
                   <button
                     onClick={() => {
-                      setSortBy('risk');
-                      setSortOrder('asc');
                       setMinBidAskVolume(20);
                     }}
                     className="px-3 py-1 bg-yellow-600/20 border border-yellow-500/30 rounded text-yellow-400 text-xs hover:bg-yellow-600/30 transition-colors"
                   >
-                    🛡️ Low Risk
+                    🛡️ High Volume
                   </button>
                   <button
                     onClick={() => {
@@ -1602,8 +1529,6 @@ const StockXArbitrage: React.FC = () => {
                       setSelectedSizes([]);
                       setMinBidAskVolume(0);
                       setOnlyRecentReleases(false);
-                      setSortBy('profit');
-                      setSortOrder('desc');
                     }}
                     className="px-3 py-1 bg-gray-600/20 border border-gray-500/30 rounded text-gray-400 text-xs hover:bg-gray-600/30 transition-colors"
                   >
