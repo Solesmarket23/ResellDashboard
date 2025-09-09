@@ -185,18 +185,18 @@ const Sales = () => {
     }
     // Default widths
     return {
-      product: 280,
-      brand: 120,
-      size: 80,
-      orderNumber: 140,
-      soldOn: 120,
-      purchasedFrom: 140,
+      product: 260,
+      brand: 110,
+      size: 70,
+      orderNumber: 160,
+      soldOn: 100,
+      purchasedFrom: 130,
       salePrice: 100,
       purchasePrice: 120,
       fees: 80,
       profit: 100,
       date: 120,
-      actions: 100
+      actions: 120
     };
   };
 
@@ -1585,7 +1585,10 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                       } uppercase tracking-wider cursor-pointer select-none ${
                         isNeon ? 'hover:bg-white/5' : 'hover:bg-gray-100'
                       } transition-colors`} 
-                      style={{ width: `${columnWidths.orderNumber}px` }}
+                      style={{ 
+                        width: `${columnWidths.orderNumber}px`, 
+                        minWidth: `${Math.max(160, columnWidths.orderNumber)}px` 
+                      }}
                       onClick={(e) => handleHeaderClick(e, 'orderNumber')}
                     >
                       <div className="flex items-center justify-between h-full">
@@ -1617,7 +1620,10 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                       } uppercase tracking-wider cursor-pointer select-none ${
                         isNeon ? 'hover:bg-white/5' : 'hover:bg-gray-100'
                       } transition-colors`} 
-                      style={{ width: `${columnWidths.soldOn}px` }}
+                      style={{ 
+                        width: `${columnWidths.soldOn}px`, 
+                        minWidth: `${Math.max(100, columnWidths.soldOn)}px` 
+                      }}
                       onClick={(e) => handleHeaderClick(e, 'soldOn')}
                     >
                       <div className="flex items-center justify-between h-full">
@@ -1907,7 +1913,10 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                       {/* Order Number */}
                       <td className={`px-3 py-4 whitespace-nowrap text-sm ${
                         isNeon ? 'text-gray-300' : 'text-gray-900'
-                      }`} style={{ width: `${columnWidths.orderNumber}px` }}>
+                      }`} style={{ 
+                        width: `${columnWidths.orderNumber}px`, 
+                        minWidth: `${Math.max(160, columnWidths.orderNumber)}px` 
+                      }}>
                         <div className="font-mono text-xs">
                           {sale.orderNumber ? (
                             <span className={`${isNeon ? 'text-cyan-400' : 'text-blue-600'}`}>
@@ -1924,7 +1933,10 @@ ${Object.entries(data.sizeLocations.allSizeFields || {}).map(([key, value]) => `
                       {/* Sold On */}
                       <td className={`px-3 py-4 whitespace-nowrap text-sm ${
                         isNeon ? 'text-gray-300' : 'text-gray-900'
-                      }`} style={{ width: `${columnWidths.soldOn}px` }}>
+                      }`} style={{ 
+                        width: `${columnWidths.soldOn}px`, 
+                        minWidth: `${Math.max(100, columnWidths.soldOn)}px` 
+                      }}>
                         {sale.platform === 'stockx' ? 'StockX' : (sale.market || 'Manual')}
                       </td>
                       
