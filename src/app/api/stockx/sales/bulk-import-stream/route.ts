@@ -419,50 +419,86 @@ function processSalesData(orders: any[]): StockXSale[] {
 }
 
 function extractBrandFromName(productName: string): string {
-  // Comprehensive list of sneaker and apparel brands
-  const brands = [
-    'Nike', 'Jordan', 'Air Jordan', 'Adidas', 'Yeezy', 'New Balance', 
-    'Puma', 'Vans', 'Converse', 'Reebok', 'ASICS', 'Saucony', 
-    'Under Armour', 'Supreme', 'Bape', 'A Bathing Ape', 'Palace',
-    'Off-White', 'Travis Scott', 'Fear of God', 'FOG', 'Essential',
-    'The North Face', 'Timberland', 'UGG', 'Dr. Martens', 'Crocs',
-    'Balenciaga', 'Gucci', 'Louis Vuitton', 'LV', 'Dior', 'AMI',
-    'Stone Island', 'Chrome Hearts', 'Represent', 'Gallery Dept',
-    'KAWS', 'Human Made', 'Stussy', 'Anti Social Social Club', 'ASSC'
-  ];
-
-  // Special cases for brand variations
-  const brandAliases: { [key: string]: string } = {
+  // Comprehensive list of sneaker and apparel brands with their variations
+  const brandMappings: { [key: string]: string } = {
+    // Nike & Jordan
+    'NIKE': 'Nike',
+    'JORDAN': 'Jordan',
     'AIR JORDAN': 'Jordan',
     'NIKE ACG': 'Nike',
     'NIKE SB': 'Nike',
+    
+    // Adidas & Yeezy
+    'ADIDAS': 'Adidas',
     'YEEZY': 'Adidas',
-    'FEAR OF GOD ESSENTIALS': 'Fear of God',
-    'FOG ESSENTIALS': 'Fear of God',
+    
+    // Other Athletic Brands
+    'NEW BALANCE': 'New Balance',
+    'PUMA': 'Puma',
+    'VANS': 'Vans',
+    'CONVERSE': 'Converse',
+    'REEBOK': 'Reebok',
+    'ASICS': 'ASICS',
+    'SAUCONY': 'Saucony',
+    'UNDER ARMOUR': 'Under Armour',
+    
+    // Streetwear & Designer
+    'SUPREME': 'Supreme',
+    'BAPE': 'Bape',
     'A BATHING APE': 'Bape',
+    'PALACE': 'Palace',
+    'OFF-WHITE': 'Off-White',
+    'TRAVIS SCOTT': 'Travis Scott',
+    'CACTUS JACK': 'Travis Scott',
+    'FEAR OF GOD': 'Fear of God',
+    'FOG': 'Fear of God',
+    'ESSENTIALS': 'Fear of God',
+    'DENIM TEARS': 'Denim Tears',
+    'POP MART': 'Pop Mart',
+    
+    // Luxury & Designer
+    'BALENCIAGA': 'Balenciaga',
+    'GUCCI': 'Gucci',
+    'LOUIS VUITTON': 'Louis Vuitton',
     'LV': 'Louis Vuitton',
-    'ASSC': 'Anti Social Social Club'
+    'DIOR': 'Dior',
+    'AMI': 'AMI',
+    'STONE ISLAND': 'Stone Island',
+    'CHROME HEARTS': 'Chrome Hearts',
+    'GALLERY DEPT': 'Gallery Dept',
+    
+    // Outdoor & Footwear
+    'THE NORTH FACE': 'The North Face',
+    'TIMBERLAND': 'Timberland',
+    'UGG': 'UGG',
+    'DR. MARTENS': 'Dr. Martens',
+    'CROCS': 'Crocs'
   };
 
   if (!productName) return 'Unknown Brand';
   
   const upperName = productName.toUpperCase();
   
-  // First check for exact brand matches
-  for (const brand of brands) {
-    if (upperName.includes(brand.toUpperCase())) {
+  // First try to match the start of the product name
+  for (const [key, brand] of Object.entries(brandMappings)) {
+    if (upperName.startsWith(key)) {
       return brand;
     }
   }
-
-  // Then check for brand aliases
-  for (const [alias, brand] of Object.entries(brandAliases)) {
-    if (upperName.includes(alias)) {
+  
+  // Then try to find matches anywhere in the name
+  for (const [key, brand] of Object.entries(brandMappings)) {
+    if (upperName.includes(key)) {
       return brand;
     }
   }
+  
+  // Special case for Jordan numbers (e.g., "Jordan 1", "Jordan 4")
+  if (upperName.match(/JORDAN\s+\d/)) {
+    return 'Jordan';
+  }
 
-  // If no match found, try the first word but verify it's not a common prefix
+  // Try to extract brand from the first word if it's not a common prefix
   const firstWord = productName.split(' ')[0];
   const commonPrefixes = ['THE', 'NEW', 'ALL', 'MENS', "MEN'S", 'WOMENS', "WOMEN'S", 'KIDS', 'YOUTH'];
   if (firstWord && !commonPrefixes.includes(firstWord.toUpperCase())) {
@@ -572,18 +608,19 @@ async function saveSalesToMainCollection(sales: StockXSale[], userId: string, se
       };
       
       if (existingSale) {
-        if (existingSale.status !== mainSaleData.status) {
-          batchPromises.push(
-            updateDocument('sales', existingSale.id, {
-              ...mainSaleData,
-              updatedAt: new Date().toISOString()
-            }).then(() => {
-              updatedCount++;
-              batchSavedIds.push(existingSale.id);
-            })
-          );
-        }
+        // Always update existing sales to ensure we have the latest data
+        batchPromises.push(
+          updateDocument('sales', existingSale.id, {
+            ...mainSaleData,
+            updatedAt: new Date().toISOString()
+          }).then(() => {
+            updatedCount++;
+            batchSavedIds.push(existingSale.id);
+            console.log(`📝 Updated existing sale: ${existingSale.id} (${mainSaleData.product})`);
+          })
+        );
       } else {
+        // Add new sale
         batchPromises.push(
           addDocument('sales', {
             ...mainSaleData,
@@ -591,6 +628,7 @@ async function saveSalesToMainCollection(sales: StockXSale[], userId: string, se
           }).then((docId) => {
             savedCount++;
             batchSavedIds.push(docId);
+            console.log(`✨ Added new sale: ${docId} (${mainSaleData.product})`);
           })
         );
       }
