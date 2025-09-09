@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { refreshStockXTokens } from '@/lib/stockx/tokenRefresh';
-import { getDocuments, addDocument, updateDocument } from '@/lib/firebase/firebaseUtils';
+import { getAdminDocuments, addAdminDocument, updateAdminDocument } from '@/lib/firebase/firebaseAdmin';
 import { COLLECTIONS } from '@/lib/firebase/collections';
 import { StockXSale } from '@/lib/types/stockx';
 
@@ -540,7 +540,7 @@ function extractBrandFromName(productName: string): string {
 }
 
 async function saveSalesToStockxCollection(sales: StockXSale[], userId: string, sendUpdate: Function) {
-  const existingSales = await getDocuments(COLLECTIONS.STOCKX_SALES);
+  const existingSales = await getAdminDocuments(COLLECTIONS.STOCKX_SALES);
   const userSalesMap = new Map(
     existingSales
       .filter((sale: any) => sale.userId === userId)
@@ -565,7 +565,7 @@ async function saveSalesToStockxCollection(sales: StockXSale[], userId: string, 
         updatedCount++;
       }
     } else {
-      await addDocument(COLLECTIONS.STOCKX_SALES, {
+      await addAdminDocument(COLLECTIONS.STOCKX_SALES, {
         userId: userId,
         stockxOrderId: sale.orderNumber,
         saleData: sale,
@@ -588,7 +588,7 @@ async function saveSalesToStockxCollection(sales: StockXSale[], userId: string, 
 }
 
 async function saveSalesToMainCollection(sales: StockXSale[], userId: string, sendUpdate: Function) {
-  const existingSales = await getDocuments(COLLECTIONS.SALES);
+  const existingSales = await getAdminDocuments(COLLECTIONS.SALES);
   const userSalesMap = new Map(
     existingSales
       .filter((sale: any) => sale.userId === userId)
@@ -653,7 +653,7 @@ async function saveSalesToMainCollection(sales: StockXSale[], userId: string, se
       } else {
         // Add new sale
         batchPromises.push(
-          addDocument(COLLECTIONS.SALES, {
+          addAdminDocument(COLLECTIONS.SALES, {
             ...mainSaleData,
             createdAt: new Date().toISOString()
           }).then((docId) => {
