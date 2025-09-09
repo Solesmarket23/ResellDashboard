@@ -178,12 +178,26 @@ const Sales = () => {
     try {
       const stored = localStorage.getItem('sales-column-widths');
       if (stored) {
-        return JSON.parse(stored);
+        const parsed = JSON.parse(stored);
+        // Check if we have the new column structure and proper widths
+        if (parsed.orderNumber && parsed.soldOn) {
+          // If orderNumber is too small (old cached value), reset to defaults
+          if (parsed.orderNumber < 140 || parsed.soldOn < 90) {
+            console.log('🔄 Resetting column widths due to outdated cache');
+            localStorage.removeItem('sales-column-widths');
+            return getDefaultColumnWidths();
+          }
+          return parsed;
+        }
       }
     } catch (error) {
       console.warn('Failed to load column widths from localStorage:', error);
     }
-    // Default widths
+    return getDefaultColumnWidths();
+  };
+
+  const getDefaultColumnWidths = () => {
+    // Updated default widths to prevent overlap
     return {
       product: 260,
       brand: 110,
@@ -1138,6 +1152,27 @@ const Sales = () => {
           >
             <Trash2 className="w-4 h-4 mr-2" />
             Clear All Sales
+          </button>
+
+          <button 
+            onClick={() => {
+              console.log('🔄 Resetting column layout...');
+              localStorage.removeItem('sales-column-widths');
+              setColumnWidths(getDefaultColumnWidths());
+              console.log('✅ Column layout reset to defaults');
+            }}
+            disabled={isLoading}
+            className={`flex items-center px-3 py-2 ${
+              isNeon 
+                ? 'bg-gradient-to-r from-purple-500 to-purple-600 shadow-lg shadow-purple-500/25' 
+                : 'bg-purple-500'
+            } text-white rounded-lg hover:bg-purple-600 transition-colors ${
+              isLoading ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
+            title="Reset column widths to fix overlap issues"
+          >
+            <RefreshCw className="w-4 h-4 mr-1" />
+            Reset Layout
           </button>
 
           <button 
