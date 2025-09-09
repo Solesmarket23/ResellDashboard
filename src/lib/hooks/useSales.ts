@@ -194,143 +194,55 @@ export const useSales = () => {
       console.log('🔄 useSales: Loading sales data for user:', user.uid);
       
       // Fetch sales from server (admin) to guarantee we read what the API wrote
-      console.log('🔎 useSales: Fetching server sales via /api/sales/list (paged)');
-      const pageSize = 400;
+      console.log('🔎 useSales: Fetching server sales via /api/sales/list (first page fast)');
+      const pageSize = 200;
       let cursorId: string | null = null;
       let aggregatedSales: any[] = [];
-      let page = 0;
-      do {
-        const url = `/api/sales/list?userId=${encodeURIComponent(user.uid)}&limit=${pageSize}${cursorId ? `&cursorId=${cursorId}` : ''}`;
+
+      // Fetch first page quickly and render immediately
+      const firstUrl = `/api/sales/list?userId=${encodeURIComponent(user.uid)}&limit=${pageSize}`;
+      const firstResp = await fetch(firstUrl, { cache: 'no-store' });
+      if (!firstResp.ok) throw new Error(`First page fetch failed: ${firstResp.status}`);
+      const firstJson = await firstResp.json();
+      if (!firstJson.success) throw new Error('First page fetch not successful');
+      aggregatedSales = aggregatedSales.concat(firstJson.sales || []);
+      cursorId = firstJson.nextCursorId || null;
+
+      const initialNormalized = aggregatedSales.map((sale: any) => ({
+        ...sale,
+        platform: sale.platform || (sale.source?.includes('stockx') ? 'stockx' : 'manual')
+      }));
+
+      if (mountedRef.current) {
+        setSales(initialNormalized);
+        setManualSales(initialNormalized);
+        setStockxSales([]);
+        setMetrics(calculateMetrics(initialNormalized));
+        setConnectionState({ status: 'connected', lastUpdated: new Date(), error: null });
+        if (showLoading) setLoading(false);
+      }
+
+      // Background prefetch remaining pages (up to 2 more)
+      let page = 1;
+      while (cursorId && page < 3) {
+        const url = `/api/sales/list?userId=${encodeURIComponent(user.uid)}&limit=${pageSize}&cursorId=${cursorId}`;
         const resp = await fetch(url, { cache: 'no-store' });
-        if (!resp.ok) {
-          console.warn('⚠️ useSales: Server sales page fetch failed', resp.status);
-          break;
-        }
+        if (!resp.ok) break;
         const json = await resp.json();
         if (!json.success) break;
         aggregatedSales = aggregatedSales.concat(json.sales || []);
         cursorId = json.nextCursorId;
         page++;
-        // Soft cap to avoid too many sequential reads in one refresh
-        if (page >= 3) break;
-      } while (cursorId);
-
-      console.log('🔎 useSales: Server sales aggregated count:', aggregatedSales.length);
-      const serverSalesJson = { success: true, sales: aggregatedSales };
-      const manualSalesData = serverSalesJson.success ? serverSalesJson.sales : [];
-      // Keep reading stockxSales client-side for supplemental data
-      const stockxSalesData = await getDocuments('stockxSales');
-      
-      console.log('🔍 Raw StockX sales data:', stockxSalesData.length, 'total sales');
-      console.log('🔍 Current user.uid:', user.uid);
-      if (stockxSalesData.length > 0) {
-        console.log('🔍 First StockX sale raw data:', stockxSalesData[0]);
-        console.log('🔍 First sale userId:', stockxSalesData[0].userId);
-        console.log('🔍 UserID match?', stockxSalesData[0].userId === user.uid);
-      }
-      
-      // Filter StockX sales for current user and add platform field
-      const userStockxSales = stockxSalesData
-        .filter((sale: any) => sale.userId === user.uid)
-        .map((sale: any) => {
-          // StockX sales data is stored directly in the document
-          const saleData = sale.saleData;
-          
-          // Debug: Check brand data and enrichment status
-          console.log('🔍 StockX sale brand debug:', {
-            orderNumber: saleData.orderNumber,
-            productName: saleData.product?.productName,
-            brand: saleData.product?.brand,
-            alternativeBrand: saleData.brand,
-            hasEnrichment: !!saleData.product?.brand && saleData.product.brand !== 'Unknown Brand',
-            productId: saleData.product?.productId,
-            createdAt: sale.createdAt || saleData.createdAt
-          });
-          
-          // Skip if no saleData
-          if (!saleData) {
-            console.warn('⚠️ StockX sale missing saleData:', sale);
-            return null;
-          }
-          
-          // Debug log first sale's saleData
-          if (stockxSalesData.indexOf(sale) === 0) {
-            console.log('🔍 Full StockX sale data:', JSON.stringify(saleData, null, 2));
-            console.log('🔍 Key fields check:', {
-              'pricing': saleData.pricing,
-              'payout': saleData.payout,
-              'amount': saleData.amount,
-              'salePrice': saleData.salePrice,
-              'totalPayout': saleData.totalPayout,
-              'fees': saleData.fees,
-              'sellerFees': saleData.sellerFees
-            });
-          }
-          
-          // Remove debug logging
-          // The issue was pricing.salesPrice vs pricing.salePrice
-          
-          return {
+        if (mountedRef.current) {
+          const normalized = aggregatedSales.map((sale: any) => ({
             ...sale,
-            id: sale.id || saleData.orderNumber,
-            platform: 'stockx',
-            // Map StockX fields to match manual sales structure
-            product: saleData.product?.productName || 'Unknown Product',
-            brand: saleData.product?.brand || saleData.brand || extractBrandFromProductName(saleData.product?.productName) || 'Unknown Brand',
-            size: saleData.variant?.size || 'Unknown',
-            orderNumber: saleData.orderNumber || sale.stockxOrderId || '',
-            // Normalize date field
-            date: saleData.createdAt || sale.createdAt || sale.updatedAt,
-            // Normalize price fields for consistent calculations
-            // Try multiple locations for the sale price
-            salePrice: saleData.pricing?.salePrice || saleData.pricing?.buyerPaid || saleData.salePrice || parseFloat(saleData.amount) || 0,
-            purchasePrice: sale.purchasePrice || 0,
-            // StockX fees - check multiple locations
-            fees: saleData.pricing?.sellerFees || saleData.fees || saleData.totalFees || saleData.sellerFees || 0,
-            // For payout, use the totalPayout from pricing which is now calculated in the API
-            payout: saleData.pricing?.totalPayout || saleData.totalPayout || 0,
-            // Calculate profit if not provided
-            profit: (saleData.pricing?.totalPayout || saleData.totalPayout || 0) - (sale.purchasePrice || 0)
-          };
-        })
-        .filter(sale => sale !== null); // Remove any null entries
-      
-      // Add platform field to admin-fetched sales (these already include imported StockX mapped entries)
-      const normalizedManualSales = manualSalesData.map((sale: any) => ({
-        ...sale,
-        platform: sale.platform || (sale.source?.includes('stockx') ? 'stockx' : 'manual')
-      }));
-      
-      // Combine all sales
-      const allSales = [...normalizedManualSales, ...userStockxSales];
-      
-      console.log('🔄 useSales: Found', normalizedManualSales.length, 'manual sales');
-      console.log('🔄 useSales: Found', userStockxSales.length, 'StockX sales');
-      console.log('🔄 useSales: Total sales:', allSales.length);
-      
-      // Additional debug: Log sample of processed StockX sales
-      if (userStockxSales.length > 0) {
-        console.log('🔍 Sample processed StockX sale:', {
-          id: userStockxSales[0].id,
-          platform: userStockxSales[0].platform,
-          product: userStockxSales[0].product,
-          salePrice: userStockxSales[0].salePrice,
-          date: userStockxSales[0].date,
-          profit: userStockxSales[0].profit
-        });
-      }
-      
-      if (mountedRef.current) {
-        setSales(allSales);
-        setManualSales(normalizedManualSales);
-        setStockxSales(userStockxSales);
-        setMetrics(calculateMetrics(allSales));
-        setConnectionState({
-          status: 'connected',
-          lastUpdated: new Date(),
-          error: null
-        });
-        console.log('🔄 useSales: Sales state updated - total sales:', allSales.length);
+            platform: sale.platform || (sale.source?.includes('stockx') ? 'stockx' : 'manual')
+          }));
+          setSales(normalized);
+          setManualSales(normalized);
+          setMetrics(calculateMetrics(normalized));
+          setConnectionState({ status: 'connected', lastUpdated: new Date(), error: null });
+        }
       }
       
     } catch (err) {
