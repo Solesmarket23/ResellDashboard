@@ -798,6 +798,26 @@ export const convertOrderInfoToPurchaseData = (orderInfo: OrderInfo): Partial<Us
   };
 };
 
+// Get user sales from the main sales collection
+export const getUserSales = async (userId: string): Promise<any[]> => {
+  try {
+    console.log('📊 getUserSales: Loading sales for user:', userId);
+    
+    // Get all sales from the main 'sales' collection
+    const allSales = await getDocuments('sales');
+    
+    // Filter for the current user
+    const userSales = allSales.filter((sale: any) => sale.userId === userId);
+    
+    console.log('📊 getUserSales: Found', userSales.length, 'sales for user');
+    
+    return userSales;
+  } catch (error) {
+    console.error('❌ getUserSales: Error loading user sales:', error);
+    throw error;
+  }
+};
+
 // Helper function to extract brand from product name
 function extractBrandFromProduct(productName: string): string {
   if (productName.toLowerCase().includes('jordan')) return 'Jordan';
