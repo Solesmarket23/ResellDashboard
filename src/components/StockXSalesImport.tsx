@@ -14,6 +14,8 @@ interface ImportProgress {
   percentage: number;
   salesCount?: number;
   enrichedCount?: number;
+  currentPage?: number;
+  pageResults?: number;
 }
 
 const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportComplete }) => {
@@ -50,8 +52,8 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
     });
 
     try {
-      // Phase 1: Fetch sales using the new bulk import endpoint
-      const response = await fetch('/api/stockx/sales/bulk-import', {
+      // Use Server-Sent Events for real-time progress updates
+      const response = await fetch('/api/stockx/sales/bulk-import-stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -63,54 +65,95 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || `Import failed: ${response.statusText}`);
+        const errorText = await response.text();
+        throw new Error(`Import failed: ${response.statusText} - ${errorText}`);
       }
 
-      const data = await response.json();
+      // Set up EventSource-like processing for the response stream
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
 
-      if (!data.success) {
-        throw new Error(data.error || 'Import failed');
+      if (!reader) {
+        throw new Error('Failed to get response stream');
       }
 
-      setProgress({
-        phase: 'enriching',
-        message: `Processing ${data.totalSales} sales with complete data...`,
-        percentage: 50,
-        salesCount: data.totalSales
-      });
+      let buffer = '';
+      let finalResult: any = null;
 
-      // Show breakdown if available
-      if (data.breakdown) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        setProgress({
-          phase: 'saving',
-          message: `Saving to database: ${data.breakdown.completed} completed, ${data.breakdown.authenticated} authenticated, ${data.breakdown.other} other...`,
-          percentage: 80,
-          salesCount: data.totalSales
-        });
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              // Update progress based on the event type
+              if (data.type === 'status' || data.type === 'progress') {
+                setProgress({
+                  phase: data.phase || 'fetching',
+                  message: data.message,
+                  percentage: data.progress || 0,
+                  salesCount: data.salesFound || data.totalSales || 0,
+                  currentPage: data.currentPage,
+                  pageResults: data.pageResults
+                });
+              } else if (data.type === 'warning') {
+                console.warn('⚠️ Import warning:', data.message);
+                // Still update progress to show we're moving forward
+                setProgress(prev => ({
+                  ...prev,
+                  message: data.message,
+                  percentage: data.progress || prev.percentage
+                }));
+              } else if (data.type === 'error') {
+                console.error('❌ Import error:', data.message);
+                throw new Error(data.message);
+              } else if (data.type === 'complete') {
+                finalResult = data;
+                break;
+              }
+            } catch (parseError) {
+              console.warn('Failed to parse SSE data:', parseError);
+            }
+          }
+        }
+
+        if (finalResult) break;
       }
 
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      if (!finalResult) {
+        throw new Error('Import completed but no final result received');
+      }
 
-      // Phase 3: Complete
+      if (!finalResult.success) {
+        throw new Error(finalResult.message || 'Import failed');
+      }
+
+      // Final success update
       setProgress({
         phase: 'complete',
-        message: `✅ Successfully imported ${data.totalSales} sales with complete data!`,
+        message: finalResult.message,
         percentage: 100,
-        salesCount: data.totalSales,
-        enrichedCount: data.totalSales || 0
+        salesCount: finalResult.totalSales,
+        enrichedCount: finalResult.totalSales || 0
       });
 
       setNotification({
         isVisible: true,
-        message: `🎉 Imported ${data.totalSales} StockX sales and added them to your main sales table!`,
+        message: `🎉 Imported ${finalResult.totalSales} StockX sales and added them to your main sales table!`,
         type: 'success'
       });
 
       // Call completion callback
-      console.log('🔄 StockXSalesImport: Calling onImportComplete with:', { success: true, count: data.totalSales });
-      onImportComplete?.(true, data.totalSales);
+      console.log('🔄 StockXSalesImport: Calling onImportComplete with:', { success: true, count: finalResult.totalSales });
+      onImportComplete?.(true, finalResult.totalSales);
 
       // Reset after a delay
       setTimeout(() => {
@@ -235,13 +278,38 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
             </div>
 
             {/* Status Message */}
-            <div className="flex items-center gap-2">
-              {getPhaseIcon()}
-              <span className={`text-sm ${
-                isNeon ? 'text-gray-300' : 'text-gray-700'
-              }`}>
-                {progress.message}
-              </span>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                {getPhaseIcon()}
+                <span className={`text-sm ${
+                  isNeon ? 'text-gray-300' : 'text-gray-700'
+                }`}>
+                  {progress.message}
+                </span>
+              </div>
+              
+              {/* Detailed Progress Info */}
+              {(progress.currentPage || progress.salesCount || progress.pageResults) && (
+                <div className={`text-xs grid grid-cols-3 gap-4 ${
+                  isNeon ? 'text-gray-400' : 'text-gray-500'
+                }`}>
+                  {progress.currentPage && (
+                    <div>
+                      <span className="font-medium">Page:</span> {progress.currentPage}
+                    </div>
+                  )}
+                  {progress.salesCount !== undefined && (
+                    <div>
+                      <span className="font-medium">Total Found:</span> {progress.salesCount}
+                    </div>
+                  )}
+                  {progress.pageResults && (
+                    <div>
+                      <span className="font-medium">Last Page:</span> +{progress.pageResults}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Stats */}
