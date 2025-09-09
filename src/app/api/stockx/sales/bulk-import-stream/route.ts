@@ -156,32 +156,25 @@ export async function POST(request: NextRequest) {
                 // Log the first order's complete data structure
                 if (data.orders.length > 0 && pageNumber === 1) {
                   const firstOrder = data.orders[0];
-                  console.log('📦 StockX Sale Data Structure:', {
-                    // Basic sale info
+                  console.log('📦 Raw StockX API Response:', JSON.stringify(firstOrder, null, 2));
+                  console.log('📦 First Order Fields:', {
+                    // Basic info
                     id: firstOrder.id,
                     orderNumber: firstOrder.orderNumber,
                     status: firstOrder.status,
                     
-                    // Product data
-                    productData: {
-                      raw: firstOrder.saleData?.product || firstOrder.product,
-                      name: firstOrder.saleData?.product?.name || firstOrder.saleData?.product?.title,
-                      brand: firstOrder.saleData?.product?.brand,
-                      brandName: firstOrder.saleData?.brandName,
-                      category: firstOrder.saleData?.product?.category
-                    },
+                    // Product info
+                    product: firstOrder.product,
+                    productName: firstOrder.productName,
+                    brand: firstOrder.brand,
+                    brandName: firstOrder.brandName,
                     
-                    // Variant/Size data
-                    variantData: {
-                      raw: firstOrder.saleData?.variant || firstOrder.variant,
-                      size: firstOrder.saleData?.variant?.size,
-                      sizeType: firstOrder.saleData?.variant?.sizeType,
-                      variantValue: firstOrder.saleData?.variant?.variantValue
-                    },
+                    // Size info
+                    variant: firstOrder.variant,
+                    size: firstOrder.size,
                     
-                    // Full raw data for inspection
-                    rawSaleData: firstOrder.saleData,
-                    rawOrder: firstOrder
+                    // All available fields
+                    allFields: Object.keys(firstOrder)
                   });
                 }
                 
@@ -390,21 +383,31 @@ function processSalesData(orders: any[]): StockXSale[] {
     const totalPayout = parseFloat(payoutData.totalPayout || payoutData.payout || '0');
 
     // Debug logging for brand and size data
-    console.log('🔍 Sale Data Fields:', {
+    console.log('🔍 Complete Sale Data:', JSON.stringify({
+      // Basic info
       orderNumber: order.orderNumber || order.id,
-      saleData: {
-        product: order.saleData?.product,
-        variant: order.saleData?.variant,
-        brand: order.saleData?.product?.brand,
-        brandName: order.saleData?.brandName
+      
+      // Full saleData object
+      saleData: order.saleData,
+      
+      // Product info
+      product: order.saleData?.product || order.product,
+      
+      // Brand info from all possible locations
+      brandInfo: {
+        fromProduct: order.saleData?.product?.brand,
+        fromRoot: order.saleData?.brand,
+        fromBrandName: order.saleData?.brandName,
+        fromMetadata: order.saleData?.metadata?.brand
       },
-      directFields: {
-        product: order.product,
-        variant: order.variant,
-        brand: order.brand,
-        brandName: order.brandName
+      
+      // Size info from all possible locations
+      sizeInfo: {
+        fromVariant: order.saleData?.variant?.size,
+        fromProduct: order.saleData?.product?.size,
+        fromRoot: order.saleData?.size
       }
-    });
+    }, null, 2));
 
     return {
       id: order.id || order.orderId || order.orderNumber,
