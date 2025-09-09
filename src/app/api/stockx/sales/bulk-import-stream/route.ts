@@ -150,32 +150,57 @@ export async function POST(request: NextRequest) {
             }
 
             if (response.ok) {
-              const data = await response.json();
+              const responseText = await response.text();
+              console.log('📦 Raw API Response Text:', responseText);
+              
+              let data;
+              try {
+                data = JSON.parse(responseText);
+                console.log('📦 Parsed API Response:', data);
+              } catch (error) {
+                console.error('❌ Failed to parse API response:', error);
+                throw error;
+              }
               
               if (data.orders && Array.isArray(data.orders)) {
                 // Log the first order's complete data structure
                 if (data.orders.length > 0 && pageNumber === 1) {
                   const firstOrder = data.orders[0];
-                  console.log('📦 Raw StockX API Response:', JSON.stringify(firstOrder, null, 2));
-                  console.log('📦 First Order Fields:', {
-                    // Basic info
-                    id: firstOrder.id,
-                    orderNumber: firstOrder.orderNumber,
-                    status: firstOrder.status,
-                    
-                    // Product info
-                    product: firstOrder.product,
-                    productName: firstOrder.productName,
-                    brand: firstOrder.brand,
-                    brandName: firstOrder.brandName,
-                    
-                    // Size info
-                    variant: firstOrder.variant,
-                    size: firstOrder.size,
-                    
-                    // All available fields
-                    allFields: Object.keys(firstOrder)
+                  console.log('📦 Raw StockX API Response:', {
+                    // Full raw response
+                    rawResponse: data,
+                    // First order details
+                    firstOrder: firstOrder,
+                    // Product details
+                    productInfo: {
+                      product: firstOrder.product,
+                      productName: firstOrder.productName,
+                      brand: firstOrder.brand,
+                      brandName: firstOrder.brandName,
+                      brandInfo: firstOrder.brandInfo,
+                      metadata: firstOrder.metadata
+                    },
+                    // Size details
+                    sizeInfo: {
+                      variant: firstOrder.variant,
+                      size: firstOrder.size,
+                      variantValue: firstOrder.variant?.variantValue,
+                      variantName: firstOrder.variant?.variantName
+                    }
                   });
+                  
+                  // Log all available fields at root level
+                  console.log('📦 Available Fields:', Object.keys(firstOrder).sort());
+                  
+                  // If product object exists, log its structure
+                  if (firstOrder.product) {
+                    console.log('📦 Product Object Fields:', Object.keys(firstOrder.product).sort());
+                  }
+                  
+                  // If variant object exists, log its structure
+                  if (firstOrder.variant) {
+                    console.log('📦 Variant Object Fields:', Object.keys(firstOrder.variant).sort());
+                  }
                 }
                 
                 const pageSales = processSalesData(data.orders);
