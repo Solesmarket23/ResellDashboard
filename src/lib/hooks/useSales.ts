@@ -194,10 +194,13 @@ export const useSales = () => {
       console.log('🔄 useSales: Loading sales data for user:', user.uid);
       
       // Fetch sales from server (admin) to guarantee we read what the API wrote
+      console.log('🔎 useSales: Fetching server sales via /api/sales/list');
       const serverSalesResp = await fetch(`/api/sales/list?userId=${encodeURIComponent(user.uid)}`, {
         cache: 'no-store'
       });
+      console.log('🔎 useSales: Server sales response OK?', serverSalesResp.ok, 'status:', serverSalesResp.status);
       const serverSalesJson = serverSalesResp.ok ? await serverSalesResp.json() : { success: false, sales: [] };
+      console.log('🔎 useSales: Server sales payload:', { success: serverSalesJson.success, count: serverSalesJson.sales?.length });
       const manualSalesData = serverSalesJson.success ? serverSalesJson.sales : [];
       // Keep reading stockxSales client-side for supplemental data
       const stockxSalesData = await getDocuments('stockxSales');
