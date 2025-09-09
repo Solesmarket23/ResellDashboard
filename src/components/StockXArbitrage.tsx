@@ -231,6 +231,7 @@ const StockXArbitrage: React.FC = () => {
   const [affiliateLinks, setAffiliateLinks] = useState<{ [key: string]: string }>({});
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showFlexAsk, setShowFlexAsk] = useState(true); // Toggle for flex ask display - enabled by default
+  const [preserveOrder, setPreserveOrder] = useState(false); // Track if we should preserve order when loading more
 
   // Check authentication status on component mount and prompt login if needed
   useEffect(() => {
@@ -444,6 +445,7 @@ const StockXArbitrage: React.FC = () => {
 
     if (loadMore) {
       setIsLoadingMore(true);
+      setPreserveOrder(true); // Preserve order when loading more
     } else {
       setIsLoading(true);
       setErrorMessage(null);
@@ -452,6 +454,7 @@ const StockXArbitrage: React.FC = () => {
       setOpportunities([]); // Clear previous results
       setCurrentPage(1);
       setHasMore(false);
+      setPreserveOrder(false); // Don't preserve order for new searches
     }
     setHasSearched(true);
 
@@ -897,7 +900,41 @@ const StockXArbitrage: React.FC = () => {
   };
 
   // Apply filters to displayed opportunities
-  const filteredOpportunities = applyFiltersAndSorting(opportunities);
+  // When loading more, maintain the original order of results
+  const filteredOpportunities = preserveOrder 
+    ? opportunities.filter(opp => {
+        // Apply only filters, no sorting when preserving order
+        if (opp.askAmount && (opp.askAmount < priceRange.min || opp.askAmount > priceRange.max)) {
+          return false;
+        }
+        if (opp.profit < profitRange.min || opp.profit > profitRange.max) {
+          return false;
+        }
+        if (selectedCategories.length > 0 && opp.category && !selectedCategories.includes(opp.category)) {
+          return false;
+        }
+        if (selectedSizes.length > 0 && !selectedSizes.includes(opp.size)) {
+          return false;
+        }
+        if (opp.bidAskVolume && opp.bidAskVolume < minBidAskVolume) {
+          return false;
+        }
+        if (onlyRecentReleases && opp.releaseDate) {
+          const releaseDate = new Date(opp.releaseDate);
+          const threeMonthsAgo = new Date();
+          threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+          if (releaseDate < threeMonthsAgo) {
+            return false;
+          }
+        }
+        return true;
+      })
+    : applyFiltersAndSorting(opportunities);
+
+  // Reset preserveOrder when filters or sorting changes
+  useEffect(() => {
+    setPreserveOrder(false);
+  }, [sortBy, sortOrder, priceRange, profitRange, selectedCategories, selectedSizes, minBidAskVolume, onlyRecentReleases]);
 
   // Load linked purchases from localStorage on component mount
   useEffect(() => {
