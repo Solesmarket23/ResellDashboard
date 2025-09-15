@@ -82,7 +82,7 @@ const EbayStockXArbitrage: React.FC = () => {
   }>({ ebayFound: 0, stockxMatched: 0, currentStep: '' });
   
   // Filter states
-  const [minProfitMargin, setMinProfitMargin] = useState(15);
+  const [minProfitMargin, setMinProfitMargin] = useState(0); // Set to 0 for debugging
   const [maxPrice, setMaxPrice] = useState(500);
   const [minConfidence, setMinConfidence] = useState(60);
   const [showFilters, setShowFilters] = useState(false);
@@ -197,6 +197,22 @@ const EbayStockXArbitrage: React.FC = () => {
         // TEMPORARILY: Show ALL results for debugging (no confidence filter)
         const filteredOpportunities = allOpportunities; // Show everything for debugging
         console.log(`🔍 After confidence filter (showing ALL for debugging): ${filteredOpportunities.length} opportunities`);
+        
+        // Debug: Log detailed info about each opportunity
+        if (filteredOpportunities.length > 0) {
+          console.log(`🔍 Detailed opportunity analysis:`);
+          filteredOpportunities.forEach((opp, index) => {
+            console.log(`Opportunity ${index + 1}:`, {
+              ebayTitle: opp.ebayListing?.title,
+              ebayPrice: opp.ebayListing?.price,
+              stockxAsk: opp.stockxData?.lowestAsk,
+              profit: opp.profit,
+              profitMargin: opp.profitMargin,
+              confidence: opp.confidence,
+              hasRealMatch: opp.profit > -500
+            });
+          });
+        }
         
         setOpportunities(filteredOpportunities);
         setStats({

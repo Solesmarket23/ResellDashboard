@@ -33,8 +33,9 @@ export async function GET(request: NextRequest) {
 
     // Get the current host from the request
     const host = request.headers.get('host') || '';
-    const protocol = host.includes('localhost') ? 'http' : 'https';
-    const baseUrl = `${protocol}://${host}`;
+    
+    // Use ngrok URL if available, otherwise use the host
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `https://${host}`;
 
     console.log('=== STOCKX CALLBACK ===');
     console.log('Callback request from:', {

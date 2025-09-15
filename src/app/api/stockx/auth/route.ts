@@ -16,9 +16,9 @@ export async function GET(request: NextRequest) {
   // Get the current host from the request
   const host = request.headers.get('host') || '';
   
-  // Build redirect URI dynamically based on current host
-  const protocol = host.includes('localhost') ? 'http' : 'https';
-  const redirectUri = `${protocol}://${host}/api/stockx/callback`;
+  // Use ngrok URL if available, otherwise use the host
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `https://${host}`;
+  const redirectUri = `${baseUrl}/api/stockx/callback`;
   
   console.log('Auth request from:', {
     host,

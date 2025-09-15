@@ -1121,8 +1121,6 @@ const StockXArbitrage: React.FC = () => {
           animation: fadeIn 0.2s ease-out;
         }
       `}</style>
-      {/* Temporary debug component */}
-      {process.env.NODE_ENV === 'development' && <SovrnDebug />}
       <div className="max-w-6xl mx-auto">
         <div className="mb-6 sm:mb-8">
           <div className="flex items-center gap-3 mb-4">

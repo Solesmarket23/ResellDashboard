@@ -327,6 +327,7 @@ function generateStockXQueries(ebayTitle: string, parsedDetails: { brand?: strin
         queries.push('Nike Dunk Low Panda');
         queries.push('Nike Dunk Low White Black');
         queries.push('Dunk Low Panda');
+        queries.push('Dunk Low White Black');
       } else {
         queries.push('Nike Dunk Low');
         queries.push('Dunk Low');
@@ -366,6 +367,10 @@ function generateStockXQueries(ebayTitle: string, parsedDetails: { brand?: strin
       queries.push('Nike Blazer');
       queries.push('Blazer');
     }
+    // General Nike search
+    else {
+      queries.push('Nike');
+    }
   }
   
   // Priority 3: Adidas patterns
@@ -374,6 +379,7 @@ function generateStockXQueries(ebayTitle: string, parsedDetails: { brand?: strin
       if (title.includes('350')) {
         queries.push('Adidas Yeezy Boost 350');
         queries.push('Yeezy 350');
+        queries.push('Yeezy Boost 350 V2');
       } else if (title.includes('700')) {
         queries.push('Adidas Yeezy Boost 700');
         queries.push('Yeezy 700');
@@ -385,6 +391,10 @@ function generateStockXQueries(ebayTitle: string, parsedDetails: { brand?: strin
     else if (title.includes('ultraboost')) {
       queries.push('Adidas Ultraboost');
       queries.push('Ultraboost');
+    }
+    // General Adidas search
+    else {
+      queries.push('Adidas');
     }
   }
   
@@ -410,6 +420,13 @@ function generateStockXQueries(ebayTitle: string, parsedDetails: { brand?: strin
   // Priority 6: Brand only as last resort (only for major sneaker brands)
   if (brand && ['nike', 'adidas', 'jordan'].includes(brand.toLowerCase()) && queries.length === 0) {
     queries.push(brand);
+  }
+  
+  // Priority 7: Generic sneaker search terms
+  if (queries.length === 0) {
+    if (title.includes('sneaker') || title.includes('shoe')) {
+      queries.push('sneakers');
+    }
   }
   
   // Remove duplicates and return
@@ -463,55 +480,68 @@ function generateStockXQuery(ebayTitle: string, parsedDetails: { brand?: string;
   return queries[0] || ebayTitle.split(' ').slice(0, 3).join(' ');
 }
 
-// Search StockX for matching products using the same endpoint as the working StockX arbitrage finder
+// Search StockX for matching products using direct API call (no HTTP intermediary)
 async function searchStockXForProduct(query: string, request: NextRequest): Promise<any[]> {
   try {
-    console.log(`🔍 Searching StockX for: ${query}`);
+    console.log(`🔍 Searching StockX catalog directly for: ${query}`);
     
-    // Make HTTP request to our StockX search API
-    const stockxUrl = `${request.nextUrl.origin}/api/stockx/search?query=${encodeURIComponent(query)}&limit=10`;
-    console.log(`🌐 Calling StockX API via HTTP: ${stockxUrl}`);
+    // Get authentication tokens from cookies
+    const accessToken = request.cookies.get('stockx_access_token')?.value;
+    const apiKey = process.env.STOCKX_API_KEY;
     
-    const response = await fetch(stockxUrl, {
+    if (!accessToken) {
+      console.log(`❌ No StockX access token found - user needs to authenticate`);
+      return [];
+    }
+    
+    if (!apiKey) {
+      console.log(`❌ No StockX API key configured`);
+      return [];
+    }
+    
+    // Use StockX catalog search API directly
+    const searchApiParams = new URLSearchParams({
+      query: query,
+      pageNumber: '1',
+      pageSize: '10'
+    });
+
+    const searchUrl = `https://api.stockx.com/v2/catalog/search?${searchApiParams.toString()}`;
+    console.log(`🌐 Direct StockX API call: ${searchUrl}`);
+    
+    const response = await fetch(searchUrl, {
       method: 'GET',
       headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'X-API-Key': apiKey, // Fixed: should be X-API-Key, not x-api-key
         'Content-Type': 'application/json',
-        // Forward relevant headers from the original request
-        'Cookie': request.headers.get('Cookie') || '',
-        'Authorization': request.headers.get('Authorization') || '',
-        'User-Agent': request.headers.get('User-Agent') || 'Mozilla/5.0'
+        'Accept': 'application/json',
+        'User-Agent': 'FlipFlow/1.0'
       }
     });
     
     console.log(`📡 StockX API response status: ${response.status}`);
     
-    if (response.status === 200) {
+    if (response.ok) {
       const data = await response.json();
-      console.log(`📦 StockX response summary:`, {
-        hasProducts: !!data.products,
-        productCount: data.products?.length || 0,
-        hasError: !!data.error,
-        authRequired: !!data.authRequired,
-        keys: Object.keys(data)
+      const products = data.products || [];
+      
+      console.log(`📦 StockX catalog response:`, {
+        productCount: products.length,
+        totalResults: data.totalResults || 0,
+        hasProducts: products.length > 0
       });
       
-      // Check for authentication error
-      if (data.error && data.authRequired) {
-        console.log(`❌ StockX requires authentication: ${data.error}`);
-        return [];
-      }
-      
-      // Handle successful response with products
-      const products = data.products || data.data?.products || [];
       if (products.length > 0) {
         console.log(`✅ Found ${products.length} StockX products`);
         
         // Log first few products for debugging
         console.log(`📋 Sample StockX products:`, products.slice(0, 3).map((p: any) => ({
-          id: p.id || p.uuid,
+          id: p.id || p.uuid || p.productId,
           title: p.title || p.name,
           brand: p.brand,
-          urlKey: p.urlKey
+          urlKey: p.urlKey,
+          productId: p.productId
         })));
         
         return products;
@@ -521,7 +551,13 @@ async function searchStockXForProduct(query: string, request: NextRequest): Prom
       }
     } else {
       const errorText = await response.text();
-      console.log(`❌ StockX search failed (${response.status}): ${errorText}`);
+      console.log(`❌ StockX catalog search failed (${response.status}): ${errorText}`);
+      
+      // If unauthorized, user needs to authenticate
+      if (response.status === 401) {
+        console.log(`🔐 Authentication required - user should connect StockX account`);
+      }
+      
       return [];
     }
     
@@ -532,41 +568,109 @@ async function searchStockXForProduct(query: string, request: NextRequest): Prom
 }
 
 
-// Get StockX market data for a specific product and size
-async function getStockXMarketData(productId: string, size?: string): Promise<StockXPriceData | null> {
+// Get StockX market data for a specific product and size using direct API call
+async function getStockXMarketData(productId: string, size?: string, request?: NextRequest): Promise<StockXPriceData | null> {
   try {
-    // Use your existing StockX market data API
-    const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/stockx/products/${productId}/market-data`, {
+    console.log(`💰 Fetching market data for product: ${productId}, size: ${size || 'any'}`);
+    
+    // Get authentication tokens from cookies if request is provided
+    let accessToken = '';
+    let apiKey = process.env.STOCKX_API_KEY;
+    
+    if (request) {
+      accessToken = request.cookies.get('stockx_access_token')?.value || '';
+      apiKey = process.env.STOCKX_API_KEY;
+    }
+    
+    if (!accessToken || !apiKey) {
+      console.log(`❌ Missing StockX credentials for market data`);
+      return null;
+    }
+    
+    // Use direct StockX API call instead of internal API
+    const marketUrl = `https://api.stockx.com/v2/catalog/products/${productId}/market-data`;
+    console.log(`🌐 Direct StockX market data API call: ${marketUrl}`);
+    
+    const response = await fetch(marketUrl, {
+      method: 'GET',
       headers: {
-        'Content-Type': 'application/json'
+        'Authorization': `Bearer ${accessToken}`,
+        'X-API-Key': apiKey,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'User-Agent': 'FlipFlow/1.0'
       }
     });
-    
+
+    console.log(`📡 Market data API response status: ${response.status}`);
+
     if (response.ok) {
-      const data = await response.json();
+      const marketData = await response.json();
+      console.log(`✅ Market data response for ${productId}:`, {
+        isArray: Array.isArray(marketData),
+        variantCount: Array.isArray(marketData) ? marketData.length : 0,
+        hasData: !!marketData,
+        sampleData: Array.isArray(marketData) ? marketData[0] : null
+      });
+      
+      // Market data response format from StockX API
+      const variants = Array.isArray(marketData) ? marketData : [];
       
       // Find the variant that matches the size
-      const variants = data.variants || [];
-      let targetVariant = variants.find((v: any) => v.size === size);
+      let targetVariant = null;
+      if (size) {
+        targetVariant = variants.find((v: any) => 
+          v.variantValue === size || 
+          v.size === size || 
+          v.displaySize === size ||
+          v.sizeValue === size ||
+          v.shoeSize === size
+        );
+      }
       
-      // If no exact size match, use the first variant or aggregate data
+      // If no exact size match, use the first variant with market data
       if (!targetVariant && variants.length > 0) {
-        targetVariant = variants[0];
+        targetVariant = variants.find((v: any) => 
+          (v.lowestAskAmount && v.lowestAskAmount > 0) || 
+          (v.lowestAsk && v.lowestAsk > 0)
+        ) || variants[0];
       }
       
       if (targetVariant) {
-        return {
-          lowestAsk: targetVariant.lowestAsk || 0,
-          highestBid: targetVariant.highestBid || 0,
-          lastSale: targetVariant.lastSale || 0,
-          productId: productId,
-          variantId: targetVariant.id,
-          size: targetVariant.size || size || 'N/A'
-        };
+        // Handle different response formats
+        const lowestAsk = targetVariant.lowestAskAmount || targetVariant.lowestAsk || 0;
+        const highestBid = targetVariant.highestBidAmount || targetVariant.highestBid || 0;
+        const lastSale = targetVariant.lastSaleAmount || targetVariant.lastSale || lowestAsk;
+        
+        console.log(`📊 Found market data:`, {
+          size: targetVariant.variantValue || targetVariant.size || targetVariant.displaySize || targetVariant.sizeValue || targetVariant.shoeSize,
+          lowestAsk: lowestAsk,
+          highestBid: highestBid,
+          lastSale: lastSale,
+          variantId: targetVariant.variantId || targetVariant.id
+        });
+        
+        if (lowestAsk > 0) {
+          return {
+            lowestAsk: lowestAsk,
+            highestBid: highestBid,
+            lastSale: lastSale,
+            productId: productId,
+            variantId: targetVariant.variantId || targetVariant.id,
+            size: targetVariant.variantValue || targetVariant.size || targetVariant.displaySize || targetVariant.sizeValue || targetVariant.shoeSize || size || 'N/A'
+          };
+        } else {
+          console.log(`⚠️ No valid pricing data found for ${productId} size ${size}`);
+        }
+      } else {
+        console.log(`⚠️ No market data variants found for ${productId} size ${size}`);
       }
+    } else {
+      const errorText = await response.text();
+      console.log(`❌ Market data request failed: ${response.status} - ${errorText}`);
     }
   } catch (error) {
-    console.log('StockX market data error:', error);
+    console.log('❌ StockX market data error:', error);
   }
   
   return null;
@@ -652,6 +756,33 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Query parameter required' }, { status: 400 });
   }
 
+  // Check StockX authentication early
+  const accessToken = request.cookies.get('stockx_access_token')?.value;
+  const apiKey = process.env.STOCKX_API_KEY;
+  
+  if (!accessToken) {
+    return NextResponse.json({
+      success: false,
+      error: 'StockX authentication required',
+      message: 'Please connect your StockX account first to enable price comparisons',
+      authRequired: true,
+      opportunities: [],
+      totalEbayListings: 0,
+      totalOpportunities: 0
+    }, { status: 401 });
+  }
+
+  if (!apiKey) {
+    return NextResponse.json({
+      success: false,
+      error: 'StockX API not configured',
+      message: 'StockX API credentials are not properly configured',
+      opportunities: [],
+      totalEbayListings: 0,
+      totalOpportunities: 0
+    }, { status: 500 });
+  }
+
   try {
     console.log(`🔍 === ARBITRAGE SEARCH DEBUG START ===`);
     console.log(`🔍 Searching eBay for: "${query}" with minProfit: ${minProfitMargin}%, maxPrice: $${maxPrice}, newOnly: ${newItemsOnly}, authenticityGuarantee: ${authenticityGuaranteeOnly}`);
@@ -687,11 +818,12 @@ export async function GET(request: NextRequest) {
     
     
     console.log(`🔄 Starting to process ${ebayListings.length} eBay listings...`);
+    console.log(`📝 Sample eBay item:`, ebayListings[0]);
     
     for (let i = 0; i < ebayListings.length; i++) {
       const listing = ebayListings[i];
       console.log(`\n🔄 === Processing eBay listing ${i + 1}/${ebayListings.length} ===`);
-      console.log(`📦 eBay listing: ${listing.title} - $${listing.price}`);
+      console.log(`🏷️ eBay Item ${i + 1}: ${listing.title} - $${listing.price}`);
       
       // Skip if over max price
       if (listing.price > maxPrice) {
@@ -764,6 +896,9 @@ export async function GET(request: NextRequest) {
       let stockxProducts: any[] = [];
       let usedQuery = '';
       
+      // Log StockX lookup attempt
+      console.log(`🔍 Looking up on StockX...`);
+      
       // Try each query until we find matches
       for (const query of stockxQueries) {
         console.log(`🔍 Trying StockX query: "${query}"`);
@@ -773,6 +908,7 @@ export async function GET(request: NextRequest) {
           
           if (stockxProducts.length > 0) {
             usedQuery = query;
+            console.log(`✅ StockX found: ${stockxProducts[0].title} - $${stockxProducts[0].price || 'N/A'}`);
             break;
           }
         } catch (error) {
@@ -784,6 +920,7 @@ export async function GET(request: NextRequest) {
       }
       
       if (stockxProducts.length === 0) {
+        console.log(`❌ No StockX match found`);
         console.log(`⚠️ No StockX matches found after trying ${stockxQueries.length} queries:`, stockxQueries);
         
         // Skip this listing if no StockX matches found (don't add placeholder entries)
@@ -802,7 +939,7 @@ export async function GET(request: NextRequest) {
           const productId = stockxProduct.id || stockxProduct.productId || stockxProduct.uuid;
           console.log(`📊 Getting market data for product ID: ${productId}, size: ${parsedDetails.size}`);
           
-          const marketData = await getStockXMarketData(productId, parsedDetails.size);
+          const marketData = await getStockXMarketData(productId, parsedDetails.size, request);
           
           if (marketData) {
             console.log(`💰 Market data: Ask $${marketData.lowestAsk}, Bid $${marketData.highestBid}`);
@@ -824,6 +961,8 @@ export async function GET(request: NextRequest) {
                 console.log(`✅ Profitable opportunity: $${arbitrage.profit.toFixed(2)} profit (${arbitrage.profitMargin.toFixed(1)}%)`);
               } else {
                 console.log(`🔍 Unprofitable match (showing for debugging): $${arbitrage.profit.toFixed(2)} profit (${arbitrage.profitMargin.toFixed(1)}%)`);
+                console.log(`   eBay: $${arbitrage.ebayListing.price} + $${arbitrage.ebayListing.shipping || 0} shipping = $${arbitrage.totalCost.toFixed(2)} total cost`);
+                console.log(`   StockX: $${arbitrage.stockxData?.lowestAsk || 0} ask - $${arbitrage.netRevenue.toFixed(2)} net revenue`);
               }
             }
           }
