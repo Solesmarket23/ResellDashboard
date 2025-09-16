@@ -37,9 +37,9 @@ export async function GET(request: NextRequest) {
     // Use ngrok URL if available, otherwise use the host
     let baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `https://${host}`;
     
-    // Force non-www version for StockX OAuth compatibility
-    if (baseUrl.includes('www.solesmarket.com')) {
-      baseUrl = 'https://solesmarket.com';
+    // Force www version for StockX OAuth compatibility
+    if (baseUrl.includes('solesmarket.com') && !baseUrl.includes('www.')) {
+      baseUrl = 'https://www.solesmarket.com';
     }
 
     console.log('=== STOCKX CALLBACK ===');
