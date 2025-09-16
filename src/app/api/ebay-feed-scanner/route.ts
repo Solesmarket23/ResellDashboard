@@ -160,18 +160,10 @@ async function downloadEbayFeed(categoryId: string, limit: number): Promise<Ebay
     // Use real eBay search API instead of feed API
     console.log('🔍 Using real eBay search API for bulk scanning');
     
-    // Search for popular sneaker terms
+    // Search for popular sneaker terms (simplified for testing)
     const searchTerms = [
-      'Jordan 1',
-      'Jordan 4', 
-      'Yeezy 350',
-      'Nike Dunk Low',
-      'Nike Dunk High',
-      'Air Force 1',
-      'Nike Blazer',
-      'Adidas Ultraboost',
-      'New Balance 550',
-      'Nike Air Max'
+      'Nike shoes',
+      'Jordan shoes'
     ];
     
     const allItems: EbayFeedItem[] = [];
@@ -283,45 +275,19 @@ function extractBrandFromTitle(title: string): string {
 function filterHighPotentialItems(items: EbayFeedItem[]): EbayFeedItem[] {
   console.log(`🔍 Filtering ${items.length} items...`);
   
+  // For debugging, let's be VERY lenient and just log everything
   const filtered = items.filter(item => {
     const price = parseFloat(item.priceValue);
     
-    // Basic price filters (more lenient)
-    if (price < 20 || price > 2000) {
-      console.log(`❌ Price filter: $${price} (${item.title.substring(0, 50)}...)`);
+    console.log(`🔍 Item: $${price} ${item.brand} ${item.condition} - "${item.title.substring(0, 50)}..."`);
+    
+    // Only filter out items with no price or extremely high prices
+    if (price <= 0 || price > 5000) {
+      console.log(`❌ Price filter: $${price}`);
       return false;
     }
     
-    // Must be available
-    if (item.availability !== 'AVAILABLE') {
-      console.log(`❌ Availability filter: ${item.availability} (${item.title.substring(0, 50)}...)`);
-      return false;
-    }
-    
-    // Must be from known sneaker brands (more lenient - no GTIN requirement)
-    const isSneakerBrand = ['Nike', 'Adidas', 'Jordan', 'New Balance', 'Puma', 'Reebok', 'Converse', 'Vans', 'Unknown'].includes(item.brand);
-    
-    if (!isSneakerBrand) {
-      console.log(`❌ Brand filter: ${item.brand} (${item.title.substring(0, 50)}...)`);
-      return false;
-    }
-    
-    // Accept new and used conditions (more lenient)
-    if (!['New', 'Used', 'USED_EXCELLENT', 'USED_VERY_GOOD'].includes(item.condition)) {
-      console.log(`❌ Condition filter: ${item.condition} (${item.title.substring(0, 50)}...)`);
-      return false;
-    }
-    
-    // More lenient feedback requirements
-    const feedbackScore = parseInt(item.sellerFeedbackScore || '0');
-    const feedbackPercentage = parseFloat(item.sellerFeedbackPercentage || '0');
-    
-    if (feedbackScore < 50 || feedbackPercentage < 90) {
-      console.log(`❌ Feedback filter: Score ${feedbackScore}, % ${feedbackPercentage} (${item.title.substring(0, 50)}...)`);
-      return false;
-    }
-    
-    console.log(`✅ Passed filters: $${price} ${item.brand} ${item.condition} (${item.title.substring(0, 50)}...)`);
+    console.log(`✅ Passed all filters: $${price} ${item.brand} ${item.condition}`);
     return true;
   });
   
