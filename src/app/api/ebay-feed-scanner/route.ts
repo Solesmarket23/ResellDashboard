@@ -272,6 +272,44 @@ function extractBrandFromTitle(title: string): string {
   return 'Unknown';
 }
 
+function extractStyleCodeFromTitle(title: string): string | null {
+  // Common style code patterns for sneakers
+  const styleCodePatterns = [
+    // Nike/Jordan patterns: 6-7 characters, mix of letters and numbers
+    /\b[A-Z0-9]{6,7}\b/g,
+    // Adidas patterns: 6-8 characters
+    /\b[A-Z0-9]{6,8}\b/g,
+    // New Balance patterns: often start with letters
+    /\b[A-Z]{2,3}[0-9]{3,4}[A-Z]?\b/g,
+    // General pattern: 6-8 alphanumeric characters
+    /\b[A-Z0-9]{6,8}\b/g
+  ];
+  
+  for (const pattern of styleCodePatterns) {
+    const matches = title.match(pattern);
+    if (matches) {
+      // Filter out common false positives
+      const validMatches = matches.filter(match => 
+        !match.includes('SIZE') &&
+        !match.includes('SHOE') &&
+        !match.includes('HIGH') &&
+        !match.includes('LOW') &&
+        !match.includes('MID') &&
+        match.length >= 6 &&
+        match.length <= 8
+      );
+      
+      if (validMatches.length > 0) {
+        console.log(`🎯 Extracted style code: ${validMatches[0]} from title: ${title}`);
+        return validMatches[0];
+      }
+    }
+  }
+  
+  console.log(`❌ No style code found in title: ${title}`);
+  return null;
+}
+
 function filterHighPotentialItems(items: EbayFeedItem[]): EbayFeedItem[] {
   console.log(`🔍 Filtering ${items.length} items...`);
   
@@ -383,6 +421,17 @@ async function findStockXMatch(item: EbayFeedItem, request: NextRequest): Promis
       }
     }
     
+    // Try style code search first (most accurate)
+    const styleCode = extractStyleCodeFromTitle(item.title);
+    if (styleCode) {
+      console.log(`🔍 Searching StockX by style code: ${styleCode}`);
+      const styleCodeResults = await searchStockXByStyleCode(styleCode, accessToken, apiKey);
+      if (styleCodeResults.length > 0) {
+        console.log(`✅ Found style code match: ${styleCodeResults[0].title}`);
+        return styleCodeResults[0];
+      }
+    }
+    
     // Try more specific searches for sneakers only
     const searchQueries = [
       `${item.brand} Air Jordan 1 High sneakers`,
@@ -467,6 +516,57 @@ async function searchStockXByGTIN(gtin: string, accessToken: string, apiKey: str
     
   } catch (error) {
     console.error('❌ Error searching StockX by GTIN:', error);
+    return [];
+  }
+}
+
+async function searchStockXByStyleCode(styleCode: string, accessToken: string, apiKey: string): Promise<StockXProduct[]> {
+  try {
+    console.log(`🔍 Searching StockX by style code: ${styleCode}`);
+    
+    const response = await fetch(`https://api.stockx.com/v2/catalog/search?query=${encodeURIComponent(styleCode)}&pageNumber=1&pageSize=10`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'X-API-Key': apiKey,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'User-Agent': 'FlipFlow/1.0'
+      }
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      const products = data.products || [];
+      
+      console.log(`📊 Found ${products.length} products for style code: ${styleCode}`);
+      
+      return products.map((p: any) => ({
+        id: p.id || p.uuid || p.productId,
+        title: p.title || p.name,
+        brand: p.brand,
+        price: p.price || 0,
+        lowestAsk: p.lowestAsk || 0,
+        highestBid: p.highestBid || 0,
+        lastSale: p.lastSale || 0,
+        urlKey: p.urlKey,
+        styleCode: p.styleCode || p.sku,
+        gtin: p.gtin
+      })).filter(product => {
+        // Only return actual sneakers, not collectibles
+        const title = product.title.toLowerCase();
+        return !title.includes('bearbrick') && 
+               !title.includes('collectible') && 
+               !title.includes('toy') && 
+               !title.includes('figure') &&
+               !title.includes('statue');
+      });
+    }
+    
+    return [];
+    
+  } catch (error) {
+    console.error('❌ Error searching StockX by style code:', error);
     return [];
   }
 }
