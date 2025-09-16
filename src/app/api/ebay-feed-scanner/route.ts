@@ -142,7 +142,7 @@ export async function GET(request: NextRequest) {
 
 async function downloadEbayFeed(categoryId: string, limit: number): Promise<EbayFeedItem[]> {
   try {
-    console.log(`📥 Downloading eBay feed for category ${categoryId}...`);
+    console.log(`📥 Searching eBay for sneaker listings...`);
     
     const ebayAppId = process.env.EBAY_APP_ID;
     const ebayClientSecret = process.env.EBAY_CLIENT_SECRET;
@@ -157,62 +157,115 @@ async function downloadEbayFeed(categoryId: string, limit: number): Promise<Ebay
       throw new Error('Failed to get eBay access token');
     }
     
-    // For now, we'll simulate feed data since Feed API requires special approval
-    // In production, you would call the actual Feed API here
-    console.log('⚠️ Using simulated feed data (Feed API requires special approval)');
+    // Use real eBay search API instead of feed API
+    console.log('🔍 Using real eBay search API for bulk scanning');
     
-    // Simulate some high-potential sneaker listings
-    const simulatedItems: EbayFeedItem[] = [
-      {
-        itemId: 'v1|123456789|987654321',
-        title: 'Nike Air Jordan 1 Retro High OG "Bred" Size 10.5 DS',
-        priceValue: '180.00',
-        priceCurrency: 'USD',
-        gtin: '194180000000',
-        brand: 'Nike',
-        mpn: '555088-061',
-        condition: 'New',
-        imageUrl: 'https://example.com/jordan1.jpg',
-        itemWebUrl: 'https://www.ebay.com/itm/123456789',
-        sellerUsername: 'sneakerhead123',
-        availability: 'AVAILABLE',
-        categoryId: '15709',
-        category: 'Shoes|Athletic Shoes|Basketball Shoes',
-        estimatedAvailableQuantity: 1,
-        shippingCost: '15.00',
-        returnsAccepted: true,
-        sellerFeedbackScore: '5000',
-        sellerFeedbackPercentage: '99.8'
-      },
-      {
-        itemId: 'v1|123456790|987654322',
-        title: 'Adidas Yeezy Boost 350 V2 "Zebra" Size 9 DS',
-        priceValue: '220.00',
-        priceCurrency: 'USD',
-        gtin: '194180000001',
-        brand: 'Adidas',
-        mpn: 'CP9654',
-        condition: 'New',
-        imageUrl: 'https://example.com/yeezy.jpg',
-        itemWebUrl: 'https://www.ebay.com/itm/123456790',
-        sellerUsername: 'yeezycollector',
-        availability: 'AVAILABLE',
-        categoryId: '15709',
-        category: 'Shoes|Athletic Shoes|Running Shoes',
-        estimatedAvailableQuantity: 1,
-        shippingCost: '12.00',
-        returnsAccepted: true,
-        sellerFeedbackScore: '2500',
-        sellerFeedbackPercentage: '98.5'
-      }
+    // Search for popular sneaker terms
+    const searchTerms = [
+      'Jordan 1',
+      'Jordan 4', 
+      'Yeezy 350',
+      'Nike Dunk Low',
+      'Nike Dunk High',
+      'Air Force 1',
+      'Nike Blazer',
+      'Adidas Ultraboost',
+      'New Balance 550',
+      'Nike Air Max'
     ];
     
-    return simulatedItems.slice(0, limit);
+    const allItems: EbayFeedItem[] = [];
+    const itemsPerTerm = Math.ceil(limit / searchTerms.length);
+    
+    for (const term of searchTerms) {
+      try {
+        console.log(`🔍 Searching for: ${term}`);
+        
+        const apiUrl = `https://api.ebay.com/buy/browse/v1/item_summary/search`;
+        const params = new URLSearchParams({
+          q: `${term} sneakers shoes -box -"box only" -empty`,
+          limit: itemsPerTerm.toString(),
+          sort: 'price',
+          fieldgroups: 'MATCHING_ITEMS,EXTENDED'
+        });
+        
+        // Add category filter
+        params.append('category_ids', '15709');
+        
+        // Add filters
+        const filters = [
+          'conditions:{NEW,USED_EXCELLENT,USED_VERY_GOOD}',
+          'price:[50..1000]'
+        ];
+        params.append('filter', filters.join(','));
+        
+        const response = await fetch(`${apiUrl}?${params}`, {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+            'X-EBAY-C-ENDUSERCTX': 'contextualLocation=country%3DUS%2Czip%3D90210'
+          }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const items = (data.itemSummaries || []).map((item: any) => ({
+            itemId: item.itemId,
+            title: item.title,
+            priceValue: item.price?.value?.toString() || '0',
+            priceCurrency: item.price?.currency || 'USD',
+            gtin: '', // Will be extracted from title if available
+            brand: extractBrandFromTitle(item.title),
+            mpn: '', // Not available in search API
+            condition: item.condition || 'New',
+            imageUrl: item.image?.imageUrl || '/placeholder-shoe.png',
+            itemWebUrl: item.itemWebUrl,
+            sellerUsername: item.seller?.username || 'Unknown',
+            availability: 'AVAILABLE',
+            categoryId: '15709',
+            category: 'Shoes|Athletic Shoes',
+            estimatedAvailableQuantity: 1,
+            shippingCost: item.shippingOptions?.[0]?.shippingCost?.value?.toString() || '0',
+            returnsAccepted: true,
+            sellerFeedbackScore: '1000', // Default value
+            sellerFeedbackPercentage: '95' // Default value
+          }));
+          
+          allItems.push(...items);
+          console.log(`✅ Found ${items.length} items for "${term}"`);
+        } else {
+          console.log(`❌ Search failed for "${term}": ${response.status}`);
+        }
+        
+        // Small delay between searches
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+      } catch (error) {
+        console.error(`❌ Error searching for "${term}":`, error);
+      }
+    }
+    
+    console.log(`📦 Total items found: ${allItems.length}`);
+    return allItems.slice(0, limit);
     
   } catch (error) {
-    console.error('❌ Error downloading eBay feed:', error);
+    console.error('❌ Error downloading eBay data:', error);
     throw error;
   }
+}
+
+function extractBrandFromTitle(title: string): string {
+  const brands = ['Nike', 'Adidas', 'Jordan', 'New Balance', 'Puma', 'Reebok', 'Converse', 'Vans'];
+  const titleLower = title.toLowerCase();
+  
+  for (const brand of brands) {
+    if (titleLower.includes(brand.toLowerCase())) {
+      return brand;
+    }
+  }
+  
+  return 'Unknown';
 }
 
 function filterHighPotentialItems(items: EbayFeedItem[]): EbayFeedItem[] {
