@@ -129,7 +129,7 @@ const EbayStockXArbitrage: React.FC = () => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
       
-      const response = await fetch('/api/ebay-feed-scanner?limit=50&minProfit=10', {
+      const response = await fetch('/api/ebay-feed-scanner?limit=100&minProfit=5', {
         signal: controller.signal
       });
       

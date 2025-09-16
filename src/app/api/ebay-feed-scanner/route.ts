@@ -52,8 +52,8 @@ interface ArbitrageOpportunity {
 
 // Configuration for profitable opportunities
 const PROFIT_THRESHOLDS = {
-  MIN_PROFIT: 10, // Minimum $10 profit (more realistic)
-  MIN_PROFIT_PERCENTAGE: 5, // Minimum 5% profit margin (more realistic)
+  MIN_PROFIT: 5, // Minimum $5 profit (very lenient for testing)
+  MIN_PROFIT_PERCENTAGE: 2, // Minimum 2% profit margin (very lenient)
   MAX_EBAY_PRICE: 2000, // Don't show items over $2000 (too risky)
   MIN_EBAY_PRICE: 20, // Don't show items under $20 (more lenient)
 };
@@ -160,10 +160,13 @@ async function downloadEbayFeed(categoryId: string, limit: number): Promise<Ebay
     // Use real eBay search API instead of feed API
     console.log('🔍 Using real eBay search API for bulk scanning');
     
-    // Search for actual sneaker models (reduced scope for faster response)
+    // Search for actual sneaker models (expanded for more opportunities)
     const searchTerms = [
       'Nike Air Jordan 1 High sneakers -sticker -decals -accessories',
-      'Nike Dunk Low sneakers -sticker -decals -accessories'
+      'Nike Dunk Low sneakers -sticker -decals -accessories',
+      'Yeezy Boost 350 V2 sneakers -sticker -decals -accessories',
+      'Nike Air Force 1 sneakers -sticker -decals -accessories',
+      'Adidas Ultraboost sneakers -sticker -decals -accessories'
     ];
     
     const allItems: EbayFeedItem[] = [];
@@ -334,6 +337,11 @@ async function findArbitrageOpportunities(items: EbayFeedItem[], request: NextRe
   const opportunities: ArbitrageOpportunity[] = [];
   
   console.log(`🔍 Finding StockX matches for ${items.length} items...`);
+  console.log(`📊 Sample items to match:`, items.slice(0, 3).map(item => ({
+    title: item.title,
+    price: item.priceValue,
+    brand: item.brand
+  })));
   
   for (const item of items) {
     try {
