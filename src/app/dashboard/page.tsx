@@ -38,7 +38,6 @@ import OnboardingQuestionnaire from '../../components/OnboardingQuestionnaire';
 import AliasInventory from '../../components/AliasInventory';
 import AliasListingCreator from '../../components/AliasListingCreator';
 import AliasOrderManagement from '../../components/AliasOrderManagement';
-import ProfitOpportunityScanner from '../../components/ProfitOpportunityScanner';
 
 export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -232,8 +231,6 @@ export default function DashboardPage() {
         return <StockXArbitrage />;
       case 'ebay-stockx-arbitrage':
         return <EbayStockXArbitrage />;
-      case 'profit-scanner':
-        return <ProfitOpportunityScanner />;
       case 'stockx-repricing':
         return <StockXRepricing />;
       case 'stockx-releases':

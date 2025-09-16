@@ -77,7 +77,6 @@ const navigationItems = [
       { id: 'stockx-inventory', label: 'Inventory Manager', icon: Archive },
       { id: 'stockx-arbitrage', label: 'StockX Arbitrage', icon: ArrowLeftRight },
       { id: 'ebay-stockx-arbitrage', label: 'eBay → StockX Deals', icon: Target },
-      { id: 'profit-scanner', label: '💰 Profit Scanner', icon: DollarSign },
       { id: 'stockx-listings', label: 'Create Listing', icon: Package },
       { id: 'stockx-repricing', label: 'Automated Repricing', icon: Activity },
       { id: 'stockx-sales', label: 'My Sales', icon: DollarSign },
