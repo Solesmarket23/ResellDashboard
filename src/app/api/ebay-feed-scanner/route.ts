@@ -52,10 +52,10 @@ interface ArbitrageOpportunity {
 
 // Configuration for profitable opportunities
 const PROFIT_THRESHOLDS = {
-  MIN_PROFIT: 50, // Minimum $50 profit
-  MIN_PROFIT_PERCENTAGE: 20, // Minimum 20% profit margin
+  MIN_PROFIT: 10, // Minimum $10 profit (more realistic)
+  MIN_PROFIT_PERCENTAGE: 5, // Minimum 5% profit margin (more realistic)
   MAX_EBAY_PRICE: 2000, // Don't show items over $2000 (too risky)
-  MIN_EBAY_PRICE: 50, // Don't show items under $50 (low value)
+  MIN_EBAY_PRICE: 20, // Don't show items under $20 (more lenient)
 };
 
 // eBay fees and costs
@@ -269,42 +269,52 @@ function extractBrandFromTitle(title: string): string {
 }
 
 function filterHighPotentialItems(items: EbayFeedItem[]): EbayFeedItem[] {
-  return items.filter(item => {
+  console.log(`🔍 Filtering ${items.length} items...`);
+  
+  const filtered = items.filter(item => {
     const price = parseFloat(item.priceValue);
     
-    // Basic filters
-    if (price < PROFIT_THRESHOLDS.MIN_EBAY_PRICE || price > PROFIT_THRESHOLDS.MAX_EBAY_PRICE) {
+    // Basic price filters (more lenient)
+    if (price < 20 || price > 2000) {
+      console.log(`❌ Price filter: $${price} (${item.title.substring(0, 50)}...)`);
       return false;
     }
     
     // Must be available
     if (item.availability !== 'AVAILABLE') {
+      console.log(`❌ Availability filter: ${item.availability} (${item.title.substring(0, 50)}...)`);
       return false;
     }
     
-    // Must have GTIN or be from known sneaker brands
-    const hasGtin = item.gtin && item.gtin.length >= 8;
-    const isSneakerBrand = ['Nike', 'Adidas', 'Jordan', 'New Balance', 'Puma', 'Reebok'].includes(item.brand);
+    // Must be from known sneaker brands (more lenient - no GTIN requirement)
+    const isSneakerBrand = ['Nike', 'Adidas', 'Jordan', 'New Balance', 'Puma', 'Reebok', 'Converse', 'Vans', 'Unknown'].includes(item.brand);
     
-    if (!hasGtin && !isSneakerBrand) {
+    if (!isSneakerBrand) {
+      console.log(`❌ Brand filter: ${item.brand} (${item.title.substring(0, 50)}...)`);
       return false;
     }
     
-    // Must be new condition for best arbitrage
-    if (item.condition !== 'New') {
+    // Accept new and used conditions (more lenient)
+    if (!['New', 'Used', 'USED_EXCELLENT', 'USED_VERY_GOOD'].includes(item.condition)) {
+      console.log(`❌ Condition filter: ${item.condition} (${item.title.substring(0, 50)}...)`);
       return false;
     }
     
-    // Must have good seller feedback
+    // More lenient feedback requirements
     const feedbackScore = parseInt(item.sellerFeedbackScore || '0');
     const feedbackPercentage = parseFloat(item.sellerFeedbackPercentage || '0');
     
-    if (feedbackScore < 100 || feedbackPercentage < 95) {
+    if (feedbackScore < 50 || feedbackPercentage < 90) {
+      console.log(`❌ Feedback filter: Score ${feedbackScore}, % ${feedbackPercentage} (${item.title.substring(0, 50)}...)`);
       return false;
     }
     
+    console.log(`✅ Passed filters: $${price} ${item.brand} ${item.condition} (${item.title.substring(0, 50)}...)`);
     return true;
   });
+  
+  console.log(`📊 Filtered ${items.length} items down to ${filtered.length} high-potential items`);
+  return filtered;
 }
 
 async function findArbitrageOpportunities(items: EbayFeedItem[], request: NextRequest): Promise<ArbitrageOpportunity[]> {
