@@ -383,14 +383,34 @@ async function findStockXMatch(item: EbayFeedItem, request: NextRequest): Promis
       }
     }
     
-    // Try brand + model search
-    const searchQuery = `${item.brand} ${extractModelFromTitle(item.title)}`;
-    const searchResults = await searchStockXForProduct(searchQuery, accessToken, apiKey);
+    // Try more specific searches for sneakers only
+    const searchQueries = [
+      `${item.brand} Air Jordan 1 High sneakers`,
+      `${item.brand} Air Jordan 1 sneakers`,
+      `Nike Air Jordan 1 High`,
+      `Nike Jordan 1 High`
+    ];
     
-    if (searchResults.length > 0) {
-      return searchResults[0];
+    for (const searchQuery of searchQueries) {
+      console.log(`🔍 Searching StockX for: ${searchQuery}`);
+      const searchResults = await searchStockXForProduct(searchQuery, accessToken, apiKey);
+      
+      // Filter out collectibles and non-sneaker items
+      const sneakerResults = searchResults.filter(product => 
+        product.title.toLowerCase().includes('air jordan') &&
+        !product.title.toLowerCase().includes('bearbrick') &&
+        !product.title.toLowerCase().includes('collectible') &&
+        !product.title.toLowerCase().includes('toy') &&
+        !product.title.toLowerCase().includes('figure')
+      );
+      
+      if (sneakerResults.length > 0) {
+        console.log(`✅ Found sneaker match: ${sneakerResults[0].title}`);
+        return sneakerResults[0];
+      }
     }
     
+    console.log(`❌ No sneaker matches found for: ${item.title}`);
     return null;
     
   } catch (error) {
@@ -479,7 +499,15 @@ async function searchStockXForProduct(query: string, accessToken: string, apiKey
         urlKey: p.urlKey,
         styleCode: p.styleCode || p.sku,
         gtin: p.gtin
-      }));
+      })).filter(product => {
+        // Only return actual sneakers, not collectibles
+        const title = product.title.toLowerCase();
+        return !title.includes('bearbrick') && 
+               !title.includes('collectible') && 
+               !title.includes('toy') && 
+               !title.includes('figure') &&
+               !title.includes('statue');
+      });
     }
     
     return [];
