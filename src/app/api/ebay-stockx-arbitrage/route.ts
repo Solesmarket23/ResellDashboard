@@ -404,17 +404,24 @@ function generateStockXQueries(ebayTitle: string, parsedDetails: { brand?: strin
     queries.push(`${brand} ${cleanModel}`);
   }
   
-  // Priority 5: Extract key sneaker terms only
-  const sneakerKeywords = ['nike', 'adidas', 'jordan', 'dunk', 'yeezy', 'boost', 'air', 'force', 'blazer', 'cortez'];
+  // Priority 5: Extract key sneaker terms only - be more specific
+  const sneakerKeywords = ['nike', 'adidas', 'jordan', 'dunk', 'yeezy', 'boost', 'air', 'force', 'blazer', 'cortez', 'retro', 'og', 'high', 'low', 'mid'];
   const words = ebayTitle.split(' ').filter(word => {
     const w = word.toLowerCase();
     return w.length > 2 && 
-           !['size', 'new', 'used', 'mens', 'womens', 'men', 'women', 'box', 'only', 'shoe', 'shoes'].includes(w) &&
+           !['size', 'new', 'used', 'mens', 'womens', 'men', 'women', 'box', 'only', 'shoe', 'shoes', 'sneakers'].includes(w) &&
            sneakerKeywords.some(keyword => w.includes(keyword) || ebayTitle.toLowerCase().includes(keyword));
   });
   
   if (words.length >= 2) {
-    queries.push(words.slice(0, 3).join(' ')); // First 3 meaningful sneaker words
+    // Use more specific combinations
+    queries.push(words.slice(0, 4).join(' ')); // First 4 meaningful sneaker words
+    if (words.length >= 3) {
+      queries.push(words.slice(0, 3).join(' ')); // First 3 words
+    }
+    if (words.length >= 2) {
+      queries.push(words.slice(0, 2).join(' ')); // First 2 words
+    }
   }
   
   // Priority 6: Brand only as last resort (only for major sneaker brands)
@@ -431,7 +438,8 @@ function generateStockXQueries(ebayTitle: string, parsedDetails: { brand?: strin
   
   // Remove duplicates and return
   const uniqueQueries = [...new Set(queries)];
-  console.log(`🔍 Generated ${uniqueQueries.length} queries for "${ebayTitle}": ${uniqueQueries.join(', ')}`);
+  console.log(`🔍 Generated ${uniqueQueries.length} queries for "${ebayTitle}":`);
+  uniqueQueries.forEach((q, i) => console.log(`  ${i + 1}. "${q}"`));
   return uniqueQueries;
 }
 
