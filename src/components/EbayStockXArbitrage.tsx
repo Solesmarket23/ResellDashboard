@@ -499,100 +499,147 @@ const EbayStockXArbitrage: React.FC = () => {
               </div>
             )}
 
-            {/* Bulk Opportunities */}
+            {/* Bulk Opportunities - Neon Theme */}
             {bulkOpportunities.length > 0 && (
-              <div className="space-y-4">
-                <h3 className="text-xl font-semibold text-gray-300">Bulk Opportunities</h3>
+              <div className="space-y-6">
+                <h3 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400">
+                  ⚡ Bulk Opportunities
+                </h3>
                 {bulkOpportunities.map((opportunity, index) => (
-                  <div key={index} className="bg-white rounded-lg shadow-lg p-6 border border-gray-200">
+                  <div key={index} className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-xl shadow-2xl p-6 border-2 border-cyan-500/30 hover:border-cyan-400/60 transition-all duration-300 hover:shadow-cyan-500/20 hover:shadow-xl">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      {/* eBay Item */}
+                      {/* eBay Item - Neon Blue */}
                       <div className="space-y-4">
-                        <h4 className="font-semibold text-gray-900">eBay Item</h4>
+                        <h4 className="font-bold text-cyan-400 text-lg flex items-center gap-2">
+                          <span className="text-2xl">🛒</span>
+                          eBay Item
+                        </h4>
                         <div className="flex gap-4">
                           <img
                             src={opportunity.ebayItem.imageUrl || '/placeholder-shoe.png'}
                             alt={opportunity.ebayItem.title}
-                            className="w-20 h-20 object-cover rounded-lg"
+                            className="w-24 h-24 object-cover rounded-lg border-2 border-cyan-400/50 shadow-lg"
                           />
                           <div className="flex-1">
-                            <h5 className="font-medium text-gray-900 mb-2">
+                            <h5 className="font-bold text-white mb-2 text-sm leading-tight">
                               {opportunity.ebayItem.title}
                             </h5>
-                            <div className="text-sm text-gray-600 space-y-1">
-                              <div>Brand: {opportunity.ebayItem.brand}</div>
-                              <div>Condition: {opportunity.ebayItem.condition}</div>
-                              <div>Seller: {opportunity.ebayItem.sellerUsername}</div>
-                              <div>Feedback: {opportunity.ebayItem.sellerFeedbackPercentage}% ({opportunity.ebayItem.sellerFeedbackScore})</div>
-                              {opportunity.ebayItem.gtin && <div>GTIN: {opportunity.ebayItem.gtin}</div>}
-                              {opportunity.styleCode && <div>Style: {opportunity.styleCode}</div>}
+                            <div className="text-xs text-cyan-300 space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-cyan-400">🏷️</span>
+                                <span className="font-semibold">{opportunity.ebayItem.brand}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-cyan-400">⭐</span>
+                                <span>{opportunity.ebayItem.condition}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-cyan-400">👤</span>
+                                <span>{opportunity.ebayItem.sellerUsername}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-cyan-400">📊</span>
+                                <span>{opportunity.ebayItem.sellerFeedbackPercentage}% ({opportunity.ebayItem.sellerFeedbackScore})</span>
+                              </div>
+                              {opportunity.ebayItem.gtin && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-cyan-400">🔢</span>
+                                  <span>GTIN: {opportunity.ebayItem.gtin}</span>
+                                </div>
+                              )}
+                              {opportunity.styleCode && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-cyan-400">🎨</span>
+                                  <span>Style: {opportunity.styleCode}</span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
                       </div>
 
-                      {/* StockX Match */}
+                      {/* StockX Match - Neon Green */}
                       <div className="space-y-4">
-                        <h4 className="font-semibold text-gray-900">StockX Match</h4>
-                        <div className="bg-gray-50 p-4 rounded-lg">
-                          <div className="font-medium">{opportunity.matchedProduct}</div>
-                          <div>Lowest Ask: <span className="font-semibold text-green-600">${opportunity.stockxProduct.lowestAsk}</span></div>
-                          <div>Highest Bid: <span className="font-semibold text-blue-600">${opportunity.stockxProduct.highestBid}</span></div>
-                          <div>Last Sale: <span className="font-semibold text-gray-600">${opportunity.stockxProduct.lastSale}</span></div>
+                        <h4 className="font-bold text-green-400 text-lg flex items-center gap-2">
+                          <span className="text-2xl">📈</span>
+                          StockX Match
+                        </h4>
+                        <div className="bg-gradient-to-br from-green-900/30 to-emerald-900/30 p-4 rounded-lg border border-green-400/30">
+                          <div className="font-bold text-green-300 mb-3">{opportunity.matchedProduct}</div>
+                          <div className="space-y-2 text-sm">
+                            <div className="flex justify-between items-center">
+                              <span className="text-green-400">Lowest Ask:</span>
+                              <span className="font-bold text-green-300">${opportunity.stockxProduct.lowestAsk}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-green-400">Highest Bid:</span>
+                              <span className="font-bold text-green-300">${opportunity.stockxProduct.highestBid}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-green-400">Last Sale:</span>
+                              <span className="font-bold text-green-300">${opportunity.stockxProduct.lastSale}</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
 
-                    {/* Profit Analysis */}
-                    <div className="mt-6 pt-6 border-t border-gray-200">
+                    {/* Profit Analysis - Neon Purple/Pink */}
+                    <div className="mt-6 pt-6 border-t border-purple-400/30">
                       <div className="grid grid-cols-2 gap-4 text-center">
-                        <div>
-                          <div className="text-sm text-gray-600">eBay Price</div>
-                          <div className="text-lg font-semibold">
-                            <span className="font-semibold">${opportunity.ebayItem.priceValue}</span>
+                        <div className="bg-gradient-to-r from-cyan-900/30 to-blue-900/30 p-3 rounded-lg border border-cyan-400/30">
+                          <div className="text-xs text-cyan-400 font-semibold">eBay Price</div>
+                          <div className="text-xl font-bold text-cyan-300">
+                            ${opportunity.ebayItem.priceValue}
                           </div>
                         </div>
-                        <div>
-                          <div className="text-sm text-gray-600">StockX Ask</div>
-                          <div className="text-lg font-semibold">
-                            <span className="font-semibold">${opportunity.stockxProduct.lowestAsk}</span>
+                        <div className="bg-gradient-to-r from-green-900/30 to-emerald-900/30 p-3 rounded-lg border border-green-400/30">
+                          <div className="text-xs text-green-400 font-semibold">StockX Ask</div>
+                          <div className="text-xl font-bold text-green-300">
+                            ${opportunity.stockxProduct.lowestAsk}
                           </div>
                         </div>
-                        <div className="col-span-2">
-                          <div className="text-sm text-gray-600">Potential Profit</div>
-                          <div className="text-2xl font-bold">
-                            <span className={`font-bold text-lg ${opportunity.profit > 100 ? 'text-green-600' : 'text-blue-600'}`}>
+                        <div className="col-span-2 bg-gradient-to-r from-purple-900/30 to-pink-900/30 p-4 rounded-lg border border-purple-400/30">
+                          <div className="text-xs text-purple-400 font-semibold">Potential Profit</div>
+                          <div className="text-3xl font-bold">
+                            <span className={`font-bold ${opportunity.profit > 0 ? 'text-green-400' : 'text-red-400'}`}>
                               ${opportunity.profit.toFixed(2)}
                             </span>
                           </div>
-                          <div className="text-sm text-gray-600">
-                            <span className={`font-semibold ${opportunity.profitPercentage > 30 ? 'text-green-600' : 'text-blue-600'}`}>
+                          <div className="text-sm">
+                            <span className={`font-bold ${opportunity.profitPercentage > 0 ? 'text-green-400' : 'text-red-400'}`}>
                               {opportunity.profitPercentage.toFixed(1)}%
                             </span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Actions */}
+                      {/* Actions - Neon Buttons */}
                       <div className="mt-4 flex gap-2 flex-wrap">
-                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                          opportunity.profit > 100 ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                        <span className={`px-4 py-2 rounded-full text-xs font-bold ${
+                          opportunity.profit > 0 
+                            ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-lg shadow-green-500/30' 
+                            : 'bg-gradient-to-r from-red-500 to-pink-500 text-white shadow-lg shadow-red-500/30'
                         }`}>
-                          ${opportunity.profit.toFixed(0)} Profit
+                          ${opportunity.profit.toFixed(2)} Profit
                         </span>
-                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                          opportunity.confidence > 80 ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                        <span className={`px-4 py-2 rounded-full text-xs font-bold ${
+                          opportunity.confidence > 80 
+                            ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-lg shadow-green-500/30' 
+                            : opportunity.confidence > 60 
+                            ? 'bg-gradient-to-r from-yellow-500 to-orange-500 text-white shadow-lg shadow-yellow-500/30' 
+                            : 'bg-gradient-to-r from-red-500 to-pink-500 text-white shadow-lg shadow-red-500/30'
                         }`}>
                           {opportunity.confidence}% Match
                         </span>
-                        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-800">
+                        <span className="px-4 py-2 rounded-full text-xs font-bold bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/30">
                           {opportunity.searchMethod.toUpperCase()}
                         </span>
                         <a
                           href={opportunity.ebayItem.itemWebUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 hover:bg-blue-200 transition-colors"
+                          className="px-4 py-2 rounded-full text-xs font-bold bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:from-blue-400 hover:to-cyan-400 transition-all duration-300 shadow-lg shadow-blue-500/30 hover:shadow-blue-400/50"
                         >
                           View on eBay
                         </a>
@@ -600,7 +647,7 @@ const EbayStockXArbitrage: React.FC = () => {
                           href={`https://stockx.com/${opportunity.stockxProduct.urlKey}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800 hover:bg-green-200 transition-colors"
+                          className="px-4 py-2 rounded-full text-xs font-bold bg-gradient-to-r from-green-500 to-emerald-500 text-white hover:from-green-400 hover:to-emerald-400 transition-all duration-300 shadow-lg shadow-green-500/30 hover:shadow-green-400/50"
                         >
                           View on StockX
                         </a>
