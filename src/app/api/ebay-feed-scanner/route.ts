@@ -251,6 +251,12 @@ async function downloadEbayFeed(categoryId: string, limit: number): Promise<Ebay
     }
     
     console.log(`📦 Total items found: ${allItems.length}`);
+    console.log(`📊 Sample items:`, allItems.slice(0, 3).map(item => ({
+      title: item.title,
+      price: item.priceValue,
+      brand: item.brand,
+      condition: item.condition
+    })));
     return allItems.slice(0, limit);
     
   } catch (error) {
