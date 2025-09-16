@@ -55,6 +55,9 @@ interface ArbitrageOpportunity {
   roi: number;
   matchedProduct?: string;
   confidence: number;
+  searchMethod?: 'gtin' | 'stylecode' | 'text';
+  gtin?: string;
+  styleCode?: string;
 }
 
 interface SearchStats {
@@ -95,6 +98,15 @@ const EbayStockXArbitrage: React.FC = () => {
     currentStep: string;
   }>({ ebayFound: 0, stockxMatched: 0, currentStep: '' });
 
+  // Filter states
+  const [minProfitMargin, setMinProfitMargin] = useState(0);
+  const [maxPrice, setMaxPrice] = useState(500);
+  const [minConfidence, setMinConfidence] = useState(60);
+  const [showFilters, setShowFilters] = useState(false);
+  const [newItemsOnly, setNewItemsOnly] = useState(true);
+  const [authenticityGuaranteeOnly, setAuthenticityGuaranteeOnly] = useState(false);
+  const [stockxAuthStatus, setStockxAuthStatus] = useState<'checking' | 'authenticated' | 'not_authenticated'>('checking');
+
   // Bulk scan function
   const scanForBulkOpportunities = async () => {
     setBulkLoading(true);
@@ -121,15 +133,6 @@ const EbayStockXArbitrage: React.FC = () => {
       setBulkLoading(false);
     }
   };
-  
-  // Filter states
-  const [minProfitMargin, setMinProfitMargin] = useState(0); // Set to 0 for debugging
-  const [maxPrice, setMaxPrice] = useState(500);
-  const [minConfidence, setMinConfidence] = useState(60);
-  const [showFilters, setShowFilters] = useState(false);
-  const [newItemsOnly, setNewItemsOnly] = useState(true); // Default to new items only since StockX requires new
-  const [authenticityGuaranteeOnly, setAuthenticityGuaranteeOnly] = useState(false);
-  const [stockxAuthStatus, setStockxAuthStatus] = useState<'checking' | 'authenticated' | 'not_authenticated'>('checking');
 
   // Check StockX authentication status on component mount
   useEffect(() => {
@@ -210,63 +213,53 @@ const EbayStockXArbitrage: React.FC = () => {
 
       const data = await response.json();
       console.log(`📦 Raw API response:`, data);
-
+      
       if (data.success) {
         const allOpportunities = data.opportunities || [];
         console.log(`📋 Total opportunities from API: ${allOpportunities.length}`);
         
-        // Debug: Log the first few opportunities to see what we're getting
-        if (allOpportunities.length > 0) {
-          console.log(`🔍 Sample opportunities:`, allOpportunities.slice(0, 3).map(opp => ({
-            ebayTitle: opp.ebayListing?.title,
-            stockxMatch: opp.stockxData?.title || 'No match',
-            profit: opp.profit,
-            confidence: opp.confidence,
-            hasRealMatch: opp.profit > -500 // Real matches should have reasonable profit, not -999
-          })));
-        }
-        
-        // Update progress with eBay results
+        // Update progress
         setSearchProgress(prev => ({ 
           ...prev, 
           ebayFound: data.totalEbayListings || 0,
           stockxMatched: data.totalOpportunities || 0,
-          currentStep: 'Processing results'
+          currentStep: 'Processing results...'
         }));
         setSearchStatus(`Found ${data.totalEbayListings || 0} eBay listings, ${data.totalOpportunities || 0} with StockX matches`);
         
-        // TEMPORARILY: Show ALL results for debugging (no confidence filter)
-        const filteredOpportunities = allOpportunities; // Show everything for debugging
+        // Filter by confidence (showing ALL for debugging)
+        const filteredOpportunities = allOpportunities.filter((opp: ArbitrageOpportunity) => 
+          opp.confidence >= minConfidence
+        );
+        
         console.log(`🔍 After confidence filter (showing ALL for debugging): ${filteredOpportunities.length} opportunities`);
         
-        // Debug: Log detailed info about each opportunity
+        setOpportunities(filteredOpportunities);
+        
         if (filteredOpportunities.length > 0) {
-          console.log(`🔍 Detailed opportunity analysis:`);
+          console.log(`✅ Found ${filteredOpportunities.length} opportunities`);
           filteredOpportunities.forEach((opp, index) => {
             console.log(`Opportunity ${index + 1}:`, {
-              ebayTitle: opp.ebayListing?.title,
-              ebayPrice: opp.ebayListing?.price,
-              stockxAsk: opp.stockxData?.lowestAsk,
+              title: opp.ebayListing.title,
+              price: opp.ebayListing.price,
               profit: opp.profit,
-              profitMargin: opp.profitMargin,
-              confidence: opp.confidence,
-              hasRealMatch: opp.profit > -500
+              margin: opp.profitMargin,
+              confidence: opp.confidence
             });
           });
         }
         
-        setOpportunities(filteredOpportunities);
         setStats({
-          totalEbayListings: data.totalEbayListings,
-          totalOpportunities: data.totalOpportunities,
-          averageProfit: data.averageProfit,
-          averageProfitMargin: data.averageProfitMargin
+          totalEbayListings: data.totalEbayListings || 0,
+          totalOpportunities: data.totalOpportunities || 0,
+          averageProfit: data.averageProfit || 0,
+          averageProfitMargin: data.averageProfitMargin || 0
         });
         
         if (filteredOpportunities.length > 0) {
           setSuccessMessage(`Found ${filteredOpportunities.length} profitable arbitrage opportunities!`);
         } else {
-          setSuccessMessage('Search completed, but no opportunities found matching your criteria. Try adjusting your filters.');
+          setSuccessMessage('Search completed, but no profitable opportunities found with current filters.');
         }
       } else {
         console.error(`❌ API returned error:`, data);
@@ -333,40 +326,22 @@ const EbayStockXArbitrage: React.FC = () => {
           <p className="text-gray-400 text-lg mb-4">
             Find shoes selling for less on eBay than their market value on StockX
           </p>
-          <div className="p-4 bg-gradient-to-r from-blue-900/20 to-emerald-900/20 border border-blue-500/30 rounded-lg">
-            <div className="flex items-start gap-3">
-              <Target className="w-5 h-5 text-blue-400 mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="text-blue-300 font-medium">How it works:</p>
-                <p className="text-blue-200 text-sm mt-1">
-                  This tool searches eBay for shoes and compares their prices to current StockX market prices. 
-                  It calculates potential profit including all fees (eBay, PayPal, StockX) and shipping costs. 
-                  Look for high-confidence matches with good profit margins.
-                </p>
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* StockX Authentication Status */}
         {stockxAuthStatus === 'not_authenticated' && (
-          <div className="mb-6 p-4 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <AlertCircle className="w-5 h-5 text-yellow-400" />
-                <div>
-                  <p className="text-yellow-300 font-medium">StockX Authentication Required</p>
-                  <p className="text-yellow-200 text-sm">
-                    Connect to StockX to see price comparisons and profit calculations
-                  </p>
-                </div>
-              </div>
+          <div className="bg-yellow-900/20 border border-yellow-500 rounded-lg p-4 mb-6">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-yellow-400" />
+              <p className="text-yellow-400">
+                StockX authentication required to enable price comparisons
+              </p>
               <button
                 onClick={() => {
                   const returnUrl = encodeURIComponent(window.location.href);
                   window.location.href = `/api/stockx/auth?returnTo=${returnUrl}`;
                 }}
-                className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-medium transition-colors"
+                className="ml-auto bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-md text-sm font-semibold transition-colors"
               >
                 Connect StockX
               </button>
@@ -400,12 +375,12 @@ const EbayStockXArbitrage: React.FC = () => {
           </div>
         </div>
 
+        {/* StockX Authentication Status */}
         {stockxAuthStatus === 'authenticated' && (
-          <div className="mb-6 p-4 bg-green-900/20 border border-green-500/30 rounded-lg">
-            <div className="flex items-center gap-3">
+          <div className="bg-green-900/20 border border-green-500 rounded-lg p-4 mb-6">
+            <div className="flex items-center gap-2">
               <CheckCircle className="w-5 h-5 text-green-400" />
-              <p className="text-green-300 font-medium">StockX Connected</p>
-              <span className="text-green-200 text-sm">• Ready to find arbitrage opportunities</span>
+              <p className="text-green-400">StockX connected - Ready to find arbitrage opportunities!</p>
             </div>
           </div>
         )}
@@ -418,25 +393,25 @@ const EbayStockXArbitrage: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <div className="bg-blue-50 p-4 rounded-lg">
                   <div className="text-2xl font-bold text-blue-600">{bulkStats.totalScanned}</div>
-                  <div className="text-sm text-blue-800">Items Scanned</div>
+                  <div className="text-sm text-blue-600">Items Scanned</div>
                 </div>
                 <div className="bg-yellow-50 p-4 rounded-lg">
                   <div className="text-2xl font-bold text-yellow-600">{bulkStats.filtered}</div>
-                  <div className="text-sm text-yellow-800">High-Potential Items</div>
+                  <div className="text-sm text-yellow-600">Filtered</div>
                 </div>
                 <div className="bg-green-50 p-4 rounded-lg">
                   <div className="text-2xl font-bold text-green-600">{bulkStats.opportunities}</div>
-                  <div className="text-sm text-green-800">Profitable Opportunities</div>
+                  <div className="text-sm text-green-600">Opportunities</div>
                 </div>
               </div>
             )}
 
             {/* Bulk Scanner Actions */}
-            <div className="flex gap-4">
+            <div className="text-center">
               <button
                 onClick={scanForBulkOpportunities}
                 disabled={bulkLoading}
-                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
+                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-8 py-3 rounded-lg font-semibold transition-colors"
               >
                 {bulkLoading ? '🔄 Scanning...' : '🚀 Scan for Opportunities'}
               </button>
@@ -444,34 +419,35 @@ const EbayStockXArbitrage: React.FC = () => {
 
             {/* Bulk Scanner Error */}
             {bulkError && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-                {bulkError}
+              <div className="bg-red-900/20 border border-red-500 rounded-lg p-4">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5 text-red-400" />
+                  <p className="text-red-400">{bulkError}</p>
+                </div>
               </div>
             )}
 
             {/* Bulk Opportunities */}
             {bulkOpportunities.length > 0 && (
-              <div className="space-y-6">
-                <h2 className="text-2xl font-bold text-white">
-                  🎯 Top Profit Opportunities
-                </h2>
-                
+              <div className="space-y-4">
+                <h3 className="text-xl font-semibold text-gray-300">Bulk Opportunities</h3>
                 {bulkOpportunities.map((opportunity, index) => (
                   <div key={index} className="bg-white rounded-lg shadow-lg p-6 border border-gray-200">
-                    <div className="flex flex-col lg:flex-row gap-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                       {/* eBay Item */}
-                      <div className="flex-1">
-                        <div className="flex items-start gap-4">
+                      <div className="space-y-4">
+                        <h4 className="font-semibold text-gray-900">eBay Item</h4>
+                        <div className="flex gap-4">
                           <img
                             src={opportunity.ebayItem.imageUrl || '/placeholder-shoe.png'}
                             alt={opportunity.ebayItem.title}
                             className="w-20 h-20 object-cover rounded-lg"
                           />
                           <div className="flex-1">
-                            <h3 className="font-semibold text-gray-900 mb-2">
+                            <h5 className="font-medium text-gray-900 mb-2">
                               {opportunity.ebayItem.title}
-                            </h3>
-                            <div className="space-y-1 text-sm text-gray-600">
+                            </h5>
+                            <div className="text-sm text-gray-600 space-y-1">
                               <div>Brand: {opportunity.ebayItem.brand}</div>
                               <div>Condition: {opportunity.ebayItem.condition}</div>
                               <div>Seller: {opportunity.ebayItem.sellerUsername}</div>
@@ -484,78 +460,67 @@ const EbayStockXArbitrage: React.FC = () => {
                       </div>
 
                       {/* StockX Match */}
-                      <div className="flex-1">
+                      <div className="space-y-4">
+                        <h4 className="font-semibold text-gray-900">StockX Match</h4>
                         <div className="bg-gray-50 p-4 rounded-lg">
-                          <h4 className="font-semibold text-gray-900 mb-2">StockX Match</h4>
-                          <div className="space-y-1 text-sm">
-                            <div className="font-medium">{opportunity.matchedProduct}</div>
-                            <div>Lowest Ask: <span className="font-semibold text-green-600">${opportunity.stockxProduct.lowestAsk}</span></div>
-                            <div>Highest Bid: <span className="font-semibold text-blue-600">${opportunity.stockxProduct.highestBid}</span></div>
-                            <div>Last Sale: <span className="font-semibold text-gray-600">${opportunity.stockxProduct.lastSale}</span></div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Profit Analysis */}
-                      <div className="flex-1">
-                        <div className="bg-green-50 p-4 rounded-lg">
-                          <h4 className="font-semibold text-gray-900 mb-2">Profit Analysis</h4>
-                          <div className="space-y-2">
-                            <div className="flex justify-between">
-                              <span className="text-sm text-gray-600">eBay Price:</span>
-                              <span className="font-semibold">${opportunity.ebayItem.priceValue}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm text-gray-600">StockX Ask:</span>
-                              <span className="font-semibold">${opportunity.stockxProduct.lowestAsk}</span>
-                            </div>
-                            <div className="border-t pt-2">
-                              <div className="flex justify-between">
-                                <span className="text-sm text-gray-600">Net Profit:</span>
-                                <span className={`font-bold text-lg ${opportunity.profit > 100 ? 'text-green-600' : 'text-blue-600'}`}>
-                                  ${opportunity.profit.toFixed(2)}
-                                </span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-sm text-gray-600">Profit Margin:</span>
-                                <span className={`font-semibold ${opportunity.profitPercentage > 30 ? 'text-green-600' : 'text-blue-600'}`}>
-                                  {opportunity.profitPercentage.toFixed(1)}%
-                                </span>
-                              </div>
-                            </div>
-                          </div>
+                          <div className="font-medium">{opportunity.matchedProduct}</div>
+                          <div>Lowest Ask: <span className="font-semibold text-green-600">${opportunity.stockxProduct.lowestAsk}</span></div>
+                          <div>Highest Bid: <span className="font-semibold text-blue-600">${opportunity.stockxProduct.highestBid}</span></div>
+                          <div>Last Sale: <span className="font-semibold text-gray-600">${opportunity.stockxProduct.lastSale}</span></div>
                         </div>
                       </div>
                     </div>
 
-                    {/* Actions */}
-                    <div className="flex flex-wrap items-center justify-between mt-4 pt-4 border-t border-gray-200">
-                      <div className="flex flex-wrap gap-2">
+                    {/* Profit Analysis */}
+                    <div className="mt-6 pt-6 border-t border-gray-200">
+                      <div className="grid grid-cols-2 gap-4 text-center">
+                        <div>
+                          <div className="text-sm text-gray-600">eBay Price</div>
+                          <div className="text-lg font-semibold">
+                            <span className="font-semibold">${opportunity.ebayItem.priceValue}</span>
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-sm text-gray-600">StockX Ask</div>
+                          <div className="text-lg font-semibold">
+                            <span className="font-semibold">${opportunity.stockxProduct.lowestAsk}</span>
+                          </div>
+                        </div>
+                        <div className="col-span-2">
+                          <div className="text-sm text-gray-600">Potential Profit</div>
+                          <div className="text-2xl font-bold">
+                            <span className={`font-bold text-lg ${opportunity.profit > 100 ? 'text-green-600' : 'text-blue-600'}`}>
+                              ${opportunity.profit.toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            <span className={`font-semibold ${opportunity.profitPercentage > 30 ? 'text-green-600' : 'text-blue-600'}`}>
+                              {opportunity.profitPercentage.toFixed(1)}%
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="mt-4 flex gap-2 flex-wrap">
                         <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                          opportunity.profit >= 200 ? 'bg-green-100 text-green-800' :
-                          opportunity.profit >= 100 ? 'bg-blue-100 text-blue-800' :
-                          'bg-yellow-100 text-yellow-800'
+                          opportunity.profit > 100 ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
                         }`}>
                           ${opportunity.profit.toFixed(0)} Profit
                         </span>
                         <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                          opportunity.confidence >= 80 ? 'bg-green-100 text-green-800' :
-                          opportunity.confidence >= 60 ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-red-100 text-red-800'
+                          opportunity.confidence > 80 ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
                         }`}>
                           {opportunity.confidence}% Match
                         </span>
-                        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-800">
+                        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-800">
                           {opportunity.searchMethod.toUpperCase()}
                         </span>
-                      </div>
-                      
-                      <div className="flex gap-2">
                         <a
                           href={opportunity.ebayItem.itemWebUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+                          className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 hover:bg-blue-200 transition-colors"
                         >
                           View on eBay
                         </a>
@@ -563,7 +528,7 @@ const EbayStockXArbitrage: React.FC = () => {
                           href={`https://stockx.com/${opportunity.stockxProduct.urlKey}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+                          className="px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800 hover:bg-green-200 transition-colors"
                         >
                           View on StockX
                         </a>
@@ -577,11 +542,13 @@ const EbayStockXArbitrage: React.FC = () => {
             {/* Bulk Scanner Empty State */}
             {bulkOpportunities.length === 0 && !bulkLoading && (
               <div className="text-center py-12">
-                <div className="text-6xl mb-4">🔍</div>
-                <h3 className="text-xl font-semibold text-white mb-2">No Opportunities Found</h3>
-                <p className="text-gray-400 mb-4">
-                  Click "Scan for Opportunities" to start finding profitable flips
-                </p>
+                <div className="bg-gray-800 rounded-lg p-8">
+                  <div className="text-6xl mb-4">🚀</div>
+                  <h3 className="text-xl font-semibold text-gray-300 mb-2">Ready to Scan for Opportunities</h3>
+                  <p className="text-gray-400 max-w-md mx-auto">
+                    Click the scan button to automatically find profitable arbitrage opportunities from eBay listings.
+                  </p>
+                </div>
               </div>
             )}
           </div>
@@ -589,182 +556,174 @@ const EbayStockXArbitrage: React.FC = () => {
 
         {/* Manual Search Mode */}
         {mode === 'manual' && (
-        <div className="space-y-4 mb-6 sm:mb-8">
-          {/* Main Search */}
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-            <div className="lg:col-span-2">
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Search for Shoes
-              </label>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyPress={handleKeyPress}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="e.g., Jordan 1, Yeezy 350, Nike Dunk"
-              />
-              <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-400">
-                <span>💡 Try:</span>
+          <div className="space-y-4 mb-6 sm:mb-8">
+            {/* Main Search */}
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+              <div className="lg:col-span-2">
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Search for Shoes
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., Jordan 1 High, Yeezy 350 V2, Nike Dunk Low..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <div className="flex gap-2 mt-2">
+                  <button
+                    onClick={() => setSearchQuery('Jordan 1 High')}
+                    className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded transition-colors"
+                  >
+                    Jordan 1 High
+                  </button>
+                  <button
+                    onClick={() => setSearchQuery('Yeezy 350 V2')}
+                    className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded transition-colors"
+                  >
+                    Yeezy 350 V2
+                  </button>
+                  <button
+                    onClick={() => setSearchQuery('Nike Dunk Low')}
+                    className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded transition-colors"
+                  >
+                    Nike Dunk Low
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Min Profit Margin: {minProfitMargin}%
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="5"
+                  value={minProfitMargin}
+                  onChange={(e) => setMinProfitMargin(parseFloat(e.target.value) || 0)}
+                  className="w-full"
+                />
+              </div>
+              <div className="flex items-end">
                 <button
-                  type="button"
-                  onClick={() => setSearchQuery('Jordan 1 High')}
-                  className="text-blue-400 hover:text-blue-300 underline"
+                  onClick={searchArbitrageOpportunities}
+                  disabled={isLoading || !searchQuery.trim()}
+                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
                 >
-                  Jordan 1 High
-                </button>
-                <span>•</span>
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('Yeezy 350 V2')}
-                  className="text-blue-400 hover:text-blue-300 underline"
-                >
-                  Yeezy 350 V2
-                </button>
-                <span>•</span>
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('Nike Dunk Low')}
-                  className="text-blue-400 hover:text-blue-300 underline"
-                >
-                  Nike Dunk Low
+                  {isLoading ? (
+                    <div className="flex items-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Searching...
+                    </div>
+                  ) : (
+                    'Search Opportunities'
+                  )}
                 </button>
               </div>
             </div>
+
+            {/* Advanced Filters */}
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Min Profit %
-              </label>
-              <input
-                type="number"
-                value={minProfitMargin}
-                onChange={(e) => setMinProfitMargin(parseFloat(e.target.value) || 0)}
-                className="w-full px-3 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="15"
-                min="0"
-                max="100"
-              />
-            </div>
-            <div className="flex items-end">
               <button
-                onClick={searchArbitrageOpportunities}
-                disabled={isLoading || !searchQuery.trim()}
-                className="w-full bg-gradient-to-r from-blue-500 to-emerald-500 hover:from-blue-600 hover:to-emerald-600 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2"
+                onClick={() => setShowFilters(!showFilters)}
+                className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors"
               >
-                {isLoading ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    Searching...
-                  </>
-                ) : (
-                  <>
-                    <Search className="w-4 h-4" />
-                    Find Deals
-                  </>
-                )}
+                <Filter className="w-4 h-4" />
+                Advanced Filters
+                {showFilters ? '▼' : '▶'}
               </button>
+              
+              {showFilters && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 p-4 bg-gray-800/50 rounded-lg">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Max eBay Price: ${maxPrice}
+                    </label>
+                    <input
+                      type="range"
+                      min="50"
+                      max="2000"
+                      step="50"
+                      value={maxPrice}
+                      onChange={(e) => setMaxPrice(parseInt(e.target.value))}
+                      className="w-full"
+                    />
+                    <div className="flex justify-between text-xs text-gray-400 mt-1">
+                      <span>$50</span>
+                      <span>$2000</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Min Match Confidence: {minConfidence}%
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="10"
+                      value={minConfidence}
+                      onChange={(e) => setMinConfidence(parseInt(e.target.value))}
+                      className="w-full"
+                    />
+                    <div className="flex justify-between text-xs text-gray-400 mt-1">
+                      <span>0%</span>
+                      <span>100%</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Item Condition
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-2 text-sm text-gray-300">
+                        <input
+                          type="checkbox"
+                          checked={newItemsOnly}
+                          onChange={(e) => setNewItemsOnly(e.target.checked)}
+                          className="rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500"
+                        />
+                        New items only
+                      </label>
+                    </div>
+                    <div className="text-xs text-gray-400 mt-1">
+                      StockX only accepts new items
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <label className="flex items-center space-x-2 text-sm text-gray-300">
+                        <input
+                          type="checkbox"
+                          checked={authenticityGuaranteeOnly}
+                          onChange={(e) => setAuthenticityGuaranteeOnly(e.target.checked)}
+                          className="rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500"
+                        />
+                        Authenticity Guarantee only
+                      </label>
+                    </div>
+                    <div className="text-xs text-gray-400 mt-1">
+                      Only show eBay items with authenticity guarantee
+                    </div>
+                  </div>
+                  <div className="flex items-end">
+                    <div className="text-sm text-gray-400 w-full">
+                      <p className="mb-1">🎯 Filter Tips:</p>
+                      <ul className="text-xs space-y-0.5">
+                        <li>• Higher confidence = better matches</li>
+                        <li>• Lower max price = more budget-friendly deals</li>
+                        <li>• Higher profit % = more selective results</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-
-          {/* Advanced Filters */}
-          <div className="border-t border-gray-700 pt-4">
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center gap-2 text-gray-300 hover:text-white transition-colors"
-            >
-              <Filter className="w-4 h-4" />
-              Advanced Filters
-              {showFilters ? '▼' : '▶'}
-            </button>
-            
-            {showFilters && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 p-4 bg-gray-800/50 rounded-lg">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Max eBay Price: ${maxPrice}
-                  </label>
-                  <input
-                    type="range"
-                    min="50"
-                    max="2000"
-                    step="50"
-                    value={maxPrice}
-                    onChange={(e) => setMaxPrice(parseInt(e.target.value))}
-                    className="w-full"
-                  />
-                  <div className="flex justify-between text-xs text-gray-400 mt-1">
-                    <span>$50</span>
-                    <span>$2000</span>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Min Match Confidence: {minConfidence}%
-                  </label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    step="10"
-                    value={minConfidence}
-                    onChange={(e) => setMinConfidence(parseInt(e.target.value))}
-                    className="w-full"
-                  />
-                  <div className="flex justify-between text-xs text-gray-400 mt-1">
-                    <span>0%</span>
-                    <span>100%</span>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Item Condition
-                  </label>
-                  <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-2 text-sm text-gray-300">
-                      <input
-                        type="checkbox"
-                        checked={newItemsOnly}
-                        onChange={(e) => setNewItemsOnly(e.target.checked)}
-                        className="rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500"
-                      />
-                      New items only
-                    </label>
-                  </div>
-                  <div className="text-xs text-gray-400 mt-1">
-                    StockX only accepts new items
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex items-center space-x-2">
-                    <label className="flex items-center space-x-2 text-sm text-gray-300">
-                      <input
-                        type="checkbox"
-                        checked={authenticityGuaranteeOnly}
-                        onChange={(e) => setAuthenticityGuaranteeOnly(e.target.checked)}
-                        className="rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500"
-                      />
-                      Authenticity Guarantee only
-                    </label>
-                  </div>
-                  <div className="text-xs text-gray-400 mt-1">
-                    Only show eBay items with authenticity guarantee
-                  </div>
-                </div>
-                <div className="flex items-end">
-                  <div className="text-sm text-gray-400 w-full">
-                    <p className="mb-1">🎯 Filter Tips:</p>
-                    <ul className="text-xs space-y-0.5">
-                      <li>• Higher confidence = better matches</li>
-                      <li>• Lower max price = more budget-friendly deals</li>
-                      <li>• Higher profit % = more selective results</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        )}
 
         {/* Messages */}
         {successMessage && (
@@ -785,43 +744,18 @@ const EbayStockXArbitrage: React.FC = () => {
           </div>
         )}
 
-        {/* Loading State with Progress */}
+        {/* Search Progress */}
         {isLoading && (
-          <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-            
-            {/* Dynamic Status Message */}
-            <p className="text-gray-300 text-lg mb-2">
-              {searchStatus || 'Searching eBay and cross-referencing with StockX prices...'}
-            </p>
-            
-            {/* Progress Details */}
+          <div className="bg-blue-900/20 border border-blue-500 rounded-lg p-4 mb-6">
+            <div className="flex items-center gap-2">
+              <RefreshCw className="w-5 h-5 text-blue-400 animate-spin" />
+              <p className="text-blue-400">{searchStatus}</p>
+            </div>
             {searchProgress.currentStep && (
-              <div className="max-w-md mx-auto">
-                <div className="bg-gray-800 rounded-lg p-4 mb-4">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-400">Current Step:</span>
-                    <span className="text-blue-300">{searchProgress.currentStep}</span>
-                  </div>
-                  
-                  {searchProgress.ebayFound > 0 && (
-                    <div className="flex items-center justify-between text-sm mt-2">
-                      <span className="text-gray-400">eBay Listings Found:</span>
-                      <span className="text-green-400">{searchProgress.ebayFound}</span>
-                    </div>
-                  )}
-                  
-                  {searchProgress.stockxMatched > 0 && (
-                    <div className="flex items-center justify-between text-sm mt-2">
-                      <span className="text-gray-400">StockX Matches:</span>
-                      <span className="text-emerald-400">{searchProgress.stockxMatched}</span>
-                    </div>
-                  )}
-                </div>
+              <div className="mt-2 text-sm text-blue-300">
+                {searchProgress.currentStep}
               </div>
             )}
-            
-            <p className="text-gray-400 text-sm">This may take 30-60 seconds</p>
           </div>
         )}
 
@@ -832,7 +766,7 @@ const EbayStockXArbitrage: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-400 text-sm">eBay Listings</p>
-                  <p className="text-2xl font-bold text-blue-400">{stats.totalEbayListings}</p>
+                  <p className="text-2xl font-bold text-white">{stats.totalEbayListings}</p>
                 </div>
                 <ShoppingCart className="w-8 h-8 text-blue-400" />
               </div>
@@ -840,8 +774,8 @@ const EbayStockXArbitrage: React.FC = () => {
             <div className="bg-gray-800 rounded-lg p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-gray-400 text-sm">Opportunities</p>
-                  <p className="text-2xl font-bold text-emerald-400">{opportunities.length}</p>
+                  <p className="text-gray-400 text-sm">StockX Matches</p>
+                  <p className="text-2xl font-bold text-white">{stats.totalOpportunities}</p>
                 </div>
                 <Target className="w-8 h-8 text-emerald-400" />
               </div>
@@ -850,9 +784,7 @@ const EbayStockXArbitrage: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-400 text-sm">Avg Profit</p>
-                  <p className="text-2xl font-bold text-green-400">
-                    {formatCurrency(stats.averageProfit)}
-                  </p>
+                  <p className="text-2xl font-bold text-white">{formatCurrency(stats.averageProfit)}</p>
                 </div>
                 <DollarSign className="w-8 h-8 text-green-400" />
               </div>
@@ -861,133 +793,117 @@ const EbayStockXArbitrage: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-400 text-sm">Avg Margin</p>
-                  <p className="text-2xl font-bold text-cyan-400">
-                    {stats.averageProfitMargin.toFixed(1)}%
-                  </p>
+                  <p className="text-2xl font-bold text-white">{stats.averageProfitMargin.toFixed(1)}%</p>
                 </div>
-                <Percent className="w-8 h-8 text-cyan-400" />
+                <Percent className="w-8 h-8 text-yellow-400" />
               </div>
             </div>
           </div>
         )}
 
-        {/* Opportunities List */}
+        {/* Opportunities */}
         {opportunities.length > 0 && (
           <div className="space-y-6">
             {opportunities.map((opportunity, index) => (
               <div key={`${opportunity.ebayListing.itemId}-${index}`} className="bg-gray-800 rounded-lg p-6">
                 {/* Header */}
                 <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-6 gap-4">
-                  <div className="flex items-center gap-4">
+                  <div className="flex gap-4">
                     <img
                       src={opportunity.ebayListing.image}
                       alt={opportunity.ebayListing.title}
-                      className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
-                      onError={(e) => {
-                        e.currentTarget.src = '/placeholder-shoe.png';
-                      }}
+                      className="w-20 h-20 object-cover rounded-lg"
                     />
-                    <div className="min-w-0 flex-1">
-                      <h3 className="text-lg font-semibold text-white truncate mb-1">
+                    <div className="flex-1">
+                      <h3 className="text-lg font-semibold text-white mb-2">
                         {opportunity.ebayListing.title}
                       </h3>
-                      <p className="text-gray-400 text-sm">
-                        Seller: {opportunity.ebayListing.seller} • Condition: {opportunity.ebayListing.condition}
-                      </p>
-                      {opportunity.matchedProduct && (
-                        <p className="text-emerald-400 text-sm mt-1">
-                          📈 Matched to: {opportunity.matchedProduct}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-2xl font-bold text-green-400">
-                      {formatCurrency(opportunity.profit)}
-                    </p>
-                    <p className="text-gray-400 text-sm">
-                      {opportunity.profitMargin.toFixed(1)}% profit
-                    </p>
-                  </div>
-                </div>
-
-                {/* Price Breakdown */}
-                <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-                  <div className="text-center p-3 bg-blue-900/30 border border-blue-500/30 rounded-lg">
-                    <p className="text-xs text-blue-300 mb-1">eBay Price</p>
-                    <p className="text-lg font-semibold text-blue-400">
-                      {formatCurrency(opportunity.ebayListing.price)}
-                    </p>
-                  </div>
-                  <div className="text-center p-3 bg-gray-700 rounded-lg">
-                    <p className="text-xs text-gray-400 mb-1">Total Cost</p>
-                    <p className="text-lg font-semibold text-orange-400">
-                      {formatCurrency(opportunity.totalCost)}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">Inc. fees & shipping</p>
-                  </div>
-                  <div className="text-center p-3 bg-emerald-900/30 border border-emerald-500/30 rounded-lg">
-                    <p className="text-xs text-emerald-300 mb-1">StockX Ask</p>
-                    <p className="text-lg font-semibold text-emerald-400">
-                      {formatCurrency(opportunity.stockxData?.lowestAsk || 0)}
-                    </p>
-                  </div>
-                  <div className="text-center p-3 bg-gray-700 rounded-lg">
-                    <p className="text-xs text-gray-400 mb-1">Net Revenue</p>
-                    <p className="text-lg font-semibold text-cyan-400">
-                      {formatCurrency(opportunity.netRevenue)}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">After StockX fees</p>
-                  </div>
-                  <div className="text-center p-3 bg-green-900/30 border border-green-500/30 rounded-lg">
-                    <p className="text-xs text-green-300 mb-1">Profit</p>
-                    <p className="text-lg font-semibold text-green-400">
-                      {formatCurrency(opportunity.profit)}
-                    </p>
-                    <p className="text-xs text-green-300 mt-1">ROI: {opportunity.roi.toFixed(1)}%</p>
-                  </div>
-                </div>
-
-                {/* Match Confidence and Actions */}
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2">
-                      <Star className={`w-4 h-4 ${getConfidenceColor(opportunity.confidence)}`} />
-                      <span className="text-sm text-gray-300">
-                        Match Confidence: 
-                      </span>
-                      <span className={`text-sm font-semibold ${getConfidenceColor(opportunity.confidence)}`}>
-                        {opportunity.confidence}% ({getConfidenceLabel(opportunity.confidence)})
-                      </span>
-                    </div>
-                    {opportunity.stockxData && (
-                      <div className="text-sm text-gray-400">
-                        Size: {opportunity.stockxData.size}
+                      <div className="text-sm text-gray-400 space-y-1">
+                        <div>Seller: {opportunity.ebayListing.seller}</div>
+                        <div>Condition: {opportunity.ebayListing.condition}</div>
+                        {opportunity.ebayListing.shipping && (
+                          <div>Shipping: {formatCurrency(opportunity.ebayListing.shipping)}</div>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </div>
-                  
-                  <div className="flex gap-3">
+                  <div className="flex gap-2">
                     <button
                       onClick={() => window.open(opportunity.ebayListing.url, '_blank')}
-                      className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
                     >
                       <ExternalLink className="w-4 h-4" />
                       View on eBay
                     </button>
-                    {opportunity.stockxData && (
+                    {opportunity.matchedProduct && (
                       <button
                         onClick={() => {
                           const stockxUrl = `https://stockx.com/search?s=${encodeURIComponent(opportunity.matchedProduct || '')}`;
                           window.open(stockxUrl, '_blank');
                         }}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
+                        className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
                       >
-                        <TrendingUp className="w-4 h-4" />
+                        <ExternalLink className="w-4 h-4" />
                         View on StockX
                       </button>
                     )}
                   </div>
+                </div>
+
+                {/* Price Comparison */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                  <div className="bg-gray-700 rounded-lg p-4">
+                    <h4 className="text-sm font-medium text-gray-300 mb-2">eBay Price</h4>
+                    <div className="text-2xl font-bold text-white">
+                      {formatCurrency(opportunity.ebayListing.price)}
+                    </div>
+                    <div className="text-sm text-gray-400">
+                      + {formatCurrency(opportunity.ebayListing.shipping || 0)} shipping
+                    </div>
+                  </div>
+                  <div className="bg-gray-700 rounded-lg p-4">
+                    <h4 className="text-sm font-medium text-gray-300 mb-2">StockX Ask</h4>
+                    <div className="text-2xl font-bold text-white">
+                      {formatCurrency(opportunity.stockxData?.lowestAsk || 0)}
+                    </div>
+                    <div className="text-sm text-gray-400">
+                      {opportunity.stockxData?.size && (
+                        <div>Size: {opportunity.stockxData.size}</div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="bg-gray-700 rounded-lg p-4">
+                    <h4 className="text-sm font-medium text-gray-300 mb-2">Potential Profit</h4>
+                    <div className="text-2xl font-bold text-green-400">
+                      {formatCurrency(opportunity.profit)}
+                    </div>
+                    <div className="text-sm text-green-300">
+                      {opportunity.profitMargin.toFixed(1)}% margin
+                    </div>
+                  </div>
+                </div>
+
+                {/* Match Details */}
+                <div className="flex flex-wrap gap-4 text-sm">
+                  <div className="flex items-center gap-2">
+                    <Star className={`w-4 h-4 ${getConfidenceColor(opportunity.confidence)}`} />
+                    <span className="text-gray-400">Match Confidence:</span>
+                    <span className={`text-sm font-semibold ${getConfidenceColor(opportunity.confidence)}`}>
+                      {opportunity.confidence}% ({getConfidenceLabel(opportunity.confidence)})
+                    </span>
+                  </div>
+                  {opportunity.stockxData?.size && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-400">Size:</span>
+                      <span className="text-white">{opportunity.stockxData.size}</span>
+                    </div>
+                  )}
+                  {opportunity.searchMethod && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-400">Search Method:</span>
+                      <span className="text-white">{opportunity.searchMethod.toUpperCase()}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -1019,8 +935,6 @@ const EbayStockXArbitrage: React.FC = () => {
                 We'll analyze prices, fees, and shipping to calculate your potential profit.
               </p>
             </div>
-          </div>
-        )}
           </div>
         )}
       </div>
