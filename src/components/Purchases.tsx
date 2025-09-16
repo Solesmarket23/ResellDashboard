@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Edit, MoreHorizontal, Camera, RefreshCw, Mail, Trash2, Settings, Plus, Shield, Wrench } from 'lucide-react';
+import { ChevronDown, Edit, MoreHorizontal, Camera, RefreshCw, Mail, Trash2, Settings, Plus, Shield, Wrench, Download, FileSpreadsheet, FileText, FileJson } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
 import { addDocument, getDocuments, updateDocument, deleteDocument } from '../lib/firebase/firebaseUtils';
 import { generateGmailSearchUrl, formatOrderNumberForDisplay } from '../lib/utils/orderNumberUtils';
+import { exportToCSV, exportToExcel, exportToJSON, getExportStats, ExportablePurchase } from '../lib/utils/exportUtils';
 import NativeBarcodeScannerModal from './NativeBarcodeScannerModal';
 import ZXingScannerModal from './ZXingScannerModal';
 import RemoteScanModal from './RemoteScanModal';
@@ -19,6 +20,8 @@ import GmailBatchedSync from './GmailBatchedSync';
 import StatusUpdater from './StatusUpdater';
 import FixItemProducts from './FixItemProducts';
 import NeonNotification, { NotificationType } from './NeonNotification';
+import ProductSearch from './ProductSearch';
+import GmailResetButton from './GmailResetButton';
 
 const Purchases = () => {
   const [sortBy, setSortBy] = useState('Purchase Date');
@@ -44,6 +47,8 @@ const Purchases = () => {
   const [isAutoStatusEnabled, setIsAutoStatusEnabled] = useState(false);
   const [lastAutoStatusUpdate, setLastAutoStatusUpdate] = useState<Date | null>(null);
   const [showFixItemProducts, setShowFixItemProducts] = useState(false);
+  const [showExportDropdown, setShowExportDropdown] = useState(false);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [notification, setNotification] = useState<{
     isVisible: boolean;
     message: string;
@@ -218,7 +223,7 @@ const Purchases = () => {
           cellContent = purchase.deliveryStatus || purchase.status || '';
           break;
         case 'tracking':
-          cellContent = purchase.trackingNumber || '';
+          cellContent = purchase.tracking || (purchase.status?.toLowerCase() === 'ordered' ? 'Not Shipped Yet' : '');
           break;
         case 'market':
           cellContent = purchase.marketplace || purchase.market || '';
@@ -341,11 +346,73 @@ const Purchases = () => {
 
   // Load data on component mount
   useEffect(() => {
-    // Always load purchases from Firebase when user is available
-    if (user) {
+    // Debug Firebase status
+    console.log('🔍 Firebase Debug Info:');
+    console.log('  - Firebase API Key set:', !!process.env.NEXT_PUBLIC_FIREBASE_API_KEY);
+    console.log('  - Firebase Project ID set:', !!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID);
+    console.log('  - Firebase Auth Domain set:', !!process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN);
+    
+    // Always load purchases from Firebase when user is available (Firebase or site password)
+    const siteUserId = localStorage.getItem('siteUserId');
+    if (user || siteUserId) {
+      console.log('🔄 Loading all purchases from Firebase on mount...');
       loadManualPurchasesFromFirebase();
     }
+    
+    // Check Gmail connection status on mount
+    checkGmailConnectionStatus();
   }, [user]);
+
+  // Check Gmail connection status
+  const checkGmailConnectionStatus = async () => {
+    try {
+      console.log('🔍 Checking Gmail connection status...');
+      
+      // First check client-side cookies as a quick indicator
+      const hasClientCookie = document.cookie.includes('gmail_connected=true');
+      console.log('🍪 Client-side cookie check:', hasClientCookie);
+      
+      const response = await fetch('/api/gmail/status');
+      const data = await response.json();
+      console.log('📧 Gmail status:', data);
+      setGmailConnected(data.connected);
+      
+      // If Gmail is connected, load purchases from Gmail
+      if (data.connected) {
+        console.log('✅ Gmail connected, loading purchases...');
+        // The loadManualPurchasesFromFirebase will handle loading Gmail purchases
+      } else if (hasClientCookie && !data.connected) {
+        console.log('⚠️ Client cookie exists but server says not connected - possible cookie sync issue');
+      }
+    } catch (error) {
+      console.error('❌ Error checking Gmail status:', error);
+      setGmailConnected(false);
+    }
+  };
+
+  // Close export dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showExportDropdown) {
+        const target = event.target as Element;
+        if (!target.closest('.export-dropdown')) {
+          setShowExportDropdown(false);
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showExportDropdown]);
+
+  // Periodic Gmail connection check
+  useEffect(() => {
+    const interval = setInterval(() => {
+      checkGmailConnectionStatus();
+    }, 30000); // Check every 30 seconds
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Separate useEffect for config updates with debouncing - REMOVED lastFetchTime dependency
   useEffect(() => {
@@ -374,14 +441,112 @@ const Purchases = () => {
     setNotification({ isVisible: true, message, type });
   };
 
+  // Export functions
+  const convertToExportablePurchases = (purchases: any[]): ExportablePurchase[] => {
+    return purchases.map(purchase => ({
+      id: purchase.id?.toString() || '',
+      productName: purchase.product?.name || '',
+      brand: purchase.product?.brand || '',
+      size: purchase.product?.size || '',
+      orderNumber: purchase.orderNumber || '',
+      status: purchase.status || '',
+      tracking: purchase.tracking || '',
+      market: purchase.market || purchase.marketplace || '',
+      price: purchase.price || '',
+      originalPrice: purchase.originalPrice || '',
+      purchaseDate: purchase.purchaseDate || '',
+      dateAdded: purchase.dateAdded || '',
+      verified: purchase.verified || '',
+      type: purchase.type || 'Unknown'
+    }));
+  };
+
+  const handleExportCSV = () => {
+    const allPurchases = getSortedPurchases();
+    const exportablePurchases = convertToExportablePurchases(allPurchases);
+    exportToCSV(exportablePurchases, 'purchases');
+    setShowExportDropdown(false);
+    showNotification('CSV export started!', 'success');
+  };
+
+  const handleExportExcel = () => {
+    const allPurchases = getSortedPurchases();
+    const exportablePurchases = convertToExportablePurchases(allPurchases);
+    exportToExcel(exportablePurchases, 'purchases');
+    setShowExportDropdown(false);
+    showNotification('Excel export started!', 'success');
+  };
+
+  const handleExportJSON = () => {
+    const allPurchases = getSortedPurchases();
+    const exportablePurchases = convertToExportablePurchases(allPurchases);
+    exportToJSON(exportablePurchases, 'purchases');
+    setShowExportDropdown(false);
+    showNotification('JSON export started!', 'success');
+  };
+
+  const handleExportSelected = () => {
+    if (selectedPurchases.size === 0) {
+      showNotification('Please select purchases to export', 'error');
+      return;
+    }
+
+    const allPurchases = getSortedPurchases();
+    const selectedPurchasesList = allPurchases.filter(purchase => 
+      selectedPurchases.has(purchase.id?.toString() || '')
+    );
+    const exportablePurchases = convertToExportablePurchases(selectedPurchasesList);
+    
+    exportToExcel(exportablePurchases, 'selected-purchases');
+    setShowExportDropdown(false);
+    showNotification(`Exported ${selectedPurchases.size} selected purchases!`, 'success');
+  };
+
   // Handle batched Gmail sync updates
   const handleBatchedPurchasesUpdate = async (allPurchases: any[]) => {
     console.log(`📧 Batched sync update: ${allPurchases.length} total purchases`);
-    console.log(`🔍 DEBUG - user available:`, !!user, `user.uid:`, user?.uid);
-    setPurchases(allPurchases);
+    const siteUserId = localStorage.getItem('siteUserId');
+    console.log(`🔍 DEBUG - Firebase user available:`, !!user, `user.uid:`, user?.uid);
+    console.log(`🔍 DEBUG - Site password user available:`, !!siteUserId, `siteUserId:`, siteUserId);
+    
+    // Transform the data to match expected component format
+    const transformPurchaseData = (purchase: any) => {
+      return {
+        ...purchase,
+        product: {
+          name: purchase.productName || purchase.product?.name || 'Unknown Product',
+          brand: purchase.brand || purchase.product?.brand || 'Unknown Brand',
+          size: purchase.size || purchase.product?.size || 'Unknown Size',
+          image: purchase.productImageUrl || purchase.product?.image || `https://picsum.photos/200/200?random=${purchase.id?.substring(0, 4) || '1'}`,
+          bgColor: purchase.product?.bgColor || 'bg-gray-500',
+          color: purchase.product?.color || 'gray'
+        },
+        // Map other fields to expected format
+        orderNumber: purchase.orderNumber,
+        status: purchase.shippingStatus || purchase.status || 'Ordered',
+        tracking: purchase.tracking || '',
+        market: purchase.merchant || purchase.market || 'StockX',
+        price: purchase.totalAmount ? `$${purchase.totalAmount.toFixed(2)}` : (purchase.price || '$0.00'),
+        originalPrice: purchase.totalAmount ? `$${purchase.totalAmount.toFixed(2)} + $0.00` : (purchase.price || '$0.00'),
+        purchaseDate: purchase.purchaseDate || purchase.createdAt || new Date().toISOString(),
+        dateAdded: purchase.createdAt || new Date().toISOString(),
+        verified: purchase.verified || 'pending',
+        verifiedColor: purchase.verifiedColor || 'orange'
+      };
+    };
+    
+    const transformedPurchases = allPurchases.map(transformPurchaseData);
+    console.log(`🔍 Sample batched transformed data:`, {
+      original: allPurchases[0],
+      transformed: transformedPurchases[0],
+      hasProductSize: !!transformedPurchases[0].product?.size,
+      productSize: transformedPurchases[0].product?.size
+    });
+    
+    setPurchases(transformedPurchases);
     
     // Save to Firebase immediately when purchases are updated
-    if (user && allPurchases.length > 0) {
+    if ((user || siteUserId) && allPurchases.length > 0) {
       console.log(`🔄 Attempting to save ${allPurchases.length} purchases to Firebase...`);
       try {
         await saveGmailPurchasesToFirebase(allPurchases);
@@ -390,7 +555,7 @@ const Purchases = () => {
         console.error(`❌ Failed to save Gmail purchases to Firebase:`, error);
       }
     } else {
-      console.warn(`⚠️ Cannot save to Firebase - user: ${!!user}, purchases: ${allPurchases.length}`);
+      console.warn(`⚠️ Cannot save to Firebase - Firebase user: ${!!user}, Site user: ${!!siteUserId}, purchases: ${allPurchases.length}`);
     }
     
     // Combine with manual purchases for totals
@@ -403,28 +568,65 @@ const Purchases = () => {
     console.log(`✅ Batched Gmail sync complete: Found ${totalPurchases} purchases`);
     
     // Save Gmail purchases to Firebase - use the latest purchases from state
-    if (user && purchases.length > 0) {
-      await saveGmailPurchasesToFirebase(purchases);
-      console.log(`💾 Gmail purchases persisted to Firebase for future refreshes`);
+    const siteUserId = localStorage.getItem('siteUserId');
+    if ((user || siteUserId) && purchases.length > 0) {
+      try {
+        await saveGmailPurchasesToFirebase(purchases);
+        console.log(`💾 Gmail purchases persisted to Firebase for future refreshes`);
+      } catch (error) {
+        console.warn(`⚠️ Could not save to Firebase (permission issue): ${error}`);
+        console.log(`📧 Gmail purchases are still available in memory for this session`);
+      }
+    } else if (!user && !siteUserId) {
+      console.log(`📧 No user authentication - Gmail purchases available in memory only`);
+    }
+  };
+
+  // 🔄 Function to refresh all purchases from Firebase
+  const refreshAllPurchases = async () => {
+    console.log('🔄 Refreshing all purchases from Firebase...');
+    const siteUserId = localStorage.getItem('siteUserId');
+    if (user || siteUserId) {
+      await loadManualPurchasesFromFirebase();
     }
   };
 
   // 🔥 NEW: Function to save Gmail purchases to Firebase
   const saveGmailPurchasesToFirebase = async (gmailPurchases: any[]) => {
-    if (!user) {
-      console.warn('User not authenticated - cannot save Gmail purchases to Firebase');
-      return;
+    // Get user ID from either Firebase auth or site password auth
+    let userId: string | null = null;
+    let isSitePasswordUser = false;
+    
+    if (user) {
+      // Firebase user
+      userId = user.uid;
+    } else {
+      // Check for site password authentication
+      const siteUserId = localStorage.getItem('siteUserId');
+      if (siteUserId) {
+        userId = siteUserId;
+        isSitePasswordUser = true;
+      } else {
+        console.warn('User not authenticated - cannot save Gmail purchases');
+        return;
+      }
     }
 
     try {
-      console.log(`📧 Saving ${gmailPurchases.length} Gmail purchases to Firebase...`);
+      console.log(`📧 Saving ${gmailPurchases.length} Gmail purchases for user ${userId}...`);
       
       // First, deduplicate purchases by order number to prevent duplicates
       const uniquePurchases = new Map();
       gmailPurchases.forEach(purchase => {
         const existing = uniquePurchases.get(purchase.orderNumber);
-        if (!existing || (purchase.status === 'Delivered' || purchase.status === 'Shipped')) {
-          // Keep delivered/shipped status over ordered
+        if (!existing || 
+            (purchase.status === 'Delivered' && existing.status !== 'Delivered') ||
+            (purchase.status === 'Shipped' && existing.status === 'Ordered') ||
+            (purchase.tracking && !existing.tracking)) {
+          // Keep the purchase with better status or tracking info
+          if (existing && purchase.tracking && !existing.tracking) {
+            console.log(`📦 TRACKING PRESERVATION: Keeping purchase ${purchase.orderNumber} with tracking "${purchase.tracking}" over existing without tracking`);
+          }
           uniquePurchases.set(purchase.orderNumber, purchase);
         }
       });
@@ -432,43 +634,94 @@ const Purchases = () => {
       const dedupedPurchases = Array.from(uniquePurchases.values());
       console.log(`🔄 Deduplication: ${gmailPurchases.length} purchases → ${dedupedPurchases.length} unique`);
       
-      // Clear existing Gmail purchases for this user first
-      const existingPurchases = await getDocuments('purchases');
-      const existingGmailPurchases = existingPurchases.filter(
-        (purchase: any) => purchase.userId === user.uid && purchase.type === 'gmail'
-      );
+      // Prepare purchase data with user ID
+      const purchaseDataList = dedupedPurchases.map(purchase => ({
+        ...purchase,
+        userId: userId,
+        createdAt: new Date().toISOString(),
+        type: 'gmail', // Mark as Gmail import
+        syncedAt: new Date().toISOString()
+      }));
       
-      // Delete old Gmail purchases
-      for (const oldPurchase of existingGmailPurchases) {
-        try {
-          await deleteDocument('purchases', oldPurchase.id);
-        } catch (error) {
-          console.warn(`⚠️ Could not delete old purchase ${oldPurchase.id}:`, error);
-        }
-      }
-      
-      console.log(`🗑️ Cleared ${existingGmailPurchases.length} old Gmail purchases`);
-      
-      // Save all current Gmail purchases (deduplicated)
-      let savedCount = 0;
-      
-      for (const purchase of dedupedPurchases) {
-        const purchaseData = {
-          ...purchase,
-          userId: user.uid,
-          createdAt: new Date().toISOString(),
-          type: 'gmail', // Mark as Gmail import
-          syncedAt: new Date().toISOString()
-        };
+      if (isSitePasswordUser) {
+        // For site password users, save to localStorage
+        console.log('💾 Saving purchases to localStorage for site password user...');
         
-        await addDocument('purchases', purchaseData);
-        savedCount++;
+        // Get existing purchases from localStorage
+        const existingPurchases = JSON.parse(localStorage.getItem(`purchases_${userId}`) || '[]');
+        
+        // Remove old Gmail purchases for this user
+        const filteredPurchases = existingPurchases.filter(
+          (purchase: any) => !(purchase.userId === userId && purchase.type === 'gmail')
+        );
+        
+        // Add new Gmail purchases
+        const updatedPurchases = [...filteredPurchases, ...purchaseDataList];
+        
+        // Save to localStorage
+        localStorage.setItem(`purchases_${userId}`, JSON.stringify(updatedPurchases));
+        
+        console.log(`✅ Gmail purchases saved to localStorage: ${purchaseDataList.length} unique purchases`);
+        
+        // Also try to save to Firebase as backup (might fail due to permissions)
+        try {
+          console.log('💾 Also attempting to save to Firebase as backup...');
+          for (const purchaseData of purchaseDataList) {
+            await addDocument('purchases', purchaseData);
+          }
+          console.log('✅ Also saved to Firebase as backup');
+        } catch (firebaseError) {
+          console.warn('⚠️ Firebase backup save failed (expected for site password users):', firebaseError);
+        }
+        
+      } else {
+        // For Firebase users, save to Firebase
+        console.log('💾 Saving purchases to Firebase for Firebase user...');
+        
+        // Clear existing Gmail purchases for this user first
+        console.log('🔍 Loading existing purchases to clear old ones...');
+        const existingPurchases = await getDocuments('purchases');
+        console.log(`📄 Found ${existingPurchases.length} existing purchases in Firebase`);
+        
+        const existingGmailPurchases = existingPurchases.filter(
+          (purchase: any) => purchase.userId === userId && purchase.type === 'gmail'
+        );
+        
+        console.log(`🗑️ Found ${existingGmailPurchases.length} existing Gmail purchases for user ${userId}`);
+        
+        // Delete old Gmail purchases
+        for (const oldPurchase of existingGmailPurchases) {
+          try {
+            // Only attempt to delete if the purchase belongs to the current user
+            if (oldPurchase.userId === userId || !oldPurchase.userId) {
+              await deleteDocument('purchases', oldPurchase.id);
+              console.log(`✅ Deleted old purchase ${oldPurchase.id}`);
+            } else {
+              console.warn(`⚠️ Skipping deletion of purchase ${oldPurchase.id} - belongs to different user (${oldPurchase.userId})`);
+            }
+          } catch (error) {
+            console.warn(`⚠️ Could not delete old purchase ${oldPurchase.id}:`, error);
+            // Continue with other deletions even if one fails
+          }
+        }
+        
+        console.log(`🗑️ Cleared ${existingGmailPurchases.length} old Gmail purchases`);
+        
+        // Save all current Gmail purchases (deduplicated)
+        let savedCount = 0;
+        
+        for (const purchaseData of purchaseDataList) {
+          console.log(`💾 Saving purchase: ${purchaseData.orderNumber} (${purchaseData.product?.name})`);
+          await addDocument('purchases', purchaseData);
+          savedCount++;
+          console.log(`✅ Saved purchase ${savedCount}/${purchaseDataList.length}: ${purchaseData.orderNumber}`);
+        }
+        
+        console.log(`✅ Gmail purchases saved to Firebase: ${savedCount} unique purchases`);
       }
-      
-      console.log(`✅ Gmail purchases saved to Firebase: ${savedCount} unique purchases`);
       
     } catch (error) {
-      console.error('❌ Error saving Gmail purchases to Firebase:', error);
+      console.error('❌ Error saving Gmail purchases:', error);
     }
   };
 
@@ -556,52 +809,190 @@ const Purchases = () => {
 
   // Firebase functions for manual purchases
   const saveManualPurchaseToFirebase = async (purchase: any) => {
-    if (!user) {
-      console.warn('User not authenticated - cannot save to Firebase');
-      return;
+    // Get user ID from either Firebase auth or site password auth
+    let userId: string | null = null;
+    let isSitePasswordUser = false;
+    
+    if (user) {
+      // Firebase user
+      userId = user.uid;
+    } else {
+      // Check for site password authentication
+      const siteUserId = localStorage.getItem('siteUserId');
+      if (siteUserId) {
+        userId = siteUserId;
+        isSitePasswordUser = true;
+      } else {
+        console.warn('User not authenticated - cannot save purchase');
+        return;
+      }
     }
 
     try {
       const purchaseData = {
         ...purchase,
-        userId: user.uid,
+        userId: userId,
         createdAt: new Date().toISOString(),
         type: 'manual' // Distinguish from Gmail imports
       };
       
-      await addDocument('purchases', purchaseData);
-      console.log('✅ Purchase saved to Firebase');
+      if (isSitePasswordUser) {
+        // For site password users, save to localStorage
+        const existingPurchases = JSON.parse(localStorage.getItem(`purchases_${userId}`) || '[]');
+        const updatedPurchases = [...existingPurchases, purchaseData];
+        localStorage.setItem(`purchases_${userId}`, JSON.stringify(updatedPurchases));
+        console.log('✅ Purchase saved to localStorage');
+      } else {
+        // For Firebase users, save to Firebase
+        await addDocument('purchases', purchaseData);
+        console.log('✅ Purchase saved to Firebase');
+      }
     } catch (error) {
-      console.error('❌ Error saving purchase to Firebase:', error);
+      console.error('❌ Error saving purchase:', error);
     }
   };
 
   const loadManualPurchasesFromFirebase = async () => {
-    if (!user) return;
+    // Get user ID from either Firebase auth or site password auth
+    let userId: string | null = null;
+    let isSitePasswordUser = false;
+    
+    if (user) {
+      // Firebase user
+      userId = user.uid;
+      console.log('🔐 Using Firebase user ID:', userId);
+    } else {
+      // Check for site password authentication
+      const siteUserId = localStorage.getItem('siteUserId');
+      if (siteUserId) {
+        userId = siteUserId;
+        isSitePasswordUser = true;
+        console.log('🔐 Using site password user ID:', userId);
+      } else {
+        console.log('❌ No user authentication found (neither Firebase nor site password)');
+        return;
+      }
+    }
 
     try {
       setLoading(true);
-      const allPurchases = await getDocuments('purchases');
+      
+      let allPurchases: any[] = [];
+      
+      if (isSitePasswordUser) {
+        // For site password users, try localStorage first, then Firebase as fallback
+        console.log('🔍 Loading purchases for site password user...');
+        
+        // Try localStorage first
+        const localPurchases = localStorage.getItem(`purchases_${userId}`);
+        if (localPurchases) {
+          allPurchases = JSON.parse(localPurchases);
+          console.log(`📄 Loaded ${allPurchases.length} purchases from localStorage`);
+        } else {
+          console.log('📄 No purchases found in localStorage, trying Firebase...');
+          
+          // Fallback to Firebase (might fail due to permissions)
+          try {
+            allPurchases = await getDocuments('purchases');
+            console.log(`📄 Firebase returned ${allPurchases.length} total purchases`);
+          } catch (firebaseError) {
+            console.warn('⚠️ Firebase access failed for site password user:', firebaseError);
+            allPurchases = [];
+          }
+        }
+      } else {
+        // For Firebase users, use Firebase directly
+        console.log('🔍 Attempting to load purchases from Firebase...');
+        allPurchases = await getDocuments('purchases');
+        console.log(`📄 Firebase returned ${allPurchases.length} total purchases`);
+      }
       
       // Filter to only show purchases for this user
       const userPurchases = allPurchases.filter(
-        (purchase: any) => purchase.userId === user.uid
+        (purchase: any) => purchase.userId === userId
       );
       
+      console.log(`📄 Found ${userPurchases.length} purchases for user ${userId}`);
+      console.log('🔍 User purchases details:', userPurchases.map(p => ({
+        orderNumber: p.orderNumber,
+        type: p.type,
+        userId: p.userId,
+        status: p.status
+      })));
+      
+      // Debug: Log purchase types breakdown
+      const typeBreakdown = userPurchases.reduce((acc, p) => {
+        acc[p.type] = (acc[p.type] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      console.log('📊 Purchase types breakdown:', typeBreakdown);
+      
+      // Transform Firebase data to expected component format
+      const transformPurchaseData = (purchase: any) => {
+        return {
+          ...purchase,
+          product: {
+            name: purchase.productName || purchase.product?.name || 'Unknown Product',
+            brand: purchase.brand || purchase.product?.brand || 'Unknown Brand',
+            size: purchase.size || purchase.product?.size || 'Unknown Size',
+            image: purchase.productImageUrl || purchase.product?.image || `https://picsum.photos/200/200?random=${purchase.id?.substring(0, 4) || '1'}`,
+            bgColor: purchase.product?.bgColor || 'bg-gray-500',
+            color: purchase.product?.color || 'gray'
+          },
+          // Map other fields to expected format
+          orderNumber: purchase.orderNumber,
+          status: purchase.shippingStatus || purchase.status || 'Ordered',
+          tracking: purchase.tracking || '',
+          market: purchase.merchant || purchase.market || 'StockX',
+          price: purchase.totalAmount ? `$${purchase.totalAmount.toFixed(2)}` : (purchase.price || '$0.00'),
+          originalPrice: purchase.totalAmount ? `$${purchase.totalAmount.toFixed(2)} + $0.00` : (purchase.price || '$0.00'),
+          purchaseDate: purchase.purchaseDate || purchase.createdAt || new Date().toISOString(),
+          dateAdded: purchase.createdAt || new Date().toISOString(),
+          verified: purchase.verified || 'pending',
+          verifiedColor: purchase.verifiedColor || 'orange'
+        };
+      };
+
       // Separate manual and Gmail purchases
       const manualPurchases = userPurchases.filter(p => p.type === 'manual');
-      const gmailPurchases = userPurchases.filter(p => p.type === 'gmail');
+      const gmailPurchases = userPurchases.filter(p => p.type === 'gmail' || p.type === 'imported');
       
-      setManualPurchases(manualPurchases);
+      console.log('🔍 Purchase type filtering:', {
+        total: userPurchases.length,
+        manual: manualPurchases.length,
+        gmail: gmailPurchases.length,
+        types: [...new Set(userPurchases.map(p => p.type))]
+      });
+      
+      // Transform manual purchases
+      const transformedManualPurchases = manualPurchases.map(transformPurchaseData);
+      setManualPurchases(transformedManualPurchases);
+
+      // Transform Gmail purchases
+      const transformedGmailPurchases = gmailPurchases.map(transformPurchaseData);
+      
+      // Debug: Log sample transformed data to verify structure
+      if (transformedGmailPurchases.length > 0) {
+        console.log('🔍 Sample transformed purchase data:', {
+          original: gmailPurchases[0],
+          transformed: transformedGmailPurchases[0],
+          hasProductSize: !!transformedGmailPurchases[0].product?.size,
+          productSize: transformedGmailPurchases[0].product?.size
+        });
+      }
       
       // 🔥 Load Gmail purchases from Firebase if they exist
-      if (gmailPurchases.length > 0) {
-        setPurchases(gmailPurchases);
-        console.log(`✅ Loaded ${gmailPurchases.length} Gmail purchases from Firebase`);
+      if (transformedGmailPurchases.length > 0) {
+        setPurchases(transformedGmailPurchases);
+        console.log(`✅ Loaded ${transformedGmailPurchases.length} Gmail purchases from Firebase`);
+      } else {
+        console.log('⚠️ No Gmail purchases found in Firebase for this user');
+        // Don't clear existing purchases - they might be in component state
+        // setPurchases([]);
       }
       
       // Combine all purchases for display and deduplicate
-      const allUserPurchases = [...gmailPurchases, ...manualPurchases];
+      const allUserPurchases = [...transformedGmailPurchases, ...transformedManualPurchases];
       
       // Deduplicate by order number
       const uniquePurchaseMap = new Map();
@@ -609,7 +1000,12 @@ const Purchases = () => {
         const existing = uniquePurchaseMap.get(purchase.orderNumber);
         if (!existing || 
             (purchase.status === 'Delivered' && existing.status !== 'Delivered') ||
-            (purchase.status === 'Shipped' && existing.status === 'Ordered')) {
+            (purchase.status === 'Shipped' && existing.status === 'Ordered') ||
+            (purchase.tracking && !existing.tracking)) {
+          // Keep the purchase with better status or tracking info
+          if (existing && purchase.tracking && !existing.tracking) {
+            console.log(`📦 DISPLAY TRACKING PRESERVATION: Keeping purchase ${purchase.orderNumber} with tracking "${purchase.tracking}" over existing without tracking`);
+          }
           uniquePurchaseMap.set(purchase.orderNumber, purchase);
         }
       });
@@ -619,28 +1015,57 @@ const Purchases = () => {
       
       calculateTotals(combinedPurchases);
       
-      console.log('✅ Loaded purchases from Firebase:', {
+      console.log('✅ Loaded purchases:', {
         manual: manualPurchases.length,
         gmail: gmailPurchases.length,
-        total: combinedPurchases.length
+        total: combinedPurchases.length,
+        userId: userId,
+        source: isSitePasswordUser ? 'localStorage' : 'Firebase'
       });
       
     } catch (error) {
-      console.error('❌ Error loading purchases from Firebase:', error);
+      console.error('❌ Error loading purchases:', error);
     } finally {
       setLoading(false);
     }
   };
 
   const deleteManualPurchaseFromFirebase = async (purchaseId: string) => {
-    if (!user) return;
+    // Get user ID from either Firebase auth or site password auth
+    let userId: string | null = null;
+    let isSitePasswordUser = false;
+    
+    if (user) {
+      // Firebase user
+      userId = user.uid;
+    } else {
+      // Check for site password authentication
+      const siteUserId = localStorage.getItem('siteUserId');
+      if (siteUserId) {
+        userId = siteUserId;
+        isSitePasswordUser = true;
+      } else {
+        console.warn('User not authenticated - cannot delete purchase');
+        return;
+      }
+    }
 
     try {
-      await deleteDocument('purchases', purchaseId);
+      if (isSitePasswordUser) {
+        // For site password users, delete from localStorage
+        const existingPurchases = JSON.parse(localStorage.getItem(`purchases_${userId}`) || '[]');
+        const updatedPurchases = existingPurchases.filter((p: any) => p.id !== purchaseId);
+        localStorage.setItem(`purchases_${userId}`, JSON.stringify(updatedPurchases));
+        console.log('✅ Purchase deleted from localStorage');
+      } else {
+        // For Firebase users, delete from Firebase
+        await deleteDocument('purchases', purchaseId);
+        console.log('✅ Purchase deleted from Firebase');
+      }
+      
       await loadManualPurchasesFromFirebase(); // Refresh the list
-      console.log('✅ Purchase deleted from Firebase');
     } catch (error) {
-      console.error('❌ Error deleting purchase from Firebase:', error);
+      console.error('❌ Error deleting purchase:', error);
     }
   };
 
@@ -660,6 +1085,97 @@ const Purchases = () => {
     }
   };
 
+  const manualStatusUpdate = async () => {
+    console.log('🔄 MANUAL STATUS UPDATE: Button clicked!');
+    console.log('🔄 MANUAL STATUS UPDATE: Gmail connected:', gmailConnected);
+    console.log('🔄 MANUAL STATUS UPDATE: Purchases count:', purchases.length);
+    console.log('🔄 MANUAL STATUS UPDATE: Loading state:', loading);
+    console.log('🔄 MANUAL STATUS UPDATE: Is updating status:', isUpdatingStatus);
+    
+    if (isUpdatingStatus) {
+      console.log('❌ MANUAL STATUS UPDATE: Already updating status');
+      return;
+    }
+    
+    if (!gmailConnected) {
+      console.log('❌ MANUAL STATUS UPDATE: Gmail not connected');
+      setNotification({
+        isVisible: true,
+        message: 'Gmail not connected',
+        type: 'error'
+      });
+      return;
+    }
+    
+    if (purchases.length === 0) {
+      console.log('❌ MANUAL STATUS UPDATE: No purchases found');
+      setNotification({
+        isVisible: true,
+        message: 'No purchases found',
+        type: 'error'
+      });
+      return;
+    }
+    
+    setIsUpdatingStatus(true);
+    console.log('🔄 MANUAL STATUS UPDATE: Triggering status update for all orders...');
+    
+    try {
+      const orderNumbers = purchases.map(p => p.orderNumber).filter(Boolean);
+      console.log('🔄 MANUAL STATUS UPDATE: Order numbers to check:', orderNumbers);
+      
+      const response = await fetch('/api/gmail/update-status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ orderNumbers })
+      });
+
+      console.log('🔄 MANUAL STATUS UPDATE: Response status:', response.status);
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('🔄 MANUAL STATUS UPDATE: Response data:', data);
+        
+        if (data.success && data.updatedOrders.length > 0) {
+          console.log(`✅ MANUAL STATUS UPDATE: Updated ${data.updatedOrders.length} order statuses`);
+          handleStatusUpdate(data.updatedOrders);
+          setNotification({
+            isVisible: true,
+            message: `Updated ${data.updatedOrders.length} order statuses`,
+            type: 'success'
+          });
+        } else {
+          console.log(`ℹ️ MANUAL STATUS UPDATE: No status updates needed`);
+          setNotification({
+            isVisible: true,
+            message: 'No status updates needed',
+            type: 'info'
+          });
+        }
+      } else {
+        const errorData = await response.json();
+        console.error('❌ MANUAL STATUS UPDATE: Status update failed with status:', response.status);
+        console.error('❌ MANUAL STATUS UPDATE: Error data:', errorData);
+        setNotification({
+          isVisible: true,
+          message: `Status update failed: ${errorData.error || 'Unknown error'}`,
+          type: 'error'
+        });
+      }
+    } catch (error) {
+      console.error('❌ MANUAL STATUS UPDATE: Status update error:', error);
+      setNotification({
+        isVisible: true,
+        message: `Status update failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        type: 'error'
+      });
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
+
   const handleResetClick = () => {
     setShowResetConfirm(true);
   };
@@ -672,27 +1188,50 @@ const Purchases = () => {
     setShowResetConfirm(false);
     setHasBeenReset(true); // Mark that user has reset - prevents mock data from loading
     
-    // Clear Firebase data for this user
+    // Get user ID from either Firebase auth or site password auth
+    let userId: string | null = null;
+    let isSitePasswordUser = false;
+    
     if (user) {
+      // Firebase user
+      userId = user.uid;
+    } else {
+      // Check for site password authentication
+      const siteUserId = localStorage.getItem('siteUserId');
+      if (siteUserId) {
+        userId = siteUserId;
+        isSitePasswordUser = true;
+      }
+    }
+    
+    // Clear data for this user
+    if (userId) {
       try {
-        const allPurchases = await getDocuments('purchases');
-        const userPurchases = allPurchases.filter(
-          (purchase: any) => purchase.userId === user.uid
-        );
-        
-        // Delete all purchases for this user (both manual and Gmail)
-        let deletedCount = 0;
-        for (const purchase of userPurchases) {
-          if (purchase.id) {
-            await deleteDocument('purchases', purchase.id);
-            deletedCount++;
+        if (isSitePasswordUser) {
+          // For site password users, clear localStorage
+          localStorage.removeItem(`purchases_${userId}`);
+          console.log('✅ All purchases cleared from localStorage');
+        } else {
+          // For Firebase users, clear Firebase
+          const allPurchases = await getDocuments('purchases');
+          const userPurchases = allPurchases.filter(
+            (purchase: any) => purchase.userId === userId
+          );
+          
+          // Delete all purchases for this user (both manual and Gmail)
+          let deletedCount = 0;
+          for (const purchase of userPurchases) {
+            if (purchase.id) {
+              await deleteDocument('purchases', purchase.id);
+              deletedCount++;
+            }
           }
+          
+          console.log(`✅ All purchases cleared from Firebase: ${deletedCount} deleted`);
         }
         
-        console.log(`✅ All purchases cleared from Firebase: ${deletedCount} deleted`);
-        
       } catch (error) {
-        console.error('❌ Error clearing purchases from Firebase:', error);
+        console.error('❌ Error clearing purchases:', error);
       }
     }
     
@@ -772,7 +1311,8 @@ const Purchases = () => {
       setSelectedPurchases(new Set());
       
       // Reload purchases
-      if (user) {
+      const siteUserId = localStorage.getItem('siteUserId');
+      if (user || siteUserId) {
         await loadManualPurchasesFromFirebase();
       } else {
         // If not logged in, just filter out the selected items from mock data
@@ -875,7 +1415,22 @@ const Purchases = () => {
   const handleStatusUpdate = async (statusUpdates: any[]) => {
     console.log('🔄 Applying status updates:', statusUpdates);
     
-    if (!user) return;
+    // Get user ID from either Firebase auth or site password auth
+    let userId: string | null = null;
+    
+    if (user) {
+      // Firebase user
+      userId = user.uid;
+    } else {
+      // Check for site password authentication
+      const siteUserId = localStorage.getItem('siteUserId');
+      if (siteUserId) {
+        userId = siteUserId;
+      } else {
+        console.warn('User not authenticated - cannot update status');
+        return;
+      }
+    }
 
     try {
       // Update purchases in state - force update even if status appears the same
@@ -943,7 +1498,7 @@ const Purchases = () => {
             status: purchase.status,
             statusColor: purchase.statusColor,
             tracking: purchase.tracking,
-            userId: user.uid
+            userId: userId
           });
           console.log(`💾 Firebase updated for ${purchase.orderNumber}`);
         } catch (error) {
@@ -963,12 +1518,27 @@ const Purchases = () => {
 
   // One-time cleanup function to remove duplicates from Firebase
   const cleanupDuplicatesInFirebase = async () => {
-    if (!user) return;
+    // Get user ID from either Firebase auth or site password auth
+    let userId: string | null = null;
+    
+    if (user) {
+      // Firebase user
+      userId = user.uid;
+    } else {
+      // Check for site password authentication
+      const siteUserId = localStorage.getItem('siteUserId');
+      if (siteUserId) {
+        userId = siteUserId;
+      } else {
+        console.warn('User not authenticated - cannot cleanup duplicates');
+        return;
+      }
+    }
     
     try {
       console.log('🧹 Starting Firebase duplicate cleanup...');
       const allPurchases = await getDocuments('purchases');
-      const userPurchases = allPurchases.filter((p: any) => p.userId === user.uid);
+      const userPurchases = allPurchases.filter((p: any) => p.userId === userId);
       
       // Group by order number
       const orderGroups = new Map();
@@ -1047,7 +1617,7 @@ const Purchases = () => {
               }
             </p>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 flex-wrap gap-2">
             {selectedPurchases.size > 0 && (
               <button
                 onClick={handleDeleteSelected}
@@ -1075,14 +1645,87 @@ const Purchases = () => {
                 <span>Sync Gmail</span>
               </button>
             )}
-            {gmailConnected && totalCount > 0 && (
-              <StatusUpdater 
-                purchases={[...purchases, ...manualPurchases]}
-                onStatusUpdate={handleStatusUpdate}
-                isAutoEnabled={isAutoStatusEnabled}
-                lastAutoUpdate={lastAutoStatusUpdate}
-              />
+            {gmailConnected && purchases.length > 0 && (
+              <button
+                onClick={manualStatusUpdate}
+                disabled={loading || isUpdatingStatus}
+                className={`flex items-center space-x-2 ${
+                  currentTheme.name === 'Neon' 
+                    ? 'bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 shadow-lg hover:shadow-yellow-500/25' 
+                    : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-lg hover:shadow-amber-500/25'
+                } disabled:opacity-50 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200`}
+              >
+                <RefreshCw className={`w-5 h-5 ${isUpdatingStatus ? 'animate-spin' : ''}`} />
+                <span>{isUpdatingStatus ? 'Updating...' : 'Update Status'}</span>
+              </button>
             )}
+            {/* Refresh Firebase Data Button */}
+            <button
+              onClick={refreshAllPurchases}
+              className={`flex items-center space-x-2 ${
+                currentTheme.name === 'Neon' 
+                  ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 shadow-lg hover:shadow-blue-500/25' 
+                  : 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 shadow-lg hover:shadow-blue-500/25'
+              } disabled:opacity-50 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200`}
+            >
+              <RefreshCw className="w-5 h-5" />
+              <span>Refresh Data</span>
+            </button>
+            {/* Export Dropdown - Always visible */}
+            <div className="relative export-dropdown">
+              <button
+                onClick={() => setShowExportDropdown(!showExportDropdown)}
+                className={`flex items-center space-x-2 ${
+                  currentTheme.name === 'Neon' 
+                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 shadow-lg hover:shadow-cyan-500/25' 
+                    : 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 shadow-lg hover:shadow-indigo-500/25'
+                } text-white px-4 py-2 rounded-lg font-medium transition-all duration-200`}
+              >
+                <Download className="w-5 h-5" />
+                <span>Export</span>
+                <ChevronDown className="w-4 h-4" />
+              </button>
+              
+              {showExportDropdown && (
+                <div className={`absolute left-1/2 transform -translate-x-1/2 mt-2 w-56 ${currentTheme.name === 'Neon' ? 'bg-gray-900' : 'bg-white'} ${currentTheme.colors.border} border rounded-lg shadow-xl z-50`}>
+                  <div className="py-2">
+                    <button
+                      onClick={handleExportExcel}
+                      className={`w-full flex items-center space-x-3 px-4 py-2 text-sm hover:bg-gray-100 ${
+                        currentTheme.name === 'Neon' ? 'hover:bg-white/10 text-gray-300' : 'text-gray-700'
+                      }`}
+                    >
+                      <FileSpreadsheet className="w-4 h-4" />
+                      <span>Export as Excel</span>
+                    </button>
+                    <button
+                      onClick={handleExportCSV}
+                      className={`w-full flex items-center space-x-3 px-4 py-2 text-sm hover:bg-gray-100 ${
+                        currentTheme.name === 'Neon' ? 'hover:bg-white/10 text-gray-300' : 'text-gray-700'
+                      }`}
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span>Export as CSV</span>
+                    </button>
+                    {selectedPurchases.size > 0 && (
+                      <>
+                        <div className={`border-t ${currentTheme.name === 'Neon' ? 'border-white/10' : 'border-gray-200'} my-1`} />
+                        <button
+                          onClick={handleExportSelected}
+                          className={`w-full flex items-center space-x-3 px-4 py-2 text-sm hover:bg-gray-100 ${
+                            currentTheme.name === 'Neon' ? 'hover:bg-white/10 text-gray-300' : 'text-gray-700'
+                          }`}
+                        >
+                          <FileSpreadsheet className="w-4 h-4" />
+                          <span>Export Selected ({selectedPurchases.size})</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            
             <button
               onClick={() => setShowAddPurchaseModal(true)}
               className={`flex items-center space-x-2 ${
@@ -1094,6 +1737,7 @@ const Purchases = () => {
               <Plus className="w-5 h-5" />
               <span>Add Purchase</span>
             </button>
+            
             <button
               onClick={() => setShowEmailSettings(true)}
               className={`flex items-center space-x-2 ${
@@ -1105,6 +1749,15 @@ const Purchases = () => {
               <Settings className="w-5 h-5" />
               <span>Settings</span>
             </button>
+            
+            {gmailConnected && totalCount > 0 && (
+              <StatusUpdater 
+                purchases={[...purchases, ...manualPurchases]}
+                onStatusUpdate={handleStatusUpdate}
+                isAutoEnabled={isAutoStatusEnabled}
+                lastAutoUpdate={lastAutoStatusUpdate}
+              />
+            )}
           </div>
         </div>
         <div className="text-right">
@@ -1499,7 +2152,7 @@ const Purchases = () => {
                     <button 
                       onClick={() => alert(`Tracking: ${purchase.tracking}\n\nTracking integration coming soon!`)}
                       className={`${currentTheme.colors.accent} text-sm hover:underline transition-colors cursor-pointer`}>
-                      {purchase.tracking}
+                      {purchase.status?.toLowerCase() === 'ordered' ? 'Not Shipped Yet' : purchase.tracking}
                     </button>
                   </td>
                   <td className="px-6 py-2 align-middle">
@@ -1672,6 +2325,9 @@ const Purchases = () => {
         </div>
       )}
       
+      {/* Gmail Reset Button - Temporary for debugging */}
+      <GmailResetButton />
+      
       {/* Neon Notification */}
       {notification.isVisible && (
         <NeonNotification
@@ -1699,6 +2355,22 @@ const AddPurchaseModal = ({ onClose, onSuccess }: { onClose: () => void; onSucce
     price: '',
     purchaseDate: '',
   });
+  const [showProductSearch, setShowProductSearch] = useState(false);
+
+  const handleProductSelect = (product: any) => {
+    setFormData({
+      ...formData,
+      productName: product.name,
+      brand: product.brand || '',
+    });
+    setShowProductSearch(false);
+  };
+
+  const handleProductNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setFormData({ ...formData, productName: value });
+    setShowProductSearch(value.length >= 2);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1753,13 +2425,25 @@ const AddPurchaseModal = ({ onClose, onSuccess }: { onClose: () => void; onSucce
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
-      <div className={`${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto`}>
+    <div className={`fixed inset-0 ${
+      currentTheme.name === 'Neon' ? 'bg-black/80' : 'bg-black bg-opacity-50'
+    } flex items-center justify-center z-50 p-4`}>
+      <div className={`${
+        currentTheme.name === 'Neon' 
+          ? 'modal-premium border border-cyan-500/30 shadow-2xl shadow-cyan-500/20' 
+          : `${currentTheme.colors.cardBackground} shadow-2xl border border-gray-200`
+      } rounded-2xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto`}>
         <div className="flex items-center justify-between mb-4">
-          <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>Add Purchase</h3>
+          <h3 className={`text-lg font-semibold ${
+            currentTheme.name === 'Neon' ? 'text-white' : 'text-gray-900'
+          }`}>Add Purchase</h3>
           <button
             onClick={onClose}
-            className={`${currentTheme.colors.textSecondary} hover:${currentTheme.colors.textPrimary}`}
+            className={`p-2 ${
+              currentTheme.name === 'Neon' 
+                ? 'text-gray-300 hover:text-white hover:bg-white/10' 
+                : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+            } rounded-xl transition-all duration-200`}
           >
             ✕
           </button>
@@ -1767,14 +2451,16 @@ const AddPurchaseModal = ({ onClose, onSuccess }: { onClose: () => void; onSucce
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className={`block text-sm font-medium ${currentTheme.colors.textPrimary} mb-1`}>
+            <label className={`block text-sm font-medium ${
+              currentTheme.name === 'Neon' ? 'text-gray-200' : 'text-gray-700'
+            } mb-1`}>
               Product Name *
             </label>
             <input
               type="text"
               required
               value={formData.productName}
-              onChange={(e) => setFormData({ ...formData, productName: e.target.value })}
+              onChange={handleProductNameChange}
               className={`w-full px-3 py-2 border rounded-lg ${currentTheme.colors.textPrimary} ${
                 currentTheme.name === 'Neon' 
                   ? 'bg-black/20 border-white/20 focus:border-cyan-500' 
@@ -1782,11 +2468,18 @@ const AddPurchaseModal = ({ onClose, onSuccess }: { onClose: () => void; onSucce
               } focus:outline-none`}
               placeholder="e.g., Nike Air Jordan 1 High OG"
             />
+            <ProductSearch
+              searchTerm={formData.productName}
+              onProductSelect={handleProductSelect}
+              isVisible={showProductSearch}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className={`block text-sm font-medium ${currentTheme.colors.textPrimary} mb-1`}>
+              <label className={`block text-sm font-medium ${
+              currentTheme.name === 'Neon' ? 'text-gray-200' : 'text-gray-700'
+            } mb-1`}>
                 Brand *
               </label>
               <input
@@ -1803,7 +2496,9 @@ const AddPurchaseModal = ({ onClose, onSuccess }: { onClose: () => void; onSucce
               />
             </div>
             <div>
-              <label className={`block text-sm font-medium ${currentTheme.colors.textPrimary} mb-1`}>
+              <label className={`block text-sm font-medium ${
+              currentTheme.name === 'Neon' ? 'text-gray-200' : 'text-gray-700'
+            } mb-1`}>
                 Size *
               </label>
               <input
@@ -1823,7 +2518,9 @@ const AddPurchaseModal = ({ onClose, onSuccess }: { onClose: () => void; onSucce
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className={`block text-sm font-medium ${currentTheme.colors.textPrimary} mb-1`}>
+              <label className={`block text-sm font-medium ${
+              currentTheme.name === 'Neon' ? 'text-gray-200' : 'text-gray-700'
+            } mb-1`}>
                 Price *
               </label>
               <input
@@ -1841,7 +2538,9 @@ const AddPurchaseModal = ({ onClose, onSuccess }: { onClose: () => void; onSucce
               />
             </div>
             <div>
-              <label className={`block text-sm font-medium ${currentTheme.colors.textPrimary} mb-1`}>
+              <label className={`block text-sm font-medium ${
+              currentTheme.name === 'Neon' ? 'text-gray-200' : 'text-gray-700'
+            } mb-1`}>
                 Purchase Date *
               </label>
               <input
@@ -1860,7 +2559,9 @@ const AddPurchaseModal = ({ onClose, onSuccess }: { onClose: () => void; onSucce
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className={`block text-sm font-medium ${currentTheme.colors.textPrimary} mb-1`}>
+              <label className={`block text-sm font-medium ${
+              currentTheme.name === 'Neon' ? 'text-gray-200' : 'text-gray-700'
+            } mb-1`}>
                 Order Number
               </label>
               <input
@@ -1876,7 +2577,9 @@ const AddPurchaseModal = ({ onClose, onSuccess }: { onClose: () => void; onSucce
               />
             </div>
             <div>
-              <label className={`block text-sm font-medium ${currentTheme.colors.textPrimary} mb-1`}>
+              <label className={`block text-sm font-medium ${
+              currentTheme.name === 'Neon' ? 'text-gray-200' : 'text-gray-700'
+            } mb-1`}>
                 Tracking Number
               </label>
               <input
@@ -1895,7 +2598,9 @@ const AddPurchaseModal = ({ onClose, onSuccess }: { onClose: () => void; onSucce
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className={`block text-sm font-medium ${currentTheme.colors.textPrimary} mb-1`}>
+              <label className={`block text-sm font-medium ${
+              currentTheme.name === 'Neon' ? 'text-gray-200' : 'text-gray-700'
+            } mb-1`}>
                 Status
               </label>
               <select
@@ -1913,7 +2618,9 @@ const AddPurchaseModal = ({ onClose, onSuccess }: { onClose: () => void; onSucce
               </select>
             </div>
             <div>
-              <label className={`block text-sm font-medium ${currentTheme.colors.textPrimary} mb-1`}>
+              <label className={`block text-sm font-medium ${
+              currentTheme.name === 'Neon' ? 'text-gray-200' : 'text-gray-700'
+            } mb-1`}>
                 Market
               </label>
               <select

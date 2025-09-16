@@ -173,9 +173,43 @@ export async function GET(request: NextRequest) {
         const variantMap = new Map();
         if (variants?.length) {
           variants.forEach(variant => {
+            // Use robust size extraction logic (same as market-data API)
+            let sizeValue = variant.variantValue || 
+                           variant.size || 
+                           variant.sizeValue || 
+                           variant.displaySize || 
+                           variant.shoeSize;
+            
+            // Try to extract size from traits if available
+            if (!sizeValue && variant.traits) {
+              const sizeTraits = variant.traits.find((trait: any) => 
+                trait.name?.toLowerCase().includes('size') || 
+                trait.filterId?.toLowerCase().includes('size')
+              );
+              if (sizeTraits && sizeTraits.value) {
+                sizeValue = sizeTraits.value;
+              }
+            }
+            
+            // Try to extract size from variantTraits if available
+            if (!sizeValue && variant.variantTraits) {
+              const sizeTraits = variant.variantTraits.find((trait: any) => 
+                trait.name?.toLowerCase().includes('size') || 
+                trait.filterId?.toLowerCase().includes('size')
+              );
+              if (sizeTraits && sizeTraits.value) {
+                sizeValue = sizeTraits.value;
+              }
+            }
+            
+            // If still no size, use fallback
+            if (!sizeValue || sizeValue === 'Unknown') {
+              sizeValue = 'One Size';
+            }
+            
             variantMap.set(variant.variantId, {
               id: variant.variantId,
-              size: variant.variantValue || 'One Size',
+              size: sizeValue,
               sizeChart: variant.sizeChart
             });
           });
@@ -198,9 +232,44 @@ export async function GET(request: NextRequest) {
         if (variants?.length) {
           variants.forEach(variant => {
             const market = marketMap.get(variant.variantId) || {};
+            
+            // Use robust size extraction logic (same as above)
+            let sizeValue = variant.variantValue || 
+                           variant.size || 
+                           variant.sizeValue || 
+                           variant.displaySize || 
+                           variant.shoeSize;
+            
+            // Try to extract size from traits if available
+            if (!sizeValue && variant.traits) {
+              const sizeTraits = variant.traits.find((trait: any) => 
+                trait.name?.toLowerCase().includes('size') || 
+                trait.filterId?.toLowerCase().includes('size')
+              );
+              if (sizeTraits && sizeTraits.value) {
+                sizeValue = sizeTraits.value;
+              }
+            }
+            
+            // Try to extract size from variantTraits if available
+            if (!sizeValue && variant.variantTraits) {
+              const sizeTraits = variant.variantTraits.find((trait: any) => 
+                trait.name?.toLowerCase().includes('size') || 
+                trait.filterId?.toLowerCase().includes('size')
+              );
+              if (sizeTraits && sizeTraits.value) {
+                sizeValue = sizeTraits.value;
+              }
+            }
+            
+            // If still no size, use fallback
+            if (!sizeValue || sizeValue === 'Unknown') {
+              sizeValue = 'One Size';
+            }
+            
             enrichedVariants.push({
               id: variant.variantId,
-              size: variant.variantValue || 'One Size',
+              size: sizeValue,
               sizeChart: variant.sizeChart,
               lowestAsk: market.lowestAsk || 0,
               flexLowestAsk: market.flexLowestAsk || 0,

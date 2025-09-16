@@ -9,7 +9,6 @@ import { getDocuments } from '../lib/firebase/firebaseUtils';
 import { useSales } from '../lib/hooks/useSales';
 import { formatOrderNumberForDisplay } from '../lib/utils/orderNumberUtils';
 import DatePicker from './DatePicker';
-import MarketAlerts from './MarketAlerts';
 
 const Dashboard = () => {
   const { currentTheme, setTheme, themes } = useTheme();
@@ -411,8 +410,9 @@ const Dashboard = () => {
 
 
 
-  // Show empty state for new users
-  if (!user) {
+  // Show empty state for new users (only if no Firebase user AND no site password auth)
+  const siteUserId = typeof window !== 'undefined' ? localStorage.getItem('siteUserId') : null;
+  if (!user && !siteUserId) {
     return (
       <div className={`flex-1 ${currentTheme.colors.background} p-8`}>
         <div className="flex items-center justify-center h-64">
@@ -457,33 +457,35 @@ const Dashboard = () => {
         <div className="flex items-center">
           <h1 className={`text-3xl font-bold ${currentTheme.colors.textPrimary} mr-8`}>Dashboard</h1>
           
-          {/* Connection State Indicator */}
-          <div className="flex items-center space-x-2 text-sm">
-            {connectionState.status === 'connected' && (
-              <div className="flex items-center space-x-1 text-green-500">
-                <Wifi className="w-4 h-4" />
-                <span>Connected</span>
-              </div>
-            )}
-            {connectionState.status === 'connecting' && (
-              <div className="flex items-center space-x-1 text-yellow-500">
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Connecting...</span>
-              </div>
-            )}
-            {connectionState.status === 'error' && (
-              <div className="flex items-center space-x-1 text-red-500">
-                <AlertCircle className="w-4 h-4" />
-                <span>Error</span>
-              </div>
-            )}
-            {connectionState.status === 'disconnected' && (
-              <div className="flex items-center space-x-1 text-gray-500">
-                <WifiOff className="w-4 h-4" />
-                <span>Offline</span>
-              </div>
-            )}
-          </div>
+          {/* Connection State Indicator - Only show for Firebase users */}
+          {user && (
+            <div className="flex items-center space-x-2 text-sm">
+              {connectionState.status === 'connected' && (
+                <div className="flex items-center space-x-1 text-green-500">
+                  <Wifi className="w-4 h-4" />
+                  <span>Connected</span>
+                </div>
+              )}
+              {connectionState.status === 'connecting' && (
+                <div className="flex items-center space-x-1 text-yellow-500">
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Connecting...</span>
+                </div>
+              )}
+              {connectionState.status === 'error' && (
+                <div className="flex items-center space-x-1 text-red-500">
+                  <AlertCircle className="w-4 h-4" />
+                  <span>Error</span>
+                </div>
+              )}
+              {connectionState.status === 'disconnected' && (
+                <div className="flex items-center space-x-1 text-gray-500">
+                  <WifiOff className="w-4 h-4" />
+                  <span>Offline</span>
+                </div>
+              )}
+            </div>
+          )}
           <div className="relative flex items-center space-x-2">
             {timePeriods.map((period) => (
               <button
@@ -697,31 +699,6 @@ const Dashboard = () => {
         </div>
       )}
 
-      {/* Debug Info Section - Remove in production */}
-      <div className="mb-6 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm">
-        <div className="flex items-center justify-between mb-2">
-          <span className="font-semibold">Debug Info</span>
-          <div className="flex items-center space-x-4">
-            <span>Sales: {sales.length}</span>
-            <span>Purchases: {userPurchases.length}</span>
-            <span>Connection: {connectionState.status}</span>
-            {connectionState.lastSync && (
-              <span>Last sync: {connectionState.lastSync.toLocaleTimeString()}</span>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center space-x-4 text-xs text-gray-600">
-          <span>From cache: {connectionState.fromCache ? 'Yes' : 'No'}</span>
-          <span>Pending writes: {connectionState.hasPendingWrites ? 'Yes' : 'No'}</span>
-          {salesError && <span className="text-red-500">Error: {salesError}</span>}
-          <button
-            onClick={refreshSales}
-            className="px-2 py-1 bg-blue-500 text-white rounded text-xs hover:bg-blue-600"
-          >
-            Force Refresh Sales
-          </button>
-        </div>
-      </div>
 
       {/* Metrics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
@@ -903,10 +880,6 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Market Alerts Component */}
-      <div className="mt-8">
-        <MarketAlerts />
-      </div>
     </div>
   );
 };

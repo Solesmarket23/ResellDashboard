@@ -39,7 +39,22 @@ export async function GET(request: NextRequest) {
     // Get the current URL to determine the correct redirect URI
     const url = new URL(request.url);
     const baseUrl = `${url.protocol}//${url.host}`;
-    const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${baseUrl}/api/gmail/callback`;
+    
+    // Check if we're running locally (localhost, 127.0.0.1, or 0.0.0.0)
+    const isLocal = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1') || baseUrl.includes('0.0.0.0');
+    
+    // Use environment variable if set, otherwise auto-detect
+    let redirectUri = process.env.GOOGLE_REDIRECT_URI;
+    
+    if (!redirectUri) {
+      if (isLocal) {
+        // For local development, use localhost with the correct port
+        redirectUri = 'http://localhost:3002/api/gmail/callback';
+      } else {
+        // For production, use the current domain
+        redirectUri = `${baseUrl}/api/gmail/callback`;
+      }
+    }
 
     // Set up OAuth2 client
     const oauth2Client = new google.auth.OAuth2(

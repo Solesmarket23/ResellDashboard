@@ -4,9 +4,10 @@ import { cookies } from 'next/headers';
 import { parseGmailApiMessage, orderInfoToDict, OrderInfo } from '../../../../lib/email/orderConfirmationParser';
 
 // Batch configuration
-const BATCH_SIZE = 20; // Process 20 emails per batch
-const MAX_BATCHES_PER_REQUEST = 1; // Max 1 batch per API call (20 emails)
-const TIMEOUT_PER_EMAIL = 8000; // 8 seconds per email
+const BATCH_SIZE = 25; // Process 25 emails per batch
+const MAX_BATCHES_PER_REQUEST = 1; // Max 1 batch per API call (25 emails)
+const TIMEOUT_PER_EMAIL = 2000; // 2 seconds per email (reduced from 8s)
+const PARALLEL_EMAILS = 5; // Process 5 emails in parallel
 
 interface BatchProgress {
   batchIndex: number;
@@ -186,8 +187,8 @@ export async function GET(request: NextRequest) {
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     const config = getDefaultConfig();
 
-    // ONLY Order Confirmed emails - these have size info and we'll handle status separately
-    const primaryQuery = 'from:noreply@stockx.com (subject:"Order Confirmed" OR subject:"Xpress Order Confirmed") -subject:"You Sold" -subject:"Sale" -subject:"Payout" -subject:"Ship your"';
+    // Order Confirmed, Delivery, AND Shipped emails - these have size info and status info
+    const primaryQuery = 'from:noreply@stockx.com (subject:"Order Confirmed" OR subject:"Xpress Order Confirmed" OR subject:"Order Delivered" OR subject:"Xpress Ship Order Delivered" OR subject:"Xpress Order Delivered" OR subject:"Order Verified & Shipped" OR subject:"Order Shipped") -subject:"You Sold" -subject:"Sale" -subject:"Payout" -subject:"Ship your"';
     
     console.log(`📦 BATCH ${batchIndex}: Searching with query: ${primaryQuery}`);
 
@@ -228,11 +229,9 @@ export async function GET(request: NextRequest) {
     const batchPurchases: any[] = [];
     let processedInBatch = 0;
 
-    // Process each email in the batch with timeout protection
-    for (const message of batchMessages) {
+    // Process emails in parallel batches for much better performance
+    const processEmail = async (message: any, emailIndex: number) => {
       try {
-        console.log(`📧 BATCH ${batchIndex}: Processing email ${processedInBatch + 1}/${batchMessages.length}`);
-        
         const emailPromise = gmail.users.messages.get({
           userId: 'me',
           id: message.id,
@@ -250,25 +249,47 @@ export async function GET(request: NextRequest) {
         const fromHeader = emailData.data.payload?.headers?.find((h: any) => h.name === 'From')?.value || '';
         const subjectHeader = emailData.data.payload?.headers?.find((h: any) => h.name === 'Subject')?.value || '';
         
-        console.log(`📧 BATCH ${batchIndex}: Email from="${fromHeader}", subject="${subjectHeader}"`);
-        
-        const purchase = await parseEmailMessage(emailData.data, config, gmail);
-        if (purchase) {
-          console.log(`✅ BATCH ${batchIndex}: Parsed purchase: ${purchase.product.name} - ${purchase.orderNumber}`);
-          batchPurchases.push(purchase);
-        } else {
-          console.log(`❌ BATCH ${batchIndex}: Email filtered out or failed to parse`);
+        // Only log every 5th email to reduce noise
+        if (emailIndex % 5 === 0) {
+          console.log(`📧 BATCH ${batchIndex}: Processing email ${emailIndex + 1}/${batchMessages.length} - ${subjectHeader}`);
         }
         
-        processedInBatch++;
-        
-        // Small delay to prevent overwhelming Gmail API
-        await new Promise(resolve => setTimeout(resolve, 100));
+        const purchase = await parseEmailMessage(emailData.data, config, gmail, false); // Disable debug for performance
+        if (purchase) {
+          console.log(`✅ BATCH ${batchIndex}: Parsed purchase: ${purchase.product.name} - ${purchase.orderNumber}`);
+          return purchase;
+        } else {
+          return null;
+        }
         
       } catch (error) {
-        console.error(`❌ BATCH ${batchIndex}: Error processing email:`, error);
+        console.error(`❌ BATCH ${batchIndex}: Error processing email ${emailIndex + 1}:`, error);
+        return null;
+      }
+    };
+
+    // Process emails in parallel batches
+    for (let i = 0; i < batchMessages.length; i += PARALLEL_EMAILS) {
+      const batchSlice = batchMessages.slice(i, i + PARALLEL_EMAILS);
+      console.log(`📧 BATCH ${batchIndex}: Processing emails ${i + 1}-${Math.min(i + PARALLEL_EMAILS, batchMessages.length)} in parallel`);
+      
+      const promises = batchSlice.map((message, index) => 
+        processEmail(message, i + index)
+      );
+      
+      const results = await Promise.all(promises);
+      
+      // Add successful purchases to batch
+      results.forEach(purchase => {
+        if (purchase) {
+          batchPurchases.push(purchase);
+        }
         processedInBatch++;
-        continue; // Continue with next email
+      });
+      
+      // Small delay between parallel batches to prevent overwhelming Gmail API
+      if (i + PARALLEL_EMAILS < batchMessages.length) {
+        await new Promise(resolve => setTimeout(resolve, 200));
       }
     }
 
@@ -341,8 +362,8 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
       return null;
     }
 
-    // Use the imported parseGmailApiMessage function
-    const orderInfo = parseGmailApiMessage(emailData);
+    // Use the imported parseGmailApiMessage function (disable debug for performance)
+    const orderInfo = parseGmailApiMessage(emailData, false);
     if (!orderInfo || !orderInfo.order_number) {
       return null;
     }
@@ -378,6 +399,9 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
       extracted_brand: brand,
       size: orderInfo.size,
       total_amount: orderInfo.total_amount,
+      tracking_number: orderInfo.tracking_number,
+      carrier: orderInfo.carrier,
+      shipping_status: orderInfo.shipping_status,
       subject: subjectHeader,
       email_id: emailData.id
     });
@@ -396,7 +420,7 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
       status: category.status,
       statusColor: category.statusColor,
       priority: category.priority,
-      tracking: 'No tracking',
+      tracking: orderInfo.tracking_number || 'No tracking',
       market,
       price,
       originalPrice: `${price} + $0.00`,

@@ -35,6 +35,9 @@ interface ArbitrageOpportunity {
   roi: number;
   matchedProduct?: string;
   confidence: number; // 0-100 confidence in the match
+  searchMethod?: 'gtin' | 'stylecode' | 'text'; // How the product was matched
+  gtin?: string; // GTIN used for matching (if applicable)
+  styleCode?: string; // Style code used for matching (if applicable)
 }
 
 // Generate eBay application token from App ID and Cert ID
@@ -69,8 +72,87 @@ async function getEbayApplicationToken(appId: string, certId: string): Promise<s
   }
 }
 
-// Enhanced eBay search with better product parsing
-async function searchEbayForShoes(query: string, limit: number = 100, authenticityGuaranteeOnly: boolean = false): Promise<EbayListing[]> {
+// Search eBay directly by GTIN for exact product matches
+async function searchEbayByGTIN(gtin: string, limit: number = 100): Promise<EbayListing[]> {
+  const ebayAppId = process.env.EBAY_APP_ID;
+  const ebayClientSecret = process.env.EBAY_CLIENT_SECRET;
+  
+  console.log(`🔍 eBay GTIN search called for: ${gtin}`);
+  
+  if (!ebayAppId || !ebayClientSecret) {
+    console.log('❌ CRITICAL: Missing eBay credentials in environment variables');
+    throw new Error('eBay credentials not configured - need both EBAY_APP_ID and EBAY_CLIENT_SECRET');
+  }
+
+  try {
+    // Get application token
+    const accessToken = await getEbayApplicationToken(ebayAppId, ebayClientSecret);
+    
+    if (!accessToken) {
+      console.log('❌ CRITICAL: Could not get eBay access token');
+      throw new Error('Failed to authenticate with eBay API - check your credentials');
+    }
+
+    const apiUrl = `https://api.ebay.com/buy/browse/v1/item_summary/search`;
+    
+    const params = new URLSearchParams({
+      gtin: gtin, // Direct GTIN search
+      limit: limit.toString(),
+      sort: 'price', // Sort by price ascending to find deals
+      fieldgroups: 'MATCHING_ITEMS,EXTENDED'
+    });
+    
+    console.log(`🌐 eBay GTIN API URL: ${apiUrl}?${params}`);
+    
+    const response = await fetch(`${apiUrl}?${params}`, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+        'X-EBAY-C-ENDUSERCTX': 'contextualLocation=country%3DUS%2Czip%3D90210'
+      }
+    });
+
+    console.log(`📡 eBay GTIN API response status: ${response.status}`);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ eBay GTIN API error:', response.status, errorText);
+      throw new Error(`eBay GTIN API failed with status ${response.status}: ${errorText}`);
+    }
+
+    const data = await response.json();
+    console.log(`📦 eBay GTIN API raw response:`, JSON.stringify(data, null, 2));
+    
+    const mappedResults = (data.itemSummaries || []).map((item: any) => ({
+      title: item.title,
+      price: parseFloat(item.price?.value || '0'),
+      currency: item.price?.currency || 'USD',
+      image: item.image?.imageUrl || '/placeholder-shoe.png',
+      url: item.itemWebUrl,
+      seller: item.seller?.username || 'Unknown',
+      condition: item.condition || 'New',
+      source: 'eBay',
+      itemId: item.itemId,
+      shipping: parseFloat(item.shippingOptions?.[0]?.shippingCost?.value || '0'),
+      bidsCount: item.bidCount || 0,
+      endTime: item.itemEndDate,
+      buyItNowPrice: item.buyItNowPrice ? parseFloat(item.buyItNowPrice.value) : undefined
+    }));
+    
+    console.log(`✅ eBay GTIN search successful: Found ${mappedResults.length} listings for GTIN ${gtin}`);
+    console.log(`📝 Sample GTIN listing:`, mappedResults[0] || 'None');
+    
+    return mappedResults;
+
+  } catch (error) {
+    console.error('❌ eBay GTIN search error:', error);
+    throw error;
+  }
+}
+
+// Enhanced eBay search with GTIN support and better product parsing
+async function searchEbayForShoes(query: string, limit: number = 100, authenticityGuaranteeOnly: boolean = false, gtin?: string): Promise<EbayListing[]> {
   const ebayAppId = process.env.EBAY_APP_ID;
   const ebayClientSecret = process.env.EBAY_CLIENT_SECRET;
   
@@ -98,6 +180,9 @@ async function searchEbayForShoes(query: string, limit: number = 100, authentici
       // For style codes, search broadly without category restrictions
       const isStyleCode = query.match(/^[A-Z]{2}\d{4}-\d{3}$/i);
       
+      // Check if we have a GTIN for direct search
+      const hasGTIN = gtin && isValidGTIN(gtin);
+      
       // Enhance query to find actual shoes, not boxes
       const enhancedQuery = isStyleCode ? query : `${query} sneakers shoes -box -"box only" -empty`;
       
@@ -107,6 +192,12 @@ async function searchEbayForShoes(query: string, limit: number = 100, authentici
         sort: 'price', // Sort by price ascending to find deals
         fieldgroups: 'MATCHING_ITEMS,EXTENDED'
       });
+      
+      // Add GTIN as direct search parameter if available
+      if (hasGTIN) {
+        params.set('gtin', gtin);
+        console.log(`🏷️ Using GTIN for direct eBay search: ${gtin}`);
+      }
       
       console.log(`🔍 Enhanced eBay query: "${enhancedQuery}"`);
 
@@ -262,16 +353,108 @@ function parseShoeDetails(title: string): { brand?: string; model?: string; size
   return { brand, model, size, styleCode, possibleSizes };
 }
 
-// Extract GTIN (UPC/EAN) from eBay listing title or description
+// Enhanced GTIN extraction with validation and multiple formats
 function extractGTINFromTitle(title: string): string | undefined {
-  // Look for UPC (12 digits) or EAN (13 digits)
-  const upcMatch = title.match(/\b(\d{12})\b/);
-  if (upcMatch) return upcMatch[1];
+  // Remove common prefixes and clean the title
+  const cleanTitle = title
+    .replace(/\b(upc|ean|gtin|barcode|code):\s*/gi, '')
+    .replace(/\b(upc|ean|gtin|barcode|code)\s*#?\s*/gi, '')
+    .replace(/[^\d\s]/g, ' ') // Keep only digits and spaces
+    .replace(/\s+/g, ' ') // Normalize spaces
+    .trim();
   
-  const eanMatch = title.match(/\b(\d{13})\b/);
-  if (eanMatch) return eanMatch[1];
+  // Look for UPC (12 digits) - most common for US products
+  const upcMatch = cleanTitle.match(/\b(\d{12})\b/);
+  if (upcMatch && isValidUPC(upcMatch[1])) {
+    console.log(`🏷️ Found valid UPC: ${upcMatch[1]}`);
+    return upcMatch[1];
+  }
+  
+  // Look for EAN (13 digits) - international standard
+  const eanMatch = cleanTitle.match(/\b(\d{13})\b/);
+  if (eanMatch && isValidEAN(eanMatch[1])) {
+    console.log(`🏷️ Found valid EAN: ${eanMatch[1]}`);
+    return eanMatch[1];
+  }
+  
+  // Look for GTIN-14 (14 digits) - used for trade items
+  const gtin14Match = cleanTitle.match(/\b(\d{14})\b/);
+  if (gtin14Match && isValidGTIN14(gtin14Match[1])) {
+    console.log(`🏷️ Found valid GTIN-14: ${gtin14Match[1]}`);
+    return gtin14Match[1];
+  }
+  
+  // Look for any 8-14 digit sequence that might be a GTIN
+  const anyGtinMatch = cleanTitle.match(/\b(\d{8,14})\b/);
+  if (anyGtinMatch) {
+    const candidate = anyGtinMatch[1];
+    if (isValidGTIN(candidate)) {
+      console.log(`🏷️ Found valid GTIN: ${candidate}`);
+      return candidate;
+    }
+  }
   
   return undefined;
+}
+
+// Validate UPC (12 digits) using check digit algorithm
+function isValidUPC(upc: string): boolean {
+  if (!/^\d{12}$/.test(upc)) return false;
+  
+  const digits = upc.split('').map(Number);
+  let sum = 0;
+  
+  // UPC check digit calculation
+  for (let i = 0; i < 11; i++) {
+    sum += digits[i] * (i % 2 === 0 ? 3 : 1);
+  }
+  
+  const checkDigit = (10 - (sum % 10)) % 10;
+  return checkDigit === digits[11];
+}
+
+// Validate EAN (13 digits) using check digit algorithm
+function isValidEAN(ean: string): boolean {
+  if (!/^\d{13}$/.test(ean)) return false;
+  
+  const digits = ean.split('').map(Number);
+  let sum = 0;
+  
+  // EAN check digit calculation
+  for (let i = 0; i < 12; i++) {
+    sum += digits[i] * (i % 2 === 0 ? 1 : 3);
+  }
+  
+  const checkDigit = (10 - (sum % 10)) % 10;
+  return checkDigit === digits[12];
+}
+
+// Validate GTIN-14 (14 digits)
+function isValidGTIN14(gtin: string): boolean {
+  if (!/^\d{14}$/.test(gtin)) return false;
+  
+  const digits = gtin.split('').map(Number);
+  let sum = 0;
+  
+  // GTIN-14 check digit calculation
+  for (let i = 0; i < 13; i++) {
+    sum += digits[i] * (i % 2 === 0 ? 3 : 1);
+  }
+  
+  const checkDigit = (10 - (sum % 10)) % 10;
+  return checkDigit === digits[13];
+}
+
+// Generic GTIN validation for any length
+function isValidGTIN(gtin: string): boolean {
+  const length = gtin.length;
+  
+  if (length === 12) return isValidUPC(gtin);
+  if (length === 13) return isValidEAN(gtin);
+  if (length === 14) return isValidGTIN14(gtin);
+  
+  // For other lengths, use basic format validation
+  return /^\d{8,14}$/.test(gtin);
 }
 
 // Extract colorway from eBay listing title
@@ -437,26 +620,38 @@ function generateStockXQueries(ebayTitle: string, parsedDetails: { brand?: strin
   }
   
   // Remove duplicates and return
-  const uniqueQueries = [...new Set(queries)];
+  const uniqueQueries = Array.from(new Set(queries));
   console.log(`🔍 Generated ${uniqueQueries.length} queries for "${ebayTitle}":`);
   uniqueQueries.forEach((q, i) => console.log(`  ${i + 1}. "${q}"`));
   return uniqueQueries;
 }
 
-// Enhanced query generation using all available identifiers
-function generateEnhancedStockXQueries(productDetails: any): string[] {
+// Enhanced query generation using all available identifiers with priority order
+function generateEnhancedStockXQueries(productDetails: any): { 
+  queries: string[]; 
+  hasGTIN: boolean; 
+  hasStyleCode: boolean;
+  gtin?: string; 
+  styleCode?: string;
+} {
   const queries: string[] = [];
+  let hasGTIN = false;
+  let hasStyleCode = false;
+  let gtin: string | undefined;
+  let styleCode: string | undefined;
   
-  // Priority 1: GTIN (most accurate if available)
-  if (productDetails.gtin) {
-    queries.push(productDetails.gtin);
-    console.log(`🎯 Added GTIN query: ${productDetails.gtin}`);
+  // Priority 1: Style Code (most accurate for sneakers, required field in StockX API) - will be handled separately
+  if (productDetails.styleCode) {
+    styleCode = productDetails.styleCode;
+    hasStyleCode = true;
+    console.log(`🎯 Style code available for direct search: ${productDetails.styleCode}`);
   }
   
-  // Priority 2: Style code
-  if (productDetails.styleCode) {
-    queries.push(productDetails.styleCode);
-    console.log(`🎯 Added style code query: ${productDetails.styleCode}`);
+  // Priority 2: GTIN (very accurate if available) - will be handled separately
+  if (productDetails.gtin) {
+    gtin = productDetails.gtin;
+    hasGTIN = true;
+    console.log(`🎯 GTIN available for direct search: ${productDetails.gtin}`);
   }
   
   // Priority 3: Brand + Model + Colorway combinations
@@ -477,15 +672,196 @@ function generateEnhancedStockXQueries(productDetails: any): string[] {
   queries.push(...originalQueries);
   
   // Remove duplicates and return
-  const uniqueQueries = [...new Set(queries)];
+  const uniqueQueries = Array.from(new Set(queries));
   console.log(`🔍 Enhanced query generation for "${productDetails.originalTitle}": ${uniqueQueries.join(', ')}`);
-  return uniqueQueries;
+  return { queries: uniqueQueries, hasGTIN, hasStyleCode, gtin, styleCode };
 }
 
 // Generate StockX search query from eBay listing - supports both style codes and product names
 function generateStockXQuery(ebayTitle: string, parsedDetails: { brand?: string; model?: string; styleCode?: string }): string {
   const queries = generateStockXQueries(ebayTitle, parsedDetails);
   return queries[0] || ebayTitle.split(' ').slice(0, 3).join(' ');
+}
+
+// Search StockX using GTIN/UPC/EAN for exact product matches
+async function searchStockXByGTIN(gtin: string, request: NextRequest): Promise<any[]> {
+  try {
+    console.log(`🔍 Searching StockX by GTIN: ${gtin}`);
+    
+    // Get authentication tokens from cookies
+    const accessToken = request.cookies.get('stockx_access_token')?.value;
+    const apiKey = process.env.STOCKX_API_KEY;
+    
+    if (!accessToken || !apiKey) {
+      console.log(`❌ Missing StockX credentials for GTIN search`);
+      return [];
+    }
+    
+    // Try multiple StockX search approaches for GTIN
+    const searchQueries = [
+      gtin, // Direct GTIN search
+      `UPC:${gtin}`, // UPC prefix
+      `EAN:${gtin}`, // EAN prefix
+      `GTIN:${gtin}`, // GTIN prefix
+      `Barcode:${gtin}`, // Barcode prefix
+    ];
+    
+    for (const searchQuery of searchQueries) {
+      try {
+        console.log(`🔍 Trying GTIN search query: "${searchQuery}"`);
+        
+        const searchApiParams = new URLSearchParams({
+          query: searchQuery,
+          pageNumber: '1',
+          pageSize: '10'
+        });
+
+        const searchUrl = `https://api.stockx.com/v2/catalog/search?${searchApiParams.toString()}`;
+        console.log(`🌐 GTIN StockX API call: ${searchUrl}`);
+        
+        const response = await fetch(searchUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'X-API-Key': apiKey,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'FlipFlow/1.0'
+          }
+        });
+        
+        console.log(`📡 GTIN StockX API response status: ${response.status}`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          const products = data.products || [];
+          
+          console.log(`📦 GTIN StockX response: Found ${products.length} products`);
+          
+          if (products.length > 0) {
+            console.log(`✅ GTIN search successful with query: "${searchQuery}"`);
+            console.log(`📋 GTIN matches:`, products.slice(0, 3).map((p: any) => ({
+              id: p.id || p.uuid || p.productId,
+              title: p.title || p.name,
+              brand: p.brand,
+              urlKey: p.urlKey,
+              productId: p.productId
+            })));
+            
+            return products;
+          }
+        } else {
+          const errorText = await response.text();
+          console.log(`❌ GTIN search failed (${response.status}): ${errorText}`);
+        }
+        
+        // Small delay between attempts
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+      } catch (error) {
+        console.log(`❌ Error with GTIN search query "${searchQuery}":`, error);
+        continue;
+      }
+    }
+    
+    console.log(`❌ No StockX products found for GTIN: ${gtin}`);
+    return [];
+    
+  } catch (error) {
+    console.log('❌ GTIN StockX search error:', error);
+    return [];
+  }
+}
+
+// Search StockX using Style Code for exact product matches (based on StockX API schema)
+async function searchStockXByStyleCode(styleCode: string, request: NextRequest): Promise<any[]> {
+  try {
+    console.log(`🔍 Searching StockX by Style Code: ${styleCode}`);
+    
+    // Get authentication tokens from cookies
+    const accessToken = request.cookies.get('stockx_access_token')?.value;
+    const apiKey = process.env.STOCKX_API_KEY;
+    
+    if (!accessToken || !apiKey) {
+      console.log(`❌ Missing StockX credentials for style code search`);
+      return [];
+    }
+    
+    // Try multiple StockX search approaches for style code
+    const searchQueries = [
+      styleCode, // Direct style code search
+      `style:${styleCode}`, // Style prefix
+      `styleCode:${styleCode}`, // StyleCode prefix
+      `code:${styleCode}`, // Code prefix
+      `SKU:${styleCode}`, // SKU prefix
+    ];
+    
+    for (const searchQuery of searchQueries) {
+      try {
+        console.log(`🔍 Trying style code search query: "${searchQuery}"`);
+        
+        const searchApiParams = new URLSearchParams({
+          query: searchQuery,
+          pageNumber: '1',
+          pageSize: '10'
+        });
+
+        const searchUrl = `https://api.stockx.com/v2/catalog/search?${searchApiParams.toString()}`;
+        console.log(`🌐 Style Code StockX API call: ${searchUrl}`);
+        
+        const response = await fetch(searchUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'X-API-Key': apiKey,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'FlipFlow/1.0'
+          }
+        });
+        
+        console.log(`📡 Style Code StockX API response status: ${response.status}`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          const products = data.products || [];
+          
+          console.log(`📦 Style Code StockX response: Found ${products.length} products`);
+          
+          if (products.length > 0) {
+            console.log(`✅ Style code search successful with query: "${searchQuery}"`);
+            console.log(`📋 Style code matches:`, products.slice(0, 3).map((p: any) => ({
+              id: p.id || p.uuid || p.productId,
+              title: p.title || p.name,
+              brand: p.brand,
+              urlKey: p.urlKey,
+              productId: p.productId,
+              styleCode: p.styleCode || p.sku
+            })));
+            
+            return products;
+          }
+        } else {
+          const errorText = await response.text();
+          console.log(`❌ Style code search failed (${response.status}): ${errorText}`);
+        }
+        
+        // Small delay between attempts
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+      } catch (error) {
+        console.log(`❌ Error with style code search query "${searchQuery}":`, error);
+        continue;
+      }
+    }
+    
+    console.log(`❌ No StockX products found for style code: ${styleCode}`);
+    return [];
+    
+  } catch (error) {
+    console.log('❌ Style code StockX search error:', error);
+    return [];
+  }
 }
 
 // Search StockX for matching products using direct API call (no HTTP intermediary)
@@ -796,8 +1172,25 @@ export async function GET(request: NextRequest) {
     console.log(`🔍 Searching eBay for: "${query}" with minProfit: ${minProfitMargin}%, maxPrice: $${maxPrice}, newOnly: ${newItemsOnly}, authenticityGuarantee: ${authenticityGuaranteeOnly}`);
     
     // Step 1: Search eBay for listings
-    const ebayListings = await searchEbayForShoes(query, limit, authenticityGuaranteeOnly);
-    console.log(`📦 Found ${ebayListings.length} eBay listings`);
+    // Check if query contains a GTIN for direct eBay search
+    const extractedGTIN = extractGTINFromTitle(query);
+    let ebayListings: EbayListing[] = [];
+    
+    if (extractedGTIN) {
+      console.log(`🏷️ GTIN detected in query, searching eBay by GTIN: ${extractedGTIN}`);
+      try {
+        ebayListings = await searchEbayByGTIN(extractedGTIN, limit);
+        console.log(`📦 Found ${ebayListings.length} eBay listings by GTIN`);
+      } catch (error) {
+        console.error(`❌ eBay GTIN search failed, falling back to keyword search:`, error);
+        ebayListings = await searchEbayForShoes(query, limit, authenticityGuaranteeOnly);
+      }
+    } else {
+      console.log(`🔍 No GTIN detected, searching eBay by keyword: "${query}"`);
+      ebayListings = await searchEbayForShoes(query, limit, authenticityGuaranteeOnly);
+    }
+    
+    console.log(`📦 Found ${ebayListings.length} eBay listings total`);
     console.log(`📦 Sample listing:`, ebayListings[0] || 'None');
     
     if (ebayListings.length === 0) {
@@ -897,34 +1290,74 @@ export async function GET(request: NextRequest) {
       
       console.log(`📝 Enhanced details:`, enhancedDetails);
       
-      // Generate multiple StockX search queries to try (enhanced with GTIN/colorway)
-      const stockxQueries = generateEnhancedStockXQueries(enhancedDetails);
+      // Generate multiple StockX search queries to try (enhanced with GTIN/style code/colorway)
+      const { queries: stockxQueries, hasGTIN, hasStyleCode, gtin, styleCode } = generateEnhancedStockXQueries(enhancedDetails);
       console.log(`🔍 Generated ${stockxQueries.length} enhanced StockX queries:`, stockxQueries);
       
       let stockxProducts: any[] = [];
       let usedQuery = '';
+      let searchMethod: 'gtin' | 'stylecode' | 'text' = 'text';
       
       // Log StockX lookup attempt
       console.log(`🔍 Looking up on StockX...`);
       
-      // Try each query until we find matches
-      for (const query of stockxQueries) {
-        console.log(`🔍 Trying StockX query: "${query}"`);
+      // Priority 1: Try Style Code search first (most accurate for sneakers, required in StockX API)
+      if (hasStyleCode && styleCode) {
+        console.log(`🎯 Attempting Style Code search first: ${styleCode}`);
         try {
-          stockxProducts = await searchStockXForProduct(query, request);
-          console.log(`📈 Found ${stockxProducts.length} StockX matches for "${query}"`);
+          stockxProducts = await searchStockXByStyleCode(styleCode, request);
+          console.log(`📈 Style code search found ${stockxProducts.length} StockX matches`);
           
           if (stockxProducts.length > 0) {
-            usedQuery = query;
-            console.log(`✅ StockX found: ${stockxProducts[0].title} - $${stockxProducts[0].price || 'N/A'}`);
-            break;
+            usedQuery = styleCode;
+            searchMethod = 'stylecode';
+            console.log(`✅ Style code search successful: ${stockxProducts[0].title || stockxProducts[0].name} - $${stockxProducts[0].price || 'N/A'}`);
           }
         } catch (error) {
-          console.error(`❌ Error searching StockX for "${query}":`, error);
+          console.error(`❌ Error with style code search:`, error);
         }
+      }
+      
+      // Priority 2: Try GTIN search if style code search failed or not available
+      if (stockxProducts.length === 0 && hasGTIN && gtin) {
+        console.log(`🎯 Attempting GTIN search: ${gtin}`);
+        try {
+          stockxProducts = await searchStockXByGTIN(gtin, request);
+          console.log(`📈 GTIN search found ${stockxProducts.length} StockX matches`);
+          
+          if (stockxProducts.length > 0) {
+            usedQuery = gtin;
+            searchMethod = 'gtin';
+            console.log(`✅ GTIN search successful: ${stockxProducts[0].title || stockxProducts[0].name} - $${stockxProducts[0].price || 'N/A'}`);
+          }
+        } catch (error) {
+          console.error(`❌ Error with GTIN search:`, error);
+        }
+      }
+      
+      // Priority 3: Fall back to text-based search if both style code and GTIN searches failed
+      if (stockxProducts.length === 0) {
+        console.log(`🔍 Style code and GTIN searches ${hasStyleCode || hasGTIN ? 'failed' : 'not available'}, trying text-based search...`);
         
-        // Small delay between searches to be respectful
-        await new Promise(resolve => setTimeout(resolve, 100));
+        for (const query of stockxQueries) {
+          console.log(`🔍 Trying StockX text query: "${query}"`);
+          try {
+            stockxProducts = await searchStockXForProduct(query, request);
+            console.log(`📈 Found ${stockxProducts.length} StockX matches for "${query}"`);
+            
+            if (stockxProducts.length > 0) {
+              usedQuery = query;
+              searchMethod = 'text';
+              console.log(`✅ Text search successful: ${stockxProducts[0].title || stockxProducts[0].name} - $${stockxProducts[0].price || 'N/A'}`);
+              break;
+            }
+          } catch (error) {
+            console.error(`❌ Error searching StockX for "${query}":`, error);
+          }
+          
+          // Small delay between searches to be respectful
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
       }
       
       if (stockxProducts.length === 0) {
@@ -958,9 +1391,20 @@ export async function GET(request: NextRequest) {
             if (arbitrage) {
               console.log(`💡 Arbitrage calc: Profit $${arbitrage.profit.toFixed(2)} (${arbitrage.profitMargin.toFixed(1)}%) - Min required: ${minProfitMargin}%`);
               
-              // Calculate match confidence
-              arbitrage.confidence = calculateMatchConfidence(listing.title, stockxProduct.title, parsedDetails);
+              // Calculate match confidence (higher for style code and GTIN matches)
+              const baseConfidence = calculateMatchConfidence(listing.title, stockxProduct.title, parsedDetails);
+              let confidenceBoost = 0;
+              if (searchMethod === 'stylecode') {
+                confidenceBoost = 25; // Style code matches are most accurate (required in StockX API)
+              } else if (searchMethod === 'gtin') {
+                confidenceBoost = 20; // GTIN matches are very accurate
+              }
+              
+              arbitrage.confidence = Math.min(baseConfidence + confidenceBoost, 100);
               arbitrage.matchedProduct = `${stockxProduct.title} (found with: "${usedQuery}")`;
+              arbitrage.searchMethod = searchMethod as 'gtin' | 'stylecode' | 'text';
+              arbitrage.gtin = gtin;
+              arbitrage.styleCode = styleCode;
               
               // TEMPORARILY: Show ALL matches regardless of profitability for debugging
               opportunities.push(arbitrage);
@@ -1005,7 +1449,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: false,
       error: 'Failed to search for arbitrage opportunities',
-      details: error.message
+      details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 });
   }
 }

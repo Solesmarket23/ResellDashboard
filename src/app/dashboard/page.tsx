@@ -38,7 +38,7 @@ import OnboardingQuestionnaire from '../../components/OnboardingQuestionnaire';
 import AliasInventory from '../../components/AliasInventory';
 import AliasListingCreator from '../../components/AliasListingCreator';
 import AliasOrderManagement from '../../components/AliasOrderManagement';
-import PurchaseManagement from '../../components/PurchaseManagement';
+import ProfitOpportunityScanner from '../../components/ProfitOpportunityScanner';
 
 export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -57,7 +57,7 @@ export default function DashboardPage() {
   useEffect(() => {
     setIsClient(true);
     
-    // Check authentication - require Google authentication for dashboard access
+    // Check authentication - site password is sufficient for dashboard access
     if (!loading && !user) {
       // Check if user has site password authentication
       const siteUserId = localStorage.getItem('siteUserId');
@@ -67,10 +67,10 @@ export default function DashboardPage() {
         window.location.href = '/password-protect';
         return;
       } else {
-        // User has site password but no Firebase authentication, redirect to login
-        console.log('🔐 Site password auth found, but no Firebase auth, redirecting to login');
-        window.location.href = '/login?from=/dashboard';
-        return;
+        // User has site password authentication, allow dashboard access
+        console.log('🔐 Site password auth found, allowing dashboard access');
+        // No redirect needed - user can access dashboard with site password
+        // The dashboard will render even without Firebase user
       }
     }
     
@@ -78,13 +78,19 @@ export default function DashboardPage() {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       const section = urlParams.get('section');
+      console.log('🔍 Dashboard: Current URL:', window.location.href);
+      console.log('🔍 Dashboard: URL params:', Object.fromEntries(urlParams.entries()));
+      
       if (section) {
+        console.log('🔍 Dashboard: Found section in URL:', section);
         setCurrentSection(section);
       } else {
+        console.log('🔍 Dashboard: No section in URL, defaulting to dashboard');
         // Set default section in URL
         const newUrl = new URL(window.location.href);
         newUrl.searchParams.set('section', 'dashboard');
         window.history.replaceState({}, '', newUrl.toString());
+        setCurrentSection('dashboard');
       }
     }
   }, [user, loading, router]);
@@ -108,11 +114,13 @@ export default function DashboardPage() {
   const handleItemClick = (item: string) => {
     // Convert section name to URL-friendly format (e.g., "Market Research" -> "market-research")
     const urlSection = item.toLowerCase().replace(/\s+/g, '-');
+    console.log('🔍 Dashboard: Navigating to section:', urlSection);
     
     // Update URL only if we're on the client
     if (typeof window !== 'undefined') {
       const newUrl = new URL(window.location.href);
       newUrl.searchParams.set('section', urlSection);
+      console.log('🔍 Dashboard: Updating URL to:', newUrl.toString());
       window.history.pushState({}, '', newUrl.toString());
     }
     
@@ -153,8 +161,6 @@ export default function DashboardPage() {
         );
       case 'purchases':
         return <Purchases />;
-      case 'purchase-management':
-        return <PurchaseManagement />;
       case 'deliveries':
         return <Deliveries />;
       case 'sales':
@@ -226,6 +232,8 @@ export default function DashboardPage() {
         return <StockXArbitrage />;
       case 'ebay-stockx-arbitrage':
         return <EbayStockXArbitrage />;
+      case 'profit-scanner':
+        return <ProfitOpportunityScanner />;
       case 'stockx-repricing':
         return <StockXRepricing />;
       case 'stockx-releases':
@@ -301,18 +309,31 @@ export default function DashboardPage() {
     );
   }
 
-  // If not loading and no user, show redirecting message
-  // The useEffect will handle the actual redirect
+  // If not loading and no user, check if we have site password auth
   if (!user) {
-    return (
-      <div className={`flex h-screen overflow-hidden ${currentTheme.colors.background}`}>
-        <div className="flex-1 flex items-center justify-center">
-          <div className={`text-lg ${isNeon ? 'text-white' : 'text-gray-900'}`}>
-            Redirecting to login...
+    console.log('🔍 Dashboard: No Firebase user found, checking site password auth...');
+    const siteUserId = localStorage.getItem('siteUserId');
+    console.log('🔍 Dashboard: siteUserId from localStorage:', siteUserId);
+    
+    // If we have site password auth, allow dashboard access
+    if (siteUserId) {
+      console.log('🔍 Dashboard: Site password auth found, allowing dashboard access');
+      // Continue to render dashboard - the useEffect will handle the rest
+    } else {
+      // No authentication at all, show redirecting message
+      return (
+        <div className={`flex h-screen overflow-hidden ${currentTheme.colors.background}`}>
+          <div className="flex-1 flex items-center justify-center">
+            <div className={`text-lg ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+              Redirecting to login...
+            </div>
+            <div className={`text-sm mt-2 ${isNeon ? 'text-slate-400' : 'text-gray-500'}`}>
+              Debug: No authentication found
+            </div>
           </div>
         </div>
-      </div>
-    );
+      );
+    }
   }
 
   return (

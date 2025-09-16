@@ -91,8 +91,11 @@ function createDefaultOrderInfo(): OrderInfo {
 
 export class OrderConfirmationParser {
   private supportedMerchants: string[] = ['stockx'];
+  private debug: boolean = false;
   
-  constructor() {}
+  constructor(debug: boolean = false) {
+    this.debug = debug;
+  }
   
   /**
    * Parse an email and extract order information
@@ -184,23 +187,56 @@ export class OrderConfirmationParser {
       emailSubject.includes(pattern) || htmlContent.includes(pattern)
     );
     
+    console.log(`🔍 EMAIL SUBJECT CHECK: "${emailSubject}"`);
+    console.log(`🔍 SHIPPING PATTERNS CHECK:`, shippingSubjectPatterns.map(pattern => ({
+      pattern,
+      subjectMatch: emailSubject.includes(pattern),
+      htmlMatch: htmlContent.includes(pattern)
+    })));
+    console.log(`🔍 IS SHIPPING EMAIL: ${isShippingEmail}`);
+    
     // Also check for delivery confirmation emails
     const isDeliveryConfirmation = htmlContent.toLowerCase().includes('order delivered') ||
                                    htmlContent.toLowerCase().includes('has been delivered') ||
-                                   htmlContent.toLowerCase().includes('xpress ship order delivered');
+                                   htmlContent.toLowerCase().includes('xpress ship order delivered') ||
+                                   emailSubject.toLowerCase().includes('xpress ship order delivered') ||
+                                   emailSubject.toLowerCase().includes('order delivered') ||
+                                   emailSubject.toLowerCase().includes('🎉');
+    
+    // Check for shipped confirmation emails
+    const isShippedConfirmation = htmlContent.toLowerCase().includes('order verified & shipped') ||
+                                  htmlContent.toLowerCase().includes('has been shipped') ||
+                                  htmlContent.toLowerCase().includes('order shipped') ||
+                                  emailSubject.toLowerCase().includes('order verified & shipped') ||
+                                  emailSubject.toLowerCase().includes('order shipped') ||
+                                  emailSubject.toLowerCase().includes('✅');
     
     if (isShippingEmail) {
       orderInfo.shipping_status = "shipped";
-      // Extract tracking number ONLY from shipping confirmation emails
+      // Extract tracking number from shipping confirmation emails
       console.log(`📦 SHIPPING EMAIL DETECTED: "${emailSubject}" - Extracting tracking...`);
+      this.extractStockXTrackingInfo(htmlContent, textContent, orderInfo);
+    } else if (isShippedConfirmation) {
+      orderInfo.shipping_status = "shipped";
+      // Extract tracking number from shipped confirmation emails
+      console.log(`📦 SHIPPED EMAIL DETECTED: "${emailSubject}" - Extracting tracking...`);
+      console.log(`📦 SHIPPED DEBUG: Order number: ${orderInfo.order_number}`);
       this.extractStockXTrackingInfo(htmlContent, textContent, orderInfo);
     } else if (isDeliveryConfirmation) {
       orderInfo.shipping_status = "delivered";
-      // Don't extract tracking from delivery emails - they usually don't have it
-      console.log(`📬 DELIVERY EMAIL DETECTED: "${emailSubject}" - No tracking extraction`);
+      // Try to extract tracking from delivery emails too - sometimes they have it
+      console.log(`📬 DELIVERY EMAIL DETECTED: "${emailSubject}" - Attempting tracking extraction...`);
+      console.log(`📬 DELIVERY DEBUG: Order number: ${orderInfo.order_number}`);
+      this.extractStockXTrackingInfo(htmlContent, textContent, orderInfo);
     } else {
       orderInfo.shipping_status = "ordered";
+      console.log(`📦 ORDER EMAIL DETECTED: "${emailSubject}" - Setting status to ordered`);
     }
+    
+    // ALWAYS attempt tracking extraction for ALL StockX emails
+    // Some order confirmation emails may contain tracking numbers
+    console.log(`🔍 ATTEMPTING TRACKING EXTRACTION for all StockX emails...`);
+    this.extractStockXTrackingInfo(htmlContent, textContent, orderInfo);
     
     // Initial order type detection from subject/content
     if (htmlContent.toLowerCase().includes('xpress order confirmed')) {
@@ -222,6 +258,10 @@ export class OrderConfirmationParser {
    * Extract product details from StockX email
    */
   private extractStockXProductInfo(htmlContent: string, textContent: string, orderInfo: OrderInfo): void {
+    console.log(`\n🚀 ===== PRODUCT INFO EXTRACTION START =====`);
+    console.log(`🔧 STARTING PRODUCT INFO EXTRACTION for ${orderInfo.order_number || 'UNKNOWN'}`);
+    console.log(`🚀 ===== PRODUCT INFO EXTRACTION START =====\n`);
+    
     // Product name patterns - updated to handle both order confirmations and shipping confirmations
     const productPatterns = [
       // Patterns for shipping confirmation emails
@@ -257,91 +297,290 @@ export class OrderConfirmationParser {
       }
     }
     
-    // Extract size - comprehensive patterns for StockX emails (avoiding CSS matches)
+    // Extract size - COMPREHENSIVE patterns for StockX emails (100% accuracy required)
+    if (this.debug) {
+      console.log(`\n🔍 ===== SIZE EXTRACTION DEBUG START =====`);
+      console.log(`🔍 EXTRACTING SIZE from order: ${orderInfo.order_number || 'UNKNOWN'}`);
+      console.log(`🔍 HTML CONTENT LENGTH: ${htmlContent.length} characters`);
+      console.log(`🔍 HTML CONTENT SAMPLE: ${htmlContent.substring(0, 500)}...`);
+    }
+    
+    // Special debug for the specific order we're testing
+    if (orderInfo.order_number === '77272475') {
+      console.log(`🔍 *** TESTING ORDER 77272475 ***`);
+      console.log(`🔍 FULL HTML CONTENT: ${htmlContent}`);
+    }
+    
+    if (this.debug) {
+      console.log(`🔍 ===== SIZE EXTRACTION DEBUG START =====\n`);
+    }
+    
+    // Look for size patterns in the HTML content
+    const sizeMatches = htmlContent.match(/Size:\s*([^<\n\r!]+?)/gi);
+    if (this.debug) {
+      if (sizeMatches) {
+        console.log(`🔍 FOUND SIZE MATCHES: ${sizeMatches.join(', ')}`);
+      } else {
+        console.log(`🔍 NO SIZE MATCHES FOUND in HTML`);
+      }
+    }
+    
+    // Test with a simple pattern to see if ANY size text is found
+    const simpleSizeMatches = htmlContent.match(/Size/gi);
+    if (simpleSizeMatches) {
+      console.log(`🔍 FOUND 'Size' TEXT: ${simpleSizeMatches.length} occurrences`);
+    } else {
+      console.log(`🔍 NO 'Size' TEXT FOUND at all`);
+    }
+    
+    // Look for the specific list item pattern
+    const listItemMatches = htmlContent.match(/<li[^>]*class="attributes"[^>]*>.*?Size:.*?<\/li>/gi);
+    if (listItemMatches) {
+      console.log(`🔍 FOUND LIST ITEM MATCHES: ${listItemMatches.join(', ')}`);
+    } else {
+      console.log(`🔍 NO LIST ITEM MATCHES FOUND`);
+    }
+    
+    // Test the exact pattern from the email you showed me
+    const exactPattern = htmlContent.match(/<li[^>]*class="attributes"[^>]*style="[^"]*"[^>]*>\s*Size:\s*([^<\n\r!]+?)\s*<\/li>/gi);
+    if (exactPattern) {
+      console.log(`🔍 FOUND EXACT PATTERN MATCHES: ${exactPattern.join(', ')}`);
+    } else {
+      console.log(`🔍 NO EXACT PATTERN MATCHES FOUND`);
+    }
+    
+    // Test specifically for "US M 11.5" pattern
+    const usPattern = htmlContent.match(/Size:\s*US\s+[A-Z0-9\.\s]+/gi);
+    if (usPattern) {
+      console.log(`🔍 FOUND US SIZE PATTERNS: ${usPattern.join(', ')}`);
+    } else {
+      console.log(`🔍 NO US SIZE PATTERNS FOUND`);
+    }
+    
     const sizePatterns = [
-      // StockX specific patterns from the provided email format
-      /<li[^>]*class="attributes"[^>]*style="[^"]*">.*?Size:\s*([^<\n\r!]+?)<\/li>/i,
-      /<li[^>]*class="attributes"[^>]*>.*?Size:\s*([^<\n\r!]+?)<\/li>/i,
-      
-      // HTML list items with size information (most specific first)
-      /<li[^>]*>.*?(?:U\.S\.\s*)?(?:Men's|Women's)\s*Size:\s*([^<\n\r!]+?)<\/li>/i,
+      // 1. StockX specific HTML list patterns (highest priority)
+      /<li[^>]*class="attributes"[^>]*style="[^"]*"[^>]*>Size:\s*([^<\n\r!]+?)<\/li>/i,
+      /<li[^>]*class="attributes"[^>]*>Size:\s*([^<\n\r!]+?)<\/li>/i,
       /<li[^>]*>.*?Size:\s*([^<\n\r!]+?)<\/li>/i,
       
-      // Text content patterns (not in HTML tags or CSS) - more specific for US sizing
-      /(?:^|\n|\s)Size:\s*(US\s+[MWF]?\s*\d+(?:\.\d+)?[WC]?)(?:\n|\s|$)/im,
-      /(?:^|\n|\s)Size:\s*([^\n\r!;{}\s]+(?:\s+[MWF]?\s*\d+(?:\.\d+)?[WC]?)?)(?:\n|\s|$)/im,
+      // 1.5. More specific StockX patterns for the exact format we see
+      /<li[^>]*class="attributes"[^>]*style="[^"]*"[^>]*>\s*Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
+      /<li[^>]*class="attributes"[^>]*>\s*Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
       
-      // Generic text patterns
-      /(?:^|\n)\s*(?:U\.S\.\s*)?(?:Men's|Women's)\s*Size:\s*([^\n\r!;{}]+?)(?:\n|$)/im,
-      /(?:^|\n)\s*Size:\s*([^\n\r!;{}]+?)(?:\n|$)/im,
+      // 1.6. Pattern for sizes without "Size:" prefix (like "US L") - more specific
+      /<li[^>]*class="attributes"[^>]*style="[^"]*"[^>]*>\s*(US\s+[A-Z0-9\.\s]+?)\s*<\/li>/i,
+      /<li[^>]*class="attributes"[^>]*>\s*(US\s+[A-Z0-9\.\s]+?)\s*<\/li>/i,
       
-      // Product title size extraction (avoid CSS)
+      // 2. Table cell patterns
+      /<td[^>]*>Size:\s*([^<\n\r!]+?)<\/td>/i,
+      /<td[^>]*>.*?Size:\s*([^<\n\r!]+?)<\/td>/i,
+      
+      // 3. Generic HTML patterns
+      /<[^>]*>Size:\s*([^<\n\r!]+?)<\/[^>]*>/i,
+      /Size:\s*([^<\n\r!]+?)(?=<|$)/i,
+      
+      // 4. Text patterns with context
+      /(?:^|\n|\s)Size:\s*(US\s+[A-Z0-9\.\s]+?)(?:\n|\s|$)/im,
+      /(?:^|\n|\s)Size:\s*([A-Z0-9\.\s]+?)(?:\n|\s|$)/im,
+      
+      // 5. Product title patterns
       /Size\s+US\s+([A-Z0-9\.\s]+?)(?:\s*[,;\n]|$)/i,
-      /Size\s+([XSML]{1,3})(?:\s|$)/i,
-      /Size\s+(\d+(?:\.\d+)?[WC]?)(?:\s|$)/i,
+      /Size\s+([A-Z0-9\.\s]+?)(?:\s*[,;\n]|$)/i,
       
-      // Parenthetical size (common in product names)
-      /\(Size\s*([^)!;{}]+)\)/i
+      // 6. Parenthetical patterns
+      /\(Size\s*([^)!;{}]+)\)/i,
+      /\[Size\s*([^\]!;{}]+)\]/i,
+      
+      // 7. Colon patterns
+      /Size:\s*US\s+([A-Z0-9\.\s]+?)(?:\s|$)/i,
+      /Size:\s*([A-Z0-9\.\s]+?)(?:\s|$)/i,
+      
+      // 8. Dash patterns
+      /Size\s*-\s*US\s+([A-Z0-9\.\s]+?)(?:\s|$)/i,
+      /Size\s*-\s*([A-Z0-9\.\s]+?)(?:\s|$)/i,
+      
+      // 9. Any remaining patterns
+      /Size[:\s]+([A-Z0-9\.\s]+?)(?:\s|$)/i,
+      /Size[:\s]*US[:\s]*([A-Z0-9\.\s]+?)(?:\s|$)/i,
+      
+      // 10. Additional patterns for better coverage
+      /Size\s*:\s*([A-Z0-9\.\s]+?)(?:\s|$|,|;|\.)/i,
+      /Size\s*-\s*([A-Z0-9\.\s]+?)(?:\s|$|,|;|\.)/i,
+      /Size\s*=\s*([A-Z0-9\.\s]+?)(?:\s|$|,|;|\.)/i,
+      /([A-Z0-9\.\s]+?)\s*Size(?:\s|$|,|;|\.)/i,
+      /US\s*Size\s*([A-Z0-9\.\s]+?)(?:\s|$|,|;|\.)/i,
+      /Size\s*US\s*([A-Z0-9\.\s]+?)(?:\s|$|,|;|\.)/i
     ];
     
-    for (const pattern of sizePatterns) {
+    let sizeFound = false;
+    
+    for (let i = 0; i < sizePatterns.length; i++) {
+      const pattern = sizePatterns[i];
       const match = htmlContent.match(pattern);
       if (match) {
         let size = match[1].trim();
+        if (this.debug) {
+          console.log(`📏 SIZE PATTERN ${i+1} MATCH for ${orderInfo.order_number}: "${size}"`);
+          console.log(`📏 PATTERN: ${pattern}`);
+          console.log(`📏 FULL MATCH: "${match[0]}"`);
+          console.log(`📏 CONTEXT: "${htmlContent.substring(Math.max(0, match.index - 50), match.index + match[0].length + 50)}"`);
+        }
         
-        // Skip if this looks like CSS or code
-        if (size.includes('!important') || 
-            size.includes('webkit') || 
-            size.includes('font-family') ||
-            size.includes(';') ||
-            size.includes('{') ||
-            size.includes('}') ||
-            size.includes('%') ||
-            size.length > 20) {
-          console.log(`🚫 SKIPPING CSS-like match: "${size}"`);
+        // Skip if this looks like CSS or code - comprehensive CSS filtering
+        const cssKeywords = [
+          '!important', 'webkit', 'font-family', 'font-size', 'line-height', 
+          'padding', 'margin', 'width', 'height', 'border', 'color', 'background',
+          'display', 'position', 'float', 'clear', 'overflow', 'visibility',
+          'z-index', 'opacity', 'transform', 'transition', 'animation',
+          'inherit', 'initial', 'unset', 'revert', 'auto', 'none', 'normal',
+          'block', 'inline', 'flex', 'grid', 'table', 'absolute', 'relative',
+          'fixed', 'static', 'sticky', 'left', 'right', 'top', 'bottom',
+          'center', 'justify', 'align', 'space', 'between', 'around', 'evenly',
+          'start', 'end', 'baseline', 'stretch', 'row', 'column', 'wrap',
+          'nowrap', 'reverse', 'grow', 'shrink', 'basis', 'order', 'gap',
+          'px', 'em', 'rem', '%', 'vh', 'vw', 'vmin', 'vmax', 'pt', 'pc',
+          'in', 'cm', 'mm', 'ex', 'ch', 'fr', 'deg', 'rad', 'grad', 'turn',
+          's', 'ms', 'Hz', 'kHz', 'dpi', 'dpcm', 'dppx', 'x', 'y', 'z',
+          'rgb', 'rgba', 'hsl', 'hsla', 'hwb', 'lab', 'lch', 'oklab', 'oklch',
+          'var(', 'calc(', 'clamp(', 'min(', 'max(', 'attr(', 'url(',
+          'linear-gradient', 'radial-gradient', 'conic-gradient',
+          'repeating-linear-gradient', 'repeating-radial-gradient',
+          'repeating-conic-gradient', 'cubic-bezier', 'steps', 'ease',
+          'ease-in', 'ease-out', 'ease-in-out', 'linear', 'ease',
+          'serif', 'sans-serif', 'monospace', 'cursive', 'fantasy',
+          'bold', 'bolder', 'lighter', 'normal', 'italic', 'oblique',
+          'small-caps', 'small-caps', 'all-small-caps', 'petite-caps',
+          'all-petite-caps', 'unicase', 'titling-caps', 'ultra-condensed',
+          'extra-condensed', 'condensed', 'semi-condensed', 'semi-expanded',
+          'expanded', 'extra-expanded', 'ultra-expanded', 'wider', 'narrower',
+          'lighter', 'normal', 'bold', 'bolder', '100', '200', '300', '400',
+          '500', '600', '700', '800', '900', 'smaller', 'larger', 'xx-small',
+          'x-small', 'small', 'medium', 'large', 'x-large', 'xx-large',
+          'left', 'right', 'center', 'justify', 'start', 'end', 'match-parent',
+          'nowrap', 'wrap', 'wrap-reverse', 'flex-start', 'flex-end',
+          'space-between', 'space-around', 'space-evenly', 'stretch',
+          'baseline', 'first-baseline', 'last-baseline', 'safe', 'unsafe',
+          'row', 'row-reverse', 'column', 'column-reverse', 'nowrap',
+          'wrap', 'wrap-reverse', 'grow', 'shrink', 'basis', 'order',
+          'auto', 'content', 'max-content', 'min-content', 'fit-content',
+          'fill', 'fill-available', 'fit-content', 'contain', 'cover',
+          'scale-down', 'none', 'contain', 'cover', 'fill', 'scale-down',
+          'repeat', 'no-repeat', 'repeat-x', 'repeat-y', 'space', 'round',
+          'scroll', 'fixed', 'local', 'border-box', 'padding-box', 'content-box',
+          'text', 'top', 'bottom', 'left', 'right', 'center', 'justify',
+          'start', 'end', 'self-start', 'self-end', 'safe', 'unsafe',
+          'stretch', 'baseline', 'first-baseline', 'last-baseline',
+          'space-between', 'space-around', 'space-evenly', 'stretch',
+          'baseline', 'first-baseline', 'last-baseline', 'safe', 'unsafe'
+        ];
+        
+        const isCssKeyword = cssKeywords.some(keyword => 
+          size.toLowerCase().includes(keyword.toLowerCase())
+        );
+        
+        // Skip single digit numbers that are likely CSS values
+        if (/^[0-9]+$/.test(size) && size.length <= 2) {
+          console.log(`🚫 SKIPPING single digit CSS value for ${orderInfo.order_number}: "${size}"`);
           continue;
         }
         
-        // Clean up the size string
-        size = size.replace(/^(Size|Men's|Women's)[\s:]*/, '').trim();
-        size = size.replace(/[,;].*$/, '').trim(); // Remove anything after comma or semicolon
+        // More intelligent CSS filtering - only reject if it's clearly CSS
+        const isCssPattern = size.includes(';') ||
+                            size.includes('{') ||
+                            size.includes('}') ||
+                            size.includes('(') ||
+                            size.includes(')') ||
+                            size.includes('[') ||
+                            size.includes(']') ||
+                            size.includes('=') ||
+                            size.includes('"') ||
+                            size.includes("'") ||
+                            size.length > 25;
         
-        // Validate it looks like a real size (allow up to 15 chars for "US M 10" format)
-        if (size && size !== 'Size' && size.length > 0 && size.length <= 15) {
-          orderInfo.size = size;
-          console.log(`✅ SIZE EXTRACTED: "${size}" using pattern: ${pattern}`);
-          break;
+        // Don't reject if it contains valid size indicators like "US", "W", "M", "L", etc.
+        const hasValidSizeIndicators = /US|W|M|L|S|XL|XXL|GS|Y|\.5|\.0|\.5Y|\.0Y/i.test(size);
+        
+        if (this.debug) {
+          console.log(`🔍 SIZE VALIDATION for "${size}": isCssKeyword=${isCssKeyword}, isCssPattern=${isCssPattern}, hasValidSizeIndicators=${hasValidSizeIndicators}`);
+        }
+        
+        // Only reject as CSS if it's a CSS keyword AND doesn't have valid size indicators
+        // AND it's not a valid size format (like "US W 7")
+        if (isCssKeyword && !hasValidSizeIndicators) {
+          console.log(`🚫 SKIPPING CSS keyword match for ${orderInfo.order_number}: "${size}"`);
+          continue;
+        }
+        
+        // Reject if it has CSS patterns but no valid size indicators
+        if (isCssPattern && !hasValidSizeIndicators) {
+          console.log(`🚫 SKIPPING CSS pattern match for ${orderInfo.order_number}: "${size}"`);
+          continue;
+        }
+        
+        // Clean up the size string - comprehensive cleaning
+        const originalSize = size;
+        
+        // For sizes like "US W 9", we want to keep the full format, not strip "US W"
+        // Only strip "Size:" prefix, not "US" or other size indicators
+        size = size.replace(/^Size[\s:]*/i, '').trim();
+        size = size.replace(/[,;].*$/, '').trim(); // Remove anything after comma or semicolon
+        size = size.replace(/[<>]/g, '').trim(); // Remove any HTML tags
+        size = size.replace(/\s+/g, ' ').trim(); // Normalize whitespace
+        
+        // Additional validation - reject common false positives, but only if the original size was just a number
+        // Don't reject if the original size had letters (like "US W 9")
+        const falsePositives = ['15', '14', '13', '12', '11', '10', '9', '8', '7', '6', '5', '4', '3', '2', '1', '0'];
+        if (falsePositives.includes(size) && /^[0-9]+$/.test(originalSize)) {
+          console.log(`🚫 REJECTING LIKELY FALSE POSITIVE: "${size}" - too generic, might be CSS or other content`);
+          continue;
+        }
+        
+        // Validate it looks like a real size
+        if (size && size !== 'Size' && size.length > 0 && size.length <= 25) {
+          // Check if it contains at least one letter or number
+          if (/[A-Za-z0-9]/.test(size)) {
+            // Additional validation: check if it's a reasonable size format
+            const isValidSize = this.isValidSizeFormat(size);
+            if (isValidSize) {
+              orderInfo.size = size;
+              sizeFound = true;
+              if (this.debug) {
+                console.log(`✅ SIZE EXTRACTED for ${orderInfo.order_number}: "${size}" using pattern ${i+1}`);
+              }
+              break;
+            } else {
+              if (this.debug) {
+                console.log(`❌ SIZE REJECTED for ${orderInfo.order_number}: "${size}" (invalid size format)`);
+              }
+            }
+          } else {
+            if (this.debug) {
+              console.log(`❌ SIZE REJECTED for ${orderInfo.order_number}: "${size}" (no letters or numbers)`);
+            }
+          }
+        } else {
+          if (this.debug) {
+            console.log(`❌ SIZE REJECTED for ${orderInfo.order_number}: "${size}" (invalid format)`);
+          }
         }
       }
     }
     
-    // If no size found, try to extract from product name patterns
-    if (!orderInfo.size || orderInfo.size === '15') { // '15' seems to be a default fallback
-      const productSizePatterns = [
-        /\(Size\s*([^)!;{}]+)\)/i,
-        /Size\s*([XSML]+)(?:\s|$)/i,
-        /Size\s*(\d+(?:\.\d+)?[WC]?)(?:\s|$)/i
-      ];
-      
-      for (const pattern of productSizePatterns) {
-        const match = orderInfo.product_name.match(pattern);
-        if (match) {
-          let size = match[1].trim();
-          
-          // Skip if this looks like CSS or is too long
-          if (size.includes('!important') || 
-              size.includes('webkit') || 
-              size.includes(';') ||
-              size.length > 10) {
-            continue;
-          }
-          
-          orderInfo.size = size;
-          console.log(`🔍 SIZE FROM PRODUCT NAME: "${size}"`);
-          break;
-        }
-      }
+    // If no size found with patterns, try fallback methods
+    if (!sizeFound) {
+      console.log(`🔍 NO SIZE FOUND with patterns, trying fallback methods...`);
+      sizeFound = this.tryFallbackSizeExtraction(htmlContent, textContent, orderInfo);
     }
+    
+    console.log(`📏 FINAL SIZE for ${orderInfo.order_number}: "${orderInfo.size || 'NOT SET'}"`);
+    
+    // Check if size contains any HTML content that might be problematic
+    if (orderInfo.size && (orderInfo.size.includes('<') || orderInfo.size.includes('>'))) {
+      console.log(`⚠️ SIZE CONTAINS HTML for ${orderInfo.order_number}: "${orderInfo.size}"`);
+    }
+    
+    // Size extraction is now handled by the comprehensive pattern matching above
+    // and fallback methods if no size is found
     
     // Extract condition
     const conditionMatch = htmlContent.match(/Condition:\s*([^<\n]+)/i);
@@ -362,6 +601,263 @@ export class OrderConfirmationParser {
         break;
       }
     }
+    
+    console.log(`🏁 COMPLETED PRODUCT INFO EXTRACTION for ${orderInfo.order_number}: size="${orderInfo.size}", product="${orderInfo.product_name}"`);
+  }
+  
+  /**
+   * Validate if a string looks like a valid size format
+   */
+  private isValidSizeFormat(size: string): boolean {
+    if (!size || size.length === 0) return false;
+    
+    // Reject single digits (likely CSS values like "0", "1", "2", etc.)
+    if (/^[0-9]+$/.test(size) && size.length <= 2) {
+      return false;
+    }
+    
+    // Common size patterns
+    const sizePatterns = [
+      // Letter sizes (XS, S, M, L, XL, XXL, etc.) - but not just single letters that are CSS keywords
+      /^[X]+[SLM]$/i,  // XXL, XXXL, etc.
+      /^[SLM]$/i,      // S, L, M only
+      /^[X]*[SLM]\d+$/i, // XS10, M10, etc.
+      
+      // Number sizes (5, 5.5, 10, 10.5, etc.)
+      /^\d+(\.\d+)?$/,
+      
+      // US sizes (US 5, US M, US W 9, etc.)
+      /^US\s*[A-Z0-9\.\s]+$/i,
+      
+      // Women's sizes (W 9, W 10, etc.)
+      /^W\s*\d+(\.\d+)?$/i,
+      
+      // Men's sizes (M 9, M 10, etc.)
+      /^M\s*\d+(\.\d+)?$/i,
+      
+      // Mixed formats (M 10, L 12, etc.)
+      /^[A-Z]\s*\d+(\.\d+)?$/i,
+      
+      // European sizes (40, 41, 42, etc.)
+      /^\d{2,3}$/,
+      
+      // One size fits all
+      /^One\s*Size$/i,
+      /^OS$/i,
+      /^OSFA$/i
+    ];
+    
+    // First check: Must not contain HTML or CSS keywords (highest priority)
+    const invalidKeywords = [
+      'div', 'span', 'class', 'style', 'width', 'height', 'px', 'em', 'rem', '%',
+      'inherit', 'initial', 'unset', 'revert', 'auto', 'none', 'normal', 'block',
+      'inline', 'flex', 'grid', 'table', 'absolute', 'relative', 'fixed', 'static',
+      'sticky', 'left', 'right', 'top', 'bottom', 'center', 'justify', 'align',
+      'space', 'between', 'around', 'evenly', 'start', 'end', 'baseline', 'stretch',
+      'row', 'column', 'wrap', 'nowrap', 'reverse', 'grow', 'shrink', 'basis',
+      'order', 'gap', 'vh', 'vw', 'vmin', 'vmax', 'pt', 'pc', 'in', 'cm', 'mm',
+      'ex', 'ch', 'fr', 'deg', 'rad', 'grad', 'turn', 's', 'ms', 'Hz', 'kHz',
+      'dpi', 'dpcm', 'dppx', 'rgb', 'rgba', 'hsl', 'hsla', 'hwb', 'lab', 'lch',
+      'oklab', 'oklch', 'var(', 'calc(', 'clamp(', 'min(', 'max(', 'attr(',
+      'url(', 'linear-gradient', 'radial-gradient', 'conic-gradient',
+      'repeating-linear-gradient', 'repeating-radial-gradient',
+      'repeating-conic-gradient', 'cubic-bezier', 'steps', 'ease', 'ease-in',
+      'ease-out', 'ease-in-out', 'linear', 'serif', 'sans-serif', 'monospace',
+      'cursive', 'fantasy', 'bold', 'bolder', 'lighter', 'italic', 'oblique',
+      'small-caps', 'all-small-caps', 'petite-caps', 'all-petite-caps',
+      'unicase', 'titling-caps', 'ultra-condensed', 'extra-condensed',
+      'condensed', 'semi-condensed', 'semi-expanded', 'expanded',
+      'extra-expanded', 'ultra-expanded', 'wider', 'narrower', 'smaller',
+      'larger', 'xx-small', 'x-small', 'small', 'medium', 'large', 'x-large',
+      'xx-large', 'match-parent', 'flex-start', 'flex-end', 'space-between',
+      'space-around', 'space-evenly', 'row-reverse', 'column-reverse',
+      'content', 'max-content', 'min-content', 'fit-content', 'fill',
+      'fill-available', 'contain', 'cover', 'scale-down', 'repeat',
+      'no-repeat', 'repeat-x', 'repeat-y', 'space', 'round', 'scroll',
+      'local', 'border-box', 'padding-box', 'content-box', 'text',
+      'self-start', 'self-end', 'safe', 'unsafe'
+    ];
+    
+  for (const keyword of invalidKeywords) {
+    // Use word boundary matching to avoid false positives
+    // Escape special regex characters
+    const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`\\b${escapedKeyword.toLowerCase()}\\b`, 'i');
+    if (regex.test(size)) return false;
+  }
+    
+    // Second check: Must contain at least one letter or number
+    if (!/[A-Za-z0-9]/.test(size)) return false;
+    
+    // Third check: Must not be too long (reasonable size limit)
+    if (size.length > 20) return false;
+    
+    // Fourth check: Check if size matches any valid pattern
+    for (const pattern of sizePatterns) {
+      if (pattern.test(size)) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+  
+  /**
+   * Try fallback methods to extract size when patterns fail
+   */
+  private tryFallbackSizeExtraction(htmlContent: string, textContent: string, orderInfo: OrderInfo): boolean {
+    console.log(`🔍 TRYING FALLBACK SIZE EXTRACTION for ${orderInfo.order_number}`);
+    
+    // Method 1: Look for size in product name
+    if (orderInfo.product_name) {
+      console.log(`🔍 Checking product name for size: "${orderInfo.product_name}"`);
+      const productSizePatterns = [
+        /\(Size\s*([^)]+)\)/i,
+        /\[Size\s*([^\]]+)\]/i,
+        /Size\s*([A-Z0-9\.\s]+?)(?:\s|$)/i,
+        /([A-Z0-9\.\s]+?)\s*Size/i
+      ];
+      
+      for (const pattern of productSizePatterns) {
+        const match = orderInfo.product_name.match(pattern);
+        if (match) {
+          let size = match[1].trim();
+          if (this.isValidSizeFormat(size)) {
+            orderInfo.size = size;
+            console.log(`✅ SIZE FOUND in product name: "${size}"`);
+            return true;
+          }
+        }
+      }
+    }
+    
+    // Method 2: Look for size in alt text of images
+    const imageAltPatterns = [
+      /alt="[^"]*Size[:\s]*([^"]+)/i,
+      /alt="[^"]*([A-Z0-9\.\s]+?)\s*Size/i
+    ];
+    
+    for (const pattern of imageAltPatterns) {
+      const match = htmlContent.match(pattern);
+      if (match) {
+        let size = match[1].trim();
+        if (this.isValidSizeFormat(size)) {
+          orderInfo.size = size;
+          console.log(`✅ SIZE FOUND in image alt text: "${size}"`);
+          return true;
+        }
+      }
+    }
+    
+    // Method 3: Look for any remaining size-like patterns in the entire HTML
+    const comprehensivePatterns = [
+      /Size[:\s]*([A-Z0-9\.\s]+?)(?:\s|$|,|;|\.)/gi,
+      /([A-Z0-9\.\s]+?)\s*Size(?:\s|$|,|;|\.)/gi
+    ];
+    
+    for (const pattern of comprehensivePatterns) {
+      const matches = htmlContent.matchAll(pattern);
+      for (const match of matches) {
+        let size = match[1].trim();
+        
+        // Skip single digit numbers that are likely CSS values
+        if (/^[0-9]+$/.test(size) && size.length <= 2) {
+          console.log(`🚫 SKIPPING single digit CSS value: "${size}"`);
+          continue;
+        }
+        
+        // More intelligent CSS filtering for fallback
+        const isCssPattern = size.includes(';') || size.includes('{') || size.includes('}') || 
+                            size.includes('(') || size.includes(')') || size.includes('[') || 
+                            size.includes(']') || size.includes('=') || size.includes('"') || 
+                            size.includes("'") || size.length > 25;
+        
+        // Don't reject if it contains valid size indicators
+        const hasValidSizeIndicators = /US|W|M|L|S|XL|XXL|GS|Y|\.5|\.0|\.5Y|\.0Y/i.test(size);
+        
+        // Only reject if it has CSS patterns but no valid size indicators
+        if (isCssPattern && !hasValidSizeIndicators) {
+          console.log(`🚫 SKIPPING CSS pattern match in fallback: "${size}"`);
+          continue;
+        }
+        
+        if (this.isValidSizeFormat(size)) {
+          orderInfo.size = size;
+          console.log(`✅ SIZE FOUND with comprehensive pattern: "${size}"`);
+          return true;
+        }
+      }
+    }
+    
+    // Method 4: Try one more aggressive extraction from the entire email content
+    console.log(`🔍 TRYING AGGRESSIVE SIZE EXTRACTION for ${orderInfo.order_number}`);
+    const aggressivePatterns = [
+      /Size[:\s]*([A-Z0-9\.\s]+?)(?:\s|$|,|;|\.|\)|\]|\})/gi,
+      /([A-Z0-9\.\s]+?)\s*Size(?:\s|$|,|;|\.|\)|\]|\})/gi,
+      /US\s*([A-Z0-9\.\s]+?)(?:\s|$|,|;|\.|\)|\]|\})/gi,
+      /([A-Z0-9\.\s]+?)\s*US(?:\s|$|,|;|\.|\)|\]|\})/gi
+    ];
+    
+    for (const pattern of aggressivePatterns) {
+      const matches = textContent.matchAll(pattern);
+      for (const match of matches) {
+        let size = match[1].trim();
+        
+        // Skip very short or very long matches
+        if (size.length < 1 || size.length > 25) continue;
+        
+        // Skip single digits that are likely CSS values
+        if (/^[0-9]+$/.test(size) && size.length <= 2) continue;
+        
+        // Skip CSS-like patterns
+        if (size.includes(';') || size.includes('{') || size.includes('}') || 
+            size.includes('(') || size.includes(')') || size.includes('[') || 
+            size.includes(']') || size.includes('=') || size.includes('"') || 
+            size.includes("'")) continue;
+        
+        if (this.isValidSizeFormat(size)) {
+          orderInfo.size = size;
+          console.log(`✅ SIZE FOUND with aggressive extraction: "${size}"`);
+          return true;
+        }
+      }
+    }
+    
+    // Method 5: If still no size found, set a default based on product type
+    console.log(`⚠️ NO SIZE FOUND for ${orderInfo.order_number}, setting default based on product type`);
+    const defaultSize = this.getDefaultSizeForProduct(orderInfo.product_name);
+    if (defaultSize) {
+      orderInfo.size = defaultSize;
+      console.log(`✅ DEFAULT SIZE SET: "${defaultSize}"`);
+      return true;
+    }
+    
+    console.log(`❌ NO SIZE FOUND for ${orderInfo.order_number} - this should not happen!`);
+    return false;
+  }
+  
+  /**
+   * Get default size for products that might not have explicit sizes
+   */
+  private getDefaultSizeForProduct(productName: string): string | null {
+    if (!productName) return null;
+    
+    const productNameLower = productName.toLowerCase();
+    
+    // Check if it's a collectible or toy (one size)
+    if (productNameLower.includes('collectible') || 
+        productNameLower.includes('toy') || 
+        productNameLower.includes('figure') ||
+        productNameLower.includes('accessory') ||
+        productNameLower.includes('keychain') ||
+        productNameLower.includes('pin') ||
+        productNameLower.includes('sticker')) {
+      return 'One Size';
+    }
+    
+    // For clothing and shoes, we should always find a size
+    // If we don't, this indicates a parsing issue
+    return null;
   }
   
   /**
@@ -560,26 +1056,58 @@ export class OrderConfirmationParser {
    * Extract tracking information from StockX shipping confirmation emails
    */
   private extractStockXTrackingInfo(htmlContent: string, textContent: string, orderInfo: OrderInfo): void {
+    console.log(`🔍 EXTRACTING TRACKING INFO for order: ${orderInfo.order_number || 'UNKNOWN'}`);
+    console.log(`🔍 HTML Content length: ${htmlContent.length} characters`);
+    console.log(`🔍 Text Content length: ${textContent.length} characters`);
+    
     // Tracking number patterns - looking for REAL tracking number formats
     const trackingPatterns = [
       // UPS tracking (1Z followed by 16 alphanumeric)
       /tracking\s*(?:number|#)?:?\s*(1Z[0-9A-Z]{16})/i,
       /track\s*(?:your\s*)?(?:package|order|shipment)?:?\s*(1Z[0-9A-Z]{16})/i,
+      /(?:ups|ups\.com).*?(1Z[0-9A-Z]{16})/i,
+      
+      // FedEx tracking in URLs (highest priority for URL-based tracking)
+      /fedex\.com.*tracknumbers[=%3D](\d{12,15})/i,
+      // FedEx tracking in URL-encoded format
+      /tracknumbers%3D(\d{12,15})/i,
+      /tracknumbers=(\d{12,15})/i,
       
       // FedEx tracking (12 or 15 digits)
       /tracking\s*(?:number|#)?:?\s*(\d{12}(?:\d{3})?)\b/i,
+      /(?:fedex|fedex\.com).*?(\d{12,15})/i,
       
       // USPS tracking (20-22 digits, often starts with 9)
       /tracking\s*(?:number|#)?:?\s*(9[0-9]{19,21})/i,
+      /(?:usps|usps\.com).*?(9[0-9]{19,21})/i,
       
       // DHL tracking (10 digits)
       /tracking\s*(?:number|#)?:?\s*(\d{10})\b/i,
+      /(?:dhl|dhl\.com).*?(\d{10})/i,
       
       // Generic but with "tracking" context - must be preceded by tracking-related text
       /(?:tracking|track your|package tracking)[^0-9]*(\d{10,22})\b/i,
       
       // Look for tracking in specific HTML structures
-      /<a[^>]*href=[^>]*track[^>]*>([0-9A-Z]{10,22})<\/a>/i
+      /<a[^>]*href=[^>]*track[^>]*>([0-9A-Z]{10,22})<\/a>/i,
+      
+      // Look for tracking numbers in UPS URLs
+      /ups\.com.*track[=%3D](\d{10,15})/i,
+      
+      // Look for tracking numbers in USPS URLs
+      /usps\.com.*track[=%3D](\d{10,15})/i,
+      
+      // Look for tracking numbers in table cells or divs
+      /<(?:td|div)[^>]*>.*?(\d{12,22}).*?<\/(?:td|div)>/i,
+      
+      // Look for tracking numbers in bold or emphasized text
+      /<(?:b|strong|em)[^>]*>.*?(\d{12,22}).*?<\/(?:b|strong|em)>/i,
+      
+      // Look for tracking numbers after "tracking number" or similar phrases
+      /(?:tracking\s*number|track\s*number|tracking\s*#|track\s*#)[:\s]*([0-9A-Z]{10,22})/i,
+      
+      // Look for tracking numbers in StockX-specific patterns
+      /(?:stockx|stock x).*?(\d{12,22})/i
     ];
     
     for (const pattern of trackingPatterns) {
@@ -687,6 +1215,12 @@ export class OrderConfirmationParser {
         orderInfo.carrier = "StockX Logistics";
       }
     }
+    
+    // Final tracking extraction summary
+    console.log(`📦 TRACKING EXTRACTION COMPLETE for order ${orderInfo.order_number}:`);
+    console.log(`   - Tracking Number: "${orderInfo.tracking_number || 'NOT FOUND'}"`);
+    console.log(`   - Carrier: "${orderInfo.carrier || 'NOT DETECTED'}"`);
+    console.log(`   - Shipping Status: "${orderInfo.shipping_status}"`);
   }
 
   /**
@@ -783,8 +1317,14 @@ export function parseOrderEmailFile(filePath: string): OrderInfo {
 /**
  * Parse an order confirmation email from Gmail API response
  */
-export function parseGmailApiMessage(gmailMessage: any): OrderInfo {
-  const parser = new OrderConfirmationParser();
+export function parseGmailApiMessage(gmailMessage: any, debug: boolean = false): OrderInfo {
+  if (debug) {
+    console.log(`\n📧 ===== PARSING GMAIL MESSAGE START =====`);
+    console.log(`📧 MESSAGE ID: ${gmailMessage.id}`);
+    console.log(`📧 ===== PARSING GMAIL MESSAGE START =====\n`);
+  }
+  
+  const parser = new OrderConfirmationParser(debug);
   
   // Extract HTML content from Gmail API payload
   let htmlContent = "";
@@ -872,4 +1412,15 @@ export function orderInfoToDict(orderInfo: OrderInfo): Record<string, any> {
       sender: orderInfo.sender
     }
   };
+  
+  console.log(`\n📧 ===== PARSING GMAIL MESSAGE COMPLETE =====`);
+  console.log(`📧 FINAL ORDER INFO:`, {
+    order_number: orderInfo.order_number,
+    product_name: orderInfo.product_name,
+    size: orderInfo.size,
+    total_amount: orderInfo.total_amount
+  });
+  console.log(`📧 ===== PARSING GMAIL MESSAGE COMPLETE =====\n`);
+  
+  return orderInfo;
 } 

@@ -97,8 +97,18 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
     setError(null);
 
     try {
+      // Set a timeout to prevent infinite connecting state
+      const timeoutId = setTimeout(() => {
+        if (isConnecting) {
+          setError('Connection timed out. Please try resetting the connection.');
+          setIsConnecting(false);
+        }
+      }, 15000); // 15 second timeout
+      
       const response = await fetch('/api/gmail/auth');
       const data = await response.json();
+      
+      clearTimeout(timeoutId);
       
       if (data.authUrl) {
         // Redirect to Google OAuth
@@ -121,6 +131,25 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
       onConnectionChange?.(false);
     } catch (error) {
       console.error('Error disconnecting from Gmail:', error);
+    }
+  };
+
+  const resetGmailConnection = async () => {
+    try {
+      setIsConnecting(true);
+      setError(null);
+      
+      // Reset Gmail connection
+      await fetch('/api/gmail/reset', { method: 'POST' });
+      
+      // Wait a moment then try to reconnect
+      setTimeout(() => {
+        connectToGmail();
+      }, 1000);
+    } catch (error) {
+      console.error('Error resetting Gmail connection:', error);
+      setError('Failed to reset Gmail connection');
+      setIsConnecting(false);
     }
   };
 
@@ -187,18 +216,64 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
               : 'text-red-600'
           }`}>{error}</div>
         </div>
+        <div className="flex space-x-2">
+          <button
+            onClick={() => {
+              setError(null);
+              connectToGmail();
+            }}
+            className={`text-xs underline ${ 
+              isNeonTheme 
+                ? 'text-red-400 hover:text-red-300' 
+                : 'text-red-700 hover:text-red-900'
+            }`}
+          >
+            Retry
+          </button>
+          <button
+            onClick={resetGmailConnection}
+            className={`text-xs underline ${ 
+              isNeonTheme 
+                ? 'text-red-400 hover:text-red-300' 
+                : 'text-red-700 hover:text-red-900'
+            }`}
+          >
+            Reset
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (isConnecting) {
+    return (
+      <div className={`flex items-center space-x-3 px-4 py-3 rounded-lg border ${ 
+        isNeonTheme 
+          ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30 backdrop-blur-sm' 
+          : 'bg-yellow-50 text-yellow-800 border-yellow-200'
+      }`}>
+        <Loader2 className={`w-5 h-5 animate-spin ${ 
+          isNeonTheme 
+            ? 'text-yellow-400' 
+            : 'text-yellow-600'
+        }`} />
+        <div className="flex-1">
+          <div className="font-medium text-sm">Connecting to Gmail...</div>
+          <div className={`text-xs ${ 
+            isNeonTheme 
+              ? 'text-yellow-400/70' 
+              : 'text-yellow-600'
+          }`}>Please wait while we establish the connection</div>
+        </div>
         <button
-          onClick={() => {
-            setError(null);
-            connectToGmail();
-          }}
+          onClick={resetGmailConnection}
           className={`text-xs underline ${ 
             isNeonTheme 
-              ? 'text-red-400 hover:text-red-300' 
-              : 'text-red-700 hover:text-red-900'
+              ? 'text-yellow-400 hover:text-yellow-300' 
+              : 'text-yellow-700 hover:text-yellow-900'
           }`}
         >
-          Retry
+          Reset
         </button>
       </div>
     );

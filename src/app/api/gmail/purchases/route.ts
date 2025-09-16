@@ -629,12 +629,48 @@ async function parsePurchaseEmail(email: any, config: any, gmail: any) {
       'Xpress Order Delivered:',
       'has been delivered',
       'package delivered',
-      '🎉 Xpress Ship Order Delivered:' // Add pattern with emoji
+      '🎉 Xpress Ship Order Delivered:', // Add pattern with emoji
+      'xpress ship order delivered', // Add lowercase version
+      'order delivered' // Add more general pattern
+    ];
+
+    const shippedKeywords = [
+      'Order Verified & Shipped:',
+      'Order Shipped:',
+      'Xpress Order Shipped:',
+      'has been shipped',
+      'package shipped',
+      '✅ Order Verified & Shipped:', // Add pattern with emoji
+      'order verified & shipped', // Add lowercase version
+      'order shipped' // Add more general pattern
     ];
     
     const isDeliveryEmail = deliveryKeywords.some(keyword => 
       subjectHeader.toLowerCase().includes(keyword.toLowerCase())
     );
+    
+    const isShippedEmail = shippedKeywords.some(keyword => 
+      subjectHeader.toLowerCase().includes(keyword.toLowerCase())
+    );
+    
+    // Debug logging for delivery and shipped detection
+    console.log(`🔍 STATUS DEBUG: Subject="${subjectHeader}"`);
+    console.log(`🔍 STATUS DEBUG: Is StockX Email: ${isStockXEmail}`);
+    console.log(`🔍 STATUS DEBUG: Is Delivery Email: ${isDeliveryEmail}`);
+    console.log(`🔍 STATUS DEBUG: Is Shipped Email: ${isShippedEmail}`);
+    console.log(`🔍 STATUS DEBUG: Delivery keywords:`, deliveryKeywords);
+    console.log(`🔍 STATUS DEBUG: Shipped keywords:`, shippedKeywords);
+    
+    // Test each keyword individually for debugging
+    deliveryKeywords.forEach(keyword => {
+      const matches = subjectHeader.toLowerCase().includes(keyword.toLowerCase());
+      console.log(`🔍 DELIVERY DEBUG: Keyword "${keyword}" matches: ${matches}`);
+    });
+    
+    shippedKeywords.forEach(keyword => {
+      const matches = subjectHeader.toLowerCase().includes(keyword.toLowerCase());
+      console.log(`🔍 SHIPPED DEBUG: Keyword "${keyword}" matches: ${matches}`);
+    });
     
     if (isStockXEmail && isDeliveryEmail) {
       console.log(`🚚 DELIVERY OVERRIDE: StockX delivery email detected - forcing Delivered status`);
@@ -642,7 +678,7 @@ async function parsePurchaseEmail(email: any, config: any, gmail: any) {
       console.log(`🚚 Order Number: ${orderInfo.order_number}`);
       
       // Special debug for specific orders
-      if (orderInfo.order_number === '01-3KF7CE560J' || orderInfo.order_number === '01-3KF7CE560J') {
+      if (orderInfo.order_number === '01-3KF7CE560J' || orderInfo.order_number === '01-47MDU2T9C5') {
         console.log(`🎯🚚 SPECIAL: Order ${orderInfo.order_number} DELIVERY OVERRIDE TRIGGERED!`);
         console.log(`🎯🚚 Subject: "${subjectHeader}"`);
         console.log(`🎯🚚 This order should now be DELIVERED status!`);
@@ -652,6 +688,23 @@ async function parsePurchaseEmail(email: any, config: any, gmail: any) {
         status: 'Delivered',
         statusColor: 'green',
         priority: 4
+      };
+    } else if (isStockXEmail && isShippedEmail) {
+      console.log(`📦 SHIPPED OVERRIDE: StockX shipped email detected - forcing Shipped status`);
+      console.log(`📦 Email: "${subjectHeader}" from ${fromHeader}`);
+      console.log(`📦 Order Number: ${orderInfo.order_number}`);
+      
+      // Special debug for specific orders
+      if (orderInfo.order_number === '77312394' || orderInfo.order_number === '77349364') {
+        console.log(`🎯📦 SPECIAL: Order ${orderInfo.order_number} SHIPPED OVERRIDE TRIGGERED!`);
+        console.log(`🎯📦 Subject: "${subjectHeader}"`);
+        console.log(`🎯📦 This order should now be SHIPPED status!`);
+      }
+      
+      category = {
+        status: 'Shipped',
+        statusColor: 'blue',
+        priority: 3
       };
     } else {
       // Use normal categorization for non-delivery emails
@@ -737,13 +790,50 @@ async function parsePurchaseEmail(email: any, config: any, gmail: any) {
     const productImage = orderInfo.product_image_url || 
                         `https://picsum.photos/200/200?random=${email.id.substring(0, 4)}`;
 
+    // Enhanced size extraction with better fallbacks
+    let finalSize = orderInfo.size;
+    
+    // If no size was extracted, try to extract from product name
+    if (!finalSize || finalSize === 'Unknown' || finalSize === 'Unknown Size') {
+      console.log(`🔍 No size found in orderInfo, trying to extract from product name: "${orderInfo.product_name}"`);
+      
+      // Try to extract size from product name using common patterns
+      const productNameSizePatterns = [
+        /\(Size\s*([^)]+)\)/i,
+        /\[Size\s*([^\]]+)\]/i,
+        /Size\s*([A-Z0-9\.\s]+?)(?:\s|$)/i,
+        /([A-Z0-9\.\s]+?)\s*Size/i,
+        /US\s+([A-Z0-9\.\s]+?)(?:\s|$)/i,
+        /([A-Z0-9\.\s]+?)\s*US/i
+      ];
+      
+      for (const pattern of productNameSizePatterns) {
+        const match = orderInfo.product_name.match(pattern);
+        if (match) {
+          const extractedSize = match[1].trim();
+          // Validate it looks like a real size
+          if (extractedSize && extractedSize.length > 0 && extractedSize.length <= 25 && /[A-Za-z0-9]/.test(extractedSize)) {
+            finalSize = extractedSize;
+            console.log(`✅ Size extracted from product name: "${finalSize}"`);
+            break;
+          }
+        }
+      }
+    }
+    
+    // Final fallback - use a more descriptive default
+    if (!finalSize || finalSize === 'Unknown' || finalSize === 'Unknown Size') {
+      finalSize = 'Size Not Found';
+      console.log(`⚠️ No size found for order ${orderInfo.order_number}, using fallback: "${finalSize}"`);
+    }
+
     return {
       id: email.id,
       orderNumber: orderInfo.order_number,
       product: {
         name: orderInfo.product_name,
         brand,
-        size: orderInfo.size || 'Unknown Size',
+        size: finalSize,
         image: productImage,
         bgColor: getBrandColor(brand)
       },

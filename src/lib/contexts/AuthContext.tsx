@@ -145,15 +145,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       
       const provider = new GoogleAuthProvider();
       console.log("🔐 Google provider created, attempting sign-in...");
-      await signInWithPopup(auth, provider);
+      
+      // Add timeout wrapper for Google auth
+      const authPromise = signInWithPopup(auth, provider);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Google authentication timeout after 30 seconds')), 30000)
+      );
+      
+      await Promise.race([authPromise, timeoutPromise]);
       console.log("🔐 Google sign-in successful!");
     } catch (error: any) {
       console.error("❌ Google sign-in error:", error);
       console.error("❌ Error code:", error.code);
       console.error("❌ Error message:", error.message);
       
+      // Handle timeout errors
+      if (error.message === 'Google authentication timeout after 30 seconds') {
+        setError("Google sign-in timed out. Please check your internet connection and try again.");
+      }
       // Handle specific Firebase auth errors
-      if (error.code === 'auth/unauthorized-domain') {
+      else if (error.code === 'auth/unauthorized-domain') {
         setError("This domain is not authorized for Firebase authentication. Please contact support.");
       } else if (error.code === 'auth/popup-closed-by-user') {
         setError("Sign-in cancelled. Please try again.");
@@ -175,13 +186,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       setError(null);
       console.log("🔐 Starting email sign-in process...");
-      await signInWithEmailAndPassword(auth, email, password);
+      
+      // Add timeout wrapper for Firebase auth
+      const authPromise = signInWithEmailAndPassword(auth, email, password);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Authentication timeout after 20 seconds')), 20000)
+      );
+      
+      await Promise.race([authPromise, timeoutPromise]);
       console.log("🔐 Email sign-in successful!");
     } catch (error: any) {
       console.error("❌ Email sign-in error:", error);
       
+      // Handle timeout errors
+      if (error.message === 'Authentication timeout after 20 seconds') {
+        setError("Sign-in timed out. Please check your internet connection and try again.");
+      }
       // Handle specific Firebase auth errors
-      if (error.code === 'auth/user-not-found') {
+      else if (error.code === 'auth/user-not-found') {
         setError("No account found with this email address.");
       } else if (error.code === 'auth/wrong-password') {
         setError("Incorrect password. Please try again.");
@@ -207,22 +229,38 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setError(null);
       console.log("🔐 Starting email sign-up process...");
       
-      // Create user account
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      // Add timeout wrapper for Firebase auth
+      const authPromise = createUserWithEmailAndPassword(auth, email, password);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Authentication timeout after 20 seconds')), 20000)
+      );
       
-      // Update display name
+      const userCredential = await Promise.race([authPromise, timeoutPromise]) as any;
+      
+      // Update display name with timeout as well
       if (userCredential.user) {
-        await updateProfile(userCredential.user, {
+        const updatePromise = updateProfile(userCredential.user, {
           displayName: name
         });
+        const updateTimeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Profile update timeout after 10 seconds')), 10000)
+        );
+        
+        await Promise.race([updatePromise, updateTimeoutPromise]);
       }
       
       console.log("🔐 Email sign-up successful!");
     } catch (error: any) {
       console.error("❌ Email sign-up error:", error);
       
+      // Handle timeout errors
+      if (error.message === 'Authentication timeout after 20 seconds') {
+        setError("Sign-up timed out. Please check your internet connection and try again.");
+      } else if (error.message === 'Profile update timeout after 10 seconds') {
+        setError("Account created but profile update timed out. You can update your name later.");
+      }
       // Handle specific Firebase auth errors
-      if (error.code === 'auth/email-already-in-use') {
+      else if (error.code === 'auth/email-already-in-use') {
         setError("An account with this email already exists.");
       } else if (error.code === 'auth/invalid-email') {
         setError("Invalid email address.");

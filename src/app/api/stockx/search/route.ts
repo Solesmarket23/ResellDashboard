@@ -431,12 +431,66 @@ export async function GET(request: NextRequest) {
               
               console.log(`📊 Product ${product.title}: ${marketData?.length || 0} market data entries, ${variants?.length || 0} variants`);
               
+              // Debug: Log first few variants to understand structure
+              if (variants?.length > 0) {
+                console.log(`🔍 First 3 variants for ${product.title}:`);
+                variants.slice(0, 3).forEach((variant, index) => {
+                  console.log(`Variant ${index + 1}:`, {
+                    variantId: variant.variantId,
+                    variantValue: variant.variantValue,
+                    size: variant.size,
+                    sizeValue: variant.sizeValue,
+                    displaySize: variant.displaySize,
+                    shoeSize: variant.shoeSize,
+                    traits: variant.traits,
+                    variantTraits: variant.variantTraits
+                  });
+                });
+              }
+              
               // Create a map of variant IDs to variant info for quick lookup
               const variantMap = new Map();
               if (variants?.length) {
                 variants.forEach(variant => {
+                  // Use robust size extraction logic (same as market-data API)
+                  let sizeValue = variant.variantValue || 
+                                 variant.size || 
+                                 variant.sizeValue || 
+                                 variant.displaySize || 
+                                 variant.shoeSize;
+                  
+                  // Try to extract size from traits if available
+                  if (!sizeValue && variant.traits) {
+                    const sizeTraits = variant.traits.find((trait: any) => 
+                      trait.name?.toLowerCase().includes('size') || 
+                      trait.filterId?.toLowerCase().includes('size')
+                    );
+                    if (sizeTraits && sizeTraits.value) {
+                      sizeValue = sizeTraits.value;
+                    }
+                  }
+                  
+                  // Try to extract size from variantTraits if available
+                  if (!sizeValue && variant.variantTraits) {
+                    const sizeTraits = variant.variantTraits.find((trait: any) => 
+                      trait.name?.toLowerCase().includes('size') || 
+                      trait.filterId?.toLowerCase().includes('size')
+                    );
+                    if (sizeTraits && sizeTraits.value) {
+                      sizeValue = sizeTraits.value;
+                    }
+                  }
+                  
+                  // If still no size, use fallback
+                  if (!sizeValue || sizeValue === 'Unknown') {
+                    sizeValue = 'One Size';
+                  }
+                  
+                  // Debug: Log size extraction
+                  console.log(`📏 Size extraction for variant ${variant.variantId}: "${sizeValue}"`);
+                  
                   variantMap.set(variant.variantId, {
-                    size: variant.variantValue || 'One Size',
+                    size: sizeValue,
                     sizeChart: variant.sizeChart
                   });
                 });

@@ -91,6 +91,11 @@ export interface UserPurchaseData {
   // Purchase information
   purchaseDate: string; // When the order was placed
   
+  // Shipping information
+  tracking: string; // Tracking number
+  carrier: string; // Shipping carrier
+  shippingStatus: string; // Shipping status
+  
   // Email metadata
   emailSubject: string;
   emailDate: string;
@@ -360,6 +365,9 @@ export const saveUserPurchase = async (userId: string, orderInfo: OrderInfo): Pr
       estimatedDeliveryStart: orderInfo.estimated_delivery_start,
       estimatedDeliveryEnd: orderInfo.estimated_delivery_end,
       purchaseDate: orderInfo.purchase_date,
+      tracking: orderInfo.tracking_number || '',
+      carrier: orderInfo.carrier || '',
+      shippingStatus: orderInfo.shipping_status || 'ordered',
       emailSubject: orderInfo.email_subject,
       emailDate: orderInfo.email_date,
       sender: orderInfo.sender,

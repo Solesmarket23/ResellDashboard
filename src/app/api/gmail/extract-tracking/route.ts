@@ -145,6 +145,18 @@ function extractTrackingFromEmail(email: any): { trackingNumber: string; trackin
         validator: (match: string) => /^1Z[0-9A-Z]{16}$/i.test(match)
       },
       { 
+        name: 'FedEx URL Tracking', 
+        regex: /fedex\.com.*tracknumbers[=%3D]([0-9]{12,15})/gi,
+        priority: 1,
+        validator: (match: string) => /^[0-9]{12,15}$/.test(match) && !isExcludedNumber(match)
+      },
+      { 
+        name: 'FedEx URL Encoded', 
+        regex: /tracknumbers%3D([0-9]{12,15})/gi,
+        priority: 1,
+        validator: (match: string) => /^[0-9]{12,15}$/.test(match) && !isExcludedNumber(match)
+      },
+      { 
         name: 'FedEx Standard', 
         regex: /(?:tracking.*?|number.*?)([0-9]{12})\b/gi,
         priority: 2,
@@ -198,11 +210,13 @@ function extractTrackingFromEmail(email: any): { trackingNumber: string; trackin
 
     // Try each pattern in priority order
     for (const pattern of trackingPatterns) {
-      const matches = bodyContent.match(pattern.regex) || [];
-      console.log(`🔍 Pattern "${pattern.name}": found ${matches.length} potential matches`);
+      let regexMatch;
+      const regex = new RegExp(pattern.regex.source, pattern.regex.flags);
       
-      for (const match of matches) {
-        const cleanMatch = match.replace(/[<>]/g, '').trim();
+      while ((regexMatch = regex.exec(bodyContent)) !== null) {
+        const cleanMatch = regexMatch[1] ? regexMatch[1].replace(/[<>]/g, '').trim() : regexMatch[0].replace(/[<>]/g, '').trim();
+        
+        console.log(`🔍 Pattern "${pattern.name}": found match "${cleanMatch}"`);
         
         allAttempts.push({
           pattern: pattern.name,
