@@ -125,7 +125,15 @@ const EbayStockXArbitrage: React.FC = () => {
       setSearchProgress(prev => ({ ...prev, currentStep: 'Searching eBay for sneakers...' }));
       setSearchStatus('Searching eBay for sneaker listings...');
       
-      const response = await fetch('/api/ebay-feed-scanner?limit=1000&minProfit=10');
+      // Add timeout to prevent hanging
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      
+      const response = await fetch('/api/ebay-feed-scanner?limit=50&minProfit=10', {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -160,7 +168,11 @@ const EbayStockXArbitrage: React.FC = () => {
         setBulkError(data.message || 'Failed to scan for opportunities');
       }
     } catch (err) {
-      setBulkError('Network error occurred');
+      if (err instanceof Error && err.name === 'AbortError') {
+        setBulkError('Scan timed out after 30 seconds. Please try again with a smaller search scope.');
+      } else {
+        setBulkError('Network error occurred');
+      }
       console.error('Bulk scanner error:', err);
     } finally {
       setBulkLoading(false);

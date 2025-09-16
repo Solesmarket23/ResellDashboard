@@ -160,13 +160,10 @@ async function downloadEbayFeed(categoryId: string, limit: number): Promise<Ebay
     // Use real eBay search API instead of feed API
     console.log('🔍 Using real eBay search API for bulk scanning');
     
-    // Search for actual sneaker models (not stickers/accessories)
+    // Search for actual sneaker models (reduced scope for faster response)
     const searchTerms = [
       'Nike Air Jordan 1 High sneakers -sticker -decals -accessories',
-      'Nike Air Jordan 4 sneakers -sticker -decals -accessories', 
-      'Yeezy Boost 350 V2 sneakers -sticker -decals -accessories',
-      'Nike Dunk Low sneakers -sticker -decals -accessories',
-      'Nike Air Force 1 sneakers -sticker -decals -accessories'
+      'Nike Dunk Low sneakers -sticker -decals -accessories'
     ];
     
     const allItems: EbayFeedItem[] = [];
