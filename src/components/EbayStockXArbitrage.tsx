@@ -127,9 +127,9 @@ const EbayStockXArbitrage: React.FC = () => {
       
       // Add timeout to prevent hanging
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 45000); // 45 second timeout
       
-      const response = await fetch('/api/ebay-feed-scanner?limit=100&minProfit=5', {
+      const response = await fetch('/api/ebay-feed-scanner?limit=20&minProfit=5', {
         signal: controller.signal
       });
       
@@ -169,7 +169,7 @@ const EbayStockXArbitrage: React.FC = () => {
       }
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
-        setBulkError('Scan timed out after 30 seconds. Please try again with a smaller search scope.');
+        setBulkError('Scan timed out after 45 seconds. The search is taking longer than expected.');
       } else {
         setBulkError('Network error occurred');
       }
