@@ -104,20 +104,15 @@ export async function GET(request: NextRequest) {
     const opportunities = await findArbitrageOpportunities(filteredItems, request);
     console.log(`💰 Found ${opportunities.length} arbitrage opportunities`);
     
-    // Step 4: Filter by profitability thresholds
-    const profitableOpportunities = opportunities.filter(opp => 
-      opp.profit >= minProfit && 
-      opp.profitPercentage >= PROFIT_THRESHOLDS.MIN_PROFIT_PERCENTAGE
-    );
+    // Step 4: Show ALL matches regardless of profitability (for testing)
+    console.log(`💎 Found ${opportunities.length} total matches (showing all for testing)`);
     
-    console.log(`💎 ${profitableOpportunities.length} opportunities meet profitability thresholds`);
-    
-    // Step 5: Sort by profit potential
-    const sortedOpportunities = profitableOpportunities.sort((a, b) => b.profit - a.profit);
+    // Step 5: Sort by profit potential (but show all)
+    const sortedOpportunities = opportunities.sort((a, b) => b.profit - a.profit);
     
     return NextResponse.json({
       success: true,
-      message: `Found ${sortedOpportunities.length} profitable opportunities`,
+      message: `Found ${sortedOpportunities.length} matched items (showing all matches for testing)`,
       totalScanned: ebayItems.length,
       filtered: filteredItems.length,
       opportunities: sortedOpportunities.slice(0, 50), // Return top 50
@@ -349,12 +344,17 @@ async function findArbitrageOpportunities(items: EbayFeedItem[], request: NextRe
       const stockxProduct = await findStockXMatch(item, request);
       
       if (stockxProduct) {
+        console.log(`✅ Found StockX match: ${stockxProduct.title} ($${stockxProduct.lowestAsk})`);
+        
         const opportunity = calculateArbitrage(item, stockxProduct);
         
-        if (opportunity.profit > 0) {
-          opportunities.push(opportunity);
-          console.log(`✅ Found opportunity: ${item.title} - $${opportunity.profit.toFixed(2)} profit`);
-        }
+        console.log(`💰 Arbitrage calculation: $${opportunity.profit.toFixed(2)} profit (${opportunity.profitPercentage.toFixed(1)}%)`);
+        
+        // Show ALL matches regardless of profit (for testing)
+        opportunities.push(opportunity);
+        console.log(`✅ Added match: ${item.title} - $${opportunity.profit.toFixed(2)} profit`);
+      } else {
+        console.log(`❌ No StockX match found for: ${item.title.substring(0, 50)}...`);
       }
       
       // Small delay to avoid rate limiting
