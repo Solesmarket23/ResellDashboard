@@ -160,10 +160,13 @@ async function downloadEbayFeed(categoryId: string, limit: number): Promise<Ebay
     // Use real eBay search API instead of feed API
     console.log('🔍 Using real eBay search API for bulk scanning');
     
-    // Search for popular sneaker terms (simplified for testing)
+    // Search for actual sneaker models (not stickers/accessories)
     const searchTerms = [
-      'Nike shoes',
-      'Jordan shoes'
+      'Nike Air Jordan 1 High sneakers -sticker -decals -accessories',
+      'Nike Air Jordan 4 sneakers -sticker -decals -accessories', 
+      'Yeezy Boost 350 V2 sneakers -sticker -decals -accessories',
+      'Nike Dunk Low sneakers -sticker -decals -accessories',
+      'Nike Air Force 1 sneakers -sticker -decals -accessories'
     ];
     
     const allItems: EbayFeedItem[] = [];
@@ -281,15 +284,44 @@ function extractBrandFromTitle(title: string): string {
 function filterHighPotentialItems(items: EbayFeedItem[]): EbayFeedItem[] {
   console.log(`🔍 Filtering ${items.length} items...`);
   
-  // For debugging, let's be VERY lenient and just log everything
   const filtered = items.filter(item => {
     const price = parseFloat(item.priceValue);
+    const title = item.title.toLowerCase();
     
     console.log(`🔍 Item: $${price} ${item.brand} ${item.condition} - "${item.title.substring(0, 50)}..."`);
     
-    // Only filter out items with no price or extremely high prices
-    if (price <= 0 || price > 5000) {
+    // Filter out stickers, decals, and accessories
+    const isAccessory = title.includes('sticker') || 
+                       title.includes('decal') || 
+                       title.includes('accessory') ||
+                       title.includes('keychain') ||
+                       title.includes('pin') ||
+                       title.includes('patch') ||
+                       title.includes('poster') ||
+                       title.includes('print');
+    
+    if (isAccessory) {
+      console.log(`❌ Accessory filter: ${item.title.substring(0, 50)}...`);
+      return false;
+    }
+    
+    // Price filters
+    if (price <= 0 || price > 2000) {
       console.log(`❌ Price filter: $${price}`);
+      return false;
+    }
+    
+    // Must be actual shoes (not just any Nike/Jordan item)
+    const isShoe = title.includes('size') || 
+                   title.includes('shoe') || 
+                   title.includes('sneaker') ||
+                   title.includes('jordan') ||
+                   title.includes('yeezy') ||
+                   title.includes('dunk') ||
+                   title.includes('air force');
+    
+    if (!isShoe) {
+      console.log(`❌ Shoe filter: ${item.title.substring(0, 50)}...`);
       return false;
     }
     
