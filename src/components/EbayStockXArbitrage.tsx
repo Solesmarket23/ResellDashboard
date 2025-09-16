@@ -111,18 +111,51 @@ const EbayStockXArbitrage: React.FC = () => {
   const scanForBulkOpportunities = async () => {
     setBulkLoading(true);
     setBulkError(null);
+    setBulkOpportunities([]);
+    setBulkStats(null);
+    
+    // Reset progress
+    setSearchProgress({ ebayFound: 0, stockxMatched: 0, currentStep: 'Starting bulk scan...' });
+    setSearchStatus('Initializing bulk scan...');
     
     try {
-      const response = await fetch('/api/ebay-feed-scanner?limit=1000&minProfit=50');
+      console.log('🚀 Starting bulk opportunity scan...');
+      
+      // Update progress - searching eBay
+      setSearchProgress(prev => ({ ...prev, currentStep: 'Searching eBay for sneakers...' }));
+      setSearchStatus('Searching eBay for sneaker listings...');
+      
+      const response = await fetch('/api/ebay-feed-scanner?limit=1000&minProfit=10');
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const data = await response.json();
+      console.log('📦 Bulk scan response:', data);
       
       if (data.success) {
-        setBulkOpportunities(data.opportunities);
+        // Update progress - processing results
+        setSearchProgress(prev => ({ 
+          ...prev, 
+          ebayFound: data.totalScanned || 0,
+          stockxMatched: data.opportunities?.length || 0,
+          currentStep: 'Processing results...'
+        }));
+        setSearchStatus(`Found ${data.totalScanned || 0} items, ${data.filtered || 0} passed filters, ${data.opportunities?.length || 0} opportunities`);
+        
+        setBulkOpportunities(data.opportunities || []);
         setBulkStats({
-          totalScanned: data.totalScanned,
-          filtered: data.filtered,
-          opportunities: data.opportunities.length
+          totalScanned: data.totalScanned || 0,
+          filtered: data.filtered || 0,
+          opportunities: data.opportunities?.length || 0
         });
+        
+        if (data.opportunities?.length > 0) {
+          setSuccessMessage(`Found ${data.opportunities.length} profitable opportunities!`);
+        } else {
+          setSuccessMessage('Bulk scan completed, but no profitable opportunities found with current criteria.');
+        }
       } else {
         setBulkError(data.message || 'Failed to scan for opportunities');
       }
@@ -131,6 +164,12 @@ const EbayStockXArbitrage: React.FC = () => {
       console.error('Bulk scanner error:', err);
     } finally {
       setBulkLoading(false);
+      
+      // Clear status after a delay
+      setTimeout(() => {
+        setSearchStatus('');
+        setSearchProgress({ ebayFound: 0, stockxMatched: 0, currentStep: '' });
+      }, 5000);
     }
   };
 
@@ -407,7 +446,7 @@ const EbayStockXArbitrage: React.FC = () => {
             )}
 
             {/* Bulk Scanner Actions */}
-            <div className="text-center">
+            <div className="text-center space-y-4">
               <button
                 onClick={scanForBulkOpportunities}
                 disabled={bulkLoading}
@@ -415,6 +454,27 @@ const EbayStockXArbitrage: React.FC = () => {
               >
                 {bulkLoading ? '🔄 Scanning...' : '🚀 Scan for Opportunities'}
               </button>
+              
+              {/* Progress Indicator */}
+              {bulkLoading && (
+                <div className="bg-gray-800 rounded-lg p-4 max-w-md mx-auto">
+                  <div className="flex items-center justify-center gap-2 mb-2">
+                    <RefreshCw className="w-4 h-4 animate-spin text-blue-400" />
+                    <span className="text-sm text-gray-300">{searchProgress.currentStep}</span>
+                  </div>
+                  <div className="text-xs text-gray-400 text-center">
+                    {searchProgress.ebayFound > 0 && `Found ${searchProgress.ebayFound} items`}
+                    {searchProgress.stockxMatched > 0 && ` • ${searchProgress.stockxMatched} matches`}
+                  </div>
+                </div>
+              )}
+              
+              {/* Status Message */}
+              {searchStatus && (
+                <div className="bg-blue-900/20 border border-blue-500 rounded-lg p-3 max-w-md mx-auto">
+                  <p className="text-blue-400 text-sm">{searchStatus}</p>
+                </div>
+              )}
             </div>
 
             {/* Bulk Scanner Error */}
