@@ -210,32 +210,44 @@ async function downloadEbayFeed(categoryId: string, limit: number): Promise<Ebay
         
         if (response.ok) {
           const data = await response.json();
-          const items = (data.itemSummaries || []).map((item: any) => ({
-            itemId: item.itemId,
-            title: item.title,
-            priceValue: item.price?.value?.toString() || '0',
-            priceCurrency: item.price?.currency || 'USD',
-            gtin: '', // Will be extracted from title if available
-            brand: extractBrandFromTitle(item.title),
-            mpn: '', // Not available in search API
-            condition: item.condition || 'New',
-            imageUrl: item.image?.imageUrl || '/placeholder-shoe.png',
-            itemWebUrl: item.itemWebUrl,
-            sellerUsername: item.seller?.username || 'Unknown',
-            availability: 'AVAILABLE',
-            categoryId: '15709',
-            category: 'Shoes|Athletic Shoes',
-            estimatedAvailableQuantity: 1,
-            shippingCost: item.shippingOptions?.[0]?.shippingCost?.value?.toString() || '0',
-            returnsAccepted: true,
-            sellerFeedbackScore: '1000', // Default value
-            sellerFeedbackPercentage: '95' // Default value
-          }));
+          console.log(`📊 Raw eBay response for "${term}":`, JSON.stringify(data, null, 2));
+          
+          const items = (data.itemSummaries || []).map((item: any) => {
+            console.log(`🔍 Processing item:`, {
+              title: item.title,
+              price: item.price,
+              condition: item.condition,
+              brand: extractBrandFromTitle(item.title)
+            });
+            
+            return {
+              itemId: item.itemId,
+              title: item.title,
+              priceValue: item.price?.value?.toString() || '0',
+              priceCurrency: item.price?.currency || 'USD',
+              gtin: '', // Will be extracted from title if available
+              brand: extractBrandFromTitle(item.title),
+              mpn: '', // Not available in search API
+              condition: item.condition || 'New',
+              imageUrl: item.image?.imageUrl || '/placeholder-shoe.png',
+              itemWebUrl: item.itemWebUrl,
+              sellerUsername: item.seller?.username || 'Unknown',
+              availability: 'AVAILABLE',
+              categoryId: '15709',
+              category: 'Shoes|Athletic Shoes',
+              estimatedAvailableQuantity: 1,
+              shippingCost: item.shippingOptions?.[0]?.shippingCost?.value?.toString() || '0',
+              returnsAccepted: true,
+              sellerFeedbackScore: '1000', // Default value
+              sellerFeedbackPercentage: '95' // Default value
+            };
+          });
           
           allItems.push(...items);
           console.log(`✅ Found ${items.length} items for "${term}"`);
         } else {
-          console.log(`❌ Search failed for "${term}": ${response.status}`);
+          const errorText = await response.text();
+          console.log(`❌ Search failed for "${term}": ${response.status} - ${errorText}`);
         }
         
         // Small delay between searches
