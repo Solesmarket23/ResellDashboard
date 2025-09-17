@@ -1,0 +1,39 @@
+{
+  "info": {
+    "name": "ResellDashboard API Collection",
+    "description": "API collection for ResellDashboard eBay-StockX arbitrage system",
+    "version": "1.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "eBay-StockX Arbitrage",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"searchQuery\": \"jordan 1\",\n  \"maxResults\": 50,\n  \"minProfitMargin\": 20,\n  \"maxPrice\": 500,\n  \"sizes\": [\"9\", \"9.5\", \"10\"]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/ebay-stockx-arbitrage",
+          "host": ["{{base_url}}"],
+          "path": ["api", "ebay-stockx-arbitrage"]
+        }
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000"
+    }
+  ]
+}
+

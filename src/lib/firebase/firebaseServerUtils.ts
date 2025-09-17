@@ -39,3 +39,26 @@ export const getDocumentsServer = async (collectionName: string, options?: {
     return [];
   }
 };
+
+export const deleteDocument = async (collectionName: string, id: string) => {
+  if (!db) {
+    throw new Error("Firebase not initialized");
+  }
+
+  try {
+    // Ensure ID is a string and not empty
+    if (!id || typeof id !== 'string') {
+      throw new Error('Invalid document ID');
+    }
+
+    console.log(`🗑️ Server: Deleting document ${id} from ${collectionName}`);
+    
+    const docRef = db.collection(collectionName).doc(id);
+    await docRef.delete();
+    
+    console.log(`✅ Server: Successfully deleted document ${id} from ${collectionName}`);
+  } catch (error) {
+    console.error(`❌ Server: Error deleting document ${id} from ${collectionName}:`, error);
+    throw error;
+  }
+};

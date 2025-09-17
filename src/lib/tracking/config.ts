@@ -20,7 +20,7 @@ export const trackingConfig = {
   fedex: {
     apiKey: process.env.FEDEX_API_KEY,
     secretKey: process.env.FEDEX_SECRET_KEY,
-    baseUrl: 'https://apis.fedex.com',
+    baseUrl: process.env.FEDEX_BASE_URL || 'https://apis.fedex.com',
     enabled: !!(process.env.FEDEX_API_KEY && process.env.FEDEX_SECRET_KEY)
   },
   

@@ -35,8 +35,19 @@ export const signInWithGoogle = async () => {
 };
 
 // Firestore functions
-export const addDocument = (collectionName: string, data: any) =>
-  addDoc(collection(db, collectionName), data);
+export const addDocument = async (collectionName: string, data: any) => {
+  if (!db) {
+    console.warn('🔧 Firebase not initialized - cannot add document');
+    throw new Error('Firebase not initialized');
+  }
+  
+  try {
+    return await addDoc(collection(db, collectionName), data);
+  } catch (error) {
+    console.error('❌ Error adding document:', error);
+    throw error;
+  }
+};
 
 export const getDocuments = async (collectionName: string): Promise<any[]> => {
   if (!db) {
