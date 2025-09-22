@@ -1,96 +1,181 @@
-# Vercel Cron Setup Guide
+# CRON Job Setup for Real-Time Delivery Tracking
 
-## Overview
-This guide explains how to set up the cron jobs for 24/7 monitoring of StockX prices and auto-syncing Gmail purchases.
+This guide explains how to set up automated CRON jobs to keep your delivery tracking data up-to-date in real-time.
 
-## What Cron Jobs Do
+## 🎯 **What CRON Jobs Do**
 
-1. **Price Monitor** (runs every 15 minutes)
-   - Checks all monitored products for price changes
-   - Creates alerts when prices drop below thresholds
-   - Updates price history
-   - Works for all users automatically
+- **Auto-sync deliveries**: Every 5 minutes, sync all purchases with tracking numbers to the deliveries page
+- **Live tracking updates**: Fetch real-time tracking data from AfterShip API
+- **Status updates**: Update delivery statuses (shipped, in_transit, out_for_delivery, delivered)
+- **Estimated delivery dates**: Get accurate delivery estimates from carriers
 
-2. **Purchase Sync** (runs every hour)
-   - Auto-fetches new purchase emails from Gmail
-   - Parses order confirmations
-   - Updates purchase database
-   - No manual syncing needed
+## 🚀 **Setup Options**
 
-## Setup Steps
+### **Option 1: Vercel Cron Jobs (Recommended)**
 
-### 1. Get Firebase Admin Credentials
+If you're using Vercel, add this to your `vercel.json`:
 
-1. Go to [Firebase Console](https://console.firebase.google.com)
-2. Select your project
-3. Go to Project Settings → Service Accounts
-4. Click "Generate New Private Key"
-5. Save the downloaded JSON file
-
-### 2. Add Environment Variables to Vercel
-
-Go to your Vercel project settings and add these environment variables:
-
-```
-FIREBASE_CLIENT_EMAIL=<from-service-account-json>
-FIREBASE_PRIVATE_KEY=<from-service-account-json>
-CRON_SECRET=<generate-a-random-string>
+```json
+{
+  "crons": [
+    {
+      "path": "/api/cron/sync-deliveries",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}
 ```
 
-**Important**: For `FIREBASE_PRIVATE_KEY`, copy the entire private key including the `-----BEGIN PRIVATE KEY-----` and `-----END PRIVATE KEY-----` parts.
+### **Option 2: External CRON Service**
 
-### 3. Deploy to Vercel
+Use a service like [cron-job.org](https://cron-job.org) or [EasyCron](https://www.easycron.com):
+
+**URL**: `https://your-domain.com/api/cron/sync-deliveries`
+**Schedule**: Every 5 minutes (`*/5 * * * *`)
+**Method**: GET
+**Headers**: 
+```
+Authorization: Bearer YOUR_CRON_SECRET
+```
+
+### **Option 3: Server CRON (VPS/Dedicated)**
+
+Add to your server's crontab:
 
 ```bash
-git add .
-git commit -m "Add Vercel cron jobs"
-git push
+# Edit crontab
+crontab -e
+
+# Add this line (runs every 5 minutes)
+*/5 * * * * curl -H "Authorization: Bearer YOUR_CRON_SECRET" https://your-domain.com/api/cron/sync-deliveries
 ```
 
-Vercel will automatically detect the `vercel.json` file and set up the cron jobs.
+## 🔧 **Environment Variables**
 
-### 4. Verify Crons Are Running
+Add these to your `.env.local`:
 
-After deployment:
-1. Go to your Vercel dashboard
-2. Click on your project
-3. Go to the "Functions" tab
-4. You should see:
-   - `/api/cron/monitor-prices` (runs every 15 min)
-   - `/api/cron/sync-purchases` (runs every hour)
+```bash
+# CRON Secret (for security)
+CRON_SECRET=your-super-secret-cron-key-here
 
-### 5. Check Cron Status
+# AfterShip API Key (for live tracking)
+AFTERSHIP_API_KEY=your-aftership-api-key
 
-Visit: `https://your-app.vercel.app/api/cron/status`
+# App URL (for internal API calls)
+NEXT_PUBLIC_APP_URL=https://your-domain.com
+```
 
-## How It Works
+## 📊 **Monitoring**
 
-- Crons run on Vercel's infrastructure (not your computer)
-- They work 24/7 even when your app is closed
-- Price checks respect rate limits (1 req/sec)
-- Only checks products that haven't been checked in 5+ minutes
-- Creates alerts that appear when you open the app
+### **Check CRON Status**
 
-## Monitoring
+Visit: `https://your-domain.com/api/cron/sync-deliveries`
 
-To see if crons are working:
-1. Check Vercel Functions logs
-2. Look for new alerts in your app
-3. Check "last checked" timestamps on products
+**Success Response**:
+```json
+{
+  "success": true,
+  "message": "Delivery sync completed",
+  "results": {
+    "totalUsers": 5,
+    "successfulSyncs": 5,
+    "failedSyncs": 0,
+    "totalDeliveries": 23,
+    "liveTrackingUpdates": 18,
+    "errors": []
+  },
+  "timestamp": "2025-01-17T19:30:00.000Z"
+}
+```
 
-## Troubleshooting
+### **Manual Trigger**
 
-**Crons not running?**
-- Check environment variables are set correctly
-- Verify Firebase service account has proper permissions
-- Check Vercel Functions logs for errors
+You can manually trigger a sync:
 
-**No alerts appearing?**
-- Ensure products have price drop thresholds set
-- Check that monitoring is enabled for users
-- Verify StockX authentication is valid
+```bash
+curl -H "Authorization: Bearer YOUR_CRON_SECRET" \
+     https://your-domain.com/api/cron/sync-deliveries
+```
 
-**Rate limit errors?**
-- Crons automatically handle rate limits
-- Products are checked in batches with delays
-- Each user's products are checked separately
+## ⚡ **Real-Time Features**
+
+### **Automatic Updates**
+- **Every 5 minutes**: CRON job syncs all deliveries
+- **Live tracking**: AfterShip API provides real-time status
+- **Status changes**: Automatically updates delivery statuses
+- **Delivery dates**: Gets accurate estimates from carriers
+
+### **User Experience**
+- **Real-time indicators**: Shows "Last sync" timestamp
+- **Live status**: Green WiFi icon when synced
+- **Error handling**: Red WiFi icon when sync fails
+- **Auto-refresh**: Page refreshes every minute for live data
+
+## 🔍 **Troubleshooting**
+
+### **Common Issues**
+
+1. **CRON not running**
+   - Check `CRON_SECRET` environment variable
+   - Verify URL is accessible
+   - Check server logs
+
+2. **No live tracking data**
+   - Verify `AFTERSHIP_API_KEY` is set
+   - Check AfterShip API permissions
+   - Ensure tracking numbers are registered
+
+3. **Sync errors**
+   - Check Firebase connection
+   - Verify user authentication
+   - Check API rate limits
+
+### **Debug Commands**
+
+```bash
+# Test CRON endpoint
+curl -H "Authorization: Bearer YOUR_CRON_SECRET" \
+     https://your-domain.com/api/cron/sync-deliveries
+
+# Check environment variables
+echo $CRON_SECRET
+echo $AFTERSHIP_API_KEY
+
+# View logs (if using PM2 or similar)
+pm2 logs your-app-name
+```
+
+## 📈 **Performance**
+
+### **Optimization**
+- **Batch processing**: Processes all users in one request
+- **Rate limiting**: 1-second delay between users
+- **Error handling**: Continues processing if one user fails
+- **Deduplication**: Removes duplicate tracking numbers
+
+### **Scaling**
+- **Multiple users**: Handles unlimited users
+- **Large datasets**: Processes thousands of deliveries
+- **API limits**: Respects AfterShip rate limits
+- **Memory efficient**: Processes data in batches
+
+## 🎉 **Benefits**
+
+✅ **Real-time updates**: Always current delivery status  
+✅ **Automatic sync**: No manual intervention needed  
+✅ **Live tracking**: AfterShip API integration  
+✅ **Error handling**: Graceful failure recovery  
+✅ **Scalable**: Handles growing user base  
+✅ **Secure**: CRON secret protection  
+
+## 🔄 **Next Steps**
+
+1. **Set up CRON job** using one of the options above
+2. **Configure environment variables** in `.env.local`
+3. **Test the endpoint** manually first
+4. **Monitor the logs** for any issues
+5. **Enjoy real-time delivery tracking!** 🚀
+
+---
+
+**Need help?** Check the logs or create an issue in the repository.

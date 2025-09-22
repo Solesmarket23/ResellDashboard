@@ -6,7 +6,7 @@ export interface FedExTrackingRequest {
   trackingInfo: {
     trackingNumberInfo: {
       trackingNumber: string;
-    }[];
+    };
   }[];
 }
 
@@ -82,6 +82,11 @@ export interface FedExTrackingResponse {
             ends: string;
           };
         };
+        // Key addition: dateAndTimes array for precise delivery date extraction
+        dateAndTimes: Array<{
+          dateTime: string;
+          type: 'ACTUAL_DELIVERY' | 'ESTIMATED_DELIVERY' | 'COMMITMENT' | 'APPOINTMENT_DELIVERY' | 'ACTUAL_PICKUP' | 'ACTUAL_TENDER' | 'ANTICIPATED_TENDER' | 'ATTEMPTED_DELIVERY' | 'ESTIMATED_ARRIVAL_AT_GATEWAY' | 'ESTIMATED_PICKUP' | 'ESTIMATED_RETURN_TO_STATION' | 'SHIP' | 'SHIPMENT_DATA_RECEIVED';
+        }>;
         deliveryDetails: {
           actualDeliveryTimestamp: string;
           deliveryLocation: string;
@@ -124,11 +129,9 @@ export class FedExTrackingAPI {
         includeDetailedScans: true,
         trackingInfo: [
           {
-            trackingNumberInfo: [
-              {
-                trackingNumber: trackingNumber
-              }
-            ]
+            trackingNumberInfo: {
+              trackingNumber: trackingNumber
+            }
           }
         ]
       };
@@ -193,12 +196,37 @@ export class FedExTrackingAPI {
       // Determine current status
       const currentStatus = this.mapFedExStatus(trackResults.statusCode || trackResults.statusDetail?.code || 'UNKNOWN');
       
-      // Get estimated delivery
-      const estimatedDelivery = trackResults.estimatedDeliveryTimeWindow?.window?.starts || 
+      // Get delivery dates from dateAndTimes array (most reliable method)
+      const dateAndTimes = trackResults.dateAndTimes || [];
+      
+      // Find estimated delivery date (priority: ESTIMATED_DELIVERY > COMMITMENT)
+      const estimatedDeliveryDate = dateAndTimes.find(dt => 
+        dt.type === 'ESTIMATED_DELIVERY' || dt.type === 'COMMITMENT'
+      )?.dateTime;
+      
+      // Find actual delivery date
+      const actualDeliveryDate = dateAndTimes.find(dt => 
+        dt.type === 'ACTUAL_DELIVERY'
+      )?.dateTime;
+
+      // Find commitment date
+      const commitmentDate = dateAndTimes.find(dt => 
+        dt.type === 'COMMITMENT'
+      )?.dateTime;
+
+      // Find appointment delivery date
+      const appointmentDeliveryDate = dateAndTimes.find(dt => 
+        dt.type === 'APPOINTMENT_DELIVERY'
+      )?.dateTime;
+
+      // Fallback to time windows if dateAndTimes not available
+      const estimatedDelivery = estimatedDeliveryDate || 
+                               trackResults.estimatedDeliveryTimeWindow?.window?.starts || 
                                trackResults.standardTransitTimeWindow?.window?.starts;
 
-      // Get actual delivery
-      const actualDelivery = trackResults.deliveryDetails?.actualDeliveryTimestamp;
+      // Fallback to deliveryDetails if dateAndTimes not available
+      const actualDelivery = actualDeliveryDate || 
+                            trackResults.deliveryDetails?.actualDeliveryTimestamp;
 
       return {
         trackingNumber,
@@ -212,7 +240,29 @@ export class FedExTrackingAPI {
         updates: updates,
         serviceType: trackResults.serviceDetail?.description,
         weight: trackResults.packageDetails?.weightAndDimensions?.weight?.[0]?.value,
-        weightUnit: trackResults.packageDetails?.weightAndDimensions?.weight?.[0]?.unit
+        weightUnit: trackResults.packageDetails?.weightAndDimensions?.weight?.[0]?.unit,
+        // Enhanced delivery date information
+        commitmentDate: commitmentDate ? new Date(commitmentDate).toISOString().split('T')[0] : undefined,
+        appointmentDeliveryDate: appointmentDeliveryDate ? new Date(appointmentDeliveryDate).toISOString().split('T')[0] : undefined,
+        deliveryTimeWindow: {
+          estimated: trackResults.estimatedDeliveryTimeWindow?.window ? {
+            starts: trackResults.estimatedDeliveryTimeWindow.window.starts,
+            ends: trackResults.estimatedDeliveryTimeWindow.window.ends
+          } : undefined,
+          actual: trackResults.actualDeliveryTimeWindow?.window ? {
+            starts: trackResults.actualDeliveryTimeWindow.window.starts,
+            ends: trackResults.actualDeliveryTimeWindow.window.ends
+          } : undefined
+        },
+        deliveryDetails: trackResults.deliveryDetails ? {
+          location: trackResults.deliveryDetails.deliveryLocation,
+          signatureName: trackResults.deliveryDetails.deliverySignatureName,
+          serviceArea: trackResults.deliveryDetails.deliveryServiceArea,
+          serviceAreaDescription: trackResults.deliveryDetails.deliveryServiceAreaDescription,
+          locationDescription: trackResults.deliveryDetails.deliveryLocationDescription,
+          deliveryToday: false, // This would need to be calculated based on current date vs delivery date
+          deliveryAttempts: '0' // This would need to be extracted from scan events
+        } : undefined
       };
 
     } catch (error) {

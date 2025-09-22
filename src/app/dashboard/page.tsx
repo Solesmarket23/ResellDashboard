@@ -41,6 +41,7 @@ import AliasOrderManagement from '../../components/AliasOrderManagement';
 
 export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [currentSection, setCurrentSection] = useState('dashboard');
   const [isClient, setIsClient] = useState(false);
   const { currentTheme } = useTheme();
@@ -133,6 +134,10 @@ export default function DashboardPage() {
 
   const closeSidebar = () => {
     setSidebarOpen(false);
+  };
+
+  const toggleSidebarCollapse = () => {
+    setSidebarCollapsed(!sidebarCollapsed);
   };
 
   // Helper function to format section name for display
@@ -341,10 +346,12 @@ export default function DashboardPage() {
         onItemClick={handleItemClick}
         isOpen={sidebarOpen}
         onClose={closeSidebar}
+        isCollapsed={sidebarCollapsed}
+        onToggleCollapse={toggleSidebarCollapse}
       />
       
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden lg:ml-0">
+      <div className="flex-1 flex flex-col overflow-hidden">
         {/* Mobile Header with Hamburger Menu */}
         <div className="lg:hidden flex items-center justify-between p-4 border-b border-gray-700/20">
           <button

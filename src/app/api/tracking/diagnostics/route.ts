@@ -21,6 +21,11 @@ export async function GET(request: NextRequest) {
         },
         ups: {
           enabled: trackingConfig.ups.enabled,
+          hasOAuthClientId: !!process.env.UPS_OAUTH_CLIENT_ID,
+          hasOAuthClientSecret: !!process.env.UPS_OAUTH_CLIENT_SECRET,
+          hasClientId: !!process.env.UPS_CLIENT_ID,
+          hasClientSecret: !!process.env.UPS_CLIENT_SECRET,
+          hasAccountNumber: !!process.env.UPS_ACCOUNT_NUMBER,
           hasApiKey: !!process.env.UPS_API_KEY,
           hasUsername: !!process.env.UPS_API_USERNAME,
           hasPassword: !!process.env.UPS_API_PASSWORD
@@ -39,6 +44,11 @@ export async function GET(request: NextRequest) {
         AFTERSHIP_API_KEY: process.env.AFTERSHIP_API_KEY ? '***configured***' : 'not set',
         FEDEX_API_KEY: process.env.FEDEX_API_KEY ? '***configured***' : 'not set',
         FEDEX_SECRET_KEY: process.env.FEDEX_SECRET_KEY ? '***configured***' : 'not set',
+        UPS_OAUTH_CLIENT_ID: process.env.UPS_OAUTH_CLIENT_ID ? '***configured***' : 'not set',
+        UPS_OAUTH_CLIENT_SECRET: process.env.UPS_OAUTH_CLIENT_SECRET ? '***configured***' : 'not set',
+        UPS_CLIENT_ID: process.env.UPS_CLIENT_ID ? '***configured***' : 'not set',
+        UPS_CLIENT_SECRET: process.env.UPS_CLIENT_SECRET ? '***configured***' : 'not set',
+        UPS_ACCOUNT_NUMBER: process.env.UPS_ACCOUNT_NUMBER ? '***configured***' : 'not set',
         UPS_API_KEY: process.env.UPS_API_KEY ? '***configured***' : 'not set',
         USPS_API_KEY: process.env.USPS_API_KEY ? '***configured***' : 'not set'
       }

@@ -3,17 +3,29 @@ export const trackingConfig = {
   // AfterShip API (Universal tracking service)
   afterShip: {
     apiKey: process.env.AFTERSHIP_API_KEY,
-    baseUrl: 'https://api.aftership.com/v4',
+    baseUrl: 'https://api.aftership.com/tracking/2025-07',
     enabled: !!process.env.AFTERSHIP_API_KEY
   },
   
   // UPS API
   ups: {
+    // OAuth credentials (preferred)
+    oauthClientId: process.env.UPS_OAUTH_CLIENT_ID,
+    oauthClientSecret: process.env.UPS_OAUTH_CLIENT_SECRET,
+    oauthRedirectUri: process.env.UPS_OAUTH_REDIRECT_URI,
+    oauthScope: process.env.UPS_OAUTH_SCOPE,
+    // Client credentials (fallback)
+    clientId: process.env.UPS_CLIENT_ID,
+    clientSecret: process.env.UPS_CLIENT_SECRET,
+    accountNumber: process.env.UPS_ACCOUNT_NUMBER,
+    baseUrl: process.env.UPS_BASE_URL || 'https://wwwcie.ups.com',
+    // Legacy API credentials (if needed)
     apiKey: process.env.UPS_API_KEY,
     username: process.env.UPS_API_USERNAME,
     password: process.env.UPS_API_PASSWORD,
-    baseUrl: 'https://onlinetools.ups.com/api',
-    enabled: !!(process.env.UPS_API_KEY && process.env.UPS_API_USERNAME && process.env.UPS_API_PASSWORD)
+    enabled: !!(process.env.UPS_OAUTH_CLIENT_ID && process.env.UPS_OAUTH_CLIENT_SECRET) || 
+             !!(process.env.UPS_CLIENT_ID && process.env.UPS_CLIENT_SECRET && process.env.UPS_ACCOUNT_NUMBER) ||
+             !!(process.env.UPS_API_KEY && process.env.UPS_API_USERNAME && process.env.UPS_API_PASSWORD)
   },
   
   // FedEx API

@@ -1,4 +1,5 @@
-import { trackingConfig } from './config';
+import { FedExTrackingAPI } from './fedexApi';
+import { UPSTrackingAPI } from './upsApi';
 
 // Tracking service for live delivery updates
 export interface TrackingUpdate {
@@ -20,235 +21,163 @@ export interface TrackingInfo {
   lastUpdate: string;
   updates: TrackingUpdate[];
   error?: string;
+  // Additional courier-specific information
+  courierEstimatedDelivery?: string;
+  afterShipEstimatedDelivery?: string;
+  transitTime?: number;
+  deliveryType?: string;
+  signatureRequired?: string;
+  courierTrackingLink?: string;
+  onTimeStatus?: string;
+  // Enhanced delivery date information
+  commitmentDate?: string; // COMMITMENT type from dateAndTimes
+  appointmentDeliveryDate?: string; // APPOINTMENT_DELIVERY type from dateAndTimes
+  deliveryTimeWindow?: {
+    estimated?: { starts: string; ends: string };
+    actual?: { starts: string; ends: string };
+  };
+  deliveryDetails?: {
+    location?: string;
+    signatureName?: string;
+    serviceArea?: string;
+    serviceAreaDescription?: string;
+    locationDescription?: string;
+    deliveryToday?: boolean;
+    deliveryAttempts?: string;
+  };
 }
 
-export interface CarrierAPI {
-  name: string;
-  detectTrackingNumber: (trackingNumber: string) => boolean;
-  getTrackingInfo: (trackingNumber: string) => Promise<TrackingInfo>;
-}
+// Multi-carrier tracking service
 
-// Note: All carrier APIs removed - using only AfterShip for all tracking
-
-// AfterShip API Integration (Universal tracking service)
-export class AfterShipAPI implements CarrierAPI {
-  name = 'AfterShip';
-  private apiKey: string;
-  
-  constructor(apiKey: string) {
-    this.apiKey = apiKey;
-  }
-  
-  detectTrackingNumber(trackingNumber: string): boolean {
-    // AfterShip can handle any tracking number format
-    return trackingNumber.length >= 8;
-  }
-  
-  async getTrackingInfo(trackingNumber: string): Promise<TrackingInfo> {
-    try {
-      // First, search for the tracking number in AfterShip
-      const searchResponse = await fetch(`https://api.aftership.com/v4/trackings?tracking_numbers=${trackingNumber}`, {
-        headers: {
-          'as-api-key': this.apiKey,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (!searchResponse.ok) {
-        const errorData = await searchResponse.text();
-        console.log(`⚠️ AfterShip search failed for ${trackingNumber}: ${searchResponse.status} - ${errorData}`);
-        throw new Error(`AfterShip API error: ${searchResponse.status} - ${errorData}`);
-      }
-      
-      const searchData = await searchResponse.json();
-      
-      // If we found the tracking, get the full details
-      if (searchData.data.trackings && searchData.data.trackings.length > 0) {
-        const tracking = searchData.data.trackings[0];
-        console.log(`✅ Found tracking in AfterShip: ${trackingNumber}`);
-        return this.parseAfterShipResponse({ data: { tracking } });
-      } else {
-        // Tracking not found, register it with AfterShip
-        console.log(`⚠️ Tracking not found in AfterShip: ${trackingNumber}, registering...`);
-        
-        const registerResponse = await fetch('https://api.aftership.com/v4/trackings', {
-          method: 'POST',
-          headers: {
-            'as-api-key': this.apiKey,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            tracking: {
-              tracking_number: trackingNumber,
-              slug: this.detectCarrierFromTrackingNumber(trackingNumber)
-            }
-          })
-        });
-        
-        if (registerResponse.ok) {
-          console.log(`✅ Successfully registered tracking with AfterShip: ${trackingNumber}`);
-          // Wait for AfterShip to process the registration
-          await new Promise(resolve => setTimeout(resolve, 3000));
-          
-          // Try to get the tracking info again
-          return await this.getTrackingInfo(trackingNumber);
-        } else {
-          const errorData = await registerResponse.json();
-          console.log(`❌ Failed to register tracking with AfterShip: ${errorData.meta?.message || 'Unknown error'}`);
-          
-          // Check if it's a permission issue
-          if (registerResponse.status === 403) {
-            return {
-              trackingNumber,
-              carrier: this.detectCarrierFromTrackingNumber(trackingNumber),
-              status: 'unknown',
-              lastUpdate: new Date().toISOString(),
-              updates: [],
-              error: 'AfterShip API key lacks write permissions. Please register this tracking number manually in AfterShip dashboard or upgrade your API key permissions.'
-            };
-          }
-          
-          return {
-            trackingNumber,
-            carrier: this.detectCarrierFromTrackingNumber(trackingNumber),
-            status: 'unknown',
-            lastUpdate: new Date().toISOString(),
-            updates: [],
-            error: `Failed to register with AfterShip: ${errorData.meta?.message || 'Unknown error'}`
-          };
-        }
-      }
-    } catch (error) {
-      console.error(`❌ AfterShip API error for ${trackingNumber}:`, error);
-      
-      return {
-        trackingNumber,
-        carrier: this.detectCarrierFromTrackingNumber(trackingNumber),
-        status: 'unknown',
-        lastUpdate: new Date().toISOString(),
-        updates: [],
-        error: error instanceof Error ? error.message : 'AfterShip API error'
-      };
-    }
-  }
-  
-  private detectCarrierFromTrackingNumber(trackingNumber: string): string {
-    if (trackingNumber.startsWith('1Z')) return 'ups';
-    if (/^[0-9]{12,15}$/.test(trackingNumber)) return 'fedex';
-    if (/^9[0-9]{19,21}$/.test(trackingNumber)) return 'usps';
-    if (/^[0-9]{10}$/.test(trackingNumber)) return 'dhl';
-    return 'fedex'; // Default to FedEx for unknown formats
-  }
-  
-  private parseAfterShipResponse(data: any): TrackingInfo {
-    const tracking = data.data.tracking;
-    const checkpoints = tracking.checkpoints || [];
-    const estimatedDelivery = tracking.expected_delivery;
-    
-    // Log the estimated delivery from AfterShip for debugging
-    if (estimatedDelivery) {
-      console.log(`📦 AfterShip estimated delivery: ${estimatedDelivery} for ${tracking.tracking_number}`);
-    }
-    
-    const updates: TrackingUpdate[] = checkpoints.map((checkpoint: any) => ({
-      timestamp: checkpoint.checkpoint_time,
-      location: checkpoint.location || 'Unknown',
-      status: this.mapAfterShipStatus(checkpoint.tag, estimatedDelivery),
-      description: checkpoint.message || checkpoint.description || 'Status update',
-      details: checkpoint.details
-    }));
-    
-    return {
-      trackingNumber: tracking.tracking_number,
-      carrier: tracking.slug || 'Unknown',
-      status: this.mapAfterShipStatus(tracking.tag, estimatedDelivery),
-      estimatedDelivery: tracking.expected_delivery,
-      actualDelivery: tracking.tag === 'Delivered' ? tracking.delivered_time : undefined,
-      origin: tracking.origin_country,
-      destination: tracking.destination_country,
-      lastUpdate: updates.length > 0 ? updates[updates.length - 1].timestamp : new Date().toISOString(),
-      updates: updates.reverse() // Most recent first
-    };
-  }
-  
-  private mapAfterShipStatus(tag: string, estimatedDelivery?: string): TrackingInfo['status'] {
-    let status: TrackingInfo['status'];
-    
-    switch (tag?.toLowerCase()) {
-      case 'delivered':
-        status = 'delivered';
-        break;
-      case 'in_transit':
-      case 'in_transit':
-        status = 'in_transit';
-        break;
-      case 'out_for_delivery':
-        status = 'out_for_delivery';
-        break;
-      case 'exception':
-        status = 'exception';
-        break;
-      case 'pending':
-      case 'info_received':
-        status = 'shipped';
-        break;
-      default:
-        status = 'unknown';
-    }
-    
-    // If status is "out_for_delivery" but estimated delivery is more than 1 day away,
-    // it's likely still in transit to the local facility
-    if (status === 'out_for_delivery' && estimatedDelivery) {
-      const estimatedDate = new Date(estimatedDelivery);
-      const today = new Date();
-      const daysUntilDelivery = Math.ceil((estimatedDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-      
-      if (daysUntilDelivery > 1) {
-        status = 'in_transit';
-      }
-    }
-    
-    return status;
-  }
-}
-
-// Main tracking service - AfterShip only
+// Main tracking service - supports FedEx and UPS
 export class TrackingService {
-  private afterShipAPI?: AfterShipAPI;
+  private fedexAPI?: FedExTrackingAPI;
+  private upsAPI?: UPSTrackingAPI;
+  private fedexInitialized = false;
+  private upsInitialized = false;
   
-  constructor(afterShipApiKey?: string) {
-    if (afterShipApiKey) {
-      this.afterShipAPI = new AfterShipAPI(afterShipApiKey);
+  constructor() {
+    // No parameters needed - credentials come from environment variables
+  }
+  
+  private initializeFedEx(): void {
+    if (this.fedexInitialized) return;
+    
+    if (process.env.FEDEX_API_KEY && process.env.FEDEX_SECRET_KEY) {
+      this.fedexAPI = new FedExTrackingAPI();
+      console.log('✅ FedEx API initialized');
     } else {
-      console.warn('⚠️ No AfterShip API key provided - tracking will not work');
+      console.warn('⚠️ No FedEx API credentials provided');
     }
+    
+    this.fedexInitialized = true;
+  }
+
+  private initializeUPS(): void {
+    if (this.upsInitialized) return;
+    
+    if (process.env.UPS_CLIENT_ID && process.env.UPS_CLIENT_SECRET && process.env.UPS_ACCOUNT_NUMBER) {
+      this.upsAPI = new UPSTrackingAPI();
+      console.log('✅ UPS API initialized');
+    } else {
+      console.warn('⚠️ No UPS API credentials provided');
+    }
+    
+    this.upsInitialized = true;
   }
   
   async getTrackingInfo(trackingNumber: string, carrier?: string): Promise<TrackingInfo> {
-    if (!this.afterShipAPI) {
+    // Initialize both APIs
+    this.initializeFedEx();
+    this.initializeUPS();
+    
+    // Determine which API to use based on carrier or tracking number format
+    const detectedCarrier = carrier || this.detectCarrier(trackingNumber);
+    
+    if (detectedCarrier === 'UPS' && this.upsAPI) {
+      console.log(`🔄 Getting tracking info from UPS API for ${trackingNumber}`);
+      try {
+        const upsResult = await this.upsAPI.getTrackingInfo(trackingNumber);
+        console.log(`✅ UPS API success for ${trackingNumber}`);
+        return upsResult;
+      } catch (error) {
+        console.error(`❌ UPS API error for ${trackingNumber}:`, error);
+        return {
+          trackingNumber,
+          carrier: 'UPS',
+          status: 'unknown',
+          lastUpdate: new Date().toISOString(),
+          updates: [],
+          error: error instanceof Error ? error.message : 'UPS API error'
+        };
+      }
+    } else if (detectedCarrier === 'FedEx' && this.fedexAPI) {
+      console.log(`🔄 Getting tracking info from FedEx API for ${trackingNumber}`);
+      try {
+        const fedexResult = await this.fedexAPI.getTrackingInfo(trackingNumber);
+        console.log(`✅ FedEx API success for ${trackingNumber}`);
+        return fedexResult;
+      } catch (error) {
+        console.error(`❌ FedEx API error for ${trackingNumber}:`, error);
+        return {
+          trackingNumber,
+          carrier: 'FedEx',
+          status: 'unknown',
+          lastUpdate: new Date().toISOString(),
+          updates: [],
+          error: error instanceof Error ? error.message : 'FedEx API error'
+        };
+      }
+    } else {
+      // No API available for this carrier
       return {
         trackingNumber,
-        carrier: 'Unknown',
+        carrier: detectedCarrier,
         status: 'unknown',
         lastUpdate: new Date().toISOString(),
         updates: [],
-        error: 'AfterShip API not configured'
+        error: `${detectedCarrier} API not configured`
       };
     }
+  }
+
+  private detectCarrier(trackingNumber: string): string {
+    if (!trackingNumber) return 'Unknown';
     
-    console.log(`🔄 Getting tracking info from AfterShip for ${trackingNumber}`);
-    return await this.afterShipAPI.getTrackingInfo(trackingNumber);
+    const cleanTracking = trackingNumber.replace(/[\s\-_]/g, '').toUpperCase();
+    
+    // UPS: Starts with 1Z and is 15-18 characters after 1Z (total 17-20)
+    if (/^1Z[0-9A-Z]{15,18}$/.test(cleanTracking)) return 'UPS';
+    
+    // FedEx: 12-15 digits (most common), or 20+ digits (some formats)
+    if (/^[0-9]{12,15}$/.test(cleanTracking)) return 'FedEx';
+    if (/^[0-9]{20,}$/.test(cleanTracking)) return 'FedEx';
+    
+    // USPS: 20-22 digits starting with 9, or 13 digits starting with 9
+    if (/^9[0-9]{19,21}$/.test(cleanTracking)) return 'USPS';
+    if (/^9[0-9]{12}$/.test(cleanTracking)) return 'USPS';
+    
+    // DHL: 10 digits, or starts with DHL
+    if (/^[0-9]{10}$/.test(cleanTracking)) return 'DHL';
+    if (/^DHL[0-9A-Z]+$/.test(cleanTracking)) return 'DHL';
+    
+    return 'Unknown';
   }
   
   async getBulkTrackingInfo(trackingNumbers: string[]): Promise<TrackingInfo[]> {
-    if (!this.afterShipAPI) {
+    // Initialize both APIs
+    this.initializeFedEx();
+    this.initializeUPS();
+    
+    // Check if any tracking APIs are available
+    if (!this.fedexAPI && !this.upsAPI) {
       return trackingNumbers.map(trackingNumber => ({
         trackingNumber,
         carrier: 'Unknown',
         status: 'unknown' as const,
         lastUpdate: new Date().toISOString(),
         updates: [],
-        error: 'AfterShip API not configured'
+        error: 'No tracking APIs configured'
       }));
     }
     
@@ -262,7 +191,7 @@ export class TrackingService {
       } else {
         return {
           trackingNumber: trackingNumbers[index],
-          carrier: 'Unknown',
+          carrier: 'FedEx',
           status: 'unknown' as const,
           lastUpdate: new Date().toISOString(),
           updates: [],
@@ -271,7 +200,8 @@ export class TrackingService {
       }
     });
   }
+
 }
 
 // Create singleton instance
-export const trackingService = new TrackingService(trackingConfig.afterShip.apiKey);
+export const trackingService = new TrackingService();

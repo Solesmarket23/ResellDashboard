@@ -40,6 +40,61 @@ export const getDocumentsServer = async (collectionName: string, options?: {
   }
 };
 
+export const updateDocument = async (collectionName: string, id: string, data: any) => {
+  if (!db) {
+    throw new Error("Firebase not initialized");
+  }
+
+  try {
+    // Ensure ID is a string and not empty
+    if (!id || typeof id !== 'string') {
+      throw new Error('Invalid document ID');
+    }
+
+    console.log(`📝 Server: Updating document ${id} in ${collectionName}`);
+    
+    const docRef = db.collection(collectionName).doc(id);
+    await docRef.update(data);
+    
+    console.log(`✅ Server: Successfully updated document ${id} in ${collectionName}`);
+  } catch (error) {
+    console.error(`❌ Server: Error updating document ${id} in ${collectionName}:`, error);
+    throw error;
+  }
+};
+
+export const getDocument = async (collectionName: string, id: string) => {
+  if (!db) {
+    throw new Error("Firebase not initialized");
+  }
+
+  try {
+    // Ensure ID is a string and not empty
+    if (!id || typeof id !== 'string') {
+      throw new Error('Invalid document ID');
+    }
+
+    console.log(`📄 Server: Getting document ${id} from ${collectionName}`);
+    
+    const docRef = db.collection(collectionName).doc(id);
+    const doc = await docRef.get();
+    
+    if (!doc.exists) {
+      console.log(`⚠️ Server: Document ${id} not found in ${collectionName}`);
+      return null;
+    }
+    
+    console.log(`✅ Server: Successfully retrieved document ${id} from ${collectionName}`);
+    return {
+      id: doc.id,
+      ...doc.data()
+    };
+  } catch (error) {
+    console.error(`❌ Server: Error getting document ${id} from ${collectionName}:`, error);
+    throw error;
+  }
+};
+
 export const deleteDocument = async (collectionName: string, id: string) => {
   if (!db) {
     throw new Error("Firebase not initialized");

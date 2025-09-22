@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDocumentsAdmin, addDocumentAdmin } from '../../../../lib/firebase/admin';
+import { getDocumentsServer, addDocument } from '../../../../lib/firebase/firebaseServerUtils';
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,8 +20,21 @@ export async function POST(request: NextRequest) {
     const userId = request.headers.get('x-user-id') || 'manual-user';
     
     try {
+      // Check if this tracking number was recently deleted (re-addition detection)
+      const deletionRecords = await getDocumentsServer('tracking_deletions');
+      const wasRecentlyDeleted = deletionRecords.find(d => 
+        d.trackingNumber === tracking && 
+        d.status === 'deleted' &&
+        new Date(d.deletedAt) > new Date(Date.now() - 24 * 60 * 60 * 1000) // Within last 24 hours
+      );
+      
+      if (wasRecentlyDeleted) {
+        console.log(`🔄 Detected re-addition of recently deleted tracking: ${tracking}`);
+        console.log(`📦 This will trigger a fresh fetch from AfterShip`);
+      }
+      
       // Get all existing purchases
-      const existingPurchases = await getDocumentsAdmin('purchases');
+      const existingPurchases = await getDocumentsServer('purchases');
       
       // Check if a tracking number already exists
       const existingTracking = existingPurchases.find(p => p.tracking === tracking);
@@ -44,9 +57,9 @@ export async function POST(request: NextRequest) {
         tracking: tracking,
         carrier: carrier || existingPurchase.carrier || 'Unknown',
         shippingStatus: shippingStatus || existingPurchase.shippingStatus || 'shipped',
-        productName: productName || existingPurchase.productName || 'Manual Entry',
-        productBrand: productBrand || existingPurchase.productBrand || 'Unknown',
-        productSize: productSize || existingPurchase.productSize || 'Unknown',
+        productName: (productName && productName.trim()) || existingPurchase.productName || 'Manual Entry',
+        productBrand: (productBrand && productBrand.trim()) || existingPurchase.productBrand || 'Unknown',
+        productSize: (productSize && productSize.trim()) || existingPurchase.productSize || 'Unknown',
         updatedAt: new Date().toISOString(),
         manualTrackingAdded: true
       };
@@ -59,9 +72,9 @@ export async function POST(request: NextRequest) {
         tracking: tracking,
         carrier: carrier || 'Unknown',
         shippingStatus: shippingStatus || 'shipped',
-        productName: productName || 'Manual Entry',
-        productBrand: productBrand || 'Unknown',
-        productSize: productSize || 'Unknown',
+        productName: (productName && productName.trim()) || 'Manual Entry',
+        productBrand: (productBrand && productBrand.trim()) || 'Unknown',
+        productSize: (productSize && productSize.trim()) || 'Unknown',
         status: shippingStatus || 'shipped',
         purchaseDate: new Date().toISOString(),
         estimatedDelivery: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 3 days from now
@@ -73,7 +86,7 @@ export async function POST(request: NextRequest) {
         manualTrackingAdded: true
       };
 
-      const docRef = await addDocumentAdmin('purchases', newPurchase);
+      const docRef = await addDocument('purchases', newPurchase);
       
       // Try to register with AfterShip for real-time tracking
       try {
@@ -84,13 +97,32 @@ export async function POST(request: NextRequest) {
           },
           body: JSON.stringify({
             trackingNumber: tracking,
-            carrier: carrier || 'Unknown'
+            carrier: carrier || 'Unknown',
+            forceFresh: wasRecentlyDeleted
           })
         });
         
         const afterShipResult = await afterShipResponse.json();
         if (afterShipResult.success) {
           console.log('✅ Tracking registered with AfterShip');
+          
+          // If this was a re-addition, clear the deletion record
+          if (wasRecentlyDeleted) {
+            try {
+              const deletionRecord = deletionRecords.find(d => d.trackingNumber === tracking);
+              if (deletionRecord) {
+                // Mark as re-added instead of deleting
+                await addDocument('tracking_deletions', {
+                  ...deletionRecord,
+                  status: 're-added',
+                  reAddedAt: new Date().toISOString()
+                });
+                console.log(`✅ Deletion record cleared for re-added tracking: ${tracking}`);
+              }
+            } catch (clearError) {
+              console.error('⚠️ Failed to clear deletion record (non-critical):', clearError);
+            }
+          }
         } else {
           console.log('⚠️ AfterShip registration failed:', afterShipResult.error);
         }
@@ -115,9 +147,9 @@ export async function POST(request: NextRequest) {
         tracking: tracking,
         carrier: carrier || 'Unknown',
         shippingStatus: shippingStatus || 'shipped',
-        productName: productName || 'Manual Entry',
-        productBrand: productBrand || 'Unknown',
-        productSize: productSize || 'Unknown',
+        productName: (productName && productName.trim()) || 'Manual Entry',
+        productBrand: (productBrand && productBrand.trim()) || 'Unknown',
+        productSize: (productSize && productSize.trim()) || 'Unknown',
         status: shippingStatus || 'shipped',
         purchaseDate: new Date().toISOString(),
         estimatedDelivery: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 3 days from now
@@ -129,7 +161,7 @@ export async function POST(request: NextRequest) {
         manualTrackingAdded: true
       };
 
-      const docRef = await addDocumentAdmin('purchases', newPurchase);
+      const docRef = await addDocument('purchases', newPurchase);
       
       // Try to register with AfterShip for real-time tracking
       try {
@@ -140,13 +172,32 @@ export async function POST(request: NextRequest) {
           },
           body: JSON.stringify({
             trackingNumber: tracking,
-            carrier: carrier || 'Unknown'
+            carrier: carrier || 'Unknown',
+            forceFresh: wasRecentlyDeleted
           })
         });
         
         const afterShipResult = await afterShipResponse.json();
         if (afterShipResult.success) {
           console.log('✅ Tracking registered with AfterShip');
+          
+          // If this was a re-addition, clear the deletion record
+          if (wasRecentlyDeleted) {
+            try {
+              const deletionRecord = deletionRecords.find(d => d.trackingNumber === tracking);
+              if (deletionRecord) {
+                // Mark as re-added instead of deleting
+                await addDocument('tracking_deletions', {
+                  ...deletionRecord,
+                  status: 're-added',
+                  reAddedAt: new Date().toISOString()
+                });
+                console.log(`✅ Deletion record cleared for re-added tracking: ${tracking}`);
+              }
+            } catch (clearError) {
+              console.error('⚠️ Failed to clear deletion record (non-critical):', clearError);
+            }
+          }
         } else {
           console.log('⚠️ AfterShip registration failed:', afterShipResult.error);
         }

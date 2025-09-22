@@ -55,23 +55,31 @@ export class FedExAuthService {
 
     const authUrl = `${baseUrl}/oauth/token`;
     
-    const credentials = Buffer.from(`${apiKey}:${secretKey}`).toString('base64');
+    console.log(`🔐 Authenticating with FedEx OAuth at: ${authUrl}`);
+    console.log(`- Using API Key: ${apiKey.substring(0, 8)}...`);
+    console.log(`- Using Secret Key: ${secretKey.substring(0, 8)}...`);
     
+    // Use the correct FedEx OAuth format from official documentation
+    // FedEx requires form-encoded body parameters, not Basic Auth
     const response = await fetch(authUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': `Basic ${credentials}`
+        'Content-Type': 'application/x-www-form-urlencoded'
       },
-      body: 'grant_type=client_credentials'
+      body: `grant_type=client_credentials&client_id=${apiKey}&client_secret=${secretKey}`
     });
+
+    console.log(`- Auth Response Status: ${response.status}`);
+    console.log(`- Auth Response Headers:`, Object.fromEntries(response.headers.entries()));
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.error(`❌ FedEx OAuth failed: ${response.status} ${errorText}`);
       throw new Error(`FedEx authentication failed: ${response.status} ${errorText}`);
     }
 
     const tokenData = await response.json();
+    console.log(`✅ FedEx OAuth successful! Token type: ${tokenData.token_type}, expires in: ${tokenData.expires_in}s`);
     
     const token: FedExToken = {
       access_token: tokenData.access_token,

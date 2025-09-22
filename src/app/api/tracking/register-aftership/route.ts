@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
   try {
-    const { trackingNumber, carrier } = await request.json();
+    const { trackingNumber, carrier, forceFresh } = await request.json();
     
     if (!trackingNumber) {
       return NextResponse.json({ 
@@ -18,13 +18,37 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    console.log(`📦 Registering tracking with AfterShip: ${trackingNumber}`);
+    console.log(`📦 Registering tracking with AfterShip: ${trackingNumber}${forceFresh ? ' (FORCE FRESH)' : ''}`);
+
+    // If forceFresh is true, first try to retrack to get fresh data
+    if (forceFresh) {
+      try {
+        console.log(`🔄 Force retracking for fresh data: ${trackingNumber}`);
+        const retrackResponse = await fetch(`https://api.aftership.com/tracking/2025-07/trackings/${trackingNumber}/retrack`, {
+          method: 'POST',
+          headers: {
+            'as-api-key': apiKey,
+            'as-api-version': '2025-07',
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (retrackResponse.ok) {
+          console.log(`✅ Force retrack successful for: ${trackingNumber}`);
+        } else {
+          console.log(`⚠️ Force retrack failed for: ${trackingNumber}, proceeding with normal registration`);
+        }
+      } catch (retrackError) {
+        console.log(`⚠️ Force retrack error for: ${trackingNumber}, proceeding with normal registration`);
+      }
+    }
 
     // Register tracking with AfterShip using the correct API version
-    const response = await fetch('https://api.aftership.com/v4/trackings', {
+    const response = await fetch('https://api.aftership.com/tracking/2025-07/trackings', {
       method: 'POST',
       headers: {
         'as-api-key': apiKey,
+        'as-api-version': '2025-07',
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
