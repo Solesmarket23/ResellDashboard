@@ -101,5 +101,20 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == userId;
       allow create: if request.auth != null && request.auth.uid == userId;
     }
+    
+    // Allow any user to read/write their own data in user_sales collection
+    match /user_sales/{sale} {
+      // Allow Firebase authenticated users
+      allow read, write: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      
+      // Allow site password users (no auth but with userId in data)
+      allow read, write: if request.auth == null && resource.data.userId != null;
+      allow create: if request.auth == null && request.resource.data.userId != null;
+      
+      // Allow any user with valid userId in the data (for API endpoints)
+      allow read, write: if resource.data.userId != null;
+      allow create: if request.resource.data.userId != null;
+    }
   }
 }

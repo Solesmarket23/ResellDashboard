@@ -337,8 +337,9 @@ export class UPSTrackingAPI {
               const year = dateStr.substring(0, 4);
               const month = dateStr.substring(4, 6);
               const day = dateStr.substring(6, 8);
-              const formattedDate = `${year}-${month}-${day}`;
-              estimatedDelivery = formattedDate;
+              // Create date in local timezone to avoid UTC conversion issues
+              const localDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+              estimatedDelivery = localDate.toISOString().split('T')[0];
               console.log('📅 Found package deliveryDate array:', estimatedDelivery);
             }
           } else if (typeof packageData.deliveryDate === 'string' && packageData.deliveryDate.length === 8) {
@@ -347,8 +348,9 @@ export class UPSTrackingAPI {
             const year = dateStr.substring(0, 4);
             const month = dateStr.substring(4, 6);
             const day = dateStr.substring(6, 8);
-            const formattedDate = `${year}-${month}-${day}`;
-            estimatedDelivery = formattedDate;
+            // Create date in local timezone to avoid UTC conversion issues
+            const localDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+            estimatedDelivery = localDate.toISOString().split('T')[0];
             console.log('📅 Found package deliveryDate webhook format:', estimatedDelivery);
           } else {
             // Handle standard date format

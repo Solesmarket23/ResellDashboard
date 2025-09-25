@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { RefreshCw, Mail, CheckCircle, AlertCircle, Package } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 
@@ -33,6 +33,20 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [currentBatch, setCurrentBatch] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
+  const [isForceCompleting, setIsForceCompleting] = useState(false);
+  const isCancelledRef = useRef(false);
+  const controllerRef = useRef<AbortController | null>(null);
+
+  // Cancel outstanding work on unmount
+  useEffect(() => {
+    isCancelledRef.current = false;
+    return () => {
+      isCancelledRef.current = true;
+      if (controllerRef.current) {
+        try { controllerRef.current.abort(); } catch {}
+      }
+    };
+  }, []);
 
   const startBatchedSync = async () => {
     setIsLoading(true);
@@ -41,6 +55,7 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
     setAllPurchases([]);
     setCurrentBatch(0);
     setIsComplete(false);
+    isCancelledRef.current = false;
 
     await processBatches();
   };
@@ -50,15 +65,18 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
     let pageToken: string | undefined = undefined;
     let allCollectedPurchases: any[] = [];
     let hasMore = true;
+    let lastProcessed = -1;
+    let stagnantIterations = 0;
 
-    while (hasMore && batchIndex < 1) { // Limit to 1 batch (25 emails)
+    while (hasMore && batchIndex < 10) { // Limit to 10 batches (1000 emails total)
       try {
         console.log(`🚀 Starting batch ${batchIndex + 1}...`);
         
         // Build URL with parameters
         const params = new URLSearchParams({
           batch: batchIndex.toString(),
-          reset: batchIndex === 0 ? 'true' : 'false'
+          reset: batchIndex === 0 ? 'true' : 'false',
+          quick: batchIndex === 0 ? 'true' : 'false'
         });
         
         if (pageToken) {
@@ -67,7 +85,18 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
 
         setCurrentBatch(batchIndex + 1);
 
-        const response = await fetch(`/api/gmail/purchases-batched?${params.toString()}`);
+        // Add a timeout so we never hang indefinitely
+        if (isCancelledRef.current) {
+          console.warn('⏹️ Sync cancelled before fetch');
+          break;
+        }
+
+        const controller = new AbortController();
+        controllerRef.current = controller;
+        const timeoutId = setTimeout(() => controller.abort(), 90000); // 90s
+        const response = await fetch(`/api/gmail/purchases-batched?${params.toString()}`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        controllerRef.current = null;
         
         if (!response.ok) {
           const errorData = await response.json();
@@ -78,19 +107,52 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
         console.log(`✅ Batch ${batchIndex + 1} completed:`, data);
 
         // Update progress
+        if (isCancelledRef.current) {
+          console.warn('⏹️ Sync cancelled after fetch');
+          break;
+        }
         setProgress(data.progress);
         
-        // Add new purchases to collection
+        // Add new purchases to collection and push immediate UI updates
         if (data.purchases && data.purchases.length > 0) {
-          allCollectedPurchases = [...allCollectedPurchases, ...data.purchases];
-          setAllPurchases(allCollectedPurchases);
-          
-          // Notify parent component of updates
+          // push in small chunks to make the UI feel live
+          for (const p of data.purchases) {
+            allCollectedPurchases = [...allCollectedPurchases, p];
+            setAllPurchases(prev => [...prev, p]);
+          }
           onPurchasesUpdate?.(allCollectedPurchases);
         }
 
         // Check if we should continue
-        hasMore = data.progress.hasMore && !data.isComplete;
+        hasMore = data.progress.hasMore && !data.isComplete && !isCancelledRef.current;
+
+        // If quick mode returned 0 purchases and no more pages, automatically retry without quick mode
+        if (!hasMore && batchIndex === 0 && allCollectedPurchases.length === 0 && params.get('quick') === 'true') {
+          console.log('🔁 Quick scan found 0 purchases - retrying full scan');
+          // Retry immediately without quick flag and with a larger first page
+          params.delete('quick');
+          const fullController = new AbortController();
+          controllerRef.current = fullController;
+          const fullTimeout = setTimeout(() => fullController.abort(), 90000);
+          const fullResp = await fetch(`/api/gmail/purchases-batched?${params.toString()}`, { signal: fullController.signal });
+          clearTimeout(fullTimeout);
+          controllerRef.current = null;
+          if (fullResp.ok) {
+            const fullData = await fullResp.json();
+            if (fullData.purchases && fullData.purchases.length > 0) {
+              for (const p of fullData.purchases) {
+                allCollectedPurchases = [...allCollectedPurchases, p];
+                setAllPurchases(prev => [...prev, p]);
+              }
+              onPurchasesUpdate?.(allCollectedPurchases);
+            }
+            setProgress(fullData.progress);
+            hasMore = fullData.progress.hasMore && !fullData.isComplete && !isCancelledRef.current;
+            pageToken = fullData.progress.nextPageToken;
+          }
+        }
+        
+        // Stagnation detection removed to avoid premature finishes on slow Gmail responses
         pageToken = data.progress.nextPageToken;
         batchIndex++;
 
@@ -107,9 +169,11 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
     }
 
     // Sync complete
-    setIsComplete(true);
-    setIsLoading(false);
-    onSyncComplete?.(allCollectedPurchases.length);
+    if (!isCancelledRef.current) {
+      setIsComplete(true);
+      setIsLoading(false);
+      onSyncComplete?.(allCollectedPurchases.length);
+    }
     
     console.log(`🎉 Gmail sync complete! Total purchases: ${allCollectedPurchases.length}`);
   };
@@ -212,6 +276,25 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
                     }`}
                     style={{ width: `${getProgressPercentage()}%` }}
                   ></div>
+                </div>
+                {/* Force-complete button in case API pagination stalls */}
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => {
+                      setIsForceCompleting(true);
+                      isCancelledRef.current = true;
+                      if (controllerRef.current) {
+                        try { controllerRef.current.abort(); } catch {}
+                      }
+                      setIsComplete(true);
+                      setIsLoading(false);
+                      onSyncComplete?.(allPurchases.length);
+                      setIsForceCompleting(false);
+                    }}
+                    className={`text-xs underline ${currentTheme.colors.textSecondary} hover:${currentTheme.colors.textPrimary}`}
+                  >
+                    {isForceCompleting ? 'Finishing…' : 'Finish now'}
+                  </button>
                 </div>
               </div>
             )}

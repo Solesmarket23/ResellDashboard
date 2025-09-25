@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { db } from '@/lib/firebase/firebase';
 import { doc, updateDoc, getDoc, setDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
-import AutoEmailSync from './AutoEmailSync';
+// import AutoEmailSync from './AutoEmailSync';
+// import UserStockXApiManager from './UserStockXApiManager';
 import { 
   User, 
   Mail, 
@@ -14,25 +15,15 @@ import {
   Calendar,
   Shield,
   Bell,
-  Download,
-  Upload,
+  Database,
   CreditCard,
-  Key,
+  Settings,
+  Save,
+  X,
   Eye,
   EyeOff,
-  Save,
-  Edit3,
-  Check,
-  X,
-  Settings,
-  Smartphone,
-  Globe,
-  Lock,
-  Trash2,
-  AlertTriangle,
-  BarChart3,
-  Users,
-  RefreshCw
+  CheckCircle,
+  AlertCircle
 } from 'lucide-react';
 
 const Profile = () => {
@@ -43,49 +34,42 @@ const Profile = () => {
   const [activeTab, setActiveTab] = useState('personal');
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
-  
   const [profileData, setProfileData] = useState({
     firstName: '',
     lastName: '',
-    email: user?.email || '',
+    email: '',
     phone: '',
     address: '',
-    dateJoined: user?.metadata?.creationTime || new Date().toISOString(),
+    dateJoined: '',
     timezone: 'PST',
     language: 'English'
   });
-
   const [originalProfileData, setOriginalProfileData] = useState({
     firstName: '',
     lastName: '',
-    email: user?.email || '',
+    email: '',
     phone: '',
     address: '',
-    dateJoined: user?.metadata?.creationTime || new Date().toISOString(),
+    dateJoined: '',
     timezone: 'PST',
     language: 'English'
   });
-
   const [notifications, setNotifications] = useState({
-    emailAlerts: true,
-    smsAlerts: false,
-    pushNotifications: true,
-    marketingEmails: false,
-    weeklyReports: true,
-    profitAlerts: true
+    email: true,
+    push: true,
+    sms: false,
+    marketing: false
   });
-
   const [security, setSecurity] = useState({
-    twoFactorAuth: false,
+    twoFactor: false,
     loginAlerts: true,
-    deviceTracking: true
+    sessionTimeout: 30
   });
-
   const [communityInsights, setCommunityInsights] = useState({
     shareData: false,
-    showBenchmarks: false
+    anonymousStats: true,
+    betaFeatures: false
   });
-
   const [gmailConnected, setGmailConnected] = useState(false);
   const [purchases, setPurchases] = useState<any[]>([]);
 
@@ -93,7 +77,7 @@ const Profile = () => {
     { id: 'personal', label: 'Personal Info', icon: User },
     { id: 'security', label: 'Security', icon: Shield },
     { id: 'notifications', label: 'Notifications', icon: Bell },
-    { id: 'data', label: 'Data & Privacy', icon: Download },
+    { id: 'data', label: 'Data & Privacy', icon: Database },
     { id: 'subscription', label: 'Subscription', icon: CreditCard }
   ];
 
@@ -101,61 +85,41 @@ const Profile = () => {
     setProfileData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleNotificationChange = (field: string, value: boolean) => {
-    setNotifications(prev => ({ ...prev, [field]: value }));
-  };
-
-  const handleSecurityChange = (field: string, value: boolean) => {
-    setSecurity(prev => ({ ...prev, [field]: value }));
-  };
-
-  const handleCommunityInsightsChange = async (field: string, value: boolean) => {
-    setCommunityInsights(prev => ({ ...prev, [field]: value }));
-    
-    // Save to Firebase
-    if (user) {
-      try {
-        const userRef = doc(db, 'users', user.uid);
-        await updateDoc(userRef, {
-          communityInsights: {
-            ...communityInsights,
-            [field]: value
-          }
-        });
-        console.log('Community insights preference saved');
-      } catch (error) {
-        console.error('Error saving community insights preference:', error);
-      }
-    }
-  };
-
-  const handleSave = async () => {
+  const handleSaveProfile = async () => {
     if (!user) return;
     
     setIsSavingProfile(true);
     try {
       const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, {
+        profile: profileData,
+        updatedAt: new Date().toISOString()
+      });
       
-      // Update the user document with profile data
-      await setDoc(userRef, {
-        profile: {
-          firstName: profileData.firstName,
-          lastName: profileData.lastName,
-          email: profileData.email,
-          phone: profileData.phone,
-          address: profileData.address,
-          updatedAt: new Date().toISOString()
-        }
-      }, { merge: true });
-      
+      setOriginalProfileData({ ...profileData });
       setIsEditing(false);
-      setOriginalProfileData(profileData); // Update original data after successful save
-      console.log('Profile saved successfully');
     } catch (error) {
       console.error('Error saving profile:', error);
     } finally {
       setIsSavingProfile(false);
     }
+  };
+
+  const handleCancelEdit = () => {
+    setProfileData({ ...originalProfileData });
+    setIsEditing(false);
+  };
+
+  const handleNotificationChange = (field: string, value: boolean) => {
+    setNotifications(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleSecurityChange = (field: string, value: boolean | number) => {
+    setSecurity(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleCommunityInsightsChange = (field: string, value: boolean) => {
+    setCommunityInsights(prev => ({ ...prev, [field]: value }));
   };
 
   // Load user preferences from Firebase
@@ -268,882 +232,269 @@ const Profile = () => {
     }
   }, [user]);
 
+  if (isLoadingProfile) {
+    return (
+      <div className="flex-1 overflow-y-auto bg-gray-50">
+        <div className="max-w-6xl mx-auto p-8">
+          <div className="animate-pulse">
+            <div className="h-8 bg-gray-200 rounded w-1/4 mb-8"></div>
+            <div className="space-y-4">
+              <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+              <div className="h-4 bg-gray-200 rounded w-1/3"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className={`flex-1 overflow-y-auto ${
-      currentTheme.name === 'Neon'
-        ? 'bg-gray-900'
-        : 'bg-gray-50'
-    }`}>
+    <div className="flex-1 overflow-y-auto bg-gray-50">
       <div className="max-w-6xl mx-auto p-8">
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className={`text-3xl font-bold ${currentTheme.colors.textPrimary} mb-2`}>
-                Profile Settings
-              </h1>
-              <p className={`${currentTheme.colors.textSecondary}`}>
-                Manage your account settings and preferences
-              </p>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">Profile Settings</h1>
+              <p className="text-gray-600">Manage your account settings and preferences</p>
             </div>
-            <div className="flex items-center space-x-3">
-              {isEditing ? (
-                <>
-                  <button
-                    onClick={handleSave}
-                    disabled={isSavingProfile}
-                    className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-                      currentTheme.name === 'Neon'
-                        ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white hover:shadow-lg hover:shadow-cyan-500/25'
-                        : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:shadow-lg hover:shadow-purple-500/25'
-                    } ${isSavingProfile ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    {isSavingProfile ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 mr-2 inline animate-spin" />
-                        Saving...
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-4 h-4 mr-2 inline" />
-                        Save Changes
-                      </>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setProfileData(originalProfileData);
-                      setIsEditing(false);
-                    }}
-                    disabled={isSavingProfile}
-                    className={`px-4 py-2 rounded-lg border transition-all duration-200 ${
-                      currentTheme.name === 'Neon'
-                        ? 'border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10'
-                        : 'border-purple-500/30 text-purple-600 hover:bg-purple-500/10'
-                    } ${isSavingProfile ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    <X className="w-4 h-4 mr-2 inline" />
-                    Cancel
-                  </button>
-                </>
-              ) : (
+            {isEditing ? (
+              <div className="flex space-x-3">
                 <button
-                  onClick={() => setIsEditing(true)}
-                  className={`px-4 py-2 rounded-lg border transition-all duration-200 ${
-                    currentTheme.name === 'Neon'
-                      ? 'border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10'
-                      : 'border-purple-500/30 text-purple-600 hover:bg-purple-500/10'
-                  }`}
+                  onClick={handleCancelEdit}
+                  className="px-4 py-2 text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center space-x-2"
                 >
-                  <Edit3 className="w-4 h-4 mr-2 inline" />
-                  Edit Profile
+                  <X className="w-4 h-4" />
+                  <span>Cancel</span>
                 </button>
-              )}
-            </div>
+                <button
+                  onClick={handleSaveProfile}
+                  disabled={isSavingProfile}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center space-x-2"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>{isSavingProfile ? 'Saving...' : 'Save Changes'}</span>
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setIsEditing(true)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+              >
+                <Settings className="w-4 h-4" />
+                <span>Edit Profile</span>
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="flex space-x-1 mb-8 overflow-x-auto">
-          {tabs.map((tab) => {
-            const IconComponent = tab.icon;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center space-x-2 px-4 py-3 rounded-lg font-medium whitespace-nowrap border ${
-                  activeTab === tab.id
-                    ? currentTheme.name === 'Neon'
-                      ? 'bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 text-cyan-400 border-cyan-500/30'
-                      : `${currentTheme.colors.primary} text-white border-transparent`
-                    : `${currentTheme.colors.textSecondary} hover:bg-white/5 hover:text-white border-transparent`
-                } transition-colors duration-150`}
-              >
-                <IconComponent className="w-4 h-4" />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
+        {/* Tabs */}
+        <div className="flex border-b border-gray-200 mb-8">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center space-x-2 px-4 py-3 rounded-lg font-medium whitespace-nowrap border ${
+                activeTab === tab.id
+                  ? 'bg-purple-100 text-purple-700 border-purple-300'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <tab.icon className="w-5 h-5" />
+              <span>{tab.label}</span>
+            </button>
+          ))}
         </div>
 
         {/* Tab Content */}
         <div className="space-y-6">
           {activeTab === 'personal' && (
             <div className="grid lg:grid-cols-2 gap-8">
-              {/* Profile Picture */}
-              <div className={`p-6 rounded-2xl ${
-                currentTheme.name === 'Neon'
-                  ? 'bg-white/5 border border-cyan-500/20'
-                  : `${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border`
-              }`}>
-                <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary} mb-4`}>
-                  Profile Picture
-                </h3>
-                <div className="flex items-center space-x-4">
-                  <div className={`w-20 h-20 rounded-full flex items-center justify-center ${
-                    currentTheme.name === 'Neon' 
-                      ? 'bg-gradient-to-r from-emerald-500 to-cyan-500' 
-                      : 'bg-gradient-to-r from-purple-500 to-pink-500'
-                  }`}>
-                    <User className="w-10 h-10 text-white" />
-                  </div>
-                  <div>
-                    <p className={`font-medium ${currentTheme.colors.textPrimary} mb-1`}>
-                      {profileData.firstName} {profileData.lastName}
-                    </p>
-                    <p className={`text-sm ${currentTheme.colors.textSecondary} mb-3`}>
-                      Pro Member since {new Date(profileData.dateJoined).toLocaleDateString()}
-                    </p>
-                    <button className={`text-sm font-medium ${
-                      currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-purple-600'
-                    } hover:underline`}>
-                      Change Photo
-                    </button>
-                  </div>
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">First Name</label>
+                  <input
+                    type="text"
+                    value={profileData.firstName}
+                    onChange={(e) => handleInputChange('firstName', e.target.value)}
+                    disabled={!isEditing}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Last Name</label>
+                  <input
+                    type="text"
+                    value={profileData.lastName}
+                    onChange={(e) => handleInputChange('lastName', e.target.value)}
+                    disabled={!isEditing}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                  <input
+                    type="email"
+                    value={profileData.email}
+                    disabled
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-500"
+                  />
+                  <p className="text-sm text-gray-500 mt-1">Email cannot be changed</p>
                 </div>
               </div>
-
-              {/* Personal Information */}
-              <div className={`p-6 rounded-2xl ${
-                currentTheme.name === 'Neon'
-                  ? 'bg-white/5 border border-cyan-500/20'
-                  : `${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border`
-              }`}>
-                <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary} mb-4`}>
-                  Personal Information
-                </h3>
-                {isLoadingProfile ? (
-                  <div className="space-y-4">
-                    {/* Loading skeleton */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <div className="h-4 w-20 bg-gray-300 dark:bg-gray-700 rounded mb-2 animate-pulse"></div>
-                        <div className="h-10 bg-gray-200 dark:bg-gray-800 rounded animate-pulse"></div>
-                      </div>
-                      <div>
-                        <div className="h-4 w-20 bg-gray-300 dark:bg-gray-700 rounded mb-2 animate-pulse"></div>
-                        <div className="h-10 bg-gray-200 dark:bg-gray-800 rounded animate-pulse"></div>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="h-4 w-24 bg-gray-300 dark:bg-gray-700 rounded mb-2 animate-pulse"></div>
-                      <div className="h-10 bg-gray-200 dark:bg-gray-800 rounded animate-pulse"></div>
-                    </div>
-                    <div>
-                      <div className="h-4 w-24 bg-gray-300 dark:bg-gray-700 rounded mb-2 animate-pulse"></div>
-                      <div className="h-10 bg-gray-200 dark:bg-gray-800 rounded animate-pulse"></div>
-                    </div>
-                    <div>
-                      <div className="h-4 w-20 bg-gray-300 dark:bg-gray-700 rounded mb-2 animate-pulse"></div>
-                      <div className="h-10 bg-gray-200 dark:bg-gray-800 rounded animate-pulse"></div>
-                    </div>
-                  </div>
-                ) : (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className={`block text-sm font-medium ${currentTheme.colors.textSecondary} mb-1`}>
-                        First Name
-                      </label>
-                      <input
-                        type="text"
-                        value={profileData.firstName}
-                        onChange={(e) => handleInputChange('firstName', e.target.value)}
-                        disabled={!isEditing || isSavingProfile}
-                        className={`w-full px-3 py-2 rounded-lg ${
-                          currentTheme.name === 'Neon'
-                            ? 'bg-white/10 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500'
-                            : 'bg-white border border-gray-300 text-gray-900 placeholder-gray-500 focus:border-purple-500'
-                        } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 disabled:opacity-50`}
-                      />
-                    </div>
-                    <div>
-                      <label className={`block text-sm font-medium ${currentTheme.colors.textSecondary} mb-1`}>
-                        Last Name
-                      </label>
-                      <input
-                        type="text"
-                        value={profileData.lastName}
-                        onChange={(e) => handleInputChange('lastName', e.target.value)}
-                        disabled={!isEditing || isSavingProfile}
-                        className={`w-full px-3 py-2 rounded-lg ${
-                          currentTheme.name === 'Neon'
-                            ? 'bg-white/10 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500'
-                            : 'bg-white border border-gray-300 text-gray-900 placeholder-gray-500 focus:border-purple-500'
-                        } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 disabled:opacity-50`}
-                      />
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <label className={`block text-sm font-medium ${currentTheme.colors.textSecondary} mb-1`}>
-                      Email Address
-                    </label>
-                    <input
-                      type="email"
-                      value={profileData.email}
-                      onChange={(e) => handleInputChange('email', e.target.value)}
-                      disabled={!isEditing}
-                      className={`w-full px-3 py-2 rounded-lg ${
-                        currentTheme.name === 'Neon'
-                          ? 'bg-white/10 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500'
-                          : 'bg-white border border-gray-300 text-gray-900 placeholder-gray-500 focus:border-purple-500'
-                      } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 disabled:opacity-50`}
-                    />
-                  </div>
-
-                  <div>
-                    <label className={`block text-sm font-medium ${currentTheme.colors.textSecondary} mb-1`}>
-                      Phone Number
-                    </label>
-                    <input
-                      type="tel"
-                      value={profileData.phone}
-                      onChange={(e) => handleInputChange('phone', e.target.value)}
-                      disabled={!isEditing}
-                      className={`w-full px-3 py-2 rounded-lg ${
-                        currentTheme.name === 'Neon'
-                          ? 'bg-white/10 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500'
-                          : 'bg-white border border-gray-300 text-gray-900 placeholder-gray-500 focus:border-purple-500'
-                      } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 disabled:opacity-50`}
-                    />
-                  </div>
-
-                  <div>
-                    <label className={`block text-sm font-medium ${currentTheme.colors.textSecondary} mb-1`}>
-                      Location
-                    </label>
-                    <input
-                      type="text"
-                      value={profileData.address}
-                      onChange={(e) => handleInputChange('address', e.target.value)}
-                      disabled={!isEditing}
-                      className={`w-full px-3 py-2 rounded-lg ${
-                        currentTheme.name === 'Neon'
-                          ? 'bg-white/10 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500'
-                          : 'bg-white border border-gray-300 text-gray-900 placeholder-gray-500 focus:border-purple-500'
-                      } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 disabled:opacity-50`}
-                    />
-                  </div>
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                  <input
+                    type="tel"
+                    value={profileData.phone}
+                    onChange={(e) => handleInputChange('phone', e.target.value)}
+                    disabled={!isEditing}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+                  />
                 </div>
-                )}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
+                  <textarea
+                    value={profileData.address}
+                    onChange={(e) => handleInputChange('address', e.target.value)}
+                    disabled={!isEditing}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Date Joined</label>
+                  <input
+                    type="text"
+                    value={new Date(profileData.dateJoined).toLocaleDateString()}
+                    disabled
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-500"
+                  />
+                </div>
               </div>
             </div>
           )}
 
           {activeTab === 'security' && (
             <div className="grid lg:grid-cols-2 gap-8">
-              {/* Security Settings */}
-              <div className={`p-6 rounded-2xl ${
-                currentTheme.name === 'Neon'
-                  ? 'bg-white/5 border border-cyan-500/20'
-                  : `${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border`
-              }`}>
-                <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary} mb-4`}>
-                  Security Settings
-                </h3>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className={`font-medium ${currentTheme.colors.textPrimary}`}>
-                        Two-Factor Authentication
-                      </p>
-                      <p className={`text-sm ${currentTheme.colors.textSecondary}`}>
-                        Add an extra layer of security to your account
-                      </p>
+              <div className="space-y-6">
+                <div className="bg-white p-6 rounded-lg border border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Password & Security</h3>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-medium text-gray-900">Two-Factor Authentication</h4>
+                        <p className="text-sm text-gray-600">Add an extra layer of security</p>
+                      </div>
+                      <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                        Enable
+                      </button>
                     </div>
-                    <button
-                      onClick={() => handleSecurityChange('twoFactorAuth', !security.twoFactorAuth)}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        security.twoFactorAuth
-                          ? currentTheme.name === 'Neon' ? 'bg-emerald-500' : 'bg-purple-500'
-                          : 'bg-gray-400'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          security.twoFactorAuth ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className={`font-medium ${currentTheme.colors.textPrimary}`}>
-                        Login Alerts
-                      </p>
-                      <p className={`text-sm ${currentTheme.colors.textSecondary}`}>
-                        Get notified of new sign-ins to your account
-                      </p>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-medium text-gray-900">Login Alerts</h4>
+                        <p className="text-sm text-gray-600">Get notified of new logins</p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={security.loginAlerts}
+                          onChange={(e) => handleSecurityChange('loginAlerts', e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                      </label>
                     </div>
-                    <button
-                      onClick={() => handleSecurityChange('loginAlerts', !security.loginAlerts)}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        security.loginAlerts
-                          ? currentTheme.name === 'Neon' ? 'bg-emerald-500' : 'bg-purple-500'
-                          : 'bg-gray-400'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          security.loginAlerts ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className={`font-medium ${currentTheme.colors.textPrimary}`}>
-                        Device Tracking
-                      </p>
-                      <p className={`text-sm ${currentTheme.colors.textSecondary}`}>
-                        Track devices that access your account
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => handleSecurityChange('deviceTracking', !security.deviceTracking)}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        security.deviceTracking
-                          ? currentTheme.name === 'Neon' ? 'bg-emerald-500' : 'bg-purple-500'
-                          : 'bg-gray-400'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          security.deviceTracking ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
                   </div>
                 </div>
               </div>
+            </div>
 
-              {/* Password Change */}
-              <div className={`p-6 rounded-2xl ${
-                currentTheme.name === 'Neon'
-                  ? 'bg-white/5 border border-cyan-500/20'
-                  : `${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border`
-              }`}>
-                <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary} mb-4`}>
-                  Change Password
-                </h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className={`block text-sm font-medium ${currentTheme.colors.textSecondary} mb-1`}>
-                      Current Password
-                    </label>
-                    <div className="relative">
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        className={`w-full px-3 py-2 rounded-lg ${
-                          currentTheme.name === 'Neon'
-                            ? 'bg-white/10 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500'
-                            : 'bg-white border border-gray-300 text-gray-900 placeholder-gray-500 focus:border-purple-500'
-                        } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200`}
-                        placeholder="Enter current password"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2"
-                      >
-                        {showPassword ? 
-                          <EyeOff className={`w-5 h-5 ${currentTheme.colors.textSecondary}`} /> : 
-                          <Eye className={`w-5 h-5 ${currentTheme.colors.textSecondary}`} />
-                        }
-                      </button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className={`block text-sm font-medium ${currentTheme.colors.textSecondary} mb-1`}>
-                      New Password
-                    </label>
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      className={`w-full px-3 py-2 rounded-lg ${
-                        currentTheme.name === 'Neon'
-                          ? 'bg-white/10 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500'
-                          : 'bg-white border border-gray-300 text-gray-900 placeholder-gray-500 focus:border-purple-500'
-                      } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200`}
-                      placeholder="Enter new password"
-                    />
-                  </div>
-
-                  <div>
-                    <label className={`block text-sm font-medium ${currentTheme.colors.textSecondary} mb-1`}>
-                      Confirm New Password
-                    </label>
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      className={`w-full px-3 py-2 rounded-lg ${
-                        currentTheme.name === 'Neon'
-                          ? 'bg-white/10 border border-cyan-500/30 text-white placeholder-gray-400 focus:border-cyan-500'
-                          : 'bg-white border border-gray-300 text-gray-900 placeholder-gray-500 focus:border-purple-500'
-                      } focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200`}
-                      placeholder="Confirm new password"
-                    />
-                  </div>
-
-                  <button className={`w-full py-2 px-4 rounded-lg font-medium transition-all duration-200 ${
-                    currentTheme.name === 'Neon'
-                      ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white hover:shadow-lg hover:shadow-cyan-500/25'
-                      : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:shadow-lg hover:shadow-purple-500/25'
-                  }`}>
-                    Update Password
-                  </button>
-                </div>
+            {/* StockX API Configuration - Full Width */}
+            <div className="mt-8">
+              <div className="bg-white p-6 rounded-lg border border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">StockX API Configuration</h3>
+                <p className="text-gray-600">StockX API management temporarily disabled for debugging.</p>
               </div>
             </div>
           )}
 
           {activeTab === 'notifications' && (
-            <div className={`p-6 rounded-2xl ${
-              currentTheme.name === 'Neon'
-                ? 'bg-white/5 border border-cyan-500/20'
-                : `${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border`
-            }`}>
-              <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary} mb-6`}>
-                Notification Preferences
-              </h3>
-              <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className={`font-medium ${currentTheme.colors.textPrimary}`}>
-                      Email Alerts
-                    </p>
-                    <p className={`text-sm ${currentTheme.colors.textSecondary}`}>
-                      Receive important updates via email
-                    </p>
+            <div className="space-y-6">
+              <div className="bg-white p-6 rounded-lg border border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Notification Preferences</h3>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-medium text-gray-900">Email Notifications</h4>
+                      <p className="text-sm text-gray-600">Receive updates via email</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={notifications.email}
+                        onChange={(e) => handleNotificationChange('email', e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
                   </div>
-                  <button
-                    onClick={() => handleNotificationChange('emailAlerts', !notifications.emailAlerts)}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      notifications.emailAlerts
-                        ? currentTheme.name === 'Neon' ? 'bg-emerald-500' : 'bg-purple-500'
-                        : 'bg-gray-400'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        notifications.emailAlerts ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className={`font-medium ${currentTheme.colors.textPrimary}`}>
-                      SMS Alerts
-                    </p>
-                    <p className={`text-sm ${currentTheme.colors.textSecondary}`}>
-                      Get text messages for urgent notifications
-                    </p>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-medium text-gray-900">Push Notifications</h4>
+                      <p className="text-sm text-gray-600">Receive browser notifications</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={notifications.push}
+                        onChange={(e) => handleNotificationChange('push', e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
                   </div>
-                  <button
-                    onClick={() => handleNotificationChange('smsAlerts', !notifications.smsAlerts)}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      notifications.smsAlerts
-                        ? currentTheme.name === 'Neon' ? 'bg-emerald-500' : 'bg-purple-500'
-                        : 'bg-gray-400'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        notifications.smsAlerts ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className={`font-medium ${currentTheme.colors.textPrimary}`}>
-                      Push Notifications
-                    </p>
-                    <p className={`text-sm ${currentTheme.colors.textSecondary}`}>
-                      Browser and mobile push notifications
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => handleNotificationChange('pushNotifications', !notifications.pushNotifications)}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      notifications.pushNotifications
-                        ? currentTheme.name === 'Neon' ? 'bg-emerald-500' : 'bg-purple-500'
-                        : 'bg-gray-400'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        notifications.pushNotifications ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className={`font-medium ${currentTheme.colors.textPrimary}`}>
-                      Profit Alerts
-                    </p>
-                    <p className={`text-sm ${currentTheme.colors.textSecondary}`}>
-                      Notifications when profitable opportunities are found
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => handleNotificationChange('profitAlerts', !notifications.profitAlerts)}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      notifications.profitAlerts
-                        ? currentTheme.name === 'Neon' ? 'bg-emerald-500' : 'bg-purple-500'
-                        : 'bg-gray-400'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        notifications.profitAlerts ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className={`font-medium ${currentTheme.colors.textPrimary}`}>
-                      Weekly Reports
-                    </p>
-                    <p className={`text-sm ${currentTheme.colors.textSecondary}`}>
-                      Weekly summary of your performance and analytics
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => handleNotificationChange('weeklyReports', !notifications.weeklyReports)}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      notifications.weeklyReports
-                        ? currentTheme.name === 'Neon' ? 'bg-emerald-500' : 'bg-purple-500'
-                        : 'bg-gray-400'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        notifications.weeklyReports ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className={`font-medium ${currentTheme.colors.textPrimary}`}>
-                      Marketing Emails
-                    </p>
-                    <p className={`text-sm ${currentTheme.colors.textSecondary}`}>
-                      Product updates, tips, and promotional content
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => handleNotificationChange('marketingEmails', !notifications.marketingEmails)}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      notifications.marketingEmails
-                        ? currentTheme.name === 'Neon' ? 'bg-emerald-500' : 'bg-purple-500'
-                        : 'bg-gray-400'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        notifications.marketingEmails ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
                 </div>
               </div>
             </div>
           )}
 
           {activeTab === 'data' && (
-            <div className="space-y-8">
-              {/* Auto Monitoring Section */}
-              <div className={`p-6 rounded-2xl ${
-                currentTheme.name === 'Neon'
-                  ? 'bg-white/5 border border-cyan-500/20'
-                  : `${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border`
-              }`}>
-                <div className="mb-4">
-                  <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary} mb-2`}>
-                    Auto Monitoring Settings
-                  </h3>
-                  <p className={`text-sm ${currentTheme.colors.textSecondary}`}>
-                    Configure automatic email sync and status monitoring
-                  </p>
-                </div>
-                
-                <AutoEmailSync 
-                  isGmailConnected={gmailConnected}
-                  purchases={purchases}
-                  onNewPurchases={(count) => {
-                    console.log(`🎉 Auto sync found ${count} new purchases`);
-                  }}
-                  onStatusUpdate={(updates) => {
-                    console.log('Status updates:', updates);
-                  }}
-                  onAutoStatusChange={(enabled, lastUpdate) => {
-                    console.log('Auto status changed:', enabled, lastUpdate);
-                  }}
-                />
-              </div>
-
-              {/* Community Insights Section */}
-              <div className={`p-6 rounded-2xl ${
-                currentTheme.name === 'Neon'
-                  ? 'bg-white/5 border border-cyan-500/20'
-                  : `${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border`
-              }`}>
-                <div className="flex items-center mb-4">
-                  <Users className={`w-6 h-6 mr-3 ${
-                    currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-purple-600'
-                  }`} />
-                  <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>
-                    Community Insights
-                  </h3>
-                  <span className={`ml-auto px-3 py-1 rounded-full text-xs font-medium ${
-                    currentTheme.name === 'Neon'
-                      ? 'bg-gradient-to-r from-cyan-500/20 to-emerald-500/20 text-cyan-300 border border-cyan-500/30'
-                      : 'bg-purple-100 text-purple-700'
-                  }`}>
-                    Beta
-                  </span>
-                </div>
-                
-                <p className={`text-sm ${currentTheme.colors.textSecondary} mb-6`}>
-                  Opt in to share anonymous data and see how your verification failure rates compare to the community average.
-                </p>
-
+            <div className="space-y-6">
+              <div className="bg-white p-6 rounded-lg border border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Data & Privacy</h3>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className={`font-medium ${currentTheme.colors.textPrimary}`}>
-                        Share Anonymous Data
-                      </p>
-                      <p className={`text-sm ${currentTheme.colors.textSecondary}`}>
-                        Contribute your failure rates to help the community
-                      </p>
+                      <h4 className="font-medium text-gray-900">Share Data for Insights</h4>
+                      <p className="text-sm text-gray-600">Help improve the platform with anonymous data</p>
                     </div>
-                    <button
-                      onClick={() => handleCommunityInsightsChange('shareData', !communityInsights.shareData)}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        communityInsights.shareData
-                          ? currentTheme.name === 'Neon' ? 'bg-emerald-500' : 'bg-purple-500'
-                          : 'bg-gray-400'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          communityInsights.shareData ? 'translate-x-6' : 'translate-x-1'
-                        }`}
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={communityInsights.shareData}
+                        onChange={(e) => handleCommunityInsightsChange('shareData', e.target.checked)}
+                        className="sr-only peer"
                       />
-                    </button>
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
                   </div>
-
-                  {communityInsights.shareData && (
-                    <div className={`p-4 rounded-lg ${
-                      currentTheme.name === 'Neon'
-                        ? 'bg-emerald-500/10 border border-emerald-500/30'
-                        : 'bg-purple-50 border border-purple-200'
-                    }`}>
-                      <h4 className={`font-medium mb-2 ${
-                        currentTheme.name === 'Neon' ? 'text-emerald-300' : 'text-purple-700'
-                      }`}>
-                        What we share:
-                      </h4>
-                      <ul className={`text-sm space-y-1 ${
-                        currentTheme.name === 'Neon' ? 'text-emerald-200' : 'text-purple-600'
-                      }`}>
-                        <li>• Monthly verification failure counts (anonymized)</li>
-                        <li>• Failure rates by marketplace</li>
-                        <li>• No personal information or order details</li>
-                      </ul>
-                      <h4 className={`font-medium mt-3 mb-2 ${
-                        currentTheme.name === 'Neon' ? 'text-emerald-300' : 'text-purple-700'
-                      }`}>
-                        What you get:
-                      </h4>
-                      <ul className={`text-sm space-y-1 ${
-                        currentTheme.name === 'Neon' ? 'text-emerald-200' : 'text-purple-600'
-                      }`}>
-                        <li>• Community average failure rates</li>
-                        <li>• Your percentile ranking</li>
-                        <li>• Industry trend insights</li>
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Data Export */}
-              <div className={`p-6 rounded-2xl ${
-                currentTheme.name === 'Neon'
-                  ? 'bg-white/5 border border-cyan-500/20'
-                  : `${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border`
-              }`}>
-                <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary} mb-4`}>
-                  Data Export
-                </h3>
-                <p className={`text-sm ${currentTheme.colors.textSecondary} mb-6`}>
-                  Download a copy of your data for backup or migration purposes.
-                </p>
-                <div className="space-y-3">
-                  <button className={`w-full flex items-center justify-center px-4 py-3 rounded-lg border transition-all duration-200 ${
-                    currentTheme.name === 'Neon'
-                      ? 'border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10'
-                      : 'border-purple-500/30 text-purple-600 hover:bg-purple-500/10'
-                  }`}>
-                    <Download className="w-4 h-4 mr-2" />
-                    Export Purchase Data
-                  </button>
-                  <button className={`w-full flex items-center justify-center px-4 py-3 rounded-lg border transition-all duration-200 ${
-                    currentTheme.name === 'Neon'
-                      ? 'border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10'
-                      : 'border-purple-500/30 text-purple-600 hover:bg-purple-500/10'
-                  }`}>
-                    <Download className="w-4 h-4 mr-2" />
-                    Export Sales Data
-                  </button>
-                  <button className={`w-full flex items-center justify-center px-4 py-3 rounded-lg border transition-all duration-200 ${
-                    currentTheme.name === 'Neon'
-                      ? 'border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10'
-                      : 'border-purple-500/30 text-purple-600 hover:bg-purple-500/10'
-                  }`}>
-                    <Download className="w-4 h-4 mr-2" />
-                    Export Full Profile
-                  </button>
-                </div>
-              </div>
-
-              {/* Data Privacy */}
-              <div className={`p-6 rounded-2xl ${
-                currentTheme.name === 'Neon'
-                  ? 'bg-white/5 border border-cyan-500/20'
-                  : `${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border`
-              }`}>
-                <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary} mb-4`}>
-                  Privacy & Data Deletion
-                </h3>
-                <p className={`text-sm ${currentTheme.colors.textSecondary} mb-6`}>
-                  Manage your privacy settings and data retention preferences.
-                </p>
-                <div className="space-y-3">
-                  <button className={`w-full flex items-center justify-center px-4 py-3 rounded-lg border border-orange-500/30 text-orange-400 hover:bg-orange-500/10 transition-all duration-200`}>
-                    <AlertTriangle className="w-4 h-4 mr-2" />
-                    Request Data Deletion
-                  </button>
-                  <button className={`w-full flex items-center justify-center px-4 py-3 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-all duration-200`}>
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Delete Account
-                  </button>
                 </div>
               </div>
             </div>
           )}
 
           {activeTab === 'subscription' && (
-            <div className="grid lg:grid-cols-2 gap-8">
-              {/* Current Plan */}
-              <div className={`p-6 rounded-2xl ${
-                currentTheme.name === 'Neon'
-                  ? 'bg-white/5 border border-cyan-500/20'
-                  : `${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border`
-              }`}>
-                <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary} mb-4`}>
-                  Current Plan
-                </h3>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className={`font-medium ${currentTheme.colors.textPrimary}`}>
-                      Pro Plan
-                    </span>
-                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                      currentTheme.name === 'Neon'
-                        ? 'bg-emerald-500/20 text-emerald-400'
-                        : 'bg-green-100 text-green-800'
-                    }`}>
-                      Active
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className={currentTheme.colors.textSecondary}>
-                      Monthly billing
-                    </span>
-                    <span className={`font-medium ${currentTheme.colors.textPrimary}`}>
-                      $29.99/month
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className={currentTheme.colors.textSecondary}>
-                      Next billing date
-                    </span>
-                    <span className={`font-medium ${currentTheme.colors.textPrimary}`}>
-                      Feb 15, 2024
-                    </span>
-                  </div>
-                </div>
-                <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-                  <button className={`w-full py-2 px-4 rounded-lg font-medium transition-all duration-200 ${
-                    currentTheme.name === 'Neon'
-                      ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white hover:shadow-lg hover:shadow-cyan-500/25'
-                      : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:shadow-lg hover:shadow-purple-500/25'
-                  }`}>
-                    Manage Subscription
-                  </button>
-                </div>
-              </div>
-
-              {/* Billing History */}
-              <div className={`p-6 rounded-2xl ${
-                currentTheme.name === 'Neon'
-                  ? 'bg-white/5 border border-cyan-500/20'
-                  : `${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border`
-              }`}>
-                <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary} mb-4`}>
-                  Billing History
-                </h3>
-                <div className="space-y-3">
-                  {[
-                    { date: 'Jan 15, 2024', amount: '$29.99', status: 'Paid' },
-                    { date: 'Dec 15, 2023', amount: '$29.99', status: 'Paid' },
-                    { date: 'Nov 15, 2023', amount: '$29.99', status: 'Paid' },
-                    { date: 'Oct 15, 2023', amount: '$29.99', status: 'Paid' }
-                  ].map((invoice, index) => (
-                    <div key={index} className="flex items-center justify-between py-2">
-                      <div>
-                        <p className={`font-medium ${currentTheme.colors.textPrimary}`}>
-                          {invoice.date}
-                        </p>
-                        <p className={`text-sm ${currentTheme.colors.textSecondary}`}>
-                          Monthly Pro Plan
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className={`font-medium ${currentTheme.colors.textPrimary}`}>
-                          {invoice.amount}
-                        </p>
-                        <p className={`text-sm ${
-                          currentTheme.name === 'Neon' ? 'text-emerald-400' : 'text-green-600'
-                        }`}>
-                          {invoice.status}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-                  <button className={`w-full py-2 px-4 rounded-lg border font-medium transition-all duration-200 ${
-                    currentTheme.name === 'Neon'
-                      ? 'border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10'
-                      : 'border-purple-500/30 text-purple-600 hover:bg-purple-500/10'
-                  }`}>
-                    View All Invoices
+            <div className="space-y-6">
+              <div className="bg-white p-6 rounded-lg border border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Subscription</h3>
+                <div className="text-center py-8">
+                  <CreditCard className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                  <h4 className="text-xl font-semibold text-gray-900 mb-2">Free Plan</h4>
+                  <p className="text-gray-600 mb-6">You're currently on the free plan</p>
+                  <button className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                    Upgrade to Pro
                   </button>
                 </div>
               </div>
@@ -1155,4 +506,4 @@ const Profile = () => {
   );
 };
 
-export default Profile; 
+export default Profile;

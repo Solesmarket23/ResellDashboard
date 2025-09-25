@@ -57,6 +57,15 @@ export interface ConnectionState {
 
 export const useSales = () => {
   const { user } = useAuth();
+  
+  // Get site password user as fallback
+  const getUserId = () => {
+    if (user?.uid) return user.uid;
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('siteUserId');
+    }
+    return null;
+  };
   const [sales, setSales] = useState<any[]>([]);
   const [manualSales, setManualSales] = useState<any[]>([]);
   const [stockxSales, setStockxSales] = useState<any[]>([]);
@@ -173,7 +182,8 @@ export const useSales = () => {
 
   // Load sales data from Firebase
   const loadSalesData = async (showLoading = true) => {
-    if (!user) {
+    const userId = getUserId();
+    if (!userId) {
       console.log('🔄 useSales: No user found, skipping sales load');
       setLoading(false);
       setConnectionState({
@@ -191,16 +201,16 @@ export const useSales = () => {
       setError(null);
       setConnectionState(prev => ({ ...prev, status: 'reconnecting' }));
 
-      console.log('🔄 useSales: Loading sales data for user:', user.uid);
+      console.log('🔄 useSales: Loading sales data for user:', userId);
       
       // Fetch sales from server (admin) to guarantee we read what the API wrote
       console.log('🔎 useSales: Fetching server sales via /api/sales/list (first page fast)');
-      const pageSize = 200;
+      const pageSize = 400; // Increased page size for better performance
       let cursorId: string | null = null;
       let aggregatedSales: any[] = [];
 
       // Fetch first page quickly and render immediately
-      const firstUrl = `/api/sales/list?userId=${encodeURIComponent(user.uid)}&limit=${pageSize}`;
+      const firstUrl = `/api/sales/list?userId=${encodeURIComponent(userId)}&limit=${pageSize}`;
       const firstResp = await fetch(firstUrl, { cache: 'no-store' });
       if (!firstResp.ok) throw new Error(`First page fetch failed: ${firstResp.status}`);
       const firstJson = await firstResp.json();
@@ -222,17 +232,34 @@ export const useSales = () => {
         if (showLoading) setLoading(false);
       }
 
-      // Background prefetch remaining pages (up to 2 more)
+      // Background prefetch remaining pages (load all pages)
       let page = 1;
-      while (cursorId && page < 3) {
-        const url = `/api/sales/list?userId=${encodeURIComponent(user.uid)}&limit=${pageSize}&cursorId=${cursorId}`;
+      console.log(`🔄 useSales: Starting background loading. Page size: ${pageSize}, Initial cursor: ${cursorId}`);
+      
+      while (cursorId && page < 50) { // Increased limit to handle up to 20,000 sales (50 × 400)
+        console.log(`🔄 useSales: Loading page ${page}, cursor: ${cursorId}`);
+        
+        const url = `/api/sales/list?userId=${encodeURIComponent(userId)}&limit=${pageSize}&cursorId=${cursorId}`;
         const resp = await fetch(url, { cache: 'no-store' });
-        if (!resp.ok) break;
+        
+        if (!resp.ok) {
+          console.log(`❌ useSales: Page ${page} fetch failed: ${resp.status}`);
+          break;
+        }
+        
         const json = await resp.json();
-        if (!json.success) break;
-        aggregatedSales = aggregatedSales.concat(json.sales || []);
+        if (!json.success) {
+          console.log(`❌ useSales: Page ${page} not successful:`, json);
+          break;
+        }
+        
+        const newSales = json.sales || [];
+        console.log(`📊 useSales: Page ${page} loaded ${newSales.length} sales. Total so far: ${aggregatedSales.length + newSales.length}`);
+        
+        aggregatedSales = aggregatedSales.concat(newSales);
         cursorId = json.nextCursorId;
         page++;
+        
         if (mountedRef.current) {
           const normalized = aggregatedSales.map((sale: any) => ({
             ...sale,
@@ -243,7 +270,15 @@ export const useSales = () => {
           setMetrics(calculateMetrics(normalized));
           setConnectionState({ status: 'connected', lastUpdated: new Date(), error: null });
         }
+        
+        // If no more cursor, we're done
+        if (!json.nextCursorId) {
+          console.log(`✅ useSales: No more cursor, finished loading at page ${page}`);
+          break;
+        }
       }
+      
+      console.log(`✅ useSales: Background loading completed. Total sales loaded: ${aggregatedSales.length}`);
       
     } catch (err) {
       console.error('❌ useSales: Error loading sales:', err);
@@ -266,7 +301,8 @@ export const useSales = () => {
 
   // Delete a single sale
   const deleteSale = async (saleId: string): Promise<boolean> => {
-    if (!user) {
+    const userId = getUserId();
+    if (!userId) {
       console.error('❌ useSales: No user authenticated for delete');
       return false;
     }
@@ -303,42 +339,32 @@ export const useSales = () => {
 
   // Clear all user sales
   const clearAllSales = async (): Promise<boolean> => {
-    if (!user) {
+    const userId = getUserId();
+    if (!userId) {
       console.error('❌ useSales: No user authenticated for clear all');
       return false;
     }
 
     try {
       setIsDeleting(true);
-      console.log('🗑️ useSales: Clearing all sales for user:', user.uid);
+      console.log('🗑️ useSales: Clearing all sales for user:', userId);
+      console.log('🗑️ useSales: User ID type:', typeof userId);
+      console.log('🗑️ useSales: User ID length:', userId.length);
       
-      // Clear manual sales from 'sales' collection
-      const result = await clearAllUserSales(user.uid);
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to clear manual sales');
+      // Use API endpoint to clear sales (bypasses client-side permissions)
+      const response = await fetch('/api/sales/clear-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `API error: ${response.status}`);
       }
-      
-      // Also clear StockX sales from 'stockxSales' collection
-      console.log('🗑️ useSales: Clearing StockX sales...');
-      const stockxSalesData = await getDocuments('stockxSales');
-      const userStockxSales = stockxSalesData.filter((sale: any) => sale.userId === user.uid);
-      
-      console.log(`🗑️ useSales: Found ${userStockxSales.length} StockX sales to clear`);
-      
-      // Delete each StockX sale
-      for (const sale of userStockxSales) {
-        await deleteDocument('stockxSales', sale.id);
-      }
-      
-      // Also clear StockX sync info
-      const syncInfo = await getDocuments('stockxSyncInfo');
-      const userSyncInfo = syncInfo.find((info: any) => info.userId === user.uid);
-      if (userSyncInfo) {
-        await deleteDocument('stockxSyncInfo', userSyncInfo.id);
-      }
-      
-      console.log('✅ useSales: All sales (manual + StockX) cleared successfully');
+
+      const result = await response.json();
+      console.log('✅ useSales: API cleared sales successfully:', result);
       
       // Refresh data after clearing
       await loadSalesData(false);
@@ -370,11 +396,12 @@ export const useSales = () => {
     return () => {
       mountedRef.current = false;
     };
-  }, [user]);
+  }, [user, getUserId()]);
 
   // Set up auto-refresh when user is active
   useEffect(() => {
-    if (!user) return;
+    const userId = getUserId();
+    if (!userId) return;
 
     const setupAutoRefresh = () => {
       // Clear existing interval
@@ -423,7 +450,7 @@ export const useSales = () => {
       // document.removeEventListener('visibilitychange', handleVisibilityChange);
       // window.removeEventListener('focus', handleFocus);
     };
-  }, [user]);
+  }, [user, getUserId()]);
 
   // Cleanup on unmount
   useEffect(() => {

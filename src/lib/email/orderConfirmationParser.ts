@@ -15,7 +15,6 @@
  */
 
 import * as cheerio from 'cheerio';
-import { CheerioAPI } from 'cheerio';
 
 // OrderInfo interface - structured order information extracted from email
 export interface OrderInfo {
@@ -166,8 +165,8 @@ export class OrderConfirmationParser {
    */
   private parseStockXEmail(htmlContent: string, orderInfo: OrderInfo): void {
     // Clean HTML and extract text
-    const $ = cheerio.load(htmlContent);
-    const textContent = $.text();
+    const $: any = cheerio.load(htmlContent);
+    const textContent: string = ($('body').text && $('body').text()) || ($.root && $.root().text && $.root().text()) || '';
     
     // Check if this is a shipping email based on subject line patterns
     // ONLY extract tracking from these specific shipping emails
@@ -249,6 +248,17 @@ export class OrderConfirmationParser {
     this.extractStockXOrderNumber(textContent, orderInfo);
     this.extractStockXProductInfo(htmlContent, textContent, orderInfo);
     this.extractStockXProductImage(htmlContent, orderInfo);
+
+    // If product name is missing or clearly polluted, try using image alt
+    if (!orderInfo.product_name || orderInfo.product_name.length < 4 || /class=|style=|<div|<span|\bOrder\b|\bView Order\b/i.test(orderInfo.product_name)) {
+      if (orderInfo.product_image_alt) {
+        orderInfo.product_name = this.cleanProductName(orderInfo.product_image_alt);
+      } else {
+        orderInfo.product_name = this.cleanProductName(orderInfo.product_name);
+      }
+    } else {
+      orderInfo.product_name = this.cleanProductName(orderInfo.product_name);
+    }
     this.extractStockXPricing(htmlContent, textContent, orderInfo);
     this.extractStockXDelivery(htmlContent, textContent, orderInfo);
     this.extractStockXPurchaseDate(htmlContent, textContent, orderInfo);
@@ -264,29 +274,34 @@ export class OrderConfirmationParser {
     
     // Product name patterns - updated to handle both order confirmations and shipping confirmations
     const productPatterns = [
-      // Patterns for shipping confirmation emails
-      /(?:Subject:.*?Order Shipped:|✅ Order Shipped:)\s*([^"<\n]+)/i,
-      /alt="([^"]+(?:Slipper|Sweatshirt|Shoe|Sneaker|Jacket|Hoodie|Shirt|Pant)[^"]*)"/.i,
-      
-      // Original patterns for order confirmation emails
-      /(?:Subject:.*?Order Confirmed:|Xpress Order Confirmed:)\s*([^"]+?)(?:\s*(?:Chestnut|Grey|Black|White))?(?:\s*\(Women's\))?/i,
+      // Email <title> or Subject header variants
+      /<title>[^<]*?:\s*([^<]+)<\/title>/i,
+      /Subject:\s*(?:[^:]*?:\s*)?([^\n]+)\n/i,
+
+      // Subject line text blocks rendered into body (emoji variants too)
+      /(?:✅\s*)?Order Verified & Shipped:\s*([^\n<]+)/i,
+      /(?:✅\s*)?Order Shipped:\s*([^\n<]+)/i,
+      /(?:Xpress\s*)?Order Confirmed:\s*([^\n<]+)/i,
+      /(?:🎉\s*)?Order Delivered:\s*([^\n<]+)/i,
+      /(?:🎉\s*)?Xpress Ship Order Delivered:\s*([^\n<]+)/i,
+
+      // Product name anchors/TDs
       /<td[^>]*class="productName"[^>]*>.*?<a[^>]*>([^<]+)<\/a>/i,
-      
-      // Generic product name in link
-      /<a[^>]*>([^<]+(?:Sweatshirt|Shoe|Sneaker|Jacket|Hoodie|Shirt|Pant)[^<]*)<\/a>/i
+      /<a[^>]*>([^<]+(?:Slipper|Sweatshirt|Shoe|Sneaker|Jacket|Hoodie|Shirt|Pant)[^<]*)<\/a>/i,
+      /alt="([^"]+(?:Slipper|Sweatshirt|Shoe|Sneaker|Jacket|Hoodie|Shirt|Pant)[^"]*)"/i
     ];
     
     for (const pattern of productPatterns) {
       const match = htmlContent.match(pattern);
       if (match && match[1]) {
-        orderInfo.product_name = match[1].trim();
+        orderInfo.product_name = this.cleanProductName(match[1]);
         break;
       }
     }
     
     // Extract variant (color) from product name
     const colorPatterns = [
-      /\b(Chestnut|Grey|Gray|Black|White|Red|Blue|Green|Brown)\b/i
+      /\b(Chestnut|Grey|Gray|Black|White|Red|Blue|Green|Brown|Purple|Pink|Silver|Gold|Monochrome)\b/i
     ];
     
     for (const pattern of colorPatterns) {
@@ -377,6 +392,7 @@ export class OrderConfirmationParser {
       
       // 3. Generic HTML patterns
       /<[^>]*>Size:\s*([^<\n\r!]+?)<\/[^>]*>/i,
+      /Size:\s*US\s*([A-Z0-9\.\s]+?)(?=<|$)/i,
       /Size:\s*([^<\n\r!]+?)(?=<|$)/i,
       
       // 4. Text patterns with context
@@ -423,7 +439,8 @@ export class OrderConfirmationParser {
           console.log(`📏 SIZE PATTERN ${i+1} MATCH for ${orderInfo.order_number}: "${size}"`);
           console.log(`📏 PATTERN: ${pattern}`);
           console.log(`📏 FULL MATCH: "${match[0]}"`);
-          console.log(`📏 CONTEXT: "${htmlContent.substring(Math.max(0, match.index - 50), match.index + match[0].length + 50)}"`);
+          const idx = (match as any).index ?? 0;
+          console.log(`📏 CONTEXT: "${htmlContent.substring(Math.max(0, idx - 50), idx + match[0].length + 50)}"`);
         }
         
         // Skip if this looks like CSS or code - comprehensive CSS filtering
@@ -529,9 +546,9 @@ export class OrderConfirmationParser {
         
         // Additional validation - reject common false positives, but only if the original size was just a number
         // Don't reject if the original size had letters (like "US W 9")
-        const falsePositives = ['15', '14', '13', '12', '11', '10', '9', '8', '7', '6', '5', '4', '3', '2', '1', '0'];
-        if (falsePositives.includes(size) && /^[0-9]+$/.test(originalSize)) {
-          console.log(`🚫 REJECTING LIKELY FALSE POSITIVE: "${size}" - too generic, might be CSS or other content`);
+        // Reject code-like numeric matches such as color/style codes (e.g., 601)
+        if (/^\d{3,4}$/.test(size) && /^[0-9]+$/.test(originalSize)) {
+          console.log(`🚫 REJECTING LIKELY FALSE POSITIVE (code-like number): "${size}"`);
           continue;
         }
         
@@ -579,6 +596,10 @@ export class OrderConfirmationParser {
       console.log(`⚠️ SIZE CONTAINS HTML for ${orderInfo.order_number}: "${orderInfo.size}"`);
     }
     
+    // If product name still empty, try using image alt text captured elsewhere
+    if (!orderInfo.product_name && orderInfo.product_image_alt) {
+      orderInfo.product_name = this.cleanProductName(orderInfo.product_image_alt);
+    }
     // Size extraction is now handled by the comprehensive pattern matching above
     // and fallback methods if no size is found
     
@@ -590,8 +611,7 @@ export class OrderConfirmationParser {
     
     // Extract style ID
     const stylePatterns = [
-      /Style ID:\s*([^<\n]+)/i,
-      /Style:\s*([^<\n]+)/i
+      /Style ID:\s*([A-Z0-9\-]+)\b/i
     ];
     
     for (const pattern of stylePatterns) {
@@ -603,6 +623,40 @@ export class OrderConfirmationParser {
     }
     
     console.log(`🏁 COMPLETED PRODUCT INFO EXTRACTION for ${orderInfo.order_number}: size="${orderInfo.size}", product="${orderInfo.product_name}"`);
+  }
+
+  /**
+   * Clean up a product name string: strip HTML, decode entities, remove pdf2html noise
+   */
+  private cleanProductName(raw: string): string {
+    if (!raw) return '';
+    let text = raw;
+    // Remove HTML tags
+    text = text.replace(/<[^>]+>/g, ' ');
+    // Decode common entities
+    const entityMap: Record<string, string> = {
+      '&amp;': '&',
+      '&apos;': "'",
+      '&#39;': "'",
+      '&quot;': '"',
+      '&lt;': '<',
+      '&gt;': '>'
+    };
+    text = text.replace(/&(amp|apos|quot|lt|gt|#39);/g, (m) => entityMap[m] || m);
+    // Drop known noise phrases
+    const noise = [
+      'Your order has been verified', 'Estimated Arrival', 'TOTAL PAYMENT', 'View Order',
+      'Ships from StockX', 'Condition:', 'Order number:', 'Purchase Price:', 'Processing Fee:', 'Shipping:'
+    ];
+    for (const n of noise) {
+      const idx = text.indexOf(n);
+      if (idx !== -1) text = text.substring(0, idx);
+    }
+    // Collapse whitespace
+    text = text.replace(/\s+/g, ' ').trim();
+    // If extremely long, keep first 120 chars
+    if (text.length > 120) text = text.slice(0, 120).trim();
+    return text;
   }
   
   /**
@@ -781,6 +835,11 @@ export class OrderConfirmationParser {
           continue;
         }
         
+        // Reject code-like numeric of length 3-4
+        if (/^\d{3,4}$/.test(size)) {
+          console.log(`🚫 SKIPPING code-like numeric size in fallback: "${size}"`);
+          continue;
+        }
         if (this.isValidSizeFormat(size)) {
           orderInfo.size = size;
           console.log(`✅ SIZE FOUND with comprehensive pattern: "${size}"`);
@@ -792,8 +851,8 @@ export class OrderConfirmationParser {
     // Method 4: Try one more aggressive extraction from the entire email content
     console.log(`🔍 TRYING AGGRESSIVE SIZE EXTRACTION for ${orderInfo.order_number}`);
     const aggressivePatterns = [
+      /Size[:\s]*US\s*([A-Z0-9\.\s]+?)(?:\s|$|,|;|\.|\)|\]|\})/gi,
       /Size[:\s]*([A-Z0-9\.\s]+?)(?:\s|$|,|;|\.|\)|\]|\})/gi,
-      /([A-Z0-9\.\s]+?)\s*Size(?:\s|$|,|;|\.|\)|\]|\})/gi,
       /US\s*([A-Z0-9\.\s]+?)(?:\s|$|,|;|\.|\)|\]|\})/gi,
       /([A-Z0-9\.\s]+?)\s*US(?:\s|$|,|;|\.|\)|\]|\})/gi
     ];
@@ -815,6 +874,8 @@ export class OrderConfirmationParser {
             size.includes(']') || size.includes('=') || size.includes('"') || 
             size.includes("'")) continue;
         
+        // Reject code-like numeric of length 3-4
+        if (/^\d{3,4}$/.test(size)) continue;
         if (this.isValidSizeFormat(size)) {
           orderInfo.size = size;
           console.log(`✅ SIZE FOUND with aggressive extraction: "${size}"`);
@@ -884,7 +945,7 @@ export class OrderConfirmationParser {
       () => $('img[width="260"], img[width="240"], img[width="280"]').first()
     ];
     
-    let productImg: cheerio.Cheerio<cheerio.Element> | null = null;
+    let productImg: any = null;
     for (const searchFunc of imageSearches) {
       try {
         const result = searchFunc();
@@ -920,7 +981,7 @@ export class OrderConfirmationParser {
         /src="(https:\/\/images\.stockx\.com\/images\/[^"]*Product[^"]*\.jpg)"/i,
         /src="(https:\/\/images\.stockx\.com\/images\/[^"]*Product[^"]*)"/i,
         /<img[^>]*alt="([^"]*(?:Slipper|Sweatshirt|Shoe|Sneaker)[^"]*)"[^>]*src="([^"]+)"/i,
-        /<img[^>]*src="([^"]+)"[^>]*alt="([^"]*(?:Slipper|Sweatshirt|Shoe|Sneaker)[^"]*)"/.i
+        /<img[^>]*src="([^"]+)"[^>]*alt="([^"]*(?:Slipper|Sweatshirt|Shoe|Sneaker)[^"]*)"/i
       ];
       
       for (const pattern of imageUrlPatterns) {
@@ -1067,15 +1128,15 @@ export class OrderConfirmationParser {
       /track\s*(?:your\s*)?(?:package|order|shipment)?:?\s*(1Z[0-9A-Z]{16})/i,
       /(?:ups|ups\.com).*?(1Z[0-9A-Z]{16})/i,
       
-      // FedEx tracking in URLs (highest priority for URL-based tracking)
-      /fedex\.com.*tracknumbers[=%3D](\d{12,15})/i,
-      // FedEx tracking in URL-encoded format
-      /tracknumbers%3D(\d{12,15})/i,
-      /tracknumbers=(\d{12,15})/i,
+      // FedEx tracking in URLs (strict 12-digit)
+      /fedex\.com.*tracknumbers[=%3D](\d{12})/i,
+      // FedEx tracking in URL-encoded format (strict 12-digit)
+      /tracknumbers%3D(\d{12})/i,
+      /tracknumbers=(\d{12})/i,
       
-      // FedEx tracking (12 or 15 digits)
-      /tracking\s*(?:number|#)?:?\s*(\d{12}(?:\d{3})?)\b/i,
-      /(?:fedex|fedex\.com).*?(\d{12,15})/i,
+      // FedEx tracking (strict 12 digits)
+      /tracking\s*(?:number|#)?:?\s*(\d{12})\b/i,
+      /(?:fedex|fedex\.com).*?(\d{12})\b/i,
       
       // USPS tracking (20-22 digits, often starts with 9)
       /tracking\s*(?:number|#)?:?\s*(9[0-9]{19,21})/i,
@@ -1113,7 +1174,8 @@ export class OrderConfirmationParser {
     for (const pattern of trackingPatterns) {
       const match = htmlContent.match(pattern);
       if (match) {
-        const trackingNum = match[1].trim();
+        const trackingNumRaw = match[1].trim();
+        const trackingNum = trackingNumRaw.toUpperCase();
         // Validate it looks like a real tracking number
         // Skip if it looks like an order number (contains dash not in UPS format)
         if (trackingNum.includes('-') && !trackingNum.startsWith('1Z')) {
@@ -1125,8 +1187,8 @@ export class OrderConfirmationParser {
         const isValidTracking = (
           // UPS: 1Z followed by 16 alphanumeric
           /^1Z[0-9A-Z]{16}$/i.test(trackingNum) ||
-          // FedEx: 12 or 15 digits
-          /^\d{12}$/.test(trackingNum) || /^\d{15}$/.test(trackingNum) ||
+          // FedEx: strict 12 digits
+          /^\d{12}$/.test(trackingNum) ||
           // USPS: 20-22 digits
           /^\d{20,22}$/.test(trackingNum) ||
           // DHL: 10 digits
@@ -1148,8 +1210,8 @@ export class OrderConfirmationParser {
       console.log(`🔍 Trying flexible tracking extraction for StockX...`);
       
       // StockX often puts tracking numbers in specific locations
-      // Look for 15-digit FedEx numbers (common for StockX)
-      const fedexPattern = /\b(\d{15})\b/g;
+      // Look for 12-digit FedEx numbers
+      const fedexPattern = /\b(\d{12})\b/g;
       const fedexMatches = htmlContent.match(fedexPattern) || [];
       
       for (const match of fedexMatches) {
@@ -1169,12 +1231,12 @@ export class OrderConfirmationParser {
       if (!orderInfo.tracking_number && orderInfo.shipping_status === "shipped") {
         console.log(`🔍 Looking for ANY prominent number in shipping email...`);
         
-        // Look for numbers in bold or large text (common for tracking numbers)
+        // Look for numbers in bold or large text (restrict to 12-digit numeric)
         const prominentPatterns = [
-          /<(?:b|strong)>(\d{12,22})<\//g,
-          /<span[^>]*font-size[^>]*>(\d{12,22})<\/span>/g,
-          /<td[^>]*>(\d{12,22})<\/td>/g,
-          /<p[^>]*>(\d{12,22})<\/p>/g
+          /<(?:b|strong)>(\d{12})<\//g,
+          /<span[^>]*font-size[^>]*>(\d{12})<\/span>/g,
+          /<td[^>]*>(\d{12})<\/td>/g,
+          /<p[^>]*>(\d{12})<\/p>/g
         ];
         
         for (const pattern of prominentPatterns) {
@@ -1191,12 +1253,12 @@ export class OrderConfirmationParser {
         }
       }
       
-      // Last resort for shipping emails - find the FIRST long number after "shipped"
+      // Last resort for shipping emails - find the FIRST 12-digit number after "shipped"
       if (!orderInfo.tracking_number && orderInfo.shipping_status === "shipped") {
-        const afterShippedPattern = /(?:shipped|tracking|track your order)[^0-9]*(\d{12,22})/i;
+        const afterShippedPattern = /(?:shipped|tracking|track your order)[^0-9]*(\d{12})/i;
         const afterShippedMatch = textContent.match(afterShippedPattern);
         if (afterShippedMatch && !afterShippedMatch[1].includes('-')) {
-          orderInfo.tracking_number = afterShippedMatch[1];
+          orderInfo.tracking_number = afterShippedMatch[1].toUpperCase();
           console.log(`✅ TRACKING NUMBER FOUND (first number after 'shipped'): "${afterShippedMatch[1]}"`);
         }
       }
@@ -1205,10 +1267,10 @@ export class OrderConfirmationParser {
     // Determine carrier - StockX typically uses UPS
     if (orderInfo.tracking_number) {
       // UPS tracking numbers are typically 18 digits starting with 1Z
-      if (orderInfo.tracking_number.startsWith('1Z')) {
+      if (orderInfo.tracking_number.toUpperCase().startsWith('1Z')) {
         orderInfo.carrier = "UPS";
-      } else if (orderInfo.tracking_number.length === 12 || orderInfo.tracking_number.length === 15) {
-        // FedEx uses 12 or 15 digit tracking numbers
+      } else if (orderInfo.tracking_number.length === 12) {
+        // FedEx uses 12 digit tracking numbers (strict)
         orderInfo.carrier = "FedEx";
       } else {
         // Default to generic carrier for StockX
@@ -1326,26 +1388,94 @@ export function parseGmailApiMessage(gmailMessage: any, debug: boolean = false):
   
   const parser = new OrderConfirmationParser(debug);
   
-  // Extract HTML content from Gmail API payload
+  // Extract HTML content from Gmail API payload (handle quoted-printable + charset)
   let htmlContent = "";
   if (gmailMessage.payload) {
     const payload = gmailMessage.payload;
-    
+
+    // Helper to decode a part body with potential quoted-printable and charset
+    const decodePartBody = (part: any): string => {
+      const b64 = part?.body?.data || '';
+      if (!b64) return '';
+      // Gmail uses base64url
+      const raw = Buffer.from(b64, 'base64').toString('latin1');
+
+      const headers: Record<string, string> = {};
+      if (Array.isArray(part.headers)) {
+        for (const h of part.headers) {
+          headers[(h.name || '').toLowerCase()] = h.value || '';
+        }
+      }
+      const contentType = headers['content-type'] || '';
+      const transferEncoding = headers['content-transfer-encoding'] || '';
+      const charsetMatch = contentType.match(/charset=([\w\-]+)/i);
+      const charset = (charsetMatch?.[1] || 'utf-8').toLowerCase();
+
+      const looksQuotedPrintable = transferEncoding.toLowerCase() === 'quoted-printable' || /=\r?\n|=3D/.test(raw);
+
+      const qpDecodeToBuffer = (qp: string): Buffer => {
+        const cleaned = qp.replace(/=\r?\n/g, '');
+        const bytes: number[] = [];
+        for (let i = 0; i < cleaned.length; i++) {
+          const ch = cleaned[i];
+          if (ch === '=' && i + 2 < cleaned.length) {
+            const hex = cleaned.slice(i + 1, i + 3);
+            if (/^[0-9A-Fa-f]{2}$/.test(hex)) {
+              bytes.push(parseInt(hex, 16));
+              i += 2;
+              continue;
+            }
+          }
+          bytes.push(cleaned.charCodeAt(i));
+        }
+        return Buffer.from(bytes);
+      };
+
+      try {
+        if (looksQuotedPrintable) {
+          const buf = qpDecodeToBuffer(raw);
+          if (charset.includes('iso-8859-1') || charset.includes('latin1') || charset.includes('windows-1252')) {
+            return buf.toString('latin1');
+          }
+          return buf.toString('utf8');
+        } else {
+          // Not quoted-printable; decode using charset
+          const buf = Buffer.from(raw, 'latin1');
+          if (charset.includes('iso-8859-1') || charset.includes('latin1') || charset.includes('windows-1252')) {
+            return buf.toString('latin1');
+          }
+          return buf.toString('utf8');
+        }
+      } catch (e) {
+        // Fallback to utf8
+        return Buffer.from(raw, 'latin1').toString('utf8');
+      }
+    };
+
     if (payload.parts) {
+      // Prefer text/html part; if multipart/alternative, headers may be on each part
       for (const part of payload.parts) {
         if (part.mimeType === 'text/html') {
-          const bodyData = part.body?.data || '';
-          if (bodyData) {
-            htmlContent = Buffer.from(bodyData, 'base64').toString('utf8');
-            break;
+          htmlContent = decodePartBody(part);
+          break;
+        }
+      }
+      if (!htmlContent) {
+        // Some emails nest parts; attempt one level deeper
+        for (const part of payload.parts) {
+          if (part.parts && Array.isArray(part.parts)) {
+            for (const sub of part.parts) {
+              if (sub.mimeType === 'text/html') {
+                htmlContent = decodePartBody(sub);
+                break;
+              }
+            }
+            if (htmlContent) break;
           }
         }
       }
     } else if (payload.mimeType === 'text/html') {
-      const bodyData = payload.body?.data || '';
-      if (bodyData) {
-        htmlContent = Buffer.from(bodyData, 'base64').toString('utf8');
-      }
+      htmlContent = decodePartBody(payload);
     }
   }
   

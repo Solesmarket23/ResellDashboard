@@ -6,22 +6,28 @@ export async function GET(request: NextRequest) {
   try {
     // Get the current URL to determine the correct redirect URI
     const url = new URL(request.url);
-    const baseUrl = `${url.protocol}//${url.host}`;
+    let baseUrl = `${url.protocol}//${url.host}`;
     
-    // Check if we're running locally (localhost, 127.0.0.1, or 0.0.0.0)
-    const isLocal = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1') || baseUrl.includes('0.0.0.0');
+    // Fix for 0.0.0.0 - convert to localhost for OAuth
+    if (baseUrl.includes('0.0.0.0')) {
+      baseUrl = baseUrl.replace('0.0.0.0', 'localhost');
+    }
+    
+    // Check if we're running locally (localhost, 127.0.0.1)
+    const isLocal = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1');
+    
+    // Get the return URL from state parameter
+    const returnUrl = url.searchParams.get('state') || '/dashboard';
+    
+    console.log('🔐 Gmail Callback - State parameter:', url.searchParams.get('state'));
+    console.log('🔐 Gmail Callback - Return URL:', returnUrl);
     
     // Use environment variable if set, otherwise auto-detect
     let redirectUri = process.env.GOOGLE_REDIRECT_URI;
     
     if (!redirectUri) {
-      if (isLocal) {
-        // For local development, use localhost with the correct port
-        redirectUri = 'http://localhost:3000/api/gmail/callback';
-      } else {
-        // For production, use the current domain
-        redirectUri = `${baseUrl}/api/gmail/callback`;
-      }
+      // Always use the current base URL to auto-detect the port
+      redirectUri = `${baseUrl}/api/gmail/callback`;
     }
     
     console.log('🔐 Gmail Callback - Using redirect URI:', redirectUri);
@@ -53,11 +59,30 @@ export async function GET(request: NextRequest) {
       throw new Error('No access token received from Google');
     }
     
-    // Create response with redirect to purchases page
+    // Create response with redirect to the original page
     // Use the current port for local development
     const redirectBaseUrl = isLocal ? `http://localhost:${url.port || '3000'}` : baseUrl;
-    const redirectUrl = new URL('/dashboard?section=purchases&gmail_connected=true', redirectBaseUrl);
-    const response = NextResponse.redirect(redirectUrl);
+    
+    // Handle the return URL properly - if it starts with /, append to base URL
+    let redirectUrl;
+    if (returnUrl.startsWith('/')) {
+      redirectUrl = new URL(returnUrl, redirectBaseUrl);
+    } else {
+      redirectUrl = new URL(returnUrl);
+    }
+    
+    console.log('🔐 Gmail Callback - Redirect base URL:', redirectBaseUrl);
+    console.log('🔐 Gmail Callback - Final redirect URL before params:', redirectUrl.toString());
+    
+    // Add gmail_connected parameter properly
+    redirectUrl.searchParams.set('gmail_connected', 'true');
+    
+    console.log('🔐 Gmail Callback - Final redirect URL after params:', redirectUrl.toString());
+    const response = NextResponse.redirect(redirectUrl, { status: 302 });
+    // Add a refresh header as a fallback to ensure navigation in dev
+    try {
+      response.headers.set('Refresh', `0;url=${redirectUrl.toString()}`);
+    } catch {}
     
     // Determine if we're in production (Vercel) or development
     const isProduction = baseUrl.includes('vercel.app') || baseUrl.includes('resell-dashboard');
@@ -77,7 +102,7 @@ export async function GET(request: NextRequest) {
       secure: isProduction,
       sameSite: 'lax' as const,
       path: '/',
-      maxAge: 7 * 24 * 60 * 60,
+      maxAge: 30 * 24 * 60 * 60, // 30 days client-visible marker
       domain: isLocal ? undefined : (isProduction ? '.vercel.app' : undefined)
     };
     
@@ -119,7 +144,9 @@ export async function GET(request: NextRequest) {
     const baseUrl = `${url.protocol}//${url.host}`;
     const isLocal = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1') || baseUrl.includes('0.0.0.0');
     const redirectBaseUrl = isLocal ? `http://localhost:${url.port || '3000'}` : baseUrl;
-    const errorUrl = new URL('/dashboard?section=purchases&gmail_error=true', redirectBaseUrl);
+    const returnUrl = url.searchParams.get('state') || '/dashboard';
+    const errorUrl = new URL(returnUrl, redirectBaseUrl);
+    errorUrl.searchParams.set('gmail_error', 'true');
     return NextResponse.redirect(errorUrl);
   }
 } 

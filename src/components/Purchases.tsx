@@ -17,13 +17,17 @@ import ImagePreviewModal from './ImagePreviewModal';
 import AutoEmailSync from './AutoEmailSync';
 import SimpleAutoSync from './SimpleAutoSync';
 import GmailBatchedSync from './GmailBatchedSync';
+import StreamingHistoricalSync from './StreamingHistoricalSync';
 import StatusUpdater from './StatusUpdater';
 import FixItemProducts from './FixItemProducts';
 import NeonNotification, { NotificationType } from './NeonNotification';
 import ProductSearch from './ProductSearch';
 import GmailResetButton from './GmailResetButton';
+import SyncProgressIndicator from './SyncProgressIndicator';
 
 const Purchases = () => {
+  // Temporary feature flag to disable Historical Sync UI (revert)
+  const ENABLE_HISTORICAL_SYNC = false;
   const [sortBy, setSortBy] = useState('Purchase Date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [showScanModal, setShowScanModal] = useState(false);
@@ -43,6 +47,7 @@ const Purchases = () => {
   const [showAddPurchaseModal, setShowAddPurchaseModal] = useState(false);
   const [hasBeenReset, setHasBeenReset] = useState(false);
   const [showBatchedSync, setShowBatchedSync] = useState(false);
+  const [showStreamingHistoricalSync, setShowStreamingHistoricalSync] = useState(false);
   const [selectedPurchases, setSelectedPurchases] = useState<Set<string>>(new Set());
   const [isAutoStatusEnabled, setIsAutoStatusEnabled] = useState(false);
   const [lastAutoStatusUpdate, setLastAutoStatusUpdate] = useState<Date | null>(null);
@@ -54,6 +59,7 @@ const Purchases = () => {
     message: string;
     type: NotificationType;
   }>({ isVisible: false, message: '', type: 'success' });
+  const [backgroundPurchases, setBackgroundPurchases] = useState<any[]>([]);
   const [imagePreview, setImagePreview] = useState<{
     isOpen: boolean;
     imageUrl: string;
@@ -69,6 +75,22 @@ const Purchases = () => {
   });
   const { currentTheme } = useTheme();
   const { user } = useAuth();
+
+  // Handle live purchase updates from background sync
+  const handleBackgroundPurchasesUpdate = (newPurchases: any[]) => {
+    setBackgroundPurchases(newPurchases);
+    // Merge with existing purchases, avoiding duplicates
+    setPurchases(prevPurchases => {
+      const existingIds = new Set(prevPurchases.map(p => p.id));
+      const uniqueNewPurchases = newPurchases.filter(p => !existingIds.has(p.id));
+      const updatedPurchases = [...prevPurchases, ...uniqueNewPurchases];
+      
+      // Update totals after adding new purchases
+      calculateTotals(updatedPurchases);
+      
+      return updatedPurchases;
+    });
+  };
   
   // Column width state with localStorage persistence
   const getStoredColumnWidths = () => {
@@ -121,8 +143,8 @@ const Purchases = () => {
       
       switch (sortKey) {
         case 'product':
-          aValue = a.product.name.toLowerCase();
-          bValue = b.product.name.toLowerCase();
+          aValue = a.product?.name?.toLowerCase() || '';
+          bValue = b.product?.name?.toLowerCase() || '';
           break;
         case 'orderNumber':
           aValue = a.orderNumber.toLowerCase();
@@ -264,9 +286,16 @@ const Purchases = () => {
   const getSortedPurchases = () => {
     const allPurchases = [...purchases, ...manualPurchases];
     
+    // Filter out invalid purchases first
+    const validPurchases = allPurchases.filter(purchase => 
+      purchase && 
+      typeof purchase === 'object' && 
+      purchase.orderNumber
+    );
+    
     // Deduplicate by order number before sorting
     const uniqueMap = new Map();
-    allPurchases.forEach(purchase => {
+    validPurchases.forEach(purchase => {
       const existing = uniqueMap.get(purchase.orderNumber);
       if (!existing || 
           (purchase.status === 'Delivered' && existing.status !== 'Delivered') ||
@@ -278,6 +307,10 @@ const Purchases = () => {
     });
     
     const uniquePurchases = Array.from(uniqueMap.values());
+    
+    // Debug logging
+    console.log(`📊 Purchase counts: Total=${allPurchases.length}, Valid=${validPurchases.length}, Unique=${uniquePurchases.length}`);
+    
     return sortPurchases(uniquePurchases, sortBy, sortDirection);
   };
   
@@ -545,19 +578,6 @@ const Purchases = () => {
     
     setPurchases(transformedPurchases);
     
-    // Save to Firebase immediately when purchases are updated
-    if ((user || siteUserId) && allPurchases.length > 0) {
-      console.log(`🔄 Attempting to save ${allPurchases.length} purchases to Firebase...`);
-      try {
-        await saveGmailPurchasesToFirebase(allPurchases);
-        console.log(`💾 Gmail purchases auto-saved to Firebase`);
-      } catch (error) {
-        console.error(`❌ Failed to save Gmail purchases to Firebase:`, error);
-      }
-    } else {
-      console.warn(`⚠️ Cannot save to Firebase - Firebase user: ${!!user}, Site user: ${!!siteUserId}, purchases: ${allPurchases.length}`);
-    }
-    
     // Combine with manual purchases for totals
     const combinedPurchases = [...allPurchases, ...manualPurchases];
     calculateTotals(combinedPurchases);
@@ -799,10 +819,25 @@ const Purchases = () => {
   };
 
   const calculateTotals = (purchaseList: any[]) => {
-    const total = purchaseList.reduce((sum, purchase) => {
-      const price = parseFloat(purchase.price.replace('$', '').replace(',', ''));
-      return sum + price;
-    }, 0);
+    const normalizePrice = (p: any): number => {
+      if (!p) return 0;
+      // Prefer numeric fields if present
+      if (typeof p.price === 'number' && !isNaN(p.price)) return p.price;
+      if (typeof p.totalPayment === 'number' && !isNaN(p.totalPayment)) return p.totalPayment;
+      if (typeof p.purchasePrice === 'number' && !isNaN(p.purchasePrice)) return p.purchasePrice;
+
+      // Parse common string formats like "$1,234.56" or "1,234.56 + $0.00"
+      const tryStrings: (string | undefined)[] = [p.price, p.originalPrice];
+      for (const s of tryStrings) {
+        if (typeof s === 'string') {
+          const num = parseFloat(s.replace(/[^0-9.\-]+/g, ''));
+          if (!isNaN(num)) return num;
+        }
+      }
+      return 0;
+    };
+
+    const total = purchaseList.reduce((sum, purchase) => sum + normalizePrice(purchase), 0);
     setTotalValue(`$${total.toLocaleString()}`);
     setTotalCount(purchaseList.length);
   };
@@ -1085,6 +1120,55 @@ const Purchases = () => {
     }
   };
 
+  const performHistoricalSync = () => {
+    if (!gmailConnected) {
+      alert('Please connect Gmail first');
+      return;
+    }
+
+    if (loading) {
+      alert('Sync already in progress, please wait...');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      'Historical Sync will search through ALL your emails to find purchases. This may take several minutes and will process up to 5000 emails. You will see live updates as purchases are found. Continue?'
+    );
+
+    if (!confirmed) return;
+
+    setShowStreamingHistoricalSync(true);
+  };
+
+  // Handle streaming historical sync updates
+  const handleStreamingPurchasesUpdate = async (newPurchases: any[]) => {
+    console.log('📡 Received streaming update with', newPurchases.length, 'purchases');
+    
+    // Update local state immediately for live updates
+    setPurchases(newPurchases);
+    
+    // Save to Firebase in the background
+    try {
+      await saveGmailPurchasesToFirebase(newPurchases);
+      console.log('💾 Streaming purchases saved to Firebase');
+    } catch (error) {
+      console.warn('⚠️ Could not save streaming purchases to Firebase:', error);
+    }
+  };
+
+  // Handle streaming historical sync completion
+  const handleStreamingSyncComplete = async (totalPurchases: number) => {
+    console.log('✅ Streaming historical sync complete:', totalPurchases, 'purchases');
+    
+    // Reload all purchases to get the complete picture
+    await loadManualPurchasesFromFirebase();
+    
+    showNotification(
+      `Historical sync complete! Found ${totalPurchases} purchases. Check the results below.`,
+      'success'
+    );
+  };
+
   const manualStatusUpdate = async () => {
     console.log('🔄 MANUAL STATUS UPDATE: Button clicked!');
     console.log('🔄 MANUAL STATUS UPDATE: Gmail connected:', gmailConnected);
@@ -1246,10 +1330,10 @@ const Purchases = () => {
   const handleImageClick = (purchase: any) => {
     setImagePreview({
       isOpen: true,
-      imageUrl: purchase.product.image,
-      productName: purchase.product.name,
-      productBrand: purchase.product.brand,
-      productSize: purchase.product.size
+      imageUrl: purchase.product?.image || '',
+      productName: purchase.product?.name || 'Unknown Product',
+      productBrand: purchase.product?.brand || 'Unknown Brand',
+      productSize: purchase.product?.size || 'Unknown Size'
     });
   };
 
@@ -1367,6 +1451,18 @@ const Purchases = () => {
     }
   };
 
+  // Derive a color when statusColor is missing to keep badges color-coded
+  const deriveStatusColor = (status: string, explicitColor?: string) => {
+    if (explicitColor) return explicitColor;
+    const normalized = (status || '').toLowerCase();
+    if (normalized.includes('deliver')) return 'green';
+    if (normalized.includes('ship')) return 'blue';
+    if (normalized.includes('cancel')) return 'red';
+    if (normalized.includes('pend')) return 'yellow';
+    // Default for new orders or unknowns
+    return 'orange';
+  };
+
   const handleScanComplete = (trackingNumber: string) => {
     console.log('Scanned tracking number:', trackingNumber);
     setHasBeenReset(false); // Reset flag when user adds data
@@ -1398,7 +1494,7 @@ const Purchases = () => {
         }
       }
       
-      alert(`📦 Package found!\n\n${packageType} Package: ${trackingNumber}\nProduct: ${matchedPurchase.product.name}\nOrder: ${matchedPurchase.orderNumber}\nStatus: ${matchedPurchase.status}`);
+      alert(`📦 Package found!\n\n${packageType} Package: ${trackingNumber}\nProduct: ${matchedPurchase.product?.name || 'Unknown Product'}\nOrder: ${matchedPurchase.orderNumber}\nStatus: ${matchedPurchase.status}`);
     } else {
       // Show option to add as note or create new purchase
       const shouldAddNote = confirm(`Package not found in your orders.\n\n${packageType} Package: ${trackingNumber}\n\nWould you like to add this as a note to an existing purchase?`);
@@ -1591,6 +1687,9 @@ const Purchases = () => {
 
   return (
     <div className={`flex-1 ${currentTheme.colors.background} p-8`}>
+      {/* Background Sync Progress Indicator */}
+      <SyncProgressIndicator onPurchasesUpdate={handleBackgroundPurchasesUpdate} />
+      
       {/* Gmail Connection Status */}
       <div className="mb-6 space-y-4">
         <GmailConnector 
@@ -1643,6 +1742,20 @@ const Purchases = () => {
               >
                 <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
                 <span>Sync Gmail</span>
+              </button>
+            )}
+            {gmailConnected && ENABLE_HISTORICAL_SYNC && (
+              <button
+                onClick={performHistoricalSync}
+                disabled={loading}
+                className={`flex items-center space-x-2 ${
+                  currentTheme.name === 'Neon' 
+                    ? 'bg-gradient-to-r from-violet-500 to-purple-500 hover:from-violet-600 hover:to-purple-600 shadow-lg hover:shadow-violet-500/25' 
+                    : 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 shadow-lg hover:shadow-indigo-500/25'
+                } disabled:opacity-50 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200`}
+              >
+                <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+                <span>Historical Sync</span>
               </button>
             )}
             {gmailConnected && purchases.length > 0 && (
@@ -2082,7 +2195,11 @@ const Purchases = () => {
             <tbody className={`${currentTheme.colors.cardBackground} ${
               currentTheme.name === 'Neon' ? 'divide-y divide-white/10' : 'divide-y divide-gray-100'
             }`}>
-              {getSortedPurchases().map((purchase) => (
+              {getSortedPurchases().map((purchase) => {
+                // Safety check to ensure purchase exists and has required structure
+                if (!purchase) return null;
+                
+                return (
                 <tr 
                   key={purchase.id?.toString() || Math.random()} 
                   data-purchase-id={purchase.id}
@@ -2101,34 +2218,37 @@ const Purchases = () => {
                   <td className="px-6 py-2">
                     <div className="flex items-start gap-3 min-h-12">
                       <div 
-                        className={`w-8 h-8 rounded-lg flex-shrink-0 overflow-hidden ${purchase.product.bgColor} flex items-center justify-center shadow-sm mt-1 cursor-pointer hover:ring-2 hover:ring-offset-1 ${
+                        className={`w-8 h-8 rounded-lg flex-shrink-0 overflow-hidden ${purchase.product?.bgColor || 'bg-gray-100'} flex items-center justify-center shadow-sm mt-1 cursor-pointer hover:ring-2 hover:ring-offset-1 ${
                           currentTheme.name === 'Neon' ? 'hover:ring-cyan-400' : 'hover:ring-blue-400'
                         } transition-all duration-200`}
                         onClick={() => handleImageClick(purchase)}
                         title="Click to preview image"
                       >
                         <img 
-                          src={purchase.product.image} 
-                          alt={purchase.product.name}
+                          src={purchase.product?.image || ''} 
+                          alt={purchase.product?.name || 'Product'}
                           className="w-full h-full object-cover rounded-lg"
                           onLoad={(e) => {
                             const target = e.target as HTMLImageElement;
-                            target.parentElement!.classList.remove(purchase.product.bgColor);
+                            target.parentElement!.classList.remove(purchase.product?.bgColor || 'bg-gray-100');
                           }}
                           onError={(e) => {
                             const target = e.target as HTMLImageElement;
-                            target.style.display = 'none';
-                            const parent = target.parentElement!;
-                            parent.innerHTML = `<div class="w-full h-full flex items-center justify-center text-white text-xs font-bold">${purchase.product.brand.split(' ')[0]}</div>`
+                            // Swap to a safe placeholder instead of removing the image element
+                            if (target.getAttribute('data-fallback') !== '1') {
+                              target.setAttribute('data-fallback', '1');
+                              target.src = '/placeholder-shoe.png';
+                              target.style.display = 'block';
+                            }
                           }}
                         />
                       </div>
                       <div className="flex-1">
                         <div className={`text-sm font-medium ${currentTheme.colors.textPrimary} leading-tight`} style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
-                          {purchase.product.name}
+                          {purchase.product?.name || 'Unknown Product'}
                         </div>
                         <div className={`text-xs ${currentTheme.colors.textSecondary}`} style={{ wordBreak: 'break-word' }}>
-                          {purchase.product.brand} • {purchase.product.size}
+                          {purchase.product?.brand || 'Unknown Brand'} • {purchase.product?.size || 'Unknown Size'}
                         </div>
                       </div>
                     </div>
@@ -2144,7 +2264,7 @@ const Purchases = () => {
                     </a>
                   </td>
                   <td className="px-6 py-2 align-middle">
-                    <span className={getStatusBadge(purchase.status, purchase.statusColor)}>
+                    <span className={getStatusBadge(purchase.status, deriveStatusColor(purchase.status, purchase.statusColor))}>
                       {purchase.status}
                     </span>
                   </td>
@@ -2171,7 +2291,7 @@ const Purchases = () => {
                   </td>
                   <td className="px-6 py-2 align-middle">
                     <div className={`text-sm ${currentTheme.colors.textPrimary} whitespace-nowrap`}>
-                      {purchase.dateAdded.replace('\n', ' ')}
+                      {purchase.dateAdded?.replace('\n', ' ') || 'Unknown'}
                     </div>
                   </td>
                   <td className="px-6 py-2 align-middle">
@@ -2192,7 +2312,8 @@ const Purchases = () => {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -2324,6 +2445,16 @@ const Purchases = () => {
           </div>
         </div>
       )}
+
+            {/* Streaming Historical Sync Modal (disabled via flag) */}
+            {ENABLE_HISTORICAL_SYNC && (
+              <StreamingHistoricalSync
+                isOpen={showStreamingHistoricalSync}
+                onClose={() => setShowStreamingHistoricalSync(false)}
+                onPurchasesUpdate={handleStreamingPurchasesUpdate}
+                onSyncComplete={handleStreamingSyncComplete}
+              />
+            )}
       
       {/* Gmail Reset Button - Temporary for debugging */}
       <GmailResetButton />

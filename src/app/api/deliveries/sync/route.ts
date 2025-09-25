@@ -47,7 +47,14 @@ export async function GET(request: NextRequest) {
              trackingValue !== 'TBD';
     });
 
-    console.log(`📦 Found ${purchasesWithTracking.length} purchases with tracking numbers`);
+    // Include any manual trackings added via PUT (in-memory during this process lifetime)
+    const manualFromMemory = manualTrackingStorage.get(userId) || [];
+    if (manualFromMemory.length > 0) {
+      console.log(`📝 Including ${manualFromMemory.length} manual tracking entr${manualFromMemory.length === 1 ? 'y' : 'ies'} from memory`);
+      purchasesWithTracking = [...manualFromMemory, ...purchasesWithTracking];
+    }
+
+    console.log(`📦 Found ${purchasesWithTracking.length} purchases with tracking numbers (including manual if any)`);
 
     // If no purchases found, add some test data for demonstration
     if (purchasesWithTracking.length === 0) {
@@ -199,7 +206,7 @@ export async function PUT(request: NextRequest) {
       orderNumber: `manual-${Date.now()}`,
       tracking: trackingNumber,
       trackingNumber: trackingNumber,
-      carrier: carrier || 'UPS',
+      carrier: carrier || undefined, // allow auto-detect downstream
       productName: productName || 'Manual Test Package',
       productBrand: productBrand || 'Test Brand',
       productSize: productSize || 'Unknown',

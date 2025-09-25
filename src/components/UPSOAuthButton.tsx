@@ -64,53 +64,30 @@ export default function UPSOAuthButton({
 
   if (isAuthenticated) {
     return (
-      <div className={`space-y-4 ${className}`}>
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-              </svg>
-            </div>
-            <div className="ml-3">
-              <h3 className="text-sm font-medium text-green-800">
-                UPS OAuth Connected
-              </h3>
-              <div className="mt-2 text-sm text-green-700">
-                <p>Token Type: {tokenInfo?.token_type}</p>
-                <p>Expires In: {tokenInfo?.expires_in} seconds</p>
-                <p>Scope: {tokenInfo?.scope}</p>
-              </div>
-            </div>
+      <div className={`space-y-3 ${className}`}>
+        {/* Clean, minimal status indicator */}
+        <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-lg px-4 py-3">
+          <div className="flex items-center space-x-3">
+            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+            <span className="text-sm font-medium text-green-800">UPS Connected</span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="text-xs text-green-600 hover:text-green-800 underline disabled:opacity-50"
+            >
+              {isRefreshing ? 'Refreshing...' : 'Refresh'}
+            </button>
+            <button
+              onClick={handleLogout}
+              className="text-xs text-red-600 hover:text-red-800 underline"
+            >
+              Disconnect
+            </button>
           </div>
         </div>
 
-        <div className="flex space-x-3">
-          <button
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-            className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-          >
-            {isRefreshing ? (
-              <>
-                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Refreshing...
-              </>
-            ) : (
-              'Refresh Token'
-            )}
-          </button>
-
-          <button
-            onClick={handleLogout}
-            className="inline-flex items-center px-3 py-2 border border-red-300 shadow-sm text-sm leading-4 font-medium rounded-md text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-          >
-            Disconnect
-          </button>
-        </div>
       </div>
     );
   }

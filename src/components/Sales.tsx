@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Calendar, TrendingUp, ArrowUp, ExternalLink, Plus, Sparkles, Trash2, X, ChevronDown, ChevronLeft, ChevronRight, Loader2, Wifi, WifiOff, AlertCircle, RefreshCw, Package, DollarSign, Link } from 'lucide-react';
+import { Search, Calendar, TrendingUp, ArrowUp, ExternalLink, Plus, Sparkles, Trash2, X, ChevronDown, ChevronLeft, ChevronRight, Loader2, Wifi, WifiOff, AlertCircle, RefreshCw, Package, DollarSign, Link, Upload } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
 import { saveUserSale } from '../lib/firebase/userDataUtils';
@@ -37,6 +38,10 @@ const Sales = () => {
   const [clearAllModal, setClearAllModal] = useState(false);
   const [recordSaleModal, setRecordSaleModal] = useState(false);
   const [marketplaceDropdownOpen, setMarketplaceDropdownOpen] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{processed: number; total: number; errors: number}>({ processed: 0, total: 0, errors: 0 });
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   
   // Purchase linking state
   const [linkedPurchases, setLinkedPurchases] = useState<any[]>([]);
@@ -171,6 +176,116 @@ const Sales = () => {
     
     setPurchaseLinkSuccessMessage(`🗑️ Purchase link removed for ${sale.product || sale.title}`);
     setTimeout(() => setPurchaseLinkSuccessMessage(null), 3000);
+  };
+
+  // Upload handling
+  const handleUploadFile = async (file: File) => {
+    if (!user) return;
+    try {
+      setUploading(true);
+      setUploadProgress({ processed: 0, total: 0, errors: 0 });
+      const nameLower = file.name.toLowerCase();
+      let wb: XLSX.WorkBook;
+      if (nameLower.endsWith('.csv')) {
+        const text = await file.text();
+        // Ensure Windows-1252/Latin1 CSVs parse by converting to UTF-8 string first
+        wb = XLSX.read(text, { type: 'string', raw: false });
+      } else {
+        const data = await file.arrayBuffer();
+        wb = XLSX.read(data, { type: 'array' });
+      }
+      const sheetName = wb.SheetNames[0];
+      const ws = wb.Sheets[sheetName];
+      const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      setUploadProgress(prev => ({ ...prev, total: rows.length }));
+
+      // Map headers (case-insensitive)
+      const norm = (s: string) => s.toLowerCase().trim();
+      const headerMap: Record<string, string> = {
+        item: 'product',
+        'sku name': 'brand',
+        'sku size': 'size',
+        style: 'style',
+        'order number': 'orderNumber',
+        'sale order number': 'saleOrderNumber',
+        price: 'salePrice',
+        'price currency': 'priceCurrency',
+        'final payout amount': 'payout',
+        'final payout currency': 'payoutCurrency',
+        'payout method': 'payoutMethod',
+        'sale date': 'date',
+        status: 'status',
+        'seller tracking number': 'sellerTracking',
+        'payout id': 'payoutId',
+        'provider transaction id': 'providerTransactionId',
+        'total invoice amount': 'totalInvoiceAmount'
+      };
+
+      let processed = 0;
+      let errors = 0;
+      for (const row of rows) {
+        try {
+          const mapped: any = {};
+          for (const [key, val] of Object.entries(row)) {
+            const k = norm(String(key));
+            const target = headerMap[k];
+            if (target) mapped[target] = val;
+          }
+
+          // Build sale record
+          const product = String(mapped.product || mapped.item || '').toString();
+          const brand = String(mapped.brand || '').toString();
+          const size = String(mapped.size || '').toString();
+          const orderNumber = String(mapped.orderNumber || mapped.saleOrderNumber || '').toString();
+          const status = String(mapped.status || 'pending').toLowerCase();
+          const salePriceNum = Number(String(mapped.salePrice || '').replace(/[^0-9.\-]/g, '')) || 0;
+          const payoutNum = Number(String(mapped.payout || '').replace(/[^0-9.\-]/g, '')) || 0;
+          const feesNum = Math.max(0, salePriceNum - payoutNum);
+          const dateStr = mapped.date ? new Date(mapped.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+
+          await saveUserSale(user.uid, {
+            product,
+            brand,
+            size,
+            orderNumber,
+            market: 'StockX',
+            salePrice: salePriceNum,
+            fees: feesNum,
+            payout: payoutNum,
+            date: dateStr,
+            isTest: false,
+            type: 'imported',
+            status
+          } as any);
+        } catch (e) {
+          console.error('Row import error:', e, row);
+          errors++;
+        } finally {
+          processed++;
+          if (processed % 10 === 0) setUploadProgress({ processed, total: rows.length, errors });
+        }
+      }
+
+      setUploadProgress({ processed, total: rows.length, errors });
+      await forceRefresh();
+    } catch (e) {
+      console.error('Upload parse error:', e);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const getFileFromDataTransfer = (dt: DataTransfer): File | null => {
+    if (dt.items && dt.items.length) {
+      for (const item of Array.from(dt.items)) {
+        if (item.kind === 'file') {
+          const f = item.getAsFile();
+          if (f) return f;
+        }
+      }
+    }
+    if (dt.files && dt.files.length) return dt.files[0] || null;
+    return null;
   };
   
   // Column width state for resizable columns with localStorage persistence
@@ -1189,6 +1304,20 @@ const Sales = () => {
             <Plus className="w-4 h-4 mr-2" />
             Record Sale
           </button>
+          <button 
+            onClick={() => setShowUploadModal(true)}
+            disabled={isLoading}
+            className={`flex items-center px-4 py-2 ${
+              isNeon 
+                ? 'bg-gradient-to-r from-emerald-500 to-green-600 shadow-lg shadow-emerald-500/25' 
+                : 'bg-green-600'
+            } text-white rounded-lg hover:bg-green-700 transition-colors ${
+              isLoading ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
+          >
+            <Upload className="w-4 h-4 mr-2" />
+            Upload Pending Sales
+          </button>
         </div>
       </div>
 
@@ -1205,6 +1334,77 @@ const Sales = () => {
               }
             }}
           />
+        </div>
+      )}
+
+      {/* Upload Pending Sales Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+          <div className={`${isNeon ? 'bg-gray-900 border border-cyan-500/30' : 'bg-white border border-gray-200'} rounded-xl w-full max-w-2xl p-6 shadow-2xl`}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className={`text-lg font-semibold ${isNeon ? 'text-white' : 'text-gray-900'}`}>Upload Pending StockX Sales (CSV/XLSX)</h3>
+              <button onClick={() => setShowUploadModal(false)} className={`p-2 rounded ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}>
+                <X className={`w-5 h-5 ${isNeon ? 'text-gray-300' : 'text-gray-600'}`} />
+              </button>
+            </div>
+            <p className={`${isNeon ? 'text-gray-400' : 'text-gray-600'} text-sm mb-4`}>
+              Columns supported: item, SKU Name, Sku Size, Style, Order Number, Sale order number, Price, Price currency, Final payout amount, Final payout Currency, Payout method, Sale date, Status, Seller Tracking number, Payout ID, Provider Transaction ID, Total Invoice Amount
+            </p>
+
+            <div 
+              className={`rounded-lg border-2 border-dashed ${isNeon ? 'border-cyan-500/30 bg-black/30' : 'border-gray-300 bg-gray-50'} p-6 text-center mb-4`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onDragEnter={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onDrop={async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const f = getFileFromDataTransfer(e.dataTransfer);
+                if (f) await handleUploadFile(f);
+              }}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
+                className="hidden"
+                onChange={async (e) => {
+                  try {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    await handleUploadFile(f);
+                  } catch (err) {
+                    console.error('File input change error:', err);
+                  } finally {
+                    // Reset input value so the same file can be re-selected
+                    if (fileInputRef.current) fileInputRef.current.value = '' as any;
+                  }
+                }}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className={`inline-flex items-center px-4 py-2 ${isNeon ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white' : 'bg-blue-600 text-white'} rounded-lg hover:opacity-90`}
+              >
+                <Upload className="w-4 h-4 mr-2" /> Select CSV/XLSX File
+              </button>
+              <p className={`${isNeon ? 'text-gray-400' : 'text-gray-600'} text-xs mt-2`}>or drag and drop your file here</p>
+            </div>
+
+            {uploading && (
+              <div className={`${isNeon ? 'text-gray-300' : 'text-gray-700'} text-sm mb-2`}>
+                Importing {uploadProgress.processed}/{uploadProgress.total} rows • Errors: {uploadProgress.errors}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setShowUploadModal(false)} className={`px-4 py-2 rounded-lg ${isNeon ? 'bg-white/10 text-gray-200 hover:bg-white/20' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>Close</button>
+            </div>
+          </div>
         </div>
       )}
 

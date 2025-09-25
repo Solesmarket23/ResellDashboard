@@ -12,9 +12,11 @@ function getDefaultConfig() {
         status: "Ordered",
         statusColor: "orange",
         subjectPatterns: [
-          "Order Confirmation:",
-          "Xpress Order Confirmed:",
-          "Order Confirmation"
+          "Order Confirmation",
+          "Order Confirmed",
+          "Xpress Order",
+          "Order Placed",
+          "Your Order"
         ]
       },
       orderShipped: {
@@ -22,10 +24,11 @@ function getDefaultConfig() {
         status: "Shipped", 
         statusColor: "blue",
         subjectPatterns: [
-          "Order Verified & Shipped:",
-          "Order Shipped:",
-          "Xpress Order Shipped:",
-          "Your order has shipped"
+          "Order Shipped",
+          "Order Verified",
+          "Shipped",
+          "Your order has shipped",
+          "Package shipped"
         ]
       },
       orderDelivered: {
@@ -33,12 +36,10 @@ function getDefaultConfig() {
         status: "Delivered",
         statusColor: "green", 
         subjectPatterns: [
-          "Order Delivered:",
-          "Xpress Ship Order Delivered:",
-          "Order delivered",
-          "Xpress Order Delivered:",
-          "Your order has been delivered",
-          "Package delivered"
+          "Order Delivered",
+          "Delivered",
+          "Package delivered",
+          "Your order has been delivered"
         ]
       },
       orderDelayed: {
@@ -64,6 +65,11 @@ function getDefaultConfig() {
       stockx: {
         name: "StockX",
         emailDomain: "stockx.com",
+        senderEmails: [
+          "noreply@stockx.com",
+          "orders@stockx.com",
+          "support@stockx.com"
+        ],
         enabled: true,
         available: true
       },
@@ -143,22 +149,30 @@ function generateQueries(config: any) {
     }
   }
 
-  // Add focused StockX search queries for PURCHASES only (exclude sales) (past 2 years)
-  queries.push('from:noreply@stockx.com after:2022/1/1 -subject:"You Sold" -subject:"Sale" -subject:"Payout" -subject:"Ship" -subject:"Ask was matched"'); 
-  queries.push('from:stockx.com after:2022/1/1 -subject:"You Sold" -subject:"Sale" -subject:"Payout" -subject:"Ship" -subject:"Ask was matched"');
+  // Simplified and more inclusive StockX purchase queries
+  // These are broader and should catch more purchase-related emails
   
-  // Add focused subject-based queries (simplified to prevent timeout) - past 2 years
-  queries.push('subject:"Order Confirmed" after:2022/1/1');
-  queries.push('subject:"Order Shipped" after:2022/1/1');
-  queries.push('subject:"Encountered a Delay" after:2022/1/1');
-  queries.push('subject:"Refund Issued:" after:2022/1/1');
+  // Primary StockX purchase queries (exclude ALL sales-related emails)
+  queries.push('from:noreply@stockx.com -subject:"You Sold" -subject:"Sale" -subject:"Payout" -subject:"Ask was matched" -subject:"Ship your" -subject:"Reminder" -subject:"Time to Ship" -subject:"Ship Your Item" -subject:"Shipped To StockX"');
+  queries.push('from:stockx.com -subject:"You Sold" -subject:"Sale" -subject:"Payout" -subject:"Ask was matched" -subject:"Ship your" -subject:"Reminder" -subject:"Time to Ship" -subject:"Ship Your Item" -subject:"Shipped To StockX"');
   
-  // Enhanced delivery-focused queries - past 2 years  
-  queries.push('subject:"Xpress Ship Order Delivered:" after:2022/1/1');
-  queries.push('subject:"Order Delivered:" after:2022/1/1');
-  queries.push('subject:"Xpress Order Delivered:" after:2022/1/1');
-  queries.push('from:stockx.com AND subject:"delivered" after:2022/1/1');
-  queries.push('from:noreply@stockx.com AND subject:"delivered" after:2022/1/1');
+  // Purchase-specific subject patterns (these are what StockX sends for purchases)
+  queries.push('from:noreply@stockx.com subject:"Order Confirmation"');
+  queries.push('from:noreply@stockx.com subject:"Order Verified"');
+  queries.push('from:noreply@stockx.com subject:"Order Shipped"');
+  queries.push('from:noreply@stockx.com subject:"Order Delivered"');
+  queries.push('from:noreply@stockx.com subject:"Xpress Order"');
+  queries.push('from:noreply@stockx.com subject:"Your order"');
+  queries.push('from:noreply@stockx.com subject:"Package"');
+  
+  // Additional StockX email patterns
+  queries.push('from:noreply@stockx.com subject:"Your StockX"');
+  queries.push('from:noreply@stockx.com subject:"StockX Order"');
+  queries.push('from:noreply@stockx.com subject:"Order Status"');
+  queries.push('from:noreply@stockx.com subject:"Order Update"');
+  
+  // Fallback: Very broad StockX query (exclude ALL sales emails)
+  queries.push('from:noreply@stockx.com -subject:"You Sold" -subject:"Sale" -subject:"Payout" -subject:"Ask was matched" -subject:"Ship your" -subject:"Reminder" -subject:"Time to Ship" -subject:"Ship Your Item" -subject:"Shipped To StockX" -subject:"Your Sale" -subject:"Payout is Ready"');
   
   // Add fallback queries for subject patterns
   const fallbackQueries = [];
@@ -185,29 +199,47 @@ function generateQueries(config: any) {
 }
 
 // Priority order for purchase statuses (higher number = higher priority)
+// Per spec: Canceled highest, then Shipped, Delayed, Order Placed.
+// We also include Delivered above Shipped.
 const STATUS_PRIORITIES = {
-  'Ordered': 1,      // Order Placed
-  'Shipped': 2,      // Order Shipped  
-  'Delayed': 3,      // Order Delayed
-  'Delivered': 4,    // Order Delivered
-  'Canceled': 5      // Order Canceled/Refunded (highest priority)
+  'Ordered': 1,
+  'Delayed': 2,
+  'Shipped': 3,
+  'Delivered': 4,
+  'Canceled': 5
 };
 
 // Determine email category and status based on subject line
 function categorizeEmail(subject: string, config: any) {
   console.log(`🎯 CATEGORIZATION DEBUG: Processing subject "${subject}"`);
   
+  // Hard subject mapping per spec
+  if (/(xpress\s*order\s*confirmed:|order\s*confirmed:|order\s*confirmation:)/i.test(subject)) {
+    return { status: 'Ordered', statusColor: 'orange', priority: STATUS_PRIORITIES['Ordered'] };
+  }
+  if (/encountered\s+a\s+delay/i.test(subject)) {
+    return { status: 'Delayed', statusColor: 'yellow', priority: STATUS_PRIORITIES['Delayed'] };
+  }
+  if (/(order\s*verified\s*&\s*shipped:|order\s*shipped:|xpress\s*order\s*shipped:)/i.test(subject)) {
+    return { status: 'Shipped', statusColor: 'blue', priority: STATUS_PRIORITIES['Shipped'] };
+  }
+  if (/refund\s+issued:/i.test(subject)) {
+    return { status: 'Canceled', statusColor: 'red', priority: STATUS_PRIORITIES['Canceled'] };
+  }
+  if (/(xpress\s*ship\s*order\s*delivered:|order\s*delivered:)/i.test(subject)) {
+    return { status: 'Delivered', statusColor: 'green', priority: STATUS_PRIORITIES['Delivered'] };
+  }
+  
+  // Fallback to configured patterns
   for (const [categoryKey, category] of Object.entries(config.emailCategories)) {
     for (const pattern of (category as any).subjectPatterns) {
       console.log(`🔍 CATEGORIZATION DEBUG: Checking pattern "${pattern}" against "${subject}"`);
-      if (subject.toLowerCase().includes(pattern.toLowerCase())) {
-        const result = {
+      if (subject.toLowerCase().includes((pattern as string).toLowerCase())) {
+        return {
           status: (category as any).status,
           statusColor: (category as any).statusColor,
           priority: STATUS_PRIORITIES[(category as any).status] || 1
         };
-        console.log(`✅ CATEGORIZATION DEBUG: MATCH! Pattern "${pattern}" -> Status: ${result.status} (priority ${result.priority})`);
-        return result;
       }
     }
   }
@@ -368,20 +400,20 @@ export async function GET(request: NextRequest) {
     const configHeader = request.headers.get('email-config');
     const config = configHeader ? JSON.parse(configHeader) : getDefaultConfig();
 
-    // Get limit parameter for controlled testing (default to 50 to balance coverage vs performance)
-    const limit = parseInt(url.searchParams.get('limit') || '50');
+    // Get limit parameter for controlled testing (default to 500 for better historical coverage)
+    const limit = parseInt(url.searchParams.get('limit') || '500');
 
     console.log(`Gmail API: Fetching up to ${limit} emails per query`);
 
     // Generate dynamic queries based on configuration
     const allQueries = generateQueries(config);
-    // Limit to first 8 queries to prevent timeout (prioritize most important ones)
-    const queries = allQueries.slice(0, 8);
+    // Use more queries for better historical coverage (increased from 8 to 15)
+    const queries = allQueries.slice(0, 15);
     console.log(`🔍 SEARCH DEBUG: Generated ${allQueries.length} search queries, using first ${queries.length}:`, queries);
 
     const allPurchases: any[] = [];
     let totalProcessedEmails = 0;
-    const maxTotalEmails = 200; // Limit total emails processed across all queries
+    const maxTotalEmails = 2000; // Significantly increased limit for historical data (was 400)
 
     // Create timeout helper function
     const withTimeout = (promise: Promise<any>, seconds: number) => {

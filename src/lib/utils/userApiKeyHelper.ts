@@ -21,25 +21,21 @@ export async function getStockXApiCredentials(userId?: string): Promise<{
     };
   }
 
-  // TEMPORARILY: Skip user API keys to avoid Firebase Admin issues
-  // TODO: Fix Firebase Admin setup for server-side API key retrieval
-  console.log('⚠️ Skipping user API keys, using global environment variables');
-  
-  // try {
-  //   // Try to get user-specific API keys first
-  //   const userKeys = await getUserStockXKeys(userId);
-  //   
-  //   if (userKeys.isConfigured && userKeys.apiKey) {
-  //     return {
-  //       apiKey: userKeys.apiKey,
-  //       clientId: userKeys.clientId,
-  //       clientSecret: userKeys.clientSecret,
-  //       source: 'user'
-  //     };
-  //   }
-  // } catch (error) {
-  //   console.warn('Failed to get user API keys, falling back to global:', error);
-  // }
+  try {
+    // Try to get user-specific API keys first
+    const userKeys = await getUserStockXKeys(userId);
+    
+    if (userKeys.isConfigured && userKeys.apiKey) {
+      return {
+        apiKey: userKeys.apiKey,
+        clientId: userKeys.clientId,
+        clientSecret: userKeys.clientSecret,
+        source: 'user'
+      };
+    }
+  } catch (error) {
+    console.warn('Failed to get user API keys, falling back to global:', error);
+  }
 
   // Fallback to global environment variables
   const globalApiKey = process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID;

@@ -7,7 +7,10 @@ import { useAuth } from '../lib/contexts/AuthContext';
 import { useSiteAuth } from '../lib/hooks/useSiteAuth';
 import { useRealTimeDeliveries } from '../lib/hooks/useRealTimeDeliveries';
 import { TrackingInfo } from '../lib/tracking/trackingService';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { db } from '../lib/firebase/firebase';
 import { deliveryArrivalLogger } from '../lib/delivery/arrivalLogger';
+import { formatDisplayDate } from '../lib/utils/dateUtils';
 import UPSOAuthButton from './UPSOAuthButton';
 import { useUPSOAuth } from '../lib/hooks/useUPSOAuth';
 
@@ -62,7 +65,7 @@ const DeliveriesNew: React.FC = () => {
     deliveries,
     loading,
     error,
-    refreshDeliveries
+    refresh: refreshDeliveries
   } = useRealTimeDeliveries({
     userId: user?.uid || '',
     autoRefresh: true,
@@ -91,6 +94,15 @@ const DeliveriesNew: React.FC = () => {
     show: false,
     message: '',
     type: 'success'
+  });
+  const [showAddTrackingModal, setShowAddTrackingModal] = useState(false);
+  const [addingTracking, setAddingTracking] = useState(false);
+  const [newTracking, setNewTracking] = useState({
+    trackingNumber: '',
+    carrier: 'AUTO',
+    productName: '',
+    productBrand: '',
+    productSize: ''
   });
   
   // Copy tracking number to clipboard
@@ -299,6 +311,41 @@ const DeliveriesNew: React.FC = () => {
     setDraggedIndex(null);
   };
 
+  // Save customizable stats settings to Firebase
+  const saveStatsSettings = async (stats: string[]) => {
+    if (!user) return;
+    
+    try {
+      const userSettingsRef = doc(db, 'userSettings', user.uid);
+      await setDoc(userSettingsRef, {
+        deliveriesCustomizableStats: stats,
+        lastUpdated: new Date().toISOString()
+      }, { merge: true });
+    } catch (error) {
+      console.error('Error saving stats settings:', error);
+      showNotification('Failed to save settings', 'error');
+    }
+  };
+
+  // Load customizable stats settings from Firebase
+  const loadStatsSettings = async () => {
+    if (!user) return;
+    
+    try {
+      const userSettingsRef = doc(db, 'userSettings', user.uid);
+      const userSettingsDoc = await getDoc(userSettingsRef);
+      
+      if (userSettingsDoc.exists()) {
+        const data = userSettingsDoc.data();
+        if (data.deliveriesCustomizableStats && Array.isArray(data.deliveriesCustomizableStats)) {
+          setSelectedStats(data.deliveriesCustomizableStats);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading stats settings:', error);
+    }
+  };
+
   // Show notification helper
   const showNotification = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
     setNotification({
@@ -311,6 +358,44 @@ const DeliveriesNew: React.FC = () => {
     setTimeout(() => {
       setNotification(prev => ({ ...prev, show: false }));
     }, 3000);
+  };
+
+  // Add manual tracking
+  const handleAddManualTracking = async () => {
+    if (!user) {
+      showNotification('Please sign in to add tracking', 'error');
+      return;
+    }
+    if (!newTracking.trackingNumber.trim()) {
+      showNotification('Enter a tracking number', 'error');
+      return;
+    }
+    try {
+      setAddingTracking(true);
+      const res = await fetch('/api/deliveries/sync', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.uid,
+          trackingNumber: newTracking.trackingNumber.trim(),
+          carrier: newTracking.carrier === 'AUTO' ? undefined : newTracking.carrier,
+          productName: newTracking.productName || undefined,
+          productBrand: newTracking.productBrand || undefined,
+          productSize: newTracking.productSize || undefined
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to add tracking');
+      showNotification('Tracking added');
+      setShowAddTrackingModal(false);
+      setNewTracking({ trackingNumber: '', carrier: 'AUTO', productName: '', productBrand: '', productSize: '' });
+      await refreshDeliveries();
+    } catch (e) {
+      console.error(e);
+      showNotification('Failed to add tracking', 'error');
+    } finally {
+      setAddingTracking(false);
+    }
   };
 
   // Filter deliveries
@@ -332,6 +417,11 @@ const DeliveriesNew: React.FC = () => {
       setSelectedDelivery(filteredDeliveries[0]);
     }
   }, [filteredDeliveries, selectedDelivery]);
+
+  // Load customizable stats settings from Firebase
+  useEffect(() => {
+    loadStatsSettings();
+  }, [user]);
 
   if (loading) {
     return (
@@ -400,6 +490,15 @@ const DeliveriesNew: React.FC = () => {
                    <List className="w-4 h-4" />
                    Table View
             </button>
+
+            {/* Add Manual Tracking */}
+            <button
+              onClick={() => setShowAddTrackingModal(true)}
+              className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+            >
+              <Package className="w-4 h-4" />
+              Add Manual Tracking
+            </button>
                </div>
                
             <button
@@ -418,6 +517,93 @@ const DeliveriesNew: React.FC = () => {
             </button>
         </div>
       </div>
+
+      {/* Add Manual Tracking Modal */}
+      {showAddTrackingModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-80 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-200 dark:border-gray-700 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>Add Manual Tracking Number</h3>
+              <button onClick={() => setShowAddTrackingModal(false)} className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700">
+                <X className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className={`block text-sm mb-1 ${currentTheme.colors.textSecondary}`}>Tracking Number *</label>
+                <input
+                  type="text"
+                  value={newTracking.trackingNumber}
+                  onChange={(e) => setNewTracking({ ...newTracking, trackingNumber: e.target.value })}
+                  className={`w-full px-3 py-2 border rounded-lg ${currentTheme.colors.border} ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary} focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                  placeholder="e.g., 1Z..."
+                />
+              </div>
+              <div>
+                <label className={`block text-sm mb-1 ${currentTheme.colors.textSecondary}`}>Carrier</label>
+                <select
+                  value={newTracking.carrier}
+                  onChange={(e) => setNewTracking({ ...newTracking, carrier: e.target.value })}
+                  className={`w-full px-3 py-2 border rounded-lg ${currentTheme.colors.border} ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary} focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                >
+                  <option value="AUTO">Auto-detect</option>
+                  <option value="UPS">UPS</option>
+                  <option value="FedEx">FedEx</option>
+                  <option value="USPS">USPS</option>
+                  <option value="DHL">DHL</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={`block text-sm mb-1 ${currentTheme.colors.textSecondary}`}>Product Name</label>
+                  <input
+                    type="text"
+                    value={newTracking.productName}
+                    onChange={(e) => setNewTracking({ ...newTracking, productName: e.target.value })}
+                    className={`w-full px-3 py-2 border rounded-lg ${currentTheme.colors.border} ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary} focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                    placeholder="Optional"
+                  />
+                </div>
+                <div>
+                  <label className={`block text-sm mb-1 ${currentTheme.colors.textSecondary}`}>Brand</label>
+                  <input
+                    type="text"
+                    value={newTracking.productBrand}
+                    onChange={(e) => setNewTracking({ ...newTracking, productBrand: e.target.value })}
+                    className={`w-full px-3 py-2 border rounded-lg ${currentTheme.colors.border} ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary} focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                    placeholder="Optional"
+                  />
+                </div>
+                <div>
+                  <label className={`block text-sm mb-1 ${currentTheme.colors.textSecondary}`}>Size</label>
+                  <input
+                    type="text"
+                    value={newTracking.productSize}
+                    onChange={(e) => setNewTracking({ ...newTracking, productSize: e.target.value })}
+                    className={`w-full px-3 py-2 border rounded-lg ${currentTheme.colors.border} ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary} focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                    placeholder="Optional"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  onClick={() => setShowAddTrackingModal(false)}
+                  className={`px-4 py-2 border rounded-lg ${currentTheme.colors.border} ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary}`}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAddManualTracking}
+                  disabled={addingTracking}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg"
+                >
+                  {addingTracking ? 'Adding…' : 'Add Tracking'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
           {/* Customizable Stats */}
           <div className="flex items-center justify-between mb-4">
@@ -530,7 +716,8 @@ const DeliveriesNew: React.FC = () => {
                     Cancel
                   </button>
                   <button
-                    onClick={() => {
+                    onClick={async () => {
+                      await saveStatsSettings(selectedStats);
                       setShowStatsSettings(false);
                       showNotification('Dashboard stats saved successfully!', 'success');
                     }}
@@ -710,10 +897,10 @@ const DeliveriesNew: React.FC = () => {
                                 <Calendar className="w-3 h-3" />
                                 <span>
                       {delivery.status === 'delivered' && delivery.actualDelivery
-                        ? `Delivered ${new Date(delivery.actualDelivery).toLocaleDateString()}`
+                        ? `Delivered ${formatDisplayDate(delivery.actualDelivery)}`
                         : delivery.estimatedDelivery === 'TBD'
                         ? 'Est. TBD'
-                        : `Est. ${new Date(delivery.estimatedDelivery).toLocaleDateString()}`
+                        : `Est. ${formatDisplayDate(delivery.estimatedDelivery)}`
                       }
                     </span>
                   </div>
@@ -931,10 +1118,10 @@ const DeliveriesNew: React.FC = () => {
                       <td className="px-4 py-4">
                         <div className={`text-sm ${currentTheme.colors.textPrimary}`}>
                           {delivery.status === 'delivered' && delivery.actualDelivery
-                            ? `Delivered ${new Date(delivery.actualDelivery).toLocaleDateString()}`
+                            ? `Delivered ${formatDisplayDate(delivery.actualDelivery)}`
                             : delivery.estimatedDelivery === 'TBD'
                             ? 'TBD'
-                            : new Date(delivery.estimatedDelivery).toLocaleDateString()
+                            : formatDisplayDate(delivery.estimatedDelivery)
                           }
                         </div>
                       </td>

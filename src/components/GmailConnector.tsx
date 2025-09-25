@@ -27,14 +27,18 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
     if (urlParams.get('gmail_connected') === 'true') {
       setIsConnected(true);
       onConnectionChange?.(true);
-      // Clean up URL
-      const newUrl = window.location.pathname;
-      window.history.replaceState({}, document.title, newUrl);
+      // Clean up only Gmail-specific params, preserve other query params like 'section'
+      const url = new URL(window.location.href);
+      url.searchParams.delete('gmail_connected');
+      url.searchParams.delete('gmail_error');
+      window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
     } else if (urlParams.get('gmail_error') === 'true') {
       setError('Failed to connect to Gmail. Please try again.');
-      // Clean up URL
-      const newUrl = window.location.pathname;
-      window.history.replaceState({}, document.title, newUrl);
+      // Clean up only Gmail-specific params, preserve other query params like 'section'
+      const url = new URL(window.location.href);
+      url.searchParams.delete('gmail_connected');
+      url.searchParams.delete('gmail_error');
+      window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
     }
   }, [onConnectionChange]);
 
@@ -105,7 +109,14 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
         }
       }, 15000); // 15 second timeout
       
-      const response = await fetch('/api/gmail/auth');
+      // Get the current page to return to after authentication
+      const currentPath = window.location.pathname + window.location.search;
+      console.log('🔐 Gmail Connector - Current path:', currentPath);
+      console.log('🔐 Gmail Connector - Pathname:', window.location.pathname);
+      console.log('🔐 Gmail Connector - Search:', window.location.search);
+      console.log('🔐 Gmail Connector - Full URL:', window.location.href);
+      
+      const response = await fetch(`/api/gmail/auth?returnUrl=${encodeURIComponent(currentPath)}`);
       const data = await response.json();
       
       clearTimeout(timeoutId);

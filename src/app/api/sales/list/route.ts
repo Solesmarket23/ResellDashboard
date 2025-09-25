@@ -21,13 +21,13 @@ export async function GET(request: NextRequest) {
     const cursorId = request.nextUrl.searchParams.get('cursorId');
 
     let queryRef: FirebaseFirestore.Query = db
-      .collection(COLLECTIONS.SALES)
+      .collection('user_sales')
       .where('userId', '==', userId)
       .orderBy(FieldPath.documentId())
       .limit(limit);
 
     if (cursorId) {
-      const cursorDoc = await db.collection(COLLECTIONS.SALES).doc(cursorId).get();
+      const cursorDoc = await db.collection('user_sales').doc(cursorId).get();
       if (cursorDoc.exists) {
         queryRef = queryRef.startAfter(cursorDoc);
       }

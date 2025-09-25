@@ -233,7 +233,8 @@ export const saveUserSale = async (userId: string, saleData: Partial<UserSaleDat
     const sale = {
       ...saleData,
       userId: userId, // Explicitly set userId last to ensure it's not overridden
-      type: 'manual',
+      // Respect incoming type if provided (e.g., 'imported'), default to 'manual'
+      type: (saleData as any)?.type || 'manual',
       createdAt: new Date().toISOString()
     };
     
@@ -241,11 +242,11 @@ export const saveUserSale = async (userId: string, saleData: Partial<UserSaleDat
     console.log('💾 saveUserSale: Sale data keys:', Object.keys(sale));
     console.log('💾 saveUserSale: userId field value:', sale.userId);
 
-    const docRef = await addDocument(COLLECTIONS.SALES, sale);
+    const docRef = await addDocument('user_sales', sale);
     console.log('✅ Sale saved to Firebase with doc ID:', docRef.id);
     
     // Verify the save by immediately reading it back
-    const savedSale = await getDocuments(COLLECTIONS.SALES);
+    const savedSale = await getDocuments('user_sales');
     const justSavedSale = savedSale.find((s: any) => s.id === docRef.id);
     console.log('🔍 Verification - Just saved sale:', justSavedSale);
     console.log('🔍 Verification - userId in saved sale:', justSavedSale?.userId);
@@ -270,7 +271,7 @@ export const getUserSales = async (userId: string): Promise<UserSaleData[]> => {
     const timestamp = Date.now();
     console.log('🔄 getUserSales: Cache-busting timestamp:', timestamp);
     
-    const sales = await getDocuments(COLLECTIONS.SALES);
+    const sales = await getDocuments('user_sales');
     console.log('📊 getUserSales: Total sales in database:', sales.length);
     
     const userSales = sales.filter((sale: any) => sale.userId === userId);
@@ -290,7 +291,7 @@ export const deleteUserSale = async (userId: string, saleId: string | number) =>
     const docId = String(saleId);
     
     console.log('🔥 Attempting to delete sale with doc ID:', docId);
-    await deleteDocument(COLLECTIONS.SALES, docId);
+    await deleteDocument('user_sales', docId);
     console.log('✅ Sale deleted from Firebase');
   } catch (error) {
     console.error('❌ Error deleting sale:', error);
@@ -303,11 +304,13 @@ export const clearAllUserSales = async (userId: string): Promise<{success: boole
   try {
     console.log('🔄 Starting clearAllUserSales for user:', userId);
     
-    const sales = await getDocuments(COLLECTIONS.SALES);
+    const sales = await getDocuments('user_sales');
     console.log('📊 Total sales in database:', sales.length);
+    console.log('📊 All sales sample:', sales.slice(0, 3).map(s => ({ id: s.id, userId: s.userId, product: s.product })));
     
     const userSales = sales.filter((sale: any) => sale.userId === userId);
     console.log('📊 User sales found:', userSales.length);
+    console.log('📊 User sales details:', userSales.map(s => ({ id: s.id, userId: s.userId, product: s.product })));
     
     if (userSales.length === 0) {
       console.log('ℹ️ No sales found for user - nothing to delete');
@@ -316,17 +319,23 @@ export const clearAllUserSales = async (userId: string): Promise<{success: boole
     
     console.log('🗑️ Deleting sales:', userSales.map(s => ({ id: s.id, product: s.product })));
     
+    let deletedCount = 0;
     for (const sale of userSales) {
       if (sale.id) {
         console.log('🔥 Deleting sale:', sale.id);
-        await deleteDocument(COLLECTIONS.SALES, sale.id);
-        console.log('✅ Deleted sale:', sale.id);
+        try {
+          await deleteDocument('user_sales', sale.id);
+          console.log('✅ Deleted sale:', sale.id);
+          deletedCount++;
+        } catch (deleteError) {
+          console.error('❌ Error deleting sale:', sale.id, deleteError);
+        }
       } else {
         console.warn('⚠️ Sale missing ID:', sale);
       }
     }
     
-    console.log('✅ All sales cleared from Firebase');
+    console.log(`✅ Deleted ${deletedCount} sales from Firebase`);
     return { success: true };
   } catch (error) {
     console.error('❌ Error clearing sales:', error);
@@ -662,11 +671,11 @@ export const clearAllUserData = async (userId: string) => {
     // Clear sales (with error handling)
     try {
       console.log('🔄 Clearing sales data...');
-      const sales = await getDocuments(COLLECTIONS.SALES);
+      const sales = await getDocuments('user_sales');
       const userSales = sales.filter((sale: any) => sale.userId === userId);
       for (const sale of userSales) {
         if (sale.id) {
-          await deleteDocument(COLLECTIONS.SALES, sale.id);
+          await deleteDocument('user_sales', sale.id);
           clearedCounts.sales++;
         }
       }

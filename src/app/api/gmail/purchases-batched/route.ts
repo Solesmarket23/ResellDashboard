@@ -4,10 +4,10 @@ import { cookies } from 'next/headers';
 import { parseGmailApiMessage, orderInfoToDict, OrderInfo } from '../../../../lib/email/orderConfirmationParser';
 
 // Batch configuration
-const BATCH_SIZE = 25; // Process 25 emails per batch
-const MAX_BATCHES_PER_REQUEST = 1; // Max 1 batch per API call (25 emails)
-const TIMEOUT_PER_EMAIL = 2000; // 2 seconds per email (reduced from 8s)
-const PARALLEL_EMAILS = 5; // Process 5 emails in parallel
+const BATCH_SIZE = 100; // Process 100 emails per batch (increased from 50)
+const MAX_BATCHES_PER_REQUEST = 10; // Max 10 batches per API call (1000 emails total)
+const TIMEOUT_PER_EMAIL = 6000; // 6 seconds per email to reduce timeouts
+const PARALLEL_EMAILS = 6; // Lower parallelism to reduce per-request pressure
 
 interface BatchProgress {
   batchIndex: number;
@@ -166,6 +166,7 @@ export async function GET(request: NextRequest) {
     const batchIndex = parseInt(url.searchParams.get('batch') || '0');
     const pageToken = url.searchParams.get('pageToken') || undefined;
     const reset = url.searchParams.get('reset') === 'true';
+    const quick = url.searchParams.get('quick') === 'true';
 
     console.log(`📦 BATCH ${batchIndex}: Starting batch processing...`);
 
@@ -187,17 +188,31 @@ export async function GET(request: NextRequest) {
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     const config = getDefaultConfig();
 
-    // Order Confirmed, Delivery, AND Shipped emails - these have size info and status info
-    const primaryQuery = 'from:noreply@stockx.com (subject:"Order Confirmed" OR subject:"Xpress Order Confirmed" OR subject:"Order Delivered" OR subject:"Xpress Ship Order Delivered" OR subject:"Xpress Order Delivered" OR subject:"Order Verified & Shipped" OR subject:"Order Shipped") -subject:"You Sold" -subject:"Sale" -subject:"Payout" -subject:"Ship your"';
-    
-    console.log(`📦 BATCH ${batchIndex}: Searching with query: ${primaryQuery}`);
+    // Build a rotating set of queries from config to cover confirmation, shipped, delivered etc.
+    const queries = generateQueries(config);
+    // Prepend a broader fallback covering all StockX purchases but excluding sales/payouts
+    const fallbackQuery = '(from:noreply@stockx.com OR from:stockx.com) -subject:"You Sold" -subject:"Sale" -subject:"Payout" -subject:"Ship your" -subject:"Bid" -subject:"Ask was matched" -subject:"Offer" -subject:"expires"';
+    if (!queries.includes(fallbackQuery)) {
+      queries.unshift(fallbackQuery);
+    }
 
-    // Get emails for this batch
+    const queryIndexParam = parseInt(url.searchParams.get('qIndex') || '0');
+    const qIndex = Math.max(0, Math.min(queryIndexParam, queries.length - 1));
+    const timeFilter = quick ? ' newer_than:30d' : '';
+    const activeQuery = (queries[qIndex] + timeFilter).trim();
+    console.log(`📦 BATCH ${batchIndex}: Searching with query [${qIndex + 1}/${queries.length}]: ${activeQuery}`);
+
+    // Get emails. Keep the first batch small so UI updates quickly, then scale up.
+    const isFirstBatch = batchIndex === 0 && reset;
+    // Quick mode: tiny first fetch to show results ASAP
+    const maxResults = quick
+      ? Math.min(10, BATCH_SIZE)
+      : (isFirstBatch ? Math.min(25, BATCH_SIZE) : Math.min(BATCH_SIZE * 2, BATCH_SIZE * MAX_BATCHES_PER_REQUEST));
     const response = await gmail.users.messages.list({
       userId: 'me',
-      q: primaryQuery,
-      maxResults: BATCH_SIZE, // Just get one batch worth of emails
-      pageToken: pageToken
+      q: activeQuery,
+      maxResults,
+      pageToken
     });
 
     const allMessages = response.data.messages || [];
@@ -221,10 +236,10 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Process all messages from this batch (no slicing needed since we only requested BATCH_SIZE)
+    // Process all messages from multiple batches
     const batchMessages = allMessages;
     
-    console.log(`📦 BATCH ${batchIndex}: Processing ${batchMessages.length} emails`);
+    console.log(`📦 BATCH ${batchIndex}: Processing ${batchMessages.length} emails (${isFirstBatch ? 1 : MAX_BATCHES_PER_REQUEST} batches of ${BATCH_SIZE} each)`);
 
     const batchPurchases: any[] = [];
     let processedInBatch = 0;
@@ -298,18 +313,24 @@ export async function GET(request: NextRequest) {
     
     console.log(`📦 BATCH ${batchIndex}: Completed! Processed ${processedInBatch}/${batchMessages.length} emails, found ${consolidatedPurchases.length} purchases`);
 
-    // Calculate if there are more batches
-    const hasMore = !!response.data.nextPageToken;
+    // Calculate if there are more batches across pages/queries
+    const nextPageToken = response.data.nextPageToken;
+    const hasMorePages = quick ? false : !!nextPageToken;
+    const hasMoreQueries = !nextPageToken && (qIndex + 1 < queries.length);
+    const hasMore = hasMorePages || hasMoreQueries;
 
     const progress: BatchProgress = {
       batchIndex,
-      totalBatches: hasMore ? batchIndex + 2 : batchIndex + 1, // Estimate: current + 1, or current + 1 more if hasMore
+      totalBatches: hasMore ? batchIndex + 2 : batchIndex + 1, // simple estimate
       currentBatchSize: batchMessages.length,
       processedInBatch,
-      totalProcessed: (batchIndex * BATCH_SIZE) + processedInBatch,
-      totalFound: (batchIndex * BATCH_SIZE) + totalFound, // Cumulative estimate
+      totalProcessed: (batchIndex * BATCH_SIZE * MAX_BATCHES_PER_REQUEST) + processedInBatch,
+      totalFound: (batchIndex * BATCH_SIZE * MAX_BATCHES_PER_REQUEST) + totalFound, // Cumulative estimate
       hasMore,
-      nextPageToken: response.data.nextPageToken
+      nextPageToken,
+      // extra metadata to let the client advance queries if needed
+      qIndex,
+      totalQueries: queries.length
     };
 
     return NextResponse.json({
@@ -351,20 +372,56 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
       return null;
     }
 
-    // Additional filtering for sales emails in subject/content
-    if (subjectHeader.toLowerCase().includes('you sold') ||
-        subjectHeader.toLowerCase().includes('sale price') ||
-        subjectHeader.toLowerCase().includes('payout') ||
-        subjectHeader.toLowerCase().includes('ship your') ||
-        subjectHeader.toLowerCase().includes('ask was matched') ||
-        subjectHeader.toLowerCase().includes('shipping label')) {
-      console.log(`🚫 Filtering out sales email: ${subjectHeader}`);
+    // Additional filtering for sales/non-purchase emails in subject/content
+    const loweredSubject = subjectHeader.toLowerCase();
+    const nonPurchaseSubjects = [
+      'you sold',
+      'sale price',
+      'payout',
+      'ship your',
+      'shipping label',
+      'ask was matched',
+      'ask updated',
+      'your bid',
+      'bid expired',
+      'bid updated',
+      'your ask',
+      'offer',
+      'price drop',
+      'place a new bid',
+      'arrived at stockx',
+      'shipped to stockx'
+    ];
+    if (nonPurchaseSubjects.some(k => loweredSubject.includes(k))) {
+      console.log(`🚫 Filtering out non-purchase email: ${subjectHeader}`);
       return null;
     }
 
     // Use the imported parseGmailApiMessage function (disable debug for performance)
     const orderInfo = parseGmailApiMessage(emailData, false);
-    if (!orderInfo || !orderInfo.order_number) {
+
+    // Fallback tracking extraction: if shipped/delivered and no tracking yet, search shipping email
+    if (!orderInfo.tracking_number && (orderInfo.shipping_status === 'shipped' || orderInfo.shipping_status === 'delivered')) {
+      try {
+        const fallback = await extractTrackingNumber(orderInfo.order_number, gmail);
+        if (fallback) {
+          orderInfo.tracking_number = fallback.toUpperCase();
+          if (orderInfo.tracking_number.startsWith('1Z')) {
+            orderInfo.carrier = 'UPS';
+          } else if (/^\d{12}$/.test(orderInfo.tracking_number)) {
+            orderInfo.carrier = 'FedEx';
+          }
+        }
+      } catch (e) {
+        console.error('TRACKING fallback (batched) failed:', e);
+      }
+    }
+    // Validate order number to avoid false positives (e.g., "0" or missing)
+    const isValidOrderNumber = !!(orderInfo && orderInfo.order_number && orderInfo.order_number !== '0' && (
+      /^(\d{8}-\d{8})$/i.test(orderInfo.order_number) || // 8-8 numeric
+      /^(\d{2}-[A-Z0-9]+)$/i.test(orderInfo.order_number) // 2-ALPHANUM
+    ));
+    if (!isValidOrderNumber) {
       return null;
     }
 
@@ -440,6 +497,62 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
     console.error('Error parsing email:', error);
     return null;
   }
+}
+
+// Extract tracking number by locating shipping emails for the same order
+async function extractTrackingNumber(orderNumber: string, gmail: any): Promise<string | null> {
+  if (!orderNumber || !gmail) return null;
+  try {
+    const queries = [
+      `from:noreply@stockx.com AND subject:"Order Verified & Shipped:" AND "${orderNumber}"`,
+      `from:noreply@stockx.com AND subject:"Order Shipped:" AND "${orderNumber}"`,
+      `from:noreply@stockx.com AND subject:"Xpress Order Shipped:" AND "${orderNumber}"`,
+      `from:stockx.com AND subject:"shipped" AND "${orderNumber}"`
+    ];
+    for (const q of queries) {
+      const resp = await gmail.users.messages.list({ userId: 'me', q, maxResults: 5 });
+      if (resp.data.messages && resp.data.messages.length > 0) {
+        const m = await gmail.users.messages.get({ userId: 'me', id: resp.data.messages[0].id, format: 'full' });
+        const t = extractTrackingFromShippingEmail(m.data);
+        if (t) return t.toUpperCase();
+      }
+    }
+  } catch (err) {
+    console.error('extractTrackingNumber (batched) error:', err);
+  }
+  return null;
+}
+
+// Parse a Gmail message for tracking numbers using robust patterns
+function extractTrackingFromShippingEmail(email: any): string | null {
+  try {
+    let body = '';
+    if (email.payload?.parts) {
+      for (const part of email.payload.parts) {
+        if (part.mimeType === 'text/html' || part.mimeType === 'text/plain') {
+          if (part.body?.data) {
+            body += Buffer.from(part.body.data, 'base64').toString('utf8');
+          }
+        }
+      }
+    } else if (email.payload?.body?.data) {
+      body = Buffer.from(email.payload.body.data, 'base64').toString('utf8');
+    }
+    const patterns = [
+      { name: 'UPS', re: /(1Z[0-9A-Z]{16})/gi, valid: (s: string) => /^1Z[0-9A-Z]{16}$/i.test(s) },
+      { name: 'FedEx12', re: /(?:tracking|number|track)[^0-9A-Z]*([0-9]{12})\b/gi, valid: (s: string) => /^\d{12}$/.test(s) }
+    ];
+    for (const p of patterns) {
+      const matches = body.match(p.re) || [];
+      for (const m of matches) {
+        const clean = m.replace(/[<>]/g, '').trim();
+        if (p.valid(clean)) return clean;
+      }
+    }
+  } catch (e) {
+    console.error('extractTrackingFromShippingEmail (batched) error:', e);
+  }
+  return null;
 }
 
 // Categorize emails based on subject patterns

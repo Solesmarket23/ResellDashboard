@@ -1,10 +1,13 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { DollarSign, TrendingUp, Package, ShoppingCart, BarChart3, Calculator, Calendar, X, Palette, Trash2, RotateCcw, RefreshCw, Wifi, WifiOff, AlertCircle } from 'lucide-react';
+import { DollarSign, TrendingUp, Package, ShoppingCart, BarChart3, Calculator, Calendar, X, Palette, Trash2, RotateCcw, RefreshCw, Wifi, WifiOff, AlertCircle, Settings, GripVertical, CheckCircle } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
 import { saveUserDashboardSettings, getUserDashboardSettings, clearAllUserData } from '../lib/firebase/userDataUtils';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { db } from '../lib/firebase/firebase';
+import { formatShortDate } from '../lib/utils/dateUtils';
 import { getDocuments } from '../lib/firebase/firebaseUtils';
 import { useSales } from '../lib/hooks/useSales';
 import { formatOrderNumberForDisplay } from '../lib/utils/orderNumberUtils';
@@ -33,6 +36,24 @@ const Dashboard = () => {
   const [endDate, setEndDate] = useState('');
   const [customRangeLabel, setCustomRangeLabel] = useState('Custom Range');
   const [showBackground, setShowBackground] = useState(true);
+  
+  // Customizable stats state
+  const [showStatsSettings, setShowStatsSettings] = useState(false);
+  const [selectedStats, setSelectedStats] = useState<string[]>([
+    'total_profit', 'total_revenue', 'unsold_inventory', 'inventory_value', 'avg_profit', 'total_spend'
+  ]);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [notification, setNotification] = useState<{
+    show: boolean;
+    message: string;
+    type: 'success' | 'error' | 'info';
+  }>({
+    show: false,
+    message: '',
+    type: 'success'
+  });
+  const [selectedBar, setSelectedBar] = useState<number | null>(null);
+  const [mockDataEnabled, setMockDataEnabled] = useState(false);
   
   // Other data state (purchases, etc.)
   const [userPurchases, setUserPurchases] = useState<any[]>([]);
@@ -227,6 +248,32 @@ const Dashboard = () => {
 
   // calculateRealMetrics function removed - now using salesMetrics from useSales hook
 
+  // Mock data for demonstration
+  const mockMetrics = {
+    totalProfit: 15420,
+    totalRevenue: 28450,
+    totalSpend: 13030,
+    inventoryCount: 23,
+    inventoryValue: 18450,
+    avgProfitPerSale: 385,
+    platformBreakdown: {
+      stockx: { count: 18, profit: 12350 },
+      manual: { count: 5, profit: 3070 }
+    },
+    recentSales: [
+      { profit: 150, date: '2024-01-10', product: 'Air Jordan 1 Retro' },
+      { profit: 320, date: '2024-01-11', product: 'Nike Dunk Low' },
+      { profit: 85, date: '2024-01-12', product: 'Yeezy 350 V2' },
+      { profit: 450, date: '2024-01-13', product: 'Travis Scott Jordan 1' },
+      { profit: 200, date: '2024-01-14', product: 'Off-White Air Max 90' },
+      { profit: 180, date: '2024-01-15', product: 'Fragment Design Jordan 1' },
+      { profit: 290, date: '2024-01-16', product: 'Union LA Jordan 1' }
+    ]
+  };
+
+  // Use mock data if enabled, otherwise use real data
+  const displayMetrics = mockDataEnabled ? mockMetrics : realMetrics;
+
   // Load dashboard settings from Firebase
   useEffect(() => {
     const loadDashboardSettings = async () => {
@@ -247,6 +294,24 @@ const Dashboard = () => {
 
     loadDashboardSettings();
   }, [user]);
+
+  // Load customizable stats settings from Firebase
+  useEffect(() => {
+    loadStatsSettings();
+  }, [user]);
+
+  // Auto-save stats settings whenever selectedStats changes (but not on initial load)
+  useEffect(() => {
+    if (user && selectedStats.length > 0) {
+      // Only save if we have a user and stats are not empty
+      // This prevents saving on initial load when selectedStats is still the default
+      const timeoutId = setTimeout(() => {
+        saveStatsSettings(selectedStats);
+      }, 1000); // Debounce saves by 1 second
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [selectedStats, user]);
 
   // Save dashboard settings to Firebase
   const saveDashboardSettings = async () => {
@@ -320,60 +385,225 @@ const Dashboard = () => {
     };
   }, [showDatePicker, showBackground]);
   
+  // Show notification helper
+  const showNotification = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setNotification({
+      show: true,
+      message,
+      type
+    });
+    
+    // Auto-hide after 3 seconds
+    setTimeout(() => {
+      setNotification(prev => ({ ...prev, show: false }));
+    }, 3000);
+  };
+
+  // Stats configuration
+  const availableStats = {
+    total_profit: {
+      id: 'total_profit',
+      label: 'Total Profit',
+      icon: DollarSign,
+      color: 'text-green-600',
+      getValue: () => `$${displayMetrics.totalProfit.toLocaleString()}`,
+      getSubtitle: () => `${displayMetrics.platformBreakdown?.stockx?.count || 0} StockX, ${displayMetrics.platformBreakdown?.manual?.count || 0} Manual`
+    },
+    total_revenue: {
+      id: 'total_revenue',
+      label: 'Total Revenue',
+      icon: TrendingUp,
+      color: 'text-blue-600',
+      getValue: () => `$${displayMetrics.totalRevenue.toLocaleString()}`,
+      getSubtitle: () => 'From all sales'
+    },
+    unsold_inventory: {
+      id: 'unsold_inventory',
+      label: 'Unsold Inventory',
+      icon: Package,
+      color: 'text-purple-600',
+      getValue: () => displayMetrics.inventoryCount.toString(),
+      getSubtitle: () => 'Items in stock'
+    },
+    inventory_value: {
+      id: 'inventory_value',
+      label: 'Inventory Value',
+      icon: ShoppingCart,
+      color: 'text-orange-600',
+      getValue: () => `$${displayMetrics.inventoryValue.toLocaleString()}`,
+      getSubtitle: () => 'Estimated value'
+    },
+    avg_profit: {
+      id: 'avg_profit',
+      label: 'Avg Profit/Sale',
+      icon: BarChart3,
+      color: 'text-green-600',
+      getValue: () => `$${Math.round(displayMetrics.avgProfitPerSale).toLocaleString()}`,
+      getSubtitle: () => 'Per transaction'
+    },
+    total_spend: {
+      id: 'total_spend',
+      label: 'Total Spend',
+      icon: Calculator,
+      color: 'text-red-600',
+      getValue: () => `$${displayMetrics.totalSpend.toLocaleString()}`,
+      getSubtitle: () => 'Purchase costs'
+    }
+  };
+
+  // Handle stat selection
+  const handleStatToggle = (statId: string) => {
+    let newStats;
+    if (selectedStats.includes(statId)) {
+      // Remove if already selected
+      newStats = selectedStats.filter(id => id !== statId);
+    } else {
+      // Add if not selected
+      newStats = [...selectedStats, statId];
+    }
+    setSelectedStats(newStats);
+    // Auto-save when toggling stats
+    saveStatsSettings(newStats);
+  };
+
+  // Handle stat reordering
+  const handleStatReorder = (fromIndex: number, toIndex: number) => {
+    const newStats = [...selectedStats];
+    const [removed] = newStats.splice(fromIndex, 1);
+    newStats.splice(toIndex, 0, removed);
+    setSelectedStats(newStats);
+    // Auto-save when reordering
+    saveStatsSettings(newStats);
+  };
+
+  // Drag and drop handlers
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    if (draggedIndex !== null && draggedIndex !== dropIndex) {
+      handleStatReorder(draggedIndex, dropIndex);
+    }
+    setDraggedIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+  };
+
+  // Save customizable stats settings to Firebase
+  const saveStatsSettings = async (stats: string[]) => {
+    if (!user) return;
+    
+    try {
+      const userSettingsRef = doc(db, 'userSettings', user.uid);
+      await setDoc(userSettingsRef, {
+        customizableStats: stats,
+        lastUpdated: new Date().toISOString()
+      }, { merge: true });
+      console.log('✅ Dashboard stats saved successfully:', stats);
+    } catch (error) {
+      console.error('❌ Error saving stats settings:', error);
+      showNotification('Failed to save dashboard settings', 'error');
+    }
+  };
+
+  // Load customizable stats settings from Firebase
+  const loadStatsSettings = async () => {
+    if (!user) return;
+    
+    try {
+      const userSettingsRef = doc(db, 'userSettings', user.uid);
+      const userSettingsDoc = await getDoc(userSettingsRef);
+      
+      if (userSettingsDoc.exists()) {
+        const data = userSettingsDoc.data();
+        if (data.customizableStats && Array.isArray(data.customizableStats)) {
+          console.log('✅ Dashboard stats loaded from Firebase:', data.customizableStats);
+          setSelectedStats(data.customizableStats);
+        } else {
+          console.log('ℹ️ No custom stats found, using defaults');
+        }
+      } else {
+        console.log('ℹ️ No user settings found, using defaults');
+      }
+    } catch (error) {
+      console.error('❌ Error loading stats settings:', error);
+    }
+  };
+
   // Real metric cards using actual user data
   const metricCards = [
     {
       title: 'Total Profit',
-      value: `$${realMetrics.totalProfit.toLocaleString()}`,
-      subtitle: `${realMetrics.platformBreakdown?.stockx?.count || 0} StockX, ${realMetrics.platformBreakdown?.manual?.count || 0} Manual`,
+      value: `$${displayMetrics.totalProfit.toLocaleString()}`,
+      subtitle: `${displayMetrics.platformBreakdown?.stockx?.count || 0} StockX, ${displayMetrics.platformBreakdown?.manual?.count || 0} Manual`,
       icon: DollarSign,
       iconColor: 'text-green-600'
     },
     {
       title: 'Total Revenue',
-      value: `$${realMetrics.totalRevenue.toLocaleString()}`,
+      value: `$${displayMetrics.totalRevenue.toLocaleString()}`,
       subtitle: 'From all sales',
       icon: TrendingUp,
       iconColor: 'text-blue-600'
     },
     {
       title: 'Unsold Inventory',
-      value: realMetrics.inventoryCount.toString(),
+      value: displayMetrics.inventoryCount.toString(),
       subtitle: 'Items in stock',
       icon: Package,
       iconColor: 'text-purple-600'
     },
     {
       title: 'Inventory Value',
-      value: `$${realMetrics.inventoryValue.toLocaleString()}`,
+      value: `$${displayMetrics.inventoryValue.toLocaleString()}`,
       subtitle: 'Estimated value',
       icon: ShoppingCart,
       iconColor: 'text-orange-600'
     },
     {
       title: 'Avg Profit/Sale',
-      value: `$${Math.round(realMetrics.avgProfitPerSale).toLocaleString()}`,
+      value: `$${Math.round(displayMetrics.avgProfitPerSale).toLocaleString()}`,
       subtitle: 'Per transaction',
       icon: BarChart3,
       iconColor: 'text-green-600'
     },
     {
       title: 'Total Spend',
-      value: `$${realMetrics.totalSpend.toLocaleString()}`,
+      value: `$${displayMetrics.totalSpend.toLocaleString()}`,
       subtitle: 'Purchase costs',
       icon: Calculator,
       iconColor: 'text-red-600'
     }
   ];
 
-  // Generate simple chart data from recent sales
-  const chartData = realMetrics.recentSales.length > 0 
-    ? realMetrics.recentSales.map((sale, index) => ({
+  // Generate simple chart data from recent sales (showing profit by day)
+  const chartData = displayMetrics.recentSales.length > 0 
+    ? displayMetrics.recentSales.map((sale, index) => ({
         value: sale.profit || 0,
         date: sale.date || `Sale ${index + 1}`,
         items: sale.product || 'Unknown Product'
       }))
-    : [{ value: 0, date: 'No sales yet', items: 'Start selling to see data' }];
+    : [
+        { value: 0, date: 'No profit data yet', items: 'Start selling to see data' },
+        // Mock data for demonstration
+        { value: 150, date: '2024-01-10', items: 'Air Jordan 1 Retro' },
+        { value: 320, date: '2024-01-11', items: 'Nike Dunk Low' },
+        { value: 85, date: '2024-01-12', items: 'Yeezy 350 V2' },
+        { value: 450, date: '2024-01-13', items: 'Travis Scott Jordan 1' },
+        { value: 200, date: '2024-01-14', items: 'Off-White Air Max 90' },
+        { value: 180, date: '2024-01-15', items: 'Fragment Design Jordan 1' },
+        { value: 290, date: '2024-01-16', items: 'Union LA Jordan 1' }
+      ];
 
   // Calculate chart metrics
   const totalProfit = chartData.reduce((sum, item) => sum + item.value, 0);
@@ -382,8 +612,8 @@ const Dashboard = () => {
   const peakDayItem = chartData.find(d => d.value === peakDay)?.items || '';
 
   // Calculate best flip percentage
-  const bestFlipData = realMetrics.recentSales.length > 0 
-    ? realMetrics.recentSales[0] // Already sorted by profit
+  const bestFlipData = displayMetrics.recentSales.length > 0 
+    ? displayMetrics.recentSales[0] // Already sorted by profit
     : { profit: 0, salePrice: 0, purchasePrice: 0 };
   
   const bestFlipPercent = bestFlipData.salePrice > 0 && bestFlipData.purchasePrice > 0
@@ -700,14 +930,165 @@ const Dashboard = () => {
       )}
 
 
+      {/* Customizable Stats */}
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-semibold text-white">Dashboard Metrics</h2>
+        <div className="flex items-center gap-4">
+          {/* Mock Data Toggle */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-300">
+              {mockDataEnabled ? 'Mock Data' : 'Real Data'}
+            </span>
+            <button
+              onClick={() => {
+                setMockDataEnabled(!mockDataEnabled);
+                showNotification(
+                  mockDataEnabled ? 'Switched to real data' : 'Switched to mock data', 
+                  'info'
+                );
+              }}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                mockDataEnabled ? 'bg-blue-600' : 'bg-gray-600'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  mockDataEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+          
+          <button
+            onClick={() => setShowStatsSettings(!showStatsSettings)}
+            className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+          >
+            <Settings className="w-4 h-4" />
+            Customize
+          </button>
+        </div>
+      </div>
+
+      {/* Stats Settings Modal */}
+      {showStatsSettings && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-2xl mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Customize Dashboard Metrics
+              </h3>
+              <button
+                onClick={() => setShowStatsSettings(false)}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              Select which metrics to display on your dashboard. Drag to reorder.
+            </p>
+
+            {/* Available Stats */}
+            <div className="mb-6">
+              <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-3">Available Metrics</h4>
+              <div className="grid grid-cols-2 gap-2">
+                {Object.values(availableStats).map((stat) => {
+                  const Icon = stat.icon;
+                  const isSelected = selectedStats.includes(stat.id);
+                  
+                  return (
+                    <button
+                      key={stat.id}
+                      onClick={() => handleStatToggle(stat.id)}
+                      className={`p-3 rounded-lg border-2 transition-all duration-200 flex items-center gap-3 ${
+                        isSelected
+                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                          : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                      }`}
+                    >
+                      <Icon className={`w-5 h-5 ${stat.color}`} />
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">
+                        {stat.label}
+                      </span>
+                      {isSelected && (
+                        <CheckCircle className="w-4 h-4 text-blue-500 ml-auto" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Selected Stats Preview */}
+            <div>
+              <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-3">
+                Dashboard Preview ({selectedStats.length} metrics) - Drag to reorder
+              </h4>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {selectedStats.map((statId, index) => {
+                  const stat = availableStats[statId as keyof typeof availableStats];
+                  if (!stat) return null;
+                  
+                  const Icon = stat.icon;
+                  const isDragging = draggedIndex === index;
+                  
+                  return (
+                    <div
+                      key={statId}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, index)}
+                      onDragOver={handleDragOver}
+                      onDrop={(e) => handleDrop(e, index)}
+                      onDragEnd={handleDragEnd}
+                      className={`bg-gray-50 dark:bg-gray-700 rounded-lg p-3 flex items-center gap-2 cursor-move transition-all duration-200 ${
+                        isDragging ? 'opacity-50 scale-95' : 'hover:bg-gray-100 dark:hover:bg-gray-600'
+                      }`}
+                    >
+                      <GripVertical className="w-4 h-4 text-gray-400" />
+                      <Icon className={`w-4 h-4 ${stat.color}`} />
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">
+                        {stat.label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setShowStatsSettings(false)}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  await saveStatsSettings(selectedStats);
+                  setShowStatsSettings(false);
+                  showNotification('Dashboard metrics saved successfully!', 'success');
+                }}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Metrics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-        {metricCards.map((card, index) => {
-          const IconComponent = card.icon;
+        {selectedStats.map((statId) => {
+          const stat = availableStats[statId as keyof typeof availableStats];
+          if (!stat) return null;
+          
+          const IconComponent = stat.icon;
           const isNeon = currentTheme.name === 'Neon';
           
           return (
-            <div key={index} className={`metric-card ${
+            <div key={statId} className={`metric-card ${
               isNeon
                 ? 'dark-neon-card neon-glow'
                 : `${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border`
@@ -715,19 +1096,19 @@ const Dashboard = () => {
               <div className="flex items-center justify-between">
                 <div className="flex-1">
                   <p className={`text-sm font-medium ${currentTheme.colors.textSecondary} mb-1`}>
-                    {card.title}
+                    {stat.label}
                   </p>
                   <p className={`text-2xl font-bold ${currentTheme.colors.textPrimary} mb-1`}>
-                    {card.value}
+                    {stat.getValue()}
                   </p>
                   <p className={`text-sm ${currentTheme.colors.textSecondary}`}>
-                    {card.subtitle}
+                    {stat.getSubtitle()}
                   </p>
                 </div>
                 <div className={`p-3 rounded-lg ${
                   isNeon ? 'bg-white/10 backdrop-blur-sm' : 'bg-gray-50'
                 }`}>
-                  <IconComponent className={`w-6 h-6 ${card.iconColor}`} />
+                  <IconComponent className={`w-6 h-6 ${stat.color}`} />
                 </div>
               </div>
             </div>
@@ -746,63 +1127,214 @@ const Dashboard = () => {
         } rounded-lg p-6`}>
           <div className="flex items-center justify-between mb-6">
             <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>
-              Recent Sales Performance
+              Recent Profit Performance
             </h3>
             <div className="flex items-center space-x-2">
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
               <span className="text-xs text-green-600 font-semibold">
-                {realMetrics.recentSales.length > 0 ? 'Active' : 'No sales yet'}
+                {displayMetrics.recentSales.length > 0 ? 'Active' : 'No profit data yet'}
               </span>
             </div>
           </div>
           
-          {/* Simple Bar Chart */}
-          <div className="flex items-end justify-between space-x-2 h-64 mb-4">
-            {chartData.map((bar, index) => {
-              const maxValue = Math.max(...chartData.map(d => d.value));
-              const barHeight = maxValue > 0 ? Math.max((bar.value / maxValue) * 100, 8) : 8;
-              const barColor = bar.value > 300 ? 'bg-green-500' : bar.value > 100 ? 'bg-blue-500' : 'bg-gray-500';
-              
-              return (
-                <div key={index} className="group relative flex flex-col items-center">
-                  <div className="relative">
-                    <div 
-                      className={`w-10 ${barColor} rounded-t-lg shadow-lg transition-all duration-300 hover:scale-110 cursor-pointer relative overflow-hidden`}
-                      style={{ height: `${barHeight}%` }}
-                    >
-                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-20 transform -skew-x-12 animate-pulse"></div>
+          {/* Enhanced Bar Chart with Gradient Line */}
+          <div className="relative h-64 mb-4">
+            {/* Interactive Chart Header */}
+            <div className="absolute top-2 right-2 text-xs text-gray-500 dark:text-gray-400 bg-white/80 dark:bg-gray-800/80 px-2 py-1 rounded">
+              Click bars to select
+            </div>
+            
+            {/* Background Grid */}
+            <div className="absolute inset-0 opacity-20">
+              <div className="h-full flex flex-col justify-between">
+                {[0, 25, 50, 75, 100].map((percent) => (
+                  <div key={percent} className="border-t border-gray-300 dark:border-gray-600"></div>
+                ))}
+              </div>
+            </div>
+            
+            {/* Chart Container */}
+            <div className="relative h-full flex items-end justify-between space-x-1 px-2">
+              {chartData.map((bar, index) => {
+                const maxValue = Math.max(...chartData.map(d => d.value));
+                const barHeight = maxValue > 0 ? Math.max((bar.value / maxValue) * 100, 8) : 8;
+                const isHighProfit = bar.value > 300;
+                const isMediumProfit = bar.value > 100 && bar.value <= 300;
+                const isSelected = selectedBar === index;
+                
+                return (
+                  <div key={index} className="group relative flex flex-col items-center flex-1">
+                    <div className="relative w-full">
+                      <div 
+                        className={`w-full rounded-t-lg shadow-lg transition-all duration-300 hover:scale-105 cursor-pointer relative overflow-hidden ${
+                          isSelected
+                            ? 'ring-4 ring-blue-400 ring-opacity-50 scale-105'
+                            : ''
+                        } ${
+                          isHighProfit 
+                            ? 'bg-gradient-to-t from-green-600 to-green-400 hover:from-green-500 hover:to-green-300' 
+                            : isMediumProfit 
+                            ? 'bg-gradient-to-t from-blue-600 to-blue-400 hover:from-blue-500 hover:to-blue-300'
+                            : 'bg-gradient-to-t from-gray-500 to-gray-400 hover:from-gray-400 hover:to-gray-300'
+                        }`}
+                        style={{ height: `${barHeight}%` }}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          console.log('Chart bar clicked:', index, bar.items);
+                          setSelectedBar(selectedBar === index ? null : index);
+                          showNotification(`Selected: ${bar.items} - $${bar.value} profit`, 'info');
+                        }}
+                      >
+                        {/* Animated shimmer effect */}
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-30 transform -skew-x-12 animate-pulse"></div>
+                        
+                        {/* Click indicator */}
+                        {isSelected && (
+                          <div className="absolute inset-0 bg-white/20 rounded-t-lg flex items-center justify-center">
+                            <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                          </div>
+                        )}
+                        
+                        {/* Hover value display */}
+                        <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 text-xs font-bold text-gray-700 dark:text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-gray-800 px-2 py-1 rounded shadow-lg">
+                          ${bar.value}
+                        </div>
+                      </div>
                       
-                      <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs font-bold text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity">
-                        ${bar.value}
+                      {/* Enhanced Tooltip */}
+                      <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 bg-black/95 text-white text-xs px-4 py-3 rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-200 whitespace-nowrap z-20 border border-gray-600">
+                        <div className="font-semibold text-white">{bar.items}</div>
+                        <div className="text-gray-300 text-xs">{bar.date}</div>
+                        <div className="text-green-400 font-bold">${bar.value} profit</div>
+                        <div className="text-gray-400 text-xs mt-1">Click to select</div>
                       </div>
                     </div>
                     
-                    <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-3 bg-black/90 text-white text-xs px-3 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
-                      <div className="font-semibold">{bar.items}</div>
-                      <div className="text-gray-300">{bar.date}</div>
-                      <div className="text-green-400">${bar.value} profit</div>
+                    {/* Date label */}
+                    <div className={`text-xs ${currentTheme.colors.textSecondary} mt-2 text-center truncate w-full ${
+                      isSelected ? 'font-bold text-blue-400' : ''
+                    }`}>
+                      {formatShortDate(bar.date)}
                     </div>
                   </div>
-                  
-                  <div className={`text-xs ${currentTheme.colors.textSecondary} mt-2 text-center`}>
-                    {bar.date}
+                );
+              })}
+            </div>
+            
+            {/* Gradient line overlay with clickable dots */}
+            <div className="absolute inset-0 pointer-events-none px-2">
+              <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="profitGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="#10b981" stopOpacity="0.8" />
+                    <stop offset="50%" stopColor="#3b82f6" stopOpacity="0.9" />
+                    <stop offset="100%" stopColor="#10b981" stopOpacity="0.8" />
+                  </linearGradient>
+                </defs>
+                <polyline
+                  fill="none"
+                  stroke="url(#profitGradient)"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  points={chartData.map((bar, index) => {
+                    const maxValue = Math.max(...chartData.map(d => d.value));
+                    const barHeight = maxValue > 0 ? Math.max((bar.value / maxValue) * 100, 8) : 8;
+                    // Account for padding by adjusting x position
+                    const x = (index / (chartData.length - 1)) * 100;
+                    const y = 100 - barHeight;
+                    return `${x},${y}`;
+                  }).join(' ')}
+                />
+              </svg>
+            </div>
+            
+            {/* Clickable dots on the gradient line */}
+            <div className="absolute inset-0 pointer-events-auto px-2">
+              {chartData.map((bar, index) => {
+                const maxValue = Math.max(...chartData.map(d => d.value));
+                const barHeight = maxValue > 0 ? Math.max((bar.value / maxValue) * 100, 8) : 8;
+                // Account for padding by adjusting x position
+                const x = (index / (chartData.length - 1)) * 100;
+                const y = 100 - barHeight;
+                const isSelected = selectedBar === index;
+                
+                return (
+                  <div
+                    key={`dot-${index}`}
+                    className="absolute group cursor-pointer"
+                    style={{
+                      left: `${x}%`,
+                      top: `${y}%`,
+                      transform: 'translate(-50%, -50%)'
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      console.log('Chart dot clicked:', index, bar.items, bar.value);
+                      setSelectedBar(selectedBar === index ? null : index);
+                      showNotification(`Selected: ${bar.items} - $${bar.value} profit`, 'info');
+                    }}
+                  >
+                    {/* Dot */}
+                    <div className={`w-4 h-4 rounded-full border-2 transition-all duration-200 ${
+                      isSelected 
+                        ? 'bg-blue-500 border-blue-300 scale-125 shadow-lg' 
+                        : 'bg-white border-blue-500 hover:bg-blue-100 hover:scale-110'
+                    }`}>
+                      {/* Inner dot */}
+                      <div className={`w-2 h-2 rounded-full m-0.5 ${
+                        isSelected ? 'bg-white' : 'bg-blue-500'
+                      }`}></div>
+                    </div>
+                    
+                    {/* Hover tooltip */}
+                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 bg-black/95 text-white text-xs px-3 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-200 whitespace-nowrap z-30 border border-gray-600">
+                      <div className="font-semibold text-white">{bar.items}</div>
+                      <div className="text-gray-300 text-xs">{bar.date}</div>
+                      <div className="text-green-400 font-bold">${bar.value} profit</div>
+                      <div className="text-gray-400 text-xs mt-1">Click to select</div>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
+
+          {/* Selected Bar Details */}
+          {selectedBar !== null && (
+            <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-semibold text-blue-900 dark:text-blue-100">
+                    Selected: {chartData[selectedBar]?.items}
+                  </h4>
+                  <p className="text-sm text-blue-700 dark:text-blue-300">
+                    {chartData[selectedBar]?.date} • ${chartData[selectedBar]?.value} profit
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSelectedBar(null)}
+                  className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Summary stats */}
           <div className="grid grid-cols-3 gap-4 mt-6 pt-4 border-t border-gray-200">
             <div className="text-center">
-              <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Peak Sale</div>
+              <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Peak Profit</div>
               <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>${peakDay}</div>
               <div className={`text-xs ${currentTheme.colors.textSecondary}`}>{peakDayItem}</div>
             </div>
             <div className="text-center">
               <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Average</div>
               <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>${avgProfitPerDay}</div>
-              <div className={`text-xs ${currentTheme.colors.textSecondary}`}>per sale</div>
+              <div className={`text-xs ${currentTheme.colors.textSecondary}`}>per day</div>
             </div>
             <div className="text-center">
               <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Best ROI</div>
@@ -819,20 +1351,20 @@ const Dashboard = () => {
             : `${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border`
         } rounded-lg p-6`}>
           <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary} mb-6`}>
-            Top Profitable Sales
+            Top Profit Performers
           </h3>
           
-          {realMetrics.recentSales.length === 0 ? (
+          {displayMetrics.recentSales.length === 0 ? (
             <div className="text-center py-8">
               <Package className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className={`${currentTheme.colors.textSecondary} mb-2`}>No sales recorded yet</p>
+              <p className={`${currentTheme.colors.textSecondary} mb-2`}>No profit data yet</p>
               <p className={`text-sm ${currentTheme.colors.textSecondary}`}>
-                Your top profitable sales will appear here
+                Your top profit performers will appear here
               </p>
             </div>
           ) : (
             <div className="space-y-4">
-              {realMetrics.recentSales.map((flip, index) => (
+              {displayMetrics.recentSales.map((flip, index) => (
                 <div key={index} className={`p-4 rounded-lg ${
                   currentTheme.name === 'Neon' 
                     ? 'bg-white/5 backdrop-blur-sm border border-white/10' 
@@ -879,6 +1411,44 @@ const Dashboard = () => {
           )}
         </div>
       </div>
+
+      {/* Notification */}
+      {notification.show && (
+        <div className="fixed top-4 right-4 z-50 animate-in slide-in-from-right-2 duration-300">
+          <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-lg border-2 p-4 max-w-sm ${
+            notification.type === 'success' 
+              ? 'border-green-500 bg-green-50 dark:bg-green-900/20' 
+              : notification.type === 'error'
+              ? 'border-red-500 bg-red-50 dark:bg-red-900/20'
+              : 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+          }`}>
+            <div className="flex items-center gap-3">
+              <div className={`w-2 h-2 rounded-full ${
+                notification.type === 'success' 
+                  ? 'bg-green-500'
+                  : notification.type === 'error'
+                  ? 'bg-red-500'
+                  : 'bg-blue-500'
+              }`}></div>
+              <span className={`font-medium ${
+                notification.type === 'success' 
+                  ? 'text-green-800 dark:text-green-200'
+                  : notification.type === 'error'
+                  ? 'text-red-800 dark:text-red-200'
+                  : 'text-blue-800 dark:text-blue-200'
+              }`}>
+                {notification.message}
+              </span>
+              <button
+                onClick={() => setNotification(prev => ({ ...prev, show: false }))}
+                className="ml-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
