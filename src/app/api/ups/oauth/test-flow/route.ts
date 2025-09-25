@@ -5,12 +5,12 @@ export async function GET(request: NextRequest) {
   try {
     console.log('🧪 Testing UPS OAuth flow following UPS specification...');
 
-    // Check environment variables
-    const clientId = process.env.UPS_CLIENT_ID;
-    const clientSecret = process.env.UPS_CLIENT_SECRET;
+    // Check environment variables (OAuth credentials)
+    const clientId = process.env.UPS_OAUTH_CLIENT_ID;
+    const clientSecret = process.env.UPS_OAUTH_CLIENT_SECRET || process.env.UPS_CLIENT_SECRET || '';
     const redirectUri = process.env.UPS_OAUTH_REDIRECT_URI;
     const scope = process.env.UPS_OAUTH_SCOPE || 'ups.track ups.ship';
-    const baseUrl = process.env.UPS_OAUTH_BASE_URL || 'https://wwwcie.ups.com';
+    const baseUrl = process.env.UPS_OAUTH_BASE_URL || process.env.UPS_BASE_URL || 'https://wwwcie.ups.com';
 
     const config = {
       clientId,
@@ -29,8 +29,8 @@ export async function GET(request: NextRequest) {
 
     // Validate configuration
     const missingVars = [];
-    if (!clientId) missingVars.push('UPS_CLIENT_ID');
-    if (!clientSecret) missingVars.push('UPS_CLIENT_SECRET');
+    if (!clientId) missingVars.push('UPS_OAUTH_CLIENT_ID');
+    if (!clientSecret) missingVars.push('UPS_OAUTH_CLIENT_SECRET');
     if (!redirectUri) missingVars.push('UPS_OAUTH_REDIRECT_URI');
 
     if (missingVars.length > 0) {

@@ -8,16 +8,16 @@ export async function GET(request: NextRequest) {
     const scope = searchParams.get('scope') || 'ups.track ups.ship';
     const state = searchParams.get('state') || crypto.randomBytes(16).toString('hex');
 
-    // Get OAuth configuration from environment
-    const clientId = process.env.UPS_CLIENT_ID;
+    // Get OAuth configuration from environment (prefer UPS_OAUTH_* vars)
+    const clientId = process.env.UPS_OAUTH_CLIENT_ID || process.env.UPS_CLIENT_ID;
     const redirectUri = process.env.UPS_OAUTH_REDIRECT_URI;
-    const baseUrl = process.env.UPS_OAUTH_BASE_URL || 'https://wwwcie.ups.com';
+    const baseUrl = process.env.UPS_OAUTH_BASE_URL || process.env.UPS_BASE_URL || 'https://wwwcie.ups.com';
 
     if (!clientId || !redirectUri) {
       return NextResponse.json(
         { 
           error: 'UPS OAuth not configured',
-          details: 'Missing UPS_CLIENT_ID or UPS_OAUTH_REDIRECT_URI environment variables'
+      details: 'Missing UPS_OAUTH_CLIENT_ID (or UPS_CLIENT_ID) or UPS_OAUTH_REDIRECT_URI environment variables'
         },
         { status: 500 }
       );
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     const flowService = UPSOAuthFlowService.getInstance();
     const result = await flowService.initiateOAuthFlow({
       clientId,
-      clientSecret: process.env.UPS_CLIENT_SECRET || '',
+      clientSecret: process.env.UPS_OAUTH_CLIENT_SECRET || process.env.UPS_CLIENT_SECRET || '',
       redirectUri,
       scope,
       baseUrl
