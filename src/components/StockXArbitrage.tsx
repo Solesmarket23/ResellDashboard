@@ -443,6 +443,9 @@ const StockXArbitrage: React.FC = () => {
       return;
     }
 
+    // Always determine page BEFORE any state updates to avoid race conditions
+    const pageToLoad = loadMore ? currentPage + 1 : 1;
+
     if (loadMore) {
       setIsLoadingMore(true);
       setPreserveOrder(true); // Preserve order when loading more
@@ -459,7 +462,6 @@ const StockXArbitrage: React.FC = () => {
     setHasSearched(true);
 
     try {
-      const pageToLoad = loadMore ? currentPage + 1 : 1;
       
       // Build query parameters for streaming
       const params = new URLSearchParams({
