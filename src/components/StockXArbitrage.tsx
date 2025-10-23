@@ -446,8 +446,10 @@ const StockXArbitrage: React.FC = () => {
     }
 
     // Always determine page BEFORE any state updates to avoid race conditions
+    // For new searches (loadMore=false), ALWAYS use page 1
+    // For load more (loadMore=true), use currentPage + 1
     const pageToLoad = loadMore ? currentPage + 1 : 1;
-    console.log('🔍 StockX Search Debug:', { loadMore, currentPage, pageToLoad, searchQuery });
+    console.log('🔍 StockX Search Debug:', { loadMore, currentPage, pageToLoad, searchQuery, willSearchPage: pageToLoad });
 
     if (loadMore) {
       setIsLoadingMore(true);
