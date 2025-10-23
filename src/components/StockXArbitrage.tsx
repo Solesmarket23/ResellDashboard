@@ -437,6 +437,8 @@ const StockXArbitrage: React.FC = () => {
   };
 
   const searchArbitrageOpportunities = async (loadMore = false) => {
+    console.log('🚀 searchArbitrageOpportunities called:', { loadMore, currentPage, searchQuery: searchQuery.substring(0, 30) });
+    
     if (!searchQuery.trim()) {
       setErrorMessage('Please enter a search query');
       setIsAuthError(false);

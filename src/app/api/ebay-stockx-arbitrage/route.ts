@@ -38,6 +38,14 @@ interface ArbitrageOpportunity {
   searchMethod?: 'gtin' | 'stylecode' | 'text'; // How the product was matched
   gtin?: string; // GTIN used for matching (if applicable)
   styleCode?: string; // Style code used for matching (if applicable)
+  stockxUrl?: string; // Direct StockX product URL
+  stockxProductId?: string;
+  stockxUrlKey?: string;
+}
+
+// Normalize style codes for exact matching (remove non-alphanumerics, uppercase)
+function normalizeStyleCode(input: string): string {
+  return (input || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
 }
 
 // Generate eBay application token from App ID and Cert ID
@@ -307,7 +315,7 @@ function parseShoeDetails(title: string): { brand?: string; model?: string; size
   for (const pattern of styleCodePatterns) {
     const match = title.match(pattern);
     if (match) {
-      styleCode = match[1].toUpperCase();
+      styleCode = normalizeStyleCode(match[1]);
       console.log(`🏷️ Found style code in eBay title: ${styleCode}`);
       break;
     }
@@ -796,6 +804,8 @@ async function searchStockXByStyleCode(styleCode: string, request: NextRequest):
       `SKU:${styleCode}`, // SKU prefix
     ];
     
+    const target = normalizeStyleCode(styleCode);
+
     for (const searchQuery of searchQueries) {
       try {
         console.log(`🔍 Trying style code search query: "${searchQuery}"`);
@@ -827,10 +837,15 @@ async function searchStockXByStyleCode(styleCode: string, request: NextRequest):
           const products = data.products || [];
           
           console.log(`📦 Style Code StockX response: Found ${products.length} products`);
+          // Enforce exact style code match when possible
+          const filtered = products.filter((p: any) => {
+            const candidate = p.styleCode || p.sku || p.code || p.productStyle || p.style;
+            return candidate ? normalizeStyleCode(String(candidate)) === target : false;
+          });
           
-          if (products.length > 0) {
-            console.log(`✅ Style code search successful with query: "${searchQuery}"`);
-            console.log(`📋 Style code matches:`, products.slice(0, 3).map((p: any) => ({
+          if (filtered.length > 0) {
+            console.log(`✅ Exact style code match(es) found for ${styleCode} using query: "${searchQuery}"`);
+            console.log(`📋 Exact matches:`, filtered.slice(0, 3).map((p: any) => ({
               id: p.id || p.uuid || p.productId,
               title: p.title || p.name,
               brand: p.brand,
@@ -838,7 +853,11 @@ async function searchStockXByStyleCode(styleCode: string, request: NextRequest):
               productId: p.productId,
               styleCode: p.styleCode || p.sku
             })));
-            
+            return filtered;
+          }
+          // If no exact matches, fall back to returning all products (to allow downstream filters)
+          if (products.length > 0) {
+            console.log(`⚠️ No exact style code match; returning ${products.length} candidates for downstream filtering`);
             return products;
           }
         } else {
@@ -1405,6 +1424,16 @@ export async function GET(request: NextRequest) {
               arbitrage.searchMethod = searchMethod as 'gtin' | 'stylecode' | 'text';
               arbitrage.gtin = gtin;
               arbitrage.styleCode = styleCode;
+              // Attach direct StockX URL if we have urlKey
+              const urlKey = stockxProduct.urlKey || stockxProduct.slug || stockxProduct.productUrlKey;
+              if (urlKey) {
+                arbitrage.stockxUrl = `https://stockx.com/${urlKey}`;
+                arbitrage.stockxUrlKey = urlKey;
+              } else if (productId) {
+                // Fallback: product page by id
+                arbitrage.stockxUrl = `https://stockx.com/${productId}`;
+                arbitrage.stockxProductId = productId;
+              }
               
               // TEMPORARILY: Show ALL matches regardless of profitability for debugging
               opportunities.push(arbitrage);

@@ -17,8 +17,13 @@ import {
   where,
   onSnapshot,
   Unsubscribe,
+  getDoc,
+  limit,
+  orderBy,
+  arrayUnion,
+  serverTimestamp,
 } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { ref, uploadBytes, getDownloadURL, uploadString } from "firebase/storage";
 
 // Auth functions
 export const logoutUser = () => signOut(auth);
@@ -171,3 +176,314 @@ export const subscribeToCollection = (
 
 // Export deleteField for use in other components
 export { deleteField };
+
+// ===== EMAIL PARSING FUNCTIONS =====
+
+// Save raw email to Firebase Storage
+export const saveRawEmailToStorage = async (input: {
+  messageId: string;
+  threadId?: string;
+  rawHtml: string;
+  plainText?: string;
+  rawHeaders?: Record<string, string>;
+  receivedAt: string;
+}): Promise<string> => {
+  if (!storage) {
+    throw new Error('Firebase Storage not initialized');
+  }
+
+  try {
+    const { messageId, threadId, rawHtml, plainText, rawHeaders, receivedAt } = input;
+    
+    // Create folder structure: emails/{messageId}/
+    const htmlPath = `emails/${messageId}/email.html`;
+    const headersPath = `emails/${messageId}/headers.json`;
+    const textPath = `emails/${messageId}/text.txt`;
+    
+    // Upload HTML
+    const htmlRef = ref(storage, htmlPath);
+    await uploadString(htmlRef, rawHtml, 'raw');
+    
+    // Upload headers if provided
+    if (rawHeaders) {
+      const headersRef = ref(storage, headersPath);
+      await uploadString(headersRef, JSON.stringify(rawHeaders, null, 2), 'raw');
+    }
+    
+    // Upload plain text if provided
+    if (plainText) {
+      const textRef = ref(storage, textPath);
+      await uploadString(textRef, plainText, 'raw');
+    }
+    
+    console.log(`📧 Saved raw email to storage: ${messageId}`);
+    return htmlPath;
+    
+  } catch (error) {
+    console.error('❌ Error saving raw email to storage:', error);
+    throw error;
+  }
+};
+
+// Order management functions
+export const findOrderByOrderId = async (orderId: string): Promise<any | null> => {
+  if (!db) {
+    console.warn('🔧 Firebase not initialized - returning null');
+    return null;
+  }
+  
+  try {
+    const q = query(
+      collection(db, 'orders'),
+      where('order_id', '==', orderId),
+      limit(1)
+    );
+    const querySnapshot = await getDocs(q);
+    
+    if (querySnapshot.empty) {
+      return null;
+    }
+    
+    const doc = querySnapshot.docs[0];
+    return { id: doc.id, ...doc.data() };
+    
+  } catch (error) {
+    console.error('❌ Error finding order by order_id:', error);
+    throw error;
+  }
+};
+
+export const findOrderByTracking = async (trackingNumbers: string[]): Promise<any | null> => {
+  if (!db || trackingNumbers.length === 0) {
+    return null;
+  }
+  
+  try {
+    // Note: This is a simplified query. For production, you might want to use
+    // a more sophisticated approach for array queries
+    const q = query(
+      collection(db, 'orders'),
+      where('tracking', 'array-contains-any', trackingNumbers),
+      limit(1)
+    );
+    const querySnapshot = await getDocs(q);
+    
+    if (querySnapshot.empty) {
+      return null;
+    }
+    
+    const doc = querySnapshot.docs[0];
+    return { id: doc.id, ...doc.data() };
+    
+  } catch (error) {
+    console.error('❌ Error finding order by tracking:', error);
+    throw error;
+  }
+};
+
+export const findOrderByThreadId = async (threadId: string): Promise<any | null> => {
+  if (!db) {
+    return null;
+  }
+  
+  try {
+    const q = query(
+      collection(db, 'orders'),
+      where('source.threadId', '==', threadId),
+      limit(1)
+    );
+    const querySnapshot = await getDocs(q);
+    
+    if (querySnapshot.empty) {
+      return null;
+    }
+    
+    const doc = querySnapshot.docs[0];
+    return { id: doc.id, ...doc.data() };
+    
+  } catch (error) {
+    console.error('❌ Error finding order by thread_id:', error);
+    throw error;
+  }
+};
+
+export const createOrder = async (orderData: any): Promise<any> => {
+  if (!db) {
+    throw new Error('Firebase not initialized');
+  }
+  
+  try {
+    const docRef = await addDoc(collection(db, 'orders'), {
+      ...orderData,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    
+    console.log(`📦 Created order: ${docRef.id}`);
+    return { id: docRef.id, ...orderData };
+    
+  } catch (error) {
+    console.error('❌ Error creating order:', error);
+    throw error;
+  }
+};
+
+export const updateOrder = async (orderId: string, updates: any): Promise<void> => {
+  if (!db) {
+    throw new Error('Firebase not initialized');
+  }
+  
+  try {
+    await updateDoc(doc(db, 'orders', orderId), {
+      ...updates,
+      updatedAt: serverTimestamp(),
+    });
+    
+    console.log(`📦 Updated order: ${orderId}`);
+    
+  } catch (error) {
+    console.error('❌ Error updating order:', error);
+    throw error;
+  }
+};
+
+export const appendTimelineEntry = async (
+  orderId: string,
+  entry: { status: string; messageId: string; at: string; [key: string]: any }
+): Promise<void> => {
+  if (!db) {
+    throw new Error('Firebase not initialized');
+  }
+  
+  try {
+    await updateDoc(doc(db, 'orders', orderId), {
+      status_timeline: arrayUnion(entry),
+      updatedAt: serverTimestamp(),
+    });
+    
+    console.log(`📦 Appended timeline entry to order: ${orderId}`);
+    
+  } catch (error) {
+    console.error('❌ Error appending timeline entry:', error);
+    throw error;
+  }
+};
+
+export const setOrderStatus = async (
+  orderId: string,
+  status: string,
+  additionalData?: { tracking?: any[]; updatedAt?: string; [key: string]: any }
+): Promise<void> => {
+  if (!db) {
+    throw new Error('Firebase not initialized');
+  }
+  
+  try {
+    const updateData: any = {
+      status,
+      updatedAt: serverTimestamp(),
+      ...additionalData,
+    };
+    
+    await updateDoc(doc(db, 'orders', orderId), updateData);
+    
+    console.log(`📦 Set order ${orderId} status to ${status}`);
+    
+  } catch (error) {
+    console.error('❌ Error setting order status:', error);
+    throw error;
+  }
+};
+
+// Email event storage
+export const saveEmailEvent = async (eventData: any): Promise<string> => {
+  if (!db) {
+    throw new Error('Firebase not initialized');
+  }
+  
+  try {
+    const docRef = await addDoc(collection(db, 'email_events'), {
+      ...eventData,
+      processedAt: serverTimestamp(),
+    });
+    
+    console.log(`📧 Saved email event: ${docRef.id}`);
+    return docRef.id;
+    
+  } catch (error) {
+    console.error('❌ Error saving email event:', error);
+    throw error;
+  }
+};
+
+// Get orders by status
+export const getOrdersByStatus = async (status: string): Promise<any[]> => {
+  if (!db) {
+    return [];
+  }
+  
+  try {
+    const q = query(
+      collection(db, 'orders'),
+      where('status', '==', status),
+      orderBy('updatedAt', 'desc')
+    );
+    const querySnapshot = await getDocs(q);
+    
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+    
+  } catch (error) {
+    console.error('❌ Error getting orders by status:', error);
+    throw error;
+  }
+};
+
+// Get orders needing review
+export const getOrdersNeedingReview = async (): Promise<any[]> => {
+  if (!db) {
+    return [];
+  }
+  
+  try {
+    const q = query(
+      collection(db, 'orders'),
+      where('needs_review', '==', true),
+      orderBy('updatedAt', 'desc')
+    );
+    const querySnapshot = await getDocs(q);
+    
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+    
+  } catch (error) {
+    console.error('❌ Error getting orders needing review:', error);
+    throw error;
+  }
+};
+
+// Get order status history
+export const getOrderStatusHistory = async (orderId: string): Promise<any[]> => {
+  if (!db) {
+    return [];
+  }
+  
+  try {
+    const orderDoc = await getDoc(doc(db, 'orders', orderId));
+    
+    if (!orderDoc.exists()) {
+      return [];
+    }
+    
+    const data = orderDoc.data();
+    return data.status_timeline || [];
+    
+  } catch (error) {
+    console.error('❌ Error getting order status history:', error);
+    throw error;
+  }
+};

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^0.0.48",
+    "@ai-sdk/openai": "^2.0.35",
     "@capacitor-mlkit/barcode-scanning": "^7.2.1",
     "@capacitor/android": "^7.4.1",
     "@capacitor/cli": "^7.4.1",
