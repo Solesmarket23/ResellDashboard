@@ -1,9 +1,9 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 
-export default function UPSOAuthError() {
+function UPSOAuthErrorContent() {
   const searchParams = useSearchParams();
   const [errorInfo, setErrorInfo] = useState<any>(null);
 
@@ -73,5 +73,17 @@ export default function UPSOAuthError() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function UPSOAuthError() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-gray-600">Loading...</div>
+      </div>
+    }>
+      <UPSOAuthErrorContent />
+    </Suspense>
   );
 }

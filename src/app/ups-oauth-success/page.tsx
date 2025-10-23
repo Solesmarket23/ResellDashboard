@@ -1,9 +1,9 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 
-export default function UPSOAuthSuccess() {
+function UPSOAuthSuccessContent() {
   const searchParams = useSearchParams();
   const [tokenInfo, setTokenInfo] = useState<any>(null);
 
@@ -75,5 +75,17 @@ export default function UPSOAuthSuccess() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function UPSOAuthSuccess() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-gray-600">Loading...</div>
+      </div>
+    }>
+      <UPSOAuthSuccessContent />
+    </Suspense>
   );
 }
