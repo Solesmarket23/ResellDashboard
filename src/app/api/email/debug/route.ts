@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { EmailOrderEventSchema } from "@/app/lib/email/types";
+import { EmailOrderEventSchema } from "@/lib/email/types";
 
 export async function POST(req: NextRequest) {
   try {

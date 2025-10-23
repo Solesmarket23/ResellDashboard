@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { extractTracking } from "@/app/lib/email/tracking";
+import { extractTracking } from "@/lib/email/tracking";
 
 export async function POST(req: NextRequest) {
   try {

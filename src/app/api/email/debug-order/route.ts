@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { heuristicParse } from "@/app/lib/email/heuristics";
+import { heuristicParse } from "@/lib/email/heuristics";
 
 export async function POST(req: NextRequest) {
   try {

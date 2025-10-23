@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parseEmailToEvent, shouldProcessEmail } from "@/app/lib/email/parse";
-import { linkOrCreateOrder } from "@/app/lib/email/linking";
+import { parseEmailToEvent, shouldProcessEmail } from "@/lib/email/parse";
+import { linkOrCreateOrder } from "@/lib/email/linking";
 import { saveRawEmailToStorage, saveEmailEvent } from "@/lib/firebase/firebaseUtils";
 
 export async function POST(req: NextRequest) {
