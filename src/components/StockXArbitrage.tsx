@@ -1159,7 +1159,7 @@ const StockXArbitrage: React.FC = () => {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyPress={handleKeyPress}
                 className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                placeholder="e.g., Jordan 1, Nike, or https://stockx.com/category/apparel"
+                placeholder="e.g., Jordan 1, Nike, or https://stockx.com/air-jordan-3-retro-og-rare-air"
               />
               <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-400">
                 <span>💡 Try:</span>

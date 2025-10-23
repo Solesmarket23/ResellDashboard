@@ -52,9 +52,11 @@ function generateStockXUrl(urlKey: string, size?: string): string {
   return 'https://stockx.com';
 }
 
-// Helper function to parse StockX category URLs
+// Helper function to parse StockX category URLs and product URLs
 function parseStockXUrl(url: string): {
   isStockXUrl: boolean;
+  isProductUrl?: boolean;
+  productUrlKey?: string;
   category?: string;
   sortBy?: string;
   searchTerms?: string[];
@@ -70,6 +72,18 @@ function parseStockXUrl(url: string): {
     // Parse category from path like /category/apparel or /browse/sneakers
     const pathParts = parsedUrl.pathname.split('/').filter(part => part.length > 0);
     let category = '';
+    
+    // Check if it's a product page (single path part that's not a known category)
+    const knownCategories = ['category', 'browse', 'sneakers', 'apparel', 'accessories', 'streetwear', 'collectibles', 'electronics', 'handbags', 'watches', 'jewelry', 'trading-cards'];
+    
+    if (pathParts.length === 1 && !knownCategories.includes(pathParts[0])) {
+      // This looks like a product URL (e.g., /air-jordan-3-retro-og-rare-air)
+      return {
+        isStockXUrl: true,
+        isProductUrl: true,
+        productUrlKey: pathParts[0]
+      };
+    }
     
     if (pathParts[0] === 'category' && pathParts[1]) {
       category = pathParts[1].toLowerCase();
@@ -156,16 +170,31 @@ function parseStockXUrl(url: string): {
 }
 
 // Helper function to get search query based on category or regular search
-function getSearchQuery(query: string, pageNumber: number = 1): { searchQuery: string; isUrlSearch: boolean; categoryInfo?: any } {
+function getSearchQuery(query: string, pageNumber: number = 1): { searchQuery: string; isUrlSearch: boolean; isProductUrl?: boolean; categoryInfo?: any } {
   // Check if query looks like a URL
   if (query.includes('stockx.com') || query.startsWith('http')) {
     const urlInfo = parseStockXUrl(query);
     
+    // Handle individual product URLs
+    if (urlInfo.isStockXUrl && urlInfo.isProductUrl && urlInfo.productUrlKey) {
+      console.log(`🔗 Detected StockX product URL: ${query}`);
+      console.log(`📦 Product URL key: ${urlInfo.productUrlKey}`);
+      console.log(`🔍 Searching for product by URL key: ${urlInfo.productUrlKey}`);
+      
+      return {
+        searchQuery: urlInfo.productUrlKey.replace(/-/g, ' '), // Convert URL slug to searchable text
+        isUrlSearch: true,
+        isProductUrl: true,
+        categoryInfo: urlInfo
+      };
+    }
+    
+    // Handle category URLs
     if (urlInfo.isStockXUrl && urlInfo.searchTerms?.length) {
       // Rotate through different search terms based on page number for variety
       const searchTermIndex = (pageNumber - 1) % urlInfo.searchTerms.length;
       const searchQuery = urlInfo.searchTerms[searchTermIndex];
-      console.log(`🔗 Detected StockX URL: ${query}`);
+      console.log(`🔗 Detected StockX category URL: ${query}`);
       console.log(`📂 Category: ${urlInfo.category}, Sort: ${urlInfo.sortBy || 'none'}`);
       console.log(`🔍 Using search term: ${searchQuery} (${searchTermIndex + 1}/${urlInfo.searchTerms.length} - Page ${pageNumber})`);
       
@@ -282,7 +311,7 @@ export async function GET(request: NextRequest) {
   
   // Parse the query to handle StockX URLs
   const pageNumber = parseInt(searchParams.get('page') || '1');
-  const { searchQuery: query, isUrlSearch, categoryInfo } = getSearchQuery(rawQuery, pageNumber);
+  const { searchQuery: query, isUrlSearch, isProductUrl, categoryInfo } = getSearchQuery(rawQuery, pageNumber);
 
   // Get user ID from request
   const userId = getUserIdFromRequest(request);
@@ -328,14 +357,16 @@ export async function GET(request: NextRequest) {
       async start(controller) {
         try {
           // Send initial status
-          const statusMessage = isUrlSearch 
+          const statusMessage = isProductUrl
+            ? `Searching for specific product: ${query}...`
+            : isUrlSearch 
             ? `Searching StockX ${categoryInfo?.category || 'category'} for ${query}${excludedBrandsList.length > 0 ? ` (excluding ${excludedBrandsList.join(', ')})` : ''}...`
             : `Searching StockX catalog${excludedBrandsList.length > 0 ? ` (excluding ${excludedBrandsList.join(', ')})` : ''}...`;
           
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
             type: 'status', 
             message: statusMessage,
-            searchType: isUrlSearch ? 'url' : 'text',
+            searchType: isProductUrl ? 'product' : (isUrlSearch ? 'url' : 'text'),
             category: categoryInfo?.category,
             originalQuery: rawQuery,
             excludedBrands: excludedBrandsList
