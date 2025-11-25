@@ -2550,6 +2550,7 @@ export default function StockXRepricing() {
 
               <div className="space-y-3">
                 {[
+                  { value: 1, label: '1 minute', desc: 'Ultra aggressive - Instant market response' },
                   { value: 5, label: '5 minutes', desc: 'Very aggressive - Maximum responsiveness' },
                   { value: 15, label: '15 minutes', desc: 'Aggressive - Quick market adaptation' },
                   { value: 30, label: '30 minutes', desc: 'Moderate - Balanced approach' },
