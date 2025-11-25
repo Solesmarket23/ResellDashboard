@@ -42,21 +42,27 @@ export async function POST(request: NextRequest) {
     // Calculate expiration time (default to 1 hour)
     const expiresAt = Date.now() + (3600 * 1000);
 
-    // Save tokens to Firebase
+    // Save tokens to Firebase and ensure auto-repricing is enabled
     await adminDb.collection('users').doc(userId).set({
       stockxTokens: {
         access_token: accessToken,
         refresh_token: refreshToken,
         expires_at: expiresAt,
         updated_at: new Date().toISOString()
+      },
+      stockxAutoRepricingEnabled: true,
+      stockxAutoRepricingConfig: {
+        intervalMinutes: 5,
+        strategy: 'individual'
       }
     }, { merge: true });
 
     console.log('✅ StockX tokens synced from cookies to Firebase for user:', userId);
+    console.log('✅ Auto-repricing enabled for user:', userId);
 
     return NextResponse.json({
       success: true,
-      message: 'Tokens synced successfully from cookies to Firebase',
+      message: 'Tokens synced and auto-repricing enabled',
       userId
     });
 
