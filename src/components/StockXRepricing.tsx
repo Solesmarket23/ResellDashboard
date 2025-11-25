@@ -106,6 +106,7 @@ interface RepricingResult {
 
 export default function StockXRepricing() {
   const { currentTheme } = useTheme();
+  const { user: authUser } = useAuth(); // Use AuthContext for user
   const isNeon = currentTheme.name.toLowerCase() === 'neon';
   
   // StockX Auth Hook for automatic token refresh
@@ -275,18 +276,18 @@ export default function StockXRepricing() {
     });
   }, []);
 
-  // Track auth state
+  // Track auth state from AuthContext
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      console.log('👤 Auth state changed:', user ? `User ${user.uid}` : 'No user');
-      setCurrentUser(user);
-      if (user) {
-        console.log('🔐 User authenticated, loading settings...');
-        loadSavedSettings(user.uid);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
+    if (authUser) {
+      console.log('👤 Auth user from context:', authUser.email, authUser.uid);
+      setCurrentUser(authUser);
+      console.log('🔐 User authenticated, loading settings...');
+      loadSavedSettings(authUser.uid);
+    } else {
+      console.log('👤 No auth user from context');
+      setCurrentUser(null);
+    }
+  }, [authUser]);
 
   // Fetch listings when component mounts and user is authenticated AND settings are loaded
   useEffect(() => {
