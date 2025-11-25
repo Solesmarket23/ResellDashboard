@@ -77,6 +77,10 @@ export async function GET(request: NextRequest) {
       amount: firstListing.amount,
       productId: firstListing.product?.id,
       variantId: firstListing.variant?.id,
+      productKeys: firstListing.product ? Object.keys(firstListing.product) : null,
+      variantKeys: firstListing.variant ? Object.keys(firstListing.variant) : null,
+      fullProduct: firstListing.product,
+      fullVariant: firstListing.variant,
       hasMatchInSettings: savedSettings.has(firstListing.id) || 
                           savedSettings.has(firstListing.listingId) ||
                           savedSettings.has(firstListing._id)
