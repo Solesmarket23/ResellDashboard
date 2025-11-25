@@ -211,9 +211,8 @@ export async function GET(request: NextRequest) {
         console.log(`🎯 Repricing ${itemsToReprice.length} listings (skipped ${listings.length - itemsToReprice.length} manual/keep_current)`);
 
         // Call the repricing API internally (using individual strategies per listing)
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL 
-          ? `https://${process.env.VERCEL_URL}` 
-          : 'https://www.solesmarket.com';
+        // Always use production URL to avoid Vercel deployment protection
+        const baseUrl = 'https://www.solesmarket.com';
         
         console.log(`🔑 Using access token: ${stockxTokens.access_token.substring(0, 30)}...`);
         
