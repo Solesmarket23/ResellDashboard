@@ -42,18 +42,13 @@ function initializeAdmin() {
   }
 }
 
-// Export adminDb with getter that initializes on first access
-export { adminApp };
+// Export getAdminDb function for lazy initialization
 export const getAdminDb = () => {
   return initializeAdmin();
 };
 
-// For backward compatibility, export adminDb but initialize it lazily
-Object.defineProperty(exports, 'adminDb', {
-  get() {
-    return initializeAdmin();
-  }
-});
+// Export adminApp and adminDb (adminDb will be null until getAdminDb() is called)
+export { adminApp, adminDb };
 
 // Server-side Firestore functions
 export const addDocumentAdmin = async (collectionName: string, data: any) => {
@@ -101,5 +96,3 @@ export const updateDocumentAdmin = async (collectionName: string, docId: string,
     throw error;
   }
 };
-
-export { adminApp, adminDb };
