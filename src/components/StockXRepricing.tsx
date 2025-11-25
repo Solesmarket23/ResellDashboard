@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
-import { DollarSign, TrendingDown, Target, Zap, RefreshCw, AlertTriangle, CheckCircle, Loader, Package, Copy, Check, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
+import { DollarSign, TrendingDown, Target, Zap, RefreshCw, AlertTriangle, CheckCircle, Loader, Package, Copy, Check, ChevronUp, ChevronDown, ChevronsUpDown, Clock, Save } from 'lucide-react';
 import NeonDropdown from './NeonDropdown';
 import { addDocument, getDocuments, updateDocument, deleteField } from '@/lib/firebase/firebaseUtils';
 import { auth } from '@/lib/firebase/firebase';
@@ -179,6 +179,13 @@ export default function StockXRepricing() {
   const [sortColumn, setSortColumn] = useState<'product' | 'size' | 'price' | 'market' | 'status' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   
+  // Auto-repricing settings
+  const [showAutoRepricingSettings, setShowAutoRepricingSettings] = useState(false);
+  const [autoRepricingEnabled, setAutoRepricingEnabled] = useState(false);
+  const [autoRepricingInterval, setAutoRepricingInterval] = useState(30);
+  const [tempInterval, setTempInterval] = useState(30);
+  const [savingInterval, setSavingInterval] = useState(false);
+  
   // Sorting logic
   const sortedListings = [...listings].sort((a, b) => {
     if (!sortColumn) return 0;
@@ -284,6 +291,32 @@ export default function StockXRepricing() {
       fetchListings();
     }
   }, [currentUser, settingsLoaded]); // Depend on both user and settings loaded state
+
+  // Load auto-repricing settings
+  useEffect(() => {
+    const loadAutoRepricingSettings = async () => {
+      if (!currentUser) return;
+      
+      try {
+        const { doc, getDoc } = await import('firebase/firestore');
+        const { db } = await import('@/lib/firebase/firebase');
+        
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          setAutoRepricingEnabled(userData.stockxAutoRepricingEnabled || false);
+          if (userData.stockxAutoRepricingConfig?.intervalMinutes) {
+            setAutoRepricingInterval(userData.stockxAutoRepricingConfig.intervalMinutes);
+            setTempInterval(userData.stockxAutoRepricingConfig.intervalMinutes);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading auto-repricing settings:', error);
+      }
+    };
+    
+    loadAutoRepricingSettings();
+  }, [currentUser]);
 
   // Apply saved settings - removed to prevent double application
 
@@ -654,6 +687,30 @@ export default function StockXRepricing() {
     
     // Sync the new price to all group members
     await syncInventoryGroup(listing.inventoryGroupId, newPrice, listingId);
+  };
+
+  // Save auto-repricing interval
+  const saveAutoRepricingInterval = async () => {
+    if (!currentUser) return;
+    
+    try {
+      setSavingInterval(true);
+      const { doc, updateDoc } = await import('firebase/firestore');
+      const { db } = await import('@/lib/firebase/firebase');
+      
+      await updateDoc(doc(db, 'users', currentUser.uid), {
+        'stockxAutoRepricingConfig.intervalMinutes': tempInterval,
+        updatedAt: new Date().toISOString()
+      });
+      
+      setAutoRepricingInterval(tempInterval);
+      alert(`✅ Auto-repricing interval updated to ${tempInterval} minutes!`);
+    } catch (error) {
+      console.error('Error saving interval:', error);
+      alert('❌ Failed to save interval. Please try again.');
+    } finally {
+      setSavingInterval(false);
+    }
   };
 
   const fetchListings = async (forceReload = false) => {
@@ -2205,6 +2262,9 @@ export default function StockXRepricing() {
           <p className={`mt-2 ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
             Optimize your listing prices with intelligent repricing strategies
           </p>
+          <p className={`mt-1 text-sm ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`}>
+            💡 Tip: Configure auto-repricing intervals below to automatically reprice your listings
+          </p>
         </div>
         <div className="flex gap-2">
           <button
@@ -2244,6 +2304,131 @@ export default function StockXRepricing() {
             Hard Reload
           </button>
         </div>
+      </div>
+
+      {/* Auto-Repricing Interval Settings */}
+      <div className={`rounded-xl border ${
+        isNeon ? 'bg-slate-800/50 border-cyan-500/30' : 'bg-white border-gray-200'
+      }`}>
+        <button
+          onClick={() => setShowAutoRepricingSettings(!showAutoRepricingSettings)}
+          className={`w-full p-4 flex items-center justify-between ${
+            isNeon ? 'hover:bg-slate-700/50' : 'hover:bg-gray-50'
+          } transition-colors rounded-xl`}
+        >
+          <div className="flex items-center gap-3">
+            <Clock className={`w-6 h-6 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
+            <div className="text-left">
+              <h3 className={`font-semibold ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+                Auto-Repricing Settings
+              </h3>
+              <p className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                {autoRepricingEnabled 
+                  ? `Active - Repricing every ${autoRepricingInterval} minutes`
+                  : 'Configure automatic repricing intervals'}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {autoRepricingEnabled && (
+              <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                isNeon ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-700'
+              }`}>
+                Enabled
+              </span>
+            )}
+            {showAutoRepricingSettings ? (
+              <ChevronUp className={`w-5 h-5 ${isNeon ? 'text-gray-400' : 'text-gray-600'}`} />
+            ) : (
+              <ChevronDown className={`w-5 h-5 ${isNeon ? 'text-gray-400' : 'text-gray-600'}`} />
+            )}
+          </div>
+        </button>
+
+        {showAutoRepricingSettings && (
+          <div className={`p-6 border-t ${isNeon ? 'border-slate-700' : 'border-gray-200'}`}>
+            <div className="space-y-4">
+              <p className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                Choose how frequently your listings should be automatically repriced. The system will check and update prices based on your selected interval.
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {[
+                  { value: 5, label: '5 minutes', desc: 'Very aggressive' },
+                  { value: 15, label: '15 minutes', desc: 'Aggressive' },
+                  { value: 30, label: '30 minutes', desc: 'Moderate' },
+                  { value: 60, label: '1 hour', desc: 'Conservative' },
+                  { value: 120, label: '2 hours', desc: 'Very conservative' },
+                  { value: 240, label: '4 hours', desc: 'Minimal' },
+                ].map((preset) => (
+                  <button
+                    key={preset.value}
+                    onClick={() => setTempInterval(preset.value)}
+                    className={`p-4 rounded-lg border-2 transition-all text-left ${
+                      tempInterval === preset.value
+                        ? isNeon
+                          ? 'border-cyan-500 bg-cyan-500/10'
+                          : 'border-blue-500 bg-blue-50'
+                        : isNeon
+                          ? 'border-slate-700 bg-slate-700/30 hover:border-slate-600'
+                          : 'border-gray-200 bg-gray-50 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className={`font-semibold ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+                        {preset.label}
+                      </span>
+                      {autoRepricingInterval === preset.value && (
+                        <span className={`text-xs px-2 py-0.5 rounded ${
+                          isNeon ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-700'
+                        }`}>
+                          Active
+                        </span>
+                      )}
+                    </div>
+                    <p className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                      {preset.desc}
+                    </p>
+                  </button>
+                ))}
+              </div>
+
+              {tempInterval !== autoRepricingInterval && (
+                <div className="flex items-center justify-between p-4 rounded-lg bg-blue-500/10 border border-blue-500/30">
+                  <div>
+                    <p className={`font-medium ${isNeon ? 'text-cyan-400' : 'text-blue-700'}`}>
+                      Save new interval: {tempInterval} minutes
+                    </p>
+                    <p className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                      Click save to apply this repricing interval
+                    </p>
+                  </div>
+                  <button
+                    onClick={saveAutoRepricingInterval}
+                    disabled={savingInterval}
+                    className={`px-6 py-2 rounded-lg font-semibold transition-all flex items-center gap-2 ${
+                      isNeon
+                        ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white'
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    } disabled:opacity-50`}
+                  >
+                    {savingInterval ? (
+                      <>
+                        <Loader className="w-4 h-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        Save
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Success Message */}
