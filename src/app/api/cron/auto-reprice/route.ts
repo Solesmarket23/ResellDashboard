@@ -159,6 +159,19 @@ export async function GET(request: NextRequest) {
         });
 
         console.log(`⚙️ Loaded ${savedSettings.size} saved listing settings`);
+        
+        // Debug: Show first listing structure to understand ID field
+        if (listings.length > 0) {
+          console.log('🔍 First listing structure:', JSON.stringify({
+            id: listings[0].id,
+            listingId: listings[0].listingId,
+            _id: listings[0]._id,
+            keys: Object.keys(listings[0])
+          }, null, 2));
+        }
+        
+        // Debug: Show saved settings IDs
+        console.log('🔑 Saved settings listing IDs:', Array.from(savedSettings.keys()).slice(0, 3));
 
         // Prepare repricing items, filtering by pricing strategy
         const itemsToReprice = listings
