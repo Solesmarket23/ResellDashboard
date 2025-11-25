@@ -215,6 +215,8 @@ export async function GET(request: NextRequest) {
           ? `https://${process.env.VERCEL_URL}` 
           : 'https://www.solesmarket.com';
         
+        console.log(`🔑 Using access token: ${stockxTokens.access_token.substring(0, 30)}...`);
+        
         const repriceResponse = await fetch(`${baseUrl}/api/stockx/repricing`, {
           method: 'POST',
           headers: {
@@ -240,9 +242,13 @@ export async function GET(request: NextRequest) {
           })
         });
 
+        console.log(`📡 Repricing API response status: ${repriceResponse.status}`);
+
         if (!repriceResponse.ok) {
-          console.log(`❌ Repricing failed for user ${userId}: ${repriceResponse.status}`);
-          errors.push(`User ${userId}: Repricing failed (${repriceResponse.status})`);
+          const errorText = await repriceResponse.text();
+          console.log(`❌ Repricing API returned not ok: ${repriceResponse.status}`);
+          console.log(`❌ Error details:`, errorText);
+          errors.push(`User ${userId}: Repricing failed (${repriceResponse.status}) - ${errorText}`);
           continue;
         }
 
