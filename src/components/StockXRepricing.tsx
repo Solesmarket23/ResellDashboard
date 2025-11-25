@@ -721,10 +721,21 @@ export default function StockXRepricing() {
 
   // Save auto-repricing interval
   const saveAutoRepricingInterval = async () => {
-    if (!currentUser) return;
+    console.log('💾 saveAutoRepricingInterval called');
+    console.log('👤 Current user:', currentUser ? `${currentUser.email} (${currentUser.uid})` : 'No user');
+    console.log('⏱️ Temp interval:', tempInterval);
+    console.log('⏱️ Current interval:', autoRepricingInterval);
+    
+    if (!currentUser) {
+      console.error('❌ No current user - cannot save interval');
+      alert('❌ You must be logged in to save settings. Please refresh the page and try again.');
+      return;
+    }
     
     try {
       setSavingInterval(true);
+      console.log('🔄 Saving interval to Firebase...');
+      
       const { doc, updateDoc } = await import('firebase/firestore');
       const { db } = await import('@/lib/firebase/firebase');
       
@@ -733,10 +744,11 @@ export default function StockXRepricing() {
         updatedAt: new Date().toISOString()
       });
       
+      console.log('✅ Interval saved successfully to Firebase');
       setAutoRepricingInterval(tempInterval);
       alert(`✅ Auto-repricing interval updated to ${tempInterval} minutes!`);
     } catch (error) {
-      console.error('Error saving interval:', error);
+      console.error('❌ Error saving interval:', error);
       alert('❌ Failed to save interval. Please try again.');
     } finally {
       setSavingInterval(false);
@@ -2628,7 +2640,11 @@ export default function StockXRepricing() {
                       
                       {tempInterval === preset.value && autoRepricingInterval !== preset.value && (
                         <button
-                          onClick={saveAutoRepricingInterval}
+                          onClick={() => {
+                            console.log('🖱️ Save button clicked!');
+                            console.log('📊 State:', { tempInterval, autoRepricingInterval, hasUser: !!currentUser });
+                            saveAutoRepricingInterval();
+                          }}
                           disabled={savingInterval}
                           className={`px-4 py-2 rounded-lg font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
           isNeon 
