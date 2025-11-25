@@ -188,11 +188,11 @@ export async function GET(request: NextRequest) {
             return true;
           })
           .map((listing: any) => {
-            const settings = savedSettings.get(listing.listingId); // FIXED: Use listingId instead of id
+            const settings = savedSettings.get(listing.listingId);
             return {
-              listingId: listing.listingId, // FIXED: Use listingId instead of id
-              productId: listing.product?.id,
-              variantId: listing.variant?.id,
+              listingId: listing.listingId,
+              productId: listing.product?.productId, // FIXED: Use productId field
+              variantId: listing.variant?.variantId, // FIXED: Use variantId field
               currentPrice: parseInt(listing.amount), // Parse to number
               lowestAsk: listing.product?.market?.lowestAsk || parseInt(listing.amount),
               highestBid: listing.product?.market?.highestBid || 0,
