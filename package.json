@@ -13,7 +13,8 @@
     "cap:run:ios": "npx cap run ios",
     "ios:dev": "CAPACITOR_DEV=true npm run cap:sync:ios && npm run cap:open:ios",
     "ios:build": "npm run build && npm run cap:sync:ios && npm run cap:open:ios",
-    "enable-repricing": "node scripts/enable-auto-repricing.js"
+    "enable-repricing": "node scripts/enable-auto-repricing.js",
+    "show-vercel-env": "node scripts/show-vercel-env.js"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^0.0.48",
