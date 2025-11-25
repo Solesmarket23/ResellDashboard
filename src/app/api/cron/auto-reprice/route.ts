@@ -113,12 +113,21 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
-        // Fetch user's active listings
-        const listingsResponse = await fetch('https://api.stockx.com/v2/selling', {
+        // Fetch user's active listings (matching the exact format from listings/route.ts)
+        const params = new URLSearchParams({
+          listingStatuses: 'ACTIVE',
+          pageSize: '100',
+          pageNumber: '1'
+        });
+        
+        const listingsResponse = await fetch(`https://api.stockx.com/v2/selling/listings?${params}`, {
+          method: 'GET',
           headers: {
             'Authorization': `Bearer ${stockxTokens.access_token}`,
-            'x-api-key': process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID || '',
-            'Content-Type': 'application/json'
+            'X-API-Key': process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID || '',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'ResellDashboard/1.0'
           }
         });
 
@@ -129,7 +138,7 @@ export async function GET(request: NextRequest) {
         }
 
         const listingsData = await listingsResponse.json();
-        const listings = listingsData.data || [];
+        const listings = listingsData.listings || listingsData.data || [];
 
         if (listings.length === 0) {
           console.log(`⏭️ No active listings for user ${userId}`);
