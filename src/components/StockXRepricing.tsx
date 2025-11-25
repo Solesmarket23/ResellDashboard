@@ -107,6 +107,7 @@ interface RepricingResult {
 
 export default function StockXRepricing() {
   const { currentTheme } = useTheme();
+  const { user: authUser } = useAuth(); // Get user from AuthContext
   const isNeon = currentTheme.name.toLowerCase() === 'neon';
   
   // StockX Auth Hook for automatic token refresh
@@ -170,7 +171,6 @@ export default function StockXRepricing() {
   const [previewResults, setPreviewResults] = useState<RepricingResult[]>([]);
   const [isPreviewMinimized, setIsPreviewMinimized] = useState(false);
   const [showPreviewResults, setShowPreviewResults] = useState(false);
-  const [currentUser, setCurrentUser] = useState<any>(null);
   const [savedSettings, setSavedSettings] = useState<Record<string, any>>({});
   const [savingSettings, setSavingSettings] = useState(false);
   const [activePeeks, setActivePeeks] = useState<Record<string, boolean>>({});
@@ -272,42 +272,34 @@ export default function StockXRepricing() {
       listingsCount: listings.length,
       savedSettingsCount: Object.keys(savedSettings).length,
       settingsLoaded,
-      currentUser: currentUser?.uid
+      currentUser: authUser?.uid
     });
-  }, []);
+  }, [authUser]);
 
-  // Track auth state directly from Firebase
+  // Load settings when auth user changes
   useEffect(() => {
-    console.log('🔧 Setting up Firebase auth listener...');
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      console.log('👤 Firebase auth state changed:', user ? `${user.email} (${user.uid})` : 'No user');
-      setCurrentUser(user);
-      if (user) {
-        console.log('🔐 User authenticated, loading settings...');
-        loadSavedSettings(user.uid);
-      } else {
-        console.log('⚠️ No user - settings cannot be saved');
-      }
-    });
-    return () => {
-      console.log('🧹 Cleaning up auth listener');
-      unsubscribe();
-    };
-  }, []);
+    console.log('👤 Auth user changed:', authUser ? `${authUser.email} (${authUser.uid})` : 'No user');
+    if (authUser) {
+      console.log('🔐 User authenticated, loading settings...');
+      loadSavedSettings(authUser.uid);
+    } else {
+      console.log('⚠️ No user - settings cannot be saved');
+    }
+  }, [authUser]);
 
   // Fetch listings when component mounts and user is authenticated AND settings are loaded
   const hasInitiallyFetched = useRef(false);
   useEffect(() => {
-    if (currentUser && settingsLoaded && !loading && !hasInitiallyFetched.current) {
+    if (authUser && settingsLoaded && !loading && !hasInitiallyFetched.current) {
       console.log('📋 Initial load - fetching listings after settings loaded...');
       hasInitiallyFetched.current = true;
       fetchListings(true); // Force reload to ensure fresh data
     }
-  }, [currentUser, settingsLoaded]); // Depend on both user and settings loaded state
+  }, [authUser, settingsLoaded]); // Depend on both user and settings loaded state
 
   // Auto-refresh listings every 3 minutes to catch new listings
   useEffect(() => {
-    if (!currentUser || !settingsLoaded) return;
+    if (!authUser || !settingsLoaded) return;
     
     console.log('⏰ Setting up auto-refresh for listings (every 3 minutes)...');
     
@@ -320,18 +312,18 @@ export default function StockXRepricing() {
       console.log('🛑 Clearing listings auto-refresh interval');
       clearInterval(refreshInterval);
     };
-  }, [currentUser, settingsLoaded]);
+  }, [authUser, settingsLoaded]);
 
   // Load auto-repricing settings
   useEffect(() => {
     const loadAutoRepricingSettings = async () => {
-      if (!currentUser) return;
+      if (!authUser) return;
       
       try {
         const { doc, getDoc } = await import('firebase/firestore');
         const { db } = await import('@/lib/firebase/firebase');
         
-        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        const userDoc = await getDoc(doc(db, 'users', authUser.uid));
         if (userDoc.exists()) {
           const userData = userDoc.data();
           setAutoRepricingEnabled(userData.stockxAutoRepricingEnabled || false);
@@ -346,7 +338,7 @@ export default function StockXRepricing() {
     };
     
     loadAutoRepricingSettings();
-  }, [currentUser]);
+  }, [authUser]);
 
   // Apply saved settings - removed to prevent double application
 
@@ -413,9 +405,9 @@ export default function StockXRepricing() {
   };
 
   const saveSettingToFirebase = async (listingId: string, settings: any) => {
-    if (!currentUser || savingSettings) {
-      console.log('❌ Skipping save - no user or already saving', { 
-        hasUser: !!currentUser, 
+    if (!authUser || savingSettings) {
+      console.log('❌ Skipping save - no user or already saving', {
+        hasUser: !!authUser,
         savingSettings 
       });
       return;
@@ -471,7 +463,7 @@ export default function StockXRepricing() {
       }
       
       const settingData: any = {
-        userId: currentUser.uid,
+        userId: authUser.uid,
         listingId,
         pricingStrategy: cleanPricingStrategy,
         autoDeactivate: settings.autoDeactivate || false,
@@ -722,12 +714,12 @@ export default function StockXRepricing() {
   // Save auto-repricing interval
   const saveAutoRepricingInterval = async () => {
     console.log('💾 saveAutoRepricingInterval called');
-    console.log('👤 Current user:', currentUser ? `${currentUser.email} (${currentUser.uid})` : 'No user');
+    console.log('👤 Current user:', authUser ? `${authUser.email} (${authUser.uid})` : 'No user');
     console.log('⏱️ Temp interval:', tempInterval);
     console.log('⏱️ Current interval:', autoRepricingInterval);
     
     // Try to get user ID from Firebase auth first, then fall back to StockX user ID from cookies
-    let userId = currentUser?.uid;
+    let userId = authUser?.uid;
     
     if (!userId) {
       // Try to get StockX user ID from cookies as fallback
@@ -792,7 +784,7 @@ export default function StockXRepricing() {
     console.log('📊 Current state before fetch:', {
       settingsLoaded,
       savedSettingsCount: Object.keys(savedSettings).length,
-      currentUser: currentUser?.uid,
+      currentUser: authUser?.uid,
       hasListings: listings.length > 0
     });
     // Only show loading on initial fetch or force reload
@@ -928,7 +920,7 @@ export default function StockXRepricing() {
         
         // Apply saved settings to the grouped listings
         let finalListings = groupedListings;
-        if (currentUser && Object.keys(savedSettings).length > 0) {
+        if (authUser && Object.keys(savedSettings).length > 0) {
           console.log('🔧 Applying saved settings after grouping...');
           console.log('📊 Settings loaded:', settingsLoaded);
           console.log('📊 Number of saved settings:', Object.keys(savedSettings).length);
@@ -958,7 +950,7 @@ export default function StockXRepricing() {
           });
         } else {
           console.log('⚠️ Settings not applied:', {
-            hasUser: !!currentUser,
+            hasUser: !!authUser,
             settingsLoaded,
             savedSettingsCount: Object.keys(savedSettings).length
           });
@@ -993,13 +985,13 @@ export default function StockXRepricing() {
         }
         
         // If user is logged in but settings haven't loaded yet, load them now
-        if (currentUser && !settingsLoaded) {
+        if (authUser && !settingsLoaded) {
           console.log('🔄 Loading saved settings for user after listings fetch...');
-          await loadSavedSettings(currentUser.uid);
+          await loadSavedSettings(authUser.uid);
           
           // Re-apply settings to the listings we just fetched
           const refreshedSettings = await getDocuments('stockxPricingSettings');
-          const userSettings = refreshedSettings.filter(s => s.userId === currentUser.uid);
+          const userSettings = refreshedSettings.filter(s => s.userId === authUser.uid);
           const settingsMap: Record<string, any> = {};
           userSettings.forEach(setting => {
             settingsMap[setting.listingId] = setting;
@@ -1393,7 +1385,7 @@ export default function StockXRepricing() {
     
     console.log('📋 Listing found:', !!listing);
     console.log('📋 Pending strategy:', pendingStrategy);
-    console.log('📋 Current user:', currentUser);
+    console.log('📋 Current user:', authUser);
     
     if (!listing || !pendingStrategy) {
       console.error('❌ Cannot save: missing listing or pending strategy');
@@ -2674,7 +2666,7 @@ export default function StockXRepricing() {
                         <button
                           onClick={() => {
                             console.log('🖱️ Save button clicked!');
-                            console.log('📊 State:', { tempInterval, autoRepricingInterval, hasUser: !!currentUser });
+                            console.log('📊 State:', { tempInterval, autoRepricingInterval, hasUser: !!authUser });
                             saveAutoRepricingInterval();
                           }}
                           disabled={savingInterval}
