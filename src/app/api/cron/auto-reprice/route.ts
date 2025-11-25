@@ -24,8 +24,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Import adminDb lazily to avoid initialization errors
-    const { adminDb } = await import('@/lib/firebase/admin');
+    // Import and initialize Firebase Admin
+    const { getAdminDb } = await import('@/lib/firebase/admin');
+    const adminDb = getAdminDb();
     
     if (!adminDb) {
       return NextResponse.json({ 
