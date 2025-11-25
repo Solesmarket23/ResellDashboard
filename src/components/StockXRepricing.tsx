@@ -1337,24 +1337,26 @@ export default function StockXRepricing() {
     
     if (!listing || !pendingStrategy) return;
     
-    // Validate: Check if min and max prices are set
-    if (!listing.minPrice || listing.minPrice <= 0) {
-      setBulkActionMessage('⚠️ Please enter a Min price before saving the pricing rule');
-      setTimeout(() => setBulkActionMessage(null), 5000);
-      return;
-    }
-    
-    if (!listing.maxPrice || listing.maxPrice <= 0) {
-      setBulkActionMessage('⚠️ Please enter a Max price before saving the pricing rule');
-      setTimeout(() => setBulkActionMessage(null), 5000);
-      return;
-    }
-    
-    // Validate: Min should be less than Max
-    if (listing.minPrice >= listing.maxPrice) {
-      setBulkActionMessage('⚠️ Min price must be less than Max price');
-      setTimeout(() => setBulkActionMessage(null), 5000);
-      return;
+    // Only validate min/max prices for manual pricing strategy
+    if (pendingStrategy.type === 'manual') {
+      if (!listing.minPrice || listing.minPrice <= 0) {
+        setBulkActionMessage('⚠️ Please enter a Min price before saving manual pricing');
+        setTimeout(() => setBulkActionMessage(null), 5000);
+        return;
+      }
+      
+      if (!listing.maxPrice || listing.maxPrice <= 0) {
+        setBulkActionMessage('⚠️ Please enter a Max price before saving manual pricing');
+        setTimeout(() => setBulkActionMessage(null), 5000);
+        return;
+      }
+      
+      // Validate: Min should be less than Max
+      if (listing.minPrice >= listing.maxPrice) {
+        setBulkActionMessage('⚠️ Min price must be less than Max price');
+        setTimeout(() => setBulkActionMessage(null), 5000);
+        return;
+      }
     }
     
     // Check if this listing is part of a group
