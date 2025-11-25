@@ -137,17 +137,62 @@ export async function GET(request: NextRequest) {
 
         console.log(`📦 Found ${listings.length} active listings for user ${userId}`);
 
-        // Prepare repricing items
-        const itemsToReprice = listings.map((listing: any) => ({
-          listingId: listing.id,
-          productId: listing.product?.id,
-          currentPrice: listing.amount,
-          lowestAsk: listing.product?.market?.lowestAsk || listing.amount,
-          highestBid: listing.product?.market?.highestBid || 0
-        }));
+        // Load saved settings for each listing from Firebase
+        const settingsSnapshot = await adminDb.collection('stockxListingSettings')
+          .where('userId', '==', userId)
+          .get();
+        
+        const savedSettings = new Map();
+        settingsSnapshot.forEach(doc => {
+          const data = doc.data();
+          savedSettings.set(data.listingId, data);
+        });
 
-        // Call the batch reprice API internally
-        const repriceResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/stockx/batch-reprice`, {
+        console.log(`⚙️ Loaded ${savedSettings.size} saved listing settings`);
+
+        // Prepare repricing items, but skip listings with "manual" pricing strategy
+        const itemsToReprice = listings
+          .filter((listing: any) => {
+            const settings = savedSettings.get(listing.id);
+            const pricingStrategy = settings?.pricingStrategy;
+            
+            // Skip if pricing strategy is "manual" or "keep_current"
+            if (pricingStrategy?.type === 'manual') {
+              console.log(`⏭️ Skipping listing ${listing.id}: Manual pricing strategy`);
+              return false;
+            }
+            if (pricingStrategy?.type === 'keep_current') {
+              console.log(`⏭️ Skipping listing ${listing.id}: Keep current strategy`);
+              return false;
+            }
+            
+            return true;
+          })
+          .map((listing: any) => {
+            const settings = savedSettings.get(listing.id);
+            return {
+              listingId: listing.id,
+              productId: listing.product?.id,
+              variantId: listing.variant?.id,
+              currentPrice: listing.amount,
+              lowestAsk: listing.product?.market?.lowestAsk || listing.amount,
+              highestBid: listing.product?.market?.highestBid || 0,
+              pricingStrategy: settings?.pricingStrategy,
+              minPrice: settings?.minPrice,
+              maxPrice: settings?.maxPrice,
+              autoDeactivate: settings?.autoDeactivate
+            };
+          });
+
+        if (itemsToReprice.length === 0) {
+          console.log(`⏭️ No listings to reprice for user ${userId} (all are manual or keep_current)`);
+          continue;
+        }
+
+        console.log(`🎯 Repricing ${itemsToReprice.length} listings (skipped ${listings.length - itemsToReprice.length} manual/keep_current)`);
+
+        // Call the repricing API internally (using individual strategies)
+        const repriceResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/stockx/repricing`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -156,10 +201,18 @@ export async function GET(request: NextRequest) {
             'x-user-id': userId
           },
           body: JSON.stringify({
-            items: itemsToReprice,
-            strategy: repricingConfig.strategy,
+            listings: itemsToReprice,
+            strategy: {
+              type: repricingConfig.strategy || 'competitive',
+              settings: {
+                minProfitMargin: repricingConfig.minProfitMargin || 5,
+                maxPriceReduction: repricingConfig.maxReduction || 20,
+                competitiveBuffer: repricingConfig.competitiveBuffer || 1,
+                aggressiveness: 'moderate'
+              }
+            },
             dryRun: false,
-            config: repricingConfig
+            useIndividualStrategies: true // Use individual strategies per listing
           })
         });
 
