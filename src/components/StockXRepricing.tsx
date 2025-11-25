@@ -1480,7 +1480,19 @@ export default function StockXRepricing() {
   // Apply manual price immediately to StockX
   const applyManualPriceNow = async (listingId: string) => {
     const listing = listings.find(l => l.listingId === listingId);
-    if (!listing) return;
+    if (!listing) {
+      console.error('❌ Listing not found:', listingId);
+      return;
+    }
+    
+    console.log('🎯 Applying manual price for listing:', {
+      listingId,
+      currentPrice: listing.currentPrice,
+      manualPrice: listing.pricingStrategy?.manualPrice,
+      minPrice: listing.minPrice,
+      maxPrice: listing.maxPrice,
+      pricingStrategy: listing.pricingStrategy
+    });
     
     // Validate manual price is set
     if (!listing.pricingStrategy?.manualPrice || listing.pricingStrategy.manualPrice <= 0) {
@@ -1511,37 +1523,57 @@ export default function StockXRepricing() {
     
     setLoading(true);
     try {
+      const requestBody = {
+        listings: [{
+          ...listing,
+          costBasis: listing.costBasis || listing.retailPrice || listing.originalPrice * 0.7,
+        }],
+        strategy,
+        dryRun: false, // Always execute for manual price
+        useIndividualStrategies: true,
+        inventoryGroups: Array.from(inventoryGroups.values())
+      };
+      
+      console.log('📤 Sending repricing request:', requestBody);
+      
       // Call the repricing API with just this one listing
       const response = await fetch('/api/stockx/repricing', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          listings: [{
-            ...listing,
-            costBasis: listing.costBasis || listing.retailPrice || listing.originalPrice * 0.7,
-          }],
-          strategy,
-          dryRun: false, // Always execute for manual price
-          useIndividualStrategies: true,
-          inventoryGroups: Array.from(inventoryGroups.values())
-        })
+        body: JSON.stringify(requestBody)
       });
 
       const data = await response.json();
+      console.log('📥 Repricing response:', data);
       
       if (data.success && data.results && Array.isArray(data.results)) {
-        setBulkActionMessage(`✅ Price updated to $${listing.pricingStrategy.manualPrice} on StockX!`);
-        setTimeout(() => setBulkActionMessage(null), 5000);
-        // Refresh listings to show updated price
-        await fetchListings(true);
+        const result = data.results[0];
+        console.log('✅ Repricing result:', result);
+        
+        if (result.action === 'updated') {
+          setBulkActionMessage(`✅ Price updated to $${result.newPrice} on StockX!`);
+          setTimeout(() => setBulkActionMessage(null), 5000);
+          // Refresh listings to show updated price
+          await fetchListings(true);
+        } else if (result.action === 'no_change') {
+          setBulkActionMessage(`ℹ️ ${result.reason || 'No price change needed'}`);
+          setTimeout(() => setBulkActionMessage(null), 5000);
+        } else if (result.action === 'failed') {
+          setBulkActionMessage(`❌ Failed: ${result.reason || 'Unknown error'}`);
+          setTimeout(() => setBulkActionMessage(null), 10000);
+        } else {
+          setBulkActionMessage(`⚠️ Unexpected result: ${result.action}`);
+          setTimeout(() => setBulkActionMessage(null), 10000);
+        }
       } else {
-        setBulkActionMessage(`❌ Failed to update price: ${data.error || 'Unknown error'}`);
+        console.error('❌ Repricing failed:', data);
+        setBulkActionMessage(`❌ Failed to update price: ${data.error || data.errors?.join(', ') || 'Unknown error'}`);
         setTimeout(() => setBulkActionMessage(null), 10000);
       }
     } catch (error) {
-      console.error('Manual price update error:', error);
+      console.error('❌ Manual price update error:', error);
       setBulkActionMessage('❌ Failed to update price on StockX');
       setTimeout(() => setBulkActionMessage(null), 10000);
     } finally {
