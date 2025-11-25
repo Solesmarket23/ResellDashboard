@@ -477,6 +477,32 @@ export default function StockXListingCreator() {
         
         if (data.isComplete) {
           if (data.isSuccessful) {
+            // Save default pricing strategy for new listing
+            if (user?.uid) {
+              try {
+                const { collection, addDoc } = await import('firebase/firestore');
+                const { db } = await import('@/lib/firebase/firebase');
+                
+                await addDoc(collection(db, 'stockxListingSettings'), {
+                  userId: user.uid,
+                  listingId: listingId,
+                  pricingStrategy: {
+                    type: 'manual', // Default new listings to manual so cron doesn't touch them
+                    manualPrice: parseFloat(listingPrice)
+                  },
+                  minPrice: Math.floor(parseFloat(listingPrice) * 0.8), // Default min: 80% of listing price
+                  maxPrice: Math.ceil(parseFloat(listingPrice) * 1.2), // Default max: 120% of listing price
+                  autoDeactivate: false,
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString()
+                });
+                
+                console.log('✅ Saved default pricing strategy for new listing:', listingId);
+              } catch (error) {
+                console.error('❌ Failed to save default pricing strategy:', error);
+              }
+            }
+            
             // Success! Clear form
             setSelectedProduct(null);
             setSelectedVariant(null);
