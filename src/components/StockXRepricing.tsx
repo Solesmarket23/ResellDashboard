@@ -726,23 +726,55 @@ export default function StockXRepricing() {
     console.log('⏱️ Temp interval:', tempInterval);
     console.log('⏱️ Current interval:', autoRepricingInterval);
     
-    if (!currentUser) {
-      console.error('❌ No current user - cannot save interval');
-      alert('❌ You must be logged in to save settings. Please refresh the page and try again.');
+    // Try to get user ID from Firebase auth first, then fall back to StockX user ID from cookies
+    let userId = currentUser?.uid;
+    
+    if (!userId) {
+      // Try to get StockX user ID from cookies as fallback
+      const cookies = document.cookie.split(';');
+      const userIdCookie = cookies.find(c => c.trim().startsWith('stockx_user_id='));
+      if (userIdCookie) {
+        userId = userIdCookie.split('=')[1];
+        console.log('📦 Using StockX user ID from cookies:', userId);
+      }
+    }
+    
+    if (!userId) {
+      console.error('❌ No user ID found - cannot save interval');
+      alert('❌ You must be connected to StockX to save settings. Please connect on the StockX Arbitrage page first.');
       return;
     }
     
     try {
       setSavingInterval(true);
-      console.log('🔄 Saving interval to Firebase...');
+      console.log('🔄 Saving interval to Firebase for user:', userId);
       
-      const { doc, updateDoc } = await import('firebase/firestore');
+      const { doc, updateDoc, setDoc, getDoc } = await import('firebase/firestore');
       const { db } = await import('@/lib/firebase/firebase');
       
-      await updateDoc(doc(db, 'users', currentUser.uid), {
-        'stockxAutoRepricingConfig.intervalMinutes': tempInterval,
-        updatedAt: new Date().toISOString()
-      });
+      const userDocRef = doc(db, 'users', userId);
+      
+      // Check if document exists, create if not
+      const userDoc = await getDoc(userDocRef);
+      if (!userDoc.exists()) {
+        console.log('📝 Creating new user document...');
+        await setDoc(userDocRef, {
+          stockxAutoRepricingConfig: {
+            intervalMinutes: tempInterval,
+            strategy: 'individual'
+          },
+          autoRepricingEnabled: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+      } else {
+        console.log('📝 Updating existing user document...');
+        await updateDoc(userDocRef, {
+          'stockxAutoRepricingConfig.intervalMinutes': tempInterval,
+          'autoRepricingEnabled': true,
+          updatedAt: new Date().toISOString()
+        });
+      }
       
       console.log('✅ Interval saved successfully to Firebase');
       setAutoRepricingInterval(tempInterval);
