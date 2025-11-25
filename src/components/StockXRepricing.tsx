@@ -1477,6 +1477,78 @@ export default function StockXRepricing() {
     });
   };
 
+  // Apply manual price immediately to StockX
+  const applyManualPriceNow = async (listingId: string) => {
+    const listing = listings.find(l => l.listingId === listingId);
+    if (!listing) return;
+    
+    // Validate manual price is set
+    if (!listing.pricingStrategy?.manualPrice || listing.pricingStrategy.manualPrice <= 0) {
+      setBulkActionMessage('⚠️ Please enter a valid manual price first');
+      setTimeout(() => setBulkActionMessage(null), 5000);
+      return;
+    }
+    
+    // Validate min/max prices
+    if (!listing.minPrice || listing.minPrice <= 0) {
+      setBulkActionMessage('⚠️ Please set a Min price before applying manual price');
+      setTimeout(() => setBulkActionMessage(null), 5000);
+      return;
+    }
+    
+    if (!listing.maxPrice || listing.maxPrice <= 0) {
+      setBulkActionMessage('⚠️ Please set a Max price before applying manual price');
+      setTimeout(() => setBulkActionMessage(null), 5000);
+      return;
+    }
+    
+    // Validate manual price is within range
+    if (listing.pricingStrategy.manualPrice < listing.minPrice || listing.pricingStrategy.manualPrice > listing.maxPrice) {
+      setBulkActionMessage(`⚠️ Manual price ($${listing.pricingStrategy.manualPrice}) must be between Min ($${listing.minPrice}) and Max ($${listing.maxPrice})`);
+      setTimeout(() => setBulkActionMessage(null), 5000);
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      // Call the repricing API with just this one listing
+      const response = await fetch('/api/stockx/repricing', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          listings: [{
+            ...listing,
+            costBasis: listing.costBasis || listing.retailPrice || listing.originalPrice * 0.7,
+          }],
+          strategy,
+          dryRun: false, // Always execute for manual price
+          useIndividualStrategies: true,
+          inventoryGroups: Array.from(inventoryGroups.values())
+        })
+      });
+
+      const data = await response.json();
+      
+      if (data.success && data.results && Array.isArray(data.results)) {
+        setBulkActionMessage(`✅ Price updated to $${listing.pricingStrategy.manualPrice} on StockX!`);
+        setTimeout(() => setBulkActionMessage(null), 5000);
+        // Refresh listings to show updated price
+        await fetchListings(true);
+      } else {
+        setBulkActionMessage(`❌ Failed to update price: ${data.error || 'Unknown error'}`);
+        setTimeout(() => setBulkActionMessage(null), 10000);
+      }
+    } catch (error) {
+      console.error('Manual price update error:', error);
+      setBulkActionMessage('❌ Failed to update price on StockX');
+      setTimeout(() => setBulkActionMessage(null), 10000);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const updateMinPrice = (listingId: string, minPrice: number) => {
     console.log(`🔧 updateMinPrice called for ${listingId} with value: ${minPrice}`);
     const listing = listings.find(l => l.listingId === listingId);
@@ -3147,29 +3219,44 @@ export default function StockXRepricing() {
                           </select>
                         ) : (listing.pricingStrategy?.type === 'percentage_below' ||
                             listing.pricingStrategy?.type === 'manual') ? (
-                          <input
-                            type="number"
-                            min="1"
-                            value={
-                              listing.pricingStrategy?.type === 'manual' 
-                                ? listing.pricingStrategy?.manualPrice || listing.currentPrice
-                                : listing.pricingStrategy?.value || 1
-                            }
-                            onChange={(e) => {
-                              const value = parseFloat(e.target.value);
-                              if (listing.pricingStrategy?.type === 'manual') {
-                                updateManualPrice(listing.listingId, value);
-                              } else {
-                                updateStrategyValue(listing.listingId, value);
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              min="1"
+                              value={
+                                listing.pricingStrategy?.type === 'manual' 
+                                  ? listing.pricingStrategy?.manualPrice || listing.currentPrice
+                                  : listing.pricingStrategy?.value || 1
                               }
-                            }}
-                            className={`w-[70px] text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
-                              isNeon 
-                                ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
-                                : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
-                            }`}
-                            placeholder={listing.pricingStrategy?.type === 'manual' ? '$' : '#'}
-                          />
+                              onChange={(e) => {
+                                const value = parseFloat(e.target.value);
+                                if (listing.pricingStrategy?.type === 'manual') {
+                                  updateManualPrice(listing.listingId, value);
+                                } else {
+                                  updateStrategyValue(listing.listingId, value);
+                                }
+                              }}
+                              className={`w-[70px] text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
+                                isNeon 
+                                  ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
+                                  : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
+                              }`}
+                              placeholder={listing.pricingStrategy?.type === 'manual' ? '$' : '#'}
+                            />
+                            {listing.pricingStrategy?.type === 'manual' && (
+                              <button
+                                onClick={() => applyManualPriceNow(listing.listingId)}
+                                className={`px-2 py-1 rounded text-xs font-semibold transition-all whitespace-nowrap ${
+                                  isNeon
+                                    ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white'
+                                    : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                                }`}
+                                title="Apply this price to StockX now"
+                              >
+                                Apply
+                              </button>
+                            )}
+                          </div>
                         ) : (
                           <div className="w-[70px]"></div>
                         )}
