@@ -1337,7 +1337,7 @@ export default function StockXRepricing() {
     
     if (!listing || !pendingStrategy) return;
     
-    // Only validate min/max prices for manual pricing strategy
+    // For manual pricing, min/max are REQUIRED
     if (pendingStrategy.type === 'manual') {
       if (!listing.minPrice || listing.minPrice <= 0) {
         setBulkActionMessage('⚠️ Please enter a Min price before saving manual pricing');
@@ -1350,13 +1350,21 @@ export default function StockXRepricing() {
         setTimeout(() => setBulkActionMessage(null), 5000);
         return;
       }
-      
-      // Validate: Min should be less than Max
+    }
+    
+    // For all strategies: if min/max are provided, validate they make sense
+    if (listing.minPrice && listing.maxPrice) {
       if (listing.minPrice >= listing.maxPrice) {
         setBulkActionMessage('⚠️ Min price must be less than Max price');
         setTimeout(() => setBulkActionMessage(null), 5000);
         return;
       }
+    }
+    
+    // Warn if automated strategy has no safety bounds (but still allow saving)
+    if (pendingStrategy.type !== 'manual' && pendingStrategy.type !== 'keep_current' && 
+        (!listing.minPrice || !listing.maxPrice)) {
+      console.warn(`⚠️ Saving ${pendingStrategy.type} without min/max safety bounds for listing ${listingId}`);
     }
     
     // Check if this listing is part of a group
