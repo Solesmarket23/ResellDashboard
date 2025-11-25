@@ -150,7 +150,7 @@ export async function GET(request: NextRequest) {
 
         console.log(`⚙️ Loaded ${savedSettings.size} saved listing settings`);
 
-        // Prepare repricing items, but skip listings with "manual" pricing strategy
+        // Prepare repricing items, filtering by pricing strategy
         const itemsToReprice = listings
           .filter((listing: any) => {
             const settings = savedSettings.get(listing.id);
@@ -158,19 +158,22 @@ export async function GET(request: NextRequest) {
             
             // If no settings found, skip the listing (user hasn't configured it yet)
             if (!settings) {
-              console.log(`⏭️ Skipping listing ${listing.id}: No saved settings (default to keep current)`);
+              console.log(`⏭️ Skipping listing ${listing.id}: No saved settings (opt-in required)`);
               return false;
             }
             
             // Skip if pricing strategy is "manual" or "keep_current"
             if (pricingStrategy?.type === 'manual') {
-              console.log(`⏭️ Skipping listing ${listing.id}: Manual pricing strategy`);
+              console.log(`⏭️ Skipping listing ${listing.id}: Manual pricing (user-controlled)`);
               return false;
             }
             if (pricingStrategy?.type === 'keep_current') {
-              console.log(`⏭️ Skipping listing ${listing.id}: Keep current strategy`);
+              console.log(`⏭️ Skipping listing ${listing.id}: Keep current price`);
               return false;
             }
+            
+            // Log which strategy will be used
+            console.log(`✅ Will reprice listing ${listing.id} using "${pricingStrategy?.type}" strategy`);
             
             return true;
           })
@@ -197,7 +200,7 @@ export async function GET(request: NextRequest) {
 
         console.log(`🎯 Repricing ${itemsToReprice.length} listings (skipped ${listings.length - itemsToReprice.length} manual/keep_current)`);
 
-        // Call the repricing API internally (using individual strategies)
+        // Call the repricing API internally (using individual strategies per listing)
         const repriceResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/stockx/repricing`, {
           method: 'POST',
           headers: {
@@ -208,17 +211,18 @@ export async function GET(request: NextRequest) {
           },
           body: JSON.stringify({
             listings: itemsToReprice,
+            // No global strategy - each listing uses its own saved pricing rule
             strategy: {
-              type: repricingConfig.strategy || 'competitive',
+              type: 'competitive', // Fallback only (not used when useIndividualStrategies is true)
               settings: {
-                minProfitMargin: repricingConfig.minProfitMargin || 5,
-                maxPriceReduction: repricingConfig.maxReduction || 20,
-                competitiveBuffer: repricingConfig.competitiveBuffer || 1,
+                minProfitMargin: 5,
+                maxPriceReduction: 20,
+                competitiveBuffer: 1,
                 aggressiveness: 'moderate'
               }
             },
             dryRun: false,
-            useIndividualStrategies: true // Use individual strategies per listing
+            useIndividualStrategies: true // Use individual pricing rules per listing
           })
         });
 
