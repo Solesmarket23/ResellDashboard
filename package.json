@@ -18,6 +18,7 @@
     "disable-repricing": "node scripts/disable-repricing.js",
     "setup-repricing": "node scripts/create-user-and-enable-repricing.js",
     "quick-setup": "node scripts/setup-repricing-by-uid.js",
+    "check-repricing-status": "node scripts/check-repricing-status.js",
     "show-vercel-env": "node scripts/show-vercel-env.js"
   },
   "dependencies": {
