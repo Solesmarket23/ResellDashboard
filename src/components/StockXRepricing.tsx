@@ -957,8 +957,16 @@ export default function StockXRepricing() {
         setAuthError(true);
         // Keep existing listings to prevent flicker
       } else {
-        console.log('No listings found or invalid response:', data);
+        console.error('❌ Error response from API:', data);
+        if (data.error) {
+          console.error('❌ Error:', data.error);
+          console.error('❌ Message:', data.message);
+          console.error('❌ Details:', data.details);
+        }
         setListings([]);
+        // Show error to user
+        setBulkActionMessage(`❌ Failed to load listings: ${data.message || data.error || 'Unknown error'}`);
+        setTimeout(() => setBulkActionMessage(null), 10000);
       }
     } catch (error) {
       console.error('❌ Failed to fetch listings:', error);

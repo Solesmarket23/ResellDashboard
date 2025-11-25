@@ -731,10 +731,13 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('❌ Error fetching listings:', error);
+    console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace');
     return NextResponse.json({ 
       success: false, 
       error: 'Failed to fetch listings', 
-      details: error.message 
+      message: error instanceof Error ? error.message : 'Unknown error',
+      details: error instanceof Error ? error.stack : String(error),
+      timestamp: new Date().toISOString()
     }, { status: 500 });
   }
 }
