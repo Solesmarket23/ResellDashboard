@@ -69,9 +69,20 @@ export async function POST(request: NextRequest) {
     const userIds = [cookieUserId, firebaseUserId].filter(Boolean);
     const uniqueUserIds = [...new Set(userIds)];
     
+    const saveResults = [];
     for (const userId of uniqueUserIds) {
-      await adminDb.collection('users').doc(userId!).set(tokenData, { merge: true });
-      console.log('✅ StockX tokens synced from cookies to Firebase for user:', userId);
+      try {
+        await adminDb.collection('users').doc(userId!).set(tokenData, { merge: true });
+        console.log('✅ StockX tokens synced from cookies to Firebase for user:', userId);
+        saveResults.push({ userId, success: true });
+      } catch (error) {
+        console.error(`❌ Failed to save tokens for user ${userId}:`, error);
+        saveResults.push({ 
+          userId, 
+          success: false, 
+          error: error instanceof Error ? error.message : 'Unknown error' 
+        });
+      }
     }
 
     console.log('✅ Auto-repricing enabled for all users');
@@ -79,7 +90,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: 'Tokens synced and auto-repricing enabled',
-      userIds: uniqueUserIds
+      userIds: uniqueUserIds,
+      saveResults,
+      tokenPreview: accessToken.substring(0, 30) + '...'
     });
 
   } catch (error) {
