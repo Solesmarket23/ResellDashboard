@@ -762,10 +762,33 @@ export default function StockXRepricing() {
       
       if (data.success && data.listings && Array.isArray(data.listings)) {
         setAuthenticated(true); // User is authenticated if we got listings
-        const enrichedListings = data.listings.map((listing: any) => ({
-          ...listing,
-          selected: false
-        }));
+        
+        // Load cached market prices
+        let cachedPrices: Record<string, any> = {};
+        try {
+          const cached = localStorage.getItem('stockx_market_prices');
+          if (cached) {
+            cachedPrices = JSON.parse(cached);
+            console.log('📦 Loaded cached market prices for', Object.keys(cachedPrices).length, 'listings');
+          }
+        } catch (error) {
+          console.error('Error loading cached prices:', error);
+        }
+        
+        const enrichedListings = data.listings.map((listing: any) => {
+          const cached = cachedPrices[listing.listingId];
+          // Only use cache if it's less than 1 hour old
+          const isRecentCache = cached && (Date.now() - cached.cachedAt < 3600000);
+          
+          return {
+            ...listing,
+            selected: false,
+            // Apply cached prices if available and recent
+            lowestAsk: isRecentCache && cached.lowestAsk ? cached.lowestAsk : listing.lowestAsk,
+            highestBid: isRecentCache && cached.highestBid ? cached.highestBid : listing.highestBid,
+            lastSale: isRecentCache && cached.lastSale ? cached.lastSale : listing.lastSale
+          };
+        });
         
         // Process inventory groups
         const groupedListings = processInventoryGroups(enrichedListings);
@@ -1003,18 +1026,40 @@ export default function StockXRepricing() {
         const data = await response.json();
         if (data.success && data.marketData) {
           // Update listings with market data
-          setListings(prev => prev.map(listing => {
-            const marketInfo = data.marketData.find((m: any) => m.listingId === listing.listingId);
-            if (marketInfo && marketInfo.marketData) {
-              return {
-                ...listing,
-                lowestAsk: marketInfo.marketData.lowestAsk,
-                highestBid: marketInfo.marketData.highestBid,
-                lastSale: marketInfo.marketData.lastSale
-              };
+          setListings(prev => {
+            const updated = prev.map(listing => {
+              const marketInfo = data.marketData.find((m: any) => m.listingId === listing.listingId);
+              if (marketInfo && marketInfo.marketData) {
+                return {
+                  ...listing,
+                  lowestAsk: marketInfo.marketData.lowestAsk,
+                  highestBid: marketInfo.marketData.highestBid,
+                  lastSale: marketInfo.marketData.lastSale
+                };
+              }
+              return listing;
+            });
+            
+            // Cache market data to localStorage
+            try {
+              const cacheData = updated.reduce((acc: any, listing) => {
+                if (listing.lowestAsk || listing.highestBid) {
+                  acc[listing.listingId] = {
+                    lowestAsk: listing.lowestAsk,
+                    highestBid: listing.highestBid,
+                    lastSale: listing.lastSale,
+                    cachedAt: Date.now()
+                  };
+                }
+                return acc;
+              }, {});
+              localStorage.setItem('stockx_market_prices', JSON.stringify(cacheData));
+            } catch (error) {
+              console.error('Error caching market prices:', error);
             }
-            return listing;
-          }));
+            
+            return updated;
+          });
         }
       }
     } catch (error) {
