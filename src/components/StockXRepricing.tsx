@@ -1316,7 +1316,8 @@ export default function StockXRepricing() {
       }
     }
     
-    // Store as pending change instead of saving immediately
+    // Always store as pending change (even if same value is selected)
+    // This ensures Save button always appears when dropdown is clicked
     setPendingStrategyChanges(prev => ({
       ...prev,
       [listingId]: newStrategy
