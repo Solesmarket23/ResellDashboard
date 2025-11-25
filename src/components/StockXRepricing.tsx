@@ -1308,6 +1308,26 @@ export default function StockXRepricing() {
     
     if (!listing || !pendingStrategy) return;
     
+    // Validate: Check if min and max prices are set
+    if (!listing.minPrice || listing.minPrice <= 0) {
+      setBulkActionMessage('⚠️ Please enter a Min price before saving the pricing rule');
+      setTimeout(() => setBulkActionMessage(null), 5000);
+      return;
+    }
+    
+    if (!listing.maxPrice || listing.maxPrice <= 0) {
+      setBulkActionMessage('⚠️ Please enter a Max price before saving the pricing rule');
+      setTimeout(() => setBulkActionMessage(null), 5000);
+      return;
+    }
+    
+    // Validate: Min should be less than Max
+    if (listing.minPrice >= listing.maxPrice) {
+      setBulkActionMessage('⚠️ Min price must be less than Max price');
+      setTimeout(() => setBulkActionMessage(null), 5000);
+      return;
+    }
+    
     // Check if this listing is part of a group
     const group = listing.inventoryGroupId ? inventoryGroups.get(listing.inventoryGroupId) : null;
     const listingsToUpdate = (group && group.listings.length > 1 && listing.isGroupLeader) 
@@ -1325,21 +1345,38 @@ export default function StockXRepricing() {
     }
     
     // Save to Firebase for all updated listings
-    for (const l of listingsToUpdate) {
-      await saveSettingToFirebase(l.listingId, {
-        pricingStrategy: pendingStrategy,
-        minPrice: l.minPrice,
-        maxPrice: l.maxPrice,
-        autoDeactivate: l.autoDeactivate
+    try {
+      for (const l of listingsToUpdate) {
+        await saveSettingToFirebase(l.listingId, {
+          pricingStrategy: pendingStrategy,
+          minPrice: l.minPrice,
+          maxPrice: l.maxPrice,
+          autoDeactivate: l.autoDeactivate
+        });
+      }
+      
+      // Show success message
+      const strategyLabel = pendingStrategy.type === 'beat_lowest' ? 'Beat Lowest by $1' :
+                           pendingStrategy.type === 'match_lowest' ? 'Match Lowest' :
+                           pendingStrategy.type === 'market_peek' ? 'Market Peek' :
+                           pendingStrategy.type === 'percentage_below' ? `Below ${pendingStrategy.value}%` :
+                           pendingStrategy.type === 'manual' ? 'Manual' :
+                           'Keep Current';
+      
+      setBulkActionMessage(`✅ Pricing rule saved: ${strategyLabel} (Min: $${listing.minPrice}, Max: $${listing.maxPrice})`);
+      setTimeout(() => setBulkActionMessage(null), 5000);
+      
+      // Remove from pending changes
+      setPendingStrategyChanges(prev => {
+        const newPending = { ...prev };
+        delete newPending[listingId];
+        return newPending;
       });
+    } catch (error) {
+      console.error('Error saving pricing rule:', error);
+      setBulkActionMessage('❌ Failed to save pricing rule. Please try again.');
+      setTimeout(() => setBulkActionMessage(null), 5000);
     }
-    
-    // Remove from pending changes
-    setPendingStrategyChanges(prev => {
-      const newPending = { ...prev };
-      delete newPending[listingId];
-      return newPending;
-    });
   };
 
   const updatePeekFrequency = (listingId: string, frequency: 'conservative' | 'balanced' | 'aggressive') => {
@@ -2465,14 +2502,28 @@ export default function StockXRepricing() {
         )}
       </div>
 
-      {/* Success Message */}
+      {/* Notification Message */}
       {bulkActionMessage && (
         <div className={`rounded-lg p-4 mb-4 flex items-center gap-3 animate-fadeIn ${
-          isNeon 
-            ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-400'
-            : 'bg-green-50 border border-green-200 text-green-800'
+          bulkActionMessage.startsWith('✅')
+            ? isNeon 
+              ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-400'
+              : 'bg-green-50 border border-green-200 text-green-800'
+            : bulkActionMessage.startsWith('⚠️')
+            ? isNeon
+              ? 'bg-yellow-500/20 border border-yellow-500/30 text-yellow-400'
+              : 'bg-yellow-50 border border-yellow-200 text-yellow-800'
+            : isNeon
+              ? 'bg-red-500/20 border border-red-500/30 text-red-400'
+              : 'bg-red-50 border border-red-200 text-red-800'
         }`}>
-          <CheckCircle className="w-5 h-5 flex-shrink-0" />
+          {bulkActionMessage.startsWith('✅') ? (
+            <CheckCircle className="w-5 h-5 flex-shrink-0" />
+          ) : bulkActionMessage.startsWith('⚠️') ? (
+            <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+          ) : (
+            <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+          )}
           <span className="font-medium">{bulkActionMessage}</span>
         </div>
       )}
