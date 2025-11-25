@@ -19,6 +19,8 @@
     "setup-repricing": "node scripts/create-user-and-enable-repricing.js",
     "quick-setup": "node scripts/setup-repricing-by-uid.js",
     "check-repricing-status": "node scripts/check-repricing-status.js",
+    "check-repricing-logs": "node scripts/check-repricing-logs.js",
+    "test-cron-reprice": "node scripts/test-cron-reprice.js",
     "show-vercel-env": "node scripts/show-vercel-env.js"
   },
   "dependencies": {
