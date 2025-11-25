@@ -42,9 +42,11 @@ export async function POST(request: NextRequest) {
     // Try to get access token from Authorization header first (for cron jobs), then from cookies
     let accessToken = request.headers.get('authorization')?.replace('Bearer ', '');
     let refreshToken: string | undefined;
+    const userId = request.headers.get('x-user-id'); // Get user ID from cron job
     
     console.log('🔍 Repricing API - Auth header:', request.headers.get('authorization') ? 'Present' : 'Missing');
     console.log('🔍 Access token from header:', accessToken ? `${accessToken.substring(0, 20)}...` : 'None');
+    console.log('🔍 User ID from header:', userId || 'None');
     
     if (!accessToken) {
       // Fall back to cookies for browser requests
@@ -52,6 +54,18 @@ export async function POST(request: NextRequest) {
       accessToken = cookieStore.get('stockx_access_token')?.value;
       refreshToken = cookieStore.get('stockx_refresh_token')?.value;
       console.log('🔍 Access token from cookies:', accessToken ? `${accessToken.substring(0, 20)}...` : 'None');
+    } else if (userId) {
+      // If we have a user ID from cron job, load refresh token from Firebase
+      try {
+        const { getAdminDb } = await import('@/lib/firebase/admin');
+        const adminDb = getAdminDb();
+        const userDoc = await adminDb.collection('users').doc(userId).get();
+        const userData = userDoc.data();
+        refreshToken = userData?.stockxTokens?.refresh_token;
+        console.log('🔍 Loaded refresh token from Firebase:', refreshToken ? 'Present' : 'Missing');
+      } catch (error) {
+        console.log('⚠️ Could not load refresh token from Firebase:', error);
+      }
     }
     
     if (!accessToken) {
