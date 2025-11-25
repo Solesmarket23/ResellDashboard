@@ -5,12 +5,24 @@ import { getFirestore } from 'firebase-admin/firestore';
 let adminApp;
 let adminDb;
 
-// Initialize Firebase Admin SDK
-const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+// Lazy initialization function - only runs when actually needed
+function initializeAdmin() {
+  if (adminDb) {
+    return adminDb; // Already initialized
+  }
 
-if (!adminApp && projectId && clientEmail && privateKey) {
+  const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+
+  if (!projectId || !clientEmail || !privateKey) {
+    console.error('⚠️ Firebase Admin SDK cannot initialize - missing credentials');
+    console.error(`  - projectId: ${projectId ? '✓' : '✗'}`);
+    console.error(`  - clientEmail: ${clientEmail ? '✓' : '✗'}`);
+    console.error(`  - privateKey: ${privateKey ? '✓' : '✗'}`);
+    return null;
+  }
+
   try {
     adminApp = getApps().length ? getApps()[0] : initializeApp({
       credential: cert({
@@ -23,15 +35,25 @@ if (!adminApp && projectId && clientEmail && privateKey) {
     
     adminDb = getFirestore(adminApp);
     console.log('✅ Firebase Admin SDK initialized successfully');
+    return adminDb;
   } catch (error) {
     console.error('❌ Firebase Admin SDK initialization failed:', error);
+    return null;
   }
-} else if (!projectId || !clientEmail || !privateKey) {
-  console.warn('⚠️ Firebase Admin SDK not initialized - missing credentials');
-  console.warn(`  - projectId: ${projectId ? '✓' : '✗'}`);
-  console.warn(`  - clientEmail: ${clientEmail ? '✓' : '✗'}`);
-  console.warn(`  - privateKey: ${privateKey ? '✓' : '✗'}`);
 }
+
+// Export adminDb with getter that initializes on first access
+export { adminApp };
+export const getAdminDb = () => {
+  return initializeAdmin();
+};
+
+// For backward compatibility, export adminDb but initialize it lazily
+Object.defineProperty(exports, 'adminDb', {
+  get() {
+    return initializeAdmin();
+  }
+});
 
 // Server-side Firestore functions
 export const addDocumentAdmin = async (collectionName: string, data: any) => {
