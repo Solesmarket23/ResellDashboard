@@ -39,9 +39,16 @@ interface ListingToReprice {
 
 export async function POST(request: NextRequest) {
   try {
-    const cookieStore = cookies();
-    let accessToken = cookieStore.get('stockx_access_token')?.value;
-    const refreshToken = cookieStore.get('stockx_refresh_token')?.value;
+    // Try to get access token from Authorization header first (for cron jobs), then from cookies
+    let accessToken = request.headers.get('authorization')?.replace('Bearer ', '');
+    let refreshToken: string | undefined;
+    
+    if (!accessToken) {
+      // Fall back to cookies for browser requests
+      const cookieStore = cookies();
+      accessToken = cookieStore.get('stockx_access_token')?.value;
+      refreshToken = cookieStore.get('stockx_refresh_token')?.value;
+    }
     
     if (!accessToken) {
       return NextResponse.json({ error: 'No access token found' }, { status: 401 });
