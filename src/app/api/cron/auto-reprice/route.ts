@@ -159,55 +159,42 @@ export async function GET(request: NextRequest) {
         });
 
         console.log(`⚙️ Loaded ${savedSettings.size} saved listing settings`);
-        
-        // Debug: Show first listing structure to understand ID field
-        if (listings.length > 0) {
-          console.log('🔍 First listing structure:', JSON.stringify({
-            id: listings[0].id,
-            listingId: listings[0].listingId,
-            _id: listings[0]._id,
-            keys: Object.keys(listings[0])
-          }, null, 2));
-        }
-        
-        // Debug: Show saved settings IDs
-        console.log('🔑 Saved settings listing IDs:', Array.from(savedSettings.keys()).slice(0, 3));
 
         // Prepare repricing items, filtering by pricing strategy
         const itemsToReprice = listings
           .filter((listing: any) => {
-            const settings = savedSettings.get(listing.id);
+            const settings = savedSettings.get(listing.listingId); // FIXED: Use listingId instead of id
             const pricingStrategy = settings?.pricingStrategy;
             
             // If no settings found, skip the listing (user hasn't configured it yet)
             if (!settings) {
-              console.log(`⏭️ Skipping listing ${listing.id}: No saved settings (opt-in required)`);
+              console.log(`⏭️ Skipping listing ${listing.listingId}: No saved settings (opt-in required)`);
               return false;
             }
             
             // Skip if pricing strategy is "manual" or "keep_current"
             if (pricingStrategy?.type === 'manual') {
-              console.log(`⏭️ Skipping listing ${listing.id}: Manual pricing (user-controlled)`);
+              console.log(`⏭️ Skipping listing ${listing.listingId}: Manual pricing (user-controlled)`);
               return false;
             }
             if (pricingStrategy?.type === 'keep_current') {
-              console.log(`⏭️ Skipping listing ${listing.id}: Keep current price`);
+              console.log(`⏭️ Skipping listing ${listing.listingId}: Keep current price`);
               return false;
             }
             
             // Log which strategy will be used
-            console.log(`✅ Will reprice listing ${listing.id} using "${pricingStrategy?.type}" strategy`);
+            console.log(`✅ Will reprice listing ${listing.listingId} using "${pricingStrategy?.type}" strategy`);
             
             return true;
           })
           .map((listing: any) => {
-            const settings = savedSettings.get(listing.id);
+            const settings = savedSettings.get(listing.listingId); // FIXED: Use listingId instead of id
             return {
-              listingId: listing.id,
+              listingId: listing.listingId, // FIXED: Use listingId instead of id
               productId: listing.product?.id,
               variantId: listing.variant?.id,
-              currentPrice: listing.amount,
-              lowestAsk: listing.product?.market?.lowestAsk || listing.amount,
+              currentPrice: parseInt(listing.amount), // Parse to number
+              lowestAsk: listing.product?.market?.lowestAsk || parseInt(listing.amount),
               highestBid: listing.product?.market?.highestBid || 0,
               pricingStrategy: settings?.pricingStrategy,
               minPrice: settings?.minPrice,
@@ -222,11 +209,6 @@ export async function GET(request: NextRequest) {
         }
 
         console.log(`🎯 Repricing ${itemsToReprice.length} listings (skipped ${listings.length - itemsToReprice.length} manual/keep_current)`);
-        
-        // Debug: Log one item to see structure
-        if (itemsToReprice.length > 0) {
-          console.log('📦 Sample item to reprice:', JSON.stringify(itemsToReprice[0], null, 2));
-        }
 
         // Call the repricing API internally (using individual strategies per listing)
         const repriceResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/stockx/repricing`, {
