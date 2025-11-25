@@ -198,6 +198,34 @@ export async function GET(request: NextRequest) {
       response.cookies.delete('stockx_state');
       response.cookies.delete('stockx_return_to');
 
+      // Save tokens to Firebase for server-side cron job access
+      try {
+        const { getUserIdFromRequest } = await import('@/lib/utils/userApiKeyHelper');
+        const { getAdminDb } = await import('@/lib/firebase/admin');
+        
+        const userId = getUserIdFromRequest(request);
+        const adminDb = getAdminDb();
+        
+        if (adminDb && userId) {
+          await adminDb.collection('users').doc(userId).set({
+            stockxTokens: {
+              access_token: tokens.access_token,
+              refresh_token: tokens.refresh_token,
+              expires_at: expiresAt,
+              updated_at: new Date().toISOString()
+            }
+          }, { merge: true });
+          console.log('✅ StockX tokens saved to Firebase for user:', userId);
+        } else if (!userId) {
+          console.warn('⚠️ No user ID found, tokens not saved to Firebase');
+        } else if (!adminDb) {
+          console.warn('⚠️ Firebase Admin not initialized, tokens not saved');
+        }
+      } catch (error) {
+        console.error('❌ Failed to save tokens to Firebase:', error);
+        // Don't fail the OAuth flow if Firebase save fails
+      }
+
       console.log('✅ Fresh tokens stored successfully, redirecting to:', finalRedirect);
       return response;
 
