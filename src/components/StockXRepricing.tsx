@@ -3036,9 +3036,9 @@ export default function StockXRepricing() {
                         </span>
                         <input
                           type="number"
-                          min="1"
+                          min="0"
                           step="1"
-                          value={listing.minPrice || ''}
+                          value={listing.minPrice && listing.minPrice > 0 ? listing.minPrice : ''}
                           onChange={(e) => {
                             console.log(`📝 Min price onChange for ${listing.listingId}: ${e.target.value}`);
                             updateMinPrice(listing.listingId, Math.round(parseFloat(e.target.value) || 0));
@@ -3053,8 +3053,7 @@ export default function StockXRepricing() {
                               ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
                               : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
                           }`}
-                          placeholder="200"
-                          required
+                          placeholder=""
                         />
                       </div>
                     </td>
@@ -3067,9 +3066,9 @@ export default function StockXRepricing() {
                         </span>
                         <input
                           type="number"
-                          min="1"
+                          min="0"
                           step="1"
-                          value={listing.maxPrice || ''}
+                          value={listing.maxPrice && listing.maxPrice > 0 ? listing.maxPrice : ''}
                           onChange={(e) => {
                             console.log(`📝 Max price onChange for ${listing.listingId}: ${e.target.value}`);
                             updateMaxPrice(listing.listingId, Math.round(parseFloat(e.target.value) || 0));
@@ -3084,8 +3083,7 @@ export default function StockXRepricing() {
                               ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
                               : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
                           }`}
-                          placeholder="400"
-                          required
+                          placeholder=""
                         />
                       </div>
                     </td>
