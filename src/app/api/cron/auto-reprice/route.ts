@@ -156,6 +156,12 @@ export async function GET(request: NextRequest) {
             const settings = savedSettings.get(listing.id);
             const pricingStrategy = settings?.pricingStrategy;
             
+            // If no settings found, skip the listing (user hasn't configured it yet)
+            if (!settings) {
+              console.log(`⏭️ Skipping listing ${listing.id}: No saved settings (default to keep current)`);
+              return false;
+            }
+            
             // Skip if pricing strategy is "manual" or "keep_current"
             if (pricingStrategy?.type === 'manual') {
               console.log(`⏭️ Skipping listing ${listing.id}: Manual pricing strategy`);
