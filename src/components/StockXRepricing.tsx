@@ -186,6 +186,9 @@ export default function StockXRepricing() {
   const [tempInterval, setTempInterval] = useState(30);
   const [savingInterval, setSavingInterval] = useState(false);
   
+  // Track pending pricing rule changes
+  const [pendingStrategyChanges, setPendingStrategyChanges] = useState<Record<string, IndividualPricingStrategy>>({});
+  
   // Sorting logic
   const sortedListings = [...listings].sort((a, b) => {
     if (!sortColumn) return 0;
@@ -1284,28 +1287,58 @@ export default function StockXRepricing() {
       }
     }
     
+    // Store as pending change instead of saving immediately
+    setPendingStrategyChanges(prev => ({
+      ...prev,
+      [listingId]: newStrategy
+    }));
+    
+    // Update UI immediately for preview
+    setListings(prev => prev.map(l => 
+      l.listingId === listingId 
+        ? { ...l, pricingStrategy: newStrategy }
+        : l
+    ));
+  };
+
+  // Save the pending pricing rule change
+  const savePricingRuleChange = async (listingId: string) => {
+    const listing = listings.find(l => l.listingId === listingId);
+    const pendingStrategy = pendingStrategyChanges[listingId];
+    
+    if (!listing || !pendingStrategy) return;
+    
     // Check if this listing is part of a group
     const group = listing.inventoryGroupId ? inventoryGroups.get(listing.inventoryGroupId) : null;
     const listingsToUpdate = (group && group.listings.length > 1 && listing.isGroupLeader) 
       ? group.listings 
       : [listing];
     
-    // Update all listings in the group (if leader) or just this listing
-    setListings(prev => prev.map(l => {
-      const shouldUpdate = listingsToUpdate.some(ul => ul.listingId === l.listingId);
-      return shouldUpdate
-        ? { ...l, pricingStrategy: newStrategy }
-        : l;
-    }));
+    // Update all listings in the group (if leader)
+    if (listingsToUpdate.length > 1) {
+      setListings(prev => prev.map(l => {
+        const shouldUpdate = listingsToUpdate.some(ul => ul.listingId === l.listingId);
+        return shouldUpdate
+          ? { ...l, pricingStrategy: pendingStrategy }
+          : l;
+      }));
+    }
     
     // Save to Firebase for all updated listings
-    listingsToUpdate.forEach(l => {
-      saveSettingToFirebase(l.listingId, {
-        pricingStrategy: newStrategy,
+    for (const l of listingsToUpdate) {
+      await saveSettingToFirebase(l.listingId, {
+        pricingStrategy: pendingStrategy,
         minPrice: l.minPrice,
         maxPrice: l.maxPrice,
         autoDeactivate: l.autoDeactivate
       });
+    }
+    
+    // Remove from pending changes
+    setPendingStrategyChanges(prev => {
+      const newPending = { ...prev };
+      delete newPending[listingId];
+      return newPending;
     });
   };
 
@@ -2968,7 +3001,7 @@ export default function StockXRepricing() {
                       ${listing.lowestAsk || '-'}
                     </td>
                     <td className="p-2">
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-2">
                         <NeonDropdown
                           value={listing.pricingStrategy?.type || 'keep_current'}
                           onChange={(value) => updateListingStrategy(listing.listingId, value as any)}
@@ -2983,6 +3016,20 @@ export default function StockXRepricing() {
                           isNeon={isNeon}
                           className="flex-1"
                         />
+                        {pendingStrategyChanges[listing.listingId] && (
+                          <button
+                            onClick={() => savePricingRuleChange(listing.listingId)}
+                            className={`px-2 py-1 rounded text-xs font-semibold transition-all whitespace-nowrap flex items-center gap-1 ${
+                              isNeon
+                                ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white'
+                                : 'bg-blue-600 text-white hover:bg-blue-700'
+                            }`}
+                            title="Save pricing rule"
+                          >
+                            <Save className="w-3 h-3" />
+                            Save
+                          </button>
+                        )}
                         {listing.pricingStrategy?.type === 'market_peek' ? (
                           <select
                             value={listing.pricingStrategy?.peekSettings?.frequency || 'balanced'}
