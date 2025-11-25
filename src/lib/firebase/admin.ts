@@ -6,15 +6,19 @@ let adminApp;
 let adminDb;
 
 // Initialize Firebase Admin SDK
-if (!adminApp && process.env.FIREBASE_PROJECT_ID) {
+const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+
+if (!adminApp && projectId && clientEmail && privateKey) {
   try {
     adminApp = getApps().length ? getApps()[0] : initializeApp({
       credential: cert({
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+        projectId,
+        clientEmail,
+        privateKey,
       }),
-      projectId: process.env.FIREBASE_PROJECT_ID,
+      projectId,
     });
     
     adminDb = getFirestore(adminApp);
@@ -22,6 +26,11 @@ if (!adminApp && process.env.FIREBASE_PROJECT_ID) {
   } catch (error) {
     console.error('❌ Firebase Admin SDK initialization failed:', error);
   }
+} else if (!projectId || !clientEmail || !privateKey) {
+  console.warn('⚠️ Firebase Admin SDK not initialized - missing credentials');
+  console.warn(`  - projectId: ${projectId ? '✓' : '✗'}`);
+  console.warn(`  - clientEmail: ${clientEmail ? '✓' : '✗'}`);
+  console.warn(`  - privateKey: ${privateKey ? '✓' : '✗'}`);
 }
 
 // Server-side Firestore functions

@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Import adminDb lazily to avoid initialization errors
-    const { adminDb } = await import('@/lib/firebase/firebaseAdmin');
+    const { adminDb } = await import('@/lib/firebase/admin');
     
     if (!adminDb) {
       return NextResponse.json({ 
