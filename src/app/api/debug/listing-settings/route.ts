@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     
     for (const userId of userIds) {
       // Get all listing settings for this user
-      const settingsSnapshot = await adminDb.collection('stockxListingSettings')
+      const settingsSnapshot = await adminDb.collection('stockxPricingSettings')
         .where('userId', '==', userId)
         .get();
       
@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get all listing settings for this user (use first user ID for backward compatibility)
-    const settingsSnapshot = await adminDb.collection('stockxListingSettings')
+    const settingsSnapshot = await adminDb.collection('stockxPricingSettings')
       .where('userId', '==', userIds[0])
       .get();
 

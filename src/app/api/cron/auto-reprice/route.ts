@@ -148,7 +148,7 @@ export async function GET(request: NextRequest) {
         console.log(`📦 Found ${listings.length} active listings for user ${userId}`);
 
         // Load saved settings for each listing from Firebase
-        const settingsSnapshot = await adminDb.collection('stockxListingSettings')
+        const settingsSnapshot = await adminDb.collection('stockxPricingSettings')
           .where('userId', '==', userId)
           .get();
         
