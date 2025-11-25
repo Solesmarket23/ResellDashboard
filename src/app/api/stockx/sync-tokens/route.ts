@@ -7,12 +7,21 @@ import { getUserIdFromRequest } from '@/lib/utils/userApiKeyHelper';
  */
 export async function POST(request: NextRequest) {
   try {
-    // Get user ID from request
-    const userId = getUserIdFromRequest(request);
+    // Get user ID from request (from site-user-id cookie)
+    const cookieUserId = getUserIdFromRequest(request);
     
-    if (!userId) {
+    // Also try to get Firebase auth user ID from a custom header or body
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      body = {};
+    }
+    const firebaseUserId = body.firebaseUserId;
+    
+    if (!cookieUserId && !firebaseUserId) {
       return NextResponse.json(
-        { error: 'User ID not found in cookies' },
+        { error: 'User ID not found in cookies or request body' },
         { status: 400 }
       );
     }
@@ -42,8 +51,7 @@ export async function POST(request: NextRequest) {
     // Calculate expiration time (default to 1 hour)
     const expiresAt = Date.now() + (3600 * 1000);
 
-    // Save tokens to Firebase and ensure auto-repricing is enabled
-    await adminDb.collection('users').doc(userId).set({
+    const tokenData = {
       stockxTokens: {
         access_token: accessToken,
         refresh_token: refreshToken,
@@ -55,15 +63,23 @@ export async function POST(request: NextRequest) {
         intervalMinutes: 5,
         strategy: 'individual'
       }
-    }, { merge: true });
+    };
 
-    console.log('✅ StockX tokens synced from cookies to Firebase for user:', userId);
-    console.log('✅ Auto-repricing enabled for user:', userId);
+    // Save to both user IDs if they're different
+    const userIds = [cookieUserId, firebaseUserId].filter(Boolean);
+    const uniqueUserIds = [...new Set(userIds)];
+    
+    for (const userId of uniqueUserIds) {
+      await adminDb.collection('users').doc(userId!).set(tokenData, { merge: true });
+      console.log('✅ StockX tokens synced from cookies to Firebase for user:', userId);
+    }
+
+    console.log('✅ Auto-repricing enabled for all users');
 
     return NextResponse.json({
       success: true,
       message: 'Tokens synced and auto-repricing enabled',
-      userId
+      userIds: uniqueUserIds
     });
 
   } catch (error) {
