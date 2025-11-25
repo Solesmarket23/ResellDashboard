@@ -383,28 +383,26 @@ function performSafetyChecks(listing: ListingToReprice, newPrice: number, strate
 
 async function updateListingPrice(listingId: string, newPrice: number, accessToken: string) {
   try {
-    const response = await fetch(`https://api.stockx.com/v2/selling/listings/${listingId}`, {
-      method: 'PATCH',
+    // Use internal endpoint that handles token refresh and polling
+    const baseUrl = 'https://www.solesmarket.com';
+    const response = await fetch(`${baseUrl}/api/stockx/listings/update-price`, {
+      method: 'POST',
       headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'x-api-key': process.env.STOCKX_CLIENT_ID || '',
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`
       },
-      body: JSON.stringify({
-        amount: String(newPrice), // Use 'amount' and ensure it's a string
-        currencyCode: 'USD' // Add currency code
-      })
+      body: JSON.stringify({ listingId, amount: newPrice })
     });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`Update failed: ${response.status} - ${errorData.message || 'Unknown error'}`);
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok || !data.success) {
+      return { success: false, error: data.error || `Update failed: ${response.status}` };
     }
 
-    const result = await response.json();
-    return { success: true, operation: result };
+    return { success: true, operation: data };
   } catch (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: (error as Error).message };
   }
 }
 

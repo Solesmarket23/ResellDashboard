@@ -252,7 +252,7 @@ export async function GET(request: NextRequest) {
         }
 
         const repriceData = await repriceResponse.json();
-        const successCount = repriceData.results?.filter((r: any) => r.success).length || 0;
+        const successCount = (repriceData.results?.filter((r: any) => (r.success === true) || (r.action === 'updated'))?.length) || 0;
         
         totalListingsRepriced += successCount;
         console.log(`✅ Successfully repriced ${successCount} listings for user ${userId}`);
