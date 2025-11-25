@@ -1333,10 +1333,19 @@ export default function StockXRepricing() {
 
   // Save the pending pricing rule change
   const savePricingRuleChange = async (listingId: string) => {
+    console.log('💾 Save button clicked for listing:', listingId);
+    
     const listing = listings.find(l => l.listingId === listingId);
     const pendingStrategy = pendingStrategyChanges[listingId];
     
-    if (!listing || !pendingStrategy) return;
+    console.log('📋 Listing found:', !!listing);
+    console.log('📋 Pending strategy:', pendingStrategy);
+    console.log('📋 Current user:', currentUser);
+    
+    if (!listing || !pendingStrategy) {
+      console.error('❌ Cannot save: missing listing or pending strategy');
+      return;
+    }
     
     // For manual pricing, min/max are REQUIRED
     if (pendingStrategy.type === 'manual') {
