@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
-import { DollarSign, TrendingDown, Target, Zap, RefreshCw, AlertTriangle, CheckCircle, Loader, Package, Copy, Check, ChevronUp, ChevronDown, ChevronsUpDown, Clock, Save } from 'lucide-react';
+import { DollarSign, TrendingDown, Target, Zap, RefreshCw, AlertTriangle, CheckCircle, Loader, Package, Copy, Check, ChevronUp, ChevronDown, ChevronsUpDown, Clock, Save, X } from 'lucide-react';
 import NeonDropdown from './NeonDropdown';
 import { addDocument, getDocuments, updateDocument, deleteField } from '@/lib/firebase/firebaseUtils';
 import { auth } from '@/lib/firebase/firebase';
@@ -2510,29 +2510,42 @@ export default function StockXRepricing() {
         )}
       </div>
 
-      {/* Notification Message */}
+      {/* Toast Notification - Fixed position in corner */}
       {bulkActionMessage && (
-        <div className={`rounded-lg p-4 mb-4 flex items-center gap-3 animate-fadeIn ${
-          bulkActionMessage.startsWith('✅')
-            ? isNeon 
-              ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-400'
-              : 'bg-green-50 border border-green-200 text-green-800'
-            : bulkActionMessage.startsWith('⚠️')
-            ? isNeon
-              ? 'bg-yellow-500/20 border border-yellow-500/30 text-yellow-400'
-              : 'bg-yellow-50 border border-yellow-200 text-yellow-800'
-            : isNeon
-              ? 'bg-red-500/20 border border-red-500/30 text-red-400'
-              : 'bg-red-50 border border-red-200 text-red-800'
-        }`}>
-          {bulkActionMessage.startsWith('✅') ? (
-            <CheckCircle className="w-5 h-5 flex-shrink-0" />
-          ) : bulkActionMessage.startsWith('⚠️') ? (
-            <AlertTriangle className="w-5 h-5 flex-shrink-0" />
-          ) : (
-            <AlertTriangle className="w-5 h-5 flex-shrink-0" />
-          )}
-          <span className="font-medium">{bulkActionMessage}</span>
+        <div className="fixed top-4 right-4 z-50 max-w-md animate-slide-in-right">
+          <div className={`rounded-lg p-4 shadow-2xl flex items-start gap-3 ${
+            bulkActionMessage.startsWith('✅')
+              ? isNeon 
+                ? 'bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 backdrop-blur-sm'
+                : 'bg-green-50 border border-green-300 text-green-800'
+              : bulkActionMessage.startsWith('⚠️')
+              ? isNeon
+                ? 'bg-yellow-500/20 border border-yellow-500/50 text-yellow-400 backdrop-blur-sm'
+                : 'bg-yellow-50 border border-yellow-300 text-yellow-800'
+              : isNeon
+                ? 'bg-red-500/20 border border-red-500/50 text-red-400 backdrop-blur-sm'
+                : 'bg-red-50 border border-red-300 text-red-800'
+          }`}>
+            {bulkActionMessage.startsWith('✅') ? (
+              <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            ) : bulkActionMessage.startsWith('⚠️') ? (
+              <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            ) : (
+              <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            )}
+            <div className="flex-1">
+              <p className="font-medium text-sm leading-relaxed">{bulkActionMessage}</p>
+            </div>
+            <button
+              onClick={() => setBulkActionMessage(null)}
+              className={`flex-shrink-0 ${
+                isNeon ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-700'
+              } transition-colors`}
+              aria-label="Close notification"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
 
