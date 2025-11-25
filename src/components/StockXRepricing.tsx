@@ -1523,69 +1523,38 @@ export default function StockXRepricing() {
     
     setLoading(true);
     try {
-      const requestBody = {
-        listings: [{
-          ...listing,
-          costBasis: listing.costBasis || listing.retailPrice || listing.originalPrice * 0.7,
-        }],
-        strategy,
-        dryRun: false, // Always execute for manual price
-        useIndividualStrategies: true,
-        inventoryGroups: Array.from(inventoryGroups.values())
-      };
+      console.log('📤 Updating price directly via StockX API...');
       
-      console.log('📤 Sending repricing request:', requestBody);
-      
-      // Call the repricing API with just this one listing
-      const response = await fetch('/api/stockx/repricing', {
+      // Use the direct update-price endpoint (simpler and more reliable)
+      const response = await fetch('/api/stockx/listings/update-price', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify({
+          listingId: listing.listingId,
+          amount: listing.pricingStrategy.manualPrice
+        })
       });
 
       const data = await response.json();
-      console.log('📥 Repricing response:', data);
+      console.log('📥 Update response:', data);
       
-      // Check if there are errors
-      if (data.errors && data.errors.length > 0) {
-        console.error('❌ Repricing errors:', data.errors);
-        const errorMessage = data.errors[0];
-        
-        // Check for 401 authentication error
-        if (errorMessage.includes('401') || errorMessage.toLowerCase().includes('unauthorized')) {
-          setBulkActionMessage('⚠️ StockX access token expired. Please re-authenticate with StockX and try again.');
-          setTimeout(() => setBulkActionMessage(null), 10000);
-        } else {
-          setBulkActionMessage(`❌ ${errorMessage}`);
-          setTimeout(() => setBulkActionMessage(null), 10000);
-        }
+      // Check for authentication error
+      if (data.needsAuth || (data.error && (data.error.includes('401') || data.error.toLowerCase().includes('token expired')))) {
+        setBulkActionMessage('⚠️ StockX access token expired. Please re-authenticate with StockX and try again.');
+        setTimeout(() => setBulkActionMessage(null), 10000);
         return;
       }
       
-      if (data.success && data.results && Array.isArray(data.results) && data.results.length > 0) {
-        const result = data.results[0];
-        console.log('✅ Repricing result:', result);
-        
-        if (result.action === 'updated') {
-          setBulkActionMessage(`✅ Price updated to $${result.newPrice} on StockX!`);
-          setTimeout(() => setBulkActionMessage(null), 5000);
-          // Refresh listings to show updated price
-          await fetchListings(true);
-        } else if (result.action === 'no_change') {
-          setBulkActionMessage(`ℹ️ ${result.reason || 'No price change needed'}`);
-          setTimeout(() => setBulkActionMessage(null), 5000);
-        } else if (result.action === 'failed') {
-          setBulkActionMessage(`❌ Failed: ${result.reason || 'Unknown error'}`);
-          setTimeout(() => setBulkActionMessage(null), 10000);
-        } else {
-          setBulkActionMessage(`⚠️ Unexpected result: ${result.action}`);
-          setTimeout(() => setBulkActionMessage(null), 10000);
-        }
+      if (data.success) {
+        setBulkActionMessage(`✅ Price updated to $${data.newPrice} on StockX!`);
+        setTimeout(() => setBulkActionMessage(null), 5000);
+        // Refresh listings to show updated price
+        await fetchListings(true);
       } else {
-        console.error('❌ Repricing failed:', data);
-        setBulkActionMessage(`❌ Failed to update price: ${data.error || 'No results returned'}`);
+        console.error('❌ Update failed:', data);
+        setBulkActionMessage(`❌ ${data.error || 'Failed to update price'}`);
         setTimeout(() => setBulkActionMessage(null), 10000);
       }
     } catch (error) {
