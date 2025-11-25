@@ -1551,8 +1551,16 @@ export default function StockXRepricing() {
       // Check if there are errors
       if (data.errors && data.errors.length > 0) {
         console.error('❌ Repricing errors:', data.errors);
-        setBulkActionMessage(`❌ ${data.errors[0]}`);
-        setTimeout(() => setBulkActionMessage(null), 10000);
+        const errorMessage = data.errors[0];
+        
+        // Check for 401 authentication error
+        if (errorMessage.includes('401') || errorMessage.toLowerCase().includes('unauthorized')) {
+          setBulkActionMessage('⚠️ StockX access token expired. Please re-authenticate with StockX and try again.');
+          setTimeout(() => setBulkActionMessage(null), 10000);
+        } else {
+          setBulkActionMessage(`❌ ${errorMessage}`);
+          setTimeout(() => setBulkActionMessage(null), 10000);
+        }
         return;
       }
       
