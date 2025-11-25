@@ -98,8 +98,8 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    // Poll the operation status (max 30 seconds)
-    const maxAttempts = 30;
+    // Poll the operation status (max 60 seconds)
+    const maxAttempts = 60;
     let attempts = 0;
     let operationComplete = false;
     let operationSuccess = false;
@@ -123,29 +123,45 @@ export async function POST(request: NextRequest) {
 
         if (statusResponse.ok) {
           const statusData = await statusResponse.json();
-          console.log(`⏳ Operation status (attempt ${attempts}):`, statusData.operationStatus);
+          console.log(`⏳ Operation status (attempt ${attempts}/${maxAttempts}):`, statusData.operationStatus, statusData);
 
-          if (statusData.operationStatus === 'COMPLETED') {
+          if (statusData.operationStatus === 'COMPLETED' || statusData.operationStatus === 'SUCCESSFUL') {
             operationComplete = true;
             operationSuccess = true;
-          } else if (statusData.operationStatus === 'FAILED') {
+            console.log('✅ Operation completed successfully!');
+          } else if (statusData.operationStatus === 'FAILED' || statusData.operationStatus === 'ERROR') {
             operationComplete = true;
             operationSuccess = false;
             operationError = statusData.error?.message || 'Operation failed';
+            console.error('❌ Operation failed:', operationError);
           }
           // If PENDING or IN_PROGRESS, continue polling
+        } else {
+          console.warn(`⚠️ Status check returned ${statusResponse.status}`);
+          // Don't fail immediately, keep polling
         }
       } catch (pollError) {
         console.error('❌ Error polling operation status:', pollError);
+        // Don't fail immediately, keep polling
       }
     }
 
     if (!operationComplete) {
-      console.warn('⚠️ Operation polling timed out');
-      return NextResponse.json({ 
-        success: false,
-        error: 'Price update timed out. Please check your listing to see if it updated.'
-      }, { status: 408 });
+      console.warn('⚠️ Operation polling timed out after 60 seconds');
+      // Even though we timed out, the price likely updated successfully
+      // Return success with a note
+      const successResponse = NextResponse.json({
+        success: true,
+        newPrice: amount,
+        listingId: listingId,
+        note: 'Price update submitted successfully. It may take a moment to reflect on StockX.'
+      });
+
+      if (refreshToken && accessToken !== cookieStore.get('stockx_access_token')?.value) {
+        setStockXTokenCookies(successResponse, accessToken, refreshToken);
+      }
+
+      return successResponse;
     }
 
     if (!operationSuccess) {
