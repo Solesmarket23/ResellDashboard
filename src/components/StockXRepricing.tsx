@@ -180,7 +180,7 @@ export default function StockXRepricing() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   
   // Auto-repricing settings
-  const [showAutoRepricingSettings, setShowAutoRepricingSettings] = useState(false);
+  const [showAutoRepricingSettings, setShowAutoRepricingSettings] = useState(true); // Default to expanded
   const [autoRepricingEnabled, setAutoRepricingEnabled] = useState(false);
   const [autoRepricingInterval, setAutoRepricingInterval] = useState(30);
   const [tempInterval, setTempInterval] = useState(30);
@@ -2352,80 +2352,81 @@ export default function StockXRepricing() {
                 Choose how frequently your listings should be automatically repriced. The system will check and update prices based on your selected interval.
               </p>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="space-y-3">
                 {[
-                  { value: 5, label: '5 minutes', desc: 'Very aggressive' },
-                  { value: 15, label: '15 minutes', desc: 'Aggressive' },
-                  { value: 30, label: '30 minutes', desc: 'Moderate' },
-                  { value: 60, label: '1 hour', desc: 'Conservative' },
-                  { value: 120, label: '2 hours', desc: 'Very conservative' },
-                  { value: 240, label: '4 hours', desc: 'Minimal' },
+                  { value: 5, label: '5 minutes', desc: 'Very aggressive - Maximum responsiveness' },
+                  { value: 15, label: '15 minutes', desc: 'Aggressive - Quick market adaptation' },
+                  { value: 30, label: '30 minutes', desc: 'Moderate - Balanced approach' },
+                  { value: 60, label: '1 hour', desc: 'Conservative - Stable pricing' },
+                  { value: 120, label: '2 hours', desc: 'Very conservative - Minimal changes' },
+                  { value: 240, label: '4 hours', desc: 'Minimal - Occasional updates' },
                 ].map((preset) => (
-                  <button
+                  <div
                     key={preset.value}
-                    onClick={() => setTempInterval(preset.value)}
-                    className={`p-4 rounded-lg border-2 transition-all text-left ${
+                    className={`p-4 rounded-lg border-2 transition-all ${
                       tempInterval === preset.value
                         ? isNeon
                           ? 'border-cyan-500 bg-cyan-500/10'
                           : 'border-blue-500 bg-blue-50'
                         : isNeon
-                          ? 'border-slate-700 bg-slate-700/30 hover:border-slate-600'
-                          : 'border-gray-200 bg-gray-50 hover:border-gray-300'
+                          ? 'border-slate-700 bg-slate-700/30'
+                          : 'border-gray-200 bg-gray-50'
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className={`font-semibold ${isNeon ? 'text-white' : 'text-gray-900'}`}>
-                        {preset.label}
-                      </span>
-                      {autoRepricingInterval === preset.value && (
-                        <span className={`text-xs px-2 py-0.5 rounded ${
-                          isNeon ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-700'
-                        }`}>
-                          Active
-                        </span>
+                    <div className="flex items-center justify-between gap-4">
+                      <button
+                        onClick={() => setTempInterval(preset.value)}
+                        className="flex-1 text-left"
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <Clock className={`w-4 h-4 ${
+                            tempInterval === preset.value 
+                              ? isNeon ? 'text-cyan-400' : 'text-blue-600'
+                              : isNeon ? 'text-gray-400' : 'text-gray-500'
+                          }`} />
+                          <span className={`font-semibold ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+                            {preset.label}
+                          </span>
+                          {autoRepricingInterval === preset.value && (
+                            <span className={`text-xs px-2 py-0.5 rounded ${
+                              isNeon ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-700'
+                            }`}>
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        <p className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                          {preset.desc}
+                        </p>
+                      </button>
+                      
+                      {tempInterval === preset.value && autoRepricingInterval !== preset.value && (
+                        <button
+                          onClick={saveAutoRepricingInterval}
+                          disabled={savingInterval}
+                          className={`px-4 py-2 rounded-lg font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
+                            isNeon
+                              ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white'
+                              : 'bg-blue-600 text-white hover:bg-blue-700'
+                          } disabled:opacity-50`}
+                        >
+                          {savingInterval ? (
+                            <>
+                              <Loader className="w-4 h-4 animate-spin" />
+                              Saving...
+                            </>
+                          ) : (
+                            <>
+                              <Save className="w-4 h-4" />
+                              Save
+                            </>
+                          )}
+                        </button>
                       )}
                     </div>
-                    <p className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-                      {preset.desc}
-                    </p>
-                  </button>
+                  </div>
                 ))}
               </div>
-
-              {tempInterval !== autoRepricingInterval && (
-                <div className="flex items-center justify-between p-4 rounded-lg bg-blue-500/10 border border-blue-500/30">
-                  <div>
-                    <p className={`font-medium ${isNeon ? 'text-cyan-400' : 'text-blue-700'}`}>
-                      Save new interval: {tempInterval} minutes
-                    </p>
-                    <p className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-                      Click save to apply this repricing interval
-                    </p>
-                  </div>
-                  <button
-                    onClick={saveAutoRepricingInterval}
-                    disabled={savingInterval}
-                    className={`px-6 py-2 rounded-lg font-semibold transition-all flex items-center gap-2 ${
-                      isNeon
-                        ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white'
-                        : 'bg-blue-600 text-white hover:bg-blue-700'
-                    } disabled:opacity-50`}
-                  >
-                    {savingInterval ? (
-                      <>
-                        <Loader className="w-4 h-4 animate-spin" />
-                        Saving...
-                      </>
-                    ) : (
-                      <>
-                        <Save className="w-4 h-4" />
-                        Save
-                      </>
-                    )}
-                  </button>
-                </div>
-              )}
             </div>
           </div>
         )}

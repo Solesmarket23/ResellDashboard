@@ -33,18 +33,18 @@ export default function NeonDropdown({ value, onChange, options, className = '',
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center justify-between w-full text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
+        className={`flex items-center justify-between w-full min-w-[140px] text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 whitespace-nowrap ${
           isNeon 
             ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50 hover:border-cyan-400' 
             : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 hover:border-blue-400'
         } ${className}`}
       >
-        <span className="truncate pr-1">{selectedOption?.label || 'Select...'}</span>
+        <span className="pr-1">{selectedOption?.label || 'Select...'}</span>
         <ChevronDown className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
       
       {isOpen && (
-        <div className={`absolute z-50 w-full mt-1 rounded-md shadow-lg overflow-hidden ${
+        <div className={`absolute z-50 w-full min-w-[180px] mt-1 rounded-md shadow-lg overflow-hidden ${
           isNeon 
             ? 'bg-gray-800 border border-cyan-500/50' 
             : 'bg-white border border-gray-200'
