@@ -143,6 +143,7 @@ export default function StockXRepricing() {
     }
   });
   const [loading, setLoading] = useState(false);
+  const [autoRefreshing, setAutoRefreshing] = useState(false);
   const [results, setResults] = useState<RepricingResult[]>([]);
   const [dryRun, setDryRun] = useState(true);
   const [notificationEmail, setNotificationEmail] = useState('');
@@ -294,6 +295,23 @@ export default function StockXRepricing() {
       fetchListings();
     }
   }, [currentUser, settingsLoaded]); // Depend on both user and settings loaded state
+
+  // Auto-refresh listings every 3 minutes to catch new listings
+  useEffect(() => {
+    if (!currentUser || !settingsLoaded) return;
+    
+    console.log('⏰ Setting up auto-refresh for listings (every 3 minutes)...');
+    
+    const refreshInterval = setInterval(() => {
+      console.log('🔄 Auto-refreshing listings to check for new items...');
+      fetchListings(true, true); // Force reload, mark as auto-refresh
+    }, 3 * 60 * 1000); // 3 minutes
+    
+    return () => {
+      console.log('🛑 Clearing listings auto-refresh interval');
+      clearInterval(refreshInterval);
+    };
+  }, [currentUser, settingsLoaded]);
 
   // Load auto-repricing settings
   useEffect(() => {
@@ -716,8 +734,8 @@ export default function StockXRepricing() {
     }
   };
 
-  const fetchListings = async (forceReload = false) => {
-    console.log(`🔄 Fetching listings... (forceReload: ${forceReload})`);
+  const fetchListings = async (forceReload = false, isAutoRefresh = false) => {
+    console.log(`🔄 Fetching listings... (forceReload: ${forceReload}, autoRefresh: ${isAutoRefresh})`);
     console.log('📊 Current state before fetch:', {
       settingsLoaded,
       savedSettingsCount: Object.keys(savedSettings).length,
@@ -725,7 +743,9 @@ export default function StockXRepricing() {
       hasListings: listings.length > 0
     });
     // Only show loading on initial fetch or force reload
-    if (forceReload || listings.length === 0) {
+    if (isAutoRefresh) {
+      setAutoRefreshing(true);
+    } else if (forceReload || listings.length === 0) {
       setLoading(true);
     }
     setAuthError(false);
@@ -973,6 +993,7 @@ export default function StockXRepricing() {
       // Keep existing listings on error to prevent flicker
     } finally {
       setLoading(false);
+      setAutoRefreshing(false);
       console.log(`✅ Fetch complete at ${new Date().toISOString()}`);
     }
   };
@@ -2332,11 +2353,19 @@ export default function StockXRepricing() {
     <div className={`min-h-screen p-6 space-y-6 pb-32 ${isNeon ? 'bg-gray-900 text-white' : 'bg-gray-50'}`}>
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h2 className={`text-3xl font-bold ${
-            isNeon ? 'bg-gradient-to-r from-cyan-400 to-emerald-400 bg-clip-text text-transparent' : 'text-gray-900'
-          }`}>
-            StockX Automated Repricing
-          </h2>
+          <div className="flex items-center gap-3">
+            <h2 className={`text-3xl font-bold ${
+              isNeon ? 'bg-gradient-to-r from-cyan-400 to-emerald-400 bg-clip-text text-transparent' : 'text-gray-900'
+            }`}>
+              StockX Automated Repricing
+            </h2>
+            {autoRefreshing && (
+              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-500/30">
+                <RefreshCw className="w-4 h-4 text-blue-400 animate-spin" />
+                <span className="text-xs text-blue-400 font-medium">Checking for new listings...</span>
+              </div>
+            )}
+          </div>
           <p className={`mt-2 ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
             Optimize your listing prices with intelligent repricing strategies
           </p>
