@@ -211,7 +211,11 @@ export async function GET(request: NextRequest) {
         console.log(`🎯 Repricing ${itemsToReprice.length} listings (skipped ${listings.length - itemsToReprice.length} manual/keep_current)`);
 
         // Call the repricing API internally (using individual strategies per listing)
-        const repriceResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/stockx/repricing`, {
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL 
+          ? `https://${process.env.VERCEL_URL}` 
+          : 'https://www.solesmarket.com';
+        
+        const repriceResponse = await fetch(`${baseUrl}/api/stockx/repricing`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
