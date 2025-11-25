@@ -1548,7 +1548,15 @@ export default function StockXRepricing() {
       const data = await response.json();
       console.log('📥 Repricing response:', data);
       
-      if (data.success && data.results && Array.isArray(data.results)) {
+      // Check if there are errors
+      if (data.errors && data.errors.length > 0) {
+        console.error('❌ Repricing errors:', data.errors);
+        setBulkActionMessage(`❌ ${data.errors[0]}`);
+        setTimeout(() => setBulkActionMessage(null), 10000);
+        return;
+      }
+      
+      if (data.success && data.results && Array.isArray(data.results) && data.results.length > 0) {
         const result = data.results[0];
         console.log('✅ Repricing result:', result);
         
@@ -1569,7 +1577,7 @@ export default function StockXRepricing() {
         }
       } else {
         console.error('❌ Repricing failed:', data);
-        setBulkActionMessage(`❌ Failed to update price: ${data.error || data.errors?.join(', ') || 'Unknown error'}`);
+        setBulkActionMessage(`❌ Failed to update price: ${data.error || 'No results returned'}`);
         setTimeout(() => setBulkActionMessage(null), 10000);
       }
     } catch (error) {
