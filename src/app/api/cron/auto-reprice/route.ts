@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
         const listingsResponse = await fetch('https://api.stockx.com/v2/selling', {
           headers: {
             'Authorization': `Bearer ${stockxTokens.access_token}`,
-            'x-api-key': process.env.STOCKX_API_KEY || '',
+            'x-api-key': process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID || '',
             'Content-Type': 'application/json'
           }
         });
