@@ -383,25 +383,34 @@ function performSafetyChecks(listing: ListingToReprice, newPrice: number, strate
 
 async function updateListingPrice(listingId: string, newPrice: number, accessToken: string) {
   try {
-    // Use internal endpoint that handles token refresh and polling
-    const baseUrl = 'https://www.solesmarket.com';
-    const response = await fetch(`${baseUrl}/api/stockx/listings/update-price`, {
-      method: 'POST',
+    console.log(`🔄 Updating listing ${listingId} to $${newPrice}`);
+    
+    const response = await fetch(`https://api.stockx.com/v2/selling/listings/${listingId}`, {
+      method: 'PATCH',
       headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'X-API-Key': process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID || '',
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`
+        'Accept': 'application/json',
+        'User-Agent': 'ResellDashboard/1.0'
       },
-      body: JSON.stringify({ listingId, amount: newPrice })
+      body: JSON.stringify({
+        amount: String(newPrice),
+        currencyCode: 'USD'
+      })
     });
 
-    const data = await response.json().catch(() => ({}));
-
-    if (!response.ok || !data.success) {
-      return { success: false, error: data.error || `Update failed: ${response.status}` };
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error(`❌ StockX update failed: ${response.status}`, errorData);
+      return { success: false, error: `Update failed: ${response.status} - ${errorData.message || 'Unknown error'}` };
     }
 
-    return { success: true, operation: data };
+    const result = await response.json();
+    console.log(`✅ Update initiated, operation ID: ${result.operationId}`);
+    return { success: true, operation: result };
   } catch (error) {
+    console.error(`❌ Update error:`, error);
     return { success: false, error: (error as Error).message };
   }
 }
