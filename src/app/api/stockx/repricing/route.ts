@@ -244,8 +244,10 @@ async function fetchMarketData(productId: string, variantId: string, accessToken
   const response = await fetch(`https://api.stockx.com/v2/catalog/products/${productId}/variants/${variantId}/market-data`, {
     headers: {
       'Authorization': `Bearer ${accessToken}`,
-      'x-api-key': process.env.STOCKX_CLIENT_ID || '',
-      'Content-Type': 'application/json'
+      'X-API-Key': process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID || '',
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'User-Agent': 'ResellDashboard/1.0'
     }
   });
 
