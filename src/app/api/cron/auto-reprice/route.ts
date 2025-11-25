@@ -252,7 +252,15 @@ export async function GET(request: NextRequest) {
         }
 
         const repriceData = await repriceResponse.json();
+        console.log(`📊 Repricing API response:`, JSON.stringify(repriceData, null, 2));
+        
         const successCount = (repriceData.results?.filter((r: any) => (r.success === true) || (r.action === 'updated'))?.length) || 0;
+        
+        console.log(`📈 Results breakdown:`, {
+          totalResults: repriceData.results?.length || 0,
+          successCount,
+          results: repriceData.results?.map((r: any) => ({ listingId: r.listingId, action: r.action, success: r.success }))
+        });
         
         totalListingsRepriced += successCount;
         console.log(`✅ Successfully repriced ${successCount} listings for user ${userId}`);
