@@ -21,6 +21,7 @@
     "check-repricing-status": "node scripts/check-repricing-status.js",
     "check-repricing-logs": "node scripts/check-repricing-logs.js",
     "test-cron-reprice": "node scripts/test-cron-reprice.js",
+    "save-stockx-tokens": "node scripts/save-stockx-tokens-to-firebase.js",
     "show-vercel-env": "node scripts/show-vercel-env.js"
   },
   "dependencies": {
