@@ -27,11 +27,14 @@ export async function POST(request: NextRequest) {
     console.log(`💰 Updating listing ${listingId} to $${amount}`);
 
     // Try to update the listing price
+    const apiKey = process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID || '';
+    console.log('🔐 Using API Key:', apiKey ? `${apiKey.substring(0, 8)}...` : 'EMPTY');
+    
     let response = await fetch(`https://api.stockx.com/v2/selling/listings/${listingId}`, {
       method: 'PATCH',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
-        'x-api-key': process.env.STOCKX_CLIENT_ID || '',
+        'x-api-key': apiKey,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
@@ -54,7 +57,7 @@ export async function POST(request: NextRequest) {
           method: 'PATCH',
           headers: {
             'Authorization': `Bearer ${accessToken}`,
-            'x-api-key': process.env.STOCKX_CLIENT_ID || '',
+            'x-api-key': apiKey,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -112,7 +115,7 @@ export async function POST(request: NextRequest) {
           {
             headers: {
               'Authorization': `Bearer ${accessToken}`,
-              'x-api-key': process.env.STOCKX_CLIENT_ID || '',
+              'x-api-key': apiKey,
               'Content-Type': 'application/json'
             }
           }
