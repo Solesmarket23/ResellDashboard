@@ -43,16 +43,23 @@ export async function POST(request: NextRequest) {
     let accessToken = request.headers.get('authorization')?.replace('Bearer ', '');
     let refreshToken: string | undefined;
     
+    console.log('🔍 Repricing API - Auth header:', request.headers.get('authorization') ? 'Present' : 'Missing');
+    console.log('🔍 Access token from header:', accessToken ? `${accessToken.substring(0, 20)}...` : 'None');
+    
     if (!accessToken) {
       // Fall back to cookies for browser requests
       const cookieStore = cookies();
       accessToken = cookieStore.get('stockx_access_token')?.value;
       refreshToken = cookieStore.get('stockx_refresh_token')?.value;
+      console.log('🔍 Access token from cookies:', accessToken ? `${accessToken.substring(0, 20)}...` : 'None');
     }
     
     if (!accessToken) {
+      console.log('❌ No access token found in headers or cookies');
       return NextResponse.json({ error: 'No access token found' }, { status: 401 });
     }
+    
+    console.log('✅ Access token available for repricing');
 
     const { 
       listings, 
