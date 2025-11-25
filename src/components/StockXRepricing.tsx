@@ -107,7 +107,6 @@ interface RepricingResult {
 
 export default function StockXRepricing() {
   const { currentTheme } = useTheme();
-  const { user: authUser } = useAuth(); // Use AuthContext for user
   const isNeon = currentTheme.name.toLowerCase() === 'neon';
   
   // StockX Auth Hook for automatic token refresh
@@ -277,18 +276,24 @@ export default function StockXRepricing() {
     });
   }, []);
 
-  // Track auth state from AuthContext
+  // Track auth state directly from Firebase
   useEffect(() => {
-    if (authUser) {
-      console.log('👤 Auth user from context:', authUser.email, authUser.uid);
-      setCurrentUser(authUser);
-      console.log('🔐 User authenticated, loading settings...');
-      loadSavedSettings(authUser.uid);
-    } else {
-      console.log('👤 No auth user from context');
-      setCurrentUser(null);
-    }
-  }, [authUser]);
+    console.log('🔧 Setting up Firebase auth listener...');
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      console.log('👤 Firebase auth state changed:', user ? `${user.email} (${user.uid})` : 'No user');
+      setCurrentUser(user);
+      if (user) {
+        console.log('🔐 User authenticated, loading settings...');
+        loadSavedSettings(user.uid);
+      } else {
+        console.log('⚠️ No user - settings cannot be saved');
+      }
+    });
+    return () => {
+      console.log('🧹 Cleaning up auth listener');
+      unsubscribe();
+    };
+  }, []);
 
   // Fetch listings when component mounts and user is authenticated AND settings are loaded
   useEffect(() => {
