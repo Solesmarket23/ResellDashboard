@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { refreshStockXTokens, setStockXTokenCookies } from '@/lib/stockx/tokenRefresh';
 
 interface RepricingStrategy {
   type: 'competitive' | 'margin_based' | 'velocity_based' | 'hybrid';
@@ -39,7 +40,8 @@ interface ListingToReprice {
 export async function POST(request: NextRequest) {
   try {
     const cookieStore = cookies();
-    const accessToken = cookieStore.get('stockx_access_token')?.value;
+    let accessToken = cookieStore.get('stockx_access_token')?.value;
+    const refreshToken = cookieStore.get('stockx_refresh_token')?.value;
     
     if (!accessToken) {
       return NextResponse.json({ error: 'No access token found' }, { status: 401 });
@@ -63,11 +65,34 @@ export async function POST(request: NextRequest) {
 
     const repricingResults = [];
     const errors = [];
+    let tokenRefreshed = false;
 
     for (const listing of listings) {
       try {
         // Get current market data
-        const marketData = await fetchMarketData(listing.productId, listing.variantId, accessToken);
+        let marketData;
+        try {
+          marketData = await fetchMarketData(listing.productId, listing.variantId, accessToken);
+        } catch (error: any) {
+          // If we get a 401 and haven't tried refreshing yet, refresh the token
+          if (error.message?.includes('401') && !tokenRefreshed && refreshToken) {
+            console.log('🔄 Token expired, attempting refresh...');
+            const refreshResult = await refreshStockXTokens(refreshToken);
+            
+            if (refreshResult.success && refreshResult.accessToken) {
+              accessToken = refreshResult.accessToken;
+              tokenRefreshed = true;
+              console.log('✅ Token refreshed successfully');
+              
+              // Retry fetching market data with new token
+              marketData = await fetchMarketData(listing.productId, listing.variantId, accessToken);
+            } else {
+              throw new Error('Token refresh failed: ' + refreshResult.error);
+            }
+          } else {
+            throw error;
+          }
+        }
         
         if (!marketData) {
           errors.push(`No market data for listing ${listing.listingId}`);
@@ -171,7 +196,7 @@ export async function POST(request: NextRequest) {
       await sendRepricingNotification(notificationEmail, repricingResults, strategy, dryRun);
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       results: repricingResults,
       errors: errors,
@@ -183,6 +208,13 @@ export async function POST(request: NextRequest) {
         dryRun: dryRun
       }
     });
+
+    // If we refreshed the token, set the new cookies
+    if (tokenRefreshed) {
+      setStockXTokenCookies(response, accessToken, refreshToken);
+    }
+
+    return response;
 
   } catch (error) {
     console.error('Repricing error:', error);
