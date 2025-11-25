@@ -1,8 +1,8 @@
 /**
- * Enable Auto-Repricing for Your Account
+ * Create User and Enable Auto-Repricing
  * 
- * This script updates your Firebase user document to enable automated repricing.
- * Run this after deploying to Vercel.
+ * This script creates a user document in Firebase if it doesn't exist,
+ * then enables auto-repricing for that user.
  */
 
 const admin = require('firebase-admin');
@@ -27,24 +27,7 @@ if (missingVars.length > 0) {
   missingVars.forEach(varName => {
     console.error(`   - ${varName}`);
   });
-  console.error('\n💡 These are needed for Firebase Admin SDK to work.');
-  console.error('   Add them to your .env.local file.\n');
-  console.error('📋 Alternative: Enable auto-repricing manually in Firebase Console:');
-  console.error('   1. Go to: https://console.firebase.google.com');
-  console.error('   2. Select your project');
-  console.error('   3. Go to: Firestore Database');
-  console.error('   4. Find your user document in the "users" collection');
-  console.error('   5. Add/update these fields:');
-  console.error('      {');
-  console.error('        "stockxAutoRepricingEnabled": true,');
-  console.error('        "stockxAutoRepricingConfig": {');
-  console.error('          "strategy": "competitive",');
-  console.error('          "competitiveBuffer": 1,');
-  console.error('          "maxReduction": 20,');
-  console.error('          "minProfitMargin": 5,');
-  console.error('          "enabled": true');
-  console.error('        }');
-  console.error('      }\n');
+  console.error('\n💡 Add them to your .env.local file.\n');
   process.exit(1);
 }
 
@@ -73,31 +56,53 @@ function question(query) {
   return new Promise(resolve => rl.question(query, resolve));
 }
 
-async function enableAutoRepricing() {
-  console.log('\n🤖 Auto-Repricing Configuration\n');
-  console.log('This will enable automated repricing for your StockX listings.\n');
+async function createUserAndEnableRepricing() {
+  console.log('\n🤖 Auto-Repricing Setup\n');
+  console.log('This will create your user account and enable automated repricing.\n');
 
   // Get user email
   const email = await question('Enter your email address: ');
   
-  // Find user by email
-  const usersSnapshot = await db.collection('users')
+  // Check if user exists
+  let usersSnapshot = await db.collection('users')
     .where('email', '==', email.trim())
     .limit(1)
     .get();
 
+  let userId;
+  let userDoc;
+
   if (usersSnapshot.empty) {
-    console.log('\n❌ User not found with email:', email);
-    console.log('Please make sure you\'re logged in to the app first.\n');
-    rl.close();
-    return;
+    console.log('\n📝 User not found. Creating new user account...\n');
+    
+    // Get display name
+    const displayName = await question('Enter your display name (optional, press Enter to skip): ');
+    
+    // Create new user document
+    const newUserRef = db.collection('users').doc();
+    userId = newUserRef.id;
+    
+    const userData = {
+      email: email.trim(),
+      displayName: displayName.trim() || email.split('@')[0],
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      stockxAutoRepricingEnabled: false
+    };
+    
+    await newUserRef.set(userData);
+    console.log(`✅ Created user account: ${userId}\n`);
+    
+    userDoc = await newUserRef.get();
+  } else {
+    userDoc = usersSnapshot.docs[0];
+    userId = userDoc.id;
+    const userData = userDoc.data();
+    console.log('\n✅ Found user:', userData.displayName || email);
   }
 
-  const userDoc = usersSnapshot.docs[0];
-  const userId = userDoc.id;
   const userData = userDoc.data();
-
-  console.log('\n✅ Found user:', userData.displayName || email);
+  
   console.log('\n📊 Current Settings:');
   console.log('  Auto-Repricing Enabled:', userData.stockxAutoRepricingEnabled || false);
   console.log('  Current Strategy:', userData.stockxAutoRepricingConfig?.strategy || 'Not set');
@@ -207,7 +212,7 @@ async function enableAutoRepricing() {
 }
 
 // Run the script
-enableAutoRepricing().catch(error => {
+createUserAndEnableRepricing().catch(error => {
   console.error('\n❌ Error:', error.message);
   rl.close();
   process.exit(1);

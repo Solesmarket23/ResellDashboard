@@ -14,6 +14,10 @@
     "ios:dev": "CAPACITOR_DEV=true npm run cap:sync:ios && npm run cap:open:ios",
     "ios:build": "npm run build && npm run cap:sync:ios && npm run cap:open:ios",
     "enable-repricing": "node scripts/enable-auto-repricing.js",
+    "enable-repricing-now": "node scripts/enable-repricing-now.js",
+    "disable-repricing": "node scripts/disable-repricing.js",
+    "setup-repricing": "node scripts/create-user-and-enable-repricing.js",
+    "quick-setup": "node scripts/setup-repricing-by-uid.js",
     "show-vercel-env": "node scripts/show-vercel-env.js"
   },
   "dependencies": {

@@ -44,9 +44,28 @@ export async function GET(request: NextRequest) {
       const userData = userDoc.data();
       // Check if user has auto-repricing enabled
       const autoRepricingEnabled = userData.stockxAutoRepricingEnabled === true;
-      if (autoRepricingEnabled) {
-        activeUsers.push(userDoc.id);
+      
+      if (!autoRepricingEnabled) {
+        continue;
       }
+
+      // Check if enough time has passed based on user's interval preference
+      const repricingConfig = userData.stockxAutoRepricingConfig || {};
+      const intervalMinutes = repricingConfig.intervalMinutes || 5; // Default: 5 minutes
+      const lastRepricedAt = userData.lastRepricedAt;
+      
+      if (lastRepricedAt) {
+        const lastRepricedTime = new Date(lastRepricedAt).getTime();
+        const now = Date.now();
+        const minutesSinceLastReprice = (now - lastRepricedTime) / (1000 * 60);
+        
+        if (minutesSinceLastReprice < intervalMinutes) {
+          console.log(`⏭️ Skipping user ${userDoc.id}: Only ${Math.floor(minutesSinceLastReprice)} minutes since last reprice (interval: ${intervalMinutes} minutes)`);
+          continue;
+        }
+      }
+      
+      activeUsers.push(userDoc.id);
     }
 
     console.log(`📊 Found ${activeUsers.length} users with auto-repricing enabled`);
@@ -156,6 +175,11 @@ export async function GET(request: NextRequest) {
         totalListingsRepriced += successCount;
         console.log(`✅ Successfully repriced ${successCount} listings for user ${userId}`);
 
+        // Update lastRepricedAt timestamp
+        await adminDb.collection('users').doc(userId).update({
+          lastRepricedAt: new Date().toISOString()
+        });
+
         // Log the repricing action
         await adminDb.collection('repricing_logs').add({
           userId,
@@ -163,6 +187,7 @@ export async function GET(request: NextRequest) {
           listingsProcessed: listings.length,
           listingsRepriced: successCount,
           strategy: repricingConfig.strategy,
+          intervalMinutes: repricingConfig.intervalMinutes || 5,
           automated: true
         });
 
