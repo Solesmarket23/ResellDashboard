@@ -1658,13 +1658,47 @@ const StockXArbitrage: React.FC = () => {
                 {isAuthenticated ? 'StockX Connected' : '❌ StockX Authentication Required'}
               </span>
             </div>
-            {!isAuthenticated && (
+            {isAuthenticated ? (
+              <button
+                onClick={async () => {
+                  try {
+                    // Get user ID from cookies
+                    const userId = document.cookie
+                      .split('; ')
+                      .find(row => row.startsWith('site-user-id='))
+                      ?.split('=')[1];
+                    
+                    // Clear tokens from Firebase
+                    await fetch('/api/stockx/clear-tokens', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ userId })
+                    });
+                    
+                    // Clear browser cookies
+                    document.cookie = 'stockx_access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+                    document.cookie = 'stockx_refresh_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+                    document.cookie = 'stockx_token_expires_at=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+                    
+                    // Reload page
+                    window.location.reload();
+                  } catch (error) {
+                    console.error('Disconnect error:', error);
+                  }
+                }}
+                className={`px-4 py-2 rounded font-medium transition-all duration-200 ${
+                  isNeon
+                    ? 'bg-gradient-to-r from-red-500 to-pink-500 text-white hover:from-red-400 hover:to-pink-400 shadow-lg shadow-red-500/25'
+                    : 'bg-red-600 text-white hover:bg-red-700'
+                }`}
+              >
+                🔌 Disconnect StockX
+              </button>
+            ) : (
               <div className="flex gap-2">
                 <button
                   onClick={async () => {
                     try {
-                      // Clear old tokens first
-                      await fetch('/api/stockx/clear-tokens', { method: 'POST' });
                       // Redirect to auth
                       window.location.href = '/api/stockx/auth?returnTo=' + encodeURIComponent(window.location.href);
                     } catch (error) {
@@ -1677,7 +1711,7 @@ const StockXArbitrage: React.FC = () => {
                       : 'bg-blue-600 text-white hover:bg-blue-700'
                   }`}
                 >
-                  🔄 Re-authenticate
+                  🔗 Connect to StockX
                 </button>
               </div>
             )}
