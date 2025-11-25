@@ -37,8 +37,8 @@ const nextConfig = {
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
   },
   // Mobile app configuration
-  // Output directory for Capacitor
-  distDir: 'out',
+  // Output directory for Capacitor (disabled for Vercel deployment)
+  // distDir: 'out',
   
   // Add script to handle mobile app environment
   async headers() {
