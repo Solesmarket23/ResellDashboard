@@ -843,6 +843,22 @@ export default function StockXRepricing() {
           });
         }
         
+        // Auto-fetch market prices for first page of listings (in background)
+        if (!forceReload && finalListings.length > 0) {
+          const firstPageListings = finalListings.slice(0, itemsPerPage);
+          const listingsNeedingPrices = firstPageListings.filter(l => !l.lowestAsk || l.lowestAsk === 0);
+          
+          if (listingsNeedingPrices.length > 0) {
+            console.log(`🔄 Auto-fetching market prices for ${listingsNeedingPrices.length} listings...`);
+            // Fetch in background without blocking UI
+            setTimeout(() => {
+              fetchMarketDataForListings(listingsNeedingPrices).catch(err => {
+                console.error('Background market price fetch failed:', err);
+              });
+            }, 1000); // Small delay to not overwhelm API
+          }
+        }
+        
         // If user is logged in but settings haven't loaded yet, load them now
         if (currentUser && !settingsLoaded) {
           console.log('🔄 Loading saved settings for user after listings fetch...');
