@@ -22,6 +22,7 @@
     "check-repricing-logs": "node scripts/check-repricing-logs.js",
     "test-cron-reprice": "node scripts/test-cron-reprice.js",
     "save-stockx-tokens": "node scripts/save-stockx-tokens-to-firebase.js",
+    "clear-stockx-tokens": "node scripts/clear-stockx-tokens.js",
     "show-vercel-env": "node scripts/show-vercel-env.js"
   },
   "dependencies": {
