@@ -52,23 +52,34 @@ export default function AutoRepricingSettings() {
 
     try {
       setLoading(true);
+      console.log('🔄 Loading auto-repricing settings for user:', user.uid);
       const userDoc = await getDoc(doc(db, 'users', user.uid));
       
       if (userDoc.exists()) {
         const userData = userDoc.data();
-        setIsEnabled(userData.stockxAutoRepricingEnabled || false);
+        const enabled = userData.stockxAutoRepricingEnabled || false;
+        setIsEnabled(enabled);
+        
+        console.log('📊 Settings loaded:', {
+          enabled,
+          hasConfig: !!userData.stockxAutoRepricingConfig,
+          intervalMinutes: userData.stockxAutoRepricingConfig?.intervalMinutes
+        });
         
         if (userData.stockxAutoRepricingConfig) {
           setConfig(userData.stockxAutoRepricingConfig);
           setTempInterval(userData.stockxAutoRepricingConfig.intervalMinutes || 30);
+          console.log('✅ Config set:', userData.stockxAutoRepricingConfig);
         }
         
         if (userData.lastRepricedAt) {
           setLastRepricedAt(userData.lastRepricedAt);
         }
+      } else {
+        console.warn('⚠️ User document not found');
       }
     } catch (error) {
-      console.error('Error loading settings:', error);
+      console.error('❌ Error loading settings:', error);
       setMessage({ type: 'error', text: 'Failed to load settings' });
     } finally {
       setLoading(false);
@@ -99,6 +110,7 @@ export default function AutoRepricingSettings() {
   };
 
   const updateInterval = (minutes: number) => {
+    console.log('🔄 Interval selected:', minutes, 'Current active:', config.intervalMinutes);
     setTempInterval(minutes);
   };
 
@@ -167,6 +179,17 @@ export default function AutoRepricingSettings() {
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
+      {/* Debug Info - Remove after testing */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-4 text-xs text-yellow-200">
+          <p><strong>Debug Info:</strong></p>
+          <p>Enabled: {isEnabled ? 'YES' : 'NO'}</p>
+          <p>Current Interval: {config.intervalMinutes} min</p>
+          <p>Temp Interval: {tempInterval} min</p>
+          <p>Should Show Save: {tempInterval !== config.intervalMinutes ? 'YES' : 'NO'}</p>
+        </div>
+      )}
+      
       {/* Header */}
       <div className="bg-slate-800/50 rounded-xl p-6 border border-cyan-500/30">
         <div className="flex items-center justify-between mb-4">

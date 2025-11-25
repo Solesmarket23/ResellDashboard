@@ -1054,8 +1054,9 @@ export default function StockXRepricing() {
                 return acc;
               }, {});
               localStorage.setItem('stockx_market_prices', JSON.stringify(cacheData));
+              console.log('💾 Cached market prices for', Object.keys(cacheData).length, 'listings');
             } catch (error) {
-              console.error('Error caching market prices:', error);
+              console.error('❌ Error caching market prices:', error);
             }
             
             return updated;
