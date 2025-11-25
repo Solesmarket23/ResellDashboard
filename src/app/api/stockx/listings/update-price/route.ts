@@ -82,12 +82,83 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await response.json();
-    console.log('✅ Price updated successfully:', result);
+    console.log('📋 Update operation created:', result);
+
+    // The update is asynchronous - we need to poll for completion
+    const operationId = result.operationId;
+    
+    if (!operationId) {
+      console.error('❌ No operationId returned from StockX');
+      return NextResponse.json({ 
+        success: false,
+        error: 'No operation ID returned from StockX'
+      }, { status: 500 });
+    }
+
+    // Poll the operation status (max 30 seconds)
+    const maxAttempts = 30;
+    let attempts = 0;
+    let operationComplete = false;
+    let operationSuccess = false;
+    let operationError = null;
+
+    while (attempts < maxAttempts && !operationComplete) {
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+      attempts++;
+
+      try {
+        const statusResponse = await fetch(
+          `https://api.stockx.com/v2/selling/listings/${listingId}/operations/${operationId}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'x-api-key': process.env.STOCKX_CLIENT_ID || '',
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        if (statusResponse.ok) {
+          const statusData = await statusResponse.json();
+          console.log(`⏳ Operation status (attempt ${attempts}):`, statusData.operationStatus);
+
+          if (statusData.operationStatus === 'COMPLETED') {
+            operationComplete = true;
+            operationSuccess = true;
+          } else if (statusData.operationStatus === 'FAILED') {
+            operationComplete = true;
+            operationSuccess = false;
+            operationError = statusData.error?.message || 'Operation failed';
+          }
+          // If PENDING or IN_PROGRESS, continue polling
+        }
+      } catch (pollError) {
+        console.error('❌ Error polling operation status:', pollError);
+      }
+    }
+
+    if (!operationComplete) {
+      console.warn('⚠️ Operation polling timed out');
+      return NextResponse.json({ 
+        success: false,
+        error: 'Price update timed out. Please check your listing to see if it updated.'
+      }, { status: 408 });
+    }
+
+    if (!operationSuccess) {
+      console.error('❌ Operation failed:', operationError);
+      return NextResponse.json({ 
+        success: false,
+        error: operationError || 'Price update failed'
+      }, { status: 500 });
+    }
+
+    console.log('✅ Price updated successfully!');
 
     const successResponse = NextResponse.json({
       success: true,
-      listing: result,
-      newPrice: amount
+      newPrice: amount,
+      listingId: listingId
     });
 
     // Set refreshed token in cookies if we refreshed
