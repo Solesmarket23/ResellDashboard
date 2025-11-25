@@ -25,12 +25,13 @@ export default function AutoRepricingSettings() {
   const [isEnabled, setIsEnabled] = useState(false);
   const [config, setConfig] = useState<RepricingConfig>({
     strategy: 'competitive',
-    intervalMinutes: 5,
+    intervalMinutes: 30,
     competitiveBuffer: 1,
     maxReduction: 20,
     minProfitMargin: 5,
     enabled: true
   });
+  const [tempInterval, setTempInterval] = useState(30); // Temporary state for interval selection
   const [lastRepricedAt, setLastRepricedAt] = useState<string | null>(null);
 
   // Interval presets
@@ -59,6 +60,7 @@ export default function AutoRepricingSettings() {
         
         if (userData.stockxAutoRepricingConfig) {
           setConfig(userData.stockxAutoRepricingConfig);
+          setTempInterval(userData.stockxAutoRepricingConfig.intervalMinutes || 30);
         }
         
         if (userData.lastRepricedAt) {
@@ -97,7 +99,32 @@ export default function AutoRepricingSettings() {
   };
 
   const updateInterval = (minutes: number) => {
-    setConfig({ ...config, intervalMinutes: minutes });
+    setTempInterval(minutes);
+  };
+
+  const saveInterval = async () => {
+    const newConfig = { ...config, intervalMinutes: tempInterval };
+    setConfig(newConfig);
+    
+    if (!user) return;
+
+    try {
+      setSaving(true);
+      setMessage(null);
+
+      await updateDoc(doc(db, 'users', user.uid), {
+        stockxAutoRepricingConfig: newConfig,
+        updatedAt: new Date().toISOString()
+      });
+
+      setMessage({ type: 'success', text: `Interval updated to ${tempInterval} minutes!` });
+      setTimeout(() => setMessage(null), 3000);
+    } catch (error) {
+      console.error('Error saving interval:', error);
+      setMessage({ type: 'error', text: 'Failed to save interval' });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const formatLastRepriced = () => {
@@ -193,46 +220,89 @@ export default function AutoRepricingSettings() {
 
           <div className="space-y-3">
             {intervalPresets.map((preset) => (
-              <button
+              <div
                 key={preset.value}
-                onClick={() => updateInterval(preset.value)}
-                className={`w-full p-4 rounded-lg border-2 transition-all text-left ${
-                  config.intervalMinutes === preset.value
+                className={`p-4 rounded-lg border-2 transition-all ${
+                  tempInterval === preset.value
                     ? 'border-cyan-500 bg-cyan-500/10'
-                    : 'border-slate-700 hover:border-slate-600 bg-slate-700/30'
+                    : 'border-slate-700 bg-slate-700/30'
                 }`}
               >
-                <div className="flex items-center justify-between">
-                  <div>
+                <div className="flex items-center justify-between gap-4">
+                  <button
+                    onClick={() => updateInterval(preset.value)}
+                    className="flex-1 text-left"
+                  >
                     <div className="flex items-center gap-2">
                       <Clock className={`w-4 h-4 ${
-                        config.intervalMinutes === preset.value ? 'text-cyan-400' : 'text-slate-400'
+                        tempInterval === preset.value ? 'text-cyan-400' : 'text-slate-400'
                       }`} />
                       <span className="font-medium text-white">{preset.label}</span>
+                      {config.intervalMinutes === preset.value && (
+                        <span className="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded">Active</span>
+                      )}
                     </div>
                     <p className="text-sm text-slate-400 mt-1">{preset.description}</p>
-                  </div>
-                  {config.intervalMinutes === preset.value && (
-                    <CheckCircle className="w-5 h-5 text-cyan-400" />
+                  </button>
+                  
+                  {tempInterval === preset.value && config.intervalMinutes !== preset.value && (
+                    <button
+                      onClick={saveInterval}
+                      disabled={saving}
+                      className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white rounded-lg font-medium transition-all disabled:opacity-50 flex items-center gap-2 whitespace-nowrap"
+                    >
+                      {saving ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-4 h-4" />
+                          Save
+                        </>
+                      )}
+                    </button>
                   )}
                 </div>
-              </button>
+              </div>
             ))}
           </div>
 
           {/* Custom Interval */}
-          <div className="mt-4 p-4 bg-slate-700/30 rounded-lg">
+          <div className="mt-4 p-4 bg-slate-700/30 rounded-lg border-2 border-slate-700">
             <label className="block text-sm font-medium text-slate-300 mb-2">
               Custom Interval (minutes)
             </label>
-            <input
-              type="number"
-              min="5"
-              max="1440"
-              value={config.intervalMinutes}
-              onChange={(e) => updateInterval(parseInt(e.target.value) || 5)}
-              className="w-full px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-cyan-500"
-            />
+            <div className="flex gap-2">
+              <input
+                type="number"
+                min="5"
+                max="1440"
+                value={tempInterval}
+                onChange={(e) => updateInterval(parseInt(e.target.value) || 5)}
+                className="flex-1 px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-cyan-500"
+              />
+              {tempInterval !== config.intervalMinutes && (
+                <button
+                  onClick={saveInterval}
+                  disabled={saving}
+                  className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white rounded-lg font-medium transition-all disabled:opacity-50 flex items-center gap-2 whitespace-nowrap"
+                >
+                  {saving ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      Save
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
             <p className="text-xs text-slate-400 mt-2">
               Min: 5 minutes, Max: 24 hours (1440 minutes)
             </p>
@@ -271,41 +341,21 @@ export default function AutoRepricingSettings() {
         </div>
       )}
 
-      {/* Save Button */}
-      <div className="flex items-center justify-between">
-        <div>
-          {message && (
-            <div className={`flex items-center gap-2 ${
-              message.type === 'success' ? 'text-green-400' : 'text-red-400'
-            }`}>
-              {message.type === 'success' ? (
-                <CheckCircle className="w-5 h-5" />
-              ) : (
-                <AlertCircle className="w-5 h-5" />
-              )}
-              <span className="text-sm">{message.text}</span>
-            </div>
-          )}
-        </div>
-
-        <button
-          onClick={saveSettings}
-          disabled={saving}
-          className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {saving ? (
-            <>
-              <RefreshCw className="w-4 h-4 animate-spin" />
-              Saving...
-            </>
+      {/* Status Message */}
+      {message && (
+        <div className={`flex items-center justify-center gap-2 p-4 rounded-lg ${
+          message.type === 'success' 
+            ? 'bg-green-500/10 border border-green-500/30 text-green-400' 
+            : 'bg-red-500/10 border border-red-500/30 text-red-400'
+        }`}>
+          {message.type === 'success' ? (
+            <CheckCircle className="w-5 h-5" />
           ) : (
-            <>
-              <Save className="w-4 h-4" />
-              Save Settings
-            </>
+            <AlertCircle className="w-5 h-5" />
           )}
-        </button>
-      </div>
+          <span className="font-medium">{message.text}</span>
+        </div>
+      )}
     </div>
   );
 }
