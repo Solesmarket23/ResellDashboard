@@ -6,7 +6,14 @@
     "dev": "next dev -H 0.0.0.0",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "cap:sync": "npx cap sync",
+    "cap:sync:ios": "npx cap sync ios",
+    "cap:open:ios": "npx cap open ios",
+    "cap:run:ios": "npx cap run ios",
+    "ios:dev": "CAPACITOR_DEV=true npm run cap:sync:ios && npm run cap:open:ios",
+    "ios:build": "npm run build && npm run cap:sync:ios && npm run cap:open:ios",
+    "enable-repricing": "node scripts/enable-auto-repricing.js"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^0.0.48",
@@ -15,6 +22,7 @@
     "@capacitor/android": "^7.4.1",
     "@capacitor/cli": "^7.4.1",
     "@capacitor/core": "^7.4.1",
+    "@capacitor/haptics": "^7.0.2",
     "@capacitor/ios": "^7.4.1",
     "@deepgram/sdk": "^3.6.0",
     "@types/cheerio": "^0.22.35",

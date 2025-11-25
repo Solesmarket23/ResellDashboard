@@ -613,6 +613,94 @@ input[type="password"]::selection {
   transform: scale(0.95);
 }
 
+/* Mobile App Styles - Prevent white background and bouncing */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  position: fixed;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent white background on mobile */
+html {
+  background-color: #111827;
+}
+
+body {
+  background-color: #111827;
+}
+
+/* Prevent overscroll bounce on iOS */
+body {
+  position: fixed;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+}
+
+/* Ensure root div takes full height */
+#__next {
+  height: 100%;
+  overflow: hidden;
+  background-color: #111827;
+}
+
+/* Prevent pull-to-refresh and overscroll */
+* {
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Mobile-specific: prevent bounce/rubber-band effect */
+@supports (-webkit-touch-callout: none) {
+  body {
+    position: fixed;
+    overflow: hidden;
+    width: 100%;
+    height: 100vh;
+    height: -webkit-fill-available;
+  }
+  
+  html {
+    height: -webkit-fill-available;
+  }
+}
+
+/* Ensure no white gaps around content */
+.mobile-app-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #111827;
+  overflow: hidden;
+}
+
+/* Barcode Scanner Camera View */
+body.barcode-scanner-active {
+  background: transparent !important;
+}
+
+body.barcode-scanner-active .capacitor-app,
+body.barcode-scanner-active #__next {
+  background: transparent !important;
+}
+
+/* Make the scanner overlay visible */
+body.barcode-scanner-active > * {
+  visibility: hidden;
+}
+
+body.barcode-scanner-active .barcode-scanner-overlay {
+  visibility: visible !important;
+  z-index: 9999 !important;
+}
+
 
 
 

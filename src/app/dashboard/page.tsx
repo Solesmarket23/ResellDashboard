@@ -5,10 +5,12 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Menu } from 'lucide-react';
 import { useTheme } from '../../lib/contexts/ThemeContext';
 import { useAuth } from '../../lib/contexts/AuthContext';
+import { isMobilePlatform } from '../../lib/utils/platformDetection';
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
 import Sidebar from '../../components/Sidebar';
+import MobileLayout from '../../components/MobileLayout';
 import Dashboard from '../../components/Dashboard';
 import Purchases from '../../components/Purchases';
 import Deliveries from '../../components/Deliveries';
@@ -46,6 +48,7 @@ function DashboardContent() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [currentSection, setCurrentSection] = useState('dashboard');
   const [isClient, setIsClient] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const { currentTheme } = useTheme();
   const { user, loading } = useAuth();
   const router = useRouter();
@@ -53,6 +56,11 @@ function DashboardContent() {
   
   // Dynamic theme detection for consistent background
   const isNeon = currentTheme.name === 'Neon';
+  
+  // Check if we're on mobile platform
+  useEffect(() => {
+    setIsMobile(isMobilePlatform());
+  }, []);
   
   // Remove early return to allow proper auth state checking in useEffect
 
@@ -378,6 +386,19 @@ function DashboardContent() {
     }
   }
 
+  // If on mobile platform, use mobile layout
+  if (isMobile) {
+    return (
+      <MobileLayout
+        activeItem={currentSection}
+        onItemClick={handleItemClick}
+      >
+        {renderContent()}
+      </MobileLayout>
+    );
+  }
+
+  // Desktop layout (original)
   return (
     <div className={`flex h-screen overflow-hidden ${currentTheme.colors.background}`}>
       {/* Sidebar */}

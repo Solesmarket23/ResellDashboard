@@ -1,0 +1,13 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/monitor-prices",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/auto-reprice",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}
+

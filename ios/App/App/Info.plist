@@ -45,5 +45,11 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>UIStatusBarStyle</key>
+	<string>UIStatusBarStyleLightContent</string>
+	<key>UIUserInterfaceStyle</key>
+	<string>Dark</string>
+	<key>NSCameraUsageDescription</key>
+	<string>We need camera access to scan barcodes for packages and shoes</string>
 </dict>
 </plist>

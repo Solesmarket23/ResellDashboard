@@ -12,9 +12,12 @@ function getDefaultConfig() {
         status: "Ordered",
         statusColor: "orange",
         subjectPatterns: [
-          "Order Confirmation",
-          "Order Confirmed",
-          "Xpress Order",
+          "Order Confirmed:",        // StockX format with colon
+          "Order Confirmation:",     // StockX format with colon
+          "Xpress Order Confirmed:", // StockX Xpress format with colon
+          "Order Confirmed",         // Fallback without colon
+          "Order Confirmation",      // Fallback without colon
+          "Xpress Order",            // Fallback partial match
           "Order Placed",
           "Your Order"
         ]
@@ -24,7 +27,11 @@ function getDefaultConfig() {
         status: "Shipped", 
         statusColor: "blue",
         subjectPatterns: [
-          "Order Shipped",
+          "Order Verified & Shipped:", // StockX format with colon
+          "Order Shipped:",            // StockX format with colon
+          "Xpress Order Shipped:",     // StockX Xpress format with colon
+          "Order Verified & Shipped",  // Fallback without colon
+          "Order Shipped",             // Fallback without colon
           "Order Verified",
           "Shipped",
           "Your order has shipped",
@@ -36,7 +43,9 @@ function getDefaultConfig() {
         status: "Delivered",
         statusColor: "green", 
         subjectPatterns: [
-          "Order Delivered",
+          "Order Delivered:",              // StockX format with colon
+          "Xpress Ship Order Delivered:",  // StockX Xpress format with colon
+          "Order Delivered",               // Fallback without colon
           "Delivered",
           "Package delivered",
           "Your order has been delivered"
@@ -47,8 +56,10 @@ function getDefaultConfig() {
         status: "Delayed",
         statusColor: "yellow",
         subjectPatterns: [
+          "Encountered a Delay",     // StockX exact format
+          "Order Delayed:",
           "Order delayed",
-          "Encountered a Delay"
+          "Delay"
         ]
       },
       orderCanceled: {
@@ -56,8 +67,10 @@ function getDefaultConfig() {
         status: "Canceled",
         statusColor: "red",
         subjectPatterns: [
+          "Refund Issued:",          // StockX format with colon
+          "Order Canceled:",
           "Order canceled",
-          "Refund Issued:"
+          "Refund Issued"
         ]
       }
     },
@@ -113,38 +126,22 @@ function generateQueries(config: any) {
     // Generate sender email queries if marketplace has sender emails
     if (mp.senderEmails && mp.senderEmails.length > 0) {
       for (const senderEmail of mp.senderEmails) {
-        // Create a comprehensive query that includes sender email AND subject patterns
-        const subjectPatterns = [];
-        for (const [categoryKey, category] of Object.entries(config.emailCategories)) {
-          const cat = category as any;
-          subjectPatterns.push(...cat.subjectPatterns);
-        }
+        // CRITICAL FIX FOR 100% ACCURACY:
+        // Use BROAD queries to capture ALL emails from the sender
+        // Then filter programmatically to avoid missing any purchase emails
+        // This ensures we don't miss emails with non-standard subject lines
+        queries.push(`from:${senderEmail}`);
         
-        // Create query: from sender AND (subject pattern 1 OR subject pattern 2...)
-        if (subjectPatterns.length > 0) {
-          const subjectQuery = subjectPatterns
-            .map(pattern => `subject:"${pattern}"`)
-            .join(' OR ');
-          queries.push(`from:${senderEmail} AND (${subjectQuery})`);
-        } else {
-          // Fallback: just filter by sender if no subject patterns
-          queries.push(`from:${senderEmail}`);
+        // Also add domain-level query as backup
+        if (mp.emailDomain) {
+          queries.push(`from:@${mp.emailDomain}`);
         }
       }
     } else {
       // Fallback for marketplaces without specific sender emails
-      // Use domain-based filtering with subject patterns
-      const subjectPatterns = [];
-      for (const [categoryKey, category] of Object.entries(config.emailCategories)) {
-        const cat = category as any;
-        subjectPatterns.push(...cat.subjectPatterns);
-      }
-      
-      if (subjectPatterns.length > 0) {
-        const subjectQuery = subjectPatterns
-          .map(pattern => `subject:"${pattern}"`)
-          .join(' OR ');
-        queries.push(`from:${mp.emailDomain} AND (${subjectQuery})`);
+      // Use broad domain-based filtering
+      if (mp.emailDomain) {
+        queries.push(`from:@${mp.emailDomain}`);
       }
     }
   }
@@ -407,13 +404,14 @@ export async function GET(request: NextRequest) {
 
     // Generate dynamic queries based on configuration
     const allQueries = generateQueries(config);
-    // Use more queries for better historical coverage (increased from 8 to 15)
-    const queries = allQueries.slice(0, 15);
-    console.log(`🔍 SEARCH DEBUG: Generated ${allQueries.length} search queries, using first ${queries.length}:`, queries);
+    // Use ALL queries for 100% accuracy - don't limit queries
+    const queries = allQueries;
+    console.log(`🔍 SEARCH DEBUG: Generated ${allQueries.length} search queries, using ALL queries:`, queries);
 
     const allPurchases: any[] = [];
+    const processedEmailIds = new Set<string>(); // Track processed email IDs to avoid duplicates
     let totalProcessedEmails = 0;
-    const maxTotalEmails = 2000; // Significantly increased limit for historical data (was 400)
+    const maxTotalEmails = 5000; // Increased limit for 100% coverage (was 2000)
 
     // Create timeout helper function
     const withTimeout = (promise: Promise<any>, seconds: number) => {
@@ -580,26 +578,50 @@ async function parsePurchaseEmail(email: any, config: any, gmail: any) {
     console.log(`🔍 Parsing email: "${subjectHeader}" from ${fromHeader}`);
 
     // FILTER OUT SALES-RELATED EMAILS (these are for items being sold TO marketplaces, not purchased FROM them)
+    // CRITICAL: Use EXACT phrase matching to avoid false positives
     const salesRelatedPatterns = [
-      'Order Shipped To StockX',
-      'Order Shipped to StockX',
-      'Shipped To StockX',
-      'You Sold Your Item',
-      'You Sold Your Flex Item',
-      'An Update Regarding Your Sale',
-      'Your Sale is Confirmed',
-      'Your Payout is Ready',
-      'Reminder: Ship your StockX Order',
-      'Ship your StockX Order',
-      'Time to Ship',
-      'Ship Your Item'
+      'Order Shipped To StockX', // Seller shipping to StockX
+      'Order Shipped to StockX', // Seller shipping to StockX
+      'Shipped To StockX',       // Seller shipping to StockX
+      'You Sold Your Item',      // Sale confirmation
+      'You Sold Your Flex Item', // Flex sale confirmation
+      'Your Sale is Confirmed',  // Sale confirmation
+      'Your Payout is Ready',    // Payout notification
+      'Reminder: Ship your StockX Order', // Seller reminder
+      'Ship your StockX Order',  // Seller reminder
+      'Time to Ship',            // Seller reminder
+      'Ship Your Item',          // Seller reminder
+      'Your Ask Was Matched',    // Seller ask matched
+      'Your Bid Was Matched',    // Buyer bid matched (this is actually a purchase, so exclude it)
+      'Place a New Bid',         // Bidding prompt
+      'Your Bid Expired',        // Bid expired
+      'Price Drop',              // Price alert
+      'Arrived at StockX'        // Seller's item arrived at StockX
     ];
     
+    // Only filter if the ENTIRE phrase matches (not just partial)
+    let isSalesEmail = false;
     for (const pattern of salesRelatedPatterns) {
+      // EXACT match only - don't filter if it's just a partial match
       if (subjectHeader.toLowerCase().includes(pattern.toLowerCase())) {
-        console.log(`🚫 Filtering out sales email: ${subjectHeader}`);
-        return null; // Exclude this email from purchases
+        // Additional check: make sure it's NOT a purchase confirmation
+        // "Order Confirmed" or "Order Delivered" should NOT be filtered
+        const isPurchaseConfirmation = 
+          subjectHeader.toLowerCase().includes('order confirmed') ||
+          subjectHeader.toLowerCase().includes('order delivered') ||
+          subjectHeader.toLowerCase().includes('order shipped:') ||
+          subjectHeader.toLowerCase().includes('order verified & shipped:');
+        
+        if (!isPurchaseConfirmation) {
+          console.log(`🚫 Filtering out sales email: ${subjectHeader}`);
+          isSalesEmail = true;
+          break;
+        }
       }
+    }
+    
+    if (isSalesEmail) {
+      return null; // Exclude this email from purchases
     }
 
     console.log(`🔧 Attempting to parse order data...`);
@@ -612,42 +634,51 @@ async function parsePurchaseEmail(email: any, config: any, gmail: any) {
       purchase_price: orderInfo.purchase_price
     });
     
-    // If no order data was extracted, return null (temporarily more lenient)
-    if (!orderInfo.product_name && !orderInfo.order_number && !subjectHeader.toLowerCase().includes('stockx')) {
-      console.log(`⚠️ No order data extracted from email: ${subjectHeader}`);
+    // CRITICAL FOR 100% ACCURACY: Be VERY lenient with what we accept
+    // Only reject if we have ZERO information AND it's clearly not a purchase email
+    const hasAnyPurchaseData = 
+      orderInfo.product_name || 
+      orderInfo.order_number || 
+      orderInfo.total_amount > 0 ||
+      orderInfo.purchase_price > 0 ||
+      orderInfo.tracking_number;
+    
+    const isPurchaseRelatedSubject = 
+      subjectHeader.toLowerCase().includes('order') ||
+      subjectHeader.toLowerCase().includes('confirmed') ||
+      subjectHeader.toLowerCase().includes('shipped') ||
+      subjectHeader.toLowerCase().includes('delivered') ||
+      subjectHeader.toLowerCase().includes('xpress');
+    
+    // Only filter out if we have NO data AND the subject doesn't look purchase-related
+    if (!hasAnyPurchaseData && !isPurchaseRelatedSubject) {
+      console.log(`⚠️ No purchase data extracted and subject doesn't look purchase-related: ${subjectHeader}`);
       return null;
     }
     
-    // If it's a StockX email but no data extracted, create a basic entry for debugging
-    if ((!orderInfo.product_name && !orderInfo.order_number) && subjectHeader.toLowerCase().includes('stockx')) {
-      console.log(`🔧 Creating debug entry for StockX email: ${subjectHeader}`);
-      return {
-        id: email.id,
-        orderNumber: 'DEBUG-' + email.id.substring(0, 8),
-        product: {
-          name: `[Debug] ${subjectHeader}`,
-          brand: 'StockX',
-          size: 'Unknown',
-          image: 'https://picsum.photos/200/200?random=debug',
-          bgColor: 'bg-red-500'
-        },
-        status: 'Debug',
-        statusColor: 'red',
-        priority: 1,
-        tracking: 'Debug mode',
-        market: 'StockX',
-        price: '$0.00',
-        originalPrice: '$0.00 + $0.00',
-        purchasePrice: 0,
-        totalPayment: 0,
-        purchaseDate: 'Debug',
-        dateAdded: 'Debug',
-        verified: 'pending',
-        verifiedColor: 'orange',
-        emailId: email.id,
-        subject: subjectHeader,
-        fromEmail: fromHeader
-      };
+    // If it's clearly a purchase email but we're missing some data, fill in defaults
+    if (!orderInfo.order_number && isPurchaseRelatedSubject) {
+      // Try to extract order number from subject or generate a placeholder
+      const subjectOrderMatch = subjectHeader.match(/(?:order|#)\s*([A-Z0-9-]+)/i);
+      if (subjectOrderMatch) {
+        orderInfo.order_number = subjectOrderMatch[1];
+      } else {
+        // Use email ID as fallback order number
+        orderInfo.order_number = 'EMAIL-' + email.id.substring(0, 12);
+      }
+      console.log(`🔧 Generated order number: ${orderInfo.order_number}`);
+    }
+    
+    // If product name is missing, try to extract from subject
+    if (!orderInfo.product_name && isPurchaseRelatedSubject) {
+      // Try to extract product from subject after colon
+      const colonMatch = subjectHeader.match(/:\s*(.+)$/);
+      if (colonMatch && colonMatch[1]) {
+        orderInfo.product_name = colonMatch[1].trim();
+      } else {
+        orderInfo.product_name = 'Product information unavailable';
+      }
+      console.log(`🔧 Generated product name: ${orderInfo.product_name}`);
     }
 
     // SPECIAL OVERRIDE: StockX Delivery Status Rule

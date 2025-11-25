@@ -37,7 +37,9 @@ const nextConfig = {
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
   },
   // Mobile app configuration
-  // trailingSlash: true, // This might be breaking API routes
+  // Output directory for Capacitor
+  distDir: 'out',
+  
   // Add script to handle mobile app environment
   async headers() {
     return [
@@ -47,6 +49,11 @@ const nextConfig = {
           {
             key: 'X-Frame-Options',
             value: 'SAMEORIGIN',
+          },
+          // Allow Capacitor WebView to load the app
+          {
+            key: 'Access-Control-Allow-Origin',
+            value: 'capacitor://localhost',
           },
         ],
       },
