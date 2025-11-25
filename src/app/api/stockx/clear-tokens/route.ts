@@ -30,15 +30,15 @@ export async function POST(request: NextRequest) {
     await adminDb.collection('users').doc(userId).update({
       stockxTokens: null
     });
-
+    
     console.log('✅ StockX tokens cleared from Firebase for user:', userId);
-
-    return NextResponse.json({
-      success: true,
+    
+    return NextResponse.json({ 
+      success: true, 
       message: 'Tokens cleared successfully',
       userId
     });
-
+    
   } catch (error) {
     console.error('❌ Failed to clear tokens:', error);
     return NextResponse.json(
@@ -49,4 +49,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+} 

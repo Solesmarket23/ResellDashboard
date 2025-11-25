@@ -296,10 +296,12 @@ export default function StockXRepricing() {
   }, []);
 
   // Fetch listings when component mounts and user is authenticated AND settings are loaded
+  const hasInitiallyFetched = useRef(false);
   useEffect(() => {
-    if (currentUser && settingsLoaded && !loading && listings.length === 0) {
+    if (currentUser && settingsLoaded && !loading && !hasInitiallyFetched.current) {
       console.log('📋 Initial load - fetching listings after settings loaded...');
-      fetchListings();
+      hasInitiallyFetched.current = true;
+      fetchListings(true); // Force reload to ensure fresh data
     }
   }, [currentUser, settingsLoaded]); // Depend on both user and settings loaded state
 
@@ -868,7 +870,7 @@ export default function StockXRepricing() {
           const isRecentCache = cached && (Date.now() - cached.cachedAt < 3600000);
           
           return {
-            ...listing,
+          ...listing,
             selected: false,
             // Apply cached prices if available and recent
             lowestAsk: isRecentCache && cached.lowestAsk ? cached.lowestAsk : listing.lowestAsk,
@@ -1140,16 +1142,16 @@ export default function StockXRepricing() {
           // Update listings with market data
           setListings(prev => {
             const updated = prev.map(listing => {
-              const marketInfo = data.marketData.find((m: any) => m.listingId === listing.listingId);
-              if (marketInfo && marketInfo.marketData) {
-                return {
-                  ...listing,
-                  lowestAsk: marketInfo.marketData.lowestAsk,
-                  highestBid: marketInfo.marketData.highestBid,
-                  lastSale: marketInfo.marketData.lastSale
-                };
-              }
-              return listing;
+            const marketInfo = data.marketData.find((m: any) => m.listingId === listing.listingId);
+            if (marketInfo && marketInfo.marketData) {
+              return {
+                ...listing,
+                lowestAsk: marketInfo.marketData.lowestAsk,
+                highestBid: marketInfo.marketData.highestBid,
+                lastSale: marketInfo.marketData.lastSale
+              };
+            }
+            return listing;
             });
             
             // Cache market data to localStorage
@@ -1392,12 +1394,12 @@ export default function StockXRepricing() {
     
     // Update all listings in the group (if leader)
     if (listingsToUpdate.length > 1) {
-      setListings(prev => prev.map(l => {
-        const shouldUpdate = listingsToUpdate.some(ul => ul.listingId === l.listingId);
-        return shouldUpdate
+    setListings(prev => prev.map(l => {
+      const shouldUpdate = listingsToUpdate.some(ul => ul.listingId === l.listingId);
+      return shouldUpdate
           ? { ...l, pricingStrategy: pendingStrategy }
-          : l;
-      }));
+        : l;
+    }));
     }
     
     // Save to Firebase for all updated listings
@@ -1405,10 +1407,10 @@ export default function StockXRepricing() {
       for (const l of listingsToUpdate) {
         await saveSettingToFirebase(l.listingId, {
           pricingStrategy: pendingStrategy,
-          minPrice: l.minPrice,
-          maxPrice: l.maxPrice,
-          autoDeactivate: l.autoDeactivate
-        });
+        minPrice: l.minPrice,
+        maxPrice: l.maxPrice,
+        autoDeactivate: l.autoDeactivate
+      });
       }
       
       // Show success message
@@ -2470,11 +2472,11 @@ export default function StockXRepricing() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <div className="flex items-center gap-3">
-            <h2 className={`text-3xl font-bold ${
-              isNeon ? 'bg-gradient-to-r from-cyan-400 to-emerald-400 bg-clip-text text-transparent' : 'text-gray-900'
-            }`}>
-              StockX Automated Repricing
-            </h2>
+          <h2 className={`text-3xl font-bold ${
+            isNeon ? 'bg-gradient-to-r from-cyan-400 to-emerald-400 bg-clip-text text-transparent' : 'text-gray-900'
+          }`}>
+            StockX Automated Repricing
+          </h2>
             {autoRefreshing && (
               <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-500/30">
                 <RefreshCw className="w-4 h-4 text-blue-400 animate-spin" />
@@ -2629,7 +2631,7 @@ export default function StockXRepricing() {
                           onClick={saveAutoRepricingInterval}
                           disabled={savingInterval}
                           className={`px-4 py-2 rounded-lg font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
-                            isNeon
+          isNeon 
                               ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white'
                               : 'bg-blue-600 text-white hover:bg-blue-700'
                           } disabled:opacity-50`}
@@ -2671,7 +2673,7 @@ export default function StockXRepricing() {
               : isNeon
                 ? 'bg-red-500/20 border border-red-500/50 text-red-400 backdrop-blur-sm'
                 : 'bg-red-50 border border-red-300 text-red-800'
-          }`}>
+        }`}>
             {bulkActionMessage.startsWith('✅') ? (
               <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
             ) : bulkActionMessage.startsWith('⚠️') ? (
@@ -3265,29 +3267,29 @@ export default function StockXRepricing() {
                         ) : (listing.pricingStrategy?.type === 'percentage_below' ||
                             listing.pricingStrategy?.type === 'manual') ? (
                           <div className="flex items-center gap-1">
-                            <input
-                              type="number"
-                              min="1"
-                              value={
-                                listing.pricingStrategy?.type === 'manual' 
-                                  ? listing.pricingStrategy?.manualPrice || listing.currentPrice
-                                  : listing.pricingStrategy?.value || 1
+                          <input
+                            type="number"
+                            min="1"
+                            value={
+                              listing.pricingStrategy?.type === 'manual' 
+                                ? listing.pricingStrategy?.manualPrice || listing.currentPrice
+                                : listing.pricingStrategy?.value || 1
+                            }
+                            onChange={(e) => {
+                              const value = parseFloat(e.target.value);
+                              if (listing.pricingStrategy?.type === 'manual') {
+                                updateManualPrice(listing.listingId, value);
+                              } else {
+                                updateStrategyValue(listing.listingId, value);
                               }
-                              onChange={(e) => {
-                                const value = parseFloat(e.target.value);
-                                if (listing.pricingStrategy?.type === 'manual') {
-                                  updateManualPrice(listing.listingId, value);
-                                } else {
-                                  updateStrategyValue(listing.listingId, value);
-                                }
-                              }}
-                              className={`w-[70px] text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
-                                isNeon 
-                                  ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
-                                  : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
-                              }`}
-                              placeholder={listing.pricingStrategy?.type === 'manual' ? '$' : '#'}
-                            />
+                            }}
+                            className={`w-[70px] text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
+                              isNeon 
+                                ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
+                                : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
+                            }`}
+                            placeholder={listing.pricingStrategy?.type === 'manual' ? '$' : '#'}
+                          />
                             {listing.pricingStrategy?.type === 'manual' && (
                               <button
                                 onClick={() => applyManualPriceNow(listing.listingId)}
@@ -3314,27 +3316,27 @@ export default function StockXRepricing() {
                         }`}>
                           $
                         </span>
-                        <input
-                          type="number"
+                      <input
+                        type="number"
                           min="0"
-                          step="1"
+                        step="1"
                           value={listing.minPrice && listing.minPrice > 0 ? listing.minPrice : ''}
-                          onChange={(e) => {
-                            console.log(`📝 Min price onChange for ${listing.listingId}: ${e.target.value}`);
-                            updateMinPrice(listing.listingId, Math.round(parseFloat(e.target.value) || 0));
-                          }}
-                          onBlur={(e) => {
-                            console.log(`💾 Min price onBlur for ${listing.listingId}: ${e.target.value} - Saving to Firebase`);
-                            const minPrice = Math.round(parseFloat(e.target.value) || 0);
-                            updateMinPrice(listing.listingId, minPrice);
-                          }}
+                        onChange={(e) => {
+                          console.log(`📝 Min price onChange for ${listing.listingId}: ${e.target.value}`);
+                          updateMinPrice(listing.listingId, Math.round(parseFloat(e.target.value) || 0));
+                        }}
+                        onBlur={(e) => {
+                          console.log(`💾 Min price onBlur for ${listing.listingId}: ${e.target.value} - Saving to Firebase`);
+                          const minPrice = Math.round(parseFloat(e.target.value) || 0);
+                          updateMinPrice(listing.listingId, minPrice);
+                        }}
                           className={`w-20 text-xs pl-5 pr-2 py-1 rounded border focus:outline-none focus:ring-2 ${
-                            isNeon 
+                          isNeon 
                               ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
                               : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
-                          }`}
+                        }`}
                           placeholder=""
-                        />
+                      />
                       </div>
                     </td>
                     <td className="p-2">
@@ -3344,27 +3346,27 @@ export default function StockXRepricing() {
                         }`}>
                           $
                         </span>
-                        <input
-                          type="number"
+                      <input
+                        type="number"
                           min="0"
-                          step="1"
+                        step="1"
                           value={listing.maxPrice && listing.maxPrice > 0 ? listing.maxPrice : ''}
-                          onChange={(e) => {
-                            console.log(`📝 Max price onChange for ${listing.listingId}: ${e.target.value}`);
-                            updateMaxPrice(listing.listingId, Math.round(parseFloat(e.target.value) || 0));
-                          }}
-                          onBlur={(e) => {
-                            console.log(`💾 Max price onBlur for ${listing.listingId}: ${e.target.value} - Saving to Firebase`);
-                            const maxPrice = Math.round(parseFloat(e.target.value) || 0);
-                            updateMaxPrice(listing.listingId, maxPrice);
-                          }}
+                        onChange={(e) => {
+                          console.log(`📝 Max price onChange for ${listing.listingId}: ${e.target.value}`);
+                          updateMaxPrice(listing.listingId, Math.round(parseFloat(e.target.value) || 0));
+                        }}
+                        onBlur={(e) => {
+                          console.log(`💾 Max price onBlur for ${listing.listingId}: ${e.target.value} - Saving to Firebase`);
+                          const maxPrice = Math.round(parseFloat(e.target.value) || 0);
+                          updateMaxPrice(listing.listingId, maxPrice);
+                        }}
                           className={`w-20 text-xs pl-5 pr-2 py-1 rounded border focus:outline-none focus:ring-2 ${
-                            isNeon 
+                          isNeon 
                               ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
                               : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
-                          }`}
+                        }`}
                           placeholder=""
-                        />
+                      />
                       </div>
                     </td>
                     <td className="p-2 text-center">
