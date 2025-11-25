@@ -718,16 +718,16 @@ export default function StockXRepricing() {
     console.log('⏱️ Temp interval:', tempInterval);
     console.log('⏱️ Current interval:', autoRepricingInterval);
     
-    // Try to get user ID from Firebase auth first, then fall back to StockX user ID from cookies
+    // Try to get user ID from Firebase auth first, then fall back to site user ID from cookies
     let userId = authUser?.uid;
     
     if (!userId) {
-      // Try to get StockX user ID from cookies as fallback
+      // Try to get site user ID from cookies as fallback (set by password protection)
       const cookies = document.cookie.split(';');
-      const userIdCookie = cookies.find(c => c.trim().startsWith('stockx_user_id='));
+      const userIdCookie = cookies.find(c => c.trim().startsWith('site-user-id='));
       if (userIdCookie) {
-        userId = userIdCookie.split('=')[1];
-        console.log('📦 Using StockX user ID from cookies:', userId);
+        userId = decodeURIComponent(userIdCookie.split('=')[1]);
+        console.log('📦 Using site user ID from cookies:', userId);
       }
     }
     
