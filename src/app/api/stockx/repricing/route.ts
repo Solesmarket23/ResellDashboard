@@ -179,11 +179,13 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Apply safety checks
-        const safetyCheck = performSafetyChecks(listing, newPrice, strategy);
-        if (!safetyCheck.passed) {
-          errors.push(`Safety check failed for ${listing.listingId}: ${safetyCheck.reason}`);
-          continue;
+        // Apply safety checks (only for global strategies, not individual)
+        if (!useIndividualStrategies) {
+          const safetyCheck = performSafetyChecks(listing, newPrice, strategy);
+          if (!safetyCheck.passed) {
+            errors.push(`Safety check failed for ${listing.listingId}: ${safetyCheck.reason}`);
+            continue;
+          }
         }
 
         // Execute repricing if not dry run
