@@ -33,7 +33,7 @@ export default function NeonDropdown({ value, onChange, options, className = '',
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center justify-between w-full min-w-[140px] text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 whitespace-nowrap ${
+        className={`flex items-center justify-between w-full min-w-[105px] text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 whitespace-nowrap ${
           isNeon 
             ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50 hover:border-cyan-400' 
             : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 hover:border-blue-400'
@@ -44,7 +44,7 @@ export default function NeonDropdown({ value, onChange, options, className = '',
       </button>
       
       {isOpen && (
-        <div className={`absolute z-50 w-full min-w-[180px] mt-1 rounded-md shadow-lg overflow-hidden ${
+        <div className={`absolute z-50 w-full min-w-[135px] mt-1 rounded-md shadow-lg overflow-hidden ${
           isNeon 
             ? 'bg-gray-800 border border-cyan-500/50' 
             : 'bg-white border border-gray-200'
