@@ -62,6 +62,12 @@ export async function POST(request: NextRequest) {
     } = await request.json();
 
     console.log(`🔄 Starting repricing for ${listings.length} listings (dry run: ${dryRun})`);
+    console.log(`🎯 Using individual strategies: ${useIndividualStrategies}`);
+    
+    // Debug: Log first listing structure
+    if (listings.length > 0) {
+      console.log('📦 First listing:', JSON.stringify(listings[0], null, 2));
+    }
 
     const repricingResults = [];
     const errors = [];

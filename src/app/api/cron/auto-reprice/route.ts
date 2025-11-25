@@ -209,6 +209,11 @@ export async function GET(request: NextRequest) {
         }
 
         console.log(`🎯 Repricing ${itemsToReprice.length} listings (skipped ${listings.length - itemsToReprice.length} manual/keep_current)`);
+        
+        // Debug: Log one item to see structure
+        if (itemsToReprice.length > 0) {
+          console.log('📦 Sample item to reprice:', JSON.stringify(itemsToReprice[0], null, 2));
+        }
 
         // Call the repricing API internally (using individual strategies per listing)
         const repriceResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/stockx/repricing`, {
