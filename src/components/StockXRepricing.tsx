@@ -3027,52 +3027,66 @@ export default function StockXRepricing() {
                       </div>
                     </td>
                     <td className="p-2">
-                      <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={listing.minPrice || ''}
-                        onChange={(e) => {
-                          console.log(`📝 Min price onChange for ${listing.listingId}: ${e.target.value}`);
-                          updateMinPrice(listing.listingId, Math.round(parseFloat(e.target.value) || 0));
-                        }}
-                        onBlur={(e) => {
-                          console.log(`💾 Min price onBlur for ${listing.listingId}: ${e.target.value} - Saving to Firebase`);
-                          const minPrice = Math.round(parseFloat(e.target.value) || 0);
-                          updateMinPrice(listing.listingId, minPrice);
-                        }}
-                        className={`w-16 text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
-                          isNeon 
-                            ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50 placeholder-gray-500' 
-                            : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 placeholder-gray-400'
-                        }`}
-                        placeholder="$"
-                        required
-                      />
+                      <div className="relative">
+                        <span className={`absolute left-2 top-1/2 -translate-y-1/2 text-xs ${
+                          isNeon ? 'text-cyan-400' : 'text-gray-600'
+                        }`}>
+                          $
+                        </span>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={listing.minPrice || ''}
+                          onChange={(e) => {
+                            console.log(`📝 Min price onChange for ${listing.listingId}: ${e.target.value}`);
+                            updateMinPrice(listing.listingId, Math.round(parseFloat(e.target.value) || 0));
+                          }}
+                          onBlur={(e) => {
+                            console.log(`💾 Min price onBlur for ${listing.listingId}: ${e.target.value} - Saving to Firebase`);
+                            const minPrice = Math.round(parseFloat(e.target.value) || 0);
+                            updateMinPrice(listing.listingId, minPrice);
+                          }}
+                          className={`w-20 text-xs pl-5 pr-2 py-1 rounded border focus:outline-none focus:ring-2 ${
+                            isNeon 
+                              ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
+                              : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
+                          }`}
+                          placeholder="200"
+                          required
+                        />
+                      </div>
                     </td>
                     <td className="p-2">
-                      <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={listing.maxPrice || ''}
-                        onChange={(e) => {
-                          console.log(`📝 Max price onChange for ${listing.listingId}: ${e.target.value}`);
-                          updateMaxPrice(listing.listingId, Math.round(parseFloat(e.target.value) || 0));
-                        }}
-                        onBlur={(e) => {
-                          console.log(`💾 Max price onBlur for ${listing.listingId}: ${e.target.value} - Saving to Firebase`);
-                          const maxPrice = Math.round(parseFloat(e.target.value) || 0);
-                          updateMaxPrice(listing.listingId, maxPrice);
-                        }}
-                        className={`w-16 text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
-                          isNeon 
-                            ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50 placeholder-gray-500' 
-                            : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 placeholder-gray-400'
-                        }`}
-                        placeholder="$"
-                        required
-                      />
+                      <div className="relative">
+                        <span className={`absolute left-2 top-1/2 -translate-y-1/2 text-xs ${
+                          isNeon ? 'text-cyan-400' : 'text-gray-600'
+                        }`}>
+                          $
+                        </span>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={listing.maxPrice || ''}
+                          onChange={(e) => {
+                            console.log(`📝 Max price onChange for ${listing.listingId}: ${e.target.value}`);
+                            updateMaxPrice(listing.listingId, Math.round(parseFloat(e.target.value) || 0));
+                          }}
+                          onBlur={(e) => {
+                            console.log(`💾 Max price onBlur for ${listing.listingId}: ${e.target.value} - Saving to Firebase`);
+                            const maxPrice = Math.round(parseFloat(e.target.value) || 0);
+                            updateMaxPrice(listing.listingId, maxPrice);
+                          }}
+                          className={`w-20 text-xs pl-5 pr-2 py-1 rounded border focus:outline-none focus:ring-2 ${
+                            isNeon 
+                              ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
+                              : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
+                          }`}
+                          placeholder="400"
+                          required
+                        />
+                      </div>
                     </td>
                     <td className="p-2 text-center">
                       <input
