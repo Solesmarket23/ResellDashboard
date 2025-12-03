@@ -15,18 +15,27 @@ export async function GET(request: NextRequest) {
     // Check if we're running locally (localhost, 127.0.0.1)
     const isLocal = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1');
     
+    // Force production URL to solesmarket.com if not local
+    if (!isLocal) {
+      // Use environment variable if set, otherwise default to solesmarket.com
+      const productionBaseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.solesmarket.com';
+      baseUrl = productionBaseUrl;
+      console.log('🌐 Production detected - using base URL:', baseUrl);
+    }
+    
     // Get the return URL from query parameters
     const returnUrl = url.searchParams.get('returnUrl') || '/dashboard';
     
-    // Use environment variable if set, otherwise auto-detect
+    // Use environment variable if set, otherwise use detected base URL
     let redirectUri = process.env.GOOGLE_REDIRECT_URI;
     
     if (!redirectUri) {
-      // Always use the current base URL to auto-detect the port
+      // Use the base URL (either localhost or solesmarket.com)
       redirectUri = `${baseUrl}/api/gmail/callback`;
     }
     
     console.log('🔐 Gmail Auth - Using redirect URI:', redirectUri);
+    console.log('🔐 Gmail Auth - Base URL:', baseUrl);
     console.log('🔐 Gmail Auth - Is local:', isLocal);
 
     const oauth2Client = new google.auth.OAuth2(

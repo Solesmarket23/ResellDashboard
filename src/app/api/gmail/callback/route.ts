@@ -16,21 +16,30 @@ export async function GET(request: NextRequest) {
     // Check if we're running locally (localhost, 127.0.0.1)
     const isLocal = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1');
     
+    // Force production URL to solesmarket.com if not local
+    if (!isLocal) {
+      // Use environment variable if set, otherwise default to solesmarket.com
+      const productionBaseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.solesmarket.com';
+      baseUrl = productionBaseUrl;
+      console.log('🌐 Production detected - using base URL:', baseUrl);
+    }
+    
     // Get the return URL from state parameter
     const returnUrl = url.searchParams.get('state') || '/dashboard';
     
     console.log('🔐 Gmail Callback - State parameter:', url.searchParams.get('state'));
     console.log('🔐 Gmail Callback - Return URL:', returnUrl);
     
-    // Use environment variable if set, otherwise auto-detect
+    // Use environment variable if set, otherwise use detected base URL
     let redirectUri = process.env.GOOGLE_REDIRECT_URI;
     
     if (!redirectUri) {
-      // Always use the current base URL to auto-detect the port
+      // Use the base URL (either localhost or solesmarket.com)
       redirectUri = `${baseUrl}/api/gmail/callback`;
     }
     
     console.log('🔐 Gmail Callback - Using redirect URI:', redirectUri);
+    console.log('🔐 Gmail Callback - Base URL:', baseUrl);
     console.log('🔐 Gmail Callback - Is local:', isLocal);
 
     const oauth2Client = new google.auth.OAuth2(
@@ -60,7 +69,7 @@ export async function GET(request: NextRequest) {
     }
     
     // Create response with redirect to the original page
-    // Use the current port for local development
+    // Use the current port for local development, or production base URL
     const redirectBaseUrl = isLocal ? `http://localhost:${url.port || '3000'}` : baseUrl;
     
     // Handle the return URL properly - if it starts with /, append to base URL
@@ -84,8 +93,20 @@ export async function GET(request: NextRequest) {
       response.headers.set('Refresh', `0;url=${redirectUrl.toString()}`);
     } catch {}
     
-    // Determine if we're in production (Vercel) or development
-    const isProduction = baseUrl.includes('vercel.app') || baseUrl.includes('resell-dashboard');
+    // Determine if we're in production
+    const isProduction = !isLocal;
+    const isSolesmarket = baseUrl.includes('solesmarket.com');
+    
+    // Set cookie domain based on the actual domain
+    let cookieDomain: string | undefined = undefined;
+    if (!isLocal) {
+      if (isSolesmarket) {
+        cookieDomain = '.solesmarket.com'; // Use .solesmarket.com for production
+      } else if (baseUrl.includes('vercel.app')) {
+        cookieDomain = '.vercel.app'; // Use .vercel.app for Vercel preview deployments
+      }
+      // Otherwise leave undefined to use the exact domain
+    }
     
     // Set cookies with extended duration for better user experience
     const httpOnlyCookieOptions = {
@@ -94,7 +115,7 @@ export async function GET(request: NextRequest) {
       sameSite: 'lax' as const,
       path: '/',
       maxAge: 7 * 24 * 60 * 60, // 7 days for access token
-      domain: isLocal ? undefined : (isProduction ? '.vercel.app' : undefined) // No domain for localhost
+      domain: cookieDomain // Set domain for production
     };
 
     const clientCookieOptions = {
@@ -103,7 +124,7 @@ export async function GET(request: NextRequest) {
       sameSite: 'lax' as const,
       path: '/',
       maxAge: 30 * 24 * 60 * 60, // 30 days client-visible marker
-      domain: isLocal ? undefined : (isProduction ? '.vercel.app' : undefined)
+      domain: cookieDomain // Set domain for production
     };
     
     console.log('🍪 Setting cookies with options:', { httpOnly: httpOnlyCookieOptions, client: clientCookieOptions });
@@ -141,8 +162,21 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Error handling OAuth callback:', error);
     const url = new URL(request.url);
-    const baseUrl = `${url.protocol}//${url.host}`;
+    let baseUrl = `${url.protocol}//${url.host}`;
+    
+    // Fix for 0.0.0.0 - convert to localhost for OAuth
+    if (baseUrl.includes('0.0.0.0')) {
+      baseUrl = baseUrl.replace('0.0.0.0', 'localhost');
+    }
+    
     const isLocal = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1') || baseUrl.includes('0.0.0.0');
+    
+    // Force production URL to solesmarket.com if not local
+    if (!isLocal) {
+      const productionBaseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.solesmarket.com';
+      baseUrl = productionBaseUrl;
+    }
+    
     const redirectBaseUrl = isLocal ? `http://localhost:${url.port || '3000'}` : baseUrl;
     const returnUrl = url.searchParams.get('state') || '/dashboard';
     const errorUrl = new URL(returnUrl, redirectBaseUrl);

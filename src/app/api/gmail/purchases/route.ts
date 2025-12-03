@@ -130,7 +130,7 @@ function generateQueries(config: any) {
         // Use BROAD queries to capture ALL emails from the sender
         // Then filter programmatically to avoid missing any purchase emails
         // This ensures we don't miss emails with non-standard subject lines
-        queries.push(`from:${senderEmail}`);
+          queries.push(`from:${senderEmail}`);
         
         // Also add domain-level query as backup
         if (mp.emailDomain) {
@@ -613,7 +613,7 @@ async function parsePurchaseEmail(email: any, config: any, gmail: any) {
           subjectHeader.toLowerCase().includes('order verified & shipped:');
         
         if (!isPurchaseConfirmation) {
-          console.log(`🚫 Filtering out sales email: ${subjectHeader}`);
+        console.log(`🚫 Filtering out sales email: ${subjectHeader}`);
           isSalesEmail = true;
           break;
         }
