@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     
     if (!accessToken) {
       // Fall back to cookies for browser requests
-      const cookieStore = cookies();
+    const cookieStore = cookies();
       accessToken = cookieStore.get('stockx_access_token')?.value;
       refreshToken = cookieStore.get('stockx_refresh_token')?.value;
       console.log('🔍 Access token from cookies:', accessToken ? `${accessToken.substring(0, 20)}...` : 'None');
@@ -181,10 +181,10 @@ export async function POST(request: NextRequest) {
 
         // Apply safety checks (only for global strategies, not individual)
         if (!useIndividualStrategies) {
-          const safetyCheck = performSafetyChecks(listing, newPrice, strategy);
-          if (!safetyCheck.passed) {
-            errors.push(`Safety check failed for ${listing.listingId}: ${safetyCheck.reason}`);
-            continue;
+        const safetyCheck = performSafetyChecks(listing, newPrice, strategy);
+        if (!safetyCheck.passed) {
+          errors.push(`Safety check failed for ${listing.listingId}: ${safetyCheck.reason}`);
+          continue;
           }
         }
 

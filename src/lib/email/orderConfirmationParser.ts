@@ -130,6 +130,16 @@ export class OrderConfirmationParser {
     // Extract HTML content from email
     const htmlContent = this.getHtmlContent(emailContent);
     
+    if (this.debug) {
+      console.log(`\n📧 ===== HTML EXTRACTION FROM EML =====`);
+      console.log(`   HTML Content length: ${htmlContent.length} chars`);
+      console.log(`   HTML preview (first 500 chars): ${htmlContent.substring(0, 500)}`);
+      console.log(`   Contains '<html': ${htmlContent.toLowerCase().includes('<html')}`);
+      console.log(`   Contains '<li': ${htmlContent.includes('<li')}`);
+      console.log(`   Contains 'class="attributes"': ${htmlContent.includes('class="attributes"')}`);
+      console.log(`📧 ===== HTML EXTRACTION FROM EML =====\n`);
+    }
+    
     // Determine merchant and parse accordingly
     if (orderInfo.sender.toLowerCase().includes('stockx.com') || 
         orderInfo.email_subject.toLowerCase().includes('stockx')) {

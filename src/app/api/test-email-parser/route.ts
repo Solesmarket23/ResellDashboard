@@ -97,7 +97,27 @@ export async function POST(request: Request) {
     }
 
     const parser = new OrderConfirmationParser(true);
+    
+    // Log email content info for debugging
+    console.log(`\n📧 ===== TEST API: Processing ${filename} =====`);
+    console.log(`   Content length: ${emailContent.length} chars`);
+    console.log(`   Has Delivered-To: ${emailContent.includes('Delivered-To:')}`);
+    console.log(`   Has Return-Path: ${emailContent.includes('Return-Path:')}`);
+    console.log(`   Has StockX: ${emailContent.toLowerCase().includes('stockx')}`);
+    console.log(`   Content preview (first 500 chars): ${emailContent.substring(0, 500)}`);
+    
     const orderInfo = parser.parseEmail(emailContent);
+    
+    // Log what was extracted
+    console.log(`\n📊 ===== TEST API: Extraction Results =====`);
+    console.log(`   Order #: ${orderInfo.order_number || 'NONE'}`);
+    console.log(`   Product: ${orderInfo.product_name || 'NONE'}`);
+    console.log(`   Size: ${orderInfo.size || 'NONE'}`);
+    console.log(`   Style ID: ${orderInfo.style_id || 'NONE'}`);
+    console.log(`   Total: $${orderInfo.total_amount || '0.00'}`);
+    console.log(`   Tracking: ${orderInfo.tracking_number || 'NONE'}`);
+    console.log(`   Status: ${orderInfo.shipping_status || 'NONE'}`);
+    console.log(`📊 ===== TEST API: Extraction Results =====\n`);
 
     return NextResponse.json({
       filename,
