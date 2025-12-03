@@ -587,8 +587,15 @@ const Purchases = () => {
   const handleBatchedSyncComplete = async (totalPurchases: number) => {
     console.log(`✅ Batched Gmail sync complete: Found ${totalPurchases} purchases`);
     
-    // Save Gmail purchases to Firebase - use the latest purchases from state
+    // Clear the "purchases cleared" flag when user manually syncs
     const siteUserId = localStorage.getItem('siteUserId');
+    const userId = user?.uid || siteUserId;
+    if (userId) {
+      localStorage.removeItem(`purchases_cleared_${userId}`);
+      console.log('🔄 Cleared purchases_cleared flag - user manually synced');
+    }
+    
+    // Save Gmail purchases to Firebase - use the latest purchases from state
     if ((user || siteUserId) && purchases.length > 0) {
       try {
         await saveGmailPurchasesToFirebase(purchases);
@@ -909,21 +916,16 @@ const Purchases = () => {
       }
     }
     
-    // Check if purchases were recently cleared - if so, don't auto-load
+    // Check if purchases were cleared - if so, don't auto-load until user manually syncs
     const clearedFlag = localStorage.getItem(`purchases_cleared_${userId}`);
-    if (clearedFlag) {
-      const clearedTime = parseInt(clearedFlag);
-      const timeSinceCleared = Date.now() - clearedTime;
-      // If cleared within the last 5 minutes, don't auto-load (user might have intentionally cleared)
-      // But allow manual sync via "Sync Gmail" button
-      if (timeSinceCleared < 5 * 60 * 1000) {
-        console.log('⚠️ Purchases were recently cleared - skipping auto-load. Use "Sync Gmail" to restore.');
-        setLoading(false);
-        return;
-      } else {
-        // Clear the flag after 5 minutes - allow normal loading again
-        localStorage.removeItem(`purchases_cleared_${userId}`);
-      }
+    if (clearedFlag === 'true') {
+      console.log('⚠️ Purchases were cleared - skipping auto-load. Use "Sync Gmail" to restore.');
+      setPurchases([]);
+      setManualPurchases([]);
+      setTotalValue('$0.00');
+      setTotalCount(0);
+      setLoading(false);
+      return;
     }
 
     try {
@@ -1127,6 +1129,15 @@ const Purchases = () => {
       // Respect cooldown period
       if (now - lastFetchTime >= FETCH_COOLDOWN) {
         setLastFetchTime(now);
+        
+        // Clear the "purchases cleared" flag when user manually syncs
+        const siteUserId = localStorage.getItem('siteUserId');
+        const userId = user?.uid || siteUserId;
+        if (userId) {
+          localStorage.removeItem(`purchases_cleared_${userId}`);
+          console.log('🔄 Cleared purchases_cleared flag - user is manually syncing');
+        }
+        
         // Trigger the batched sync instead of the old fetchPurchases
         setShowBatchedSync(true);
       } else {
@@ -1331,9 +1342,10 @@ const Purchases = () => {
           console.log(`✅ All purchases cleared from Firebase: ${deletedCount} deleted`);
         }
         
-        // Set a flag in localStorage to prevent auto-reload on next page refresh
+        // Set a permanent flag in localStorage to prevent auto-reload until user manually syncs
         // This flag will be checked in loadManualPurchasesFromFirebase
-        localStorage.setItem(`purchases_cleared_${userId}`, Date.now().toString());
+        // The flag will be cleared when user clicks "Sync Gmail" button
+        localStorage.setItem(`purchases_cleared_${userId}`, 'true');
         
       } catch (error) {
         console.error('❌ Error clearing purchases:', error);
