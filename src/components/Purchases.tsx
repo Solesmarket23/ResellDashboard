@@ -78,6 +78,17 @@ const Purchases = () => {
 
   // Handle live purchase updates from background sync
   const handleBackgroundPurchasesUpdate = (newPurchases: any[]) => {
+    // Check if purchases were cleared - if so, ignore background updates
+    const siteUserId = localStorage.getItem('siteUserId');
+    const userId = user?.uid || siteUserId;
+    if (userId) {
+      const clearedFlag = localStorage.getItem(`purchases_cleared_${userId}`);
+      if (clearedFlag === 'true') {
+        console.log('⚠️ Purchases were cleared - ignoring background sync updates. Use "Sync Gmail" to restore.');
+        return;
+      }
+    }
+    
     setBackgroundPurchases(newPurchases);
     // Merge with existing purchases, avoiding duplicates
     setPurchases(prevPurchases => {
@@ -387,9 +398,22 @@ const Purchases = () => {
     
     // Always load purchases from Firebase when user is available (Firebase or site password)
     const siteUserId = localStorage.getItem('siteUserId');
-    if (user || siteUserId) {
-      console.log('🔄 Loading all purchases from Firebase on mount...');
-      loadManualPurchasesFromFirebase();
+    const userId = user?.uid || siteUserId;
+    
+    // Check if purchases were cleared - if so, don't auto-load
+    if (userId) {
+      const clearedFlag = localStorage.getItem(`purchases_cleared_${userId}`);
+      if (clearedFlag === 'true') {
+        console.log('⚠️ Purchases were cleared - skipping auto-load on mount. Use "Sync Gmail" to restore.');
+        setPurchases([]);
+        setManualPurchases([]);
+        setTotalValue('$0.00');
+        setTotalCount(0);
+        setLoading(false);
+      } else {
+        console.log('🔄 Loading all purchases from Firebase on mount...');
+        loadManualPurchasesFromFirebase();
+      }
     }
     
     // Check Gmail connection status on mount
