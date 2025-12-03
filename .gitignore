@@ -38,3 +38,7 @@ next-env.d.ts
 .env
 # Backup env files (also sensitive)
 .env.local.backup*
+
+# Sample emails (may contain sensitive data)
+/sample-emails/*.eml
+/sample-emails/*.html

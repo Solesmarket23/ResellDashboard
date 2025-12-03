@@ -1,52 +1,123 @@
 # Sample Email Files for Parser Testing
 
-This folder contains sample StockX emails for testing the Gmail parser.
+This folder contains sample StockX emails for testing and improving the Gmail parser.
 
-## Instructions:
+## 📧 How to Add Email Samples
 
+### Option 1: From Gmail (Recommended)
 1. Go to Gmail and search: `from:stockx.com`
-2. Open an email
+2. Open an email with one of the subject lines below
 3. Click the **⋮** (three dots) menu
 4. Select **"Show original"**
-5. Copy ALL the content
-6. Paste it into one of the template files below
+5. Copy ALL the content (Ctrl+A / Cmd+A, then Ctrl+C / Cmd+C)
+6. Paste it into the corresponding `.eml` file below
 
-## Files to Create:
+### Option 2: HTML Content Only
+If you only have the HTML content (not full email headers), you can:
+1. Create a `.html` file instead (e.g., `order-confirmed-1.html`)
+2. Paste the HTML content directly
+3. The parser can handle both formats
 
-### Order Confirmation Emails:
-- `order-confirmed-1.eml` - Example of "Order Confirmed:" email
-- `order-confirmation-1.eml` - Example of "Order Confirmation:" email  
-- `xpress-order-confirmed-1.eml` - Example of "Xpress Order Confirmed:" email
+## 📁 File Structure
 
-### Shipping Emails:
-- `order-verified-shipped-1.eml` - Example of "Order Verified & Shipped:" email
-- `order-shipped-1.eml` - Example of "Order Shipped:" email
-- `xpress-order-shipped-1.eml` - Example of "Xpress Order Shipped:" email
+### Order Confirmation Emails (Status: "ordered")
+1. **`01-order-confirmed.eml`** - Subject: "Order Confirmed:"
+   - Example: "Order Confirmed: Nike Air Max 90"
+   - Status: ordered
+   - Type: regular
 
-### Delivery Emails:
-- `order-delivered-1.eml` - Example of "Order Delivered:" email
-- `xpress-ship-order-delivered-1.eml` - Example of "Xpress Ship Order Delivered:" email
+2. **`02-order-confirmation.eml`** - Subject: "Order Confirmation:"
+   - Example: "Order Confirmation: Jordan 1 Retro"
+   - Status: ordered
+   - Type: regular
 
-## What We'll Test:
+3. **`03-xpress-order-confirmed.eml`** - Subject: "Xpress Order Confirmed:"
+   - Example: "Xpress Order Confirmed: Yeezy Boost 350"
+   - Status: ordered
+   - Type: xpress
 
-For each email, we'll verify the parser extracts:
-- ✅ Product name
-- ✅ Size
-- ✅ Price breakdown (purchase price, fees, shipping, total)
-- ✅ Order number
-- ✅ Tracking number (for shipped/delivered emails)
-- ✅ Purchase date
-- ✅ Estimated delivery date
-- ✅ Product image URL
-- ✅ Status (Ordered/Shipped/Delivered)
+### Shipping Emails (Status: "shipped")
+4. **`04-order-verified-shipped.eml`** - Subject: "Order Verified & Shipped:"
+   - Example: "Order Verified & Shipped: Nike Dunk Low"
+   - Status: shipped
+   - Type: regular
+   - **Should contain tracking number**
 
-## Priority:
+5. **`05-order-shipped.eml`** - Subject: "Order Shipped:"
+   - Example: "Order Shipped: Adidas Samba"
+   - Status: shipped
+   - Type: regular
+   - **Should contain tracking number**
 
-**Most important to add first:**
-1. `order-confirmed-1.eml` - To verify product/price extraction
-2. `order-shipped-1.eml` - To verify tracking extraction
-3. `order-delivered-1.eml` - To verify final status
+6. **`06-xpress-order-shipped.eml`** - Subject: "Xpress Order Shipped:"
+   - Example: "Xpress Order Shipped: New Balance 550"
+   - Status: shipped
+   - Type: xpress
+   - **Should contain tracking number**
 
-Once you add these files, let me know and I'll test the parser against them!
+### Delivery Emails (Status: "delivered")
+7. **`07-xpress-ship-order-delivered.eml`** - Subject: "Xpress Ship Order Delivered:"
+   - Example: "Xpress Ship Order Delivered: Converse Chuck 70"
+   - Status: delivered
+   - Type: xpress
+
+8. **`08-order-delivered.eml`** - Subject: "Order Delivered:"
+   - Example: "Order Delivered: Vans Old Skool"
+   - Status: delivered
+   - Type: regular
+
+## ✅ What We'll Test & Extract
+
+For each email, we'll verify the parser correctly extracts:
+
+### Required Fields:
+- ✅ **Order Number** - StockX order ID (e.g., "77272475")
+- ✅ **Product Name** - Full product name (e.g., "Nike Air Max 90")
+- ✅ **Size** - Product size (e.g., "US M 11.5", "US 10")
+- ✅ **Status** - ordered / shipped / delivered
+- ✅ **Order Type** - regular / xpress
+
+### Pricing Fields:
+- ✅ **Purchase Price** - Item price before fees
+- ✅ **Processing Fee** - StockX processing fee
+- ✅ **Shipping Fee** - Shipping cost
+- ✅ **Total Amount** - Final total paid
+
+### Additional Fields:
+- ✅ **Tracking Number** - For shipped/delivered emails
+- ✅ **Carrier** - UPS, FedEx, USPS, etc.
+- ✅ **Purchase Date** - When order was placed
+- ✅ **Estimated Delivery** - Delivery date range
+- ✅ **Product Image URL** - Product image
+- ✅ **Style ID** - Product style code (e.g., "CZ4099-800")
+- ✅ **Condition** - New, Used, etc.
+
+## 🎯 Testing Priority
+
+**Start with these 3 files for quick wins:**
+1. `01-order-confirmed.eml` - Tests basic order extraction
+2. `05-order-shipped.eml` - Tests tracking extraction
+3. `08-order-delivered.eml` - Tests delivery status
+
+**Then add the remaining 5 files for comprehensive testing:**
+4. `02-order-confirmation.eml`
+5. `03-xpress-order-confirmed.eml`
+6. `04-order-verified-shipped.eml`
+7. `06-xpress-order-shipped.eml`
+8. `07-xpress-ship-order-delivered.eml`
+
+## 📝 Notes
+
+- Files can be `.eml` (full email) or `.html` (HTML content only)
+- You can add multiple examples: `01-order-confirmed-1.eml`, `01-order-confirmed-2.eml`, etc.
+- The more samples we have, the better the parser will be!
+- All files are gitignored (won't be committed to repo)
+
+## 🚀 Next Steps
+
+1. Add your email samples to the files above
+2. Let me know when they're ready
+3. I'll analyze the HTML structure and improve extraction patterns
+4. We'll test accuracy and iterate until we reach 100%!
 
 
