@@ -1772,7 +1772,7 @@ const Purchases = () => {
                 <span>{isUpdatingStatus ? 'Updating...' : 'Update Status'}</span>
               </button>
             )}
-            {/* Refresh Firebase Data Button */}
+            {/* Refresh Firebase Data Button - Reloads from database */}
             <button
               onClick={refreshAllPurchases}
               className={`flex items-center space-x-2 ${
@@ -1780,9 +1780,24 @@ const Purchases = () => {
                   ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 shadow-lg hover:shadow-blue-500/25' 
                   : 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 shadow-lg hover:shadow-blue-500/25'
               } disabled:opacity-50 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200`}
+              title="Reload purchases from database (does not sync Gmail)"
             >
               <RefreshCw className="w-5 h-5" />
-              <span>Refresh Data</span>
+              <span>Reload from DB</span>
+            </button>
+            
+            {/* Clear All Purchases Button */}
+            <button
+              onClick={handleResetClick}
+              className={`flex items-center space-x-2 ${
+                currentTheme.name === 'Neon' 
+                  ? 'bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30' 
+                  : 'bg-red-600 hover:bg-red-700 text-white'
+              } px-4 py-2 rounded-lg font-medium transition-all duration-200`}
+              title="Clear all purchases from database (keeps Gmail connected)"
+            >
+              <Trash2 className="w-5 h-5" />
+              <span>Clear All</span>
             </button>
             {/* Export Dropdown - Always visible */}
             <div className="relative export-dropdown">
@@ -1850,6 +1865,22 @@ const Purchases = () => {
               <Plus className="w-5 h-5" />
               <span>Add Purchase</span>
             </button>
+            
+            {gmailConnected && (
+              <button
+                onClick={refreshPurchases}
+                disabled={loading}
+                className={`flex items-center space-x-2 ${
+                  currentTheme.name === 'Neon' 
+                    ? 'bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 shadow-lg hover:shadow-blue-500/25' 
+                    : 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-lg hover:shadow-blue-500/25'
+                } text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed`}
+                title="Sync purchases from Gmail"
+              >
+                <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+                <span>Sync Gmail</span>
+              </button>
+            )}
             
             <button
               onClick={() => setShowEmailSettings(true)}
@@ -2359,8 +2390,14 @@ const Purchases = () => {
               <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>Reset All Purchases</h3>
             </div>
             <p className={`${currentTheme.colors.textSecondary} mb-6`}>
-              Are you sure you want to clear all purchases? This action cannot be undone.
-              {gmailConnected && " You can always sync with Gmail again to restore your data."}
+              Are you sure you want to clear all purchases from the database? This action cannot be undone.
+              <br /><br />
+              <strong className={currentTheme.colors.textPrimary}>This will:</strong>
+              <ul className={`list-disc list-inside mt-2 space-y-1 ${currentTheme.colors.textSecondary}`}>
+                <li>Delete all purchases from Firebase/localStorage</li>
+                <li>Keep your Gmail connection active</li>
+                <li>Allow you to sync again to restore purchases</li>
+              </ul>
             </p>
             <div className="flex justify-end space-x-3">
               <button
