@@ -140,20 +140,32 @@ export default function TestEmailParserPage() {
             Email Parser Test - 8 Sample Emails
           </h1>
           <p className="text-gray-400 mb-6">
-            Testing the OrderConfirmationParser with all 8 sample StockX emails
+            Testing the <strong className="text-green-400">OrderConfirmationParser</strong> (new parser) with StockX emails
           </p>
+          
+          {/* Parser Info */}
+          <div className="bg-green-900/30 border border-green-700/50 rounded-lg p-4 mb-4">
+            <h3 className="text-sm font-semibold text-green-300 mb-2">✅ Using New Parser</h3>
+            <p className="text-sm text-gray-300">
+              This test page uses <code className="bg-gray-800 px-1 rounded">OrderConfirmationParser</code> from <code className="bg-gray-800 px-1 rounded">@/lib/email/orderConfirmationParser</code>
+            </p>
+            <p className="text-xs text-gray-400 mt-2">
+              The Gmail sync API routes also use this same parser via <code className="bg-gray-800 px-1 rounded">parseGmailApiMessage()</code>
+            </p>
+          </div>
           
           {/* Instructions */}
           <div className="bg-blue-900/30 border border-blue-700/50 rounded-lg p-4 mb-6">
-            <h3 className="text-sm font-semibold text-blue-300 mb-2">How to Upload Files:</h3>
+            <h3 className="text-sm font-semibold text-blue-300 mb-2">How to Test with 1-2 Emails:</h3>
             <ol className="text-sm text-gray-300 space-y-1 list-decimal list-inside">
               <li>In Cursor, right-click on the <code className="bg-gray-800 px-1 rounded">sample-emails</code> folder</li>
               <li>Select "Reveal in Finder" (Mac) or "Show in Explorer" (Windows)</li>
-              <li>Select all 8 .eml files (01 through 08)</li>
+              <li>Select 1-2 .eml files (e.g., <code className="bg-gray-800 px-1 rounded">01-order-confirmed.eml</code> and <code className="bg-gray-800 px-1 rounded">08-order-delivered.eml</code>)</li>
               <li>Drag and drop them into the file input below, or click to browse</li>
+              <li>Click "Test X File(s)" to see the parser results</li>
             </ol>
             <p className="text-xs text-gray-400 mt-2">
-              Or run locally: <code className="bg-gray-800 px-1 rounded">node scripts/test-email-parser.js</code>
+              <strong>Recommended:</strong> Test with <code className="bg-gray-800 px-1 rounded">01-order-confirmed.eml</code> (order placed) and <code className="bg-gray-800 px-1 rounded">08-order-delivered.eml</code> (delivered with tracking)
             </p>
           </div>
           
