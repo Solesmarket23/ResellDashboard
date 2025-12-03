@@ -36,17 +36,22 @@ export async function GET(request: NextRequest) {
     console.log('🔐 Gmail Callback - State parameter:', url.searchParams.get('state'));
     console.log('🔐 Gmail Callback - Return URL:', returnUrl);
     
-    // Use environment variable if set, otherwise use detected base URL
-    let redirectUri = process.env.GOOGLE_REDIRECT_URI;
+    // ALWAYS use solesmarket.com for production (ignore GOOGLE_REDIRECT_URI if it's a Vercel URL)
+    let redirectUri: string;
     
-    if (!redirectUri) {
-      // Use the base URL (either localhost or solesmarket.com)
-      redirectUri = `${baseUrl}/api/gmail/callback`;
+    if (isLocal) {
+      // For local development, use localhost
+      redirectUri = process.env.GOOGLE_REDIRECT_URI || `http://localhost:3000/api/gmail/callback`;
+    } else {
+      // For production, ALWAYS use solesmarket.com (never use Vercel preview URLs)
+      redirectUri = 'https://www.solesmarket.com/api/gmail/callback';
+      console.log('🔐 Gmail Callback - FORCING production redirect URI (ignoring any Vercel URLs)');
     }
     
     console.log('🔐 Gmail Callback - Using redirect URI:', redirectUri);
     console.log('🔐 Gmail Callback - Base URL:', baseUrl);
     console.log('🔐 Gmail Callback - Is local:', isLocal);
+    console.log('🔐 Gmail Callback - Request URL:', request.url);
 
     const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
