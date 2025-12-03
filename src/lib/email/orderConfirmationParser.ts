@@ -343,280 +343,130 @@ export class OrderConfirmationParser {
       }
     }
     
-    // Extract size - COMPREHENSIVE patterns for StockX emails (100% accuracy required)
-    if (this.debug) {
-      console.log(`\n🔍 ===== SIZE EXTRACTION DEBUG START =====`);
-      console.log(`🔍 EXTRACTING SIZE from order: ${orderInfo.order_number || 'UNKNOWN'}`);
-      console.log(`🔍 HTML CONTENT LENGTH: ${htmlContent.length} characters`);
-      console.log(`🔍 HTML CONTENT SAMPLE: ${htmlContent.substring(0, 500)}...`);
-    }
-    
-    // Special debug for the specific order we're testing
-    if (orderInfo.order_number === '77272475') {
-      console.log(`🔍 *** TESTING ORDER 77272475 ***`);
-      console.log(`🔍 FULL HTML CONTENT: ${htmlContent}`);
-    }
-    
-    if (this.debug) {
-      console.log(`🔍 ===== SIZE EXTRACTION DEBUG START =====\n`);
-    }
-    
-    // Look for size patterns in the HTML content
-    const sizeMatches = htmlContent.match(/Size:\s*([^<\n\r!]+?)/gi);
-    if (this.debug) {
-      if (sizeMatches) {
-        console.log(`🔍 FOUND SIZE MATCHES: ${sizeMatches.join(', ')}`);
-      } else {
-        console.log(`🔍 NO SIZE MATCHES FOUND in HTML`);
-      }
-    }
-    
-    // Test with a simple pattern to see if ANY size text is found
-    const simpleSizeMatches = htmlContent.match(/Size/gi);
-    if (simpleSizeMatches) {
-      console.log(`🔍 FOUND 'Size' TEXT: ${simpleSizeMatches.length} occurrences`);
-    } else {
-      console.log(`🔍 NO 'Size' TEXT FOUND at all`);
-    }
-    
-    // Look for the specific list item pattern
-    const listItemMatches = htmlContent.match(/<li[^>]*class="attributes"[^>]*>.*?Size:.*?<\/li>/gi);
-    if (listItemMatches) {
-      console.log(`🔍 FOUND LIST ITEM MATCHES: ${listItemMatches.join(', ')}`);
-    } else {
-      console.log(`🔍 NO LIST ITEM MATCHES FOUND`);
-    }
-    
-    // Test the exact pattern from the email you showed me
-    const exactPattern = htmlContent.match(/<li[^>]*class="attributes"[^>]*style="[^"]*"[^>]*>\s*Size:\s*([^<\n\r!]+?)\s*<\/li>/gi);
-    if (exactPattern) {
-      console.log(`🔍 FOUND EXACT PATTERN MATCHES: ${exactPattern.join(', ')}`);
-    } else {
-      console.log(`🔍 NO EXACT PATTERN MATCHES FOUND`);
-    }
-    
-    // Test specifically for "US M 11.5" pattern
-    const usPattern = htmlContent.match(/Size:\s*US\s+[A-Z0-9\.\s]+/gi);
-    if (usPattern) {
-      console.log(`🔍 FOUND US SIZE PATTERNS: ${usPattern.join(', ')}`);
-    } else {
-      console.log(`🔍 NO US SIZE PATTERNS FOUND`);
-    }
-    
-    const sizePatterns = [
-      // 1. StockX specific HTML list patterns (highest priority)
-      /<li[^>]*class="attributes"[^>]*style="[^"]*"[^>]*>Size:\s*([^<\n\r!]+?)<\/li>/i,
-      /<li[^>]*class="attributes"[^>]*>Size:\s*([^<\n\r!]+?)<\/li>/i,
-      /<li[^>]*>.*?Size:\s*([^<\n\r!]+?)<\/li>/i,
-      
-      // 1.5. More specific StockX patterns for the exact format we see
-      /<li[^>]*class="attributes"[^>]*style="[^"]*"[^>]*>\s*Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
-      /<li[^>]*class="attributes"[^>]*>\s*Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
-      
-      // 1.6. Pattern for sizes without "Size:" prefix (like "US L") - more specific
-      /<li[^>]*class="attributes"[^>]*style="[^"]*"[^>]*>\s*(US\s+[A-Z0-9\.\s]+?)\s*<\/li>/i,
-      /<li[^>]*class="attributes"[^>]*>\s*(US\s+[A-Z0-9\.\s]+?)\s*<\/li>/i,
-      
-      // 2. Table cell patterns
-      /<td[^>]*>Size:\s*([^<\n\r!]+?)<\/td>/i,
-      /<td[^>]*>.*?Size:\s*([^<\n\r!]+?)<\/td>/i,
-      
-      // 3. Generic HTML patterns
-      /<[^>]*>Size:\s*([^<\n\r!]+?)<\/[^>]*>/i,
-      /Size:\s*US\s*([A-Z0-9\.\s]+?)(?=<|$)/i,
-      /Size:\s*([^<\n\r!]+?)(?=<|$)/i,
-      
-      // 4. Text patterns with context
-      /(?:^|\n|\s)Size:\s*(US\s+[A-Z0-9\.\s]+?)(?:\n|\s|$)/im,
-      /(?:^|\n|\s)Size:\s*([A-Z0-9\.\s]+?)(?:\n|\s|$)/im,
-      
-      // 5. Product title patterns
-      /Size\s+US\s+([A-Z0-9\.\s]+?)(?:\s*[,;\n]|$)/i,
-      /Size\s+([A-Z0-9\.\s]+?)(?:\s*[,;\n]|$)/i,
-      
-      // 6. Parenthetical patterns
-      /\(Size\s*([^)!;{}]+)\)/i,
-      /\[Size\s*([^\]!;{}]+)\]/i,
-      
-      // 7. Colon patterns
-      /Size:\s*US\s+([A-Z0-9\.\s]+?)(?:\s|$)/i,
-      /Size:\s*([A-Z0-9\.\s]+?)(?:\s|$)/i,
-      
-      // 8. Dash patterns
-      /Size\s*-\s*US\s+([A-Z0-9\.\s]+?)(?:\s|$)/i,
-      /Size\s*-\s*([A-Z0-9\.\s]+?)(?:\s|$)/i,
-      
-      // 9. Any remaining patterns
-      /Size[:\s]+([A-Z0-9\.\s]+?)(?:\s|$)/i,
-      /Size[:\s]*US[:\s]*([A-Z0-9\.\s]+?)(?:\s|$)/i,
-      
-      // 10. Additional patterns for better coverage
-      /Size\s*:\s*([A-Z0-9\.\s]+?)(?:\s|$|,|;|\.)/i,
-      /Size\s*-\s*([A-Z0-9\.\s]+?)(?:\s|$|,|;|\.)/i,
-      /Size\s*=\s*([A-Z0-9\.\s]+?)(?:\s|$|,|;|\.)/i,
-      /([A-Z0-9\.\s]+?)\s*Size(?:\s|$|,|;|\.)/i,
-      /US\s*Size\s*([A-Z0-9\.\s]+?)(?:\s|$|,|;|\.)/i,
-      /Size\s*US\s*([A-Z0-9\.\s]+?)(?:\s|$|,|;|\.)/i
-    ];
-    
+    // Extract size - Prioritize <li class="attributes"> pattern using cheerio
     let sizeFound = false;
     
-    for (let i = 0; i < sizePatterns.length; i++) {
-      const pattern = sizePatterns[i];
-      const match = htmlContent.match(pattern);
-      if (match) {
-        let size = match[1].trim();
-        if (this.debug) {
-          console.log(`📏 SIZE PATTERN ${i+1} MATCH for ${orderInfo.order_number}: "${size}"`);
-          console.log(`📏 PATTERN: ${pattern}`);
-          console.log(`📏 FULL MATCH: "${match[0]}"`);
-          const idx = (match as any).index ?? 0;
-          console.log(`📏 CONTEXT: "${htmlContent.substring(Math.max(0, idx - 50), idx + match[0].length + 50)}"`);
-        }
+    // Method 1: Use cheerio to parse HTML and find <li class="attributes"> elements
+    try {
+      const $ = cheerio.load(htmlContent);
+      const attributeLis = $('li.attributes');
+      
+      for (let i = 0; i < attributeLis.length; i++) {
+        const li = attributeLis.eq(i);
+        const text = li.text().trim();
         
-        // Skip if this looks like CSS or code - comprehensive CSS filtering
-        const cssKeywords = [
-          '!important', 'webkit', 'font-family', 'font-size', 'line-height', 
-          'padding', 'margin', 'width', 'height', 'border', 'color', 'background',
-          'display', 'position', 'float', 'clear', 'overflow', 'visibility',
-          'z-index', 'opacity', 'transform', 'transition', 'animation',
-          'inherit', 'initial', 'unset', 'revert', 'auto', 'none', 'normal',
-          'block', 'inline', 'flex', 'grid', 'table', 'absolute', 'relative',
-          'fixed', 'static', 'sticky', 'left', 'right', 'top', 'bottom',
-          'center', 'justify', 'align', 'space', 'between', 'around', 'evenly',
-          'start', 'end', 'baseline', 'stretch', 'row', 'column', 'wrap',
-          'nowrap', 'reverse', 'grow', 'shrink', 'basis', 'order', 'gap',
-          'px', 'em', 'rem', '%', 'vh', 'vw', 'vmin', 'vmax', 'pt', 'pc',
-          'in', 'cm', 'mm', 'ex', 'ch', 'fr', 'deg', 'rad', 'grad', 'turn',
-          's', 'ms', 'Hz', 'kHz', 'dpi', 'dpcm', 'dppx', 'x', 'y', 'z',
-          'rgb', 'rgba', 'hsl', 'hsla', 'hwb', 'lab', 'lch', 'oklab', 'oklch',
-          'var(', 'calc(', 'clamp(', 'min(', 'max(', 'attr(', 'url(',
-          'linear-gradient', 'radial-gradient', 'conic-gradient',
-          'repeating-linear-gradient', 'repeating-radial-gradient',
-          'repeating-conic-gradient', 'cubic-bezier', 'steps', 'ease',
-          'ease-in', 'ease-out', 'ease-in-out', 'linear', 'ease',
-          'serif', 'sans-serif', 'monospace', 'cursive', 'fantasy',
-          'bold', 'bolder', 'lighter', 'normal', 'italic', 'oblique',
-          'small-caps', 'small-caps', 'all-small-caps', 'petite-caps',
-          'all-petite-caps', 'unicase', 'titling-caps', 'ultra-condensed',
-          'extra-condensed', 'condensed', 'semi-condensed', 'semi-expanded',
-          'expanded', 'extra-expanded', 'ultra-expanded', 'wider', 'narrower',
-          'lighter', 'normal', 'bold', 'bolder', '100', '200', '300', '400',
-          '500', '600', '700', '800', '900', 'smaller', 'larger', 'xx-small',
-          'x-small', 'small', 'medium', 'large', 'x-large', 'xx-large',
-          'left', 'right', 'center', 'justify', 'start', 'end', 'match-parent',
-          'nowrap', 'wrap', 'wrap-reverse', 'flex-start', 'flex-end',
-          'space-between', 'space-around', 'space-evenly', 'stretch',
-          'baseline', 'first-baseline', 'last-baseline', 'safe', 'unsafe',
-          'row', 'row-reverse', 'column', 'column-reverse', 'nowrap',
-          'wrap', 'wrap-reverse', 'grow', 'shrink', 'basis', 'order',
-          'auto', 'content', 'max-content', 'min-content', 'fit-content',
-          'fill', 'fill-available', 'fit-content', 'contain', 'cover',
-          'scale-down', 'none', 'contain', 'cover', 'fill', 'scale-down',
-          'repeat', 'no-repeat', 'repeat-x', 'repeat-y', 'space', 'round',
-          'scroll', 'fixed', 'local', 'border-box', 'padding-box', 'content-box',
-          'text', 'top', 'bottom', 'left', 'right', 'center', 'justify',
-          'start', 'end', 'self-start', 'self-end', 'safe', 'unsafe',
-          'stretch', 'baseline', 'first-baseline', 'last-baseline',
-          'space-between', 'space-around', 'space-evenly', 'stretch',
-          'baseline', 'first-baseline', 'last-baseline', 'safe', 'unsafe'
-        ];
-        
-        const isCssKeyword = cssKeywords.some(keyword => 
-          size.toLowerCase().includes(keyword.toLowerCase())
-        );
-        
-        // Skip single digit numbers that are likely CSS values
-        if (/^[0-9]+$/.test(size) && size.length <= 2) {
-          console.log(`🚫 SKIPPING single digit CSS value for ${orderInfo.order_number}: "${size}"`);
-          continue;
-        }
-        
-        // More intelligent CSS filtering - only reject if it's clearly CSS
-        const isCssPattern = size.includes(';') ||
-                            size.includes('{') ||
-                            size.includes('}') ||
-                            size.includes('(') ||
-                            size.includes(')') ||
-                            size.includes('[') ||
-                            size.includes(']') ||
-                            size.includes('=') ||
-                            size.includes('"') ||
-                            size.includes("'") ||
-                            size.length > 25;
-        
-        // Don't reject if it contains valid size indicators like "US", "W", "M", "L", etc.
-        const hasValidSizeIndicators = /US|W|M|L|S|XL|XXL|GS|Y|\.5|\.0|\.5Y|\.0Y/i.test(size);
-        
-        if (this.debug) {
-          console.log(`🔍 SIZE VALIDATION for "${size}": isCssKeyword=${isCssKeyword}, isCssPattern=${isCssPattern}, hasValidSizeIndicators=${hasValidSizeIndicators}`);
-        }
-        
-        // Only reject as CSS if it's a CSS keyword AND doesn't have valid size indicators
-        // AND it's not a valid size format (like "US W 7")
-        if (isCssKeyword && !hasValidSizeIndicators) {
-          console.log(`🚫 SKIPPING CSS keyword match for ${orderInfo.order_number}: "${size}"`);
-          continue;
-        }
-        
-        // Reject if it has CSS patterns but no valid size indicators
-        if (isCssPattern && !hasValidSizeIndicators) {
-          console.log(`🚫 SKIPPING CSS pattern match for ${orderInfo.order_number}: "${size}"`);
-          continue;
-        }
-        
-        // Clean up the size string - comprehensive cleaning
-        const originalSize = size;
-        
-        // For sizes like "US W 9", we want to keep the full format, not strip "US W"
-        // Only strip "Size:" prefix, not "US" or other size indicators
-        size = size.replace(/^Size[\s:]*/i, '').trim();
-        size = size.replace(/[,;].*$/, '').trim(); // Remove anything after comma or semicolon
-        size = size.replace(/[<>]/g, '').trim(); // Remove any HTML tags
-        size = size.replace(/\s+/g, ' ').trim(); // Normalize whitespace
-        
-        // Additional validation - reject common false positives, but only if the original size was just a number
-        // Don't reject if the original size had letters (like "US W 9")
-        // Reject code-like numeric matches such as color/style codes (e.g., 601)
-        if (/^\d{3,4}$/.test(size) && /^[0-9]+$/.test(originalSize)) {
-          console.log(`🚫 REJECTING LIKELY FALSE POSITIVE (code-like number): "${size}"`);
-          continue;
-        }
-        
-        // Validate it looks like a real size
-        if (size && size !== 'Size' && size.length > 0 && size.length <= 25) {
-          // Check if it contains at least one letter or number
-          if (/[A-Za-z0-9]/.test(size)) {
-            // Additional validation: check if it's a reasonable size format
-            const isValidSize = this.isValidSizeFormat(size);
-            if (isValidSize) {
-              orderInfo.size = size;
-              sizeFound = true;
-              if (this.debug) {
-                console.log(`✅ SIZE EXTRACTED for ${orderInfo.order_number}: "${size}" using pattern ${i+1}`);
-              }
-              break;
-            } else {
-              if (this.debug) {
-                console.log(`❌ SIZE REJECTED for ${orderInfo.order_number}: "${size}" (invalid size format)`);
-              }
-            }
-          } else {
-            if (this.debug) {
-              console.log(`❌ SIZE REJECTED for ${orderInfo.order_number}: "${size}" (no letters or numbers)`);
-            }
+        // Look for "Size:" in the text
+        const sizeMatch = text.match(/^Size:\s*(.+)$/i);
+        if (sizeMatch) {
+          let size = sizeMatch[1].trim();
+          
+          // Clean up the size
+          size = size.replace(/[,;].*$/, '').trim(); // Remove anything after comma or semicolon
+          size = size.replace(/\s+/g, ' ').trim(); // Normalize whitespace
+          
+          // Validate it looks like a real size
+          if (size && size.length > 0 && size.length <= 25 && this.isValidSizeFormat(size)) {
+            orderInfo.size = size;
+            sizeFound = true;
+            console.log(`✅ SIZE EXTRACTED using cheerio from <li class="attributes">: "${size}"`);
+            break;
           }
-        } else {
-          if (this.debug) {
-            console.log(`❌ SIZE REJECTED for ${orderInfo.order_number}: "${size}" (invalid format)`);
+        }
+      }
+    } catch (error) {
+      console.log(`⚠️ Error using cheerio for size extraction: ${error}`);
+    }
+    
+    // Method 2: If cheerio didn't find it, use regex patterns (prioritize <li class="attributes">)
+    if (!sizeFound) {
+      const sizePatterns = [
+        // Highest priority: StockX specific HTML list patterns with class="attributes"
+        /<li[^>]*class=["']attributes["'][^>]*>\s*Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
+        /<li[^>]*class=["']attributes["'][^>]*style=["'][^"']*["'][^>]*>\s*Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
+        /<li[^>]*class=["']attributes["'][^>]*>Size:\s*([^<\n\r!]+?)<\/li>/i,
+        
+        // Pattern for sizes without "Size:" prefix in attributes list
+        /<li[^>]*class=["']attributes["'][^>]*>\s*(US\s+[A-Z0-9\.\s]+?)\s*<\/li>/i,
+        
+        // Other list item patterns
+        /<li[^>]*>.*?Size:\s*([^<\n\r!]+?)<\/li>/i,
+        
+        // Table cell patterns
+        /<td[^>]*>Size:\s*([^<\n\r!]+?)<\/td>/i,
+        /<td[^>]*>.*?Size:\s*([^<\n\r!]+?)<\/td>/i,
+        
+        // Generic HTML patterns
+        /<[^>]*>Size:\s*([^<\n\r!]+?)<\/[^>]*>/i,
+        /Size:\s*US\s*([A-Z0-9\.\s]+?)(?=<|$)/i,
+        /Size:\s*([^<\n\r!]+?)(?=<|$)/i,
+        
+        // Text patterns with context
+        /(?:^|\n|\s)Size:\s*(US\s+[A-Z0-9\.\s]+?)(?:\n|\s|$)/im,
+        /(?:^|\n|\s)Size:\s*([A-Z0-9\.\s]+?)(?:\n|\s|$)/im
+      ];
+      
+      for (let i = 0; i < sizePatterns.length; i++) {
+        const pattern = sizePatterns[i];
+        const match = htmlContent.match(pattern);
+        if (match) {
+          let size = match[1].trim();
+          
+          // Skip if this looks like CSS or code
+          const isCssPattern = size.includes(';') ||
+                              size.includes('{') ||
+                              size.includes('}') ||
+                              size.includes('(') ||
+                              size.includes(')') ||
+                              size.includes('[') ||
+                              size.includes(']') ||
+                              size.includes('=') ||
+                              size.includes('"') ||
+                              size.includes("'") ||
+                              size.length > 25;
+          
+          // Don't reject if it contains valid size indicators
+          const hasValidSizeIndicators = /US|W|M|L|S|XL|XXL|GS|Y|\.5|\.0|\.5Y|\.0Y/i.test(size);
+          
+          // Skip single digit numbers that are likely CSS values
+          if (/^[0-9]+$/.test(size) && size.length <= 2) {
+            continue;
+          }
+          
+          // Reject if it has CSS patterns but no valid size indicators
+          if (isCssPattern && !hasValidSizeIndicators) {
+            continue;
+          }
+          
+          // Clean up the size string
+          size = size.replace(/^Size[\s:]*/i, '').trim();
+          size = size.replace(/[,;].*$/, '').trim(); // Remove anything after comma or semicolon
+          size = size.replace(/[<>]/g, '').trim(); // Remove any HTML tags
+          size = size.replace(/\s+/g, ' ').trim(); // Normalize whitespace
+          
+          // Reject code-like numeric matches (e.g., 601)
+          if (/^\d{3,4}$/.test(size) && /^[0-9]+$/.test(size)) {
+            continue;
+          }
+          
+          // Validate it looks like a real size
+          if (size && size !== 'Size' && size.length > 0 && size.length <= 25) {
+            if (/[A-Za-z0-9]/.test(size)) {
+              const isValidSize = this.isValidSizeFormat(size);
+              if (isValidSize) {
+                orderInfo.size = size;
+                sizeFound = true;
+                console.log(`✅ SIZE EXTRACTED using regex pattern ${i+1}: "${size}"`);
+                break;
+              }
+            }
           }
         }
       }
     }
     
-    // If no size found with patterns, try fallback methods
+    // Method 3: If still no size found, try fallback methods
     if (!sizeFound) {
-      console.log(`🔍 NO SIZE FOUND with patterns, trying fallback methods...`);
+      console.log(`🔍 NO SIZE FOUND with primary methods, trying fallback methods...`);
       sizeFound = this.tryFallbackSizeExtraction(htmlContent, textContent, orderInfo);
     }
     
@@ -634,22 +484,69 @@ export class OrderConfirmationParser {
     // Size extraction is now handled by the comprehensive pattern matching above
     // and fallback methods if no size is found
     
-    // Extract condition
-    const conditionMatch = htmlContent.match(/Condition:\s*([^<\n]+)/i);
-    if (conditionMatch) {
-      orderInfo.condition = conditionMatch[1].trim();
+    // Extract condition - Prioritize <li class="attributes"> pattern
+    try {
+      const $ = cheerio.load(htmlContent);
+      const attributeLis = $('li.attributes');
+      
+      for (let i = 0; i < attributeLis.length; i++) {
+        const li = attributeLis.eq(i);
+        const text = li.text().trim();
+        
+        // Look for "Condition:" in the text
+        const conditionMatch = text.match(/^Condition:\s*(.+)$/i);
+        if (conditionMatch) {
+          const condition = conditionMatch[1].trim();
+          if (condition) {
+            orderInfo.condition = condition;
+            console.log(`✅ CONDITION EXTRACTED using cheerio: "${condition}"`);
+            break;
+          }
+        }
+      }
+    } catch (error) {
+      // Fallback to regex if cheerio fails
+      const conditionMatch = htmlContent.match(/Condition:\s*([^<\n]+)/i);
+      if (conditionMatch) {
+        orderInfo.condition = conditionMatch[1].trim();
+        console.log(`✅ CONDITION EXTRACTED using regex: "${orderInfo.condition}"`);
+      }
     }
     
-    // Extract style ID
-    const stylePatterns = [
-      /Style ID:\s*([A-Z0-9\-]+)\b/i
-    ];
-    
-    for (const pattern of stylePatterns) {
-      const match = htmlContent.match(pattern);
-      if (match) {
-        orderInfo.style_id = match[1].trim();
-        break;
+    // Extract style ID - Prioritize <li class="attributes"> pattern
+    try {
+      const $ = cheerio.load(htmlContent);
+      const attributeLis = $('li.attributes');
+      
+      for (let i = 0; i < attributeLis.length; i++) {
+        const li = attributeLis.eq(i);
+        const text = li.text().trim();
+        
+        // Look for "Style ID:" in the text
+        const styleMatch = text.match(/^Style ID:\s*(.+)$/i);
+        if (styleMatch) {
+          const styleId = styleMatch[1].trim();
+          if (styleId && /^[A-Z0-9\-]+$/i.test(styleId)) {
+            orderInfo.style_id = styleId;
+            console.log(`✅ STYLE ID EXTRACTED using cheerio: "${styleId}"`);
+            break;
+          }
+        }
+      }
+    } catch (error) {
+      // Fallback to regex if cheerio fails
+      const stylePatterns = [
+        /<li[^>]*class=["']attributes["'][^>]*>\s*Style ID:\s*([A-Z0-9\-]+)\s*<\/li>/i,
+        /Style ID:\s*([A-Z0-9\-]+)\b/i
+      ];
+      
+      for (const pattern of stylePatterns) {
+        const match = htmlContent.match(pattern);
+        if (match) {
+          orderInfo.style_id = match[1].trim();
+          console.log(`✅ STYLE ID EXTRACTED using regex: "${orderInfo.style_id}"`);
+          break;
+        }
       }
     }
     
@@ -1434,17 +1331,82 @@ export class OrderConfirmationParser {
   }
   
   /**
-   * Extract HTML content from email message
+   * Extract HTML content from email message and decode quoted-printable
    */
   private getHtmlContent(emailContent: string): string {
-    // Look for HTML content in multipart email
-    const htmlMatch = emailContent.match(/Content-Type: text\/html[\s\S]*?\n\n([\s\S]*?)(?=\n--|\nContent-Type:|\n\.\n|$)/);
-    if (htmlMatch) {
-      return htmlMatch[1];
+    // Find the start of the HTML part
+    const htmlPartStart = emailContent.indexOf('Content-Type: text/html');
+    if (htmlPartStart === -1) {
+      // No HTML part found, check if entire content is HTML
+      const encodingMatch = emailContent.match(/Content-Transfer-Encoding:\s*([^\n]+)/i);
+      const isQuotedPrintable = encodingMatch && encodingMatch[1].toLowerCase().includes('quoted-printable');
+      const charsetMatch = emailContent.match(/Content-Type:.*?charset=([^\s;]+)/i);
+      const charset = charsetMatch ? charsetMatch[1].toLowerCase() : 'utf-8';
+      
+      if (isQuotedPrintable) {
+        return this.decodeQuotedPrintable(emailContent, charset);
+      }
+      return emailContent;
     }
     
-    // If no HTML found, return the content as-is
-    return emailContent;
+    // Extract headers for the HTML part (everything between Content-Type and blank line)
+    const htmlPartEnd = emailContent.indexOf('\n\n', htmlPartStart);
+    const htmlPartHeaders = htmlPartEnd !== -1 
+      ? emailContent.substring(htmlPartStart, htmlPartEnd)
+      : emailContent.substring(htmlPartStart, htmlPartStart + 2000);
+    
+    // Extract charset and encoding from HTML part headers
+    const charsetMatch = htmlPartHeaders.match(/charset=([^\s;]+)/i);
+    const charset = charsetMatch ? charsetMatch[1].toLowerCase() : 'utf-8';
+    
+    const encodingMatch = htmlPartHeaders.match(/Content-Transfer-Encoding:\s*([^\n]+)/i);
+    const isQuotedPrintable = encodingMatch && encodingMatch[1].toLowerCase().includes('quoted-printable');
+    
+    // Extract HTML content (everything after the blank line until next boundary or end)
+    const contentStart = htmlPartEnd !== -1 ? htmlPartEnd + 2 : htmlPartStart;
+    const nextBoundary = emailContent.indexOf('\n--', contentStart);
+    const nextContentType = emailContent.indexOf('\nContent-Type:', contentStart);
+    const endPos = nextBoundary !== -1 && nextContentType !== -1
+      ? Math.min(nextBoundary, nextContentType)
+      : nextBoundary !== -1
+      ? nextBoundary
+      : nextContentType !== -1
+      ? nextContentType
+      : emailContent.length;
+    
+    let html = emailContent.substring(contentStart, endPos).trim();
+    
+    // Remove trailing boundary markers if present
+    html = html.replace(/\n--[^\n]*$/, '');
+    
+    // Decode quoted-printable if needed
+    if (isQuotedPrintable) {
+      html = this.decodeQuotedPrintable(html, charset);
+    }
+    
+    return html;
+  }
+  
+  /**
+   * Decode quoted-printable encoded text
+   */
+  private decodeQuotedPrintable(text: string, charset: string = 'utf-8'): string {
+    // Remove soft line breaks (= at end of line)
+    let decoded = text.replace(/=\r?\n/g, '');
+    
+    // Decode hex sequences (=XX)
+    decoded = decoded.replace(/=([0-9A-Fa-f]{2})/g, (match, hex) => {
+      return String.fromCharCode(parseInt(hex, 16));
+    });
+    
+    // Handle charset conversion if needed
+    if (charset.includes('iso-8859-1') || charset.includes('latin1') || charset.includes('windows-1252')) {
+      // For latin1, the bytes are already correct after hex decoding
+      return decoded;
+    }
+    
+    // Default to UTF-8
+    return decoded;
   }
   
   /**
