@@ -168,84 +168,115 @@ export class OrderConfirmationParser {
     const $: any = cheerio.load(htmlContent);
     const textContent: string = ($('body').text && $('body').text()) || ($.root && $.root().text && $.root().text()) || '';
     
-    // Check if this is a shipping email based on subject line patterns
-    // ONLY extract tracking from these specific shipping emails
-    const shippingSubjectPatterns = [
-      'Order Verified & Shipped:',
-      'Order Shipped:',
-      'Xpress Order Shipped:'
-    ];
-    
-    // Get subject from email
+    // Get subject from email (check multiple locations)
     const subjectMatch = htmlContent.match(/<title>([^<]+)<\/title>/i) || 
-                        htmlContent.match(/Subject:\s*([^\n]+)/i);
-    const emailSubject = subjectMatch ? subjectMatch[1] : '';
+                        htmlContent.match(/Subject:\s*([^\n]+)/i) ||
+                        htmlContent.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i);
+    const emailSubject = subjectMatch ? subjectMatch[1].trim() : '';
     
-    // Check if subject matches shipping patterns
-    const isShippingEmail = shippingSubjectPatterns.some(pattern => 
-      emailSubject.includes(pattern) || htmlContent.includes(pattern)
-    );
+    console.log(`🔍 EMAIL SUBJECT: "${emailSubject}"`);
     
-    console.log(`🔍 EMAIL SUBJECT CHECK: "${emailSubject}"`);
-    console.log(`🔍 SHIPPING PATTERNS CHECK:`, shippingSubjectPatterns.map(pattern => ({
-      pattern,
-      subjectMatch: emailSubject.includes(pattern),
-      htmlMatch: htmlContent.includes(pattern)
-    })));
-    console.log(`🔍 IS SHIPPING EMAIL: ${isShippingEmail}`);
+    // Comprehensive subject line patterns for all StockX email types
+    const subjectPatterns = {
+      // Order confirmation patterns
+      orderConfirmed: [
+        'Order Confirmed:',
+        'Order Confirmation:',
+        'Xpress Order Confirmed:'
+      ],
+      // Shipping patterns
+      shipped: [
+        'Order Verified & Shipped:',
+        'Order Shipped:',
+        'Xpress Order Shipped:'
+      ],
+      // Delivery patterns
+      delivered: [
+        'Xpress Ship Order Delivered:',
+        'Order Delivered:'
+      ]
+    };
     
-    // Also check for delivery confirmation emails
-    const isDeliveryConfirmation = htmlContent.toLowerCase().includes('order delivered') ||
-                                   htmlContent.toLowerCase().includes('has been delivered') ||
-                                   htmlContent.toLowerCase().includes('xpress ship order delivered') ||
-                                   emailSubject.toLowerCase().includes('xpress ship order delivered') ||
-                                   emailSubject.toLowerCase().includes('order delivered') ||
-                                   emailSubject.toLowerCase().includes('🎉');
+    // Normalize subject for matching (remove extra whitespace, handle case)
+    const normalizedSubject = emailSubject.toLowerCase().trim();
+    const normalizedHtml = htmlContent.toLowerCase();
     
-    // Check for shipped confirmation emails
-    const isShippedConfirmation = htmlContent.toLowerCase().includes('order verified & shipped') ||
-                                  htmlContent.toLowerCase().includes('has been shipped') ||
-                                  htmlContent.toLowerCase().includes('order shipped') ||
-                                  emailSubject.toLowerCase().includes('order verified & shipped') ||
-                                  emailSubject.toLowerCase().includes('order shipped') ||
-                                  emailSubject.toLowerCase().includes('✅');
+    // Determine email type and status
+    let emailType: 'order' | 'shipped' | 'delivered' = 'order';
+    let isXpress = false;
     
-    if (isShippingEmail) {
-      orderInfo.shipping_status = "shipped";
-      // Extract tracking number from shipping confirmation emails
-      console.log(`📦 SHIPPING EMAIL DETECTED: "${emailSubject}" - Extracting tracking...`);
-      this.extractStockXTrackingInfo(htmlContent, textContent, orderInfo);
-    } else if (isShippedConfirmation) {
-      orderInfo.shipping_status = "shipped";
-      // Extract tracking number from shipped confirmation emails
-      console.log(`📦 SHIPPED EMAIL DETECTED: "${emailSubject}" - Extracting tracking...`);
-      console.log(`📦 SHIPPED DEBUG: Order number: ${orderInfo.order_number}`);
-      this.extractStockXTrackingInfo(htmlContent, textContent, orderInfo);
-    } else if (isDeliveryConfirmation) {
+    // Check for delivery emails first (most specific)
+    if (subjectPatterns.delivered.some(pattern => 
+        normalizedSubject.includes(pattern.toLowerCase()) || 
+        normalizedHtml.includes(pattern.toLowerCase())
+      )) {
+      emailType = 'delivered';
       orderInfo.shipping_status = "delivered";
-      // Try to extract tracking from delivery emails too - sometimes they have it
-      console.log(`📬 DELIVERY EMAIL DETECTED: "${emailSubject}" - Attempting tracking extraction...`);
-      console.log(`📬 DELIVERY DEBUG: Order number: ${orderInfo.order_number}`);
-      this.extractStockXTrackingInfo(htmlContent, textContent, orderInfo);
-    } else {
+      console.log(`📬 DELIVERY EMAIL DETECTED: "${emailSubject}"`);
+    }
+    // Check for shipping emails
+    else if (subjectPatterns.shipped.some(pattern => 
+        normalizedSubject.includes(pattern.toLowerCase()) || 
+        normalizedHtml.includes(pattern.toLowerCase())
+      )) {
+      emailType = 'shipped';
+      orderInfo.shipping_status = "shipped";
+      console.log(`📦 SHIPPING EMAIL DETECTED: "${emailSubject}"`);
+    }
+    // Check for order confirmation emails
+    else if (subjectPatterns.orderConfirmed.some(pattern => 
+        normalizedSubject.includes(pattern.toLowerCase()) || 
+        normalizedHtml.includes(pattern.toLowerCase())
+      )) {
+      emailType = 'order';
       orderInfo.shipping_status = "ordered";
-      console.log(`📦 ORDER EMAIL DETECTED: "${emailSubject}" - Setting status to ordered`);
+      console.log(`📦 ORDER EMAIL DETECTED: "${emailSubject}"`);
+    }
+    // Fallback: check content for status indicators
+    else {
+      if (normalizedHtml.includes('order delivered') || 
+          normalizedHtml.includes('has been delivered') ||
+          normalizedHtml.includes('🎉')) {
+        emailType = 'delivered';
+        orderInfo.shipping_status = "delivered";
+        console.log(`📬 DELIVERY EMAIL DETECTED (fallback): "${emailSubject}"`);
+      } else if (normalizedHtml.includes('order verified & shipped') ||
+                 normalizedHtml.includes('order shipped') ||
+                 normalizedHtml.includes('has been shipped') ||
+                 normalizedHtml.includes('✅')) {
+        emailType = 'shipped';
+        orderInfo.shipping_status = "shipped";
+        console.log(`📦 SHIPPING EMAIL DETECTED (fallback): "${emailSubject}"`);
+      } else {
+        emailType = 'order';
+        orderInfo.shipping_status = "ordered";
+        console.log(`📦 ORDER EMAIL DETECTED (fallback): "${emailSubject}"`);
+      }
     }
     
-    // ALWAYS attempt tracking extraction for ALL StockX emails
-    // Some order confirmation emails may contain tracking numbers
-    console.log(`🔍 ATTEMPTING TRACKING EXTRACTION for all StockX emails...`);
+    // Extract tracking for shipped and delivered emails
+    if (emailType === 'shipped' || emailType === 'delivered') {
+      console.log(`🔍 Extracting tracking for ${emailType} email...`);
+      this.extractStockXTrackingInfo(htmlContent, textContent, orderInfo);
+    }
+    
+    // Also attempt tracking extraction for all emails (some order confirmations have tracking)
+    console.log(`🔍 Attempting tracking extraction for all StockX emails...`);
     this.extractStockXTrackingInfo(htmlContent, textContent, orderInfo);
     
-    // Initial order type detection from subject/content
-    if (htmlContent.toLowerCase().includes('xpress order confirmed')) {
+    // Detect order type (Xpress vs Regular)
+    // Check subject line first
+    if (normalizedSubject.includes('xpress') || normalizedHtml.includes('xpress order')) {
+      isXpress = true;
       orderInfo.order_type = "xpress";
+      console.log(`⚡ XPRESS ORDER DETECTED`);
     } else {
       orderInfo.order_type = "regular";
+      console.log(`📦 REGULAR ORDER DETECTED`);
     }
     
     // Extract information in order
-    this.extractStockXOrderNumber(textContent, orderInfo);
+    this.extractStockXOrderNumber(htmlContent, textContent, orderInfo);
     this.extractStockXProductInfo(htmlContent, textContent, orderInfo);
     this.extractStockXProductImage(htmlContent, orderInfo);
 
@@ -1288,34 +1319,72 @@ export class OrderConfirmationParser {
   /**
    * Extract order number from StockX email and validate order type
    */
-  private extractStockXOrderNumber(textContent: string, orderInfo: OrderInfo): void {
-    const orderPatterns = [
-      /Order number:\s*([A-Z0-9-]+)/i,
-      /Order Number:\s*([A-Z0-9-]+)/i,
-      /Order:\s*([A-Z0-9-]+)/i
+  private extractStockXOrderNumber(htmlContent: string, textContent: string, orderInfo: OrderInfo): void {
+    // Priority 1: Search HTML for structured order number (most reliable)
+    // Pattern: <li class="attributes">Order number: 03-PAN6QGRR7B</li>
+    const htmlOrderPatterns = [
+      /<li[^>]*class=["']attributes["'][^>]*>\s*Order\s+number:\s*([A-Z0-9-]+)\s*<\/li>/i,
+      /<li[^>]*class=["']attributes["'][^>]*>\s*Order\s+Number:\s*([A-Z0-9-]+)\s*<\/li>/i,
+      /<li[^>]*>\s*Order\s+number:\s*([A-Z0-9-]+)\s*<\/li>/i,
+      /<td[^>]*>\s*Order\s+number:\s*([A-Z0-9-]+)\s*<\/td>/i,
+      /Order\s+number:\s*([A-Z0-9-]+)/i
     ];
     
-    for (const pattern of orderPatterns) {
-      const match = textContent.match(pattern);
-      if (match) {
+    // Try HTML patterns first
+    for (const pattern of htmlOrderPatterns) {
+      const match = htmlContent.match(pattern);
+      if (match && match[1]) {
         const orderNumber = match[1].trim();
         orderInfo.order_number = orderNumber;
+        console.log(`✅ Order number extracted from HTML: ${orderNumber}`);
         
         // Validate and potentially correct order type based on order number format
         if (this.isXpressOrderNumber(orderNumber)) {
-          // If we detected xpress format but hadn't set type as xpress, correct it
           if (orderInfo.order_type !== "xpress") {
             orderInfo.order_type = "xpress";
+            console.log(`📝 Corrected order type to xpress based on order number format`);
           }
         } else if (this.isRegularOrderNumber(orderNumber)) {
-          // If we detected regular format but had set type as xpress, correct it
           if (orderInfo.order_type === "xpress") {
             orderInfo.order_type = "regular";
+            console.log(`📝 Corrected order type to regular based on order number format`);
           }
         }
-        break;
+        return; // Found in HTML, done
       }
     }
+    
+    // Priority 2: Fall back to text content patterns
+    const textOrderPatterns = [
+      /Order\s+number:\s*([A-Z0-9-]+)/i,
+      /Order\s+Number:\s*([A-Z0-9-]+)/i,
+      /Order:\s*([A-Z0-9-]+)/i
+    ];
+    
+    for (const pattern of textOrderPatterns) {
+      const match = textContent.match(pattern);
+      if (match && match[1]) {
+        const orderNumber = match[1].trim();
+        orderInfo.order_number = orderNumber;
+        console.log(`✅ Order number extracted from text: ${orderNumber}`);
+        
+        // Validate and potentially correct order type based on order number format
+        if (this.isXpressOrderNumber(orderNumber)) {
+          if (orderInfo.order_type !== "xpress") {
+            orderInfo.order_type = "xpress";
+            console.log(`📝 Corrected order type to xpress based on order number format`);
+          }
+        } else if (this.isRegularOrderNumber(orderNumber)) {
+          if (orderInfo.order_type === "xpress") {
+            orderInfo.order_type = "regular";
+            console.log(`📝 Corrected order type to regular based on order number format`);
+          }
+        }
+        return; // Found in text, done
+      }
+    }
+    
+    console.log(`⚠️ Order number not found in email`);
   }
   
   /**
