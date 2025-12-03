@@ -1051,6 +1051,7 @@ export class OrderConfirmationParser {
       const match = htmlContent.match(pattern);
       if (match) {
         orderInfo.purchase_price = parseFloat(match[1]);
+        console.log(`💰 Purchase Price extracted: $${orderInfo.purchase_price}`);
         break;
       }
     }
@@ -1065,6 +1066,7 @@ export class OrderConfirmationParser {
       const match = htmlContent.match(pattern);
       if (match) {
         orderInfo.processing_fee = parseFloat(match[1]);
+        console.log(`💰 Processing Fee extracted: $${orderInfo.processing_fee}`);
         break;
       }
     }
@@ -1080,22 +1082,50 @@ export class OrderConfirmationParser {
       if (match) {
         orderInfo.shipping_type = match[1];
         orderInfo.shipping_fee = parseFloat(match[2]);
+        console.log(`💰 Shipping Fee extracted: $${orderInfo.shipping_fee} (${orderInfo.shipping_type})`);
         break;
       }
     }
     
-    // Total
+    // Extract total from email for validation (optional)
+    let extractedTotal: number | null = null;
     const totalPatterns = [
       /Total Payment.*?\$(\d+\.\d{2})\*?/i,
-      /<td[^>]*>.*?Total Payment.*?<\/td>\s*<td[^>]*>\$(\d+\.\d{2})\*?/i
+      /<td[^>]*>.*?Total Payment.*?<\/td>\s*<td[^>]*>\$(\d+\.\d{2})\*?/i,
+      /Total.*?\$(\d+\.\d{2})\*?/i
     ];
     
     for (const pattern of totalPatterns) {
       const match = htmlContent.match(pattern);
       if (match) {
-        orderInfo.total_amount = parseFloat(match[1]);
+        extractedTotal = parseFloat(match[1]);
+        console.log(`💰 Total extracted from email: $${extractedTotal}`);
         break;
       }
+    }
+    
+    // Calculate total automatically: purchase_price + processing_fee + shipping_fee
+    const calculatedTotal = orderInfo.purchase_price + orderInfo.processing_fee + orderInfo.shipping_fee;
+    
+    if (calculatedTotal > 0) {
+      orderInfo.total_amount = parseFloat(calculatedTotal.toFixed(2));
+      console.log(`💰 Total calculated: $${orderInfo.purchase_price} + $${orderInfo.processing_fee} + $${orderInfo.shipping_fee} = $${orderInfo.total_amount}`);
+      
+      // Validate against extracted total if available
+      if (extractedTotal !== null) {
+        const difference = Math.abs(calculatedTotal - extractedTotal);
+        if (difference > 0.01) { // Allow 1 cent difference for rounding
+          console.log(`⚠️ Calculated total ($${calculatedTotal.toFixed(2)}) differs from email total ($${extractedTotal.toFixed(2)}) by $${difference.toFixed(2)}`);
+        } else {
+          console.log(`✅ Calculated total matches email total: $${orderInfo.total_amount}`);
+        }
+      }
+    } else if (extractedTotal !== null) {
+      // Fallback: use extracted total if calculation not possible
+      orderInfo.total_amount = extractedTotal;
+      console.log(`💰 Using extracted total (calculation not possible): $${orderInfo.total_amount}`);
+    } else {
+      console.log(`⚠️ Could not calculate or extract total amount`);
     }
   }
   
