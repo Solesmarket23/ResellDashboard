@@ -908,6 +908,23 @@ const Purchases = () => {
         return;
       }
     }
+    
+    // Check if purchases were recently cleared - if so, don't auto-load
+    const clearedFlag = localStorage.getItem(`purchases_cleared_${userId}`);
+    if (clearedFlag) {
+      const clearedTime = parseInt(clearedFlag);
+      const timeSinceCleared = Date.now() - clearedTime;
+      // If cleared within the last 5 minutes, don't auto-load (user might have intentionally cleared)
+      // But allow manual sync via "Sync Gmail" button
+      if (timeSinceCleared < 5 * 60 * 1000) {
+        console.log('⚠️ Purchases were recently cleared - skipping auto-load. Use "Sync Gmail" to restore.');
+        setLoading(false);
+        return;
+      } else {
+        // Clear the flag after 5 minutes - allow normal loading again
+        localStorage.removeItem(`purchases_cleared_${userId}`);
+      }
+    }
 
     try {
       setLoading(true);
@@ -1313,6 +1330,10 @@ const Purchases = () => {
           
           console.log(`✅ All purchases cleared from Firebase: ${deletedCount} deleted`);
         }
+        
+        // Set a flag in localStorage to prevent auto-reload on next page refresh
+        // This flag will be checked in loadManualPurchasesFromFirebase
+        localStorage.setItem(`purchases_cleared_${userId}`, Date.now().toString());
         
       } catch (error) {
         console.error('❌ Error clearing purchases:', error);
@@ -1728,20 +1749,6 @@ const Purchases = () => {
               >
                 <Trash2 className="w-5 h-5" />
                 <span>Delete Selected ({selectedPurchases.size})</span>
-              </button>
-            )}
-            {gmailConnected && (
-              <button
-                onClick={refreshPurchases}
-                disabled={loading}
-                className={`flex items-center space-x-2 ${
-                  currentTheme.name === 'Neon' 
-                    ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 shadow-lg hover:shadow-emerald-500/25' 
-                    : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 shadow-lg hover:shadow-purple-500/25'
-                } disabled:opacity-50 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200`}
-              >
-                <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
-                <span>Sync Gmail</span>
               </button>
             )}
             {gmailConnected && ENABLE_HISTORICAL_SYNC && (
