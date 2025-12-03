@@ -12,6 +12,7 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
   const { currentTheme } = useTheme();
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isChecking, setIsChecking] = useState(true); // Add loading state
   const [error, setError] = useState<string | null>(null);
   const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
   const [needsReconnect, setNeedsReconnect] = useState(false);
@@ -43,6 +44,7 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
   }, [onConnectionChange]);
 
   const checkConnectionStatus = async () => {
+    setIsChecking(true); // Start checking
     try {
       console.log('🔍 Checking Gmail connection status...');
       
@@ -93,6 +95,8 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
         onConnectionChange?.(false);
         setError('Connection check failed');
       }
+    } finally {
+      setIsChecking(false); // Done checking
     }
   };
 
@@ -163,6 +167,31 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
       setIsConnecting(false);
     }
   };
+
+  // Show loading state while checking connection status
+  if (isChecking) {
+    return (
+      <div className={`flex items-center space-x-3 px-4 py-3 rounded-lg border ${ 
+        isNeonTheme 
+          ? 'bg-gray-500/10 text-gray-400 border-gray-500/30 backdrop-blur-sm' 
+          : 'bg-gray-50 text-gray-800 border-gray-200'
+      }`}>
+        <Loader2 className={`w-5 h-5 animate-spin ${ 
+          isNeonTheme 
+            ? 'text-gray-400' 
+            : 'text-gray-600'
+        }`} />
+        <div className="flex-1">
+          <div className="font-medium text-sm">Checking Gmail connection...</div>
+          <div className={`text-xs ${ 
+            isNeonTheme 
+              ? 'text-gray-400/70' 
+              : 'text-gray-600'
+          }`}>Please wait</div>
+        </div>
+      </div>
+    );
+  }
 
   if (isConnected) {
     return (
