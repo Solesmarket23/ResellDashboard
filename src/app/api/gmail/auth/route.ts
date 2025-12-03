@@ -15,12 +15,18 @@ export async function GET(request: NextRequest) {
     // Check if we're running locally (localhost, 127.0.0.1)
     const isLocal = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1');
     
+    // Check if this is a Vercel preview URL (should use production domain)
+    const isVercelPreview = baseUrl.includes('vercel.app') || baseUrl.includes('vercel.app');
+    
     // Force production URL to solesmarket.com if not local
     if (!isLocal) {
-      // Use environment variable if set, otherwise default to solesmarket.com
+      // Always use solesmarket.com for production (including Vercel previews)
       const productionBaseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.solesmarket.com';
       baseUrl = productionBaseUrl;
       console.log('🌐 Production detected - using base URL:', baseUrl);
+      if (isVercelPreview) {
+        console.log('🌐 Vercel preview detected - forcing production domain');
+      }
     }
     
     // Get the return URL from query parameters
