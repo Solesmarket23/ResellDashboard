@@ -1375,31 +1375,59 @@ export class OrderConfirmationParser {
     
     // Extract headers for the HTML part (everything between Content-Type and blank line)
     // Look for blank line (could be \n\n or \r\n\r\n)
+    // Need to search from htmlPartStart onwards
     let htmlPartEnd = emailContent.indexOf('\n\n', htmlPartStart);
     if (htmlPartEnd === -1) {
       htmlPartEnd = emailContent.indexOf('\r\n\r\n', htmlPartStart);
       if (htmlPartEnd !== -1) {
         htmlPartEnd += 2; // Adjust for \r\n
       }
+    } else {
+      htmlPartEnd += 2; // Adjust for \n\n
     }
     
-    const htmlPartHeaders = htmlPartEnd !== -1 
+    // If still no blank line found, try to find the first line that starts with <
+    if (htmlPartEnd === -1 || htmlPartEnd === htmlPartStart + 1) {
+      // Look for the start of HTML content (usually <!DOCTYPE or <html)
+      const htmlStart = emailContent.indexOf('<!DOCTYPE', htmlPartStart);
+      const htmlStartAlt = emailContent.indexOf('<html', htmlPartStart);
+      const actualStart = htmlStart !== -1 ? htmlStart : (htmlStartAlt !== -1 ? htmlStartAlt : htmlPartStart + 100);
+      htmlPartEnd = actualStart;
+    }
+    
+    const htmlPartHeaders = htmlPartEnd !== -1 && htmlPartEnd > htmlPartStart
       ? emailContent.substring(htmlPartStart, htmlPartEnd)
-      : emailContent.substring(htmlPartStart, htmlPartStart + 2000);
+      : emailContent.substring(htmlPartStart, Math.min(htmlPartStart + 2000, emailContent.length));
     
     // Extract charset and encoding from HTML part headers
     const charsetMatch = htmlPartHeaders.match(/charset=([^\s;]+)/i);
     const charset = charsetMatch ? charsetMatch[1].toLowerCase() : 'utf-8';
     
     // Check for encoding in headers BEFORE Content-Type (it might be above)
-    const headersBeforeHtml = emailContent.substring(0, htmlPartStart);
+    const headersBeforeHtml = emailContent.substring(Math.max(0, htmlPartStart - 500), htmlPartStart);
     const encodingMatchBefore = headersBeforeHtml.match(/Content-Transfer-Encoding:\s*([^\n\r]+)/i);
     const encodingMatchInHeaders = htmlPartHeaders.match(/Content-Transfer-Encoding:\s*([^\n\r]+)/i);
     const encodingMatch = encodingMatchInHeaders || encodingMatchBefore;
     const isQuotedPrintable = encodingMatch && encodingMatch[1].toLowerCase().includes('quoted-printable');
     
     // Extract HTML content (everything after the blank line until next boundary or end)
-    const contentStart = htmlPartEnd !== -1 ? htmlPartEnd + 2 : htmlPartStart;
+    // If htmlPartEnd points to blank line, content starts after it
+    let contentStart = htmlPartEnd;
+    if (htmlPartEnd !== -1 && htmlPartEnd > htmlPartStart) {
+      // Check if htmlPartEnd points to blank line markers
+      if (emailContent.substring(htmlPartEnd - 2, htmlPartEnd) === '\n\n' || 
+          emailContent.substring(htmlPartEnd - 4, htmlPartEnd) === '\r\n\r\n') {
+        // Already pointing after blank line
+      } else {
+        // Find the actual start of HTML content
+        const htmlTagStart = emailContent.indexOf('<!DOCTYPE', htmlPartEnd);
+        const htmlTagStartAlt = emailContent.indexOf('<html', htmlPartEnd);
+        if (htmlTagStart !== -1 || htmlTagStartAlt !== -1) {
+          contentStart = htmlTagStart !== -1 ? htmlTagStart : htmlTagStartAlt;
+        }
+      }
+    }
+    
     const nextBoundary = emailContent.indexOf('\n--', contentStart);
     const nextContentType = emailContent.indexOf('\nContent-Type:', contentStart);
     const endPos = nextBoundary !== -1 && nextContentType !== -1
@@ -1431,7 +1459,9 @@ export class OrderConfirmationParser {
       console.log(`   HTML length: ${html.length}`);
       console.log(`   Is quoted-printable: ${isQuotedPrintable}`);
       console.log(`   Charset: ${charset}`);
-      console.log(`   HTML preview (first 200 chars): ${html.substring(0, 200)}`);
+      console.log(`   HTML preview (first 500 chars): ${html.substring(0, 500)}`);
+      console.log(`   HTML contains '<html': ${html.toLowerCase().includes('<html')}`);
+      console.log(`   HTML contains '<li': ${html.toLowerCase().includes('<li')}`);
     }
     
     return html;
