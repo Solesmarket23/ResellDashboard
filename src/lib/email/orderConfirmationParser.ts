@@ -164,9 +164,23 @@ export class OrderConfirmationParser {
    * Parse StockX-specific email format
    */
   private parseStockXEmail(htmlContent: string, orderInfo: OrderInfo): void {
+    if (this.debug) {
+      console.log(`\n🔍 PARSE STOCKX EMAIL START`);
+      console.log(`   HTML Content length: ${htmlContent.length}`);
+      console.log(`   HTML starts with: ${htmlContent.substring(0, 100)}`);
+      console.log(`   Contains '<li': ${htmlContent.includes('<li')}`);
+      console.log(`   Contains 'class="attributes"': ${htmlContent.includes('class="attributes"')}`);
+      console.log(`   Contains 'Size:': ${htmlContent.includes('Size:')}`);
+    }
+    
     // Clean HTML and extract text
     const $: any = cheerio.load(htmlContent);
     const textContent: string = ($('body').text && $('body').text()) || ($.root && $.root().text && $.root().text()) || '';
+    
+    if (this.debug) {
+      console.log(`   Text content length: ${textContent.length}`);
+      console.log(`   Text preview: ${textContent.substring(0, 200)}`);
+    }
     
     // Get subject from email (check multiple locations)
     const subjectMatch = htmlContent.match(/<title>([^<]+)<\/title>/i) || 
@@ -1350,7 +1364,15 @@ export class OrderConfirmationParser {
     }
     
     // Extract headers for the HTML part (everything between Content-Type and blank line)
-    const htmlPartEnd = emailContent.indexOf('\n\n', htmlPartStart);
+    // Look for blank line (could be \n\n or \r\n\r\n)
+    let htmlPartEnd = emailContent.indexOf('\n\n', htmlPartStart);
+    if (htmlPartEnd === -1) {
+      htmlPartEnd = emailContent.indexOf('\r\n\r\n', htmlPartStart);
+      if (htmlPartEnd !== -1) {
+        htmlPartEnd += 2; // Adjust for \r\n
+      }
+    }
+    
     const htmlPartHeaders = htmlPartEnd !== -1 
       ? emailContent.substring(htmlPartStart, htmlPartEnd)
       : emailContent.substring(htmlPartStart, htmlPartStart + 2000);
@@ -1359,7 +1381,11 @@ export class OrderConfirmationParser {
     const charsetMatch = htmlPartHeaders.match(/charset=([^\s;]+)/i);
     const charset = charsetMatch ? charsetMatch[1].toLowerCase() : 'utf-8';
     
-    const encodingMatch = htmlPartHeaders.match(/Content-Transfer-Encoding:\s*([^\n]+)/i);
+    // Check for encoding in headers BEFORE Content-Type (it might be above)
+    const headersBeforeHtml = emailContent.substring(0, htmlPartStart);
+    const encodingMatchBefore = headersBeforeHtml.match(/Content-Transfer-Encoding:\s*([^\n\r]+)/i);
+    const encodingMatchInHeaders = htmlPartHeaders.match(/Content-Transfer-Encoding:\s*([^\n\r]+)/i);
+    const encodingMatch = encodingMatchInHeaders || encodingMatchBefore;
     const isQuotedPrintable = encodingMatch && encodingMatch[1].toLowerCase().includes('quoted-printable');
     
     // Extract HTML content (everything after the blank line until next boundary or end)
@@ -1378,10 +1404,24 @@ export class OrderConfirmationParser {
     
     // Remove trailing boundary markers if present
     html = html.replace(/\n--[^\n]*$/, '');
+    html = html.replace(/\r\n--[^\r\n]*$/, '');
     
     // Decode quoted-printable if needed
     if (isQuotedPrintable) {
       html = this.decodeQuotedPrintable(html, charset);
+    }
+    
+    // Debug logging
+    if (this.debug) {
+      console.log(`📧 HTML EXTRACTION:`);
+      console.log(`   Found Content-Type at: ${htmlPartStart}`);
+      console.log(`   Blank line at: ${htmlPartEnd}`);
+      console.log(`   Content start: ${contentStart}`);
+      console.log(`   Content end: ${endPos}`);
+      console.log(`   HTML length: ${html.length}`);
+      console.log(`   Is quoted-printable: ${isQuotedPrintable}`);
+      console.log(`   Charset: ${charset}`);
+      console.log(`   HTML preview (first 200 chars): ${html.substring(0, 200)}`);
     }
     
     return html;

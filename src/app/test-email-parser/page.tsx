@@ -142,10 +142,25 @@ export default function TestEmailParserPage() {
           <p className="text-gray-400 mb-6">
             Testing the OrderConfirmationParser with all 8 sample StockX emails
           </p>
+          
+          {/* Instructions */}
+          <div className="bg-blue-900/30 border border-blue-700/50 rounded-lg p-4 mb-6">
+            <h3 className="text-sm font-semibold text-blue-300 mb-2">How to Upload Files:</h3>
+            <ol className="text-sm text-gray-300 space-y-1 list-decimal list-inside">
+              <li>In Cursor, right-click on the <code className="bg-gray-800 px-1 rounded">sample-emails</code> folder</li>
+              <li>Select "Reveal in Finder" (Mac) or "Show in Explorer" (Windows)</li>
+              <li>Select all 8 .eml files (01 through 08)</li>
+              <li>Drag and drop them into the file input below, or click to browse</li>
+            </ol>
+            <p className="text-xs text-gray-400 mt-2">
+              Or run locally: <code className="bg-gray-800 px-1 rounded">node scripts/test-email-parser.js</code>
+            </p>
+          </div>
+          
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
-                Upload Email Files (.eml)
+                Upload Email Files (.eml) - Select all 8 files
               </label>
               <input
                 type="file"
@@ -155,9 +170,16 @@ export default function TestEmailParserPage() {
                 className="block w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700"
               />
               {emailFiles.length > 0 && (
-                <p className="mt-2 text-sm text-gray-400">
-                  {emailFiles.length} file(s) selected
-                </p>
+                <div className="mt-2">
+                  <p className="text-sm text-gray-400 mb-2">
+                    {emailFiles.length} file(s) selected:
+                  </p>
+                  <ul className="text-xs text-gray-500 space-y-1 max-h-32 overflow-y-auto">
+                    {emailFiles.map((file, idx) => (
+                      <li key={idx}>• {file.name}</li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </div>
             <button

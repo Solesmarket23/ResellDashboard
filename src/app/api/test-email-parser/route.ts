@@ -50,7 +50,20 @@ export async function GET() {
       }
       
       if (emailContent) {
+        // Log some debug info
+        console.log(`\n📧 Processing ${filename}`);
+        console.log(`   Content length: ${emailContent.length} chars`);
+        console.log(`   Has Delivered-To: ${emailContent.includes('Delivered-To:')}`);
+        console.log(`   Has Return-Path: ${emailContent.includes('Return-Path:')}`);
+        console.log(`   Has StockX: ${emailContent.toLowerCase().includes('stockx')}`);
+        
         const orderInfo = parser.parseEmail(emailContent);
+        
+        // Log what was extracted
+        console.log(`   Extracted Order #: ${orderInfo.order_number || 'NONE'}`);
+        console.log(`   Extracted Size: ${orderInfo.size || 'NONE'}`);
+        console.log(`   Extracted Product: ${orderInfo.product_name || 'NONE'}`);
+        console.log(`   Merchant: ${orderInfo.merchant || 'NONE'}`);
         
         results.push({
           filename,
