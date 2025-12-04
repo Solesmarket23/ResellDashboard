@@ -651,6 +651,11 @@ export class OrderConfirmationParser {
   private isValidSizeFormat(size: string): boolean {
     if (!size || size.length === 0) return false;
     
+    // Quick check for common valid formats first (before other checks)
+    if (/^US\s+[SLM]$/i.test(size) || /^US\s+[X]+[SLM]$/i.test(size)) {
+      return true;
+    }
+    
     // Reject single digits (likely CSS values like "0", "1", "2", etc.)
     if (/^[0-9]+$/.test(size) && size.length <= 2) {
       return false;
@@ -658,6 +663,10 @@ export class OrderConfirmationParser {
     
     // Common size patterns
     const sizePatterns = [
+      // US sizes with single letter (US S, US M, US L, etc.) - highest priority
+      /^US\s+[SLM]$/i,
+      /^US\s+[X]+[SLM]$/i,  // US XL, US XXL, etc.
+      
       // Letter sizes (XS, S, M, L, XL, XXL, etc.) - but not just single letters that are CSS keywords
       /^[X]+[SLM]$/i,  // XXL, XXXL, etc.
       /^[SLM]$/i,      // S, L, M only
@@ -666,8 +675,9 @@ export class OrderConfirmationParser {
       // Number sizes (5, 5.5, 10, 10.5, etc.)
       /^\d+(\.\d+)?$/,
       
-      // US sizes (US 5, US M, US W 9, etc.)
-      /^US\s*[A-Z0-9\.\s]+$/i,
+      // US sizes (US 5, US M, US W 9, etc.) - general pattern
+      /^US\s+[A-Z0-9\.]+$/i,  // US followed by space and alphanumeric (no spaces in middle)
+      /^US\s*[A-Z0-9\.\s]+$/i,  // US with optional space and alphanumeric (allows spaces)
       
       // Women's sizes (W 9, W 10, etc.)
       /^W\s*\d+(\.\d+)?$/i,
