@@ -275,7 +275,15 @@ export default function TestEmailParserPage() {
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                           {result.data?.order_number ? (
-                            <span className="font-mono text-xs">{result.data.order_number}</span>
+                            <a
+                              href={`https://mail.google.com/mail/u/0/#search/${encodeURIComponent(result.data.order_number)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-mono text-xs text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                              title="Search for this order number in Gmail"
+                            >
+                              {result.data.order_number}
+                            </a>
                           ) : result.success ? (
                             <span className="text-yellow-600 text-xs" title="Parser ran but no order number found">No data</span>
                           ) : (
@@ -405,7 +413,21 @@ export default function TestEmailParserPage() {
                           <dl className="space-y-2 text-sm">
                             <div className="flex">
                               <dt className="font-medium text-gray-600 w-32">Order Number:</dt>
-                              <dd className="text-gray-900">{data.order_number || "—"}</dd>
+                              <dd className="text-gray-900">
+                                {data.order_number ? (
+                                  <a
+                                    href={`https://mail.google.com/mail/u/0/#search/${encodeURIComponent(data.order_number)}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer font-mono"
+                                    title="Search for this order number in Gmail"
+                                  >
+                                    {data.order_number}
+                                  </a>
+                                ) : (
+                                  "—"
+                                )}
+                              </dd>
                             </div>
                             <div className="flex">
                               <dt className="font-medium text-gray-600 w-32">Order Type:</dt>
