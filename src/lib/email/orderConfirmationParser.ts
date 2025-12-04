@@ -652,7 +652,7 @@ export class OrderConfirmationParser {
     if (!size || size.length === 0) return false;
     
     // Quick check for common valid formats first (before other checks)
-    if (/^US\s+[SLM]$/i.test(size) || /^US\s+[X]+[SLM]$/i.test(size)) {
+    if (/^US\s+[SLM]$/i.test(size) || /^US\s+[X]+[SLM]$/i.test(size) || /^US\s+XS$/i.test(size)) {
       return true;
     }
     
@@ -665,6 +665,7 @@ export class OrderConfirmationParser {
     const sizePatterns = [
       // US sizes with single letter (US S, US M, US L, etc.) - highest priority
       /^US\s+[SLM]$/i,
+      /^US\s+XS$/i,  // US XS
       /^US\s+[X]+[SLM]$/i,  // US XL, US XXL, etc.
       
       // Letter sizes (XS, S, M, L, XL, XXL, etc.) - but not just single letters that are CSS keywords
