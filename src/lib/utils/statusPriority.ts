@@ -91,46 +91,70 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
       // Use the highest priority purchase as the base
       const primaryPurchase = { ...sortedPurchases[0] };
       
-      // Find the order confirmation email (ordered status) for purchase date
-      // Check multiple status variations to find the order confirmation email
+      // ALWAYS find the order confirmation email for purchase date
+      // Check multiple ways to identify order confirmation emails:
+      // 1. Status is "ordered" or contains "order confirmed" or "confirmation"
+      // 2. Email subject contains "Order Confirmed", "Order Confirmation", "Xpress Order Confirmed"
+      // 3. Filename contains "order-confirmed", "order-confirmation", "xpress-order-confirmed"
       const orderConfirmationEmail = sortedPurchases.find(p => {
         const status = (p.status || p.shipping_status || '').toLowerCase();
-        // Match various order confirmation statuses
-        return status === 'ordered' || 
-               status === 'order placed' ||
-               status.includes('order confirmed') ||
-               status.includes('confirmation');
+        const subject = (p.email_subject || p.subject || '').toLowerCase();
+        const filename = (p.filename || '').toLowerCase();
+        
+        // Check status
+        const statusMatch = status === 'ordered' || 
+                           status === 'order placed' ||
+                           status.includes('order confirmed') ||
+                           status.includes('confirmation');
+        
+        // Check subject line
+        const subjectMatch = subject.includes('order confirmed') ||
+                            subject.includes('order confirmation') ||
+                            subject.includes('xpress order confirmed');
+        
+        // Check filename
+        const filenameMatch = filename.includes('order-confirmed') ||
+                             filename.includes('order-confirmation') ||
+                             filename.includes('xpress-order-confirmed');
+        
+        return statusMatch || subjectMatch || filenameMatch;
       });
       
-      // Set purchase date from order confirmation email (if found)
+      // ALWAYS set purchase date from order confirmation email (if found)
+      // This overwrites any purchase date that might have been set from the primary (shipped/delivered) email
       if (orderConfirmationEmail) {
-        console.log(`📅 Found order confirmation email for ${orderNumber}: status="${orderConfirmationEmail.status || orderConfirmationEmail.shipping_status}", email_date="${orderConfirmationEmail.email_date}", purchaseDate="${orderConfirmationEmail.purchaseDate}"`);
+        console.log(`📅 Found order confirmation email for ${orderNumber}: status="${orderConfirmationEmail.status || orderConfirmationEmail.shipping_status}", subject="${orderConfirmationEmail.email_subject || orderConfirmationEmail.subject || 'N/A'}", email_date="${orderConfirmationEmail.email_date}", purchaseDate="${orderConfirmationEmail.purchaseDate}"`);
         
-        // Prioritize email_date from order confirmation email
+        let purchaseDateSet = false;
+        
+        // Priority 1: Use email_date from order confirmation email - ALWAYS overwrite
         if (orderConfirmationEmail.email_date) {
           try {
             const emailDate = new Date(orderConfirmationEmail.email_date);
             if (!isNaN(emailDate.getTime())) {
               const formattedDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+              // ALWAYS overwrite purchaseDate with order confirmation date
               primaryPurchase.purchaseDate = formattedDate;
               primaryPurchase.purchase_date = orderConfirmationEmail.email_date; // Store ISO string for purchase_date
               primaryPurchase.email_date = orderConfirmationEmail.email_date;
-              console.log(`✅ Set purchase date from order confirmation email_date: ${formattedDate}`);
+              purchaseDateSet = true;
+              console.log(`✅ Set purchase date from order confirmation email_date: ${formattedDate} (overwrote any existing date)`);
             }
           } catch (e) {
             console.warn(`⚠️ Failed to parse email_date: ${orderConfirmationEmail.email_date}`, e);
           }
         }
         
-        // Fallback to existing purchaseDate if email_date parsing failed
-        if (!primaryPurchase.purchaseDate && orderConfirmationEmail.purchaseDate) {
+        // Priority 2: Fallback to existing purchaseDate from order confirmation email
+        if (!purchaseDateSet && orderConfirmationEmail.purchaseDate) {
           primaryPurchase.purchaseDate = orderConfirmationEmail.purchaseDate;
           primaryPurchase.purchase_date = orderConfirmationEmail.purchase_date || orderConfirmationEmail.email_date || orderConfirmationEmail.createdAt;
+          purchaseDateSet = true;
           console.log(`✅ Using existing purchaseDate from order confirmation: ${primaryPurchase.purchaseDate}`);
         }
         
-        // Final fallback to createdAt
-        if (!primaryPurchase.purchaseDate && orderConfirmationEmail.createdAt) {
+        // Priority 3: Final fallback to createdAt from order confirmation email
+        if (!purchaseDateSet && orderConfirmationEmail.createdAt) {
           try {
             const emailDate = new Date(orderConfirmationEmail.createdAt);
             if (!isNaN(emailDate.getTime())) {
@@ -138,6 +162,7 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
               primaryPurchase.purchaseDate = formattedDate;
               primaryPurchase.purchase_date = orderConfirmationEmail.createdAt;
               primaryPurchase.email_date = orderConfirmationEmail.createdAt;
+              purchaseDateSet = true;
               console.log(`✅ Set purchase date from order confirmation createdAt: ${formattedDate}`);
             }
           } catch (e) {
@@ -145,7 +170,9 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
           }
         }
       } else {
-        console.log(`⚠️ No order confirmation email found for ${orderNumber}, using earliest date fallback`);
+        console.log(`⚠️ No order confirmation email found for ${orderNumber}`);
+        console.log(`   Available emails: ${sortedPurchases.map(p => `status="${p.status || p.shipping_status}", subject="${p.email_subject || p.subject || 'N/A'}", filename="${p.filename || 'N/A'}"`).join('; ')}`);
+        console.log(`   Using earliest date fallback`);
         // Fallback: use the earliest email date as purchase date
         const dates = sortedPurchases
           .map(p => new Date(p.email_date || p.createdAt || 0))
