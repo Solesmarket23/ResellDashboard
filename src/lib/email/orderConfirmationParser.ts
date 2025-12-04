@@ -374,17 +374,32 @@ export class OrderConfirmationParser {
     // Extract size - Prioritize <li class="attributes"> pattern using cheerio
     let sizeFound = false;
     
-    // Method 0: First try the simplest possible pattern - "Size: US S" anywhere in HTML
+    // Method 0: First try the simplest possible pattern - "Size: US S" or "Size: US W 8.5" anywhere in HTML
     // This handles cases where cheerio fails due to encoded HTML
-    const simpleSizeMatch = htmlContent.match(/Size:\s*(US\s+[A-Z0-9\.]+)/i);
-    if (simpleSizeMatch && simpleSizeMatch[1]) {
-      let size = simpleSizeMatch[1].trim().replace(/\s+/g, ' ');
+    // Pattern 1: Match "US W 8.5" or "US M 10" format (letter followed by number)
+    const simpleSizeMatch1 = htmlContent.match(/Size:\s*(US\s+[A-Z]\s+\d+(?:\.\d+)?)/i);
+    if (simpleSizeMatch1 && simpleSizeMatch1[1]) {
+      let size = simpleSizeMatch1[1].trim().replace(/\s+/g, ' ');
       if (this.isValidSizeFormat(size)) {
         orderInfo.size = size;
         sizeFound = true;
-        console.log(`✅ SIZE EXTRACTED using simple pattern: "${size}"`);
+        console.log(`✅ SIZE EXTRACTED using simple pattern (US W 8.5 format): "${size}"`);
       } else {
         console.log(`⚠️ Simple pattern matched "${size}" but validation failed`);
+      }
+    }
+    // Pattern 2: Match "US S" or "US M" format (single letter)
+    if (!sizeFound) {
+      const simpleSizeMatch2 = htmlContent.match(/Size:\s*(US\s+[A-Z0-9\.]+)/i);
+      if (simpleSizeMatch2 && simpleSizeMatch2[1]) {
+        let size = simpleSizeMatch2[1].trim().replace(/\s+/g, ' ');
+        if (this.isValidSizeFormat(size)) {
+          orderInfo.size = size;
+          sizeFound = true;
+          console.log(`✅ SIZE EXTRACTED using simple pattern: "${size}"`);
+        } else {
+          console.log(`⚠️ Simple pattern matched "${size}" but validation failed`);
+        }
       }
     }
     
@@ -427,7 +442,9 @@ export class OrderConfirmationParser {
     // Handle both encoded (=3D) and decoded (=) HTML
     if (!sizeFound) {
       const sizePatterns = [
-        // Highest priority: Simple pattern that matches "Size: US S" anywhere (handles multi-line tags)
+        // Highest priority: Match "US W 8.5" or "US M 10" format (letter followed by number)
+        /Size:\s*(US\s+[A-Z]\s+\d+(?:\.\d+)?)(?:\s|$|,|;|\.|<\/)/i,
+        // Second priority: Simple pattern that matches "Size: US S" anywhere (handles multi-line tags)
         // Capture the full "US S" or "US 10" etc.
         /Size:\s*(US\s+[A-Z0-9\.]+)(?:\s|$|,|;|\.|<\/)/i,
         
@@ -655,6 +672,10 @@ export class OrderConfirmationParser {
     if (/^US\s+[SLM]$/i.test(size) || /^US\s+[X]+[SLM]$/i.test(size) || /^US\s+XS$/i.test(size)) {
       return true;
     }
+    // Check for "US W 8.5" or "US M 10" format (letter followed by number)
+    if (/^US\s+[A-Z]\s+\d+(?:\.\d+)?$/i.test(size)) {
+      return true;
+    }
     
     // Reject single digits (likely CSS values like "0", "1", "2", etc.)
     if (/^[0-9]+$/.test(size) && size.length <= 2) {
@@ -663,7 +684,10 @@ export class OrderConfirmationParser {
     
     // Common size patterns
     const sizePatterns = [
-      // US sizes with single letter (US S, US M, US L, etc.) - highest priority
+      // US sizes with letter and number (US W 8.5, US M 10, etc.) - highest priority
+      /^US\s+[A-Z]\s+\d+(?:\.\d+)?$/i,
+      
+      // US sizes with single letter (US S, US M, US L, etc.)
       /^US\s+[SLM]$/i,
       /^US\s+XS$/i,  // US XS
       /^US\s+[X]+[SLM]$/i,  // US XL, US XXL, etc.
@@ -761,6 +785,8 @@ export class OrderConfirmationParser {
     
     // Method 0: Direct pattern matching for "Size: US X" in any HTML structure (highest priority fallback)
     const directSizePatterns = [
+      // Match "Size: US W 8.5" or "Size: US M 10" format (letter followed by number) - highest priority
+      /Size:\s*(US\s+[A-Z]\s+\d+(?:\.\d+)?)(?:\s|$|,|;|\.|<\/)/i,
       // Match "Size: US S" or "Size: US M" etc. - capture the full "US S" or "US 10"
       /Size:\s*(US\s+[A-Z0-9\.]+)(?:\s|$|,|;|\.|<\/)/i,
       // Match "Size: US 10" or "Size: US 10.5" etc. - capture the full "US 10"
