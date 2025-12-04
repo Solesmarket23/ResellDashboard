@@ -873,7 +873,9 @@ async function parsePurchaseEmail(email: any, config: any, gmail: any) {
       estimatedDeliveryEnd: orderInfo.estimated_delivery_end,
       parsedPurchaseDate: orderInfo.purchase_date,
       carrier: orderInfo.carrier,
-      shippingStatus: orderInfo.shipping_status
+      shippingStatus: orderInfo.shipping_status,
+      email_date: emailDate.toISOString(), // Store full email date for consolidation
+      createdAt: emailDate.toISOString() // Also store as createdAt for fallback
     };
 
   } catch (error) {

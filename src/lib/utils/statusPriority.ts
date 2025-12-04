@@ -91,6 +91,50 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
       // Use the highest priority purchase as the base
       const primaryPurchase = { ...sortedPurchases[0] };
       
+      // Find the order confirmation email (ordered status) for purchase date
+      const orderConfirmationEmail = sortedPurchases.find(p => {
+        const status = (p.status || p.shipping_status || '').toLowerCase();
+        return status === 'ordered' || status === 'order placed';
+      });
+      
+      // Set purchase date from order confirmation email (if found)
+      if (orderConfirmationEmail) {
+        // Use existing purchaseDate if it's already formatted, otherwise format from email_date
+        if (orderConfirmationEmail.purchaseDate) {
+          primaryPurchase.purchaseDate = orderConfirmationEmail.purchaseDate;
+        } else if (orderConfirmationEmail.email_date) {
+          const emailDate = new Date(orderConfirmationEmail.email_date);
+          primaryPurchase.purchaseDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        } else if (orderConfirmationEmail.createdAt) {
+          const emailDate = new Date(orderConfirmationEmail.createdAt);
+          primaryPurchase.purchaseDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+        primaryPurchase.email_date = orderConfirmationEmail.email_date || orderConfirmationEmail.createdAt;
+      } else {
+        // Fallback: use the earliest email date as purchase date
+        const dates = sortedPurchases
+          .map(p => new Date(p.email_date || p.createdAt || 0))
+          .filter(d => !isNaN(d.getTime()));
+        if (dates.length > 0) {
+          const earliestDate = new Date(Math.min(...dates.map(d => d.getTime())));
+          const earliestPurchase = sortedPurchases.find(p => {
+            const pDate = new Date(p.email_date || p.createdAt || 0);
+            return !isNaN(pDate.getTime()) && pDate.getTime() === earliestDate.getTime();
+          });
+          if (earliestPurchase) {
+            if (earliestPurchase.purchaseDate) {
+              primaryPurchase.purchaseDate = earliestPurchase.purchaseDate;
+            } else if (earliestPurchase.email_date) {
+              const emailDate = new Date(earliestPurchase.email_date);
+              primaryPurchase.purchaseDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            } else if (earliestPurchase.createdAt) {
+              const emailDate = new Date(earliestPurchase.createdAt);
+              primaryPurchase.purchaseDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            }
+          }
+        }
+      }
+      
       // Merge useful data from other purchases (e.g., tracking numbers, updated dates)
       for (let i = 1; i < sortedPurchases.length; i++) {
         const otherPurchase = sortedPurchases[i];
@@ -101,10 +145,11 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
           primaryPurchase.carrier = otherPurchase.carrier;
         }
         
-        // If this purchase has a more recent date, update it
+        // Keep the most recent email_date for display (but purchaseDate stays from order confirmation)
         const otherDate = new Date(otherPurchase.email_date || otherPurchase.createdAt || 0);
         const primaryDate = new Date(primaryPurchase.email_date || primaryPurchase.createdAt || 0);
-        if (otherDate > primaryDate) {
+        if (otherDate > primaryDate && !orderConfirmationEmail) {
+          // Only update email_date if we didn't find an order confirmation email
           primaryPurchase.email_date = otherPurchase.email_date;
         }
       }
