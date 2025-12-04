@@ -1564,7 +1564,21 @@ const Purchases = () => {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to extract tracking number');
+        // Provide more helpful error messages
+        let errorMessage = data.error || 'Failed to extract tracking number';
+        
+        if (data.requiresLogin) {
+          errorMessage = 'StockX requires login. Please log in to StockX in your browser, then try again.';
+        } else if (response.status === 404) {
+          errorMessage = `Order not found or tracking not available. ${data.error || ''}`;
+        } else if (data.debug) {
+          // Include debug info in development
+          if (process.env.NODE_ENV === 'development') {
+            console.log('Debug info:', data.debug);
+          }
+        }
+        
+        throw new Error(errorMessage);
       }
 
       if (data.success && data.trackingNumber) {

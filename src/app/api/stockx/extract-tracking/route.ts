@@ -45,6 +45,40 @@ export async function POST(request: NextRequest) {
     // Wait a bit for page to fully load and render
     await page.waitForTimeout(3000);
     
+    // Check if we're on a login page or error page
+    const currentUrl = page.url();
+    const pageTitle = await page.title();
+    const pageContent = await page.content();
+    
+    console.log(`📍 Current URL: ${currentUrl}`);
+    console.log(`📄 Page title: ${pageTitle}`);
+    
+    if (currentUrl.includes('login') || currentUrl.includes('sign-in') || pageContent.includes('Sign In') || pageContent.includes('Log In')) {
+      return NextResponse.json(
+        { 
+          error: 'StockX requires login to view order details. Please log in to StockX first.',
+          requiresLogin: true,
+          currentUrl
+        },
+        { status: 401 }
+      );
+    }
+    
+    if (currentUrl.includes('404') || pageContent.includes('404') || pageContent.includes('not found')) {
+      return NextResponse.json(
+        { 
+          error: `Order not found: ${orderNumber}. The order may not exist or you may not have access to it.`,
+          orderNumber,
+          currentUrl
+        },
+        { status: 404 }
+      );
+    }
+    
+    // Log page content snippet for debugging
+    const bodyText = await page.evaluate(() => document.body.innerText);
+    console.log(`📝 Page content preview (first 500 chars): ${bodyText.substring(0, 500)}`);
+    
     // Try multiple selectors for "Track Order" button/link
     // StockX might use different selectors, so we try multiple
     const trackButtonSelectors = [
@@ -147,7 +181,94 @@ export async function POST(request: NextRequest) {
       }
     }
     
+    // If button click didn't work, try to find tracking number directly on StockX page
     if (!trackButtonFound || !fedexPage) {
+      console.log(`🔍 Button click failed, searching for tracking number directly on StockX page...`);
+      
+      // Get all text content from the page
+      const pageText = await page.evaluate(() => document.body.innerText);
+      const pageHtml = await page.content();
+      
+      // Look for tracking numbers in the page content
+      // FedEx: 10-22 digits
+      const fedexPattern = /\b(\d{10,22})\b/g;
+      const fedexMatches = pageText.match(fedexPattern) || [];
+      
+      // UPS: 1Z + 16 alphanumeric
+      const upsPattern = /\b(1Z[0-9A-Z]{16})\b/gi;
+      const upsMatches = pageText.match(upsPattern) || [];
+      
+      // Filter out common non-tracking numbers (dates, prices, etc.)
+      const potentialTracking = [...fedexMatches, ...upsMatches].filter(num => {
+        // Skip if it looks like a year (starts with 19 or 20)
+        if (/^(19|20)\d{2,}$/.test(num)) return false;
+        // Skip if it's too short or too long for FedEx
+        if (num.length < 10 || num.length > 22) return false;
+        // Skip if it's all zeros
+        if (/^0+$/.test(num)) return false;
+        return true;
+      });
+      
+      if (potentialTracking.length > 0) {
+        // Check if any are near "track" keywords
+        for (const trackingNum of potentialTracking) {
+          const contextWindow = 100;
+          const numIndex = pageText.indexOf(trackingNum);
+          if (numIndex !== -1) {
+            const context = pageText.substring(
+              Math.max(0, numIndex - contextWindow),
+              Math.min(pageText.length, numIndex + trackingNum.length + contextWindow)
+            );
+            
+            if (/track|tracking|ship|fedex|ups|carrier/i.test(context)) {
+              console.log(`✅ Found tracking number in page content: ${trackingNum}`);
+              
+              let carrier = 'FedEx';
+              if (trackingNum.startsWith('1Z') && trackingNum.length === 18) {
+                carrier = 'UPS';
+              }
+              
+              return NextResponse.json({
+                success: true,
+                trackingNumber: trackingNum,
+                carrier,
+                extractedFrom: 'stockx-page-content'
+              });
+            }
+          }
+        }
+      }
+      
+      // Also check for tracking in URLs on the page
+      const allLinks = await page.$$eval('a[href]', (links) => 
+        links.map(link => link.getAttribute('href'))
+      );
+      
+      for (const linkHref of allLinks) {
+        if (linkHref && (linkHref.includes('fedex') || linkHref.includes('ups'))) {
+          const trackingMatch = linkHref.match(/tracknumbers?[=%3D](\d{10,22})/i) || 
+                               linkHref.match(/trknbr[=%3D](\d{10,22})/i) ||
+                               linkHref.match(/(1Z[0-9A-Z]{16})/i);
+          
+          if (trackingMatch) {
+            const trackingNum = trackingMatch[1];
+            console.log(`✅ Found tracking number in link: ${trackingNum}`);
+            
+            let carrier = 'FedEx';
+            if (trackingNum.startsWith('1Z') && trackingNum.length === 18) {
+              carrier = 'UPS';
+            }
+            
+            return NextResponse.json({
+              success: true,
+              trackingNumber: trackingNum,
+              carrier,
+              extractedFrom: 'stockx-link'
+            });
+          }
+        }
+      }
+      
       // Take a screenshot for debugging
       try {
         await page.screenshot({ path: '/tmp/stockx-page.png', fullPage: true });
@@ -158,7 +279,25 @@ export async function POST(request: NextRequest) {
       
       return NextResponse.json(
         { 
-          error: 'Could not find "Track Order" button on StockX page',
+          error: 'Could not find "Track Order" button or tracking number on StockX page. The order may require login or the page structure may have changed.',
+          debug: {
+            url,
+            orderNumber,
+            currentUrl: page.url(),
+            pageTitle: await page.title(),
+            foundLinks: allLinks.length,
+            potentialTrackingNumbers: potentialTracking.slice(0, 5) // First 5 for debugging
+          }
+        },
+        { status: 404 }
+      );
+    }
+    
+    // If we got here, fedexPage should exist - extract tracking from FedEx URL
+    if (!fedexPage) {
+      return NextResponse.json(
+        { 
+          error: 'FedEx page was not opened. The "Track Order" button may not be available for this order.',
           debug: {
             url,
             orderNumber
