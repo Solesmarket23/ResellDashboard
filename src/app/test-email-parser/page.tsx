@@ -133,8 +133,8 @@ export default function TestEmailParserPage() {
   };
 
   return (
-    <div className="bg-gray-900 min-h-screen">
-      <div className="max-w-7xl mx-auto p-8">
+    <div className="bg-gray-900 min-h-screen" style={{ overflowY: 'auto', height: '100vh' }}>
+      <div className="max-w-7xl mx-auto p-8 pb-16">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-white mb-2">
             Email Parser Test
