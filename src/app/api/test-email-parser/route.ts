@@ -261,9 +261,11 @@ export async function POST(request: Request) {
               success: true,
               data: {
                 ...consolidatedPurchase as OrderInfo,
+                // Use consolidated purchase_date and email_date (from order confirmation email)
+                purchase_date: consolidatedPurchase.purchaseDate || consolidatedPurchase.purchase_date || primaryResult.data?.purchase_date || '',
+                email_date: consolidatedPurchase.email_date || primaryResult.data?.email_date || '',
                 // Preserve email metadata from primary result
                 email_subject: primaryResult.data?.email_subject || '',
-                email_date: primaryResult.data?.email_date || '',
                 sender: primaryResult.data?.sender || ''
               },
               sourceEmails: sourceEmails.length > 1 ? sourceEmails : undefined
