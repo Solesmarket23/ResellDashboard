@@ -108,6 +108,10 @@ export async function POST(request: Request) {
     
     const orderInfo = parser.parseEmail(emailContent);
     
+    // Get HTML content for debugging (access private method via any cast)
+    const htmlContent = (parser as any).getHtmlContent(emailContent);
+    const hasEncodedHtml = htmlContent.includes('class=3D') || htmlContent.includes('=3D');
+    
     // Log what was extracted
     console.log(`\n📊 ===== TEST API: Extraction Results =====`);
     console.log(`   Order #: ${orderInfo.order_number || 'NONE'}`);
@@ -117,6 +121,14 @@ export async function POST(request: Request) {
     console.log(`   Total: $${orderInfo.total_amount || '0.00'}`);
     console.log(`   Tracking: ${orderInfo.tracking_number || 'NONE'}`);
     console.log(`   Status: ${orderInfo.shipping_status || 'NONE'}`);
+    console.log(`   Merchant: ${orderInfo.merchant || 'NONE'}`);
+    console.log(`\n   HTML Debug:`);
+    console.log(`   - HTML length: ${htmlContent.length} chars`);
+    console.log(`   - Contains encoded HTML (=3D): ${hasEncodedHtml}`);
+    console.log(`   - Contains 'Order number': ${htmlContent.toLowerCase().includes('order number')}`);
+    console.log(`   - Contains 'Size:': ${htmlContent.toLowerCase().includes('size:')}`);
+    console.log(`   - Contains 'Purchase Price': ${htmlContent.toLowerCase().includes('purchase price')}`);
+    console.log(`   - HTML preview (first 300 chars): ${htmlContent.substring(0, 300)}`);
     console.log(`📊 ===== TEST API: Extraction Results =====\n`);
 
     // Check if any data was extracted
