@@ -261,6 +261,9 @@ export default function TestEmailParserPage() {
                         Total
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Purchase Date
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Tracking
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -336,6 +339,15 @@ export default function TestEmailParserPage() {
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                           {result.data?.total_amount ? (
                             `$${result.data.total_amount.toFixed(2)}`
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                          {result.data?.purchase_date ? (
+                            new Date(result.data.purchase_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                          ) : result.data?.email_date ? (
+                            new Date(result.data.email_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
                           ) : (
                             <span className="text-gray-400">—</span>
                           )}
