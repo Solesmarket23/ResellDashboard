@@ -37,15 +37,14 @@ export function generateGmailSearchUrl(orderNumber: string): string {
 }
 
 /**
- * Generate Gmail search URL for shipped email (order number + "shipped")
+ * Generate Gmail search URL for shipped email (just the order number in quotes)
  * @param orderNumber - The order number to search for
  * @returns Gmail search URL for shipped email
  */
 export function generateGmailShippedEmailUrl(orderNumber: string): string {
   const searchOrderNumber = getOrderNumberForGmailSearch(orderNumber);
-  // Search for order number + "shipped" to find the shipped email
-  const searchQuery = `${searchOrderNumber} shipped`;
-  return `https://mail.google.com/mail/u/0/#search/"${encodeURIComponent(searchQuery)}"`;
+  // Search for just the order number in quotes - simpler and finds all emails for that order
+  return `https://mail.google.com/mail/u/0/#search/"${encodeURIComponent(searchOrderNumber)}"`;
 }
 
 /**
