@@ -5,7 +5,7 @@ import { ChevronDown, Edit, MoreHorizontal, Camera, RefreshCw, Mail, Trash2, Set
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
 import { addDocument, getDocuments, updateDocument, deleteDocument } from '../lib/firebase/firebaseUtils';
-import { generateGmailSearchUrl, formatOrderNumberForDisplay } from '../lib/utils/orderNumberUtils';
+import { generateGmailSearchUrl, generateGmailShippedEmailUrl, formatOrderNumberForDisplay } from '../lib/utils/orderNumberUtils';
 import { exportToCSV, exportToExcel, exportToJSON, getExportStats, ExportablePurchase } from '../lib/utils/exportUtils';
 import { consolidatePurchasesByOrderNumber } from '../lib/utils/statusPriority';
 import NativeBarcodeScannerModal from './NativeBarcodeScannerModal';
@@ -1492,6 +1492,46 @@ const Purchases = () => {
     return 'orange';
   };
 
+  // Check if tracking number looks suspicious (might be incorrect)
+  const isTrackingSuspicious = (tracking: string): boolean => {
+    if (!tracking || tracking.trim() === '') return false;
+    
+    const trimmed = tracking.trim();
+    
+    // UPS tracking should be 1Z + 16 alphanumeric (18 total)
+    if (trimmed.startsWith('1Z') && trimmed.length === 18) {
+      return false; // Valid UPS format
+    }
+    
+    // FedEx tracking should be 10-22 digits, but typically 12 digits
+    // Suspicious if it's 12 digits starting with 9 (that's USPS format, not FedEx)
+    if (/^\d{12}$/.test(trimmed) && trimmed.startsWith('9')) {
+      return true; // Looks like USPS format but marked as FedEx - suspicious
+    }
+    
+    // Valid FedEx format (12 digits, not starting with 9)
+    if (/^\d{12}$/.test(trimmed) && !trimmed.startsWith('9')) {
+      return false; // Valid FedEx format
+    }
+    
+    // USPS tracking should be 20-22 digits starting with 9
+    if (/^9\d{19,21}$/.test(trimmed)) {
+      return false; // Valid USPS format
+    }
+    
+    // If it's a number but doesn't match known formats, might be suspicious
+    if (/^\d+$/.test(trimmed) && (trimmed.length < 10 || trimmed.length > 22)) {
+      return true; // Wrong length for known carriers
+    }
+    
+    // If it contains non-alphanumeric characters (except dashes in UPS), suspicious
+    if (!/^[0-9A-Z-]+$/i.test(trimmed)) {
+      return true;
+    }
+    
+    return false;
+  };
+
   const handleScanComplete = (trackingNumber: string) => {
     console.log('Scanned tracking number:', trackingNumber);
     setHasBeenReset(false); // Reset flag when user adds data
@@ -2572,33 +2612,47 @@ const Purchases = () => {
                       </div>
                     ) : purchase.tracking && purchase.tracking.trim() !== '' ? (
                       // Display mode with tracking
-                      <div className="flex items-center gap-2">
-                        <button 
-                          onClick={() => handleStartEditTracking(purchase)}
-                          className={`${currentTheme.colors.accent} text-sm hover:underline transition-colors cursor-pointer`}
-                          title="Click to edit">
-                          {purchase.tracking}
-                        </button>
-                        <button
-                          onClick={() => handleExtractTracking(purchase)}
-                          disabled={extractingTracking.has(purchase.id || purchase.orderNumber)}
-                          className={`text-xs px-1.5 py-0.5 rounded transition-colors ${
-                            extractingTracking.has(purchase.id || purchase.orderNumber)
-                              ? 'bg-gray-400 cursor-not-allowed text-white'
-                              : `${currentTheme.name === 'Neon' ? 'bg-cyan-500 hover:bg-cyan-600' : 'bg-blue-500 hover:bg-blue-600'} text-white hover:shadow-md`
-                          }`}
-                          title="Refresh tracking number from StockX"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleExtractTracking(purchase);
-                          }}>
-                          {extractingTracking.has(purchase.id || purchase.orderNumber) ? (
-                            <RefreshCw className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <RefreshCw className="w-3 h-3" />
-                          )}
-                        </button>
-                      </div>
+                      isTrackingSuspicious(purchase.tracking) ? (
+                        // Suspicious tracking - show Gmail link instead
+                        <a
+                          href={generateGmailShippedEmailUrl(purchase.orderNumber)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={`${currentTheme.colors.accent} text-sm hover:underline transition-colors cursor-pointer flex items-center gap-1`}
+                          title="Tracking number may be incorrect. Click to open shipped email in Gmail">
+                          <Mail className="w-3 h-3" />
+                          View Shipped Email
+                        </a>
+                      ) : (
+                        // Valid tracking - show normally
+                        <div className="flex items-center gap-2">
+                          <button 
+                            onClick={() => handleStartEditTracking(purchase)}
+                            className={`${currentTheme.colors.accent} text-sm hover:underline transition-colors cursor-pointer`}
+                            title="Click to edit">
+                            {purchase.tracking}
+                          </button>
+                          <button
+                            onClick={() => handleExtractTracking(purchase)}
+                            disabled={extractingTracking.has(purchase.id || purchase.orderNumber)}
+                            className={`text-xs px-1.5 py-0.5 rounded transition-colors ${
+                              extractingTracking.has(purchase.id || purchase.orderNumber)
+                                ? 'bg-gray-400 cursor-not-allowed text-white'
+                                : `${currentTheme.name === 'Neon' ? 'bg-cyan-500 hover:bg-cyan-600' : 'bg-blue-500 hover:bg-blue-600'} text-white hover:shadow-md`
+                            }`}
+                            title="Refresh tracking number from StockX"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleExtractTracking(purchase);
+                            }}>
+                            {extractingTracking.has(purchase.id || purchase.orderNumber) ? (
+                              <RefreshCw className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <RefreshCw className="w-3 h-3" />
+                            )}
+                          </button>
+                        </div>
+                      )
                     ) : purchase.status?.toLowerCase() === 'ordered' ? (
                       // Ordered status - no tracking yet
                       <div className="flex items-center gap-2">

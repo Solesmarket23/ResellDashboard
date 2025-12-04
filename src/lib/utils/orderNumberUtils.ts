@@ -37,6 +37,18 @@ export function generateGmailSearchUrl(orderNumber: string): string {
 }
 
 /**
+ * Generate Gmail search URL for shipped email (order number + "shipped")
+ * @param orderNumber - The order number to search for
+ * @returns Gmail search URL for shipped email
+ */
+export function generateGmailShippedEmailUrl(orderNumber: string): string {
+  const searchOrderNumber = getOrderNumberForGmailSearch(orderNumber);
+  // Search for order number + "shipped" to find the shipped email
+  const searchQuery = `${searchOrderNumber} shipped`;
+  return `https://mail.google.com/mail/u/0/#search/"${encodeURIComponent(searchQuery)}"`;
+}
+
+/**
  * Check if an order number is in Xpress format
  * @param orderNumber - The order number to check
  * @returns True if it's an Xpress order format
