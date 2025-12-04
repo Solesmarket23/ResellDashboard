@@ -464,10 +464,25 @@ export default function TestEmailParserPage() {
                             <dt className="font-medium text-gray-600">Shipping ({data.shipping_type || "Standard"}):</dt>
                             <dd className="text-gray-900">${data.shipping_fee?.toFixed(2) || "0.00"}</dd>
                           </div>
+                          {data.discount_code && data.discount_amount !== 0 && (
+                            <div className="flex justify-between">
+                              <dt className="font-medium text-gray-600">
+                                Discount ({data.discount_code}):
+                              </dt>
+                              <dd className="text-green-600 font-medium">
+                                ${data.discount_amount?.toFixed(2) || "0.00"}
+                              </dd>
+                            </div>
+                          )}
                           <div className="flex justify-between border-t pt-2 font-semibold">
                             <dt className="text-gray-900">Total:</dt>
                             <dd className="text-gray-900">${data.total_amount?.toFixed(2) || "0.00"}</dd>
                           </div>
+                          {data.discount_code && (
+                            <div className="text-xs text-gray-500 mt-1 italic">
+                              Total includes discount code {data.discount_code} (${Math.abs(data.discount_amount || 0).toFixed(2)} off)
+                            </div>
+                          )}
                         </dl>
                       </div>
 
