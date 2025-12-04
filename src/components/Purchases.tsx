@@ -55,6 +55,7 @@ const Purchases = () => {
   const [showFixItemProducts, setShowFixItemProducts] = useState(false);
   const [showExportDropdown, setShowExportDropdown] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [extractingTracking, setExtractingTracking] = useState<Set<string>>(new Set()); // Track which orders are being processed
   const [notification, setNotification] = useState<{
     isVisible: boolean;
     message: string;
@@ -1533,6 +1534,110 @@ const Purchases = () => {
     setHasBeenReset(false);
   };
 
+  const handleExtractTracking = async (purchase: any) => {
+    if (!purchase.orderNumber) {
+      setNotification({
+        isVisible: true,
+        message: 'Order number is required to extract tracking',
+        type: 'error'
+      });
+      return;
+    }
+
+    // Mark as extracting
+    setExtractingTracking(prev => new Set(prev).add(purchase.id || purchase.orderNumber));
+
+    try {
+      console.log(`🤖 Extracting tracking for order: ${purchase.orderNumber}`);
+      
+      const response = await fetch('/api/stockx/extract-tracking', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          orderNumber: purchase.orderNumber,
+          stockxOrderUrl: purchase.stockxOrderUrl // If available
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to extract tracking number');
+      }
+
+      if (data.success && data.trackingNumber) {
+        console.log(`✅ Extracted tracking: ${data.trackingNumber} (${data.carrier})`);
+        
+        // Update the purchase with tracking number
+        const updatedPurchase = {
+          ...purchase,
+          tracking: data.trackingNumber,
+          carrier: data.carrier
+        };
+
+        // Update in state
+        const allPurchases = [...purchases, ...manualPurchases];
+        const purchaseIndex = allPurchases.findIndex(p => 
+          (p.id && p.id === purchase.id) || 
+          (p.orderNumber === purchase.orderNumber)
+        );
+
+        if (purchaseIndex !== -1) {
+          if (purchaseIndex < purchases.length) {
+            // Update in purchases
+            const updatedPurchases = [...purchases];
+            updatedPurchases[purchaseIndex] = updatedPurchase;
+            setPurchases(updatedPurchases);
+          } else {
+            // Update in manualPurchases
+            const updatedManualPurchases = [...manualPurchases];
+            updatedManualPurchases[purchaseIndex - purchases.length] = updatedPurchase;
+            setManualPurchases(updatedManualPurchases);
+          }
+
+          // Save to Firebase
+          const siteUserId = localStorage.getItem('siteUserId');
+          const userId = user?.uid || siteUserId;
+          if (userId && updatedPurchase.id) {
+            try {
+              await updateDocument('user_purchases', updatedPurchase.id, {
+                tracking: data.trackingNumber,
+                carrier: data.carrier
+              });
+              console.log(`✅ Saved tracking to Firebase: ${data.trackingNumber}`);
+            } catch (error) {
+              console.error('Error saving tracking to Firebase:', error);
+            }
+          }
+        }
+
+        setNotification({
+          isVisible: true,
+          message: `Tracking number extracted: ${data.trackingNumber} (${data.carrier})`,
+          type: 'success'
+        });
+      } else {
+        throw new Error('No tracking number found');
+      }
+    } catch (error: any) {
+      console.error('Error extracting tracking:', error);
+      setNotification({
+        isVisible: true,
+        message: `Failed to extract tracking: ${error.message}`,
+        type: 'error'
+      });
+    } finally {
+      // Remove from extracting set
+      setExtractingTracking(prev => {
+        const next = new Set(prev);
+        next.delete(purchase.id || purchase.orderNumber);
+        return next;
+      });
+    }
+  };
+
   // Handler for status updates from StatusUpdater component
   const handleStatusUpdate = async (statusUpdates: any[]) => {
     console.log('🔄 Applying status updates:', statusUpdates);
@@ -2312,11 +2417,33 @@ const Purchases = () => {
                     </span>
                   </td>
                   <td className="px-6 py-2 align-middle">
-                    <button 
-                      onClick={() => alert(`Tracking: ${purchase.tracking}\n\nTracking integration coming soon!`)}
-                      className={`${currentTheme.colors.accent} text-sm hover:underline transition-colors cursor-pointer`}>
-                      {purchase.status?.toLowerCase() === 'ordered' ? 'Not Shipped Yet' : purchase.tracking}
-                    </button>
+                    {purchase.status?.toLowerCase() === 'ordered' ? (
+                      <span className={`text-sm ${currentTheme.colors.textSecondary}`}>Not Shipped Yet</span>
+                    ) : purchase.tracking ? (
+                      <button 
+                        onClick={() => alert(`Tracking: ${purchase.tracking}\n\nTracking integration coming soon!`)}
+                        className={`${currentTheme.colors.accent} text-sm hover:underline transition-colors cursor-pointer`}>
+                        {purchase.tracking}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleExtractTracking(purchase)}
+                        disabled={extractingTracking.has(purchase.id || purchase.orderNumber)}
+                        className={`text-xs px-2 py-1 rounded transition-colors ${
+                          extractingTracking.has(purchase.id || purchase.orderNumber)
+                            ? 'bg-gray-400 cursor-not-allowed text-white'
+                            : `${currentTheme.name === 'Neon' ? 'bg-cyan-500 hover:bg-cyan-600' : 'bg-blue-500 hover:bg-blue-600'} text-white hover:shadow-md`
+                        }`}>
+                        {extractingTracking.has(purchase.id || purchase.orderNumber) ? (
+                          <span className="flex items-center gap-1">
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                            Extracting...
+                          </span>
+                        ) : (
+                          'Get Tracking'
+                        )}
+                      </button>
+                    )}
                   </td>
                   <td className="px-6 py-2 align-middle">
                     <span className={`text-sm ${currentTheme.colors.textPrimary} font-medium`}>
