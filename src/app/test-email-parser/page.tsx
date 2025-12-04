@@ -133,39 +133,20 @@ export default function TestEmailParserPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 p-8">
+    <div className="min-h-screen bg-gray-900 p-8 overflow-y-auto">
       <div className="max-w-7xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white mb-4">
-            Email Parser Test - 8 Sample Emails
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold text-white mb-2">
+            Email Parser Test
           </h1>
-          <p className="text-gray-400 mb-6">
-            Testing the <strong className="text-green-400">OrderConfirmationParser</strong> (new parser) with StockX emails
+          <p className="text-gray-400 mb-4 text-sm">
+            Testing <strong className="text-green-400">OrderConfirmationParser</strong> with StockX emails
           </p>
           
-          {/* Parser Info */}
-          <div className="bg-green-900/30 border border-green-700/50 rounded-lg p-4 mb-4">
-            <h3 className="text-sm font-semibold text-green-300 mb-2">✅ Using New Parser</h3>
-            <p className="text-sm text-gray-300">
-              This test page uses <code className="bg-gray-800 px-1 rounded">OrderConfirmationParser</code> from <code className="bg-gray-800 px-1 rounded">@/lib/email/orderConfirmationParser</code>
-            </p>
-            <p className="text-xs text-gray-400 mt-2">
-              The Gmail sync API routes also use this same parser via <code className="bg-gray-800 px-1 rounded">parseGmailApiMessage()</code>
-            </p>
-          </div>
-          
-          {/* Instructions */}
-          <div className="bg-blue-900/30 border border-blue-700/50 rounded-lg p-4 mb-6">
-            <h3 className="text-sm font-semibold text-blue-300 mb-2">How to Test with 1-2 Emails:</h3>
-            <ol className="text-sm text-gray-300 space-y-1 list-decimal list-inside">
-              <li>In Cursor, right-click on the <code className="bg-gray-800 px-1 rounded">sample-emails</code> folder</li>
-              <li>Select "Reveal in Finder" (Mac) or "Show in Explorer" (Windows)</li>
-              <li>Select 1-2 .eml files (e.g., <code className="bg-gray-800 px-1 rounded">01-order-confirmed.eml</code> and <code className="bg-gray-800 px-1 rounded">08-order-delivered.eml</code>)</li>
-              <li>Drag and drop them into the file input below, or click to browse</li>
-              <li>Click "Test X File(s)" to see the parser results</li>
-            </ol>
-            <p className="text-xs text-gray-400 mt-2">
-              <strong>Recommended:</strong> Test with <code className="bg-gray-800 px-1 rounded">01-order-confirmed.eml</code> (order placed) and <code className="bg-gray-800 px-1 rounded">08-order-delivered.eml</code> (delivered with tracking)
+          {/* Compact Instructions */}
+          <div className="bg-blue-900/30 border border-blue-700/50 rounded-lg p-3 mb-4 text-xs">
+            <p className="text-gray-300 mb-1">
+              <strong>Quick Start:</strong> Upload 1-2 .eml files from <code className="bg-gray-800 px-1 rounded">sample-emails</code> folder, then click "Test"
             </p>
           </div>
           
@@ -293,7 +274,11 @@ export default function TestEmailParserPage() {
                           )}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                          {result.data?.order_number || (
+                          {result.data?.order_number ? (
+                            <span className="font-mono text-xs">{result.data.order_number}</span>
+                          ) : result.success ? (
+                            <span className="text-yellow-600 text-xs" title="Parser ran but no order number found">No data</span>
+                          ) : (
                             <span className="text-gray-400">—</span>
                           )}
                         </td>
@@ -312,7 +297,11 @@ export default function TestEmailParserPage() {
                           )}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                          {result.data?.size || (
+                          {result.data?.size ? (
+                            <span>{result.data.size}</span>
+                          ) : result.success ? (
+                            <span className="text-yellow-600 text-xs" title="Parser ran but no size found">No data</span>
+                          ) : (
                             <span className="text-gray-400">—</span>
                           )}
                         </td>
@@ -366,7 +355,29 @@ export default function TestEmailParserPage() {
                     return (
                       <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                         <p className="text-red-800 font-medium">Error:</p>
-                        <p className="text-red-600 mt-2">{result.error}</p>
+                        <p className="text-red-600 mt-2 font-mono text-xs">{result.error}</p>
+                      </div>
+                    );
+                  }
+                  
+                  // Show warning if parser ran but extracted no data
+                  const hasData = result.data && (
+                    result.data.order_number || 
+                    result.data.size || 
+                    result.data.product_name ||
+                    result.data.total_amount
+                  );
+                  
+                  if (!hasData) {
+                    return (
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                        <p className="text-yellow-800 font-medium">⚠️ Parser ran successfully but extracted no data</p>
+                        <p className="text-yellow-600 mt-2 text-sm">
+                          Check browser console (F12) or server logs for debug information.
+                        </p>
+                        <p className="text-yellow-600 mt-1 text-xs font-mono">
+                          HTML extraction may have failed. Check if HTML was properly decoded from quoted-printable encoding.
+                        </p>
                       </div>
                     );
                   }
