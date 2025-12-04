@@ -1381,7 +1381,23 @@ export class OrderConfirmationParser {
       /(?:tracking\s*number|track\s*number|tracking\s*#|track\s*#)[:\s]*([0-9A-Z]{10,22})/i,
       
       // Look for tracking numbers in StockX-specific patterns
-      /(?:stockx|stock x).*?(\d{12,22})/i
+      /(?:stockx|stock x).*?(\d{12,22})/i,
+      
+      // Look for tracking numbers in StockX order page URLs
+      /stockx\.com.*buying.*tracking[=%3D\/](\d{10,22})/i,
+      /stockx\.com.*buying.*(\d{12})\b/i, // 12-digit FedEx in order URLs
+      /buying.*tracking[=%3D\/](\d{10,22})/i,
+      
+      // Look for tracking numbers in URL parameters (tracking=, track=, tn=)
+      /[?&](?:tracking|track|tn|tracking_number)[=%3D](\d{10,22})\b/i,
+      /tracking[=%3D](\d{10,22})\b/i,
+      
+      // Look for tracking numbers near "Track Your Order" button/link
+      /track\s*your\s*order[^0-9]*(\d{10,22})\b/i,
+      
+      // Look for 12-digit numbers in href attributes (common FedEx format)
+      /href=[^>]*(\d{12})\b[^>]*track/i,
+      /track[^>]*href=[^>]*(\d{12})\b/i
     ];
     
     for (const pattern of trackingPatterns) {
@@ -1494,11 +1510,11 @@ export class OrderConfirmationParser {
         }
       }
       
-      // Last resort for shipping emails - find the FIRST tracking number after "shipped"
+      // Last resort for shipping emails - find the FIRST tracking number after "shipped" or "verified"
       // Try UPS first (1Z + 16 alphanumeric), then FedEx (10-22 digits)
       if (!orderInfo.tracking_number && orderInfo.shipping_status === "shipped") {
         // Try UPS pattern first
-        const upsAfterShippedPattern = /(?:shipped|tracking|track your order)[^0-9A-Z]*(1Z[0-9A-Z]{16})\b/i;
+        const upsAfterShippedPattern = /(?:shipped|verified|tracking|track your order)[^0-9A-Z]*(1Z[0-9A-Z]{16})\b/i;
         const upsAfterShippedMatch = textContent.match(upsAfterShippedPattern);
         if (upsAfterShippedMatch) {
           orderInfo.tracking_number = upsAfterShippedMatch[1].toUpperCase();
@@ -1506,12 +1522,44 @@ export class OrderConfirmationParser {
           console.log(`✅ TRACKING NUMBER FOUND (UPS after 'shipped'): "${upsAfterShippedMatch[1]}"`);
         } else {
           // Try FedEx pattern (10-22 digits, prioritize 12)
-          const fedexAfterShippedPattern = /(?:shipped|tracking|track your order)[^0-9]*(\d{10,22})\b/i;
-          const fedexAfterShippedMatch = textContent.match(fedexAfterShippedPattern);
+          // Check both text content and HTML for better coverage
+          const fedexAfterShippedPattern = /(?:shipped|verified|tracking|track your order|order verified)[^0-9]*(\d{10,22})\b/i;
+          const fedexAfterShippedMatch = textContent.match(fedexAfterShippedPattern) || htmlContent.match(fedexAfterShippedPattern);
           if (fedexAfterShippedMatch && !fedexAfterShippedMatch[1].includes('-')) {
-            orderInfo.tracking_number = fedexAfterShippedMatch[1];
+            // Validate it's a reasonable tracking number (not a date, price, etc.)
+            const num = fedexAfterShippedMatch[1];
+            // Skip if it looks like a year (starts with 19 or 20)
+            if (!/^(19|20)\d{2,}$/.test(num) && num.length >= 10) {
+              orderInfo.tracking_number = num;
+              orderInfo.carrier = "FedEx";
+              console.log(`✅ TRACKING NUMBER FOUND (FedEx ${num.length}-digit after 'shipped/verified'): "${num}"`);
+            }
+          }
+        }
+      }
+      
+      // Additional check: Look for 12-digit numbers in the entire HTML if still not found
+      // This catches cases where tracking is in URLs or other non-obvious locations
+      if (!orderInfo.tracking_number && orderInfo.shipping_status === "shipped") {
+        console.log(`🔍 Final attempt: Searching entire HTML for 12-digit FedEx tracking numbers...`);
+        const all12DigitNumbers = htmlContent.match(/\b(\d{12})\b/g) || [];
+        for (const num of all12DigitNumbers) {
+          // Skip common non-tracking numbers
+          if (/^(19|20)\d{10}$/.test(num)) continue; // Years
+          if (/^0+/.test(num)) continue; // Leading zeros (unlikely for FedEx)
+          
+          // Check if it's near any shipping/tracking context (even if far away)
+          const contextWindow = 500; // Larger window for URL-based tracking
+          const numIndex = htmlContent.indexOf(num);
+          const beforeContext = htmlContent.substring(Math.max(0, numIndex - contextWindow), numIndex);
+          const afterContext = htmlContent.substring(numIndex + num.length, Math.min(htmlContent.length, numIndex + num.length + contextWindow));
+          const combinedContext = beforeContext + afterContext;
+          
+          if (/(?:track|shipped|verified|delivered|package|order|fedex|ups|carrier|logistics)/i.test(combinedContext)) {
+            orderInfo.tracking_number = num;
             orderInfo.carrier = "FedEx";
-            console.log(`✅ TRACKING NUMBER FOUND (FedEx ${fedexAfterShippedMatch[1].length}-digit after 'shipped'): "${fedexAfterShippedMatch[1]}"`);
+            console.log(`✅ TRACKING NUMBER FOUND (12-digit in HTML context): "${num}"`);
+            break;
           }
         }
       }
