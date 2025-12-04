@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { google } from 'googleapis';
 import { cookies } from 'next/headers';
 import { parseGmailApiMessage, orderInfoToDict, OrderInfo } from '../../../../lib/email/orderConfirmationParser';
+import { consolidatePurchasesByOrderNumber } from '../../../../lib/utils/statusPriority';
 
 // Batch configuration
 const BATCH_SIZE = 100; // Process 100 emails per batch (increased from 50)
@@ -125,30 +126,27 @@ const STATUS_PRIORITIES = {
 };
 
 function consolidateOrderEmails(purchases: any[]) {
-  const orderMap = new Map();
-  
-  purchases.forEach((purchase) => {
-    const orderNumber = purchase.orderNumber;
-    if (!orderMap.has(orderNumber)) {
-      orderMap.set(orderNumber, []);
+  // Normalize purchase objects to have consistent status field
+  const normalizedPurchases = purchases.map(purchase => {
+    // Map shipping_status to status if needed
+    if (purchase.shipping_status && !purchase.status) {
+      purchase.status = purchase.shipping_status;
     }
-    orderMap.get(orderNumber).push(purchase);
+    // Normalize status values
+    if (purchase.status === 'refunded') {
+      purchase.status = 'Refund Issued';
+    } else if (purchase.status === 'delivered') {
+      purchase.status = 'Delivered';
+    } else if (purchase.status === 'shipped') {
+      purchase.status = 'Shipped';
+    } else if (purchase.status === 'ordered') {
+      purchase.status = 'Ordered';
+    }
+    return purchase;
   });
   
-  const consolidatedPurchases = [];
-  for (const [orderNumber, orderEmails] of orderMap.entries()) {
-    if (orderEmails.length === 1) {
-      consolidatedPurchases.push(orderEmails[0]);
-    } else {
-      // Simple: just take the first one since they're all Order Confirmed emails
-      const primaryEmail = orderEmails[0];
-      primaryEmail.consolidatedFrom = orderEmails.length;
-      consolidatedPurchases.push(primaryEmail);
-      console.log(`🔄 Multiple confirmed emails for ${orderNumber}, using first one with size: ${primaryEmail.product?.size}`);
-    }
-  }
-  
-  return consolidatedPurchases;
+  // Use the shared consolidation utility with priority system
+  return consolidatePurchasesByOrderNumber(normalizedPurchases);
 }
 
 export async function GET(request: NextRequest) {

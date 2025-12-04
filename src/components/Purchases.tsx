@@ -7,6 +7,7 @@ import { useAuth } from '../lib/contexts/AuthContext';
 import { addDocument, getDocuments, updateDocument, deleteDocument } from '../lib/firebase/firebaseUtils';
 import { generateGmailSearchUrl, formatOrderNumberForDisplay } from '../lib/utils/orderNumberUtils';
 import { exportToCSV, exportToExcel, exportToJSON, getExportStats, ExportablePurchase } from '../lib/utils/exportUtils';
+import { consolidatePurchasesByOrderNumber } from '../lib/utils/statusPriority';
 import NativeBarcodeScannerModal from './NativeBarcodeScannerModal';
 import ZXingScannerModal from './ZXingScannerModal';
 import RemoteScanModal from './RemoteScanModal';
@@ -666,23 +667,8 @@ const Purchases = () => {
     try {
       console.log(`📧 Saving ${gmailPurchases.length} Gmail purchases for user ${userId}...`);
       
-      // First, deduplicate purchases by order number to prevent duplicates
-      const uniquePurchases = new Map();
-      gmailPurchases.forEach(purchase => {
-        const existing = uniquePurchases.get(purchase.orderNumber);
-        if (!existing || 
-            (purchase.status === 'Delivered' && existing.status !== 'Delivered') ||
-            (purchase.status === 'Shipped' && existing.status === 'Ordered') ||
-            (purchase.tracking && !existing.tracking)) {
-          // Keep the purchase with better status or tracking info
-          if (existing && purchase.tracking && !existing.tracking) {
-            console.log(`📦 TRACKING PRESERVATION: Keeping purchase ${purchase.orderNumber} with tracking "${purchase.tracking}" over existing without tracking`);
-          }
-          uniquePurchases.set(purchase.orderNumber, purchase);
-        }
-      });
-      
-      const dedupedPurchases = Array.from(uniquePurchases.values());
+      // Use the shared consolidation utility with priority system
+      const dedupedPurchases = consolidatePurchasesByOrderNumber(gmailPurchases);
       console.log(`🔄 Deduplication: ${gmailPurchases.length} purchases → ${dedupedPurchases.length} unique`);
       
       // Prepare purchase data with user ID
@@ -1069,26 +1055,9 @@ const Purchases = () => {
         // setPurchases([]);
       }
       
-      // Combine all purchases for display and deduplicate
+      // Combine all purchases for display and deduplicate using priority system
       const allUserPurchases = [...transformedGmailPurchases, ...transformedManualPurchases];
-      
-      // Deduplicate by order number
-      const uniquePurchaseMap = new Map();
-      allUserPurchases.forEach(purchase => {
-        const existing = uniquePurchaseMap.get(purchase.orderNumber);
-        if (!existing || 
-            (purchase.status === 'Delivered' && existing.status !== 'Delivered') ||
-            (purchase.status === 'Shipped' && existing.status === 'Ordered') ||
-            (purchase.tracking && !existing.tracking)) {
-          // Keep the purchase with better status or tracking info
-          if (existing && purchase.tracking && !existing.tracking) {
-            console.log(`📦 DISPLAY TRACKING PRESERVATION: Keeping purchase ${purchase.orderNumber} with tracking "${purchase.tracking}" over existing without tracking`);
-          }
-          uniquePurchaseMap.set(purchase.orderNumber, purchase);
-        }
-      });
-      
-      const combinedPurchases = Array.from(uniquePurchaseMap.values());
+      const combinedPurchases = consolidatePurchasesByOrderNumber(allUserPurchases);
       console.log(`🔄 Display deduplication: ${allUserPurchases.length} → ${combinedPurchases.length} unique`);
       
       calculateTotals(combinedPurchases);

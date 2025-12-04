@@ -206,6 +206,13 @@ export class OrderConfirmationParser {
     
     // Comprehensive subject line patterns for all StockX email types
     const subjectPatterns = {
+      // Refund patterns (highest priority)
+      refund: [
+        'Refund Issued:',
+        'Refund:',
+        'Order Refunded:',
+        'Refund Processed:'
+      ],
       // Order confirmation patterns
       orderConfirmed: [
         'Order Confirmed:',
@@ -230,11 +237,20 @@ export class OrderConfirmationParser {
     const normalizedHtml = htmlContent.toLowerCase();
     
     // Determine email type and status
-    let emailType: 'order' | 'shipped' | 'delivered' = 'order';
+    let emailType: 'order' | 'shipped' | 'delivered' | 'refund' = 'order';
     let isXpress = false;
     
-    // Check for delivery emails first (most specific)
-    if (subjectPatterns.delivered.some(pattern => 
+    // Check for refund emails first (highest priority)
+    if (subjectPatterns.refund.some(pattern => 
+        normalizedSubject.includes(pattern.toLowerCase()) || 
+        normalizedHtml.includes(pattern.toLowerCase())
+      )) {
+      emailType = 'refund';
+      orderInfo.shipping_status = "refunded";
+      console.log(`💰 REFUND EMAIL DETECTED: "${emailSubject}"`);
+    }
+    // Check for delivery emails (second priority)
+    else if (subjectPatterns.delivered.some(pattern => 
         normalizedSubject.includes(pattern.toLowerCase()) || 
         normalizedHtml.includes(pattern.toLowerCase())
       )) {
@@ -242,7 +258,7 @@ export class OrderConfirmationParser {
       orderInfo.shipping_status = "delivered";
       console.log(`📬 DELIVERY EMAIL DETECTED: "${emailSubject}"`);
     }
-    // Check for shipping emails
+    // Check for shipping emails (third priority)
     else if (subjectPatterns.shipped.some(pattern => 
         normalizedSubject.includes(pattern.toLowerCase()) || 
         normalizedHtml.includes(pattern.toLowerCase())
@@ -251,7 +267,7 @@ export class OrderConfirmationParser {
       orderInfo.shipping_status = "shipped";
       console.log(`📦 SHIPPING EMAIL DETECTED: "${emailSubject}"`);
     }
-    // Check for order confirmation emails
+    // Check for order confirmation emails (lowest priority)
     else if (subjectPatterns.orderConfirmed.some(pattern => 
         normalizedSubject.includes(pattern.toLowerCase()) || 
         normalizedHtml.includes(pattern.toLowerCase())
@@ -262,7 +278,13 @@ export class OrderConfirmationParser {
     }
     // Fallback: check content for status indicators
     else {
-      if (normalizedHtml.includes('order delivered') || 
+      if (normalizedHtml.includes('refund') || 
+          normalizedHtml.includes('refund issued') ||
+          normalizedHtml.includes('refund processed')) {
+        emailType = 'refund';
+        orderInfo.shipping_status = "refunded";
+        console.log(`💰 REFUND EMAIL DETECTED (fallback): "${emailSubject}"`);
+      } else if (normalizedHtml.includes('order delivered') || 
           normalizedHtml.includes('has been delivered') ||
           normalizedHtml.includes('🎉')) {
         emailType = 'delivered';

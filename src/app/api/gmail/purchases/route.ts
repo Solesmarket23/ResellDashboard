@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { google } from 'googleapis';
 import { cookies } from 'next/headers';
 import { parseGmailApiMessage, orderInfoToDict, OrderInfo } from '../../../../lib/email/orderConfirmationParser';
+import { STATUS_PRIORITIES, consolidatePurchasesByOrderNumber } from '../../../../lib/utils/statusPriority';
 
 // Default configuration if none is provided
 function getDefaultConfig() {
@@ -195,16 +196,6 @@ function generateQueries(config: any) {
   return queries;
 }
 
-// Priority order for purchase statuses (higher number = higher priority)
-// Per spec: Canceled highest, then Shipped, Delayed, Order Placed.
-// We also include Delivered above Shipped.
-const STATUS_PRIORITIES = {
-  'Ordered': 1,
-  'Delayed': 2,
-  'Shipped': 3,
-  'Delivered': 4,
-  'Canceled': 5
-};
 
 // Determine email category and status based on subject line
 function categorizeEmail(subject: string, config: any) {
@@ -221,7 +212,7 @@ function categorizeEmail(subject: string, config: any) {
     return { status: 'Shipped', statusColor: 'blue', priority: STATUS_PRIORITIES['Shipped'] };
   }
   if (/refund\s+issued:/i.test(subject)) {
-    return { status: 'Canceled', statusColor: 'red', priority: STATUS_PRIORITIES['Canceled'] };
+    return { status: 'Refund Issued', statusColor: 'red', priority: STATUS_PRIORITIES['Refund Issued'] };
   }
   if (/(xpress\s*ship\s*order\s*delivered:|order\s*delivered:)/i.test(subject)) {
     return { status: 'Delivered', statusColor: 'green', priority: STATUS_PRIORITIES['Delivered'] };
@@ -251,78 +242,32 @@ function categorizeEmail(subject: string, config: any) {
 
 // Consolidate multiple emails for the same order using priority system
 function consolidateOrderEmails(purchases: any[]) {
-  const orderMap = new Map();
-  
   console.log('🔄 CONSOLIDATION DEBUG: Starting consolidation with', purchases.length, 'purchases');
   
-  // Group emails by order number
-  purchases.forEach((purchase, index) => {
-    const orderNumber = purchase.orderNumber;
-    console.log(`📧 CONSOLIDATION DEBUG [${index}]: Order ${orderNumber} - Status: ${purchase.status} - Subject: ${purchase.subject}`);
-    
-    if (!orderMap.has(orderNumber)) {
-      orderMap.set(orderNumber, []);
+  // Normalize purchase objects to have consistent status field
+  const normalizedPurchases = purchases.map(purchase => {
+    // Map shipping_status to status if needed
+    if (purchase.shipping_status && !purchase.status) {
+      purchase.status = purchase.shipping_status;
     }
-    orderMap.get(orderNumber).push(purchase);
+    // Normalize status values
+    if (purchase.status === 'refunded') {
+      purchase.status = 'Refund Issued';
+    } else if (purchase.status === 'delivered') {
+      purchase.status = 'Delivered';
+    } else if (purchase.status === 'shipped') {
+      purchase.status = 'Shipped';
+    } else if (purchase.status === 'ordered') {
+      purchase.status = 'Ordered';
+    }
+    return purchase;
   });
   
-  console.log('🗂️ CONSOLIDATION DEBUG: Grouped into', orderMap.size, 'unique orders');
+  // Use the shared consolidation utility
+  const consolidated = consolidatePurchasesByOrderNumber(normalizedPurchases);
   
-  // For each order, select the email with highest priority status
-  const consolidatedPurchases = [];
-  for (const [orderNumber, orderEmails] of orderMap.entries()) {
-    console.log(`📦 CONSOLIDATION DEBUG: Order ${orderNumber} has ${orderEmails.length} emails`);
-    
-    // Special debugging for specific orders
-    if (orderNumber === '01-3KF7CE560J' || orderNumber === '01-3KF7CE560J') {
-      console.log(`🚨 SPECIAL DEBUG: Order ${orderNumber} - This should be DELIVERED!`);
-      orderEmails.forEach((email, idx) => {
-        const priority = STATUS_PRIORITIES[email.status] || 1;
-        console.log(`  🔍 Email ${idx}: "${email.subject}" -> Status: ${email.status} (priority ${priority})`);
-        console.log(`     From: ${email.fromEmail}`);
-        console.log(`     Tracking: ${email.tracking || 'N/A'}`);
-      });
-    }
-    
-    if (orderEmails.length === 1) {
-      consolidatedPurchases.push(orderEmails[0]);
-      console.log(`✅ Single email for order ${orderNumber}: ${orderEmails[0].status}`);
-    } else {
-      // Log all emails for this order
-      console.log(`🔄 Multiple emails for order ${orderNumber}:`);
-      orderEmails.forEach((email, idx) => {
-        const priority = STATUS_PRIORITIES[email.status] || 1;
-        console.log(`  [${idx}] ${email.status} (priority ${priority}) - ${email.subject}`);
-      });
-      
-      // Sort by priority (highest first) and take the first one
-      const sortedEmails = orderEmails.sort((a, b) => {
-        const priorityA = STATUS_PRIORITIES[a.status] || 1;
-        const priorityB = STATUS_PRIORITIES[b.status] || 1;
-        return priorityB - priorityA;
-      });
-      
-      // Use the highest priority email but combine information from all emails
-      const primaryEmail = sortedEmails[0];
-      primaryEmail.consolidatedFrom = sortedEmails.length;
-      primaryEmail.allStatuses = sortedEmails.map(e => e.status);
-      
-      console.log(`🎯 Selected highest priority: ${primaryEmail.status} (priority ${STATUS_PRIORITIES[primaryEmail.status] || 1})`);
-      console.log(`📋 All statuses for order ${orderNumber}:`, primaryEmail.allStatuses);
-      
-      // Special debugging for specific orders
-      if (orderNumber === '01-3KF7CE560J' || orderNumber === '01-3KF7CE560J') {
-        console.log(`🚨 FINAL STATUS for ${orderNumber}: ${primaryEmail.status} - This should be DELIVERED!`);
-        console.log(`🚨 Final email subject: "${primaryEmail.subject}"`);
-        console.log(`🚨 Final tracking: ${primaryEmail.tracking || 'N/A'}`);
-      }
-      
-      consolidatedPurchases.push(primaryEmail);
-    }
-  }
-  
-  console.log('✅ CONSOLIDATION DEBUG: Final result -', consolidatedPurchases.length, 'consolidated purchases');
-  return consolidatedPurchases;
+  console.log('✅ CONSOLIDATION DEBUG: Final result -', consolidated.length, 'consolidated purchases');
+  return consolidated;
 }
 
 export async function GET(request: NextRequest) {
