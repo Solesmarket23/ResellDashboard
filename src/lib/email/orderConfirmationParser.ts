@@ -1373,61 +1373,58 @@ export class OrderConfirmationParser {
       return emailContent;
     }
     
-    // Extract headers for the HTML part (everything between Content-Type and blank line)
-    // Look for blank line (could be \n\n or \r\n\r\n)
-    // Need to search from htmlPartStart onwards
-    let htmlPartEnd = emailContent.indexOf('\n\n', htmlPartStart);
-    if (htmlPartEnd === -1) {
-      htmlPartEnd = emailContent.indexOf('\r\n\r\n', htmlPartStart);
-      if (htmlPartEnd !== -1) {
-        htmlPartEnd += 2; // Adjust for \r\n
-      }
-    } else {
-      htmlPartEnd += 2; // Adjust for \n\n
-    }
-    
-    // If still no blank line found, try to find the first line that starts with <
-    if (htmlPartEnd === -1 || htmlPartEnd === htmlPartStart + 1) {
-      // Look for the start of HTML content (usually <!DOCTYPE or <html)
-      const htmlStart = emailContent.indexOf('<!DOCTYPE', htmlPartStart);
-      const htmlStartAlt = emailContent.indexOf('<html', htmlPartStart);
-      const actualStart = htmlStart !== -1 ? htmlStart : (htmlStartAlt !== -1 ? htmlStartAlt : htmlPartStart + 100);
-      htmlPartEnd = actualStart;
-    }
-    
-    const htmlPartHeaders = htmlPartEnd !== -1 && htmlPartEnd > htmlPartStart
-      ? emailContent.substring(htmlPartStart, htmlPartEnd)
-      : emailContent.substring(htmlPartStart, Math.min(htmlPartStart + 2000, emailContent.length));
-    
-    // Extract charset and encoding from HTML part headers
-    const charsetMatch = htmlPartHeaders.match(/charset=([^\s;]+)/i);
-    const charset = charsetMatch ? charsetMatch[1].toLowerCase() : 'utf-8';
-    
-    // Check for encoding in headers BEFORE Content-Type (it might be above)
+    // Extract charset and encoding from headers
+    // Check headers BEFORE Content-Type (encoding might be above)
     const headersBeforeHtml = emailContent.substring(Math.max(0, htmlPartStart - 500), htmlPartStart);
     const encodingMatchBefore = headersBeforeHtml.match(/Content-Transfer-Encoding:\s*([^\n\r]+)/i);
-    const encodingMatchInHeaders = htmlPartHeaders.match(/Content-Transfer-Encoding:\s*([^\n\r]+)/i);
-    const encodingMatch = encodingMatchInHeaders || encodingMatchBefore;
-    const isQuotedPrintable = encodingMatch && encodingMatch[1].toLowerCase().includes('quoted-printable');
     
-    // Extract HTML content (everything after the blank line until next boundary or end)
-    // If htmlPartEnd points to blank line, content starts after it
-    let contentStart = htmlPartEnd;
-    if (htmlPartEnd !== -1 && htmlPartEnd > htmlPartStart) {
-      // Check if htmlPartEnd points to blank line markers
-      if (emailContent.substring(htmlPartEnd - 2, htmlPartEnd) === '\n\n' || 
-          emailContent.substring(htmlPartEnd - 4, htmlPartEnd) === '\r\n\r\n') {
-        // Already pointing after blank line
+    // Also check headers after Content-Type
+    const headersAfterHtml = emailContent.substring(htmlPartStart, htmlPartStart + 500);
+    const encodingMatchAfter = headersAfterHtml.match(/Content-Transfer-Encoding:\s*([^\n\r]+)/i);
+    const charsetMatch = headersAfterHtml.match(/charset=([^\s;]+)/i);
+    
+    const encodingMatch = encodingMatchAfter || encodingMatchBefore;
+    const isQuotedPrintable = encodingMatch && encodingMatch[1].toLowerCase().includes('quoted-printable');
+    const charset = charsetMatch ? charsetMatch[1].toLowerCase() : 'utf-8';
+    
+    // Find the blank line after headers (look for \n\n or \r\n\r\n)
+    let blankLinePos = emailContent.indexOf('\n\n', htmlPartStart);
+    if (blankLinePos === -1) {
+      blankLinePos = emailContent.indexOf('\r\n\r\n', htmlPartStart);
+      if (blankLinePos !== -1) {
+        blankLinePos += 4; // Skip \r\n\r\n
+      }
+    } else {
+      blankLinePos += 2; // Skip \n\n
+    }
+    
+    // If no blank line found, look for HTML start directly
+    let contentStart = blankLinePos;
+    if (blankLinePos === -1 || blankLinePos <= htmlPartStart) {
+      // Look for HTML start markers
+      const doctypePos = emailContent.indexOf('<!DOCTYPE', htmlPartStart);
+      const htmlPos = emailContent.indexOf('<html', htmlPartStart);
+      if (doctypePos !== -1) {
+        contentStart = doctypePos;
+      } else if (htmlPos !== -1) {
+        contentStart = htmlPos;
       } else {
-        // Find the actual start of HTML content
-        const htmlTagStart = emailContent.indexOf('<!DOCTYPE', htmlPartEnd);
-        const htmlTagStartAlt = emailContent.indexOf('<html', htmlPartEnd);
-        if (htmlTagStart !== -1 || htmlTagStartAlt !== -1) {
-          contentStart = htmlTagStart !== -1 ? htmlTagStart : htmlTagStartAlt;
-        }
+        // Fallback: start after Content-Type header (assume headers end within 200 chars)
+        contentStart = htmlPartStart + 200;
+      }
+    } else {
+      // We found blank line, but make sure HTML starts right after it
+      // Look for HTML start markers near the blank line
+      const doctypePos = emailContent.indexOf('<!DOCTYPE', blankLinePos - 10);
+      const htmlPos = emailContent.indexOf('<html', blankLinePos - 10);
+      if (doctypePos !== -1 && doctypePos >= blankLinePos - 10) {
+        contentStart = doctypePos;
+      } else if (htmlPos !== -1 && htmlPos >= blankLinePos - 10) {
+        contentStart = htmlPos;
       }
     }
     
+    // Find the end of HTML content (look for next boundary or end of file)
     const nextBoundary = emailContent.indexOf('\n--', contentStart);
     const nextContentType = emailContent.indexOf('\nContent-Type:', contentStart);
     const endPos = nextBoundary !== -1 && nextContentType !== -1
@@ -1453,15 +1450,17 @@ export class OrderConfirmationParser {
     if (this.debug) {
       console.log(`📧 HTML EXTRACTION:`);
       console.log(`   Found Content-Type at: ${htmlPartStart}`);
-      console.log(`   Blank line at: ${htmlPartEnd}`);
+      console.log(`   Blank line at: ${blankLinePos}`);
       console.log(`   Content start: ${contentStart}`);
       console.log(`   Content end: ${endPos}`);
-      console.log(`   HTML length: ${html.length}`);
+      console.log(`   HTML length (before decode): ${emailContent.substring(contentStart, endPos).trim().length}`);
+      console.log(`   HTML length (after decode): ${html.length}`);
       console.log(`   Is quoted-printable: ${isQuotedPrintable}`);
       console.log(`   Charset: ${charset}`);
-      console.log(`   HTML preview (first 500 chars): ${html.substring(0, 500)}`);
+      console.log(`   HTML preview (first 200 chars): ${html.substring(0, 200)}`);
       console.log(`   HTML contains '<html': ${html.toLowerCase().includes('<html')}`);
       console.log(`   HTML contains '<li': ${html.toLowerCase().includes('<li')}`);
+      console.log(`   HTML contains 'Order number': ${html.toLowerCase().includes('order number')}`);
     }
     
     return html;
