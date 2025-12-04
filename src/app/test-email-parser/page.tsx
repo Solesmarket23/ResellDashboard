@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { generateGmailShippedEmailUrl } from "@/lib/utils/orderNumberUtils";
 
 interface OrderInfo {
   merchant: string;
@@ -344,6 +345,17 @@ export default function TestEmailParserPage() {
                             <span className="font-mono text-xs">
                               {result.data.tracking_number}
                             </span>
+                          ) : result.data?.order_number && 
+                            (result.data?.shipping_status === 'shipped' || result.data?.shipping_status === 'delivered') ? (
+                            <a
+                              href={generateGmailShippedEmailUrl(result.data.order_number)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 hover:underline text-xs font-medium"
+                              title="View shipped email in Gmail"
+                            >
+                              View Shipped Email
+                            </a>
                           ) : (
                             <span className="text-gray-400">—</span>
                           )}
