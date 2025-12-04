@@ -1324,12 +1324,171 @@ export class OrderConfirmationParser {
   }
   
   /**
+   * Extract tracking number from URLs found in HTML (especially "Track Your Order" links)
+   */
+  private extractTrackingFromUrls(htmlContent: string): string | null {
+    // Find all links that contain "track" (case insensitive)
+    const trackLinkPattern = /<a[^>]*href=["']([^"']*)["'][^>]*>.*?track.*?<\/a>/gi;
+    const allTrackLinks: string[] = [];
+    let match;
+    
+    while ((match = trackLinkPattern.exec(htmlContent)) !== null) {
+      allTrackLinks.push(match[1]);
+    }
+    
+    // Also find links with href containing "track" in the attribute
+    const hrefTrackPattern = /href=["']([^"']*track[^"']*)["']/gi;
+    while ((match = hrefTrackPattern.exec(htmlContent)) !== null) {
+      if (!allTrackLinks.includes(match[1])) {
+        allTrackLinks.push(match[1]);
+      }
+    }
+    
+    console.log(`🔗 Found ${allTrackLinks.length} tracking-related URLs`);
+    
+    // Check each URL for tracking numbers
+    for (const url of allTrackLinks) {
+      // Decode URL-encoded characters (handle multiple levels of encoding)
+      let decodedUrl = url;
+      try {
+        // Handle double-encoding (common in email HTML)
+        decodedUrl = decodeURIComponent(url);
+        // Try decoding again in case of double encoding
+        if (decodedUrl.includes('%')) {
+          decodedUrl = decodeURIComponent(decodedUrl);
+        }
+        // Also check for redirect parameters (r=https%3A%2F%2F...)
+        if (decodedUrl.includes('r=') || decodedUrl.includes('redirect=')) {
+          const redirectMatch = decodedUrl.match(/(?:r|redirect)=([^&]+)/i);
+          if (redirectMatch) {
+            try {
+              const redirectUrl = decodeURIComponent(redirectMatch[1]);
+              // Recursively check the redirect URL
+              const redirectTracking = this.extractTrackingFromSingleUrl(redirectUrl);
+              if (redirectTracking) return redirectTracking;
+            } catch (e) {
+              // Continue with main URL if redirect parsing fails
+            }
+          }
+        }
+      } catch (e) {
+        // If decoding fails, use original
+        decodedUrl = url;
+      }
+      
+      const tracking = this.extractTrackingFromSingleUrl(decodedUrl);
+      if (tracking) return tracking;
+    }
+    
+    return null;
+  }
+
+  /**
+   * Extract tracking number from a single URL string
+   */
+  private extractTrackingFromSingleUrl(url: string): string | null {
+    // Look for FedEx URLs with tracking numbers
+    const fedexTrackingMatch = url.match(/fedex\.com.*?(\d{10,22})\b/i);
+    if (fedexTrackingMatch) {
+      const trackingNum = fedexTrackingMatch[1];
+      if (/^\d{10,22}$/.test(trackingNum) && !trackingNum.includes('-')) {
+        console.log(`✅ Found FedEx tracking in URL: ${trackingNum}`);
+        return trackingNum;
+      }
+    }
+    
+    // Look for tracking in query parameters
+    try {
+      const queryString = url.split('?')[1] || '';
+      if (queryString) {
+        // Handle both standard and URL-encoded query strings
+        const params = queryString.split('&');
+        for (const param of params) {
+          const parts = param.split('=');
+          if (parts.length >= 2) {
+            const key = decodeURIComponent(parts[0]);
+            const value = decodeURIComponent(parts.slice(1).join('='));
+            if (key && value && /track/i.test(key) && /^\d{10,22}$/.test(value) && !value.includes('-')) {
+              console.log(`✅ Found tracking in URL parameter ${key}: ${value}`);
+              return value;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // If URL parsing fails, continue
+    }
+    
+    // Look for 12-digit numbers in StockX order URLs (common FedEx format)
+    // But exclude order IDs (which often start with 14 and are 20 digits)
+    const stockxTrackingMatch = url.match(/stockx\.com.*buying.*(\d{12})\b/i);
+    if (stockxTrackingMatch) {
+      const potentialTracking = stockxTrackingMatch[1];
+      // Validate it's not an order ID (order IDs are usually 20 digits and start with 14)
+      if (/^\d{12}$/.test(potentialTracking) && !potentialTracking.startsWith('14')) {
+        console.log(`✅ Found potential tracking in StockX URL: ${potentialTracking}`);
+        return potentialTracking;
+      }
+    }
+    
+    // Look for tracking numbers anywhere in the URL path or query
+    const anyTrackingMatch = url.match(/(?:track|tracking)[^0-9]*(\d{10,22})\b/i);
+    if (anyTrackingMatch) {
+      const trackingNum = anyTrackingMatch[1];
+      if (/^\d{10,22}$/.test(trackingNum) && !trackingNum.includes('-')) {
+        console.log(`✅ Found tracking in URL: ${trackingNum}`);
+        return trackingNum;
+      }
+    }
+    
+    return null;
+  }
+
+  /**
    * Extract tracking information from StockX shipping confirmation emails
    */
   private extractStockXTrackingInfo(htmlContent: string, textContent: string, orderInfo: OrderInfo): void {
     console.log(`🔍 EXTRACTING TRACKING INFO for order: ${orderInfo.order_number || 'UNKNOWN'}`);
     console.log(`🔍 HTML Content length: ${htmlContent.length} characters`);
     console.log(`🔍 Text Content length: ${textContent.length} characters`);
+    
+    // First, try to extract from URLs (especially "Track Your Order" buttons)
+    const urlTracking = this.extractTrackingFromUrls(htmlContent);
+    if (urlTracking) {
+      orderInfo.tracking_number = urlTracking;
+      // Determine carrier based on format
+      if (urlTracking.startsWith('1Z') && urlTracking.length === 18) {
+        orderInfo.carrier = "UPS";
+      } else if (/^\d{10,22}$/.test(urlTracking)) {
+        orderInfo.carrier = "FedEx";
+      }
+      console.log(`✅ TRACKING EXTRACTED FROM URL: ${urlTracking} (${orderInfo.carrier})`);
+      return; // If found in URL, we're done
+    }
+    
+    // Also check ALL URLs in the HTML (not just "track" links)
+    // StockX sometimes includes tracking in order page URLs
+    const allUrlPattern = /href=["']([^"']*)["']/gi;
+    const allUrls: string[] = [];
+    let urlMatch;
+    while ((urlMatch = allUrlPattern.exec(htmlContent)) !== null) {
+      const url = urlMatch[1];
+      // Focus on StockX order page URLs
+      if (url.includes('stockx.com') && url.includes('buying')) {
+        try {
+          const decodedUrl = decodeURIComponent(url);
+          const tracking = this.extractTrackingFromSingleUrl(decodedUrl);
+          if (tracking) {
+            orderInfo.tracking_number = tracking;
+            orderInfo.carrier = "FedEx";
+            console.log(`✅ TRACKING EXTRACTED FROM STOCKX ORDER URL: ${tracking}`);
+            return;
+          }
+        } catch (e) {
+          // Continue if URL decoding fails
+        }
+      }
+    }
     
     // Tracking number patterns - looking for REAL tracking number formats
     // Priority: UPS and FedEx patterns first (most common for StockX)
@@ -1388,16 +1547,30 @@ export class OrderConfirmationParser {
       /stockx\.com.*buying.*(\d{12})\b/i, // 12-digit FedEx in order URLs
       /buying.*tracking[=%3D\/](\d{10,22})/i,
       
-      // Look for tracking numbers in URL parameters (tracking=, track=, tn=)
-      /[?&](?:tracking|track|tn|tracking_number)[=%3D](\d{10,22})\b/i,
+      // Look for tracking numbers in URL parameters (tracking=, track=, tn=, trackingNumber=)
+      /[?&](?:tracking|track|tn|tracking_number|trackingNumber)[=%3D](\d{10,22})\b/i,
       /tracking[=%3D](\d{10,22})\b/i,
+      
+      // Look for tracking numbers in FedEx URLs (embedded or redirect URLs)
+      /fedex\.com.*track[^0-9]*(\d{10,22})\b/i,
+      /fedex\.com.*tracknumbers?[=%3D](\d{10,22})\b/i,
+      /tracknumbers?[=%3D](\d{10,22})\b/i,
       
       // Look for tracking numbers near "Track Your Order" button/link
       /track\s*your\s*order[^0-9]*(\d{10,22})\b/i,
       
       // Look for 12-digit numbers in href attributes (common FedEx format)
+      // This catches tracking numbers in the "Track Your Order" button's href
       /href=[^>]*(\d{12})\b[^>]*track/i,
-      /track[^>]*href=[^>]*(\d{12})\b/i
+      /track[^>]*href=[^>]*(\d{12})\b/i,
+      
+      // Extract from "Track Your Order" button href - StockX redirects often contain tracking
+      /<a[^>]*track[^>]*your[^>]*order[^>]*href=["']([^"']*)["'][^>]*>/i,
+      /<a[^>]*href=["']([^"']*track[^"']*)["'][^>]*>.*track.*your.*order/i,
+      
+      // Look for tracking numbers in URL-encoded hrefs (common in email HTML)
+      /href=%3D([^%]*%3D)?(\d{10,22})/i,
+      /href=([^>]*track[^>]*)(\d{10,22})/i
     ];
     
     for (const pattern of trackingPatterns) {
