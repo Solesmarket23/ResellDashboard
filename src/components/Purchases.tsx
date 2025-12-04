@@ -1613,9 +1613,12 @@ const Purchases = () => {
           }
         }
 
+        const hadExistingTracking = purchase.tracking && purchase.tracking.trim() !== '';
         setNotification({
           isVisible: true,
-          message: `Tracking number extracted: ${data.trackingNumber} (${data.carrier})`,
+          message: hadExistingTracking 
+            ? `Tracking number updated: ${purchase.tracking} → ${data.trackingNumber} (${data.carrier})`
+            : `Tracking number extracted: ${data.trackingNumber} (${data.carrier})`,
           type: 'success'
         });
       } else {
@@ -2418,11 +2421,28 @@ const Purchases = () => {
                   </td>
                   <td className="px-6 py-2 align-middle">
                     {purchase.tracking && purchase.tracking.trim() !== '' ? (
-                      <button 
-                        onClick={() => alert(`Tracking: ${purchase.tracking}\n\nTracking integration coming soon!`)}
-                        className={`${currentTheme.colors.accent} text-sm hover:underline transition-colors cursor-pointer`}>
-                        {purchase.tracking}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={() => alert(`Tracking: ${purchase.tracking}\n\nTracking integration coming soon!`)}
+                          className={`${currentTheme.colors.accent} text-sm hover:underline transition-colors cursor-pointer`}>
+                          {purchase.tracking}
+                        </button>
+                        <button
+                          onClick={() => handleExtractTracking(purchase)}
+                          disabled={extractingTracking.has(purchase.id || purchase.orderNumber)}
+                          className={`text-xs px-1.5 py-0.5 rounded transition-colors ${
+                            extractingTracking.has(purchase.id || purchase.orderNumber)
+                              ? 'bg-gray-400 cursor-not-allowed text-white'
+                              : `${currentTheme.name === 'Neon' ? 'bg-cyan-500 hover:bg-cyan-600' : 'bg-blue-500 hover:bg-blue-600'} text-white hover:shadow-md`
+                          }`}
+                          title="Refresh tracking number from StockX">
+                          {extractingTracking.has(purchase.id || purchase.orderNumber) ? (
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <RefreshCw className="w-3 h-3" />
+                          )}
+                        </button>
+                      </div>
                     ) : purchase.status?.toLowerCase() === 'ordered' ? (
                       <div className="flex items-center gap-2">
                         <span className={`text-sm ${currentTheme.colors.textSecondary}`}>Not Shipped Yet</span>
