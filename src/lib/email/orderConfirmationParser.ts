@@ -1040,6 +1040,33 @@ export class OrderConfirmationParser {
       }
     }
     
+    // Discount Code and Amount - Pattern: B + 2 digits + hyphen + 6 alphanumeric characters (e.g., B10-6HRXZ2)
+    // The discount appears in a table row like: <td>B10-6HRXZ2:</td><td>-$10.00</td>
+    const discountPatterns = [
+      // Handle encoded HTML (class=3D, style=3D) - most common case
+      /<td[^>]*class=3D[^>]*>(B\d{2}-[A-Z0-9]{6}):<\/td>\s*<td[^>]*>-\$(\d+\.\d{2})/i,
+      /<td[^>]*class=3D[^>]*style=3D[^>]*>(B\d{2}-[A-Z0-9]{6}):<\/td>\s*<td[^>]*>-\$(\d+\.\d{2})/i,
+      // Handle decoded HTML
+      /<td[^>]*>(B\d{2}-[A-Z0-9]{6}):<\/td>\s*<td[^>]*>-\$(\d+\.\d{2})/i,
+      // More flexible patterns that don't require exact table structure
+      /(B\d{2}-[A-Z0-9]{6}):\s*-\$(\d+\.\d{2})/i,
+      // Pattern that matches even if there's whitespace or other characters
+      /(B\d{2}-[A-Z0-9]{6})\s*:\s*.*?-\$(\d+\.\d{2})/i
+    ];
+    
+    for (let i = 0; i < discountPatterns.length; i++) {
+      const pattern = discountPatterns[i];
+      const match = htmlContent.match(pattern);
+      if (match && match[1] && match[2]) {
+        orderInfo.discount_code = match[1].trim();
+        orderInfo.discount_amount = -parseFloat(match[2]); // Negative value
+        if (this.debug) {
+          console.log(`✅ Discount Code extracted using pattern ${i + 1}: ${orderInfo.discount_code} ($${orderInfo.discount_amount})`);
+        }
+        break;
+      }
+    }
+    
     // Extract total from email for validation (optional)
     let extractedTotal: number | null = null;
     const totalPatterns = [
@@ -1068,9 +1095,23 @@ export class OrderConfirmationParser {
       if (this.debug) {
         console.log(`✅ Using Total Payment from email: $${orderInfo.total_amount}`);
       }
+      
+      // If no discount code found but total doesn't match calculation, detect discount
+      if (!orderInfo.discount_code) {
+        const calculatedWithoutDiscount = orderInfo.purchase_price + orderInfo.processing_fee + orderInfo.shipping_fee;
+        const difference = calculatedWithoutDiscount - extractedTotal;
+        
+        // If there's a significant difference (> $0.50), there's likely a discount
+        if (difference > 0.5) {
+          orderInfo.discount_amount = -difference;
+          if (this.debug) {
+            console.log(`⚠️ Discount detected from price difference: $${difference.toFixed(2)} (discount code not found in email)`);
+          }
+        }
+      }
     } else {
       // Calculate total: purchase_price + processing_fee + shipping_fee + discount_amount
-      const calculatedTotal = orderInfo.purchase_price + orderInfo.processing_fee + orderInfo.shipping_fee + orderInfo.discount_amount;
+      const calculatedTotal = orderInfo.purchase_price + orderInfo.processing_fee + orderInfo.shipping_fee + (orderInfo.discount_amount || 0);
       
       if (calculatedTotal > 0) {
         orderInfo.total_amount = parseFloat(calculatedTotal.toFixed(2));
