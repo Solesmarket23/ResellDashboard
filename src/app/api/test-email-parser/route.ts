@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { OrderConfirmationParser, OrderInfo } from '@/lib/email/orderConfirmationParser';
+import { consolidatePurchasesByOrderNumber } from '@/lib/utils/statusPriority';
 
 const EMAIL_FILES = [
   '01-order-confirmed.eml',
@@ -24,10 +25,12 @@ export async function GET() {
     success: boolean;
     error?: string;
     data?: OrderInfo;
+    sourceEmails?: string[];
   }> = [];
 
   const parser = new OrderConfirmationParser(true); // Enable debug mode
 
+  // Parse all emails first
   for (const filename of EMAIL_FILES) {
     try {
       let emailContent: string | null = null;
@@ -80,16 +83,76 @@ export async function GET() {
     }
   }
 
+  // Consolidate results by order number
+  const successfulResults = results.filter(r => r.success && r.data?.order_number);
+  
+  if (successfulResults.length > 0) {
+    // Convert to format expected by consolidation utility
+    const purchases = successfulResults.map(r => ({
+      orderNumber: r.data!.order_number,
+      order_number: r.data!.order_number,
+      status: r.data!.shipping_status || 'ordered',
+      shipping_status: r.data!.shipping_status || 'ordered',
+      ...r.data,
+      filename: r.filename
+    }));
+    
+    // Consolidate using priority system
+    const consolidated = consolidatePurchasesByOrderNumber(purchases);
+    
+    // Map back to test result format
+    const consolidatedResults: typeof results = [];
+    const processedOrderNumbers = new Set<string>();
+    const failedResults = results.filter(r => !r.success);
+    
+    for (const consolidatedPurchase of consolidated) {
+      const orderNumber = consolidatedPurchase.orderNumber || consolidatedPurchase.order_number;
+      if (!orderNumber || processedOrderNumbers.has(orderNumber)) continue;
+      
+      processedOrderNumbers.add(orderNumber);
+      
+      // Find all source emails for this order
+      const sourceEmails = successfulResults
+        .filter(r => r.data?.order_number === orderNumber)
+        .map(r => r.filename);
+      
+      // Get the highest priority result
+      const primaryResult = successfulResults.find(r => r.data?.order_number === orderNumber);
+      
+      if (primaryResult) {
+        consolidatedResults.push({
+          filename: sourceEmails.length > 1 
+            ? `${orderNumber} (${sourceEmails.length} emails)` 
+            : primaryResult.filename,
+          success: true,
+          data: {
+            ...consolidatedPurchase as OrderInfo,
+            email_subject: primaryResult.data?.email_subject || '',
+            email_date: primaryResult.data?.email_date || '',
+            sender: primaryResult.data?.sender || ''
+          },
+          sourceEmails: sourceEmails.length > 1 ? sourceEmails : undefined
+        });
+      }
+    }
+    
+    return NextResponse.json({ results: [...consolidatedResults, ...failedResults] });
+  }
+
   return NextResponse.json({ results });
 }
 
 // POST endpoint to test with custom email content
+// Can accept single email or array of emails for consolidation
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { emailContent, filename = 'custom-email.eml' } = body;
     
-    if (!emailContent) {
+    // Support both single email and array of emails
+    const isBatch = Array.isArray(body);
+    const emails = isBatch ? body : [{ emailContent: body.emailContent, filename: body.filename || 'custom-email.eml' }];
+    
+    if (!isBatch && !body.emailContent) {
       return NextResponse.json(
         { error: 'emailContent is required' },
         { status: 400 }
@@ -97,58 +160,136 @@ export async function POST(request: Request) {
     }
 
     const parser = new OrderConfirmationParser(true);
+    const allResults: Array<{
+      filename: string;
+      success: boolean;
+      error?: string;
+      data?: OrderInfo;
+      sourceEmails?: string[]; // Track which emails were consolidated
+    }> = [];
     
-    // Log email content info for debugging
-    console.log(`\n📧 ===== TEST API: Processing ${filename} =====`);
-    console.log(`   Content length: ${emailContent.length} chars`);
-    console.log(`   Has Delivered-To: ${emailContent.includes('Delivered-To:')}`);
-    console.log(`   Has Return-Path: ${emailContent.includes('Return-Path:')}`);
-    console.log(`   Has StockX: ${emailContent.toLowerCase().includes('stockx')}`);
-    console.log(`   Content preview (first 500 chars): ${emailContent.substring(0, 500)}`);
-    
-    const orderInfo = parser.parseEmail(emailContent);
-    
-    // Get HTML content for debugging (access private method via any cast)
-    const htmlContent = (parser as any).getHtmlContent(emailContent);
-    const hasEncodedHtml = htmlContent.includes('class=3D') || htmlContent.includes('=3D');
-    
-    // Log what was extracted
-    console.log(`\n📊 ===== TEST API: Extraction Results =====`);
-    console.log(`   Order #: ${orderInfo.order_number || 'NONE'}`);
-    console.log(`   Product: ${orderInfo.product_name || 'NONE'}`);
-    console.log(`   Size: ${orderInfo.size || 'NONE'}`);
-    console.log(`   Style ID: ${orderInfo.style_id || 'NONE'}`);
-    console.log(`   Total: $${orderInfo.total_amount || '0.00'}`);
-    console.log(`   Tracking: ${orderInfo.tracking_number || 'NONE'}`);
-    console.log(`   Status: ${orderInfo.shipping_status || 'NONE'}`);
-    console.log(`   Merchant: ${orderInfo.merchant || 'NONE'}`);
-    console.log(`\n   HTML Debug:`);
-    console.log(`   - HTML length: ${htmlContent.length} chars`);
-    console.log(`   - Contains encoded HTML (=3D): ${hasEncodedHtml}`);
-    console.log(`   - Contains 'Order number': ${htmlContent.toLowerCase().includes('order number')}`);
-    console.log(`   - Contains 'Size:': ${htmlContent.toLowerCase().includes('size:')}`);
-    console.log(`   - Contains 'Purchase Price': ${htmlContent.toLowerCase().includes('purchase price')}`);
-    console.log(`   - HTML preview (first 300 chars): ${htmlContent.substring(0, 300)}`);
-    console.log(`📊 ===== TEST API: Extraction Results =====\n`);
+    // Parse all emails first
+    for (const emailData of emails) {
+      const { emailContent, filename = 'custom-email.eml' } = emailData;
+      
+      if (!emailContent) {
+        allResults.push({
+          filename,
+          success: false,
+          error: 'emailContent is required'
+        });
+        continue;
+      }
+      
+      try {
+        // Log email content info for debugging
+        console.log(`\n📧 ===== TEST API: Processing ${filename} =====`);
+        console.log(`   Content length: ${emailContent.length} chars`);
+        console.log(`   Has Delivered-To: ${emailContent.includes('Delivered-To:')}`);
+        console.log(`   Has Return-Path: ${emailContent.includes('Return-Path:')}`);
+        console.log(`   Has StockX: ${emailContent.toLowerCase().includes('stockx')}`);
+        
+        const orderInfo = parser.parseEmail(emailContent);
+        
+        // Get HTML content for debugging (access private method via any cast)
+        const htmlContent = (parser as any).getHtmlContent(emailContent);
+        const hasEncodedHtml = htmlContent.includes('class=3D') || htmlContent.includes('=3D');
+        
+        // Log what was extracted
+        console.log(`\n📊 ===== TEST API: Extraction Results =====`);
+        console.log(`   Order #: ${orderInfo.order_number || 'NONE'}`);
+        console.log(`   Product: ${orderInfo.product_name || 'NONE'}`);
+        console.log(`   Size: ${orderInfo.size || 'NONE'}`);
+        console.log(`   Status: ${orderInfo.shipping_status || 'NONE'}`);
+        console.log(`📊 ===== TEST API: Extraction Results =====\n`);
 
-    // Check if any data was extracted
-    const hasData = orderInfo.order_number || orderInfo.size || orderInfo.product_name || orderInfo.total_amount;
+        allResults.push({
+          filename,
+          success: true,
+          data: orderInfo
+        });
+      } catch (error) {
+        allResults.push({
+          filename,
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
     
-    return NextResponse.json({
-      filename,
-      success: true,
-      data: orderInfo,
-      debug: {
-        hasData,
-        extractedFields: {
-          order_number: !!orderInfo.order_number,
-          size: !!orderInfo.size,
-          product_name: !!orderInfo.product_name,
-          total_amount: !!orderInfo.total_amount,
-          merchant: orderInfo.merchant || 'NONE'
+    // If we have multiple emails, consolidate by order number
+    if (allResults.length > 1) {
+      const successfulResults = allResults.filter(r => r.success && r.data?.order_number);
+      
+      if (successfulResults.length > 0) {
+        // Convert to format expected by consolidation utility
+        const purchases = successfulResults.map(r => ({
+          orderNumber: r.data!.order_number,
+          order_number: r.data!.order_number,
+          status: r.data!.shipping_status || 'ordered',
+          shipping_status: r.data!.shipping_status || 'ordered',
+          ...r.data,
+          filename: r.filename // Keep filename for tracking
+        }));
+        
+        // Consolidate using priority system
+        const consolidated = consolidatePurchasesByOrderNumber(purchases);
+        
+        // Map back to test result format, tracking source emails
+        const consolidatedResults: typeof allResults = [];
+        const processedOrderNumbers = new Set<string>();
+        
+        for (const consolidatedPurchase of consolidated) {
+          const orderNumber = consolidatedPurchase.orderNumber || consolidatedPurchase.order_number;
+          if (!orderNumber || processedOrderNumbers.has(orderNumber)) continue;
+          
+          processedOrderNumbers.add(orderNumber);
+          
+          // Find all source emails for this order
+          const sourceEmails = successfulResults
+            .filter(r => r.data?.order_number === orderNumber)
+            .map(r => r.filename);
+          
+          // Get the highest priority result (should match consolidated purchase)
+          const primaryResult = successfulResults.find(r => r.data?.order_number === orderNumber);
+          
+          if (primaryResult) {
+            consolidatedResults.push({
+              filename: sourceEmails.length > 1 
+                ? `${orderNumber} (${sourceEmails.length} emails)` 
+                : primaryResult.filename,
+              success: true,
+              data: {
+                ...consolidatedPurchase as OrderInfo,
+                // Preserve email metadata from primary result
+                email_subject: primaryResult.data?.email_subject || '',
+                email_date: primaryResult.data?.email_date || '',
+                sender: primaryResult.data?.sender || ''
+              },
+              sourceEmails: sourceEmails.length > 1 ? sourceEmails : undefined
+            });
+          }
+        }
+        
+        // Add failed results
+        const failedResults = allResults.filter(r => !r.success);
+        
+        // Return consolidated results
+        if (isBatch) {
+          return NextResponse.json({ results: [...consolidatedResults, ...failedResults] });
+        } else {
+          // Single email - return as before
+          return NextResponse.json(consolidatedResults[0] || allResults[0]);
         }
       }
-    });
+    }
+    
+    // Single email or no consolidation needed
+    if (isBatch) {
+      return NextResponse.json({ results: allResults });
+    } else {
+      return NextResponse.json(allResults[0]);
+    }
   } catch (error) {
     return NextResponse.json(
       {

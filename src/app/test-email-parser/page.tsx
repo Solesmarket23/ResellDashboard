@@ -35,6 +35,7 @@ interface TestResult {
   success: boolean;
   error?: string;
   data?: OrderInfo;
+  sourceEmails?: string[]; // Emails that were consolidated into this result
 }
 
 export default function TestEmailParserPage() {
@@ -68,32 +69,43 @@ export default function TestEmailParserPage() {
       
       // If files are missing or we have uploaded files, process them
       if (emailFiles.length > 0) {
-        const fileResults: TestResult[] = [];
-        
-        for (const file of emailFiles) {
-          try {
-            const content = await file.text();
-            const response = await fetch("/api/test-email-parser", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                emailContent: content,
-                filename: file.name
-              })
-            });
-            
-            const result = await response.json();
-            fileResults.push(result);
-          } catch (error) {
-            fileResults.push({
-              filename: file.name,
+        try {
+          // Read all files first
+          const emailData = await Promise.all(
+            emailFiles.map(async (file) => ({
+              emailContent: await file.text(),
+              filename: file.name
+            }))
+          );
+          
+          // Send all emails in one batch request for consolidation
+          const response = await fetch("/api/test-email-parser", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(emailData)
+          });
+          
+          const data = await response.json();
+          
+          // Handle both single result and batch results
+          if (data.results) {
+            setResults(data.results);
+          } else if (data.filename) {
+            setResults([data]);
+          } else {
+            setResults([{
+              filename: "Error",
               success: false,
-              error: error instanceof Error ? error.message : 'Unknown error'
-            });
+              error: "Unexpected response format"
+            }]);
           }
+        } catch (error) {
+          setResults([{
+            filename: "Error",
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }]);
         }
-        
-        setResults(fileResults);
       } else {
         // Show message that files need to be uploaded
         setResults([{
@@ -538,6 +550,18 @@ export default function TestEmailParserPage() {
                       <div>
                         <h3 className="font-semibold text-gray-700 mb-2">Email Metadata</h3>
                         <dl className="space-y-2 text-sm">
+                          {result.sourceEmails && result.sourceEmails.length > 1 && (
+                            <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                              <dt className="font-medium text-blue-800 mb-1">Consolidated from {result.sourceEmails.length} emails:</dt>
+                              <dd className="text-blue-700 text-xs">
+                                <ul className="list-disc list-inside space-y-1">
+                                  {result.sourceEmails.map((email, idx) => (
+                                    <li key={idx}>{email}</li>
+                                  ))}
+                                </ul>
+                              </dd>
+                            </div>
+                          )}
                           <div className="flex">
                             <dt className="font-medium text-gray-600 w-32">Subject:</dt>
                             <dd className="text-gray-900">{data.email_subject || "—"}</dd>
