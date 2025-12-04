@@ -347,64 +347,15 @@ export default function TestEmailParserPage() {
                             </span>
                           ) : result.data?.order_number && 
                             (result.data?.shipping_status === 'shipped' || result.data?.shipping_status === 'delivered') ? (
-                            (() => {
-                              // Find the shipped email file from all results for this order
-                              // Priority: 1) sourceEmails with 'shipped' in name, 2) any result with shipped status for this order
-                              const orderNumber = result.data?.order_number;
-                              let shippedEmail: string | undefined;
-                              
-                              // First try to find from sourceEmails (consolidated emails)
-                              if (result.sourceEmails && result.sourceEmails.length > 0) {
-                                shippedEmail = result.sourceEmails.find(filename => 
-                                  filename.toLowerCase().includes('shipped') || 
-                                  filename.toLowerCase().includes('verified')
-                                );
-                              }
-                              
-                              // If not found, search all results for this order with shipped/delivered status
-                              if (!shippedEmail && orderNumber) {
-                                const shippedResult = results.find(r => 
-                                  r.data?.order_number === orderNumber &&
-                                  (r.data?.shipping_status === 'shipped' || r.data?.shipping_status === 'delivered') &&
-                                  r.filename !== result.filename // Don't select the consolidated result itself
-                                );
-                                shippedEmail = shippedResult?.filename;
-                              }
-                              
-                              // If still not found, use first source email
-                              if (!shippedEmail && result.sourceEmails && result.sourceEmails.length > 0) {
-                                shippedEmail = result.sourceEmails[0];
-                              }
-                              
-                              return shippedEmail ? (
-                                <button
-                                  onClick={() => {
-                                    setSelectedEmail(shippedEmail!);
-                                    // Scroll to details section
-                                    setTimeout(() => {
-                                      const detailsElement = document.querySelector('[data-details-section]');
-                                      if (detailsElement) {
-                                        detailsElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                      }
-                                    }, 100);
-                                  }}
-                                  className="text-blue-600 hover:text-blue-800 hover:underline text-xs font-medium cursor-pointer"
-                                  title={`View shipped email: ${shippedEmail}`}
-                                >
-                                  View Shipped Email
-                                </button>
-                              ) : (
-                                <a
-                                  href={generateGmailShippedEmailUrl(result.data.order_number)}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-blue-600 hover:text-blue-800 hover:underline text-xs font-medium"
-                                  title="Search for shipped email in Gmail"
-                                >
-                                  Search Gmail
-                                </a>
-                              );
-                            })()
+                            <a
+                              href={generateGmailShippedEmailUrl(result.data.order_number)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 hover:underline text-xs font-medium"
+                              title="Search for shipped email in Gmail (replicates purchases page behavior)"
+                            >
+                              View Shipped Email
+                            </a>
                           ) : (
                             <span className="text-gray-400">—</span>
                           )}
