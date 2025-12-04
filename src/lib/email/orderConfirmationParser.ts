@@ -282,15 +282,15 @@ export class OrderConfirmationParser {
       }
     }
     
-    // Extract tracking for shipped and delivered emails
+    // Extract tracking ONLY for shipped and delivered emails
+    // Order confirmation emails (Order Confirmed, Order Confirmation, Xpress Order Confirmed) 
+    // do not have tracking numbers yet
     if (emailType === 'shipped' || emailType === 'delivered') {
       console.log(`🔍 Extracting tracking for ${emailType} email...`);
       this.extractStockXTrackingInfo(htmlContent, textContent, orderInfo);
+    } else {
+      console.log(`⏭️ Skipping tracking extraction for ${emailType} email (no tracking available yet)`);
     }
-    
-    // Also attempt tracking extraction for all emails (some order confirmations have tracking)
-    console.log(`🔍 Attempting tracking extraction for all StockX emails...`);
-    this.extractStockXTrackingInfo(htmlContent, textContent, orderInfo);
     
     // Detect order type (Xpress vs Regular)
     // Check subject line first
