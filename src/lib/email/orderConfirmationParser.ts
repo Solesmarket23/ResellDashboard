@@ -1391,9 +1391,12 @@ export class OrderConfirmationParser {
     const fedexTrackingMatch = url.match(/fedex\.com.*?(\d{10,22})\b/i);
     if (fedexTrackingMatch) {
       const trackingNum = fedexTrackingMatch[1];
-      if (/^\d{10,22}$/.test(trackingNum) && !trackingNum.includes('-')) {
+      // FedEx tracking numbers do NOT start with 9 (that's USPS format)
+      if (/^\d{10,22}$/.test(trackingNum) && !trackingNum.includes('-') && !trackingNum.startsWith('9')) {
         console.log(`✅ Found FedEx tracking in URL: ${trackingNum}`);
         return trackingNum;
+      } else if (trackingNum.startsWith('9')) {
+        console.log(`⚠️ Skipping USPS-formatted number from FedEx URL: ${trackingNum}`);
       }
     }
     
@@ -1408,9 +1411,12 @@ export class OrderConfirmationParser {
           if (parts.length >= 2) {
             const key = decodeURIComponent(parts[0]);
             const value = decodeURIComponent(parts.slice(1).join('='));
-            if (key && value && /track/i.test(key) && /^\d{10,22}$/.test(value) && !value.includes('-')) {
+            // FedEx tracking numbers do NOT start with 9 (that's USPS format)
+            if (key && value && /track/i.test(key) && /^\d{10,22}$/.test(value) && !value.includes('-') && !value.startsWith('9')) {
               console.log(`✅ Found tracking in URL parameter ${key}: ${value}`);
               return value;
+            } else if (value && value.startsWith('9') && /^\d{10,22}$/.test(value)) {
+              console.log(`⚠️ Skipping USPS-formatted number from tracking parameter: ${value}`);
             }
           }
         }
@@ -1419,25 +1425,49 @@ export class OrderConfirmationParser {
       // If URL parsing fails, continue
     }
     
-    // Look for 12-digit numbers in StockX order URLs (common FedEx format)
-    // But exclude order IDs (which often start with 14 and are 20 digits)
-    const stockxTrackingMatch = url.match(/stockx\.com.*buying.*(\d{12})\b/i);
-    if (stockxTrackingMatch) {
-      const potentialTracking = stockxTrackingMatch[1];
-      // Validate it's not an order ID (order IDs are usually 20 digits and start with 14)
-      if (/^\d{12}$/.test(potentialTracking) && !potentialTracking.startsWith('14')) {
-        console.log(`✅ Found potential tracking in StockX URL: ${potentialTracking}`);
-        return potentialTracking;
+    // Look for tracking numbers in StockX order URLs ONLY if in tracking-related context
+    // DO NOT extract random 12-digit numbers from order URLs - they're likely order IDs
+    // Only extract if URL contains "track" keyword or is a FedEx/UPS redirect URL
+    if (url.includes('stockx.com') && (url.includes('track') || url.includes('fedex') || url.includes('ups'))) {
+      const stockxTrackingMatch = url.match(/stockx\.com.*(?:track|fedex|ups).*?(\d{10,22})\b/i);
+      if (stockxTrackingMatch) {
+        const potentialTracking = stockxTrackingMatch[1];
+        // Validate it's a real tracking number format
+        // FedEx: 10-22 digits, but NOT starting with 9 (that's USPS)
+        // UPS: 1Z + 16 alphanumeric
+        if (potentialTracking.startsWith('1Z') && potentialTracking.length === 18) {
+          console.log(`✅ Found UPS tracking in StockX URL: ${potentialTracking}`);
+          return potentialTracking;
+        }
+        // FedEx: 12 digits, NOT starting with 9
+        if (/^\d{12}$/.test(potentialTracking) && !potentialTracking.startsWith('9')) {
+          console.log(`✅ Found FedEx tracking in StockX URL: ${potentialTracking}`);
+          return potentialTracking;
+        }
+        // Other valid lengths (10-11, 13-22 digits) but NOT starting with 9
+        if (/^\d{10,11}$/.test(potentialTracking) || /^\d{13,22}$/.test(potentialTracking)) {
+          if (!potentialTracking.startsWith('9')) {
+            console.log(`✅ Found tracking in StockX URL: ${potentialTracking}`);
+            return potentialTracking;
+          }
+        }
+        console.log(`⚠️ Skipping invalid tracking format from StockX URL: ${potentialTracking}`);
       }
     }
+    
+    // DO NOT extract random numbers from StockX order URLs - they're order IDs, not tracking numbers
+    // The tracking number is only available on the StockX order page after clicking "Track Order"
     
     // Look for tracking numbers anywhere in the URL path or query
     const anyTrackingMatch = url.match(/(?:track|tracking)[^0-9]*(\d{10,22})\b/i);
     if (anyTrackingMatch) {
       const trackingNum = anyTrackingMatch[1];
-      if (/^\d{10,22}$/.test(trackingNum) && !trackingNum.includes('-')) {
+      // FedEx tracking numbers do NOT start with 9 (that's USPS format)
+      if (/^\d{10,22}$/.test(trackingNum) && !trackingNum.includes('-') && !trackingNum.startsWith('9')) {
         console.log(`✅ Found tracking in URL: ${trackingNum}`);
         return trackingNum;
+      } else if (trackingNum.startsWith('9')) {
+        console.log(`⚠️ Skipping USPS-formatted number from tracking URL: ${trackingNum}`);
       }
     }
     
@@ -1466,22 +1496,33 @@ export class OrderConfirmationParser {
       return; // If found in URL, we're done
     }
     
-    // Also check ALL URLs in the HTML (not just "track" links)
-    // StockX sometimes includes tracking in order page URLs
+    // Also check URLs in the HTML, but ONLY for tracking-related links
+    // DO NOT extract from generic StockX order URLs - tracking is not in those URLs
+    // Only check URLs that contain "track", "fedex", or "ups" keywords
     const allUrlPattern = /href=["']([^"']*)["']/gi;
     const allUrls: string[] = [];
     let urlMatch;
     while ((urlMatch = allUrlPattern.exec(htmlContent)) !== null) {
       const url = urlMatch[1];
-      // Focus on StockX order page URLs
-      if (url.includes('stockx.com') && url.includes('buying')) {
+      // Only check URLs that are tracking-related (contain "track", "fedex", or "ups")
+      if (url && (url.includes('track') || url.includes('fedex') || url.includes('ups') || url.includes('Track'))) {
         try {
           const decodedUrl = decodeURIComponent(url);
           const tracking = this.extractTrackingFromSingleUrl(decodedUrl);
           if (tracking) {
+            // Validate it's not a suspicious tracking number (12 digits starting with 9)
+            if (/^\d{12}$/.test(tracking) && tracking.startsWith('9')) {
+              console.log(`⚠️ Skipping suspicious tracking from URL (12 digits starting with 9): ${tracking}`);
+              continue; // Skip this - not a valid FedEx tracking number
+            }
             orderInfo.tracking_number = tracking;
-            orderInfo.carrier = "FedEx";
-            console.log(`✅ TRACKING EXTRACTED FROM STOCKX ORDER URL: ${tracking}`);
+            // Determine carrier
+            if (tracking.startsWith('1Z') && tracking.length === 18) {
+              orderInfo.carrier = "UPS";
+            } else if (/^\d{10,22}$/.test(tracking)) {
+              orderInfo.carrier = "FedEx";
+            }
+            console.log(`✅ TRACKING EXTRACTED FROM URL: ${tracking} (${orderInfo.carrier})`);
             return;
           }
         } catch (e) {
@@ -1539,13 +1580,13 @@ export class OrderConfirmationParser {
       // Look for tracking numbers after "tracking number" or similar phrases
       /(?:tracking\s*number|track\s*number|tracking\s*#|track\s*#)[:\s]*([0-9A-Z]{10,22})/i,
       
-      // Look for tracking numbers in StockX-specific patterns
-      /(?:stockx|stock x).*?(\d{12,22})/i,
+      // Look for tracking numbers in StockX-specific patterns ONLY in tracking context
+      // DO NOT extract random numbers from StockX text - they're likely order IDs
+      /(?:stockx|stock x).*?(?:track|tracking|shipped|delivered).*?(\d{10,22})\b/i,
       
-      // Look for tracking numbers in StockX order page URLs
-      /stockx\.com.*buying.*tracking[=%3D\/](\d{10,22})/i,
-      /stockx\.com.*buying.*(\d{12})\b/i, // 12-digit FedEx in order URLs
-      /buying.*tracking[=%3D\/](\d{10,22})/i,
+      // Look for tracking numbers in StockX URLs ONLY if in tracking-related context
+      /stockx\.com.*(?:track|tracking|shipped|delivered).*?(\d{10,22})\b/i,
+      // DO NOT extract from generic buying URLs - tracking is not in those URLs
       
       // Look for tracking numbers in URL parameters (tracking=, track=, tn=, trackingNumber=)
       /[?&](?:tracking|track|tn|tracking_number|trackingNumber)[=%3D](\d{10,22})\b/i,
@@ -1586,15 +1627,16 @@ export class OrderConfirmationParser {
         }
         
         // Validate based on carrier formats (strict validation)
+        // IMPORTANT: FedEx tracking numbers do NOT start with 9 (that's USPS format)
         const isValidTracking = (
           // UPS: 1Z followed by exactly 16 alphanumeric (18 total)
           // Format: 1Z + shipper number (6) + service level (2) + package ID (8) = 18
           /^1Z[0-9A-Z]{16}$/i.test(trackingNum) ||
           // FedEx: 10-22 digits (most common 12, but can be 10, 15, 20, or 22)
-          // All numeric, no letters, no dashes
-          /^\d{10,22}$/.test(trackingNum) ||
-          // USPS: 20-22 digits (for completeness, though StockX doesn't use USPS)
-          /^\d{20,22}$/.test(trackingNum) ||
+          // All numeric, no letters, no dashes, and NOT starting with 9 (that's USPS)
+          (/^\d{10,22}$/.test(trackingNum) && !trackingNum.startsWith('9')) ||
+          // USPS: 20-22 digits starting with 9 (for completeness, though StockX doesn't use USPS)
+          /^9\d{19,21}$/.test(trackingNum) ||
           // DHL: 10 digits (for completeness, though StockX doesn't use DHL)
           /^\d{10}$/.test(trackingNum)
         );
@@ -1643,6 +1685,11 @@ export class OrderConfirmationParser {
           const fedexMatches = htmlContent.match(fedexPattern) || [];
           
           for (const match of fedexMatches) {
+            // Skip if it starts with 9 (that's USPS format, not FedEx)
+            if (match.startsWith('9')) {
+              console.log(`⚠️ Skipping USPS-formatted number (starts with 9): "${match}"`);
+              continue;
+            }
             // Skip if it looks like a date, phone number, or other common number
             // Additional validation: check if it's near shipping/tracking context
             const contextCheck = new RegExp(`(?:tracking|shipped|delivered|package|fedex)[\\s\\S]{0,150}${match}|${match}[\\s\\S]{0,150}(?:tracking|shipped|delivered|package|fedex)`, 'i');
@@ -1673,10 +1720,14 @@ export class OrderConfirmationParser {
           const matches = htmlContent.matchAll(pattern);
           for (const match of matches) {
             const number = match[1];
-            if (!number.includes('-') && /^\d{12,22}$/.test(number)) {
+            // Skip if it starts with 9 (that's USPS format, not FedEx)
+            // FedEx tracking numbers do NOT start with 9
+            if (!number.includes('-') && /^\d{12,22}$/.test(number) && !number.startsWith('9')) {
               orderInfo.tracking_number = number;
               console.log(`✅ TRACKING NUMBER FOUND (prominent ${number.length}-digit number): "${number}"`);
               break;
+            } else if (number.startsWith('9')) {
+              console.log(`⚠️ Skipping USPS-formatted number (starts with 9): "${number}"`);
             }
           }
           if (orderInfo.tracking_number) break;
@@ -1702,10 +1753,13 @@ export class OrderConfirmationParser {
             // Validate it's a reasonable tracking number (not a date, price, etc.)
             const num = fedexAfterShippedMatch[1];
             // Skip if it looks like a year (starts with 19 or 20)
-            if (!/^(19|20)\d{2,}$/.test(num) && num.length >= 10) {
+            // Skip if it starts with 9 (that's USPS format, not FedEx)
+            if (!/^(19|20)\d{2,}$/.test(num) && !num.startsWith('9') && num.length >= 10) {
               orderInfo.tracking_number = num;
               orderInfo.carrier = "FedEx";
               console.log(`✅ TRACKING NUMBER FOUND (FedEx ${num.length}-digit after 'shipped/verified'): "${num}"`);
+            } else if (num.startsWith('9')) {
+              console.log(`⚠️ Skipping USPS-formatted number (starts with 9): "${num}"`);
             }
           }
         }
@@ -1720,6 +1774,11 @@ export class OrderConfirmationParser {
           // Skip common non-tracking numbers
           if (/^(19|20)\d{10}$/.test(num)) continue; // Years
           if (/^0+/.test(num)) continue; // Leading zeros (unlikely for FedEx)
+          // Skip if starts with 9 (that's USPS format, not FedEx)
+          if (num.startsWith('9')) {
+            console.log(`⚠️ Skipping USPS-formatted number (starts with 9): "${num}"`);
+            continue;
+          }
           
           // Check if it's near any shipping/tracking context (even if far away)
           const contextWindow = 500; // Larger window for URL-based tracking
@@ -1748,9 +1807,13 @@ export class OrderConfirmationParser {
         orderInfo.carrier = "UPS";
       } 
       // FedEx tracking numbers: 10-22 digits (most common 12, but can be 10, 15, 20, or 22)
-      // All numeric, no letters
-      else if (/^\d{10,22}$/.test(orderInfo.tracking_number)) {
+      // All numeric, no letters, and NOT starting with 9 (that's USPS format)
+      else if (/^\d{10,22}$/.test(orderInfo.tracking_number) && !orderInfo.tracking_number.startsWith('9')) {
         orderInfo.carrier = "FedEx";
+      }
+      // USPS tracking: 20-22 digits starting with 9
+      else if (/^9\d{19,21}$/.test(orderInfo.tracking_number)) {
+        orderInfo.carrier = "USPS";
       }
       // Try to detect from HTML content if tracking format doesn't match
       else {
@@ -1764,6 +1827,14 @@ export class OrderConfirmationParser {
           orderInfo.carrier = "StockX Logistics";
         }
       }
+    }
+    
+    // Final validation: Clear any invalid tracking numbers that shouldn't have been extracted
+    // 12-digit numbers starting with 9 are NOT valid FedEx tracking (that's USPS format)
+    if (orderInfo.tracking_number && /^\d{12}$/.test(orderInfo.tracking_number) && orderInfo.tracking_number.startsWith('9')) {
+      console.log(`⚠️ CLEARING INVALID TRACKING: "${orderInfo.tracking_number}" - 12 digits starting with 9 is USPS format, not FedEx`);
+      orderInfo.tracking_number = "";
+      orderInfo.carrier = "";
     }
     
     // Final tracking extraction summary
