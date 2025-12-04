@@ -49,25 +49,7 @@ export default function TestEmailParserPage() {
     setResults([]);
     
     try {
-      // Try to fetch from API first (works if files exist locally)
-      const response = await fetch("/api/test-email-parser");
-      const data = await response.json();
-      
-      // If we have results, use them
-      if (data.results && data.results.length > 0) {
-        // Check if any failed due to missing files
-        const hasMissingFiles = data.results.some((r: TestResult) => 
-          r.error?.includes('not found') || r.error?.includes('Email file not found')
-        );
-        
-        if (!hasMissingFiles) {
-          setResults(data.results);
-          setLoading(false);
-          return;
-        }
-      }
-      
-      // If files are missing or we have uploaded files, process them
+      // If files are uploaded, ONLY process those files (don't use GET endpoint)
       if (emailFiles.length > 0) {
         try {
           // Read all files first
@@ -107,12 +89,29 @@ export default function TestEmailParserPage() {
           }]);
         }
       } else {
-        // Show message that files need to be uploaded
-        setResults([{
-          filename: "No files",
-          success: false,
-          error: "Please upload email files or ensure sample-emails directory exists locally"
-        }]);
+        // No files uploaded - try to fetch from API (works if sample files exist locally)
+        try {
+          const response = await fetch("/api/test-email-parser");
+          const data = await response.json();
+          
+          // If we have results, use them
+          if (data.results && data.results.length > 0) {
+            setResults(data.results);
+          } else {
+            // Show message that files need to be uploaded
+            setResults([{
+              filename: "No files",
+              success: false,
+              error: "Please upload email files or ensure sample-emails directory exists locally"
+            }]);
+          }
+        } catch (error) {
+          setResults([{
+            filename: "Error",
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }]);
+        }
       }
     } catch (error) {
       console.error("Test failed:", error);

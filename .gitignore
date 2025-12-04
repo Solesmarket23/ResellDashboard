@@ -42,3 +42,4 @@ next-env.d.ts
 # Sample emails (may contain sensitive data)
 /sample-emails/*.eml
 /sample-emails/*.html
+.env.local.bak
