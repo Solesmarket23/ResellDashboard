@@ -264,6 +264,9 @@ export default function TestEmailParserPage() {
                         Tracking
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Carrier
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Actions
                       </th>
                     </tr>
@@ -341,6 +344,21 @@ export default function TestEmailParserPage() {
                           {result.data?.tracking_number ? (
                             <span className="font-mono text-xs">
                               {result.data.tracking_number}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                          {result.data?.carrier ? (
+                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                              result.data.carrier === 'UPS' 
+                                ? 'bg-purple-100 text-purple-800' 
+                                : result.data.carrier === 'FedEx'
+                                ? 'bg-orange-100 text-orange-800'
+                                : 'bg-gray-100 text-gray-800'
+                            }`}>
+                              {result.data.carrier}
                             </span>
                           ) : (
                             <span className="text-gray-400">—</span>

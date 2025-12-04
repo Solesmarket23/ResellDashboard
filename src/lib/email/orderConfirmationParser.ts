@@ -306,11 +306,14 @@ export class OrderConfirmationParser {
     
     // Extract tracking ONLY for shipped and delivered emails
     // Order confirmation emails (Order Confirmed, Order Confirmation, Xpress Order Confirmed) 
-    // do not have tracking numbers yet
+    // do not have tracking numbers yet - NEVER extract tracking from these
     if (emailType === 'shipped' || emailType === 'delivered') {
       console.log(`🔍 Extracting tracking for ${emailType} email...`);
       this.extractStockXTrackingInfo(htmlContent, textContent, orderInfo);
     } else {
+      // Explicitly ensure no tracking is set for order confirmation emails
+      orderInfo.tracking_number = "";
+      orderInfo.carrier = "";
       console.log(`⏭️ Skipping tracking extraction for ${emailType} email (no tracking available yet)`);
     }
     
@@ -1329,21 +1332,21 @@ export class OrderConfirmationParser {
     console.log(`🔍 Text Content length: ${textContent.length} characters`);
     
     // Tracking number patterns - looking for REAL tracking number formats
+    // Priority: UPS and FedEx patterns first (most common for StockX)
     const trackingPatterns = [
-      // UPS tracking (1Z followed by 16 alphanumeric)
-      /tracking\s*(?:number|#)?:?\s*(1Z[0-9A-Z]{16})/i,
-      /track\s*(?:your\s*)?(?:package|order|shipment)?:?\s*(1Z[0-9A-Z]{16})/i,
-      /(?:ups|ups\.com).*?(1Z[0-9A-Z]{16})/i,
+      // UPS tracking (1Z followed by 16 alphanumeric = 18 total) - highest priority
+      /tracking\s*(?:number|#)?:?\s*(1Z[0-9A-Z]{16})\b/i,
+      /track\s*(?:your\s*)?(?:package|order|shipment)?:?\s*(1Z[0-9A-Z]{16})\b/i,
+      /(?:ups|ups\.com|united\s*parcel).*?(1Z[0-9A-Z]{16})\b/i,
+      /(?:track|tracking)[^0-9A-Z]*(1Z[0-9A-Z]{16})\b/i,
       
-      // FedEx tracking in URLs (strict 12-digit)
-      /fedex\.com.*tracknumbers[=%3D](\d{12})/i,
-      // FedEx tracking in URL-encoded format (strict 12-digit)
-      /tracknumbers%3D(\d{12})/i,
-      /tracknumbers=(\d{12})/i,
-      
-      // FedEx tracking (strict 12 digits)
+      // FedEx tracking (strict 12 digits) - second priority
+      /fedex\.com.*tracknumbers[=%3D](\d{12})\b/i,
+      /tracknumbers%3D(\d{12})\b/i,
+      /tracknumbers=(\d{12})\b/i,
       /tracking\s*(?:number|#)?:?\s*(\d{12})\b/i,
-      /(?:fedex|fedex\.com).*?(\d{12})\b/i,
+      /(?:fedex|fedex\.com|federal\s*express).*?(\d{12})\b/i,
+      /(?:track|tracking)[^0-9]*(\d{12})\b/i,
       
       // USPS tracking (20-22 digits, often starts with 9)
       /tracking\s*(?:number|#)?:?\s*(9[0-9]{19,21})/i,
@@ -1390,15 +1393,15 @@ export class OrderConfirmationParser {
           continue;
         }
         
-        // Validate based on carrier formats
+        // Validate based on carrier formats (strict validation)
         const isValidTracking = (
-          // UPS: 1Z followed by 16 alphanumeric
+          // UPS: 1Z followed by exactly 16 alphanumeric (18 total)
           /^1Z[0-9A-Z]{16}$/i.test(trackingNum) ||
-          // FedEx: strict 12 digits
+          // FedEx: exactly 12 digits (no letters, no dashes)
           /^\d{12}$/.test(trackingNum) ||
-          // USPS: 20-22 digits
+          // USPS: 20-22 digits (for completeness, though StockX doesn't use USPS)
           /^\d{20,22}$/.test(trackingNum) ||
-          // DHL: 10 digits
+          // DHL: 10 digits (for completeness, though StockX doesn't use DHL)
           /^\d{10}$/.test(trackingNum)
         );
         
@@ -1417,18 +1420,34 @@ export class OrderConfirmationParser {
       console.log(`🔍 Trying flexible tracking extraction for StockX...`);
       
       // StockX often puts tracking numbers in specific locations
-      // Look for 12-digit FedEx numbers
-      const fedexPattern = /\b(\d{12})\b/g;
-      const fedexMatches = htmlContent.match(fedexPattern) || [];
+      // Look for UPS tracking (1Z + 16 alphanumeric)
+      const upsPattern = /\b(1Z[0-9A-Z]{16})\b/gi;
+      const upsMatches = htmlContent.match(upsPattern) || [];
       
-      for (const match of fedexMatches) {
-        // Validate it's not an order number or other ID
-        if (!match.includes('-') && /^\d{15}$/.test(match)) {
+      for (const match of upsMatches) {
+        // Additional validation: check if it's near shipping/tracking context
+        const contextCheck = new RegExp(`(?:tracking|shipped|delivered|package|ups)[\\s\\S]{0,150}${match.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}|${match.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]{0,150}(?:tracking|shipped|delivered|package|ups)`, 'i');
+        if (contextCheck.test(htmlContent)) {
+          orderInfo.tracking_number = match.toUpperCase();
+          orderInfo.carrier = "UPS";
+          console.log(`✅ TRACKING NUMBER FOUND (UPS with context): "${match}"`);
+          break;
+        }
+      }
+      
+      // Look for 12-digit FedEx numbers (strict 12 digits, no dashes)
+      if (!orderInfo.tracking_number) {
+        const fedexPattern = /\b(\d{12})\b/g;
+        const fedexMatches = htmlContent.match(fedexPattern) || [];
+        
+        for (const match of fedexMatches) {
+          // Skip if it looks like a date, phone number, or other common 12-digit number
           // Additional validation: check if it's near shipping/tracking context
-          const contextCheck = new RegExp(`(?:tracking|shipped|delivered|package)[\\s\\S]{0,100}${match}|${match}[\\s\\S]{0,100}(?:tracking|shipped|delivered|package)`, 'i');
+          const contextCheck = new RegExp(`(?:tracking|shipped|delivered|package|fedex)[\\s\\S]{0,150}${match}|${match}[\\s\\S]{0,150}(?:tracking|shipped|delivered|package|fedex)`, 'i');
           if (contextCheck.test(htmlContent)) {
             orderInfo.tracking_number = match;
-            console.log(`✅ TRACKING NUMBER FOUND (FedEx 15-digit with context): "${match}"`);
+            orderInfo.carrier = "FedEx";
+            console.log(`✅ TRACKING NUMBER FOUND (FedEx 12-digit with context): "${match}"`);
             break;
           }
         }
@@ -1471,17 +1490,29 @@ export class OrderConfirmationParser {
       }
     }
     
-    // Determine carrier - StockX typically uses UPS
+    // Determine carrier - StockX uses UPS or FedEx
     if (orderInfo.tracking_number) {
-      // UPS tracking numbers are typically 18 digits starting with 1Z
-      if (orderInfo.tracking_number.toUpperCase().startsWith('1Z')) {
+      const trackingUpper = orderInfo.tracking_number.toUpperCase();
+      
+      // UPS tracking numbers start with 1Z followed by 16 alphanumeric (18 total)
+      if (trackingUpper.startsWith('1Z') && trackingUpper.length === 18) {
         orderInfo.carrier = "UPS";
-      } else if (orderInfo.tracking_number.length === 12) {
-        // FedEx uses 12 digit tracking numbers (strict)
+      } 
+      // FedEx uses exactly 12 digits
+      else if (/^\d{12}$/.test(orderInfo.tracking_number)) {
         orderInfo.carrier = "FedEx";
-      } else {
-        // Default to generic carrier for StockX
-        orderInfo.carrier = "StockX Logistics";
+      }
+      // Try to detect from HTML content if tracking format doesn't match
+      else {
+        const htmlUpper = htmlContent.toUpperCase();
+        if (htmlUpper.includes('UPS') || htmlUpper.includes('UNITED PARCEL SERVICE')) {
+          orderInfo.carrier = "UPS";
+        } else if (htmlUpper.includes('FEDEX') || htmlUpper.includes('FEDERAL EXPRESS')) {
+          orderInfo.carrier = "FedEx";
+        } else {
+          // Default to generic carrier for StockX
+          orderInfo.carrier = "StockX Logistics";
+        }
       }
     }
     
