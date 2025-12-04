@@ -1493,30 +1493,42 @@ const Purchases = () => {
   };
 
   // Check if tracking number looks suspicious (might be incorrect)
-  const isTrackingSuspicious = (tracking: string): boolean => {
+  const isTrackingSuspicious = (tracking: string, carrier?: string): boolean => {
     if (!tracking || tracking.trim() === '') return false;
     
     const trimmed = tracking.trim();
     
     // UPS tracking should be 1Z + 16 alphanumeric (18 total)
     if (trimmed.startsWith('1Z') && trimmed.length === 18) {
-      return false; // Valid UPS format
+      // If marked as UPS, it's valid
+      if (carrier === 'UPS' || !carrier) return false;
+      // If marked as something else, suspicious
+      return true;
     }
     
     // FedEx tracking should be 10-22 digits, but typically 12 digits
-    // Suspicious if it's 12 digits starting with 9 (that's USPS format, not FedEx)
+    // NEVER starts with 9 (that's USPS format)
+    // Any 12-digit number starting with 9 is suspicious (not valid FedEx format)
     if (/^\d{12}$/.test(trimmed) && trimmed.startsWith('9')) {
-      return true; // Looks like USPS format but marked as FedEx - suspicious
+      console.log(`⚠️ Suspicious tracking detected: ${trimmed} (carrier: ${carrier}) - 12 digits starting with 9 is not valid FedEx format`);
+      // Always suspicious - 12 digits starting with 9 is NOT valid FedEx
+      return true;
     }
     
     // Valid FedEx format (12 digits, not starting with 9)
     if (/^\d{12}$/.test(trimmed) && !trimmed.startsWith('9')) {
-      return false; // Valid FedEx format
+      // If marked as FedEx, valid
+      if (carrier === 'FedEx' || !carrier) return false;
+      // If marked as something else, might be suspicious
+      return carrier !== undefined;
     }
     
     // USPS tracking should be 20-22 digits starting with 9
     if (/^9\d{19,21}$/.test(trimmed)) {
-      return false; // Valid USPS format
+      // If marked as USPS, valid
+      if (carrier === 'USPS' || !carrier) return false;
+      // If marked as something else, suspicious
+      return true;
     }
     
     // If it's a number but doesn't match known formats, might be suspicious
@@ -2612,7 +2624,7 @@ const Purchases = () => {
                       </div>
                     ) : purchase.tracking && purchase.tracking.trim() !== '' ? (
                       // Display mode with tracking
-                      isTrackingSuspicious(purchase.tracking) ? (
+                      isTrackingSuspicious(purchase.tracking, purchase.carrier) ? (
                         // Suspicious tracking - show Gmail link instead
                         <a
                           href={generateGmailShippedEmailUrl(purchase.orderNumber)}
