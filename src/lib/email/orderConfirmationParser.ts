@@ -1751,6 +1751,8 @@ export function orderInfoToDict(orderInfo: OrderInfo): Record<string, any> {
       processing_fee: orderInfo.processing_fee,
       shipping_fee: orderInfo.shipping_fee,
       shipping_type: orderInfo.shipping_type,
+      discount_code: orderInfo.discount_code,
+      discount_amount: orderInfo.discount_amount,
       total_amount: orderInfo.total_amount,
       currency: orderInfo.currency
     },
