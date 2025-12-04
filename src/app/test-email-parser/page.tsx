@@ -376,12 +376,12 @@ export default function TestEmailParserPage() {
                         {debugInfo && (
                           <div className="mt-3 space-y-2">
                             <p className="text-yellow-700 text-sm font-semibold">Debug Info:</p>
-                            <div className="bg-white rounded p-3 text-xs font-mono">
-                              <div>Merchant: {debugInfo.extractedFields?.merchant || 'NONE'}</div>
-                              <div>Order # found: {debugInfo.extractedFields?.order_number ? '✅' : '❌'}</div>
-                              <div>Size found: {debugInfo.extractedFields?.size ? '✅' : '❌'}</div>
-                              <div>Product found: {debugInfo.extractedFields?.product_name ? '✅' : '❌'}</div>
-                              <div>Total found: {debugInfo.extractedFields?.total_amount ? '✅' : '❌'}</div>
+                            <div className="bg-white rounded p-3 text-xs font-mono text-gray-900">
+                              <div className="text-black">Merchant: {debugInfo.extractedFields?.merchant || 'NONE'}</div>
+                              <div className="text-black">Order # found: {debugInfo.extractedFields?.order_number ? '✅' : '❌'}</div>
+                              <div className="text-black">Size found: {debugInfo.extractedFields?.size ? '✅' : '❌'}</div>
+                              <div className="text-black">Product found: {debugInfo.extractedFields?.product_name ? '✅' : '❌'}</div>
+                              <div className="text-black">Total found: {debugInfo.extractedFields?.total_amount ? '✅' : '❌'}</div>
                             </div>
                             <p className="text-yellow-600 mt-2 text-xs">
                               If merchant is "NONE", the parser didn't detect StockX. Check if HTML was extracted correctly.
