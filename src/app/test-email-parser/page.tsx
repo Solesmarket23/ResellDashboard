@@ -369,14 +369,27 @@ export default function TestEmailParserPage() {
                   );
                   
                   if (!hasData) {
+                    const debugInfo = (result as any).debug;
                     return (
                       <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                         <p className="text-yellow-800 font-medium">⚠️ Parser ran successfully but extracted no data</p>
+                        {debugInfo && (
+                          <div className="mt-3 space-y-2">
+                            <p className="text-yellow-700 text-sm font-semibold">Debug Info:</p>
+                            <div className="bg-white rounded p-3 text-xs font-mono">
+                              <div>Merchant: {debugInfo.extractedFields?.merchant || 'NONE'}</div>
+                              <div>Order # found: {debugInfo.extractedFields?.order_number ? '✅' : '❌'}</div>
+                              <div>Size found: {debugInfo.extractedFields?.size ? '✅' : '❌'}</div>
+                              <div>Product found: {debugInfo.extractedFields?.product_name ? '✅' : '❌'}</div>
+                              <div>Total found: {debugInfo.extractedFields?.total_amount ? '✅' : '❌'}</div>
+                            </div>
+                            <p className="text-yellow-600 mt-2 text-xs">
+                              If merchant is "NONE", the parser didn't detect StockX. Check if HTML was extracted correctly.
+                            </p>
+                          </div>
+                        )}
                         <p className="text-yellow-600 mt-2 text-sm">
-                          Check browser console (F12) or server logs for debug information.
-                        </p>
-                        <p className="text-yellow-600 mt-1 text-xs font-mono">
-                          HTML extraction may have failed. Check if HTML was properly decoded from quoted-printable encoding.
+                          Check browser Network tab (F12 → Network) for API response details, or check Vercel server logs.
                         </p>
                       </div>
                     );

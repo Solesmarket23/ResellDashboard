@@ -119,10 +119,23 @@ export async function POST(request: Request) {
     console.log(`   Status: ${orderInfo.shipping_status || 'NONE'}`);
     console.log(`📊 ===== TEST API: Extraction Results =====\n`);
 
+    // Check if any data was extracted
+    const hasData = orderInfo.order_number || orderInfo.size || orderInfo.product_name || orderInfo.total_amount;
+    
     return NextResponse.json({
       filename,
       success: true,
-      data: orderInfo
+      data: orderInfo,
+      debug: {
+        hasData,
+        extractedFields: {
+          order_number: !!orderInfo.order_number,
+          size: !!orderInfo.size,
+          product_name: !!orderInfo.product_name,
+          total_amount: !!orderInfo.total_amount,
+          merchant: orderInfo.merchant || 'NONE'
+        }
+      }
     });
   } catch (error) {
     return NextResponse.json(
