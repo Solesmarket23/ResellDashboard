@@ -1096,30 +1096,63 @@ export class OrderConfirmationParser {
       }
     }
     
-    // Discount Code and Amount - Pattern: B + 2 digits + hyphen + 6 alphanumeric characters (e.g., B10-6HRXZ2)
+    // Discount Code and Amount - Handle multiple formats:
+    // 1. Pattern: B + 2 digits + hyphen + 6 alphanumeric (e.g., B10-6HRXZ2)
+    // 2. Pattern: FREESHIP or promo codes (e.g., FREESHIPBF2025DV5DHHV4)
     // The discount appears in a table row like: <td>B10-6HRXZ2:</td><td>-$10.00</td>
+    // or: <td>FREESHIPBF2025DV5DHHV4:</td><td>-$14.95</td>
     const discountPatterns = [
-      // Handle encoded HTML (class=3D, style=3D) - most common case
+      // Pattern 1: Handle encoded HTML with B10-6HRXZ2 format (class=3D, style=3D)
       /<td[^>]*class=3D[^>]*>(B\d{2}-[A-Z0-9]{6}):<\/td>\s*<td[^>]*>-\$(\d+\.\d{2})/i,
       /<td[^>]*class=3D[^>]*style=3D[^>]*>(B\d{2}-[A-Z0-9]{6}):<\/td>\s*<td[^>]*>-\$(\d+\.\d{2})/i,
-      // Handle decoded HTML
+      
+      // Pattern 2: Handle encoded HTML with FREESHIP/promo codes (longer alphanumeric codes)
+      /<td[^>]*class=3D[^>]*>([A-Z]{6,}[A-Z0-9]{8,}):<\/td>\s*<td[^>]*>-\$(\d+\.\d{2})/i,
+      /<td[^>]*class=3D[^>]*style=3D[^>]*>([A-Z]{6,}[A-Z0-9]{8,}):<\/td>\s*<td[^>]*>-\$(\d+\.\d{2})/i,
+      
+      // Pattern 3: Handle decoded HTML with B10-6HRXZ2 format
       /<td[^>]*>(B\d{2}-[A-Z0-9]{6}):<\/td>\s*<td[^>]*>-\$(\d+\.\d{2})/i,
-      // More flexible patterns that don't require exact table structure
+      
+      // Pattern 4: Handle decoded HTML with FREESHIP/promo codes
+      /<td[^>]*>([A-Z]{6,}[A-Z0-9]{8,}):<\/td>\s*<td[^>]*>-\$(\d+\.\d{2})/i,
+      
+      // Pattern 5: More flexible patterns that don't require exact table structure (B10-6HRXZ2)
       /(B\d{2}-[A-Z0-9]{6}):\s*-\$(\d+\.\d{2})/i,
-      // Pattern that matches even if there's whitespace or other characters
-      /(B\d{2}-[A-Z0-9]{6})\s*:\s*.*?-\$(\d+\.\d{2})/i
+      /(B\d{2}-[A-Z0-9]{6})\s*:\s*.*?-\$(\d+\.\d{2})/i,
+      
+      // Pattern 6: More flexible patterns for FREESHIP/promo codes (alphanumeric codes 14+ chars)
+      /([A-Z]{6,}[A-Z0-9]{8,}):\s*-\$(\d+\.\d{2})/i,
+      /([A-Z]{6,}[A-Z0-9]{8,})\s*:\s*.*?-\$(\d+\.\d{2})/i,
+      
+      // Pattern 7: Very flexible - match any alphanumeric code (8+ chars) followed by colon and negative amount
+      // This catches codes that don't match the specific patterns above
+      /([A-Z0-9]{8,}):\s*-\$(\d+\.\d{2})/i,
+      /([A-Z0-9]{8,})\s*:\s*.*?-\$(\d+\.\d{2})/i
     ];
     
     for (let i = 0; i < discountPatterns.length; i++) {
       const pattern = discountPatterns[i];
       const match = htmlContent.match(pattern);
       if (match && match[1] && match[2]) {
-        orderInfo.discount_code = match[1].trim();
-        orderInfo.discount_amount = -parseFloat(match[2]); // Negative value
-        if (this.debug) {
-          console.log(`✅ Discount Code extracted using pattern ${i + 1}: ${orderInfo.discount_code} ($${orderInfo.discount_amount})`);
+        const code = match[1].trim();
+        const amount = parseFloat(match[2]);
+        
+        // Validate discount code looks reasonable
+        // Must be at least 8 characters, contain letters, and not be common words
+        const isValidCode = code.length >= 8 && 
+                           /[A-Za-z]/.test(code) && 
+                           !/^(Purchase|Processing|Shipping|Total|Payment|Price|Fee)$/i.test(code);
+        
+        if (isValidCode && amount > 0) {
+          orderInfo.discount_code = code;
+          orderInfo.discount_amount = -amount; // Negative value
+          if (this.debug) {
+            console.log(`✅ Discount Code extracted using pattern ${i + 1}: ${orderInfo.discount_code} ($${orderInfo.discount_amount})`);
+          }
+          break;
+        } else if (this.debug) {
+          console.log(`⚠️ Discount pattern ${i + 1} matched but validation failed: code="${code}", amount=${amount}`);
         }
-        break;
       }
     }
     
