@@ -409,9 +409,13 @@ export class OrderConfirmationParser {
     // Handle both encoded (=3D) and decoded (=) HTML
     if (!sizeFound) {
       const sizePatterns = [
-        // Highest priority: Handle encoded HTML (class=3D"attributes")
+        // Highest priority: Handle encoded HTML (class=3D"attributes") - most flexible pattern
         /<li[^>]*class=3D["']attributes["'][^>]*>\s*Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
         /<li[^>]*class=3D["']attributes["'][^>]*style=3D[^>]*>\s*Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
+        // More flexible: match even if there are spaces or other attributes
+        /<li[^>]*class\s*=\s*3D\s*["']attributes["'][^>]*>\s*Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
+        // Very specific pattern for encoded HTML with style attribute (most common case)
+        /<li[^>]*class=3D["']attributes["'][^>]*style=3D[^>]*>\s*Size:\s*([A-Z0-9\.\s]+?)\s*<\/li>/i,
         // Handle decoded HTML (class="attributes")
         /<li[^>]*class=["']attributes["'][^>]*>\s*Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
         /<li[^>]*class=["']attributes["'][^>]*style=["'][^"']*["'][^>]*>\s*Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
@@ -722,6 +726,28 @@ export class OrderConfirmationParser {
   private tryFallbackSizeExtraction(htmlContent: string, textContent: string, orderInfo: OrderInfo): boolean {
     console.log(`🔍 TRYING FALLBACK SIZE EXTRACTION for ${orderInfo.order_number}`);
     
+    // Method 0: Direct pattern matching for "Size: US X" in any HTML structure (highest priority fallback)
+    const directSizePatterns = [
+      // Match "Size: US S" or "Size: US M" etc. in any HTML context
+      /Size:\s*US\s+([A-Z0-9\.]+)(?:\s|$|,|;|\.|<\/)/i,
+      // Match "Size: US 10" or "Size: US 10.5" etc.
+      /Size:\s*US\s+(\d+(?:\.\d+)?)(?:\s|$|,|;|\.|<\/)/i,
+      // Match "Size: US S" even if there's extra whitespace
+      /Size:\s*US\s+([A-Z])(?:\s|$|,|;|\.|<\/)/i
+    ];
+    
+    for (const pattern of directSizePatterns) {
+      const match = htmlContent.match(pattern);
+      if (match && match[1]) {
+        let size = `US ${match[1].trim()}`;
+        if (this.isValidSizeFormat(size)) {
+          orderInfo.size = size;
+          console.log(`✅ SIZE FOUND with direct pattern: "${size}"`);
+          return true;
+        }
+      }
+    }
+    
     // Method 1: Look for size in product name
     if (orderInfo.product_name) {
       console.log(`🔍 Checking product name for size: "${orderInfo.product_name}"`);
@@ -765,8 +791,10 @@ export class OrderConfirmationParser {
     
     // Method 3: Look for any remaining size-like patterns in the entire HTML
     const comprehensivePatterns = [
-      /Size[:\s]*([A-Z0-9\.\s]+?)(?:\s|$|,|;|\.)/gi,
-      /([A-Z0-9\.\s]+?)\s*Size(?:\s|$|,|;|\.)/gi
+      // Prioritize "Size: US X" patterns (most common format)
+      /Size:\s*US\s+([A-Z0-9\.\s]+?)(?:\s|$|,|;|\.|<\/)/gi,
+      /Size:\s*([A-Z0-9\.\s]+?)(?:\s|$|,|;|\.|<\/)/gi,
+      /([A-Z0-9\.\s]+?)\s*Size(?:\s|$|,|;|\.|<\/)/gi
     ];
     
     for (const pattern of comprehensivePatterns) {
