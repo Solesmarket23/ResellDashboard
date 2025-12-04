@@ -56,6 +56,8 @@ const Purchases = () => {
   const [showExportDropdown, setShowExportDropdown] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [extractingTracking, setExtractingTracking] = useState<Set<string>>(new Set()); // Track which orders are being processed
+  const [editingTracking, setEditingTracking] = useState<string | null>(null); // Track which purchase is being edited (by id or orderNumber)
+  const [editingTrackingValue, setEditingTrackingValue] = useState<string>(''); // Current value being edited
   const [notification, setNotification] = useState<{
     isVisible: boolean;
     message: string;
@@ -1655,6 +1657,96 @@ const Purchases = () => {
     }
   };
 
+  const handleStartEditTracking = (purchase: any) => {
+    setEditingTracking(purchase.id || purchase.orderNumber);
+    setEditingTrackingValue(purchase.tracking || '');
+  };
+
+  const handleSaveTracking = async (purchase: any) => {
+    const trackingNumber = editingTrackingValue.trim();
+    const purchaseId = purchase.id || purchase.orderNumber;
+
+    // Validate tracking number format (optional - allow any input)
+    if (trackingNumber === '') {
+      // Allow clearing tracking number
+      setEditingTracking(null);
+      setEditingTrackingValue('');
+      return;
+    }
+
+    try {
+      // Update the purchase with tracking number
+      const updatedPurchase = {
+        ...purchase,
+        tracking: trackingNumber,
+        // Try to detect carrier from tracking format
+        carrier: trackingNumber.startsWith('1Z') && trackingNumber.length === 18 
+          ? 'UPS' 
+          : /^\d{10,22}$/.test(trackingNumber) 
+            ? 'FedEx' 
+            : purchase.carrier || 'Unknown'
+      };
+
+      // Update in state
+      const allPurchases = [...purchases, ...manualPurchases];
+      const purchaseIndex = allPurchases.findIndex(p => 
+        (p.id && p.id === purchase.id) || 
+        (p.orderNumber === purchase.orderNumber)
+      );
+
+      if (purchaseIndex !== -1) {
+        if (purchaseIndex < purchases.length) {
+          // Update in purchases
+          const updatedPurchases = [...purchases];
+          updatedPurchases[purchaseIndex] = updatedPurchase;
+          setPurchases(updatedPurchases);
+        } else {
+          // Update in manualPurchases
+          const updatedManualPurchases = [...manualPurchases];
+          updatedManualPurchases[purchaseIndex - purchases.length] = updatedPurchase;
+          setManualPurchases(updatedManualPurchases);
+        }
+
+        // Save to Firebase
+        const siteUserId = localStorage.getItem('siteUserId');
+        const userId = user?.uid || siteUserId;
+        if (userId && updatedPurchase.id) {
+          try {
+            await updateDocument('user_purchases', updatedPurchase.id, {
+              tracking: trackingNumber,
+              carrier: updatedPurchase.carrier
+            });
+            console.log(`✅ Saved tracking to Firebase: ${trackingNumber}`);
+          } catch (error) {
+            console.error('Error saving tracking to Firebase:', error);
+          }
+        }
+      }
+
+      setNotification({
+        isVisible: true,
+        message: `Tracking number saved: ${trackingNumber}`,
+        type: 'success'
+      });
+
+      // Exit edit mode
+      setEditingTracking(null);
+      setEditingTrackingValue('');
+    } catch (error: any) {
+      console.error('Error saving tracking:', error);
+      setNotification({
+        isVisible: true,
+        message: `Failed to save tracking: ${error.message}`,
+        type: 'error'
+      });
+    }
+  };
+
+  const handleCancelEditTracking = () => {
+    setEditingTracking(null);
+    setEditingTrackingValue('');
+  };
+
   // Handler for status updates from StatusUpdater component
   const handleStatusUpdate = async (statusUpdates: any[]) => {
     console.log('🔄 Applying status updates:', statusUpdates);
@@ -2434,11 +2526,57 @@ const Purchases = () => {
                     </span>
                   </td>
                   <td className="px-6 py-2 align-middle">
-                    {purchase.tracking && purchase.tracking.trim() !== '' ? (
+                    {editingTracking === (purchase.id || purchase.orderNumber) ? (
+                      // Inline editing mode
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="text"
+                          value={editingTrackingValue}
+                          onChange={(e) => setEditingTrackingValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              handleSaveTracking(purchase);
+                            } else if (e.key === 'Escape') {
+                              handleCancelEditTracking();
+                            }
+                          }}
+                          autoFocus
+                          className={`text-sm px-2 py-1 border rounded ${
+                            currentTheme.name === 'Neon' 
+                              ? 'bg-black/50 border-cyan-500 text-white' 
+                              : 'bg-white border-gray-300 text-gray-900'
+                          } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                          placeholder="Enter tracking number"
+                          style={{ minWidth: '150px' }}
+                        />
+                        <button
+                          onClick={() => handleSaveTracking(purchase)}
+                          className={`px-2 py-1 text-xs rounded ${
+                            currentTheme.name === 'Neon'
+                              ? 'bg-green-500 hover:bg-green-600 text-white'
+                              : 'bg-green-500 hover:bg-green-600 text-white'
+                          } transition-colors`}
+                          title="Save (Enter)">
+                          ✓
+                        </button>
+                        <button
+                          onClick={handleCancelEditTracking}
+                          className={`px-2 py-1 text-xs rounded ${
+                            currentTheme.name === 'Neon'
+                              ? 'bg-red-500 hover:bg-red-600 text-white'
+                              : 'bg-red-500 hover:bg-red-600 text-white'
+                          } transition-colors`}
+                          title="Cancel (Esc)">
+                          ✕
+                        </button>
+                      </div>
+                    ) : purchase.tracking && purchase.tracking.trim() !== '' ? (
+                      // Display mode with tracking
                       <div className="flex items-center gap-2">
                         <button 
-                          onClick={() => alert(`Tracking: ${purchase.tracking}\n\nTracking integration coming soon!`)}
-                          className={`${currentTheme.colors.accent} text-sm hover:underline transition-colors cursor-pointer`}>
+                          onClick={() => handleStartEditTracking(purchase)}
+                          className={`${currentTheme.colors.accent} text-sm hover:underline transition-colors cursor-pointer`}
+                          title="Click to edit">
                           {purchase.tracking}
                         </button>
                         <button
@@ -2449,7 +2587,11 @@ const Purchases = () => {
                               ? 'bg-gray-400 cursor-not-allowed text-white'
                               : `${currentTheme.name === 'Neon' ? 'bg-cyan-500 hover:bg-cyan-600' : 'bg-blue-500 hover:bg-blue-600'} text-white hover:shadow-md`
                           }`}
-                          title="Refresh tracking number from StockX">
+                          title="Refresh tracking number from StockX"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleExtractTracking(purchase);
+                          }}>
                           {extractingTracking.has(purchase.id || purchase.orderNumber) ? (
                             <RefreshCw className="w-3 h-3 animate-spin" />
                           ) : (
@@ -2458,10 +2600,19 @@ const Purchases = () => {
                         </button>
                       </div>
                     ) : purchase.status?.toLowerCase() === 'ordered' ? (
+                      // Ordered status - no tracking yet
                       <div className="flex items-center gap-2">
-                        <span className={`text-sm ${currentTheme.colors.textSecondary}`}>Not Shipped Yet</span>
                         <button
-                          onClick={() => handleExtractTracking(purchase)}
+                          onClick={() => handleStartEditTracking(purchase)}
+                          className={`text-sm ${currentTheme.colors.textSecondary} hover:underline cursor-pointer`}
+                          title="Click to add tracking number">
+                          Not Shipped Yet
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleExtractTracking(purchase);
+                          }}
                           disabled={extractingTracking.has(purchase.id || purchase.orderNumber)}
                           className={`text-xs px-2 py-1 rounded transition-colors ${
                             extractingTracking.has(purchase.id || purchase.orderNumber)
@@ -2480,22 +2631,14 @@ const Purchases = () => {
                         </button>
                       </div>
                     ) : (
+                      // No tracking - show add button
                       <button
-                        onClick={() => handleExtractTracking(purchase)}
-                        disabled={extractingTracking.has(purchase.id || purchase.orderNumber)}
+                        onClick={() => handleStartEditTracking(purchase)}
                         className={`text-xs px-2 py-1 rounded transition-colors ${
-                          extractingTracking.has(purchase.id || purchase.orderNumber)
-                            ? 'bg-gray-400 cursor-not-allowed text-white'
-                            : `${currentTheme.name === 'Neon' ? 'bg-cyan-500 hover:bg-cyan-600' : 'bg-blue-500 hover:bg-blue-600'} text-white hover:shadow-md`
-                        }`}>
-                        {extractingTracking.has(purchase.id || purchase.orderNumber) ? (
-                          <span className="flex items-center gap-1">
-                            <RefreshCw className="w-3 h-3 animate-spin" />
-                            Extracting...
-                          </span>
-                        ) : (
-                          'Get Tracking'
-                        )}
+                          currentTheme.name === 'Neon' ? 'bg-cyan-500 hover:bg-cyan-600' : 'bg-blue-500 hover:bg-blue-600'
+                        } text-white hover:shadow-md`}
+                        title="Click to add tracking number">
+                        Add Tracking
                       </button>
                     )}
                   </td>
