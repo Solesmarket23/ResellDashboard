@@ -112,7 +112,12 @@ const Purchases = () => {
     try {
       const stored = localStorage.getItem('purchases-column-widths');
       if (stored) {
-        return JSON.parse(stored);
+        const parsed = JSON.parse(stored);
+        // Ensure purchaseDate has a minimum width (might be missing or 0)
+        if (!parsed.purchaseDate || parsed.purchaseDate < 100) {
+          parsed.purchaseDate = 120;
+        }
+        return parsed;
       }
     } catch (error) {
       console.warn('Failed to load column widths from localStorage:', error);
@@ -126,7 +131,7 @@ const Purchases = () => {
       tracking: 150,
       market: 100,
       price: 130,
-      purchaseDate: 120,
+      purchaseDate: 120, // Minimum width for Purchase Date column
       dateAdded: 120,
       verified: 80,
       edit: 80
@@ -2719,7 +2724,12 @@ const Purchases = () => {
                   </td>
                   <td className="px-6 py-2 align-middle">
                     <span className={`text-sm ${currentTheme.colors.textPrimary} font-medium`}>
-                      {purchase.purchaseDate}
+                      {purchase.purchaseDate || purchase.email_date ? (
+                        purchase.purchaseDate || 
+                        (purchase.email_date ? new Date(purchase.email_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '')
+                      ) : (
+                        <span className={`text-xs ${currentTheme.colors.textSecondary}`}>—</span>
+                      )}
                     </span>
                   </td>
                   <td className="px-6 py-2 align-middle">
