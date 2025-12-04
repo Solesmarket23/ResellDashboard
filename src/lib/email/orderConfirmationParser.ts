@@ -1478,16 +1478,39 @@ export class OrderConfirmationParser {
       }
     }
     
-    // Find the end of HTML content (look for next boundary or end of file)
-    const nextBoundary = emailContent.indexOf('\n--', contentStart);
-    const nextContentType = emailContent.indexOf('\nContent-Type:', contentStart);
-    const endPos = nextBoundary !== -1 && nextContentType !== -1
-      ? Math.min(nextBoundary, nextContentType)
-      : nextBoundary !== -1
-      ? nextBoundary
-      : nextContentType !== -1
-      ? nextContentType
-      : emailContent.length;
+    // Find the end of HTML content
+    // Priority 1: Look for closing </html> tag (most reliable)
+    const htmlEndTag = emailContent.indexOf('</html>', contentStart);
+    
+    // Priority 2: Look for MIME boundary markers (must be at start of line)
+    // Boundaries look like: \n--boundary-name or \r\n--boundary-name
+    let nextBoundary = -1;
+    const boundaryMatch = emailContent.substring(contentStart).match(/\n--[a-zA-Z0-9_-]+/);
+    if (boundaryMatch) {
+      nextBoundary = contentStart + emailContent.substring(contentStart).indexOf(boundaryMatch[0]);
+    }
+    
+    // Priority 3: Look for Content-Type header (must be at start of line, not inside HTML)
+    // Only match if it's followed by a space and looks like a real header
+    let nextContentType = -1;
+    const contentTypeMatch = emailContent.substring(contentStart).match(/\nContent-Type:\s+[^\n]+/);
+    if (contentTypeMatch) {
+      const matchPos = contentStart + emailContent.substring(contentStart).indexOf(contentTypeMatch[0]);
+      // Only use if it's after </html> or if </html> wasn't found
+      if (htmlEndTag === -1 || matchPos > htmlEndTag) {
+        nextContentType = matchPos;
+      }
+    }
+    
+    // Determine end position: prefer </html>, then boundary, then Content-Type, then end of file
+    let endPos = emailContent.length;
+    if (htmlEndTag !== -1) {
+      endPos = htmlEndTag + 7; // Include </html>
+    } else if (nextBoundary !== -1) {
+      endPos = nextBoundary;
+    } else if (nextContentType !== -1) {
+      endPos = nextContentType;
+    }
     
     let html = emailContent.substring(contentStart, endPos).trim();
     
