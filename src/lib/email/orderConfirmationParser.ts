@@ -966,40 +966,62 @@ export class OrderConfirmationParser {
    * Extract pricing information from StockX email
    */
   private extractStockXPricing(htmlContent: string, textContent: string, orderInfo: OrderInfo): void {
-    // Purchase Price
+    if (this.debug) {
+      console.log(`\n💰 EXTRACTING PRICING`);
+      console.log(`   HTML contains 'Purchase Price': ${htmlContent.includes('Purchase Price')}`);
+      console.log(`   HTML contains '$': ${htmlContent.includes('$')}`);
+    }
+    
+    // Purchase Price - handle both encoded and decoded HTML
     const pricePatterns = [
+      // Handle encoded HTML (class=3D, style=3D)
+      /<td[^>]*class=3D[^>]*>Purchase Price:<\/td>\s*<td[^>]*>\$(\d+\.\d{2})/i,
       /Purchase Price:.*?\$(\d+\.\d{2})/i,
-      /<td[^>]*>Purchase Price:<\/td>\s*<td[^>]*>\$(\d+\.\d{2})/i
+      // Handle decoded HTML
+      /<td[^>]*>Purchase Price:<\/td>\s*<td[^>]*>\$(\d+\.\d{2})/i,
+      /Purchase Price:.*?\$(\d+\.\d{2})/i
     ];
     
     for (const pattern of pricePatterns) {
       const match = htmlContent.match(pattern);
       if (match) {
         orderInfo.purchase_price = parseFloat(match[1]);
-        console.log(`💰 Purchase Price extracted: $${orderInfo.purchase_price}`);
+        if (this.debug) {
+          console.log(`✅ Purchase Price extracted: $${orderInfo.purchase_price}`);
+        }
         break;
       }
     }
     
-    // Processing Fee
+    // Processing Fee - handle both encoded and decoded HTML
     const processingPatterns = [
+      // Handle encoded HTML
+      /<td[^>]*class=3D[^>]*>Processing Fee:<\/td>\s*<td[^>]*>\$(\d+\.\d{2})/i,
       /Processing Fee:.*?\$(\d+\.\d{2})/i,
-      /<td[^>]*>Processing Fee:<\/td>\s*<td[^>]*>\$(\d+\.\d{2})/i
+      // Handle decoded HTML
+      /<td[^>]*>Processing Fee:<\/td>\s*<td[^>]*>\$(\d+\.\d{2})/i,
+      /Processing Fee:.*?\$(\d+\.\d{2})/i
     ];
     
     for (const pattern of processingPatterns) {
       const match = htmlContent.match(pattern);
       if (match) {
         orderInfo.processing_fee = parseFloat(match[1]);
-        console.log(`💰 Processing Fee extracted: $${orderInfo.processing_fee}`);
+        if (this.debug) {
+          console.log(`✅ Processing Fee extracted: $${orderInfo.processing_fee}`);
+        }
         break;
       }
     }
     
-    // Shipping
+    // Shipping - handle both encoded and decoded HTML
     const shippingPatterns = [
+      // Handle encoded HTML
+      /<td[^>]*class=3D[^>]*>(Xpress Shipping|Shipping):<\/td>\s*<td[^>]*>\$(\d+\.\d{2})/i,
       /(Xpress Shipping|Shipping):.*?\$(\d+\.\d{2})/i,
-      /<td[^>]*>(Xpress Shipping|Shipping):<\/td>\s*<td[^>]*>\$(\d+\.\d{2})/i
+      // Handle decoded HTML
+      /<td[^>]*>(Xpress Shipping|Shipping):<\/td>\s*<td[^>]*>\$(\d+\.\d{2})/i,
+      /(Xpress Shipping|Shipping):.*?\$(\d+\.\d{2})/i
     ];
     
     for (const pattern of shippingPatterns) {
@@ -1007,7 +1029,9 @@ export class OrderConfirmationParser {
       if (match) {
         orderInfo.shipping_type = match[1];
         orderInfo.shipping_fee = parseFloat(match[2]);
-        console.log(`💰 Shipping Fee extracted: $${orderInfo.shipping_fee} (${orderInfo.shipping_type})`);
+        if (this.debug) {
+          console.log(`✅ Shipping Fee extracted: $${orderInfo.shipping_fee} (${orderInfo.shipping_type})`);
+        }
         break;
       }
     }
@@ -1015,7 +1039,10 @@ export class OrderConfirmationParser {
     // Extract total from email for validation (optional)
     let extractedTotal: number | null = null;
     const totalPatterns = [
+      // Handle encoded HTML
+      /<td[^>]*class=3D[^>]*>.*?Total Payment.*?<\/td>\s*<td[^>]*>\$(\d+\.\d{2})\*?/i,
       /Total Payment.*?\$(\d+\.\d{2})\*?/i,
+      // Handle decoded HTML
       /<td[^>]*>.*?Total Payment.*?<\/td>\s*<td[^>]*>\$(\d+\.\d{2})\*?/i,
       /Total.*?\$(\d+\.\d{2})\*?/i
     ];
@@ -1024,7 +1051,9 @@ export class OrderConfirmationParser {
       const match = htmlContent.match(pattern);
       if (match) {
         extractedTotal = parseFloat(match[1]);
-        console.log(`💰 Total extracted from email: $${extractedTotal}`);
+        if (this.debug) {
+          console.log(`✅ Total extracted from email: $${extractedTotal}`);
+        }
         break;
       }
     }
