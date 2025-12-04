@@ -402,9 +402,13 @@ export class OrderConfirmationParser {
     }
     
     // Method 2: If cheerio didn't find it, use regex patterns (prioritize <li class="attributes">)
+    // Handle both encoded (=3D) and decoded (=) HTML
     if (!sizeFound) {
       const sizePatterns = [
-        // Highest priority: StockX specific HTML list patterns with class="attributes"
+        // Highest priority: Handle encoded HTML (class=3D"attributes")
+        /<li[^>]*class=3D["']attributes["'][^>]*>\s*Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
+        /<li[^>]*class=3D["']attributes["'][^>]*style=3D[^>]*>\s*Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
+        // Handle decoded HTML (class="attributes")
         /<li[^>]*class=["']attributes["'][^>]*>\s*Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
         /<li[^>]*class=["']attributes["'][^>]*style=["'][^"']*["'][^>]*>\s*Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
         /<li[^>]*class=["']attributes["'][^>]*>Size:\s*([^<\n\r!]+?)<\/li>/i,
@@ -1271,23 +1275,40 @@ export class OrderConfirmationParser {
    * Extract order number from StockX email and validate order type
    */
   private extractStockXOrderNumber(htmlContent: string, textContent: string, orderInfo: OrderInfo): void {
+    if (this.debug) {
+      console.log(`\n🔍 EXTRACTING ORDER NUMBER`);
+      console.log(`   HTML contains 'class=3D': ${htmlContent.includes('class=3D')}`);
+      console.log(`   HTML contains 'class=': ${htmlContent.includes('class=')}`);
+      console.log(`   HTML contains 'Order number': ${htmlContent.includes('Order number')}`);
+      console.log(`   HTML contains 'Order number' (case insensitive): ${/Order\s+number/i.test(htmlContent)}`);
+    }
+    
     // Priority 1: Search HTML for structured order number (most reliable)
-    // Pattern: <li class="attributes">Order number: 03-PAN6QGRR7B</li>
+    // Handle both encoded (=3D) and decoded (=) versions
     const htmlOrderPatterns = [
+      // Handle encoded HTML: class=3D"attributes"
+      /<li[^>]*class=3D["']attributes["'][^>]*>\s*Order\s+number:\s*([A-Z0-9-]+)\s*<\/li>/i,
+      /<li[^>]*class=3D["']attributes["'][^>]*style=3D[^>]*>\s*Order\s+number:\s*([A-Z0-9-]+)\s*<\/li>/i,
+      // Handle decoded HTML: class="attributes"
       /<li[^>]*class=["']attributes["'][^>]*>\s*Order\s+number:\s*([A-Z0-9-]+)\s*<\/li>/i,
       /<li[^>]*class=["']attributes["'][^>]*>\s*Order\s+Number:\s*([A-Z0-9-]+)\s*<\/li>/i,
+      // Fallback patterns
       /<li[^>]*>\s*Order\s+number:\s*([A-Z0-9-]+)\s*<\/li>/i,
       /<td[^>]*>\s*Order\s+number:\s*([A-Z0-9-]+)\s*<\/td>/i,
+      // Text-based patterns (work even if HTML is malformed)
       /Order\s+number:\s*([A-Z0-9-]+)/i
     ];
     
     // Try HTML patterns first
-    for (const pattern of htmlOrderPatterns) {
+    for (let i = 0; i < htmlOrderPatterns.length; i++) {
+      const pattern = htmlOrderPatterns[i];
       const match = htmlContent.match(pattern);
       if (match && match[1]) {
         const orderNumber = match[1].trim();
         orderInfo.order_number = orderNumber;
-        console.log(`✅ Order number extracted from HTML: ${orderNumber}`);
+        if (this.debug) {
+          console.log(`✅ Order number extracted using pattern ${i + 1}: ${orderNumber}`);
+        }
         
         // Validate and potentially correct order type based on order number format
         if (this.isXpressOrderNumber(orderNumber)) {
@@ -1303,6 +1324,10 @@ export class OrderConfirmationParser {
         }
         return; // Found in HTML, done
       }
+    }
+    
+    if (this.debug) {
+      console.log(`❌ No order number found with HTML patterns`);
     }
     
     // Priority 2: Fall back to text content patterns
