@@ -1472,21 +1472,31 @@ export class OrderConfirmationParser {
    */
   private decodeQuotedPrintable(text: string, charset: string = 'utf-8'): string {
     // Remove soft line breaks (= at end of line)
-    let decoded = text.replace(/=\r?\n/g, '');
+    let cleaned = text.replace(/=\r?\n/g, '');
     
-    // Decode hex sequences (=XX)
-    decoded = decoded.replace(/=([0-9A-Fa-f]{2})/g, (match, hex) => {
-      return String.fromCharCode(parseInt(hex, 16));
-    });
+    // Decode hex sequences (=XX) into bytes
+    const bytes: number[] = [];
+    for (let i = 0; i < cleaned.length; i++) {
+      const ch = cleaned[i];
+      if (ch === '=' && i + 2 < cleaned.length) {
+        const hex = cleaned.slice(i + 1, i + 3);
+        if (/^[0-9A-Fa-f]{2}$/.test(hex)) {
+          bytes.push(parseInt(hex, 16));
+          i += 2;
+          continue;
+        }
+      }
+      bytes.push(cleaned.charCodeAt(i));
+    }
     
-    // Handle charset conversion if needed
+    // Convert bytes to string based on charset
+    const buffer = Buffer.from(bytes);
     if (charset.includes('iso-8859-1') || charset.includes('latin1') || charset.includes('windows-1252')) {
-      // For latin1, the bytes are already correct after hex decoding
-      return decoded;
+      return buffer.toString('latin1');
     }
     
     // Default to UTF-8
-    return decoded;
+    return buffer.toString('utf8');
   }
   
   /**
