@@ -130,18 +130,32 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
         // Priority 1: Use email_date from order confirmation email - ALWAYS overwrite
         if (orderConfirmationEmail.email_date) {
           try {
-            const emailDate = new Date(orderConfirmationEmail.email_date);
+            // Parse email_date (could be ISO string or Date header format like "Wed, 03 Dec 2025 23:31:33 +0000")
+            let emailDate: Date;
+            if (typeof orderConfirmationEmail.email_date === 'string') {
+              emailDate = new Date(orderConfirmationEmail.email_date);
+            } else {
+              emailDate = orderConfirmationEmail.email_date;
+            }
+            
             if (!isNaN(emailDate.getTime())) {
               const formattedDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
               // ALWAYS overwrite purchaseDate with order confirmation date
               primaryPurchase.purchaseDate = formattedDate;
-              primaryPurchase.purchase_date = orderConfirmationEmail.email_date; // Store ISO string for purchase_date
-              primaryPurchase.email_date = orderConfirmationEmail.email_date;
+              // Store the original email_date string, or convert to ISO if it's a Date object
+              primaryPurchase.purchase_date = typeof orderConfirmationEmail.email_date === 'string' 
+                ? orderConfirmationEmail.email_date 
+                : emailDate.toISOString();
+              primaryPurchase.email_date = typeof orderConfirmationEmail.email_date === 'string'
+                ? orderConfirmationEmail.email_date
+                : emailDate.toISOString();
               purchaseDateSet = true;
-              console.log(`✅ Set purchase date from order confirmation email_date: ${formattedDate} (overwrote any existing date)`);
+              console.log(`✅ Set purchase date from order confirmation email_date: "${orderConfirmationEmail.email_date}" → ${formattedDate} (overwrote any existing date)`);
+            } else {
+              console.warn(`⚠️ Invalid email_date: "${orderConfirmationEmail.email_date}" (parsed to invalid date)`);
             }
           } catch (e) {
-            console.warn(`⚠️ Failed to parse email_date: ${orderConfirmationEmail.email_date}`, e);
+            console.warn(`⚠️ Failed to parse email_date: "${orderConfirmationEmail.email_date}"`, e);
           }
         }
         

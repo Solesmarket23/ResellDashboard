@@ -229,8 +229,18 @@ export async function POST(request: Request) {
           status: r.data!.shipping_status || 'ordered',
           shipping_status: r.data!.shipping_status || 'ordered',
           ...r.data,
-          filename: r.filename // Keep filename for tracking
+          filename: r.filename, // Keep filename for tracking
+          email_subject: r.data!.email_subject, // Keep subject for order confirmation detection
+          email_date: r.data!.email_date, // Keep email_date for purchase date
+          // Ensure email_date is available for consolidation
+          createdAt: r.data!.email_date ? new Date(r.data!.email_date).toISOString() : undefined
         }));
+        
+        // Debug: Log what we're passing to consolidation
+        console.log(`\n📧 TEST API: Passing ${purchases.length} purchases to consolidation:`);
+        purchases.forEach(p => {
+          console.log(`   Order ${p.orderNumber}: status="${p.status}", email_date="${p.email_date}", subject="${p.email_subject}", filename="${p.filename}"`);
+        });
         
         // Consolidate using priority system
         const consolidated = consolidatePurchasesByOrderNumber(purchases);
@@ -253,6 +263,14 @@ export async function POST(request: Request) {
           // Get the highest priority result (should match consolidated purchase)
           const primaryResult = successfulResults.find(r => r.data?.order_number === orderNumber);
           
+          // Debug: Log purchase date info
+          console.log(`\n📅 TEST API: Consolidation result for ${orderNumber}:`);
+          console.log(`   Consolidated purchaseDate: ${consolidatedPurchase.purchaseDate}`);
+          console.log(`   Consolidated purchase_date: ${consolidatedPurchase.purchase_date}`);
+          console.log(`   Consolidated email_date: ${consolidatedPurchase.email_date}`);
+          console.log(`   Primary result purchase_date: ${primaryResult?.data?.purchase_date}`);
+          console.log(`   Primary result email_date: ${primaryResult?.data?.email_date}`);
+          
           if (primaryResult) {
             consolidatedResults.push({
               filename: sourceEmails.length > 1 
@@ -261,8 +279,8 @@ export async function POST(request: Request) {
               success: true,
               data: {
                 ...consolidatedPurchase as OrderInfo,
-                // Use consolidated purchase_date and email_date (from order confirmation email)
-                purchase_date: consolidatedPurchase.purchaseDate || consolidatedPurchase.purchase_date || primaryResult.data?.purchase_date || '',
+                // Use consolidated purchase_date (from order confirmation email) - this should be set by consolidation
+                purchase_date: consolidatedPurchase.purchase_date || consolidatedPurchase.email_date || primaryResult.data?.purchase_date || primaryResult.data?.email_date || '',
                 email_date: consolidatedPurchase.email_date || primaryResult.data?.email_date || '',
                 // Preserve email metadata from primary result
                 email_subject: primaryResult.data?.email_subject || '',
