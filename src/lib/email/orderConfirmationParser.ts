@@ -374,51 +374,73 @@ export class OrderConfirmationParser {
     // Extract size - Prioritize <li class="attributes"> pattern using cheerio
     let sizeFound = false;
     
+    // Method 0: First try the simplest possible pattern - "Size: US S" anywhere in HTML
+    // This handles cases where cheerio fails due to encoded HTML
+    const simpleSizeMatch = htmlContent.match(/Size:\s*(US\s+[A-Z0-9\.]+)/i);
+    if (simpleSizeMatch && simpleSizeMatch[1]) {
+      let size = simpleSizeMatch[1].trim().replace(/\s+/g, ' ');
+      if (this.isValidSizeFormat(size)) {
+        orderInfo.size = size;
+        sizeFound = true;
+        console.log(`✅ SIZE EXTRACTED using simple pattern: "${size}"`);
+      } else {
+        console.log(`⚠️ Simple pattern matched "${size}" but validation failed`);
+      }
+    }
+    
     // Method 1: Use cheerio to parse HTML and find <li class="attributes"> elements
-    try {
-      const $ = cheerio.load(htmlContent);
-      const attributeLis = $('li.attributes');
-      
-      for (let i = 0; i < attributeLis.length; i++) {
-        const li = attributeLis.eq(i);
-        const text = li.text().trim();
+    if (!sizeFound) {
+      try {
+        const $ = cheerio.load(htmlContent);
+        const attributeLis = $('li.attributes');
         
-        // Look for "Size:" in the text
-        const sizeMatch = text.match(/^Size:\s*(.+)$/i);
-        if (sizeMatch) {
-          let size = sizeMatch[1].trim();
+        for (let i = 0; i < attributeLis.length; i++) {
+          const li = attributeLis.eq(i);
+          const text = li.text().trim();
           
-          // Clean up the size
-          size = size.replace(/[,;].*$/, '').trim(); // Remove anything after comma or semicolon
-          size = size.replace(/\s+/g, ' ').trim(); // Normalize whitespace
-          
-          // Validate it looks like a real size
-          if (size && size.length > 0 && size.length <= 25 && this.isValidSizeFormat(size)) {
-            orderInfo.size = size;
-            sizeFound = true;
-            console.log(`✅ SIZE EXTRACTED using cheerio from <li class="attributes">: "${size}"`);
-            break;
+          // Look for "Size:" in the text
+          const sizeMatch = text.match(/^Size:\s*(.+)$/i);
+          if (sizeMatch) {
+            let size = sizeMatch[1].trim();
+            
+            // Clean up the size
+            size = size.replace(/[,;].*$/, '').trim(); // Remove anything after comma or semicolon
+            size = size.replace(/\s+/g, ' ').trim(); // Normalize whitespace
+            
+            // Validate it looks like a real size
+            if (size && size.length > 0 && size.length <= 25 && this.isValidSizeFormat(size)) {
+              orderInfo.size = size;
+              sizeFound = true;
+              console.log(`✅ SIZE EXTRACTED using cheerio from <li class="attributes">: "${size}"`);
+              break;
+            } else {
+              console.log(`⚠️ Cheerio found "${size}" but validation failed`);
+            }
           }
         }
+      } catch (error) {
+        console.log(`⚠️ Error using cheerio for size extraction: ${error}`);
       }
-    } catch (error) {
-      console.log(`⚠️ Error using cheerio for size extraction: ${error}`);
     }
     
     // Method 2: If cheerio didn't find it, use regex patterns (prioritize <li class="attributes">)
     // Handle both encoded (=3D) and decoded (=) HTML
     if (!sizeFound) {
       const sizePatterns = [
-        // Highest priority: Handle encoded HTML (class=3D"attributes") - most flexible pattern
-        /<li[^>]*class=3D["']attributes["'][^>]*>\s*Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
-        /<li[^>]*class=3D["']attributes["'][^>]*style=3D[^>]*>\s*Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
+        // Highest priority: Simple pattern that matches "Size: US S" anywhere (handles multi-line tags)
+        // Capture the full "US S" or "US 10" etc.
+        /Size:\s*(US\s+[A-Z0-9\.]+)(?:\s|$|,|;|\.|<\/)/i,
+        
+        // Handle encoded HTML (class=3D"attributes") - match across line breaks
+        /<li[^>]*class=3D["']attributes["'][^>]*>[\s\S]*?Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
+        /<li[^>]*class=3D["']attributes["'][^>]*style=3D[^>]*>[\s\S]*?Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
         // More flexible: match even if there are spaces or other attributes
-        /<li[^>]*class\s*=\s*3D\s*["']attributes["'][^>]*>\s*Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
+        /<li[^>]*class\s*=\s*3D\s*["']attributes["'][^>]*>[\s\S]*?Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
         // Very specific pattern for encoded HTML with style attribute (most common case)
-        /<li[^>]*class=3D["']attributes["'][^>]*style=3D[^>]*>\s*Size:\s*([A-Z0-9\.\s]+?)\s*<\/li>/i,
-        // Handle decoded HTML (class="attributes")
-        /<li[^>]*class=["']attributes["'][^>]*>\s*Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
-        /<li[^>]*class=["']attributes["'][^>]*style=["'][^"']*["'][^>]*>\s*Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
+        /<li[^>]*class=3D["']attributes["'][^>]*style=3D[^>]*>[\s\S]*?Size:\s*([A-Z0-9\.\s]+?)\s*<\/li>/i,
+        // Handle decoded HTML (class="attributes") - match across line breaks
+        /<li[^>]*class=["']attributes["'][^>]*>[\s\S]*?Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
+        /<li[^>]*class=["']attributes["'][^>]*style=["'][^"']*["'][^>]*>[\s\S]*?Size:\s*([^<\n\r!]+?)\s*<\/li>/i,
         /<li[^>]*class=["']attributes["'][^>]*>Size:\s*([^<\n\r!]+?)<\/li>/i,
         
         // Pattern for sizes without "Size:" prefix in attributes list
@@ -728,22 +750,28 @@ export class OrderConfirmationParser {
     
     // Method 0: Direct pattern matching for "Size: US X" in any HTML structure (highest priority fallback)
     const directSizePatterns = [
-      // Match "Size: US S" or "Size: US M" etc. in any HTML context
-      /Size:\s*US\s+([A-Z0-9\.]+)(?:\s|$|,|;|\.|<\/)/i,
-      // Match "Size: US 10" or "Size: US 10.5" etc.
-      /Size:\s*US\s+(\d+(?:\.\d+)?)(?:\s|$|,|;|\.|<\/)/i,
-      // Match "Size: US S" even if there's extra whitespace
-      /Size:\s*US\s+([A-Z])(?:\s|$|,|;|\.|<\/)/i
+      // Match "Size: US S" or "Size: US M" etc. - capture the full "US S" or "US 10"
+      /Size:\s*(US\s+[A-Z0-9\.]+)(?:\s|$|,|;|\.|<\/)/i,
+      // Match "Size: US 10" or "Size: US 10.5" etc. - capture the full "US 10"
+      /Size:\s*(US\s+\d+(?:\.\d+)?)(?:\s|$|,|;|\.|<\/)/i,
+      // Match "Size: US S" even if there's extra whitespace - capture the full "US S"
+      /Size:\s*(US\s+[A-Z])(?:\s|$|,|;|\.|<\/)/i,
+      // Very simple: just match "Size: US" followed by anything that looks like a size
+      /Size:\s*(US\s+[A-Z0-9\.\s]{1,10})(?:\s|$|,|;|\.|<\/|<\/li>)/i
     ];
     
     for (const pattern of directSizePatterns) {
       const match = htmlContent.match(pattern);
       if (match && match[1]) {
-        let size = `US ${match[1].trim()}`;
+        let size = match[1].trim();
+        // Clean up any extra whitespace
+        size = size.replace(/\s+/g, ' ').trim();
         if (this.isValidSizeFormat(size)) {
           orderInfo.size = size;
           console.log(`✅ SIZE FOUND with direct pattern: "${size}"`);
           return true;
+        } else {
+          console.log(`⚠️ Pattern matched but validation failed: "${size}"`);
         }
       }
     }
