@@ -36,6 +36,8 @@ export interface OrderInfo {
   processing_fee: number;
   shipping_fee: number;
   shipping_type: string; // "Shipping", "Xpress Shipping"
+  discount_code: string; // e.g., "B10-6HRXZ2"
+  discount_amount: number; // e.g., -10.00
   total_amount: number;
   currency: string;
   
@@ -74,6 +76,8 @@ function createDefaultOrderInfo(): OrderInfo {
     processing_fee: 0.0,
     shipping_fee: 0.0,
     shipping_type: "",
+    discount_code: "",
+    discount_amount: 0.0,
     total_amount: 0.0,
     currency: "USD",
     estimated_delivery_start: "",
@@ -1058,28 +1062,27 @@ export class OrderConfirmationParser {
       }
     }
     
-    // Calculate total automatically: purchase_price + processing_fee + shipping_fee
-    const calculatedTotal = orderInfo.purchase_price + orderInfo.processing_fee + orderInfo.shipping_fee;
-    
-    if (calculatedTotal > 0) {
-      orderInfo.total_amount = parseFloat(calculatedTotal.toFixed(2));
-      console.log(`💰 Total calculated: $${orderInfo.purchase_price} + $${orderInfo.processing_fee} + $${orderInfo.shipping_fee} = $${orderInfo.total_amount}`);
+    // Prioritize extracted total from email (most accurate, especially with discounts)
+    if (extractedTotal !== null) {
+      orderInfo.total_amount = extractedTotal;
+      if (this.debug) {
+        console.log(`✅ Using Total Payment from email: $${orderInfo.total_amount}`);
+      }
+    } else {
+      // Calculate total: purchase_price + processing_fee + shipping_fee + discount_amount
+      const calculatedTotal = orderInfo.purchase_price + orderInfo.processing_fee + orderInfo.shipping_fee + orderInfo.discount_amount;
       
-      // Validate against extracted total if available
-      if (extractedTotal !== null) {
-        const difference = Math.abs(calculatedTotal - extractedTotal);
-        if (difference > 0.01) { // Allow 1 cent difference for rounding
-          console.log(`⚠️ Calculated total ($${calculatedTotal.toFixed(2)}) differs from email total ($${extractedTotal.toFixed(2)}) by $${difference.toFixed(2)}`);
-        } else {
-          console.log(`✅ Calculated total matches email total: $${orderInfo.total_amount}`);
+      if (calculatedTotal > 0) {
+        orderInfo.total_amount = parseFloat(calculatedTotal.toFixed(2));
+        if (this.debug) {
+          const discountStr = orderInfo.discount_amount !== 0 ? ` + (${orderInfo.discount_amount >= 0 ? '+' : ''}$${orderInfo.discount_amount.toFixed(2)})` : '';
+          console.log(`💰 Total calculated: $${orderInfo.purchase_price} + $${orderInfo.processing_fee} + $${orderInfo.shipping_fee}${discountStr} = $${orderInfo.total_amount}`);
+        }
+      } else {
+        if (this.debug) {
+          console.log(`⚠️ Could not calculate or extract total amount`);
         }
       }
-    } else if (extractedTotal !== null) {
-      // Fallback: use extracted total if calculation not possible
-      orderInfo.total_amount = extractedTotal;
-      console.log(`💰 Using extracted total (calculation not possible): $${orderInfo.total_amount}`);
-    } else {
-      console.log(`⚠️ Could not calculate or extract total amount`);
     }
   }
   
