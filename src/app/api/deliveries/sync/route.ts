@@ -10,6 +10,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
     const testTrackingNumber = searchParams.get('trackingNumber');
+    const clientPurchases = searchParams.get('purchases'); // New: Accept purchases from client
     
     if (!userId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
@@ -17,23 +18,36 @@ export async function GET(request: NextRequest) {
 
     console.log(`🔄 Starting delivery sync for user: ${userId}${testTrackingNumber ? ` with tracking: ${testTrackingNumber}` : ''}`);
 
-    // Get all purchases for the user
-    const [purchasesByUserId, purchasesByUid] = await Promise.all([
-      getDocumentsServer('purchases', {
-        where: [{ field: 'userId', operator: '==', value: userId }]
-      }),
-      getDocumentsServer('purchases', {
-        where: [{ field: 'uid', operator: '==', value: userId }]
-      })
-    ]);
+    let uniquePurchases: any[] = [];
 
-    // Combine and deduplicate purchases
-    const allPurchases = [...purchasesByUserId, ...purchasesByUid];
-    const uniquePurchases = allPurchases.filter((purchase, index, self) => 
-      index === self.findIndex(p => p.id === purchase.id)
-    );
+    // If client sends purchases (localStorage users), use those
+    if (clientPurchases) {
+      try {
+        uniquePurchases = JSON.parse(decodeURIComponent(clientPurchases));
+        console.log(`📦 Received ${uniquePurchases.length} purchases from client (localStorage)`);
+      } catch (error) {
+        console.error('❌ Failed to parse client purchases:', error);
+        return NextResponse.json({ error: 'Invalid purchases data' }, { status: 400 });
+      }
+    } else {
+      // Get all purchases from Firebase for the user
+      const [purchasesByUserId, purchasesByUid] = await Promise.all([
+        getDocumentsServer('purchases', {
+          where: [{ field: 'userId', operator: '==', value: userId }]
+        }),
+        getDocumentsServer('purchases', {
+          where: [{ field: 'uid', operator: '==', value: userId }]
+        })
+      ]);
 
-    console.log(`📦 Found ${uniquePurchases.length} total purchases for user`);
+      // Combine and deduplicate purchases
+      const allPurchases = [...purchasesByUserId, ...purchasesByUid];
+      uniquePurchases = allPurchases.filter((purchase, index, self) => 
+        index === self.findIndex(p => p.id === purchase.id)
+      );
+
+      console.log(`📦 Found ${uniquePurchases.length} total purchases for user from Firebase`);
+    }
 
     // Filter purchases with tracking numbers
     let purchasesWithTracking = uniquePurchases.filter((purchase: any) => {
@@ -272,28 +286,38 @@ export async function DELETE(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, forceRefresh = false } = await request.json();
+    const { userId, forceRefresh = false, purchases: clientPurchases, fromLocalStorage = false } = await request.json();
     
     if (!userId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
     }
 
-    console.log(`🔄 Starting delivery sync for user: ${userId}`);
+    console.log(`🔄 Starting delivery sync for user: ${userId}${fromLocalStorage ? ' (localStorage)' : ' (Firebase)'}`);
 
-    // Get all purchases for the user
-    const [purchasesByUserId, purchasesByUid] = await Promise.all([
-      getDocumentsServer('purchases', {
-        where: [{ field: 'userId', operator: '==', value: userId }]
-      }),
-      getDocumentsServer('purchases', {
-        where: [{ field: 'uid', operator: '==', value: userId }]
-      })
-    ]);
+    let uniquePurchases: any[] = [];
 
-    const allPurchases = [...purchasesByUserId, ...purchasesByUid];
-    const uniquePurchases = allPurchases.filter((purchase, index, self) => 
-      index === self.findIndex(p => p.id === purchase.id)
-    );
+    // If client sends purchases (localStorage users), use those
+    if (fromLocalStorage && clientPurchases) {
+      uniquePurchases = clientPurchases;
+      console.log(`📦 Received ${uniquePurchases.length} purchases from localStorage`);
+    } else {
+      // Get all purchases for the user from Firebase
+      const [purchasesByUserId, purchasesByUid] = await Promise.all([
+        getDocumentsServer('purchases', {
+          where: [{ field: 'userId', operator: '==', value: userId }]
+        }),
+        getDocumentsServer('purchases', {
+          where: [{ field: 'uid', operator: '==', value: userId }]
+        })
+      ]);
+
+      const allPurchases = [...purchasesByUserId, ...purchasesByUid];
+      uniquePurchases = allPurchases.filter((purchase, index, self) => 
+        index === self.findIndex(p => p.id === purchase.id)
+      );
+
+      console.log(`📦 Found ${uniquePurchases.length} purchases from Firebase`);
+    }
 
     // Filter purchases with tracking numbers
     let purchasesWithTracking = uniquePurchases.filter((purchase: any) => {

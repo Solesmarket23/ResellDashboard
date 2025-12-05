@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Mail, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 
@@ -12,7 +12,7 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
   const { currentTheme } = useTheme();
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
-  const [isChecking, setIsChecking] = useState(true); // Add loading state
+  const [isChecking, setIsChecking] = useState(false); // Start as false, only show when actually checking
   const [error, setError] = useState<string | null>(null);
   const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
   const [needsReconnect, setNeedsReconnect] = useState(false);
@@ -20,8 +20,21 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
   // Check if neon theme is active
   const isNeonTheme = currentTheme?.name === 'Neon';
 
+  // Use ref to track if we've checked connection status to prevent re-checking on every render
+  const hasCheckedRef = useRef(false);
+
   useEffect(() => {
-    checkConnectionStatus();
+    // Only check connection status once on mount, unless we haven't checked yet
+    if (!hasCheckedRef.current) {
+      hasCheckedRef.current = true;
+      // Only show checking state if we're not already connected (quick check via localStorage/cookie)
+      const quickCheck = document.cookie.includes('gmail_connected=true') || 
+                        localStorage.getItem('gmail_connected') === 'true';
+      if (!quickCheck) {
+        setIsChecking(true);
+      }
+      checkConnectionStatus();
+    }
     
     // Check for OAuth callback results
     const urlParams = new URLSearchParams(window.location.search);
@@ -41,26 +54,30 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
       url.searchParams.delete('gmail_error');
       window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
     }
-  }, [onConnectionChange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty dependency array - only run once on mount
 
   const checkConnectionStatus = async () => {
-    setIsChecking(true); // Start checking
+    // Only show checking state if not already connected
+    if (!isConnected) {
+      setIsChecking(true);
+    }
     try {
       console.log('🔍 Checking Gmail connection status...');
       
-      // Add timeout to prevent hanging
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Connection check timeout')), 10000)
-      );
+      // Create abort controller for timeout (5 seconds max)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
       
-      const fetchPromise = fetch('/api/gmail/status', {
+      const response = await fetch('/api/gmail/status', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
         },
+        signal: controller.signal
       });
       
-      const response = await Promise.race([fetchPromise, timeoutPromise]) as Response;
+      clearTimeout(timeoutId);
       const data = await response.json().catch(() => ({}));
       
       console.log(`📋 Gmail connection check: Status ${response.status}`, data);
@@ -85,18 +102,23 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
     } catch (error) {
       console.error('❌ Gmail connection check failed:', error);
       
-      // If it's a timeout, assume not connected and don't show error
-      if (error instanceof Error && error.message.includes('timeout')) {
-        console.log('⏰ Connection check timed out - assuming not connected');
+      // If it's a timeout or abort, assume not connected and don't show error
+      if (error instanceof Error && (error.message.includes('timeout') || error.name === 'AbortError')) {
+        console.log('⏰ Connection check timed out - assuming not connected (page will still load)');
         setIsConnected(false);
+        setIsChecking(false); // Stop showing checking state
         onConnectionChange?.(false);
       } else {
         setIsConnected(false);
+        setIsChecking(false);
         onConnectionChange?.(false);
-        setError('Connection check failed');
+        // Don't set error for timeout - just silently fail
+        if (!(error instanceof Error && error.message.includes('timeout'))) {
+          setError('Connection check failed');
+        }
       }
     } finally {
-      setIsChecking(false); // Done checking
+      setIsChecking(false); // Always stop checking state
     }
   };
 

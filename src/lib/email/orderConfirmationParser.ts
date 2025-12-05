@@ -101,6 +101,14 @@ export class OrderConfirmationParser {
   }
   
   /**
+   * Capitalize the first letter of a string
+   */
+  private capitalizeFirst(str: string): string {
+    if (!str || str.length === 0) return str;
+    return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+  }
+  
+  /**
    * Parse an email and extract order information
    * 
    * @param emailContent - Raw email content (EML format or HTML)
@@ -236,6 +244,18 @@ export class OrderConfirmationParser {
     const normalizedSubject = emailSubject.toLowerCase().trim();
     const normalizedHtml = htmlContent.toLowerCase();
     
+    // Subject lines that should be treated as "ordered" status, not "shipped"
+    // These are intermediate status emails that don't mean the order has shipped to the customer
+    const orderedStatusSubjects = [
+      'order arrived at stockx',
+      'order shipped to stockx'
+    ];
+    
+    // Check if this is an intermediate status email that should be treated as "ordered"
+    const isOrderedStatusEmail = orderedStatusSubjects.some(pattern => 
+      normalizedSubject.includes(pattern) || normalizedHtml.includes(pattern)
+    );
+    
     // Determine email type and status
     let emailType: 'order' | 'shipped' | 'delivered' | 'refund' = 'order';
     let isXpress = false;
@@ -246,7 +266,7 @@ export class OrderConfirmationParser {
         normalizedHtml.includes(pattern.toLowerCase())
       )) {
       emailType = 'refund';
-      orderInfo.shipping_status = "refunded";
+      orderInfo.shipping_status = this.capitalizeFirst("refunded");
       console.log(`💰 REFUND EMAIL DETECTED: "${emailSubject}"`);
     }
     // Check for delivery emails (second priority)
@@ -255,16 +275,22 @@ export class OrderConfirmationParser {
         normalizedHtml.includes(pattern.toLowerCase())
       )) {
       emailType = 'delivered';
-      orderInfo.shipping_status = "delivered";
+      orderInfo.shipping_status = this.capitalizeFirst("delivered");
       console.log(`📬 DELIVERY EMAIL DETECTED: "${emailSubject}"`);
     }
-    // Check for shipping emails (third priority)
+    // Check for intermediate status emails (should be treated as "ordered", not "shipped")
+    else if (isOrderedStatusEmail) {
+      emailType = 'order';
+      orderInfo.shipping_status = this.capitalizeFirst("ordered");
+      console.log(`📦 ORDER EMAIL DETECTED (intermediate status): "${emailSubject}" - treating as ordered, not shipped`);
+    }
+    // Check for shipping emails (third priority) - but exclude intermediate status emails
     else if (subjectPatterns.shipped.some(pattern => 
         normalizedSubject.includes(pattern.toLowerCase()) || 
         normalizedHtml.includes(pattern.toLowerCase())
       )) {
       emailType = 'shipped';
-      orderInfo.shipping_status = "shipped";
+      orderInfo.shipping_status = this.capitalizeFirst("shipped");
       console.log(`📦 SHIPPING EMAIL DETECTED: "${emailSubject}"`);
     }
     // Check for order confirmation emails (lowest priority)
@@ -273,7 +299,7 @@ export class OrderConfirmationParser {
         normalizedHtml.includes(pattern.toLowerCase())
       )) {
       emailType = 'order';
-      orderInfo.shipping_status = "ordered";
+      orderInfo.shipping_status = this.capitalizeFirst("ordered");
       console.log(`📦 ORDER EMAIL DETECTED: "${emailSubject}"`);
     }
     // Fallback: check content for status indicators
@@ -282,24 +308,31 @@ export class OrderConfirmationParser {
           normalizedHtml.includes('refund issued') ||
           normalizedHtml.includes('refund processed')) {
         emailType = 'refund';
-        orderInfo.shipping_status = "refunded";
+        orderInfo.shipping_status = this.capitalizeFirst("refunded");
         console.log(`💰 REFUND EMAIL DETECTED (fallback): "${emailSubject}"`);
       } else if (normalizedHtml.includes('order delivered') || 
           normalizedHtml.includes('has been delivered') ||
           normalizedHtml.includes('🎉')) {
         emailType = 'delivered';
-        orderInfo.shipping_status = "delivered";
+        orderInfo.shipping_status = this.capitalizeFirst("delivered");
         console.log(`📬 DELIVERY EMAIL DETECTED (fallback): "${emailSubject}"`);
       } else if (normalizedHtml.includes('order verified & shipped') ||
-                 normalizedHtml.includes('order shipped') ||
+                 (normalizedHtml.includes('order shipped') && !isOrderedStatusEmail) ||
                  normalizedHtml.includes('has been shipped') ||
                  normalizedHtml.includes('✅')) {
-        emailType = 'shipped';
-        orderInfo.shipping_status = "shipped";
-        console.log(`📦 SHIPPING EMAIL DETECTED (fallback): "${emailSubject}"`);
+        // Only treat as shipped if it's not an intermediate status email
+        if (!isOrderedStatusEmail) {
+          emailType = 'shipped';
+          orderInfo.shipping_status = this.capitalizeFirst("shipped");
+          console.log(`📦 SHIPPING EMAIL DETECTED (fallback): "${emailSubject}"`);
+        } else {
+          emailType = 'order';
+          orderInfo.shipping_status = this.capitalizeFirst("ordered");
+          console.log(`📦 ORDER EMAIL DETECTED (fallback, intermediate status): "${emailSubject}"`);
+        }
       } else {
         emailType = 'order';
-        orderInfo.shipping_status = "ordered";
+        orderInfo.shipping_status = this.capitalizeFirst("ordered");
         console.log(`📦 ORDER EMAIL DETECTED (fallback): "${emailSubject}"`);
       }
     }
@@ -1831,9 +1864,11 @@ export class OrderConfirmationParser {
           orderInfo.carrier = "UPS";
         } else if (htmlUpper.includes('FEDEX') || htmlUpper.includes('FEDERAL EXPRESS')) {
           orderInfo.carrier = "FedEx";
+        } else if (htmlUpper.includes('USPS') || htmlUpper.includes('UNITED STATES POSTAL SERVICE')) {
+          orderInfo.carrier = "USPS";
         } else {
-          // Default to generic carrier for StockX
-          orderInfo.carrier = "StockX Logistics";
+          // Don't set carrier if we can't detect it - leave it null
+          orderInfo.carrier = null;
         }
       }
     }
@@ -1903,7 +1938,12 @@ export class OrderConfirmationParser {
       const pattern = htmlOrderPatterns[i];
       const match = htmlContent.match(pattern);
       if (match && match[1]) {
-        const orderNumber = match[1].trim();
+        let orderNumber = match[1].trim();
+        
+        // If order number is in format XXXX-XXXX (two numbers separated by hyphen),
+        // extract only the second half (after the hyphen)
+        orderNumber = this.normalizeOrderNumber(orderNumber);
+        
         orderInfo.order_number = orderNumber;
         if (this.debug) {
           console.log(`✅ Order number extracted using pattern ${i + 1}: ${orderNumber}`);
@@ -1939,7 +1979,12 @@ export class OrderConfirmationParser {
     for (const pattern of textOrderPatterns) {
       const match = textContent.match(pattern);
       if (match && match[1]) {
-        const orderNumber = match[1].trim();
+        let orderNumber = match[1].trim();
+        
+        // If order number is in format XXXX-XXXX (two numbers separated by hyphen),
+        // extract only the second half (after the hyphen)
+        orderNumber = this.normalizeOrderNumber(orderNumber);
+        
         orderInfo.order_number = orderNumber;
         console.log(`✅ Order number extracted from text: ${orderNumber}`);
         
@@ -1960,6 +2005,30 @@ export class OrderConfirmationParser {
     }
     
     console.log(`⚠️ Order number not found in email`);
+  }
+  
+  /**
+   * Normalize order number format
+   * If order number is in format XXXX-XXXX (two numbers separated by hyphen),
+   * extract only the second half (after the hyphen)
+   * Example: "68463321-68363080" -> "68363080"
+   */
+  private normalizeOrderNumber(orderNumber: string): string {
+    // Check if order number matches pattern: digits-hyphen-digits (e.g., "68463321-68363080")
+    const doubleNumberPattern = /^(\d+)-(\d+)$/;
+    const match = orderNumber.match(doubleNumberPattern);
+    
+    if (match && match[2]) {
+      // Extract only the second half (after the hyphen)
+      const normalized = match[2];
+      if (this.debug) {
+        console.log(`📝 Normalized order number: "${orderNumber}" -> "${normalized}"`);
+      }
+      return normalized;
+    }
+    
+    // Return original if it doesn't match the pattern
+    return orderNumber;
   }
   
   /**

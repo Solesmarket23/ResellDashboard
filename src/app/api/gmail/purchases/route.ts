@@ -835,6 +835,20 @@ async function parsePurchaseEmail(email: any, config: any, gmail: any) {
       console.log(`⚠️ No size found for order ${orderInfo.order_number}, using fallback: "${finalSize}"`);
     }
 
+    // Use shipping_status from OrderInfo (already capitalized by parser) as primary source
+    // Fallback to category.status if shipping_status is not available
+    const finalStatus = orderInfo.shipping_status || category.status;
+    
+    // Map status to statusColor if not already set
+    const getStatusColor = (status: string) => {
+      const statusLower = status.toLowerCase();
+      if (statusLower === 'delivered') return 'green';
+      if (statusLower === 'shipped') return 'blue';
+      if (statusLower === 'ordered') return 'orange';
+      if (statusLower === 'refunded') return 'red';
+      return category.statusColor || 'gray';
+    };
+    
     return {
       id: email.id,
       orderNumber: orderInfo.order_number,
@@ -845,8 +859,8 @@ async function parsePurchaseEmail(email: any, config: any, gmail: any) {
         image: productImage,
         bgColor: getBrandColor(brand)
       },
-      status: category.status,
-      statusColor: category.statusColor,
+      status: finalStatus, // Use status from parser (capitalized)
+      statusColor: getStatusColor(finalStatus), // Map to color
       priority: category.priority,
       tracking: orderInfo.tracking_number || 'No tracking', // Use tracking from parsed email
       market,

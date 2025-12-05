@@ -279,7 +279,7 @@ async function processEmail(message: any, emailIndex: number, gmail: any) {
     }
 
     // Fallback tracking extraction: if shipped/delivered and no tracking yet, search shipping email
-    if (!orderInfo.tracking_number && (orderInfo.shipping_status === 'shipped' || orderInfo.shipping_status === 'delivered')) {
+    if (!orderInfo.tracking_number && (orderInfo.shipping_status === 'Shipped' || orderInfo.shipping_status === 'Delivered')) {
       try {
         const fallbackTracking = await extractTrackingNumber(orderInfo.order_number, gmail);
         if (fallbackTracking) {

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Package, Truck, CheckCircle, Clock, MapPin, Calendar, Filter, Search, MoreHorizontal, RefreshCw, Wifi, WifiOff, X, ChevronDown, Trash2, Copy, Grid3X3, List, Settings, GripVertical } from 'lucide-react';
+import { Package, Truck, CheckCircle, Clock, MapPin, Calendar, Filter, Search, MoreHorizontal, RefreshCw, Wifi, WifiOff, X, ChevronDown, Trash2, Copy, Grid3X3, List, Settings, GripVertical, Bell } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
 import { useSiteAuth } from '../lib/hooks/useSiteAuth';
@@ -80,7 +80,14 @@ const DeliveriesNew: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [carrierFilter, setCarrierFilter] = useState('all');
   const [selectedDelivery, setSelectedDelivery] = useState<DeliveryItem | null>(null);
-  const [viewMode, setViewMode] = useState<'split' | 'table'>('split');
+  const [viewMode, setViewMode] = useState<'split' | 'table'>(() => {
+    // Load saved view mode from localStorage
+    if (typeof window !== 'undefined') {
+      const savedViewMode = localStorage.getItem('deliveriesViewMode');
+      return (savedViewMode === 'split' || savedViewMode === 'table') ? savedViewMode : 'split';
+    }
+    return 'split';
+  });
   const [showStatsSettings, setShowStatsSettings] = useState(false);
   const [selectedStats, setSelectedStats] = useState<string[]>([
     'total', 'in_transit', 'delivered', 'live_tracking'
@@ -104,6 +111,7 @@ const DeliveriesNew: React.FC = () => {
     productBrand: '',
     productSize: ''
   });
+  const [sendingSlackNotification, setSendingSlackNotification] = useState(false);
   
   // Copy tracking number to clipboard
   const [copiedTrackingId, setCopiedTrackingId] = useState<string | null>(null);
@@ -311,34 +319,62 @@ const DeliveriesNew: React.FC = () => {
     setDraggedIndex(null);
   };
 
-  // Save customizable stats settings to Firebase
+  // Save customizable stats settings to localStorage AND Firebase
   const saveStatsSettings = async (stats: string[]) => {
     if (!user) return;
     
     try {
-      const userSettingsRef = doc(db, 'userSettings', user.uid);
-      await setDoc(userSettingsRef, {
-        deliveriesCustomizableStats: stats,
-        lastUpdated: new Date().toISOString()
-      }, { merge: true });
+      // Save to localStorage first (works for all users)
+      const storageKey = `deliveriesStats_${user.uid}`;
+      localStorage.setItem(storageKey, JSON.stringify(stats));
+      console.log(`✅ Saved stats settings to localStorage: ${stats.join(', ')}`);
+      
+      // Also try to save to Firebase if available
+      if (firebaseUser) {
+        const userSettingsRef = doc(db, 'userSettings', user.uid);
+        await setDoc(userSettingsRef, {
+          deliveriesCustomizableStats: stats,
+          lastUpdated: new Date().toISOString()
+        }, { merge: true });
+        console.log(`✅ Saved stats settings to Firebase`);
+      }
     } catch (error) {
       console.error('Error saving stats settings:', error);
       showNotification('Failed to save settings', 'error');
     }
   };
 
-  // Load customizable stats settings from Firebase
+  // Load customizable stats settings from localStorage OR Firebase
   const loadStatsSettings = async () => {
     if (!user) return;
     
     try {
-      const userSettingsRef = doc(db, 'userSettings', user.uid);
-      const userSettingsDoc = await getDoc(userSettingsRef);
+      // Try localStorage first (faster and works for site password users)
+      const storageKey = `deliveriesStats_${user.uid}`;
+      const savedStats = localStorage.getItem(storageKey);
       
-      if (userSettingsDoc.exists()) {
-        const data = userSettingsDoc.data();
-        if (data.deliveriesCustomizableStats && Array.isArray(data.deliveriesCustomizableStats)) {
-          setSelectedStats(data.deliveriesCustomizableStats);
+      if (savedStats) {
+        const stats = JSON.parse(savedStats);
+        if (Array.isArray(stats) && stats.length > 0) {
+          setSelectedStats(stats);
+          console.log(`✅ Loaded stats settings from localStorage: ${stats.join(', ')}`);
+          return;
+        }
+      }
+      
+      // Fallback to Firebase for Firebase users
+      if (firebaseUser) {
+        const userSettingsRef = doc(db, 'userSettings', user.uid);
+        const userSettingsDoc = await getDoc(userSettingsRef);
+        
+        if (userSettingsDoc.exists()) {
+          const data = userSettingsDoc.data();
+          if (data.deliveriesCustomizableStats && Array.isArray(data.deliveriesCustomizableStats)) {
+            setSelectedStats(data.deliveriesCustomizableStats);
+            // Also save to localStorage for faster future loads
+            localStorage.setItem(storageKey, JSON.stringify(data.deliveriesCustomizableStats));
+            console.log(`✅ Loaded stats settings from Firebase`);
+          }
         }
       }
     } catch (error) {
@@ -398,6 +434,67 @@ const DeliveriesNew: React.FC = () => {
     }
   };
 
+  // Send Slack notification
+  const handleSendSlackNotification = async () => {
+    if (!user) {
+      showNotification('Please sign in to send notifications', 'error');
+      return;
+    }
+
+    try {
+      setSendingSlackNotification(true);
+      console.log('📨 Sending Slack notification...');
+
+      // Get purchases from localStorage for site password users
+      const siteUserId = localStorage.getItem('siteUserId');
+      let purchases: any[] | undefined;
+
+      if (siteUserId) {
+        const storageKey = `purchases_${siteUserId}`;
+        const purchasesJson = localStorage.getItem(storageKey);
+        if (purchasesJson) {
+          purchases = JSON.parse(purchasesJson);
+        }
+      }
+
+      const res = await fetch('/api/notifications/slack', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.uid,
+          type: 'daily_summary',
+          purchases // Send purchases for localStorage users
+        })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to send notification');
+      }
+
+      if (data.sent) {
+        showNotification(
+          `✅ Sent to Slack! ${data.summary.arrivingToday} arriving today, ${data.summary.arrivingTomorrow} tomorrow`,
+          'success'
+        );
+      } else {
+        showNotification('No deliveries to notify about', 'info');
+      }
+    } catch (e) {
+      console.error('Failed to send Slack notification:', e);
+      const errorMsg = e instanceof Error ? e.message : 'Unknown error';
+      
+      if (errorMsg.includes('not configured')) {
+        showNotification('Slack not configured. Add SLACK_WEBHOOK_URL to .env.local', 'error');
+      } else {
+        showNotification(`Failed to send notification: ${errorMsg}`, 'error');
+      }
+    } finally {
+      setSendingSlackNotification(false);
+    }
+  };
+
   // Filter deliveries
   const filteredDeliveries = deliveries.filter((delivery) => {
     const matchesSearch = !searchTerm || 
@@ -410,6 +507,14 @@ const DeliveriesNew: React.FC = () => {
     
     return matchesSearch && matchesStatus && matchesCarrier;
   });
+
+  // Save view mode to localStorage when it changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('deliveriesViewMode', viewMode);
+      console.log(`✅ Saved view mode: ${viewMode}`);
+    }
+  }, [viewMode]);
 
   // Auto-select first delivery if none selected
   useEffect(() => {
@@ -465,6 +570,17 @@ const DeliveriesNew: React.FC = () => {
           </div>
              <div className="flex items-center gap-4">
                <UPSOAuthButton />
+               
+               {/* Send Slack Notification Button */}
+               <button
+                 onClick={handleSendSlackNotification}
+                 disabled={sendingSlackNotification || deliveries.length === 0}
+                 className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+                 title="Send delivery summary to Slack"
+               >
+                 <Bell className="w-4 h-4" />
+                 {sendingSlackNotification ? 'Sending...' : 'Send to Slack'}
+               </button>
                
                {/* View Mode Toggle */}
                <div className="flex items-center bg-gray-800 rounded-lg p-1">

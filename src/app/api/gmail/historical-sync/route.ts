@@ -228,8 +228,14 @@ function convertOrderInfoToPurchase(orderInfo: any) {
   };
 }
 
-// Get status from order info
+// Get status from order info - use the status from OrderInfo (already capitalized)
 function getStatusFromOrderInfo(orderInfo: any): string {
+  // Use the shipping_status from OrderInfo if available (already capitalized by parser)
+  if (orderInfo.shipping_status) {
+    return orderInfo.shipping_status; // Already capitalized: "Ordered", "Shipped", "Delivered", "Refunded"
+  }
+  
+  // Fallback: parse from subject if status not available
   const subject = orderInfo.email_subject?.toLowerCase() || '';
   
   if (subject.includes('delivered') || subject.includes('delivery')) {

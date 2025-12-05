@@ -68,15 +68,20 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
     let lastProcessed = -1;
     let stagnantIterations = 0;
 
-    while (hasMore && batchIndex < 10) { // Limit to 10 batches (1000 emails total)
+    // Process in smaller chunks for more frequent updates
+    // Instead of processing all 100 emails at once, process 20 at a time
+    const CHUNK_SIZE = 20; // Process 20 emails per API call for more frequent updates
+    
+    while (hasMore && batchIndex < 5) { // Up to 5 chunks (100 emails total)
       try {
-        console.log(`🚀 Starting batch ${batchIndex + 1}...`);
+        console.log(`🚀 Starting chunk ${batchIndex + 1}...`);
         
         // Build URL with parameters
         const params = new URLSearchParams({
           batch: batchIndex.toString(),
           reset: batchIndex === 0 ? 'true' : 'false',
-          quick: batchIndex === 0 ? 'true' : 'false'
+          quick: 'false', // Don't use quick mode for incremental updates
+          limit: CHUNK_SIZE.toString() // Limit each chunk to 20 emails
         });
         
         if (pageToken) {
@@ -93,7 +98,7 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
 
         const controller = new AbortController();
         controllerRef.current = controller;
-        const timeoutId = setTimeout(() => controller.abort(), 90000); // 90s
+        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout per chunk
         const response = await fetch(`/api/gmail/purchases-batched?${params.toString()}`, { signal: controller.signal });
         clearTimeout(timeoutId);
         controllerRef.current = null;
@@ -104,9 +109,9 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
         }
 
         const data = await response.json();
-        console.log(`✅ Batch ${batchIndex + 1} completed:`, data);
+        console.log(`✅ Chunk ${batchIndex + 1} completed: Found ${data.purchases?.length || 0} purchases`);
 
-        // Update progress
+        // Update progress immediately
         if (isCancelledRef.current) {
           console.warn('⏹️ Sync cancelled after fetch');
           break;
@@ -115,11 +120,16 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
         
         // Add new purchases to collection and push immediate UI updates
         if (data.purchases && data.purchases.length > 0) {
-          // push in small chunks to make the UI feel live
+          // Add purchases one by one for smoother UI updates
           for (const p of data.purchases) {
             allCollectedPurchases = [...allCollectedPurchases, p];
             setAllPurchases(prev => [...prev, p]);
+            // Update parent immediately for each purchase found
+            onPurchasesUpdate?.([...allCollectedPurchases]);
           }
+          console.log(`📊 Total purchases so far: ${allCollectedPurchases.length}`);
+        } else {
+          // Still update parent even if no purchases found in this chunk
           onPurchasesUpdate?.(allCollectedPurchases);
         }
 

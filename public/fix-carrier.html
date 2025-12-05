@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fix Carrier Values in localStorage</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #0f0; }
+        button { padding: 10px 20px; margin: 10px; font-size: 16px; cursor: pointer; background: #0f0; border: none; color: #000; }
+        .log { background: #000; padding: 10px; margin: 10px 0; border: 1px solid #0f0; max-height: 500px; overflow-y: auto; }
+        .error { color: #f00; }
+        .success { color: #0f0; }
+        .warning { color: #ff0; }
+    </style>
+</head>
+<body>
+    <h1>🔧 Fix Carrier Values in localStorage</h1>
+    <button onclick="checkData()">1. Check Data</button>
+    <button onclick="fixData()">2. Fix Invalid Carriers</button>
+    <button onclick="clearAndReload()">3. Clear & Reload</button>
+    <div class="log" id="log"></div>
+
+    <script>
+        function log(message, type = 'normal') {
+            const logDiv = document.getElementById('log');
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : '';
+            logDiv.innerHTML += `<div class="${className}">${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function checkData() {
+            document.getElementById('log').innerHTML = '';
+            log('🔍 Checking localStorage data...', 'normal');
+            
+            const siteUserId = localStorage.getItem('siteUserId');
+            if (!siteUserId) {
+                log('❌ No siteUserId found!', 'error');
+                return;
+            }
+            
+            log(`✅ Found siteUserId: ${siteUserId}`, 'success');
+            
+            const key = `purchases_${siteUserId}`;
+            const purchases = JSON.parse(localStorage.getItem(key) || '[]');
+            log(`📦 Found ${purchases.length} purchases in localStorage`, 'success');
+            
+            if (purchases.length === 0) {
+                log('⚠️ No purchases found', 'warning');
+                return;
+            }
+            
+            log('\n📊 Analyzing carrier values:', 'normal');
+            let invalidCount = 0;
+            let validCount = 0;
+            let nullCount = 0;
+            
+            purchases.forEach((p, i) => {
+                const carrier = p.carrier;
+                const tracking = p.tracking;
+                
+                if (!carrier || carrier === null) {
+                    nullCount++;
+                } else if (carrier.toLowerCase().includes('stockx')) {
+                    invalidCount++;
+                    log(`  ❌ Purchase ${i + 1} (${p.orderNumber}): carrier="${carrier}" (INVALID)`, 'error');
+                } else {
+                    validCount++;
+                    log(`  ✅ Purchase ${i + 1} (${p.orderNumber}): carrier="${carrier}" tracking="${tracking}"`, 'success');
+                }
+            });
+            
+            log(`\n📈 Summary:`, 'normal');
+            log(`  - Valid carriers: ${validCount}`, 'success');
+            log(`  - Invalid carriers (stockx): ${invalidCount}`, 'error');
+            log(`  - Null/empty carriers: ${nullCount}`, 'normal');
+            
+            if (invalidCount > 0) {
+                log(`\n⚠️ Found ${invalidCount} purchases with invalid "stockx" carrier!`, 'warning');
+                log('Click "2. Fix Invalid Carriers" to clean them up', 'warning');
+            }
+        }
+
+        function fixData() {
+            document.getElementById('log').innerHTML = '';
+            log('🔧 Fixing invalid carrier values...', 'normal');
+            
+            const siteUserId = localStorage.getItem('siteUserId');
+            if (!siteUserId) {
+                log('❌ No siteUserId found!', 'error');
+                return;
+            }
+            
+            const key = `purchases_${siteUserId}`;
+            const purchases = JSON.parse(localStorage.getItem(key) || '[]');
+            log(`📦 Loaded ${purchases.length} purchases`, 'normal');
+            
+            let fixedCount = 0;
+            const fixed = purchases.map(p => {
+                const hasInvalidCarrier = p.carrier && (
+                    p.carrier.toLowerCase().includes('stockx') ||
+                    p.carrier === 'StockX Logistics' ||
+                    p.carrier.toLowerCase() === 'stockx'
+                );
+                
+                if (hasInvalidCarrier) {
+                    log(`🔧 Fixing ${p.orderNumber}: "${p.carrier}" → null`, 'warning');
+                    fixedCount++;
+                    return { ...p, carrier: null };
+                }
+                
+                // Also fix: no tracking but has carrier
+                if (!p.tracking || p.tracking.trim() === '') {
+                    if (p.carrier) {
+                        log(`🔧 Fixing ${p.orderNumber}: no tracking but has carrier "${p.carrier}" → null`, 'warning');
+                        fixedCount++;
+                        return { ...p, carrier: null };
+                    }
+                }
+                
+                return p;
+            });
+            
+            if (fixedCount > 0) {
+                localStorage.setItem(key, JSON.stringify(fixed));
+                log(`\n✅ Fixed ${fixedCount} purchases!`, 'success');
+                log('Click "3. Clear & Reload" to refresh the page', 'success');
+            } else {
+                log('✅ No purchases needed fixing - all carriers are valid!', 'success');
+            }
+        }
+
+        function clearAndReload() {
+            log('🔄 Reloading page...', 'normal');
+            setTimeout(() => {
+                window.location.href = '/dashboard?section=purchases';
+            }, 500);
+        }
+
+        // Auto-run check on load
+        window.onload = () => {
+            checkData();
+        };
+    </script>
+</body>
+</html>
+

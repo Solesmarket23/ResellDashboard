@@ -140,10 +140,6 @@ export default function TestEmailParserPage() {
     }
   };
 
-  const getOrderTypeColor = (type: string) => {
-    return type === "xpress" ? "bg-purple-100 text-purple-800" : "bg-gray-100 text-gray-800";
-  };
-
   return (
     <div className="bg-gray-900 min-h-screen" style={{ overflowY: 'auto', height: '100vh' }}>
       <div className="max-w-7xl mx-auto p-8 pb-16">
@@ -246,9 +242,6 @@ export default function TestEmailParserPage() {
                         Order #
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Type
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Product
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -304,15 +297,6 @@ export default function TestEmailParserPage() {
                             </a>
                           ) : result.success ? (
                             <span className="text-yellow-600 text-xs" title="Parser ran but no order number found">No data</span>
-                          ) : (
-                            <span className="text-gray-400">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          {result.data?.order_type ? (
-                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getOrderTypeColor(result.data.order_type)}`}>
-                              {result.data.order_type}
-                            </span>
                           ) : (
                             <span className="text-gray-400">—</span>
                           )}

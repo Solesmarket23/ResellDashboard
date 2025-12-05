@@ -23,8 +23,6 @@ import StatusUpdater from './StatusUpdater';
 import FixItemProducts from './FixItemProducts';
 import NeonNotification, { NotificationType } from './NeonNotification';
 import ProductSearch from './ProductSearch';
-import GmailResetButton from './GmailResetButton';
-import SyncProgressIndicator from './SyncProgressIndicator';
 
 const Purchases = () => {
   // Temporary feature flag to disable Historical Sync UI (revert)
@@ -54,6 +52,7 @@ const Purchases = () => {
   const [lastAutoStatusUpdate, setLastAutoStatusUpdate] = useState<Date | null>(null);
   const [showFixItemProducts, setShowFixItemProducts] = useState(false);
   const [showExportDropdown, setShowExportDropdown] = useState(false);
+  const [showMoreActionsDropdown, setShowMoreActionsDropdown] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [extractingTracking, setExtractingTracking] = useState<Set<string>>(new Set()); // Track which orders are being processed
   const [editingTracking, setEditingTracking] = useState<string | null>(null); // Track which purchase is being edited (by id or orderNumber)
@@ -126,15 +125,15 @@ const Purchases = () => {
     return {
       checkbox: 50,
       product: 300,
-      orderNumber: 150,
       status: 120,
-      tracking: 150,
-      market: 100,
-      price: 130,
+      orderNumber: 150,
+      size: 100,
+      styleId: 120,
+      total: 130,
       purchaseDate: 120, // Minimum width for Purchase Date column
-      dateAdded: 120,
-      verified: 80,
-      edit: 80
+      tracking: 150,
+      carrier: 100,
+      actions: 80
     };
   };
 
@@ -264,23 +263,35 @@ const Purchases = () => {
         case 'status':
           cellContent = purchase.deliveryStatus || purchase.status || '';
           break;
-        case 'tracking':
-          cellContent = purchase.tracking || (purchase.status?.toLowerCase() === 'ordered' ? 'Not Shipped Yet' : '');
+        case 'size':
+          cellContent = purchase.product?.size || purchase.size || '';
           break;
-        case 'market':
-          cellContent = purchase.marketplace || purchase.market || '';
+        case 'styleId':
+          cellContent = purchase.styleId || purchase.style_id || '';
           break;
+        case 'total':
         case 'price':
-          cellContent = purchase.orderTotal ? `$${parseFloat(purchase.orderTotal).toFixed(2)}` : '';
+          cellContent = purchase.totalAmount ? `$${typeof purchase.totalAmount === 'number' ? purchase.totalAmount.toFixed(2) : purchase.totalAmount}` : (purchase.price || '');
           break;
         case 'purchaseDate':
           cellContent = purchase.purchaseDate ? new Date(purchase.purchaseDate).toLocaleDateString() : '';
           break;
-        case 'dateAdded':
-          cellContent = purchase.dateAdded ? new Date(purchase.dateAdded).toLocaleDateString() : '';
+        case 'tracking':
+          cellContent = purchase.tracking || (purchase.status?.toLowerCase() === 'ordered' ? 'Not Shipped Yet' : '');
           break;
-        case 'verified':
-          cellContent = purchase.verified ? 'Yes' : 'No';
+        case 'carrier':
+          // Show "-" if no tracking number, otherwise show carrier or "-" if not detected or invalid
+          if (!purchase.tracking || purchase.tracking.trim() === '') {
+            cellContent = '-';
+          } else {
+            const carrier = purchase.carrier;
+            // Filter out invalid carriers using helper function
+            if (!isValidCarrier(carrier)) {
+              cellContent = '-';
+            } else {
+              cellContent = carrier;
+            }
+          }
           break;
         default:
           cellContent = '';
@@ -456,20 +467,25 @@ const Purchases = () => {
     }
   };
 
-  // Close export dropdown when clicking outside
+  // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
       if (showExportDropdown) {
-        const target = event.target as Element;
         if (!target.closest('.export-dropdown')) {
           setShowExportDropdown(false);
+        }
+      }
+      if (showMoreActionsDropdown) {
+        if (!target.closest('.more-actions-dropdown')) {
+          setShowMoreActionsDropdown(false);
         }
       }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showExportDropdown]);
+  }, [showExportDropdown, showMoreActionsDropdown]);
 
   // Periodic Gmail connection check
   useEffect(() => {
@@ -572,11 +588,63 @@ const Purchases = () => {
   const handleBatchedPurchasesUpdate = async (allPurchases: any[]) => {
     console.log(`📧 Batched sync update: ${allPurchases.length} total purchases`);
     const siteUserId = localStorage.getItem('siteUserId');
+    const userId = user?.uid || siteUserId;
     console.log(`🔍 DEBUG - Firebase user available:`, !!user, `user.uid:`, user?.uid);
     console.log(`🔍 DEBUG - Site password user available:`, !!siteUserId, `siteUserId:`, siteUserId);
     
+    // Load existing purchases from Firebase to preserve tracking numbers
+    let existingPurchasesMap = new Map();
+    if (userId) {
+      try {
+        let existingPurchases: any[] = [];
+        const isSitePasswordUser = !user && !!siteUserId;
+        
+        if (isSitePasswordUser) {
+          // For site password users, load from localStorage
+          const localPurchases = localStorage.getItem(`purchases_${userId}`);
+          if (localPurchases) {
+            existingPurchases = JSON.parse(localPurchases);
+          }
+        } else {
+          // For Firebase users, load from Firebase
+          existingPurchases = await getDocuments('purchases');
+          existingPurchases = existingPurchases.filter((p: any) => p.userId === userId);
+        }
+        
+        // Create a map of existing purchases by order number for quick lookup
+        existingPurchases.forEach((p: any) => {
+          if (p.orderNumber) {
+            existingPurchasesMap.set(p.orderNumber, p);
+          }
+        });
+        
+        console.log(`📦 Loaded ${existingPurchasesMap.size} existing purchases from Firebase to preserve tracking numbers`);
+      } catch (error) {
+        console.warn('⚠️ Could not load existing purchases to preserve tracking numbers:', error);
+      }
+    }
+    
     // Transform the data to match expected component format
     const transformPurchaseData = (purchase: any) => {
+      // Check if we have an existing purchase with tracking number
+      const existingPurchase = existingPurchasesMap.get(purchase.orderNumber);
+      
+      // Preserve tracking number from existing purchase if it exists, otherwise use new data
+      const tracking = existingPurchase?.tracking || purchase.tracking || '';
+      
+      // Only set carrier if there's a tracking number
+      let carrier = null;
+      if (tracking && tracking.trim() !== '') {
+        // If we have an existing purchase with a valid carrier, use it
+        if (existingPurchase?.carrier && isValidCarrier(existingPurchase.carrier)) {
+          carrier = existingPurchase.carrier;
+        } else {
+          // Re-detect carrier from tracking number
+          carrier = detectCarrierFromTrackingNumber(tracking);
+        }
+      }
+      // If no tracking number, carrier stays null (will show "-")
+      
       return {
         ...purchase,
         product: {
@@ -590,14 +658,17 @@ const Purchases = () => {
         // Map other fields to expected format
         orderNumber: purchase.orderNumber,
         status: purchase.shippingStatus || purchase.status || 'Ordered',
-        tracking: purchase.tracking || '',
+        tracking: tracking,
+        carrier: carrier, // Use re-detected carrier
         market: purchase.merchant || purchase.market || 'StockX',
         price: purchase.totalAmount ? `$${purchase.totalAmount.toFixed(2)}` : (purchase.price || '$0.00'),
         originalPrice: purchase.totalAmount ? `$${purchase.totalAmount.toFixed(2)} + $0.00` : (purchase.price || '$0.00'),
         purchaseDate: purchase.purchaseDate || purchase.createdAt || new Date().toISOString(),
         dateAdded: purchase.createdAt || new Date().toISOString(),
         verified: purchase.verified || 'pending',
-        verifiedColor: purchase.verifiedColor || 'orange'
+        verifiedColor: purchase.verifiedColor || 'orange',
+        // Preserve the Firebase ID if it exists
+        id: existingPurchase?.id || purchase.id
       };
     };
     
@@ -606,13 +677,15 @@ const Purchases = () => {
       original: allPurchases[0],
       transformed: transformedPurchases[0],
       hasProductSize: !!transformedPurchases[0].product?.size,
-      productSize: transformedPurchases[0].product?.size
+      productSize: transformedPurchases[0].product?.size,
+      hasTracking: !!transformedPurchases[0].tracking,
+      tracking: transformedPurchases[0].tracking
     });
     
     setPurchases(transformedPurchases);
     
     // Combine with manual purchases for totals
-    const combinedPurchases = [...allPurchases, ...manualPurchases];
+    const combinedPurchases = [...transformedPurchases, ...manualPurchases];
     calculateTotals(combinedPurchases);
   };
 
@@ -750,19 +823,98 @@ const Purchases = () => {
           }
         }
         
-        console.log(`🗑️ Cleared ${existingGmailPurchases.length} old Gmail purchases`);
+        // Create a map of existing purchases by order number for quick lookup
+        const existingPurchasesMap = new Map();
+        existingGmailPurchases.forEach((p: any) => {
+          if (p.orderNumber) {
+            existingPurchasesMap.set(p.orderNumber, p);
+          }
+        });
         
-        // Save all current Gmail purchases (deduplicated)
+        console.log(`📋 Found ${existingPurchasesMap.size} existing purchases to check for updates`);
+        
+        // Save or update purchases (preserve manual edits)
         let savedCount = 0;
+        let updatedCount = 0;
+        let createdCount = 0;
         
         for (const purchaseData of purchaseDataList) {
-          console.log(`💾 Saving purchase: ${purchaseData.orderNumber} (${purchaseData.product?.name})`);
-          await addDocument('purchases', purchaseData);
+          const orderNumber = purchaseData.orderNumber;
+          const existingPurchase = existingPurchasesMap.get(orderNumber);
+          
+          if (existingPurchase) {
+            // Purchase exists - update it, preserving manual edits
+            console.log(`🔄 Updating existing purchase: ${orderNumber}`);
+            
+            // Merge new data with existing data, preserving manual edits
+            const updatedPurchase = {
+              ...existingPurchase,
+              // Update with new Gmail data
+              product: purchaseData.product || existingPurchase.product,
+              productName: purchaseData.productName || existingPurchase.productName,
+              status: purchaseData.status || existingPurchase.status,
+              price: purchaseData.price || existingPurchase.price,
+              market: purchaseData.market || existingPurchase.market,
+              purchaseDate: purchaseData.purchaseDate || existingPurchase.purchaseDate,
+              emailSubject: purchaseData.emailSubject || existingPurchase.emailSubject,
+              emailId: purchaseData.emailId || existingPurchase.emailId,
+              emailDate: purchaseData.emailDate || existingPurchase.emailDate,
+              // Preserve manual edits (tracking, notes, etc.)
+              tracking: existingPurchase.tracking || purchaseData.tracking,
+              // Only set carrier if there's a tracking number
+              carrier: (() => {
+                const tracking = existingPurchase.tracking || purchaseData.tracking;
+                if (!tracking || tracking.trim() === '') return null;
+                
+                const existingCarrier = existingPurchase.carrier || purchaseData.carrier;
+                // If carrier is invalid, re-detect
+                if (existingCarrier && !isValidCarrier(existingCarrier)) {
+                  return detectCarrierFromTrackingNumber(tracking);
+                }
+                // Use existing carrier if valid, otherwise detect from tracking
+                return isValidCarrier(existingCarrier) ? existingCarrier : detectCarrierFromTrackingNumber(tracking);
+              })(),
+              notes: existingPurchase.notes,
+              manualEdits: existingPurchase.manualEdits,
+              // Update sync timestamp
+              syncedAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            };
+            
+            await updateDocument('purchases', existingPurchase.id, updatedPurchase);
+            updatedCount++;
+            console.log(`✅ Updated purchase ${updatedCount}/${purchaseDataList.length}: ${orderNumber}`);
+          } else {
+            // New purchase - create it
+            console.log(`💾 Creating new purchase: ${orderNumber} (${purchaseData.product?.name})`);
+            await addDocument('purchases', purchaseData);
+            createdCount++;
+            console.log(`✅ Created purchase ${createdCount}/${purchaseDataList.length}: ${orderNumber}`);
+          }
           savedCount++;
-          console.log(`✅ Saved purchase ${savedCount}/${purchaseDataList.length}: ${purchaseData.orderNumber}`);
         }
         
-        console.log(`✅ Gmail purchases saved to Firebase: ${savedCount} unique purchases`);
+        // Delete purchases that are no longer in Gmail (optional cleanup)
+        const syncedOrderNumbers = new Set(purchaseDataList.map((p: any) => p.orderNumber));
+        const purchasesToDelete = existingGmailPurchases.filter(
+          (p: any) => p.orderNumber && !syncedOrderNumbers.has(p.orderNumber)
+        );
+        
+        if (purchasesToDelete.length > 0) {
+          console.log(`🗑️ Found ${purchasesToDelete.length} purchases no longer in Gmail - deleting...`);
+          for (const oldPurchase of purchasesToDelete) {
+            try {
+              if (oldPurchase.userId === userId || !oldPurchase.userId) {
+                await deleteDocument('purchases', oldPurchase.id);
+                console.log(`🗑️ Deleted purchase no longer in Gmail: ${oldPurchase.orderNumber}`);
+              }
+            } catch (error) {
+              console.warn(`⚠️ Could not delete purchase ${oldPurchase.id}:`, error);
+            }
+          }
+        }
+        
+        console.log(`✅ Gmail sync complete: ${createdCount} created, ${updatedCount} updated, ${purchasesToDelete.length} deleted`);
       }
       
     } catch (error) {
@@ -1001,27 +1153,56 @@ const Purchases = () => {
       
       // Transform Firebase data to expected component format
       const transformPurchaseData = (purchase: any) => {
+        // Log purchase data for debugging
+        console.log(`🔍 Transforming purchase: ${purchase.orderNumber}`, {
+          tracking: purchase.tracking,
+          carrier: purchase.carrier,
+          hasTracking: !!(purchase.tracking && purchase.tracking.trim() !== '')
+        });
+        
+        // Clean up invalid carrier values
+        const cleanedPurchase = cleanupCarrier(purchase);
+        
+        console.log(`✅ After cleanup:`, {
+          orderNumber: purchase.orderNumber,
+          originalCarrier: purchase.carrier,
+          cleanedCarrier: cleanedPurchase.carrier,
+          wasChanged: purchase.carrier !== cleanedPurchase.carrier
+        });
+        
+        // Update Firebase if carrier was cleaned up
+        if (cleanedPurchase.carrier !== purchase.carrier && purchase.id) {
+          console.log(`💾 Updating carrier in Firebase for ${purchase.orderNumber}: ${purchase.carrier} → ${cleanedPurchase.carrier}`);
+          updateDocument('purchases', purchase.id, { carrier: cleanedPurchase.carrier }, true).catch(err => {
+            console.warn('Could not update carrier in Firebase:', err);
+          });
+        }
+        
+        const tracking = cleanedPurchase.tracking || '';
+        const carrier = cleanedPurchase.carrier;
+        
         return {
-          ...purchase,
+          ...cleanedPurchase,
           product: {
-            name: purchase.productName || purchase.product?.name || 'Unknown Product',
-            brand: purchase.brand || purchase.product?.brand || 'Unknown Brand',
-            size: purchase.size || purchase.product?.size || 'Unknown Size',
-            image: purchase.productImageUrl || purchase.product?.image || `https://picsum.photos/200/200?random=${purchase.id?.substring(0, 4) || '1'}`,
-            bgColor: purchase.product?.bgColor || 'bg-gray-500',
-            color: purchase.product?.color || 'gray'
+            name: cleanedPurchase.productName || cleanedPurchase.product?.name || 'Unknown Product',
+            brand: cleanedPurchase.brand || cleanedPurchase.product?.brand || 'Unknown Brand',
+            size: cleanedPurchase.size || cleanedPurchase.product?.size || 'Unknown Size',
+            image: cleanedPurchase.productImageUrl || cleanedPurchase.product?.image || `https://picsum.photos/200/200?random=${cleanedPurchase.id?.substring(0, 4) || '1'}`,
+            bgColor: cleanedPurchase.product?.bgColor || 'bg-gray-500',
+            color: cleanedPurchase.product?.color || 'gray'
           },
           // Map other fields to expected format
-          orderNumber: purchase.orderNumber,
-          status: purchase.shippingStatus || purchase.status || 'Ordered',
-          tracking: purchase.tracking || '',
-          market: purchase.merchant || purchase.market || 'StockX',
-          price: purchase.totalAmount ? `$${purchase.totalAmount.toFixed(2)}` : (purchase.price || '$0.00'),
-          originalPrice: purchase.totalAmount ? `$${purchase.totalAmount.toFixed(2)} + $0.00` : (purchase.price || '$0.00'),
-          purchaseDate: purchase.purchaseDate || purchase.createdAt || new Date().toISOString(),
-          dateAdded: purchase.createdAt || new Date().toISOString(),
-          verified: purchase.verified || 'pending',
-          verifiedColor: purchase.verifiedColor || 'orange'
+          orderNumber: cleanedPurchase.orderNumber,
+          status: cleanedPurchase.shippingStatus || cleanedPurchase.status || 'Ordered',
+          tracking: tracking,
+          carrier: carrier, // Will be null if no tracking or invalid, will show "-"
+          market: cleanedPurchase.merchant || cleanedPurchase.market || 'StockX',
+          price: cleanedPurchase.totalAmount ? `$${cleanedPurchase.totalAmount.toFixed(2)}` : (cleanedPurchase.price || '$0.00'),
+          originalPrice: cleanedPurchase.totalAmount ? `$${cleanedPurchase.totalAmount.toFixed(2)} + $0.00` : (cleanedPurchase.price || '$0.00'),
+          purchaseDate: cleanedPurchase.purchaseDate || cleanedPurchase.createdAt || new Date().toISOString(),
+          dateAdded: cleanedPurchase.createdAt || new Date().toISOString(),
+          verified: cleanedPurchase.verified || 'pending',
+          verifiedColor: cleanedPurchase.verifiedColor || 'orange'
         };
       };
 
@@ -1497,6 +1678,92 @@ const Purchases = () => {
     return 'orange';
   };
 
+  // Helper function to check if a carrier value is valid
+  const isValidCarrier = (carrier: string | null | undefined): boolean => {
+    if (!carrier) return false;
+    const carrierLower = carrier.toLowerCase().trim();
+    
+    // Filter out invalid carriers (stockx, StockX Logistics, etc.)
+    // Log for debugging
+    if (carrierLower.includes('stockx')) {
+      console.log(`❌ Invalid carrier detected: "${carrier}"`);
+      return false;
+    }
+    
+    // Valid carriers (case-insensitive)
+    const validCarriers = ['ups', 'fedex', 'usps', 'dhl', 'amazon', 'ontrac', 'lasership'];
+    const isValid = validCarriers.includes(carrierLower);
+    
+    if (!isValid) {
+      console.log(`⚠️ Unknown carrier: "${carrier}"`);
+    }
+    
+    return isValid;
+  };
+
+  // Helper function to clean up invalid carrier values in a purchase
+  const cleanupCarrier = (purchase: any): any => {
+    const tracking = purchase.tracking || '';
+    const carrier = purchase.carrier;
+    
+    console.log(`🧹 cleanupCarrier for ${purchase.orderNumber}:`, { tracking, carrier });
+    
+    // If no tracking number, carrier should be null
+    if (!tracking || tracking.trim() === '') {
+      console.log(`  → No tracking, setting carrier to null`);
+      return { ...purchase, carrier: null };
+    }
+    
+    // If carrier is invalid, try to detect from tracking number
+    if (carrier && !isValidCarrier(carrier)) {
+      console.log(`  → Invalid carrier "${carrier}", detecting from tracking...`);
+      const detectedCarrier = detectCarrierFromTrackingNumber(tracking);
+      console.log(`  → Detected carrier: ${detectedCarrier}`);
+      return { ...purchase, carrier: detectedCarrier };
+    }
+    
+    // If no carrier but we have tracking, try to detect
+    if (!carrier) {
+      console.log(`  → No carrier, detecting from tracking...`);
+      const detectedCarrier = detectCarrierFromTrackingNumber(tracking);
+      console.log(`  → Detected carrier: ${detectedCarrier}`);
+      return { ...purchase, carrier: detectedCarrier };
+    }
+    
+    console.log(`  → Carrier is valid, keeping: ${carrier}`);
+    return purchase;
+  };
+
+  // Helper function to detect carrier from tracking number
+  const detectCarrierFromTrackingNumber = (trackingNumber: string): string | null => {
+    if (!trackingNumber || trackingNumber.trim() === '') {
+      return null;
+    }
+    
+    const cleanTracking = trackingNumber.replace(/[\s\-_]/g, '').toUpperCase();
+    
+    // UPS: Starts with 1Z and is 15-18 characters after 1Z (total 17-20)
+    if (/^1Z[0-9A-Z]{15,18}$/.test(cleanTracking)) return 'UPS';
+    
+    // FedEx: 12-15 digits (most common), or 20+ digits (some formats)
+    if (/^[0-9]{12,15}$/.test(cleanTracking)) return 'FedEx';
+    if (/^[0-9]{20,}$/.test(cleanTracking)) return 'FedEx';
+    
+    // USPS: 20-22 digits starting with 9, or 13 digits starting with 9
+    if (/^9[0-9]{19,21}$/.test(cleanTracking)) return 'USPS';
+    if (/^9[0-9]{12}$/.test(cleanTracking)) return 'USPS';
+    
+    // DHL: 10 digits, or starts with DHL
+    if (/^[0-9]{10}$/.test(cleanTracking)) return 'DHL';
+    if (/^DHL[0-9A-Z]+$/.test(cleanTracking)) return 'DHL';
+    
+    // Amazon: Various formats
+    if (/^TBA[0-9A-Z]+$/.test(cleanTracking)) return 'Amazon';
+    if (/^AMZN[0-9A-Z]+$/.test(cleanTracking)) return 'Amazon';
+    
+    return null; // Return null if can't detect (will show as "-")
+  };
+
   // Check if tracking number looks suspicious (might be incorrect)
   const isTrackingSuspicious = (tracking: string, carrier?: string): boolean => {
     if (!tracking || tracking.trim() === '') return false;
@@ -1609,14 +1876,14 @@ const Purchases = () => {
     try {
       console.log(`🤖 Extracting tracking for order: ${purchase.orderNumber}`);
       
-      const response = await fetch('/api/stockx/extract-tracking', {
+      // Use Gmail → StockX → FedEx flow for more accurate tracking extraction
+      const response = await fetch('/api/gmail/extract-tracking-via-gmail', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          orderNumber: purchase.orderNumber,
-          stockxOrderUrl: purchase.stockxOrderUrl // If available
+          orderNumber: purchase.orderNumber
         }),
       });
 
@@ -1630,11 +1897,14 @@ const Purchases = () => {
           errorMessage = 'StockX requires login. Please log in to StockX in your browser, then try again.';
         } else if (response.status === 404) {
           errorMessage = `Order not found or tracking not available. ${data.error || ''}`;
-        } else if (data.debug) {
-          // Include debug info in development
-          if (process.env.NODE_ENV === 'development') {
-            console.log('Debug info:', data.debug);
-          }
+        } else if (data.suggestion) {
+          // Include suggestion in error message
+          errorMessage = `${errorMessage}. ${data.suggestion}`;
+        }
+        
+        // Include debug info in development
+        if (data.debug && process.env.NODE_ENV === 'development') {
+          console.log('Debug info:', data.debug);
         }
         
         throw new Error(errorMessage);
@@ -1675,10 +1945,11 @@ const Purchases = () => {
           const userId = user?.uid || siteUserId;
           if (userId && updatedPurchase.id) {
             try {
-              await updateDocument('user_purchases', updatedPurchase.id, {
+              // Use 'purchases' collection to match where we load from
+              await updateDocument('purchases', updatedPurchase.id, {
                 tracking: data.trackingNumber,
                 carrier: data.carrier
-              });
+              }, true); // Use merge: true to only update these fields
               console.log(`✅ Saved tracking to Firebase: ${data.trackingNumber}`);
             } catch (error) {
               console.error('Error saving tracking to Firebase:', error);
@@ -1725,23 +1996,87 @@ const Purchases = () => {
 
     // Validate tracking number format (optional - allow any input)
     if (trackingNumber === '') {
-      // Allow clearing tracking number
+      // Allow clearing tracking number - also clear carrier
+      const updatedPurchase = {
+        ...purchase,
+        tracking: '',
+        carrier: null
+      };
+      
+      // Update in state
+      const allPurchases = [...purchases, ...manualPurchases];
+      const purchaseIndex = allPurchases.findIndex(p => 
+        (p.id && p.id === purchase.id) || 
+        (p.orderNumber === purchase.orderNumber)
+      );
+
+      if (purchaseIndex !== -1) {
+        let updatedPurchases = [...purchases];
+        let updatedManualPurchases = [...manualPurchases];
+        
+        if (purchaseIndex < purchases.length) {
+          updatedPurchases[purchaseIndex] = updatedPurchase;
+          setPurchases(updatedPurchases);
+        } else {
+          updatedManualPurchases[purchaseIndex - purchases.length] = updatedPurchase;
+          setManualPurchases(updatedManualPurchases);
+        }
+
+        // Save to Firebase OR localStorage depending on auth type
+        const siteUserId = localStorage.getItem('siteUserId');
+        const userId = user?.uid || siteUserId;
+        
+        if (user && updatedPurchase.id) {
+          // Firebase authenticated user - save to Firebase
+          try {
+            await updateDocument('purchases', updatedPurchase.id, {
+              tracking: '',
+              carrier: null
+            }, true);
+            console.log(`✅ Cleared tracking in Firebase`);
+          } catch (error) {
+            console.error('Error saving to Firebase:', error);
+            setNotification({
+              isVisible: true,
+              message: `Tracking cleared locally but failed to save to Firebase: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              type: 'error'
+            });
+          }
+        } else if (siteUserId) {
+          // Site password user - save to localStorage
+          try {
+            const allPurchasesForStorage = [...updatedPurchases, ...updatedManualPurchases];
+            const storageKey = `purchases_${siteUserId}`;
+            localStorage.setItem(storageKey, JSON.stringify(allPurchasesForStorage));
+            console.log(`✅ Cleared tracking in localStorage`);
+            console.log(`📦 Total purchases in storage: ${allPurchasesForStorage.length}`);
+          } catch (error) {
+            console.error('Error saving to localStorage:', error);
+            setNotification({
+              isVisible: true,
+              message: `Failed to save to localStorage: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              type: 'error'
+            });
+          }
+        } else {
+          console.warn('⚠️ Cannot save: missing userId', { userId, purchaseId: updatedPurchase.id });
+        }
+      }
+      
       setEditingTracking(null);
       setEditingTrackingValue('');
       return;
     }
 
     try {
-      // Update the purchase with tracking number
+      // Auto-detect carrier from tracking number (only if tracking number exists)
+      const detectedCarrier = trackingNumber ? detectCarrierFromTrackingNumber(trackingNumber) : null;
+      
+      // Update the purchase with tracking number and detected carrier (null if can't detect)
       const updatedPurchase = {
         ...purchase,
         tracking: trackingNumber,
-        // Try to detect carrier from tracking format
-        carrier: trackingNumber.startsWith('1Z') && trackingNumber.length === 18 
-          ? 'UPS' 
-          : /^\d{10,22}$/.test(trackingNumber) 
-            ? 'FedEx' 
-            : purchase.carrier || 'Unknown'
+        carrier: detectedCarrier // Will be null if can't detect, which will show "-"
       };
 
       // Update in state
@@ -1752,31 +2087,57 @@ const Purchases = () => {
       );
 
       if (purchaseIndex !== -1) {
+        let updatedPurchases = [...purchases];
+        let updatedManualPurchases = [...manualPurchases];
+        
         if (purchaseIndex < purchases.length) {
           // Update in purchases
-          const updatedPurchases = [...purchases];
           updatedPurchases[purchaseIndex] = updatedPurchase;
           setPurchases(updatedPurchases);
         } else {
           // Update in manualPurchases
-          const updatedManualPurchases = [...manualPurchases];
           updatedManualPurchases[purchaseIndex - purchases.length] = updatedPurchase;
           setManualPurchases(updatedManualPurchases);
         }
 
-        // Save to Firebase
+        // Save to Firebase OR localStorage depending on auth type
         const siteUserId = localStorage.getItem('siteUserId');
         const userId = user?.uid || siteUserId;
-        if (userId && updatedPurchase.id) {
+        
+        if (user && updatedPurchase.id) {
+          // Firebase authenticated user - save to Firebase
           try {
-            await updateDocument('user_purchases', updatedPurchase.id, {
+            await updateDocument('purchases', updatedPurchase.id, {
               tracking: trackingNumber,
               carrier: updatedPurchase.carrier
-            });
-            console.log(`✅ Saved tracking to Firebase: ${trackingNumber}`);
+            }, true);
+            console.log(`✅ Saved tracking to Firebase: ${trackingNumber} (carrier: ${updatedPurchase.carrier || 'null'})`);
           } catch (error) {
             console.error('Error saving tracking to Firebase:', error);
+            setNotification({
+              isVisible: true,
+              message: `Tracking saved locally but failed to save to Firebase: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              type: 'error'
+            });
           }
+        } else if (siteUserId) {
+          // Site password user - save to localStorage
+          try {
+            const allPurchasesForStorage = [...updatedPurchases, ...updatedManualPurchases];
+            const storageKey = `purchases_${siteUserId}`;
+            localStorage.setItem(storageKey, JSON.stringify(allPurchasesForStorage));
+            console.log(`✅ Saved tracking to localStorage: ${trackingNumber} (carrier: ${updatedPurchase.carrier || 'null'})`);
+            console.log(`📦 Total purchases in storage: ${allPurchasesForStorage.length}`);
+          } catch (error) {
+            console.error('Error saving to localStorage:', error);
+            setNotification({
+              isVisible: true,
+              message: `Failed to save to localStorage: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              type: 'error'
+            });
+          }
+        } else {
+          console.warn('⚠️ Cannot save: missing userId', { userId, purchaseId: updatedPurchase.id });
         }
       }
 
@@ -1984,9 +2345,6 @@ const Purchases = () => {
 
   return (
     <div className={`flex-1 ${currentTheme.colors.background} p-8`}>
-      {/* Background Sync Progress Indicator */}
-      <SyncProgressIndicator onPurchasesUpdate={handleBackgroundPurchasesUpdate} />
-      
       {/* Gmail Connection Status */}
       <div className="mb-6 space-y-4">
         <GmailConnector 
@@ -2041,47 +2399,6 @@ const Purchases = () => {
                 <span>Historical Sync</span>
               </button>
             )}
-            {gmailConnected && purchases.length > 0 && (
-              <button
-                onClick={manualStatusUpdate}
-                disabled={loading || isUpdatingStatus}
-                className={`flex items-center space-x-2 ${
-                  currentTheme.name === 'Neon' 
-                    ? 'bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 shadow-lg hover:shadow-yellow-500/25' 
-                    : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-lg hover:shadow-amber-500/25'
-                } disabled:opacity-50 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200`}
-              >
-                <RefreshCw className={`w-5 h-5 ${isUpdatingStatus ? 'animate-spin' : ''}`} />
-                <span>{isUpdatingStatus ? 'Updating...' : 'Update Status'}</span>
-              </button>
-            )}
-            {/* Refresh Firebase Data Button - Reloads from database */}
-            <button
-              onClick={refreshAllPurchases}
-              className={`flex items-center space-x-2 ${
-                currentTheme.name === 'Neon' 
-                  ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 shadow-lg hover:shadow-blue-500/25' 
-                  : 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 shadow-lg hover:shadow-blue-500/25'
-              } disabled:opacity-50 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200`}
-              title="Reload purchases from database (does not sync Gmail)"
-            >
-              <RefreshCw className="w-5 h-5" />
-              <span>Reload from DB</span>
-            </button>
-            
-            {/* Clear All Purchases Button */}
-            <button
-              onClick={handleResetClick}
-              className={`flex items-center space-x-2 ${
-                currentTheme.name === 'Neon' 
-                  ? 'bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30' 
-                  : 'bg-red-600 hover:bg-red-700 text-white'
-              } px-4 py-2 rounded-lg font-medium transition-all duration-200`}
-              title="Clear all purchases from database (keeps Gmail connected)"
-            >
-              <Trash2 className="w-5 h-5" />
-              <span>Clear All</span>
-            </button>
             {/* Export Dropdown - Always visible */}
             <div className="relative export-dropdown">
               <button
@@ -2137,6 +2454,21 @@ const Purchases = () => {
               )}
             </div>
             
+            {gmailConnected && (
+              <button
+                onClick={refreshPurchases}
+                disabled={loading}
+                className={`flex items-center space-x-2 ${
+                  currentTheme.name === 'Neon' 
+                    ? 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 shadow-lg hover:shadow-indigo-500/25' 
+                    : 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 shadow-lg hover:shadow-indigo-500/25'
+                } disabled:opacity-50 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200`}
+              >
+                <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+                <span>Sync Gmail</span>
+              </button>
+            )}
+            
             <button
               onClick={() => setShowAddPurchaseModal(true)}
               className={`flex items-center space-x-2 ${
@@ -2149,21 +2481,55 @@ const Purchases = () => {
               <span>Add Purchase</span>
             </button>
             
-            {gmailConnected && (
+            {/* More Actions Dropdown */}
+            <div className="relative more-actions-dropdown">
               <button
-                onClick={refreshPurchases}
-                disabled={loading}
+                onClick={() => setShowMoreActionsDropdown(!showMoreActionsDropdown)}
                 className={`flex items-center space-x-2 ${
                   currentTheme.name === 'Neon' 
-                    ? 'bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 shadow-lg hover:shadow-blue-500/25' 
-                    : 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-lg hover:shadow-blue-500/25'
-                } text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed`}
-                title="Sync purchases from Gmail"
+                    ? 'bg-white/10 hover:bg-white/20 text-gray-300 border border-white/20' 
+                    : 'bg-gray-600 hover:bg-gray-700 text-white'
+                } px-4 py-2 rounded-lg font-medium transition-all duration-200`}
               >
-                <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
-                <span>Sync Gmail</span>
+                <MoreHorizontal className="w-5 h-5" />
+                <span>More Actions</span>
+                <ChevronDown className="w-4 h-4" />
               </button>
-            )}
+              
+              {showMoreActionsDropdown && (
+                <div className={`absolute right-0 mt-2 w-56 ${currentTheme.name === 'Neon' ? 'bg-gray-900' : 'bg-white'} ${currentTheme.colors.border} border rounded-lg shadow-xl z-50`}>
+                  <div className="py-2">
+                    {gmailConnected && purchases.length > 0 && (
+                      <button
+                        onClick={() => {
+                          manualStatusUpdate();
+                          setShowMoreActionsDropdown(false);
+                        }}
+                        disabled={loading || isUpdatingStatus}
+                        className={`w-full flex items-center space-x-3 px-4 py-2 text-sm hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed ${
+                          currentTheme.name === 'Neon' ? 'hover:bg-white/10 text-gray-300' : 'text-gray-700'
+                        }`}
+                      >
+                        <RefreshCw className={`w-4 h-4 ${isUpdatingStatus ? 'animate-spin' : ''}`} />
+                        <span>{isUpdatingStatus ? 'Updating...' : 'Update Status'}</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        handleResetClick();
+                        setShowMoreActionsDropdown(false);
+                      }}
+                      className={`w-full flex items-center space-x-3 px-4 py-2 text-sm hover:bg-gray-100 ${
+                        currentTheme.name === 'Neon' ? 'hover:bg-red-500/20 text-red-400' : 'text-red-600 hover:bg-red-50'
+                      }`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      <span>Clear All</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
             
             <button
               onClick={() => setShowEmailSettings(true)}
@@ -2260,6 +2626,34 @@ const Purchases = () => {
                   className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
                     currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
                   } transition-colors`} 
+                  style={{ width: `${columnWidths.status}px` }}
+                  onClick={() => handleSort('status')}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      Status
+                      <SortIcon column="status" />
+                    </div>
+                  </div>
+                  <div 
+                    className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                    } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      handleMouseDown(e, 'status');
+                    }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      handleDoubleClickResize('status', 'Status');
+                    }}
+                    title="Drag to resize column, double-click to auto-fit"
+                  />
+                </th>
+                <th 
+                  className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                  } transition-colors`} 
                   style={{ width: `${columnWidths.orderNumber}px` }}
                   onClick={() => handleSort('orderNumber')}
                 >
@@ -2288,13 +2682,13 @@ const Purchases = () => {
                   className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
                     currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
                   } transition-colors`} 
-                  style={{ width: `${columnWidths.status}px` }}
-                  onClick={() => handleSort('status')}
+                  style={{ width: `${columnWidths.size}px` }}
+                  onClick={() => handleSort('size')}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center">
-                      Status / Delivery
-                      <SortIcon column="status" />
+                      Size
+                      <SortIcon column="size" />
                     </div>
                   </div>
                   <div 
@@ -2303,11 +2697,39 @@ const Purchases = () => {
                     } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
                     onMouseDown={(e) => {
                       e.stopPropagation();
-                      handleMouseDown(e, 'status');
+                      handleMouseDown(e, 'size');
                     }}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
-                      handleDoubleClickResize('status', 'Status');
+                      handleDoubleClickResize('size', 'Size');
+                    }}
+                    title="Drag to resize column, double-click to auto-fit"
+                  />
+                </th>
+                <th 
+                  className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                  } transition-colors`} 
+                  style={{ width: `${columnWidths.styleId}px` }}
+                  onClick={() => handleSort('styleId')}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      Style ID
+                      <SortIcon column="styleId" />
+                    </div>
+                  </div>
+                  <div 
+                    className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                    } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      handleMouseDown(e, 'styleId');
+                    }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      handleDoubleClickResize('styleId', 'Style ID');
                     }}
                     title="Drag to resize column, double-click to auto-fit"
                   />
@@ -2344,13 +2766,13 @@ const Purchases = () => {
                   className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
                     currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
                   } transition-colors`} 
-                  style={{ width: `${columnWidths.market}px` }}
-                  onClick={() => handleSort('market')}
+                  style={{ width: `${columnWidths.carrier}px` }}
+                  onClick={() => handleSort('carrier')}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center">
-                      Market
-                      <SortIcon column="market" />
+                      Carrier
+                      <SortIcon column="carrier" />
                     </div>
                   </div>
                   <div 
@@ -2359,11 +2781,11 @@ const Purchases = () => {
                     } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
                     onMouseDown={(e) => {
                       e.stopPropagation();
-                      handleMouseDown(e, 'market');
+                      handleMouseDown(e, 'carrier');
                     }}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
-                      handleDoubleClickResize('market', 'Market');
+                      handleDoubleClickResize('carrier', 'Carrier');
                     }}
                     title="Drag to resize column, double-click to auto-fit"
                   />
@@ -2372,12 +2794,12 @@ const Purchases = () => {
                   className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
                     currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
                   } transition-colors`} 
-                  style={{ width: `${columnWidths.price}px` }}
+                  style={{ width: `${columnWidths.total}px` }}
                   onClick={() => handleSort('price')}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center">
-                      Price
+                      Total
                       <SortIcon column="price" />
                     </div>
                   </div>
@@ -2387,11 +2809,11 @@ const Purchases = () => {
                     } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
                     onMouseDown={(e) => {
                       e.stopPropagation();
-                      handleMouseDown(e, 'price');
+                      handleMouseDown(e, 'total');
                     }}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
-                      handleDoubleClickResize('price', 'Price');
+                      handleDoubleClickResize('total', 'Total');
                     }}
                     title="Drag to resize column, double-click to auto-fit"
                   />
@@ -2425,68 +2847,12 @@ const Purchases = () => {
                   />
                 </th>
                 <th 
-                  className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
-                    currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
-                  } transition-colors`} 
-                  style={{ width: `${columnWidths.dateAdded}px` }}
-                  onClick={() => handleSort('dateAdded')}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      Date Added
-                      <SortIcon column="dateAdded" />
-                    </div>
-                  </div>
-                  <div 
-                    className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
-                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
-                    } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
-                    onMouseDown={(e) => {
-                      e.stopPropagation();
-                      handleMouseDown(e, 'dateAdded');
-                    }}
-                    onDoubleClick={(e) => {
-                      e.stopPropagation();
-                      handleDoubleClickResize('dateAdded', 'Date Added');
-                    }}
-                    title="Drag to resize column, double-click to auto-fit"
-                  />
-                </th>
-                <th 
-                  className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
-                    currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
-                  } transition-colors`} 
-                  style={{ width: `${columnWidths.verified}px` }}
-                  onClick={() => handleSort('verified')}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      Verified
-                      <SortIcon column="verified" />
-                    </div>
-                  </div>
-                  <div 
-                    className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
-                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
-                    } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
-                    onMouseDown={(e) => {
-                      e.stopPropagation();
-                      handleMouseDown(e, 'verified');
-                    }}
-                    onDoubleClick={(e) => {
-                      e.stopPropagation();
-                      handleDoubleClickResize('verified', 'Verified');
-                    }}
-                    title="Drag to resize column, double-click to auto-fit"
-                  />
-                </th>
-                <th 
                   className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`} 
-                  style={{ width: `${columnWidths.edit}px` }}
+                  style={{ width: `${columnWidths.actions}px` }}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center">
-                      Edit
+                      Actions
                     </div>
                   </div>
                   <div 
@@ -2495,11 +2861,11 @@ const Purchases = () => {
                     } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
                     onMouseDown={(e) => {
                       e.stopPropagation();
-                      handleMouseDown(e, 'edit');
+                      handleMouseDown(e, 'actions');
                     }}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
-                      handleDoubleClickResize('edit', 'Edit');
+                      handleDoubleClickResize('actions', 'Actions');
                     }}
                     title="Drag to resize column, double-click to auto-fit"
                   />
@@ -2562,10 +2928,15 @@ const Purchases = () => {
                           {purchase.product?.name || 'Unknown Product'}
                         </div>
                         <div className={`text-xs ${currentTheme.colors.textSecondary}`} style={{ wordBreak: 'break-word' }}>
-                          {purchase.product?.brand || 'Unknown Brand'} • {purchase.product?.size || 'Unknown Size'}
+                          {purchase.product?.brand || 'Unknown Brand'}
                         </div>
                       </div>
                     </div>
+                  </td>
+                  <td className="px-6 py-2 align-middle">
+                    <span className={getStatusBadge(purchase.status, deriveStatusColor(purchase.status, purchase.statusColor))}>
+                      {purchase.status}
+                    </span>
                   </td>
                   <td className="px-6 py-2 align-middle">
                     <a 
@@ -2578,8 +2949,13 @@ const Purchases = () => {
                     </a>
                   </td>
                   <td className="px-6 py-2 align-middle">
-                    <span className={getStatusBadge(purchase.status, deriveStatusColor(purchase.status, purchase.statusColor))}>
-                      {purchase.status}
+                    <span className={`text-sm ${currentTheme.colors.textPrimary}`}>
+                      {purchase.product?.size || purchase.size || '—'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-2 align-middle">
+                    <span className={`text-sm font-mono ${currentTheme.colors.textPrimary}`}>
+                      {purchase.styleId || purchase.style_id || '—'}
                     </span>
                   </td>
                   <td className="px-6 py-2 align-middle">
@@ -2630,76 +3006,63 @@ const Purchases = () => {
                     ) : purchase.tracking && purchase.tracking.trim() !== '' ? (
                       // Display mode with tracking
                       isTrackingSuspicious(purchase.tracking, purchase.carrier) ? (
-                        // Suspicious tracking - show Gmail link instead
-                        <a
-                          href={generateGmailShippedEmailUrl(purchase.orderNumber)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={`${currentTheme.colors.accent} text-sm hover:underline transition-colors cursor-pointer flex items-center gap-1`}
-                          title="Tracking number may be incorrect. Click to open shipped email in Gmail">
-                          <Mail className="w-3 h-3" />
-                          View Shipped Email
-                        </a>
-                      ) : (
-                        // Valid tracking - show normally
+                        // Suspicious tracking - show edit button and Gmail link
                         <div className="flex items-center gap-2">
                           <button 
                             onClick={() => handleStartEditTracking(purchase)}
                             className={`${currentTheme.colors.accent} text-sm hover:underline transition-colors cursor-pointer`}
-                            title="Click to edit">
+                            title="Click to edit tracking number">
                             {purchase.tracking}
                           </button>
-                          <button
-                            onClick={() => handleExtractTracking(purchase)}
-                            disabled={extractingTracking.has(purchase.id || purchase.orderNumber)}
-                            className={`text-xs px-1.5 py-0.5 rounded transition-colors ${
-                              extractingTracking.has(purchase.id || purchase.orderNumber)
-                                ? 'bg-gray-400 cursor-not-allowed text-white'
-                                : `${currentTheme.name === 'Neon' ? 'bg-cyan-500 hover:bg-cyan-600' : 'bg-blue-500 hover:bg-blue-600'} text-white hover:shadow-md`
-                            }`}
-                            title="Refresh tracking number from StockX"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleExtractTracking(purchase);
-                            }}>
-                            {extractingTracking.has(purchase.id || purchase.orderNumber) ? (
-                              <RefreshCw className="w-3 h-3 animate-spin" />
-                            ) : (
-                              <RefreshCw className="w-3 h-3" />
-                            )}
-                          </button>
+                          <a
+                            href={generateGmailShippedEmailUrl(purchase.orderNumber)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={`${currentTheme.colors.accent} text-xs hover:underline transition-colors cursor-pointer flex items-center gap-1`}
+                            title="Tracking number may be incorrect. Click to open shipped email in Gmail">
+                            <Mail className="w-3 h-3" />
+                            View Email
+                          </a>
                         </div>
+                      ) : (
+                        // Valid tracking - show normally with edit option
+                        <button 
+                          onClick={() => handleStartEditTracking(purchase)}
+                          className={`${currentTheme.colors.accent} text-sm hover:underline transition-colors cursor-pointer`}
+                          title="Click to edit">
+                          {purchase.tracking}
+                        </button>
                       )
                     ) : purchase.status?.toLowerCase() === 'ordered' ? (
                       // Ordered status - no tracking yet
+                      <button
+                        onClick={() => handleStartEditTracking(purchase)}
+                        className={`text-sm ${currentTheme.colors.textSecondary} hover:underline cursor-pointer`}
+                        title="Click to add tracking number">
+                        Not Shipped Yet
+                      </button>
+                    ) : (purchase.status?.toLowerCase() === 'shipped' || purchase.status?.toLowerCase() === 'delivered') ? (
+                      // Shipped/Delivered but no tracking - show "Add Tracking" button and "View Shipped Email" link
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => handleStartEditTracking(purchase)}
-                          className={`text-sm ${currentTheme.colors.textSecondary} hover:underline cursor-pointer`}
-                          title="Click to add tracking number">
-                          Not Shipped Yet
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleExtractTracking(purchase);
-                          }}
-                          disabled={extractingTracking.has(purchase.id || purchase.orderNumber)}
                           className={`text-xs px-2 py-1 rounded transition-colors ${
-                            extractingTracking.has(purchase.id || purchase.orderNumber)
-                              ? 'bg-gray-400 cursor-not-allowed text-white'
-                              : `${currentTheme.name === 'Neon' ? 'bg-cyan-500 hover:bg-cyan-600' : 'bg-blue-500 hover:bg-blue-600'} text-white hover:shadow-md`
-                          }`}
-                          title="Check if tracking is available on StockX">
-                          {extractingTracking.has(purchase.id || purchase.orderNumber) ? (
-                            <span className="flex items-center gap-1">
-                              <RefreshCw className="w-3 h-3 animate-spin" />
-                              Checking...
-                            </span>
-                          ) : (
-                            'Check'
-                          )}
+                            currentTheme.name === 'Neon' ? 'bg-cyan-500 hover:bg-cyan-600' : 'bg-blue-500 hover:bg-blue-600'
+                          } text-white hover:shadow-md`}
+                          title="Click to add tracking number">
+                          Add Tracking
                         </button>
+                        <a
+                          href={generateGmailShippedEmailUrl(purchase.orderNumber)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={`${currentTheme.colors.accent} text-xs hover:underline transition-colors cursor-pointer flex items-center gap-1`}
+                          title="Click to open shipped email in Gmail and manually add tracking number"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Mail className="w-3 h-3" />
+                          View Email
+                        </a>
                       </div>
                     ) : (
                       // No tracking - show add button
@@ -2714,13 +3077,45 @@ const Purchases = () => {
                     )}
                   </td>
                   <td className="px-6 py-2 align-middle">
-                    <span className={`text-sm ${currentTheme.colors.textPrimary} font-medium`}>
-                      {purchase.market}
+                    <span className={`text-sm ${currentTheme.colors.textPrimary}`}>
+                      {(() => {
+                        // Show "-" if no tracking number
+                        const tracking = purchase.tracking;
+                        const carrier = purchase.carrier;
+                        
+                        // Debug log what we're about to render
+                        if (carrier && carrier.toLowerCase().includes('stockx')) {
+                          console.error(`🚨 RENDERING STOCKX CARRIER:`, {
+                            orderNumber: purchase.orderNumber,
+                            tracking,
+                            carrier,
+                            purchaseObject: purchase
+                          });
+                        }
+                        
+                        if (!tracking || tracking.trim() === '') {
+                          return '-';
+                        }
+                        // Filter out invalid carriers and show "-" if invalid
+                        // Double-check: if carrier contains "stockx" in any form, show "-"
+                        if (!carrier || 
+                            !isValidCarrier(carrier) ||
+                            (typeof carrier === 'string' && carrier.toLowerCase().includes('stockx'))) {
+                          return '-';
+                        }
+                        // Show valid carrier
+                        return carrier;
+                      })()}
                     </span>
                   </td>
                   <td className="px-6 py-2 align-middle">
-                    <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>{purchase.price}</div>
-                    <div className={`text-xs ${currentTheme.colors.textSecondary}`}>({purchase.originalPrice})</div>
+                    <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>
+                      {purchase.price || purchase.totalAmount ? (
+                        typeof purchase.totalAmount === 'number' 
+                          ? `$${purchase.totalAmount.toFixed(2)}`
+                          : purchase.price
+                      ) : '—'}
+                    </div>
                   </td>
                   <td className="px-6 py-2 align-middle">
                     <span className={`text-sm ${currentTheme.colors.textPrimary} font-medium`}>
@@ -2731,14 +3126,6 @@ const Purchases = () => {
                         <span className={`text-xs ${currentTheme.colors.textSecondary}`}>—</span>
                       )}
                     </span>
-                  </td>
-                  <td className="px-6 py-2 align-middle">
-                    <div className={`text-sm ${currentTheme.colors.textPrimary} whitespace-nowrap`}>
-                      {purchase.dateAdded?.replace('\n', ' ') || 'Unknown'}
-                    </div>
-                  </td>
-                  <td className="px-6 py-2 align-middle">
-                    <div className={getVerifiedIndicator(purchase.verified, purchase.verifiedColor)}></div>
                   </td>
                   <td className="px-6 py-2 align-middle">
                     <div className="flex items-center space-x-1">
@@ -2904,9 +3291,6 @@ const Purchases = () => {
                 onSyncComplete={handleStreamingSyncComplete}
               />
             )}
-      
-      {/* Gmail Reset Button - Temporary for debugging */}
-      <GmailResetButton />
       
       {/* Neon Notification */}
       {notification.isVisible && (

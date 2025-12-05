@@ -199,17 +199,26 @@ export class FedExTrackingAPI {
       // Get delivery dates from dateAndTimes array (most reliable method)
       const dateAndTimes = trackResults.dateAndTimes || [];
       
-      // Find estimated delivery date (priority: ESTIMATED_DELIVERY > COMMITMENT)
-      const estimatedDeliveryDate = dateAndTimes.find(dt => 
-        dt.type === 'ESTIMATED_DELIVERY' || dt.type === 'COMMITMENT'
-      )?.dateTime;
+      // Debug: Log all available date types from FedEx API
+      console.log(`📅 FedEx dateAndTimes for ${trackingNumber}:`, 
+        dateAndTimes.map(dt => `${dt.type}: ${dt.dateTime}`).join(', '));
+      
+      // Find estimated delivery date - prioritize ESTIMATED_DELIVERY over COMMITMENT
+      // ESTIMATED_DELIVERY = most up-to-date delivery estimate (e.g., 12/7)
+      // COMMITMENT = original scheduled delivery date (e.g., 12/6)
+      const estimatedDeliveryDate = dateAndTimes.find(dt => dt.type === 'ESTIMATED_DELIVERY')?.dateTime || 
+                                    dateAndTimes.find(dt => dt.type === 'COMMITMENT')?.dateTime;
+      
+      console.log(`🎯 Using estimated delivery: ${estimatedDeliveryDate} (from ${
+        dateAndTimes.find(dt => dt.type === 'ESTIMATED_DELIVERY') ? 'ESTIMATED_DELIVERY' : 'COMMITMENT'
+      })`);
       
       // Find actual delivery date
       const actualDeliveryDate = dateAndTimes.find(dt => 
         dt.type === 'ACTUAL_DELIVERY'
       )?.dateTime;
 
-      // Find commitment date
+      // Find commitment date (original scheduled delivery)
       const commitmentDate = dateAndTimes.find(dt => 
         dt.type === 'COMMITMENT'
       )?.dateTime;

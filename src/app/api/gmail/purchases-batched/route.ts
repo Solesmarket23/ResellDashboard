@@ -6,9 +6,10 @@ import { consolidatePurchasesByOrderNumber } from '../../../../lib/utils/statusP
 
 // Batch configuration
 const BATCH_SIZE = 100; // Process 100 emails per batch (increased from 50)
-const MAX_BATCHES_PER_REQUEST = 10; // Max 10 batches per API call (1000 emails total)
+const MAX_BATCHES_PER_REQUEST = 1; // Max 1 batch per API call (100 emails total) - reduced for faster testing
+const MAX_TOTAL_EMAILS = 100; // Maximum total emails to process
 const TIMEOUT_PER_EMAIL = 6000; // 6 seconds per email to reduce timeouts
-const PARALLEL_EMAILS = 6; // Lower parallelism to reduce per-request pressure
+const PARALLEL_EMAILS = 2; // Reduced from 6 to 2 for more frequent updates - user sees purchases appear faster
 
 interface BatchProgress {
   batchIndex: number;
@@ -196,27 +197,40 @@ export async function GET(request: NextRequest) {
 
     const queryIndexParam = parseInt(url.searchParams.get('qIndex') || '0');
     const qIndex = Math.max(0, Math.min(queryIndexParam, queries.length - 1));
-    const timeFilter = quick ? ' newer_than:30d' : '';
-    const activeQuery = (queries[qIndex] + timeFilter).trim();
+    // Removed timeFilter - search all emails, not just recent ones
+    // const timeFilter = quick ? ' newer_than:30d' : '';
+    const activeQuery = queries[qIndex].trim();
     console.log(`📦 BATCH ${batchIndex}: Searching with query [${qIndex + 1}/${queries.length}]: ${activeQuery}`);
 
-    // Get emails. Keep the first batch small so UI updates quickly, then scale up.
+    // Get emails. Support limit parameter for chunked processing
     const isFirstBatch = batchIndex === 0 && reset;
-    // Quick mode: tiny first fetch to show results ASAP
-    const maxResults = quick
-      ? Math.min(10, BATCH_SIZE)
-      : (isFirstBatch ? Math.min(25, BATCH_SIZE) : Math.min(BATCH_SIZE * 2, BATCH_SIZE * MAX_BATCHES_PER_REQUEST));
-    const response = await gmail.users.messages.list({
+    const limitParam = url.searchParams.get('limit');
+    // If limit is specified, use it (for chunked processing), otherwise use default
+    const maxResults = limitParam ? Math.min(parseInt(limitParam), BATCH_SIZE) : Math.min(100, BATCH_SIZE);
+    // Add timeout to Gmail API call to prevent hanging
+    // Gmail API returns messages sorted by internalDate descending (newest first) by default
+    // This ensures we process today's emails first, then go backwards
+    const gmailListPromise = gmail.users.messages.list({
       userId: 'me',
       q: activeQuery,
       maxResults,
       pageToken
+      // Note: Gmail API doesn't support orderBy parameter, but defaults to newest first
+      // Messages are returned sorted by internalDate descending (newest to oldest)
     });
+    
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Gmail API timeout after 30 seconds')), 30000)
+    );
+    
+    const response = await Promise.race([gmailListPromise, timeoutPromise]) as any;
 
     const allMessages = response.data.messages || [];
+    // Gmail API returns newest first, but let's ensure we preserve that order
+    // Messages are already sorted by internalDate descending (newest to oldest)
     const totalFound = allMessages.length;
     
-    console.log(`📦 BATCH ${batchIndex}: Found ${totalFound} total messages`);
+    console.log(`📦 BATCH ${batchIndex}: Found ${totalFound} total messages (limited to ${maxResults} max, newest first)`);
 
     if (totalFound === 0) {
       return NextResponse.json({
@@ -309,13 +323,23 @@ export async function GET(request: NextRequest) {
     // Consolidate purchases in this batch
     const consolidatedPurchases = consolidateOrderEmails(batchPurchases);
     
-    console.log(`📦 BATCH ${batchIndex}: Completed! Processed ${processedInBatch}/${batchMessages.length} emails, found ${consolidatedPurchases.length} purchases`);
+    // Sort purchases by date (newest first) to ensure we prioritize recent purchases
+    // Gmail API already returns messages newest first, but we sort here to be explicit
+    consolidatedPurchases.sort((a: any, b: any) => {
+      const dateA = new Date(a.emailDate || a.purchaseDate || a.createdAt || 0);
+      const dateB = new Date(b.emailDate || b.purchaseDate || b.createdAt || 0);
+      return dateB.getTime() - dateA.getTime(); // Descending order (newest first)
+    });
+    
+    console.log(`📦 BATCH ${batchIndex}: Completed! Processed ${processedInBatch}/${batchMessages.length} emails, found ${consolidatedPurchases.length} purchases (sorted newest first)`);
 
     // Calculate if there are more batches across pages/queries
     const nextPageToken = response.data.nextPageToken;
-    const hasMorePages = quick ? false : !!nextPageToken;
-    const hasMoreQueries = !nextPageToken && (qIndex + 1 < queries.length);
-    const hasMore = hasMorePages || hasMoreQueries;
+    // Stop after processing 100 emails total
+    const totalProcessedSoFar = (batchIndex * BATCH_SIZE * MAX_BATCHES_PER_REQUEST) + processedInBatch;
+    const hasMorePages = !!nextPageToken && totalProcessedSoFar < MAX_TOTAL_EMAILS;
+    const hasMoreQueries = !nextPageToken && (qIndex + 1 < queries.length) && totalProcessedSoFar < MAX_TOTAL_EMAILS;
+    const hasMore = (hasMorePages || hasMoreQueries) && totalProcessedSoFar < MAX_TOTAL_EMAILS;
 
     const progress: BatchProgress = {
       batchIndex,
@@ -398,22 +422,26 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
     // Use the imported parseGmailApiMessage function (disable debug for performance)
     const orderInfo = parseGmailApiMessage(emailData, false);
 
-    // Fallback tracking extraction: if shipped/delivered and no tracking yet, search shipping email
-    if (!orderInfo.tracking_number && (orderInfo.shipping_status === 'shipped' || orderInfo.shipping_status === 'delivered')) {
-      try {
-        const fallback = await extractTrackingNumber(orderInfo.order_number, gmail);
-        if (fallback) {
-          orderInfo.tracking_number = fallback.toUpperCase();
-          if (orderInfo.tracking_number.startsWith('1Z')) {
-            orderInfo.carrier = 'UPS';
-          } else if (/^\d{12}$/.test(orderInfo.tracking_number)) {
-            orderInfo.carrier = 'FedEx';
-          }
-        }
-      } catch (e) {
-        console.error('TRACKING fallback (batched) failed:', e);
-      }
-    }
+    // DISABLED: Tracking extraction - user will manually enter tracking numbers
+    // Using "View Shipped Email" link instead for better accuracy
+    // if (!orderInfo.tracking_number && (orderInfo.shipping_status === 'Shipped' || orderInfo.shipping_status === 'Delivered')) {
+    //   try {
+    //     const fallback = await extractTrackingNumber(orderInfo.order_number, gmail);
+    //     if (fallback) {
+    //       orderInfo.tracking_number = fallback.toUpperCase();
+    //       if (orderInfo.tracking_number.startsWith('1Z')) {
+    //         orderInfo.carrier = 'UPS';
+    //       } else if (/^\d{12}$/.test(orderInfo.tracking_number)) {
+    //         orderInfo.carrier = 'FedEx';
+    //       }
+    //     }
+    //   } catch (e) {
+    //     console.error('TRACKING fallback (batched) failed:', e);
+    //   }
+    // }
+    // Set tracking to empty so UI shows "View Shipped Email" link
+    orderInfo.tracking_number = null;
+    orderInfo.carrier = null;
     // Validate order number to avoid false positives (e.g., "0" or missing)
     const isValidOrderNumber = !!(orderInfo && orderInfo.order_number && orderInfo.order_number !== '0' && (
       /^(\d{8}-\d{8})$/i.test(orderInfo.order_number) || // 8-8 numeric
@@ -433,8 +461,12 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
     // Format pricing
     const price = `$${(orderInfo.total_amount || 0).toFixed(2)}`;
     
-    // Format dates
-    const emailDate = new Date(dateHeader);
+    // Use OrderInfo email_date if available, otherwise parse from dateHeader
+    // OrderInfo.email_date comes from the parser and is already correctly extracted
+    const emailDateStr = orderInfo.email_date || dateHeader;
+    const emailDate = new Date(emailDateStr);
+    
+    // Format purchase date - this will be overwritten by consolidation if order confirmation email is found
     const purchaseDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     const dateAdded = emailDate.toLocaleDateString('en-US', { 
       month: 'short', 
@@ -458,10 +490,13 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
       carrier: orderInfo.carrier,
       shipping_status: orderInfo.shipping_status,
       subject: subjectHeader,
+      email_date: orderInfo.email_date,
       email_id: emailData.id
     });
 
     // Return in the expected UI format
+    // IMPORTANT: Use OrderInfo fields directly (like test parser does) for consolidation
+    // Spread orderInfo to include all fields like email_date, email_subject, purchase_date, etc.
     return {
       id: orderInfo.order_number || `email-${emailData.id}`,
       product: {
@@ -472,23 +507,29 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
         bgColor: getBrandColor(brand)
       },
       orderNumber: orderInfo.order_number || 'No Order Number',
+      order_number: orderInfo.order_number, // snake_case for consolidation
       status: category.status,
+      shipping_status: orderInfo.shipping_status || category.status, // snake_case for consolidation
       statusColor: category.statusColor,
       priority: category.priority,
-      tracking: orderInfo.tracking_number || 'No tracking',
+      tracking: '', // Empty tracking - UI will show "View Shipped Email" link
       market,
       price,
       originalPrice: `${price} + $0.00`,
       purchasePrice: orderInfo.purchase_price || 0,
       totalPayment: orderInfo.total_amount || 0,
-      purchaseDate,
+      purchaseDate, // This will be overwritten by consolidation if order confirmation email is found
       dateAdded,
       verified: 'pending',
       verifiedColor: 'orange',
       emailId: emailData.id,
-      subject: subjectHeader,
+      subject: subjectHeader, // camelCase for UI
       sender: fromHeader,
-      emailDate: dateHeader
+      emailDate: dateHeader, // camelCase for UI (raw date header string)
+      // Use OrderInfo fields directly (like test parser) - these are already correctly set
+      ...orderInfo, // Spread all OrderInfo fields including email_date, email_subject, purchase_date, etc.
+      // Ensure createdAt is set for fallback
+      createdAt: orderInfo.email_date ? new Date(orderInfo.email_date).toISOString() : emailDate.toISOString()
     };
 
   } catch (error) {

@@ -73,7 +73,53 @@ export function useRealTimeDeliveries({
     try {
       console.log(`🔄 Fetching deliveries for user: ${userId}`);
       
-      const response = await fetch(`/api/deliveries/sync?userId=${encodeURIComponent(userId)}`);
+      // Check if user is using site password auth (localStorage)
+      const siteUserId = typeof window !== 'undefined' ? localStorage.getItem('siteUserId') : null;
+      let url = `/api/deliveries/sync?userId=${encodeURIComponent(userId)}`;
+      
+      // If site password user, get purchases from localStorage and send to API
+      if (siteUserId && typeof window !== 'undefined') {
+        const storageKey = `purchases_${siteUserId}`;
+        const purchasesJson = localStorage.getItem(storageKey);
+        
+        if (purchasesJson) {
+          try {
+            const purchases = JSON.parse(purchasesJson);
+            console.log(`📦 Found ${purchases.length} purchases in localStorage, sending to API`);
+            
+            // Send purchases as query param (for GET) or use POST
+            // Using POST is better for large data
+            const response = await fetch(`/api/deliveries/sync`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                userId: siteUserId,
+                purchases,
+                fromLocalStorage: true
+              })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+              setDeliveries(data.deliveries);
+              setLastSync(new Date(data.lastSync));
+              console.log(`✅ Loaded ${data.deliveries.length} deliveries (${data.liveTrackingCount} with live data)`);
+            } else {
+              throw new Error(data.error || 'Failed to fetch deliveries');
+            }
+            
+            setLoading(false);
+            return;
+          } catch (error) {
+            console.error('❌ Error parsing localStorage purchases:', error);
+            // Fall through to regular Firebase fetch
+          }
+        }
+      }
+      
+      // Regular Firebase user flow
+      const response = await fetch(url);
       const data = await response.json();
       
       if (data.success) {
