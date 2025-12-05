@@ -96,23 +96,29 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
       // 1. Status is "ordered" or contains "order confirmed" or "confirmation"
       // 2. Email subject contains "Order Confirmed", "Order Confirmation", "Xpress Order Confirmed" (ignore emojis)
       // 3. Filename contains "order-confirmed", "order-confirmation", "xpress-order-confirmed" (ignore emojis and spaces)
+      // 4. Use earliest email date as fallback if no order confirmation found
       const orderConfirmationEmail = sortedPurchases.find(p => {
         const status = (p.status || p.shipping_status || '').toLowerCase();
         // Remove emojis and normalize subject/filename for matching
         const normalizeText = (text: string) => text.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');
-        const subject = normalizeText(p.email_subject || p.subject || '');
+        const rawSubject = (p.email_subject || p.subject || '').toLowerCase();
+        const subject = normalizeText(rawSubject);
         const filename = normalizeText(p.filename || '');
         
-        // Check status
-        const statusMatch = status === 'ordered' || 
-                           status === 'order placed' ||
-                           status.includes('order confirmed') ||
-                           status.includes('confirmation');
+        // Check status - must be "ordered" or "order placed" (not "shipped" or "delivered")
+        const statusMatch = (status === 'ordered' || 
+                           status === 'order placed') &&
+                           status !== 'shipped' &&
+                           status !== 'delivered';
         
-        // Check subject line (normalized, emojis removed)
+        // Check subject line (normalized, emojis removed) - more patterns
         const subjectMatch = subject.includes('order-confirmed') ||
                             subject.includes('order-confirmation') ||
-                            subject.includes('xpress-order-confirmed');
+                            subject.includes('xpress-order-confirmed') ||
+                            rawSubject.includes('order confirmed') ||
+                            rawSubject.includes('order confirmation') ||
+                            rawSubject.includes('👍 order') ||
+                            rawSubject.includes('👍order');
         
         // Check filename (normalized, emojis and spaces removed)
         const filenameMatch = filename.includes('order-confirmed') ||

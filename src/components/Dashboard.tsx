@@ -150,15 +150,28 @@ const Dashboard = () => {
       console.log('📊 Dashboard: Starting purchases load for user:', user.uid);
       setPurchasesLoading(true);
       
-      // Load purchases from Firebase
-      console.log('📊 Dashboard: Loading purchases...');
-      const allPurchases = await getDocuments('purchases');
-      const userPurchasesData = allPurchases.filter(
-        (purchase: any) => purchase.userId === user.uid
-      );
-      console.log('📊 Dashboard: Found', userPurchasesData.length, 'purchases');
+      // Check if user is using site password (localStorage)
+      const siteUserId = localStorage.getItem('siteUserId');
       
-      setUserPurchases(userPurchasesData);
+      if (siteUserId) {
+        // Load from localStorage for site password users (much faster)
+        console.log('📊 Dashboard: Loading from localStorage (site password user)');
+        const storageKey = `purchases_${siteUserId}`;
+        const purchasesJson = localStorage.getItem(storageKey);
+        const userPurchasesData = purchasesJson ? JSON.parse(purchasesJson) : [];
+        console.log('📊 Dashboard: Found', userPurchasesData.length, 'purchases in localStorage');
+        setUserPurchases(userPurchasesData);
+      } else {
+        // Load purchases from Firebase (only for this user, with limit)
+        console.log('📊 Dashboard: Loading from Firebase...');
+        const allPurchases = await getDocuments('purchases');
+        const userPurchasesData = allPurchases.filter(
+          (purchase: any) => purchase.userId === user.uid
+        );
+        console.log('📊 Dashboard: Found', userPurchasesData.length, 'purchases');
+        setUserPurchases(userPurchasesData);
+      }
+      
       console.log('📊 Dashboard: Purchases load completed successfully');
       
     } catch (error) {

@@ -416,7 +416,8 @@ const Purchases = () => {
     console.log('  - Firebase Project ID set:', !!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID);
     console.log('  - Firebase Auth Domain set:', !!process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN);
     
-    // Always load purchases from Firebase when user is available (Firebase or site password)
+    // Only load purchases if user is available AND component is visible
+    // This prevents loading on initial dashboard render
     const siteUserId = localStorage.getItem('siteUserId');
     const userId = user?.uid || siteUserId;
     
@@ -431,8 +432,15 @@ const Purchases = () => {
         setTotalCount(0);
         setLoading(false);
       } else {
-        console.log('🔄 Loading all purchases from Firebase on mount...');
-        loadManualPurchasesFromFirebase();
+        // Lazy load: Only load if we're on the purchases section
+        const isPurchasesSection = window.location.search.includes('section=purchases');
+        if (isPurchasesSection) {
+          console.log('🔄 Loading purchases (on purchases page)...');
+          loadManualPurchasesFromFirebase();
+        } else {
+          console.log('⏭️ Skipping purchases load (not on purchases page yet)');
+          setLoading(false);
+        }
       }
     }
     
@@ -663,7 +671,7 @@ const Purchases = () => {
         market: purchase.merchant || purchase.market || 'StockX',
         price: purchase.totalAmount ? `$${purchase.totalAmount.toFixed(2)}` : (purchase.price || '$0.00'),
         originalPrice: purchase.totalAmount ? `$${purchase.totalAmount.toFixed(2)} + $0.00` : (purchase.price || '$0.00'),
-        purchaseDate: purchase.purchaseDate || purchase.createdAt || new Date().toISOString(),
+        purchaseDate: purchase.purchaseDate || purchase.purchase_date || purchase.createdAt || new Date().toISOString(),
         dateAdded: purchase.createdAt || new Date().toISOString(),
         verified: purchase.verified || 'pending',
         verifiedColor: purchase.verifiedColor || 'orange',
@@ -673,6 +681,12 @@ const Purchases = () => {
     };
     
     const transformedPurchases = allPurchases.map(transformPurchaseData);
+    
+    // IMPORTANT: Consolidate purchases by order number to merge emails from different batches
+    // This ensures order confirmation emails are found even if they're in different batches
+    // than delivery/shipped emails
+    const consolidatedPurchases = consolidatePurchasesByOrderNumber(transformedPurchases);
+    
     console.log(`🔍 Sample batched transformed data:`, {
       original: allPurchases[0],
       transformed: transformedPurchases[0],
@@ -681,8 +695,9 @@ const Purchases = () => {
       hasTracking: !!transformedPurchases[0].tracking,
       tracking: transformedPurchases[0].tracking
     });
+    console.log(`🔄 Consolidation: ${transformedPurchases.length} purchases → ${consolidatedPurchases.length} consolidated purchases`);
     
-    setPurchases(transformedPurchases);
+    setPurchases(consolidatedPurchases);
     
     // Combine with manual purchases for totals
     const combinedPurchases = [...transformedPurchases, ...manualPurchases];

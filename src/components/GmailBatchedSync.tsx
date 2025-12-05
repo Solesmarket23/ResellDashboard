@@ -13,6 +13,8 @@ interface BatchProgress {
   totalFound: number;
   hasMore: boolean;
   nextPageToken?: string;
+  qIndex?: number;
+  totalQueries?: number;
 }
 
 interface GmailBatchedSyncProps {
@@ -63,6 +65,7 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
   const processBatches = async () => {
     let batchIndex = 0;
     let pageToken: string | undefined = undefined;
+    let qIndex = 0; // Track which query we're on
     let allCollectedPurchases: any[] = [];
     let hasMore = true;
     let lastProcessed = -1;
@@ -72,7 +75,7 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
     // Instead of processing all 100 emails at once, process 20 at a time
     const CHUNK_SIZE = 20; // Process 20 emails per API call for more frequent updates
     
-    while (hasMore && batchIndex < 5) { // Up to 5 chunks (100 emails total)
+    while (hasMore && batchIndex < 50) { // Up to 50 chunks (1,000 emails total) - ~1 month of history
       try {
         console.log(`🚀 Starting chunk ${batchIndex + 1}...`);
         
@@ -81,7 +84,8 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
           batch: batchIndex.toString(),
           reset: batchIndex === 0 ? 'true' : 'false',
           quick: 'false', // Don't use quick mode for incremental updates
-          limit: CHUNK_SIZE.toString() // Limit each chunk to 20 emails
+          limit: CHUNK_SIZE.toString(), // Limit each chunk to 20 emails
+          qIndex: qIndex.toString() // Pass current query index
         });
         
         if (pageToken) {
@@ -159,11 +163,26 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
             setProgress(fullData.progress);
             hasMore = fullData.progress.hasMore && !fullData.isComplete && !isCancelledRef.current;
             pageToken = fullData.progress.nextPageToken;
+            qIndex = fullData.progress.qIndex || 0;
           }
         }
         
         // Stagnation detection removed to avoid premature finishes on slow Gmail responses
         pageToken = data.progress.nextPageToken;
+        
+        // Advance to next query if we've exhausted current query (no more pages)
+        if (!pageToken && data.progress.qIndex !== undefined && data.progress.totalQueries) {
+          const apiQIndex = data.progress.qIndex;
+          if (apiQIndex + 1 < data.progress.totalQueries) {
+            // Move to next query
+            qIndex = apiQIndex + 1;
+            console.log(`🔄 Advancing to query ${qIndex + 1}/${data.progress.totalQueries}`);
+          } else {
+            // We've exhausted all queries
+            console.log(`✅ Completed all ${data.progress.totalQueries} queries`);
+          }
+        }
+        
         batchIndex++;
 
         // Small delay between batches to prevent overwhelming the API
@@ -185,7 +204,11 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
       onSyncComplete?.(allCollectedPurchases.length);
     }
     
-    console.log(`🎉 Gmail sync complete! Total purchases: ${allCollectedPurchases.length}`);
+    const totalEmailsProcessed = batchIndex * CHUNK_SIZE;
+    console.log(`🎉 Gmail sync complete!`);
+    console.log(`   📧 Total emails processed: ${totalEmailsProcessed}`);
+    console.log(`   📦 Total purchases found: ${allCollectedPurchases.length}`);
+    console.log(`   📊 Batches completed: ${batchIndex}`);
   };
 
   const getProgressPercentage = () => {

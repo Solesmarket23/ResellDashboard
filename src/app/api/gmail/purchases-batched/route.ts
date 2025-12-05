@@ -7,7 +7,7 @@ import { consolidatePurchasesByOrderNumber } from '../../../../lib/utils/statusP
 // Batch configuration
 const BATCH_SIZE = 100; // Process 100 emails per batch (increased from 50)
 const MAX_BATCHES_PER_REQUEST = 1; // Max 1 batch per API call (100 emails total) - reduced for faster testing
-const MAX_TOTAL_EMAILS = 100; // Maximum total emails to process
+const MAX_TOTAL_EMAILS = 10000; // Maximum total emails to process (changed from 100 to 10,000 for 1 month history)
 const TIMEOUT_PER_EMAIL = 6000; // 6 seconds per email to reduce timeouts
 const PARALLEL_EMAILS = 2; // Reduced from 6 to 2 for more frequent updates - user sees purchases appear faster
 
