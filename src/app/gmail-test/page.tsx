@@ -96,7 +96,7 @@ export default function GmailTestPage() {
     }
   };
 
-  // Consolidate purchases by order number (keep highest priority status)
+  // Consolidate purchases by order number (keep highest priority status BUT use Ordered email's date)
   const consolidatePurchases = (purchases: Array<{subject: string, orderNumber: string, status: string}>) => {
     const consolidatedMap = new Map<string, any>();
     purchases.forEach(purchase => {
@@ -112,9 +112,22 @@ export default function GmailTestPage() {
         };
         const existingPriority = statusPriority[existing.status] || 0;
         const newPriority = statusPriority[purchase.status] || 0;
-        if (newPriority > existingPriority) {
-          consolidatedMap.set(purchase.orderNumber, purchase);
+        
+        // Determine which purchase to keep as the base (highest status)
+        let primaryPurchase = newPriority > existingPriority ? purchase : existing;
+        let otherPurchase = newPriority > existingPriority ? existing : purchase;
+        
+        // CRITICAL: Always use the date from the "Ordered" status email (order confirmation)
+        // even if we're keeping the "Delivered" or "Shipped" status
+        if (otherPurchase.status === 'Ordered' && primaryPurchase.status !== 'Ordered') {
+          console.log(`📅 Using order confirmation date for ${purchase.orderNumber}: ${otherPurchase.purchaseDate} (from Ordered email) instead of ${primaryPurchase.purchaseDate} (from ${primaryPurchase.status} email)`);
+          primaryPurchase = {
+            ...primaryPurchase,
+            purchaseDate: otherPurchase.purchaseDate // Use the Ordered email's date
+          };
         }
+        
+        consolidatedMap.set(purchase.orderNumber, primaryPurchase);
       }
     });
     return Array.from(consolidatedMap.values());
