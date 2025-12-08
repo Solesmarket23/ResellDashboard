@@ -377,10 +377,9 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
     // Show cumulative totals - ensure we show at least as many emails as purchases found
     // (since multiple purchases can come from the same email via consolidation)
     const displayProcessed = Math.max(totalProcessed, allPurchases.length);
-    const displayFound = Math.max(totalFound, displayProcessed, allPurchases.length);
     
-    // Always show both counts
-    return `${displayProcessed} of ${displayFound} emails processed`;
+    // Just show emails processed count
+    return `${displayProcessed} email${displayProcessed === 1 ? '' : 's'} processed`;
   };
 
   return (
