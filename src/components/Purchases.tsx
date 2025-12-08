@@ -3489,7 +3489,10 @@ const Purchases = () => {
         <div className={`flex items-center justify-between px-6 py-4 border-t ${currentTheme.colors.border}`}>
           <div className="flex items-center gap-4">
             <span className={`text-sm ${currentTheme.colors.textSecondary}`}>
-              Showing {sortedPurchases.length === 0 ? 0 : (currentPage - 1) * (itemsPerPage === -1 ? sortedPurchases.length : itemsPerPage) + 1} to {Math.min(currentPage * (itemsPerPage === -1 ? sortedPurchases.length : itemsPerPage), sortedPurchases.length)} of {sortedPurchases.length} purchases
+              {sortedPurchases.length === 0 
+                ? 'No purchases to display' 
+                : `Showing ${(currentPage - 1) * (itemsPerPage === -1 ? sortedPurchases.length : itemsPerPage) + 1} to ${Math.min(currentPage * (itemsPerPage === -1 ? sortedPurchases.length : itemsPerPage), sortedPurchases.length)} of ${sortedPurchases.length} purchase${sortedPurchases.length === 1 ? '' : 's'}`
+              }
             </span>
             
             <div className="flex items-center gap-2">
@@ -3692,29 +3695,31 @@ const Purchases = () => {
       {/* Batched Gmail Sync - Compact Corner Notification */}
       {showBatchedSync && (
         <div className="fixed bottom-6 right-6 z-50 max-w-md w-96 shadow-2xl">
-          <GmailBatchedSync
-            onPurchasesUpdate={handleBatchedPurchasesUpdate}
-            onSyncComplete={(totalPurchases) => {
-              handleBatchedSyncComplete(totalPurchases);
-              setShowBatchedSync(false);
-            }}
-            className="relative"
-          />
-          
-          {/* Close button */}
-          <button
-            onClick={() => setShowBatchedSync(false)}
-            className={`absolute top-2 right-2 p-1.5 rounded-full ${
-              currentTheme.name === 'Neon' 
-                ? 'bg-white/10 hover:bg-white/20 text-gray-400 hover:text-gray-200' 
-                : 'bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-900'
-            } transition-colors`}
-            title="Close sync panel"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <div className="relative">
+            <GmailBatchedSync
+              onPurchasesUpdate={handleBatchedPurchasesUpdate}
+              onSyncComplete={(totalPurchases) => {
+                handleBatchedSyncComplete(totalPurchases);
+                setShowBatchedSync(false);
+              }}
+              className=""
+            />
+            
+            {/* Close button - positioned outside the card */}
+            <button
+              onClick={() => setShowBatchedSync(false)}
+              className={`absolute -top-2 -right-2 p-1.5 rounded-full ${
+                currentTheme.name === 'Neon' 
+                  ? 'bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-gray-200 border border-white/20' 
+                  : 'bg-white hover:bg-gray-100 text-gray-600 hover:text-gray-900 border border-gray-300 shadow-lg'
+              } transition-colors z-10`}
+              title="Close sync panel"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
       )}
 
