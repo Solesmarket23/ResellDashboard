@@ -84,14 +84,27 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
       consolidatedPurchases.push(orderPurchases[0]);
     } else {
       // Sort by priority (highest first)
+      console.log(`🔄 CONSOLIDATING ${orderPurchases.length} emails for order ${orderNumber}:`);
+      orderPurchases.forEach((p, idx) => {
+        const status = p.status || p.shipping_status || 'Ordered';
+        const priority = getStatusPriority(status);
+        const subject = (p.email_subject || p.subject || 'N/A').substring(0, 60);
+        console.log(`   ${idx + 1}. Status="${status}" (priority=${priority}), Subject="${subject}"`);
+      });
+      
       const sortedPurchases = orderPurchases.sort((a, b) => {
         const statusA = a.status || a.shipping_status || 'Ordered';
         const statusB = b.status || b.shipping_status || 'Ordered';
+        const priorityA = getStatusPriority(statusA);
+        const priorityB = getStatusPriority(statusB);
+        console.log(`   Comparing: "${statusA}" (${priorityA}) vs "${statusB}" (${priorityB})`);
         return compareStatusPriority(statusB, statusA);
       });
       
       // Use the highest priority purchase as the base
       const primaryPurchase = { ...sortedPurchases[0] };
+      const primaryStatus = primaryPurchase.status || primaryPurchase.shipping_status || 'Ordered';
+      console.log(`✅ PRIMARY PURCHASE selected: Status="${primaryStatus}" (priority=${getStatusPriority(primaryStatus)}), Subject="${(primaryPurchase.email_subject || primaryPurchase.subject || 'N/A').substring(0, 60)}"`);
       
       // ALWAYS find the order confirmation email for purchase date
       // Check multiple ways to identify order confirmation emails:

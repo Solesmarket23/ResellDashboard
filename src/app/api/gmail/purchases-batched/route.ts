@@ -791,6 +791,9 @@ function extractTrackingFromShippingEmail(email: any): string | null {
 function categorizeEmail(subject: string, config: any) {
   const normalizedSubject = subject.toLowerCase();
   
+  console.log(`🔍 CATEGORIZING EMAIL: "${subject}"`);
+  console.log(`   Normalized: "${normalizedSubject}"`);
+  
   // PRIORITY 1: Check for order confirmation patterns FIRST (before shipped/delivered)
   // This ensures order confirmation emails are correctly categorized even if they also mention shipping
   const orderConfirmationPatterns = [
@@ -803,7 +806,7 @@ function categorizeEmail(subject: string, config: any) {
   
   for (const pattern of orderConfirmationPatterns) {
     if (normalizedSubject.includes(pattern)) {
-      console.log(`✅ Categorized as ORDERED (order confirmation): "${subject}"`);
+      console.log(`✅ MATCHED ORDER CONFIRMATION: pattern="${pattern}" → status="Ordered"`);
       return {
         status: 'Ordered',
         statusColor: 'orange',
@@ -813,13 +816,17 @@ function categorizeEmail(subject: string, config: any) {
   }
   
   // PRIORITY 2: Check other categories in config order
+  console.log(`   Checking ${Object.keys(config.emailCategories).length} email categories...`);
   for (const [categoryKey, category] of Object.entries(config.emailCategories)) {
     // Skip orderPlaced category since we already checked it above
     if (categoryKey === 'orderPlaced') continue;
     
+    console.log(`   📋 Checking category: ${categoryKey} (status="${(category as any).status}")`);
     for (const pattern of (category as any).subjectPatterns) {
-      if (normalizedSubject.includes(pattern.toLowerCase())) {
-        console.log(`✅ Categorized as ${(category as any).status}: "${subject}"`);
+      const normalizedPattern = pattern.toLowerCase();
+      console.log(`      Testing pattern: "${pattern}" → normalized: "${normalizedPattern}"`);
+      if (normalizedSubject.includes(normalizedPattern)) {
+        console.log(`✅ MATCHED! Category="${categoryKey}", Status="${(category as any).status}", Pattern="${pattern}"`);
         return {
           status: (category as any).status,
           statusColor: (category as any).statusColor,
@@ -830,7 +837,7 @@ function categorizeEmail(subject: string, config: any) {
   }
   
   // Fallback: default to Ordered
-  console.log(`⚠️ No pattern matched for "${subject}" - defaulting to Ordered`);
+  console.log(`⚠️ NO PATTERN MATCHED for "${subject}" - defaulting to Ordered`);
   return {
     status: 'Ordered',
     statusColor: 'orange',
