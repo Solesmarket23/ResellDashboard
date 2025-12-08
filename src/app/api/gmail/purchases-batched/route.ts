@@ -222,7 +222,7 @@ export async function GET(request: NextRequest) {
     // This ensures order confirmation emails and delivery emails are fetched together within each date range
     // Use specific queries for purchase confirmation, shipping, and delivery emails
     // Exclude sales-related emails at the Gmail query level for better performance
-    const baseQuery = 'from:noreply@stockx.com (subject:"Order Confirmed" OR subject:"Xpress Order Confirmed" OR subject:"Order Delivered" OR subject:"Order Verified & Shipped") -subject:"Arrived At StockX" -subject:"Shipped To StockX" -subject:"Ship your"';
+    const baseQuery = 'from:noreply@stockx.com (subject:"Order Confirmed" OR subject:"Xpress Order Confirmed" OR subject:"Order Delivered" OR subject:"Order Verified & Shipped" OR subject:"Refund Issued" OR subject:"A Refund Is On The Way") -subject:"Arrived At StockX" -subject:"Shipped To StockX" -subject:"Ship your"';
     
     // Replace all queries with date-based queries (most recent first)
     // Split into smaller date ranges to handle large volumes and avoid timeouts
