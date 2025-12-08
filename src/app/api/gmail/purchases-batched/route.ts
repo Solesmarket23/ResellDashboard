@@ -622,24 +622,28 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
     const emailDateStr = orderInfo.email_date || dateHeader;
     const emailDate = new Date(emailDateStr);
     
-    // Format purchase date - IMPORTANT: This is a temporary value
-    // Consolidation will overwrite this with the order confirmation email date if found
-    // For now, use the current email's date, but consolidation will fix it
-    const purchaseDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    
-    // Log if this appears to be an order confirmation email
+    // Format purchase date - CRITICAL: Only set for order confirmation emails
+    // For delivery/shipped emails, leave it blank - consolidation will fill it in later
     const isOrderConfirmation = category.status === 'Ordered' && (
       subjectHeader.toLowerCase().includes('order confirmed') ||
       subjectHeader.toLowerCase().includes('order confirmation') ||
       subjectHeader.toLowerCase().includes('xpress order confirmed') ||
       subjectHeader.toLowerCase().includes('item arrived for verification')
     );
+    
+    let purchaseDate: string;
     if (isOrderConfirmation) {
-      console.log(`📅 ORDER CONFIRMATION EMAIL: ${subjectHeader} - Order: ${orderInfo.order_number} - Date: ${purchaseDate}`);
-    } else if (category.status === 'Delivered') {
-      console.log(`📦 DELIVERY EMAIL: ${subjectHeader} - Order: ${orderInfo.order_number} - Date: ${purchaseDate} (will be overwritten by order confirmation during consolidation)`);
-    } else if (category.status === 'Shipped') {
-      console.log(`🚚 SHIPPED EMAIL: ${subjectHeader} - Order: ${orderInfo.order_number} - Date: ${purchaseDate}`);
+      // Only set purchase date for order confirmation emails
+      purchaseDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      console.log(`📅 ORDER CONFIRMATION EMAIL: ${subjectHeader} - Order: ${orderInfo.order_number} - Purchase Date: ${purchaseDate}`);
+    } else {
+      // For delivery/shipped emails, use a placeholder - consolidation will set the real date
+      purchaseDate = 'TBD'; // Will be replaced during consolidation
+      if (category.status === 'Delivered') {
+        console.log(`📦 DELIVERY EMAIL: ${subjectHeader} - Order: ${orderInfo.order_number} - Delivery Date: ${emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} (purchase date pending order confirmation)`);
+      } else if (category.status === 'Shipped') {
+        console.log(`🚚 SHIPPED EMAIL: ${subjectHeader} - Order: ${orderInfo.order_number} - Ship Date: ${emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} (purchase date pending order confirmation)`);
+      }
     }
     const dateAdded = emailDate.toLocaleDateString('en-US', { 
       month: 'short', 
