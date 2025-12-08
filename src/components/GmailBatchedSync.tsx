@@ -464,13 +464,13 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Emails</div>
+                  <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Emails Processed</div>
                   <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>
                     {cumulativeEmailsProcessed}
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Found</div>
+                  <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Purchases Found</div>
                   <div className={`text-sm font-semibold ${currentTheme.name === 'Neon' ? 'text-emerald-400' : 'text-green-600'}`}>
                     {allPurchases.length}
                   </div>
@@ -523,13 +523,13 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Emails</div>
+                  <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Emails Processed</div>
                   <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>
                     {cumulativeEmailsProcessed}
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Found</div>
+                  <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Purchases Found</div>
                   <div className={`text-sm font-semibold ${currentTheme.name === 'Neon' ? 'text-emerald-400' : 'text-green-600'}`}>
                     {allPurchases.length}
                   </div>
