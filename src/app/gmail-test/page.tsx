@@ -320,14 +320,16 @@ export default function GmailTestPage() {
           // Add purchases progressively (in increments of 5) for smoother UI updates
           const INCREMENT_SIZE = 5;
           const newPurchases = data.purchases.map((p: any) => {
-            const purchaseDate = p.purchase_date || p.purchaseDate || 'N/A';
+            // CRITICAL: Use purchaseDate first (has "TBD" or actual date), NOT purchase_date (raw email date string)
+            const purchaseDate = p.purchaseDate || p.purchase_date || 'N/A';
             // Debug: Log the first few purchase dates to see what format we're receiving
-            if (allStats.purchasesFound.length < 3) {
+            if (allStats.purchasesFound.length < 50) {
               console.log(`🔍 Purchase date received from backend:`, {
                 purchase_date: p.purchase_date,
                 purchaseDate: p.purchaseDate,
                 final: purchaseDate,
-                orderNumber: p.orderNumber || p.order_number
+                orderNumber: p.orderNumber || p.order_number,
+                status: p.status
               });
             }
             return {
