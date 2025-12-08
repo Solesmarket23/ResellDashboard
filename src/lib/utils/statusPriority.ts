@@ -234,34 +234,14 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
           const emailDate = p.email_date || p.createdAt || 'N/A';
           console.log(`     ${idx + 1}. status="${status}", subject="${subject}", email_date="${emailDate}"`);
         });
-        console.log(`   ⚠️ WARNING: Purchase date will use earliest available email date, not order confirmation date`);
+        console.log(`   ⚠️ WARNING: No order confirmation email found - setting purchase date to "TBD"`);
         console.log(`   💡 TIP: Order confirmation emails should have status="ordered" and subject containing "Order Confirmed", "Order Confirmation", or "Item Arrived For Verification"`);
-        console.log(`   Using earliest date fallback`);
-        // Fallback: use the earliest email date as purchase date
-        const dates = sortedPurchases
-          .map(p => new Date(p.email_date || p.createdAt || 0))
-          .filter(d => !isNaN(d.getTime()));
-        if (dates.length > 0) {
-          const earliestDate = new Date(Math.min(...dates.map(d => d.getTime())));
-          const earliestPurchase = sortedPurchases.find(p => {
-            const pDate = new Date(p.email_date || p.createdAt || 0);
-            return !isNaN(pDate.getTime()) && pDate.getTime() === earliestDate.getTime();
-          });
-          if (earliestPurchase) {
-            if (earliestPurchase.purchaseDate) {
-              primaryPurchase.purchaseDate = earliestPurchase.purchaseDate;
-              primaryPurchase.purchase_date = earliestPurchase.purchase_date || earliestPurchase.email_date || earliestPurchase.createdAt;
-            } else if (earliestPurchase.email_date) {
-              const emailDate = new Date(earliestPurchase.email_date);
-              primaryPurchase.purchaseDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-              primaryPurchase.purchase_date = earliestPurchase.email_date;
-            } else if (earliestPurchase.createdAt) {
-              const emailDate = new Date(earliestPurchase.createdAt);
-              primaryPurchase.purchaseDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-              primaryPurchase.purchase_date = earliestPurchase.createdAt;
-            }
-          }
-        }
+        
+        // Set purchase date to "TBD" when no order confirmation email is found
+        // We should ONLY use the order confirmation email date, not shipped/delivered dates
+        primaryPurchase.purchaseDate = 'TBD';
+        primaryPurchase.purchase_date = '';
+        console.log(`   ✅ Set purchaseDate to "TBD" for order ${orderNumber}`);
       }
       
       // Merge useful data from other purchases (e.g., tracking numbers, updated dates)
@@ -288,13 +268,6 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
       primaryPurchase.allStatuses = sortedPurchases.map(p => 
         p.status || p.shipping_status || 'Ordered'
       );
-      
-      // If purchase date is still "TBD" after consolidation, it means we never found an order confirmation
-      // Set it to "Unknown" instead
-      if (primaryPurchase.purchaseDate === 'TBD') {
-        console.log(`⚠️ No order confirmation found for ${orderNumber} - setting purchaseDate to "Unknown"`);
-        primaryPurchase.purchaseDate = 'Unknown';
-      }
       
       consolidatedPurchases.push(primaryPurchase);
     }
