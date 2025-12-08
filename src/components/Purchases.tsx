@@ -29,6 +29,7 @@ const Purchases = () => {
   const ENABLE_HISTORICAL_SYNC = false;
   const [sortBy, setSortBy] = useState('Purchase Date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [searchQuery, setSearchQuery] = useState('');
   const [showScanModal, setShowScanModal] = useState(false);
   const [showZXingScanModal, setShowZXingScanModal] = useState(false);
   const [showRemoteScanModal, setShowRemoteScanModal] = useState(false);
@@ -321,7 +322,7 @@ const Purchases = () => {
     });
   };
   
-  // Memoized sorted purchases - only recalculates when purchases, manualPurchases, sortBy, or sortDirection change
+  // Memoized sorted purchases - only recalculates when purchases, manualPurchases, sortBy, sortDirection, or searchQuery change
   const sortedPurchases = useMemo(() => {
     const allPurchases = [...purchases, ...manualPurchases];
     
@@ -355,13 +356,34 @@ const Purchases = () => {
       }
     });
     
-    const uniquePurchases = Array.from(uniqueMap.values());
+    let uniquePurchases = Array.from(uniqueMap.values());
+    
+    // Apply search filter if search query exists
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      uniquePurchases = uniquePurchases.filter(purchase => {
+        // Search across multiple fields
+        const productName = (purchase.product?.name || purchase.productName || '').toLowerCase();
+        const orderNumber = (purchase.orderNumber || '').toLowerCase();
+        const tracking = (purchase.tracking || '').toLowerCase();
+        const size = (purchase.product?.size || purchase.size || '').toLowerCase();
+        const brand = (purchase.product?.brand || purchase.brand || '').toLowerCase();
+        const status = (purchase.status || '').toLowerCase();
+        
+        return productName.includes(query) ||
+               orderNumber.includes(query) ||
+               tracking.includes(query) ||
+               size.includes(query) ||
+               brand.includes(query) ||
+               status.includes(query);
+      });
+    }
     
     // Debug logging
-    console.log(`📊 Purchase counts: Total=${allPurchases.length}, Valid=${validPurchases.length}, Unique=${uniquePurchases.length}`);
+    console.log(`📊 Purchase counts: Total=${allPurchases.length}, Valid=${validPurchases.length}, Unique=${uniquePurchases.length}, Filtered=${uniquePurchases.length}`);
     
     return sortPurchases(uniquePurchases, sortBy, sortDirection);
-  }, [purchases, manualPurchases, sortBy, sortDirection]);
+  }, [purchases, manualPurchases, sortBy, sortDirection, searchQuery]);
 
   // Keep getSortedPurchases for backward compatibility with existing code
   const getSortedPurchases = useCallback(() => sortedPurchases, [sortedPurchases]);
@@ -2576,6 +2598,58 @@ const Purchases = () => {
               }
             </p>
           </div>
+          
+          {/* Search Bar */}
+          <div className="mb-4">
+            <div className="relative">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by product, order number, tracking, size, brand, or status..."
+                className={`w-full px-4 py-2 pl-10 rounded-lg ${
+                  currentTheme.name === 'Neon'
+                    ? 'bg-gray-900 border border-white/20 text-gray-300 placeholder-gray-500 focus:border-cyan-500'
+                    : 'bg-white border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-indigo-500'
+                } focus:outline-none focus:ring-2 focus:ring-opacity-50 ${
+                  currentTheme.name === 'Neon' ? 'focus:ring-cyan-500' : 'focus:ring-indigo-500'
+                }`}
+              />
+              <svg
+                className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 ${
+                  currentTheme.name === 'Neon' ? 'text-gray-500' : 'text-gray-400'
+                }`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                />
+              </svg>
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className={`absolute right-3 top-1/2 transform -translate-y-1/2 ${
+                    currentTheme.name === 'Neon' ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'
+                  }`}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
+            {searchQuery && (
+              <p className={`mt-2 text-sm ${currentTheme.name === 'Neon' ? 'text-gray-400' : 'text-gray-600'}`}>
+                Showing {sortedPurchases.length} result{sortedPurchases.length !== 1 ? 's' : ''} for "{searchQuery}"
+              </p>
+            )}
+          </div>
+          
           <div className="flex items-center space-x-2 flex-wrap gap-2">
             {selectedPurchases.size > 0 && (
               <button
