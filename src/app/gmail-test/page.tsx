@@ -627,7 +627,22 @@ export default function GmailTestPage() {
         {/* Purchases Found */}
         {stats && stats.purchasesFound.length > 0 && (
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-6">
-            <h2 className="text-xl font-bold mb-4">Purchases Found ({stats.purchasesFound.length})</h2>
+            <h2 className="text-xl font-bold mb-4">
+              Purchases Found ({stats.purchasesFound.length})
+              {(() => {
+                // Count duplicate order numbers
+                const orderCounts = new Map<string, number>();
+                stats.purchasesFound.forEach(p => {
+                  orderCounts.set(p.orderNumber, (orderCounts.get(p.orderNumber) || 0) + 1);
+                });
+                const duplicates = Array.from(orderCounts.values()).filter(count => count > 1).length;
+                return (
+                  <span className={`text-sm ml-2 ${duplicates > 0 ? 'text-red-400' : 'text-green-400'}`}>
+                    ({duplicates} duplicate{duplicates !== 1 ? 's' : ''})
+                  </span>
+                );
+              })()}
+            </h2>
             <div className="bg-black/50 rounded-lg p-4 max-h-96 overflow-y-auto space-y-2">
               {stats.purchasesFound.map((purchase, i) => (
                 <div key={i} className="flex items-start gap-3 p-2 hover:bg-gray-800/50 rounded">
