@@ -3535,20 +3535,9 @@ const Purchases = () => {
                             return fallbackDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
                           }
                         }
-                        // Last resort: email_date (but this might be delivery date, so log warning)
-                        if (purchase.email_date) {
-                          console.warn(`⚠️ Using email_date for purchase date (might be delivery date): ${purchase.orderNumber}`, {
-                            purchaseDate: purchase.purchaseDate,
-                            purchase_date: purchase.purchase_date,
-                            email_date: purchase.email_date,
-                            status: purchase.status
-                          });
-                          const emailDate = new Date(purchase.email_date);
-                          if (!isNaN(emailDate.getTime())) {
-                            return emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                          }
-                        }
-                        return <span className={`text-xs ${currentTheme.colors.textSecondary}`}>—</span>;
+                        // DO NOT use email_date - it's the delivery/shipped date, not the purchase date!
+                        // If we don't have a purchase date, show "Unknown"
+                        return <span className={`text-xs ${currentTheme.colors.textSecondary}`}>Unknown</span>;
                       })()}
                     </span>
                   </td>
