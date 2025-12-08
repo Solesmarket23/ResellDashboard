@@ -46,6 +46,12 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
   const [elapsedTime, setElapsedTime] = useState(0);
   const isCancelledRef = useRef(false);
   const controllerRef = useRef<AbortController | null>(null);
+  
+  // Draggable state
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<HTMLDivElement>(null);
 
   // Cancel outstanding work on unmount
   useEffect(() => {
@@ -83,6 +89,50 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoStart]);
+
+  // Drag handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    // Only allow dragging from the header area (not buttons)
+    if ((e.target as HTMLElement).closest('button')) return;
+    
+    setIsDragging(true);
+    setDragStart({
+      x: e.clientX - position.x,
+      y: e.clientY - position.y
+    });
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging) return;
+      
+      const newX = e.clientX - dragStart.x;
+      const newY = e.clientY - dragStart.y;
+      
+      // Keep within viewport bounds
+      const maxX = window.innerWidth - (dragRef.current?.offsetWidth || 384);
+      const maxY = window.innerHeight - (dragRef.current?.offsetHeight || 200);
+      
+      setPosition({
+        x: Math.max(0, Math.min(newX, maxX)),
+        y: Math.max(0, Math.min(newY, maxY))
+      });
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, dragStart, position]);
 
   const startBatchedSync = async () => {
     setIsLoading(true);
@@ -400,14 +450,24 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
   };
 
   return (
-    <div className={`${
-      currentTheme.name === 'Neon' 
-        ? 'bg-gray-900/95 backdrop-blur-md' 
-        : 'bg-white'
-    } rounded-lg border ${currentTheme.colors.border} shadow-2xl ${className}`}>
+    <div 
+      ref={dragRef}
+      className={`${
+        currentTheme.name === 'Neon' 
+          ? 'bg-gray-900/95 backdrop-blur-md' 
+          : 'bg-white'
+      } rounded-lg border ${currentTheme.colors.border} shadow-2xl ${className} ${isDragging ? 'cursor-grabbing' : ''}`}
+      style={{
+        transform: `translate(${position.x}px, ${position.y}px)`,
+        transition: isDragging ? 'none' : 'transform 0.2s ease-out'
+      }}
+    >
       <div className="p-4">
         {/* Header */}
-        <div className="flex items-center justify-between mb-3">
+        <div 
+          className={`flex items-center justify-between mb-3 ${isDragging ? '' : 'cursor-grab'}`}
+          onMouseDown={handleMouseDown}
+        >
           <div className="flex items-center gap-2">
             <div className={`p-1.5 rounded-lg ${currentTheme.colors.accent === 'text-cyan-400' ? 'bg-cyan-500/20' : 'bg-blue-500/20'}`}>
               <Mail className={`w-4 h-4 ${currentTheme.colors.accent || 'text-blue-500'}`} />

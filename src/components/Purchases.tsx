@@ -3769,9 +3769,9 @@ const Purchases = () => {
         />
       )}
 
-      {/* Batched Gmail Sync - Compact Corner Notification */}
+      {/* Batched Gmail Sync - Draggable Notification */}
       {showBatchedSync && (
-        <div className="fixed bottom-6 right-6 z-50 max-w-md w-96 shadow-2xl">
+        <div className="fixed bottom-6 right-6 z-50 w-96">
           <div className="relative">
             <GmailBatchedSync
               onPurchasesUpdate={handleBatchedPurchasesUpdate}
