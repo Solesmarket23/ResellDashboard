@@ -3707,6 +3707,7 @@ const Purchases = () => {
                 setShowBatchedSync(false);
               }}
               className=""
+              autoStart={true}
             />
             
             {/* Close button - positioned outside the card */}

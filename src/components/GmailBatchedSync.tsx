@@ -21,12 +21,14 @@ interface GmailBatchedSyncProps {
   onPurchasesUpdate?: (purchases: any[]) => void;
   onSyncComplete?: (totalPurchases: number) => void;
   className?: string;
+  autoStart?: boolean;
 }
 
 const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
   onPurchasesUpdate,
   onSyncComplete,
-  className = ''
+  className = '',
+  autoStart = false
 }) => {
   const { currentTheme } = useTheme();
   const [isLoading, setIsLoading] = useState(false);
@@ -66,6 +68,14 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
 
     return () => clearInterval(interval);
   }, [isLoading, startTime]);
+
+  // Auto-start sync if autoStart prop is true
+  useEffect(() => {
+    if (autoStart && !isLoading && !isComplete && !error) {
+      startBatchedSync();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart]);
 
   const startBatchedSync = async () => {
     setIsLoading(true);
