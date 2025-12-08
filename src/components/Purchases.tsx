@@ -7,7 +7,7 @@ import { useAuth } from '../lib/contexts/AuthContext';
 import { addDocument, getDocuments, updateDocument, deleteDocument } from '../lib/firebase/firebaseUtils';
 import { generateGmailSearchUrl, generateGmailShippedEmailUrl, formatOrderNumberForDisplay } from '../lib/utils/orderNumberUtils';
 import { exportToCSV, exportToExcel, exportToJSON, getExportStats, ExportablePurchase } from '../lib/utils/exportUtils';
-import { consolidatePurchasesByOrderNumber } from '../lib/utils/statusPriority';
+import { consolidatePurchasesByOrderNumber, getStatusPriority } from '../lib/utils/statusPriority';
 import NativeBarcodeScannerModal from './NativeBarcodeScannerModal';
 import ZXingScannerModal from './ZXingScannerModal';
 import RemoteScanModal from './RemoteScanModal';
@@ -360,16 +360,26 @@ const Purchases = () => {
       purchase.orderNumber
     );
     
-    // Deduplicate by order number before sorting
+    // Deduplicate by order number before sorting using status priority system
     const uniqueMap = new Map();
     validPurchases.forEach(purchase => {
       const existing = uniqueMap.get(purchase.orderNumber);
-      if (!existing || 
-          (purchase.status === 'Delivered' && existing.status !== 'Delivered') ||
-          (purchase.status === 'Shipped' && existing.status === 'Ordered') ||
-          (purchase.tracking && !existing.tracking)) {
-        // Keep the purchase with better status or tracking info
+      if (!existing) {
+        // No existing purchase, add this one
         uniqueMap.set(purchase.orderNumber, purchase);
+      } else {
+        // Compare priorities: Refunded (10) > Partially Refunded (9) > Delivered (8) > Shipped (6) > Ordered (4)
+        const existingPriority = getStatusPriority(existing.status || 'Ordered');
+        const newPriority = getStatusPriority(purchase.status || 'Ordered');
+        
+        if (newPriority > existingPriority) {
+          // New purchase has higher priority status, replace existing
+          uniqueMap.set(purchase.orderNumber, purchase);
+        } else if (newPriority === existingPriority && purchase.tracking && !existing.tracking) {
+          // Same priority but new one has tracking info, replace existing
+          uniqueMap.set(purchase.orderNumber, purchase);
+        }
+        // Otherwise keep existing
       }
     });
     
@@ -1860,6 +1870,7 @@ const Purchases = () => {
     const normalized = (status || '').toLowerCase();
     if (normalized.includes('deliver')) return 'green';
     if (normalized.includes('ship')) return 'blue';
+    if (normalized.includes('refund')) return 'red'; // Full refund or partial refund
     if (normalized.includes('cancel')) return 'red';
     if (normalized.includes('pend')) return 'yellow';
     // Default for new orders or unknowns
