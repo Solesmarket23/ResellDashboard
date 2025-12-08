@@ -72,7 +72,12 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
   // Auto-start sync if autoStart prop is true
   useEffect(() => {
     if (autoStart && !isLoading && !isComplete && !error) {
-      startBatchedSync();
+      console.log('🚀 Auto-starting Gmail sync...');
+      // Small delay to ensure component is fully mounted
+      const timer = setTimeout(() => {
+        startBatchedSync();
+      }, 100);
+      return () => clearTimeout(timer);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoStart]);
