@@ -532,17 +532,38 @@ export default function GmailTestPage() {
                 </a>
               </div>
             )}
-            <button
-              onClick={startTest}
-              disabled={isRunning || !gmailConnected}
-              className={`px-6 py-3 rounded-lg font-medium transition-all ${
-                isRunning || !gmailConnected
-                  ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                  : 'bg-blue-600 hover:bg-blue-700 text-white'
-              }`}
-            >
-              {isRunning ? 'Running...' : 'Start Test'}
-            </button>
+            <div className="flex gap-3">
+              <button
+                onClick={startTest}
+                disabled={isRunning || !gmailConnected}
+                className={`px-6 py-3 rounded-lg font-medium transition-all ${
+                  isRunning || !gmailConnected
+                    ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
+              >
+                {isRunning ? 'Running...' : 'Start Test'}
+              </button>
+              {stats && stats.totalEmailsFetched > 0 && (
+                <button
+                  onClick={() => {
+                    setStats(null);
+                    setLogs([]);
+                    setError(null);
+                    setIsRunning(false);
+                    setStartTime(null);
+                  }}
+                  disabled={isRunning}
+                  className={`px-4 py-3 rounded-lg font-medium transition-all ${
+                    isRunning
+                      ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                      : 'bg-red-600 hover:bg-red-700 text-white'
+                  }`}
+                >
+                  Clear & Restart
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
