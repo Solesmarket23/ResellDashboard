@@ -20,6 +20,7 @@ interface BatchProgress {
 interface GmailBatchedSyncProps {
   onPurchasesUpdate?: (purchases: any[]) => void;
   onSyncComplete?: (totalPurchases: number) => void;
+  onClose?: () => void;
   className?: string;
   autoStart?: boolean;
   consolidatedCount?: number;
@@ -28,6 +29,7 @@ interface GmailBatchedSyncProps {
 const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
   onPurchasesUpdate,
   onSyncComplete,
+  onClose,
   className = '',
   autoStart = false,
   consolidatedCount = 0
@@ -47,8 +49,17 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
   const isCancelledRef = useRef(false);
   const controllerRef = useRef<AbortController | null>(null);
   
-  // Draggable state
-  const [position, setPosition] = useState({ x: 0, y: 0 });
+  // Draggable state - start at bottom-right corner
+  const [position, setPosition] = useState(() => {
+    // Calculate initial position at bottom-right
+    if (typeof window !== 'undefined') {
+      return {
+        x: window.innerWidth - 400, // 384px width + 16px padding
+        y: window.innerHeight - 250  // Approximate height + padding
+      };
+    }
+    return { x: 0, y: 0 };
+  });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const dragRef = useRef<HTMLDivElement>(null);
@@ -452,7 +463,7 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
   return (
     <div 
       ref={dragRef}
-      className={`${
+      className={`absolute top-0 left-0 w-96 pointer-events-auto ${
         currentTheme.name === 'Neon' 
           ? 'bg-gray-900/95 backdrop-blur-md' 
           : 'bg-white'
@@ -462,6 +473,23 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
         transition: isDragging ? 'none' : 'transform 0.2s ease-out'
       }}
     >
+      {/* Close button - positioned outside the card */}
+      {onClose && (
+        <button
+          onClick={onClose}
+          className={`absolute -top-2 -right-2 p-1.5 rounded-full ${
+            currentTheme.name === 'Neon' 
+              ? 'bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-gray-200 border border-white/20' 
+              : 'bg-white hover:bg-gray-100 text-gray-600 hover:text-gray-900 border border-gray-300 shadow-lg'
+          } transition-colors z-10`}
+          title="Close sync panel"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      )}
+      
       <div className="p-4">
         {/* Header */}
         <div 
