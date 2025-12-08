@@ -847,6 +847,15 @@ const Purchases = () => {
     
     const consolidatedPurchases = consolidatePurchasesByOrderNumber(allPurchases);
     
+    // After consolidation, convert any remaining "TBD" to "Unknown"
+    // This means we never found an order confirmation email for this purchase
+    consolidatedPurchases.forEach(purchase => {
+      if (purchase.purchaseDate === 'TBD') {
+        console.log(`⚠️ No order confirmation found for ${purchase.orderNumber} - setting purchaseDate to "Unknown"`);
+        purchase.purchaseDate = 'Unknown';
+      }
+    });
+    
     // Log consolidation results - check if purchase dates were corrected
     console.log(`🔄 Frontend consolidation: ${allPurchases.length} → ${consolidatedPurchases.length} consolidated purchases`);
     
