@@ -22,13 +22,15 @@ interface GmailBatchedSyncProps {
   onSyncComplete?: (totalPurchases: number) => void;
   className?: string;
   autoStart?: boolean;
+  consolidatedCount?: number;
 }
 
 const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
   onPurchasesUpdate,
   onSyncComplete,
   className = '',
-  autoStart = false
+  autoStart = false,
+  consolidatedCount = 0
 }) => {
   const { currentTheme } = useTheme();
   const [isLoading, setIsLoading] = useState(false);
@@ -470,9 +472,9 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Purchase Emails</div>
+                  <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Purchases</div>
                   <div className={`text-sm font-semibold ${currentTheme.name === 'Neon' ? 'text-emerald-400' : 'text-green-600'}`}>
-                    {allPurchases.length}
+                    {consolidatedCount}
                   </div>
                 </div>
               </div>
@@ -529,9 +531,9 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Purchase Emails</div>
+                  <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Purchases</div>
                   <div className={`text-sm font-semibold ${currentTheme.name === 'Neon' ? 'text-emerald-400' : 'text-green-600'}`}>
-                    {allPurchases.length}
+                    {consolidatedCount}
                   </div>
                 </div>
               </div>

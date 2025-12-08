@@ -3771,6 +3771,7 @@ const Purchases = () => {
               }}
               className=""
               autoStart={true}
+              consolidatedCount={totalCount}
             />
             
             {/* Close button - positioned outside the card */}
