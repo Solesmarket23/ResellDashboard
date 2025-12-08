@@ -189,12 +189,56 @@ const Purchases = () => {
           bValue = parseFloat(b.price.replace('$', '').replace(',', ''));
           break;
         case 'purchaseDate':
-          aValue = new Date(a.purchaseDate + ', 2024').getTime();
-          bValue = new Date(b.purchaseDate + ', 2024').getTime();
+          // Handle various date formats and edge cases
+          const aDate = a.purchaseDate;
+          const bDate = b.purchaseDate;
+          
+          // Handle special cases (TBD, Unknown, N/A, Invalid Date)
+          const specialCases = ['TBD', 'Unknown', 'N/A', 'Invalid Date', ''];
+          const aIsSpecial = !aDate || specialCases.includes(aDate);
+          const bIsSpecial = !bDate || specialCases.includes(bDate);
+          
+          // Put special cases at the end
+          if (aIsSpecial && bIsSpecial) {
+            aValue = 0;
+            bValue = 0;
+          } else if (aIsSpecial) {
+            aValue = direction === 'asc' ? Infinity : -Infinity;
+            bValue = 0;
+          } else if (bIsSpecial) {
+            aValue = 0;
+            bValue = direction === 'asc' ? Infinity : -Infinity;
+          } else {
+            // Parse actual dates
+            aValue = new Date(aDate).getTime();
+            bValue = new Date(bDate).getTime();
+            
+            // If parsing failed, treat as special case
+            if (isNaN(aValue)) aValue = direction === 'asc' ? Infinity : -Infinity;
+            if (isNaN(bValue)) bValue = direction === 'asc' ? Infinity : -Infinity;
+          }
           break;
         case 'dateAdded':
-          aValue = new Date(a.dateAdded.replace('\n', ' ') + ', 2024').getTime();
-          bValue = new Date(b.dateAdded.replace('\n', ' ') + ', 2024').getTime();
+          // Handle date added with proper parsing
+          const aDateAdded = a.dateAdded ? a.dateAdded.replace('\n', ' ') : '';
+          const bDateAdded = b.dateAdded ? b.dateAdded.replace('\n', ' ') : '';
+          
+          if (!aDateAdded && !bDateAdded) {
+            aValue = 0;
+            bValue = 0;
+          } else if (!aDateAdded) {
+            aValue = direction === 'asc' ? Infinity : -Infinity;
+            bValue = 0;
+          } else if (!bDateAdded) {
+            aValue = 0;
+            bValue = direction === 'asc' ? Infinity : -Infinity;
+          } else {
+            aValue = new Date(aDateAdded).getTime();
+            bValue = new Date(bDateAdded).getTime();
+            
+            if (isNaN(aValue)) aValue = direction === 'asc' ? Infinity : -Infinity;
+            if (isNaN(bValue)) bValue = direction === 'asc' ? Infinity : -Infinity;
+          }
           break;
         case 'verified':
           aValue = a.verified.toLowerCase();
