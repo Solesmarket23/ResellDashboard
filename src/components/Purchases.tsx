@@ -2782,15 +2782,21 @@ const Purchases = () => {
             
             <button
               onClick={refreshPurchases}
-              disabled={loading || !gmailConnected}
+              disabled={loading || !gmailConnected || showBatchedSync}
               className={`flex items-center space-x-2 ${
                 currentTheme.name === 'Neon' 
                   ? 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 shadow-lg hover:shadow-indigo-500/25' 
                   : 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 shadow-lg hover:shadow-indigo-500/25'
-              } disabled:opacity-50 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200`}
-              title={!gmailConnected ? 'Please connect Gmail first' : 'Sync your Gmail purchases'}
+              } disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-medium transition-all duration-200`}
+              title={
+                showBatchedSync 
+                  ? 'Sync already in progress' 
+                  : !gmailConnected 
+                  ? 'Please connect Gmail first' 
+                  : 'Sync your Gmail purchases'
+              }
             >
-              <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-5 h-5 ${loading || showBatchedSync ? 'animate-spin' : ''}`} />
               <span>Sync Gmail</span>
             </button>
             
