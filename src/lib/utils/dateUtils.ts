@@ -26,9 +26,9 @@ export function formatDisplayDate(date: Date | string): string {
 }
 
 /**
- * Format a date for display with short month/day format
+ * Format a date for display with short month/day/year format
  */
 export function formatShortDate(date: Date | string): string {
   const dateObj = typeof date === 'string' ? parseLocalDate(date) : date;
-  return dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }

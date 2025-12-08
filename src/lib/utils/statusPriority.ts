@@ -166,7 +166,7 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
             }
             
             if (!isNaN(emailDate.getTime())) {
-              const formattedDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+              const formattedDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
               // ALWAYS overwrite purchaseDate with order confirmation date
               primaryPurchase.purchaseDate = formattedDate;
               // Store the original email_date string, or convert to ISO if it's a Date object
@@ -199,7 +199,7 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
           try {
             const emailDate = new Date(orderConfirmationEmail.createdAt);
             if (!isNaN(emailDate.getTime())) {
-              const formattedDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+              const formattedDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
               primaryPurchase.purchaseDate = formattedDate;
               primaryPurchase.purchase_date = orderConfirmationEmail.createdAt;
               primaryPurchase.email_date = orderConfirmationEmail.createdAt;
@@ -238,11 +238,11 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
               primaryPurchase.purchase_date = earliestPurchase.purchase_date || earliestPurchase.email_date || earliestPurchase.createdAt;
             } else if (earliestPurchase.email_date) {
               const emailDate = new Date(earliestPurchase.email_date);
-              primaryPurchase.purchaseDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+              primaryPurchase.purchaseDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
               primaryPurchase.purchase_date = earliestPurchase.email_date;
             } else if (earliestPurchase.createdAt) {
               const emailDate = new Date(earliestPurchase.createdAt);
-              primaryPurchase.purchaseDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+              primaryPurchase.purchaseDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
               primaryPurchase.purchase_date = earliestPurchase.createdAt;
             }
           }

@@ -30,6 +30,9 @@ interface SyncStats {
     subject: string;
     orderNumber: string;
     status: string;
+    size?: string;
+    purchaseDate?: string;
+    productName?: string;
     relatedEmails?: string[]; // Other emails for the same order
   }>;
   emailsFiltered: Array<{
@@ -61,6 +64,36 @@ export default function GmailTestPage() {
     const hours = Math.floor(mins / 60);
     const remainingMins = mins % 60;
     return `${hours}h ${remainingMins}m`;
+  };
+
+  const formatPurchaseDate = (dateString: string | undefined): string => {
+    if (!dateString || dateString === 'N/A') return 'N/A';
+    
+    try {
+      const date = new Date(dateString);
+      
+      // Check if date is valid
+      if (isNaN(date.getTime())) return 'Invalid Date';
+      
+      // Check if date is reasonable (between 2015 and now + 1 day)
+      const now = new Date();
+      const minDate = new Date('2015-01-01');
+      const maxDate = new Date(now.getTime() + 86400000); // Now + 1 day
+      
+      if (date < minDate || date > maxDate) {
+        console.warn(`⚠️ Date out of range: ${dateString} -> ${date.toISOString()}`);
+        return 'Invalid Date';
+      }
+      
+      return date.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric', 
+        year: 'numeric' 
+      });
+    } catch (error) {
+      console.error(`❌ Error parsing date: ${dateString}`, error);
+      return 'Invalid Date';
+    }
   };
 
   // Consolidate purchases by order number (keep highest priority status)
@@ -262,7 +295,10 @@ export default function GmailTestPage() {
           const newPurchases = data.purchases.map((p: any) => ({
             subject: p.subject || p.email_subject || 'Unknown',
             orderNumber: p.orderNumber || p.order_number || 'N/A',
-            status: p.status || p.shipping_status || 'Unknown'
+            status: p.status || p.shipping_status || 'Unknown',
+            size: p.product?.size || p.size || 'N/A',
+            purchaseDate: p.purchase_date || p.purchaseDate || 'N/A',
+            productName: p.product?.name || p.productName || 'Unknown'
           }));
           
           // Add purchases in small increments with delays
@@ -711,9 +747,16 @@ export default function GmailTestPage() {
                     {i + 1}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-300 truncate">{purchase.subject}</p>
-                    <div className="flex items-center gap-3 mt-1">
-                      <span className="text-xs text-gray-500">Order: {purchase.orderNumber}</span>
+                    <p className="text-sm text-gray-300 truncate">{purchase.productName || purchase.subject}</p>
+                    <div className="flex items-center gap-3 mt-1 flex-wrap">
+                      <a 
+                        href={`https://mail.google.com/mail/u/0/#search/${encodeURIComponent(purchase.orderNumber)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-gray-500 hover:text-blue-400 hover:underline transition-colors cursor-pointer"
+                      >
+                        Order: {purchase.orderNumber}
+                      </a>
                       <span className={`text-xs px-2 py-0.5 rounded ${
                         purchase.status === 'Delivered' ? 'bg-green-500/20 text-green-400' :
                         purchase.status === 'Shipped' ? 'bg-blue-500/20 text-blue-400' :
@@ -721,6 +764,17 @@ export default function GmailTestPage() {
                       }`}>
                         {purchase.status}
                       </span>
+                      {purchase.size && purchase.size !== 'N/A' && (
+                        <span className="text-xs text-blue-400">Size: {purchase.size}</span>
+                      )}
+                      {purchase.purchaseDate && purchase.purchaseDate !== 'N/A' && (() => {
+                        const formattedDate = formatPurchaseDate(purchase.purchaseDate);
+                        return formattedDate !== 'Invalid Date' && formattedDate !== 'N/A' ? (
+                          <span className="text-xs text-purple-400">
+                            Date: {formattedDate}
+                          </span>
+                        ) : null;
+                      })()}
                     </div>
                   </div>
                 </div>
