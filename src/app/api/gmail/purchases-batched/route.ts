@@ -80,7 +80,7 @@ function getDefaultConfig() {
         statusColor: "red",
         subjectPatterns: [
           "Order canceled",
-          "Refund Issued"
+          "Refund Issued" // Full refund only
         ]
       }
     },
@@ -543,6 +543,7 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
     // Additional filtering for sales/non-purchase emails in subject/content
     const loweredSubject = subjectHeader.toLowerCase();
     const nonPurchaseSubjects = [
+      'a refund is on the way', // Partial refund notification (not a new purchase)
       'you sold',
       'sale price',
       'payout',
