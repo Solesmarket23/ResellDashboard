@@ -274,42 +274,14 @@ const Purchases = () => {
           cellContent = purchase.totalAmount ? `$${typeof purchase.totalAmount === 'number' ? purchase.totalAmount.toFixed(2) : purchase.totalAmount}` : (purchase.price || '');
           break;
         case 'purchaseDate':
-          // purchaseDate might be a formatted string like "Dec 1" or an ISO date string
-          // If it's already formatted (short format), use it directly
-          // Otherwise, parse it as a Date
+          // Use the same date formatting logic as gmail-test page
+          // Priority: purchaseDate > purchase_date
           if (purchase.purchaseDate) {
-            // Check if it's already in short format (e.g., "Dec 1", "Jan 15")
-            const shortFormatPattern = /^[A-Za-z]{3}\s+\d{1,2}$/;
-            if (shortFormatPattern.test(purchase.purchaseDate)) {
-              cellContent = purchase.purchaseDate; // Use formatted string directly
-            } else {
-              // Try to parse as Date
-              const parsedDate = new Date(purchase.purchaseDate);
-              if (!isNaN(parsedDate.getTime())) {
-                cellContent = parsedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-              } else {
-                // Fallback: try purchase_date (ISO string)
-                if (purchase.purchase_date) {
-                  const fallbackDate = new Date(purchase.purchase_date);
-                  cellContent = !isNaN(fallbackDate.getTime()) 
-                    ? fallbackDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                    : purchase.purchaseDate; // Use original if all parsing fails
-                } else {
-                  cellContent = purchase.purchaseDate; // Use original if all parsing fails
-                }
-              }
-            }
+            cellContent = formatPurchaseDate(purchase.purchaseDate);
           } else {
             // Fallback to purchase_date or email_date if purchaseDate is missing
             const fallbackDateStr = purchase.purchase_date || purchase.email_date;
-            if (fallbackDateStr) {
-              const fallbackDate = new Date(fallbackDateStr);
-              cellContent = !isNaN(fallbackDate.getTime()) 
-                ? fallbackDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                : '';
-            } else {
-              cellContent = '';
-            }
+            cellContent = formatPurchaseDate(fallbackDateStr);
           }
           break;
         case 'tracking':
@@ -1865,6 +1837,40 @@ const Purchases = () => {
   };
 
   // Derive a color when statusColor is missing to keep badges color-coded
+  // Format purchase date with proper handling of TBD, Unknown, and invalid dates
+  const formatPurchaseDate = (dateString: string | undefined): string => {
+    if (!dateString || dateString === 'N/A') return 'N/A';
+    
+    // Pass through TBD and Unknown without trying to parse as dates
+    if (dateString === 'TBD' || dateString === 'Unknown') return dateString;
+    
+    try {
+      const date = new Date(dateString);
+      
+      // Check if date is valid
+      if (isNaN(date.getTime())) return 'Invalid Date';
+      
+      // Check if date is reasonable (between 2015 and now + 1 day)
+      const now = new Date();
+      const minDate = new Date('2015-01-01');
+      const maxDate = new Date(now.getTime() + 86400000); // Now + 1 day
+      
+      if (date < minDate || date > maxDate) {
+        console.warn(`⚠️ Date out of range: ${dateString} -> ${date.toISOString()}`);
+        return 'Invalid Date';
+      }
+      
+      return date.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric', 
+        year: 'numeric' 
+      });
+    } catch (error) {
+      console.error(`❌ Error parsing date: ${dateString}`, error);
+      return 'Invalid Date';
+    }
+  };
+
   const deriveStatusColor = (status: string, explicitColor?: string) => {
     if (explicitColor) return explicitColor;
     const normalized = (status || '').toLowerCase();
