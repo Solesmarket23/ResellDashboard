@@ -93,41 +93,53 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
       
       // ALWAYS find the order confirmation email for purchase date
       // Check multiple ways to identify order confirmation emails:
-      // 1. Status is "ordered" or contains "order confirmed" or "confirmation"
-      // 2. Email subject contains "Order Confirmed", "Order Confirmation", "Xpress Order Confirmed" (ignore emojis)
-      // 3. Filename contains "order-confirmed", "order-confirmation", "xpress-order-confirmed" (ignore emojis and spaces)
+      // PRIORITY: Subject match is most reliable (works even if email was miscategorized)
+      // 1. Email subject contains order confirmation keywords (most reliable)
+      // 2. Status is "ordered" or "order placed" (secondary check)
+      // 3. Filename contains order confirmation patterns (tertiary check)
       // 4. Use earliest email date as fallback if no order confirmation found
       const orderConfirmationEmail = sortedPurchases.find(p => {
-        const status = (p.status || p.shipping_status || '').toLowerCase();
         // Remove emojis and normalize subject/filename for matching
         const normalizeText = (text: string) => text.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');
         const rawSubject = (p.email_subject || p.subject || '').toLowerCase();
         const subject = normalizeText(rawSubject);
         const filename = normalizeText(p.filename || '');
+        const status = (p.status || p.shipping_status || '').toLowerCase();
         
-        // Check status - must be "ordered" or "order placed" (not "shipped" or "delivered")
-        const statusMatch = (status === 'ordered' || 
-                           status === 'order placed') &&
-                           status !== 'shipped' &&
-                           status !== 'delivered';
-        
-        // Check subject line (normalized, emojis removed) - more patterns
+        // PRIORITY 1: Check subject line (most reliable - works even if email was miscategorized)
+        // StockX order confirmations can have various formats:
+        // - "Order Confirmed:", "Xpress Order Confirmed:", "Order Confirmation:"
+        // - "Item Arrived For Verification" (StockX sends this when order is placed)
+        // - Emoji variations like "👍 Order Confirmed:"
         const subjectMatch = subject.includes('order-confirmed') ||
                             subject.includes('order-confirmation') ||
                             subject.includes('xpress-order-confirmed') ||
+                            subject.includes('item-arrived-for-verification') ||
                             rawSubject.includes('order confirmed') ||
                             rawSubject.includes('order confirmation') ||
+                            rawSubject.includes('xpress order confirmed') ||
+                            rawSubject.includes('item arrived for verification') ||
+                            rawSubject.includes('purchase confirmed') ||
                             rawSubject.includes('👍 order') ||
                             rawSubject.includes('👍order');
         
-        // Check filename (normalized, emojis and spaces removed)
-        const filenameMatch = filename.includes('order-confirmed') ||
-                             filename.includes('order-confirmation') ||
-                             filename.includes('xpress-order-confirmed');
+        // PRIORITY 2: Check status - must be "ordered" or "order placed" (not "shipped" or "delivered")
+        // But only if subject doesn't already match (to avoid false positives)
+        const statusMatch = !subjectMatch && // Only check status if subject doesn't match
+                           (status === 'ordered' || status === 'order placed') &&
+                           status !== 'shipped' &&
+                           status !== 'delivered';
         
-        const found = statusMatch || subjectMatch || filenameMatch;
+        // PRIORITY 3: Check filename (normalized, emojis and spaces removed)
+        const filenameMatch = !subjectMatch && // Only check filename if subject doesn't match
+                             (filename.includes('order-confirmed') ||
+                              filename.includes('order-confirmation') ||
+                              filename.includes('xpress-order-confirmed'));
+        
+        const found = subjectMatch || statusMatch || filenameMatch;
         if (found) {
-          console.log(`🔍 Order confirmation email detected: status="${status}", subject="${p.email_subject || p.subject}", filename="${p.filename}"`);
+          const matchType = subjectMatch ? 'subject' : (statusMatch ? 'status' : 'filename');
+          console.log(`🔍 Order confirmation email detected (${matchType}): status="${status}", subject="${p.email_subject || p.subject}", filename="${p.filename}"`);
         }
         return found;
       });
@@ -135,7 +147,10 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
       // ALWAYS set purchase date from order confirmation email (if found)
       // This overwrites any purchase date that might have been set from the primary (shipped/delivered) email
       if (orderConfirmationEmail) {
-        console.log(`📅 Found order confirmation email for ${orderNumber}: status="${orderConfirmationEmail.status || orderConfirmationEmail.shipping_status}", subject="${orderConfirmationEmail.email_subject || orderConfirmationEmail.subject || 'N/A'}", email_date="${orderConfirmationEmail.email_date}", purchaseDate="${orderConfirmationEmail.purchaseDate}"`);
+        const originalPurchaseDate = primaryPurchase.purchaseDate;
+        console.log(`📅 Found order confirmation email for ${orderNumber}:`);
+        console.log(`   Order confirmation: status="${orderConfirmationEmail.status || orderConfirmationEmail.shipping_status}", subject="${orderConfirmationEmail.email_subject || orderConfirmationEmail.subject || 'N/A'}", email_date="${orderConfirmationEmail.email_date}"`);
+        console.log(`   Primary purchase (before): status="${primaryPurchase.status || primaryPurchase.shipping_status}", purchaseDate="${originalPurchaseDate}", email_date="${primaryPurchase.email_date}"`);
         
         let purchaseDateSet = false;
         
@@ -162,7 +177,7 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
                 ? orderConfirmationEmail.email_date
                 : emailDate.toISOString();
               purchaseDateSet = true;
-              console.log(`✅ Set purchase date from order confirmation email_date: "${orderConfirmationEmail.email_date}" → ${formattedDate} (overwrote any existing date)`);
+              console.log(`✅ OVERWROTE purchase date: "${originalPurchaseDate}" → "${formattedDate}" (from order confirmation email dated ${emailDate.toLocaleDateString()})`);
             } else {
               console.warn(`⚠️ Invalid email_date: "${orderConfirmationEmail.email_date}" (parsed to invalid date)`);
             }
@@ -197,9 +212,15 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
         }
       } else {
         console.log(`⚠️ No order confirmation email found for ${orderNumber}`);
-        console.log(`   Available emails: ${sortedPurchases.map(p => `status="${p.status || p.shipping_status}", subject="${p.email_subject || p.subject || 'N/A'}", filename="${p.filename || 'N/A'}"`).join('; ')}`);
+        console.log(`   Available emails (${sortedPurchases.length} total):`);
+        sortedPurchases.forEach((p, idx) => {
+          const status = (p.status || p.shipping_status || '').toLowerCase();
+          const subject = (p.email_subject || p.subject || 'N/A').substring(0, 60);
+          const emailDate = p.email_date || p.createdAt || 'N/A';
+          console.log(`     ${idx + 1}. status="${status}", subject="${subject}", email_date="${emailDate}"`);
+        });
         console.log(`   ⚠️ WARNING: Purchase date will use earliest available email date, not order confirmation date`);
-        console.log(`   💡 TIP: Upload the order confirmation email (Order Confirmed, Order Confirmation, or Xpress Order Confirmed) to get the correct purchase date`);
+        console.log(`   💡 TIP: Order confirmation emails should have status="ordered" and subject containing "Order Confirmed", "Order Confirmation", or "Item Arrived For Verification"`);
         console.log(`   Using earliest date fallback`);
         // Fallback: use the earliest email date as purchase date
         const dates = sortedPurchases

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { ChevronDown, Edit, MoreHorizontal, Camera, RefreshCw, Mail, Trash2, Settings, Plus, Shield, Wrench, Download, FileSpreadsheet, FileText, FileJson } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
@@ -274,7 +274,43 @@ const Purchases = () => {
           cellContent = purchase.totalAmount ? `$${typeof purchase.totalAmount === 'number' ? purchase.totalAmount.toFixed(2) : purchase.totalAmount}` : (purchase.price || '');
           break;
         case 'purchaseDate':
-          cellContent = purchase.purchaseDate ? new Date(purchase.purchaseDate).toLocaleDateString() : '';
+          // purchaseDate might be a formatted string like "Dec 1" or an ISO date string
+          // If it's already formatted (short format), use it directly
+          // Otherwise, parse it as a Date
+          if (purchase.purchaseDate) {
+            // Check if it's already in short format (e.g., "Dec 1", "Jan 15")
+            const shortFormatPattern = /^[A-Za-z]{3}\s+\d{1,2}$/;
+            if (shortFormatPattern.test(purchase.purchaseDate)) {
+              cellContent = purchase.purchaseDate; // Use formatted string directly
+            } else {
+              // Try to parse as Date
+              const parsedDate = new Date(purchase.purchaseDate);
+              if (!isNaN(parsedDate.getTime())) {
+                cellContent = parsedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+              } else {
+                // Fallback: try purchase_date (ISO string)
+                if (purchase.purchase_date) {
+                  const fallbackDate = new Date(purchase.purchase_date);
+                  cellContent = !isNaN(fallbackDate.getTime()) 
+                    ? fallbackDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                    : purchase.purchaseDate; // Use original if all parsing fails
+                } else {
+                  cellContent = purchase.purchaseDate; // Use original if all parsing fails
+                }
+              }
+            }
+          } else {
+            // Fallback to purchase_date or email_date if purchaseDate is missing
+            const fallbackDateStr = purchase.purchase_date || purchase.email_date;
+            if (fallbackDateStr) {
+              const fallbackDate = new Date(fallbackDateStr);
+              cellContent = !isNaN(fallbackDate.getTime()) 
+                ? fallbackDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                : '';
+            } else {
+              cellContent = '';
+            }
+          }
           break;
         case 'tracking':
           cellContent = purchase.tracking || (purchase.status?.toLowerCase() === 'ordered' ? 'Not Shipped Yet' : '');
@@ -313,8 +349,8 @@ const Purchases = () => {
     });
   };
   
-  // Get sorted purchases
-  const getSortedPurchases = () => {
+  // Memoized sorted purchases - only recalculates when purchases, manualPurchases, sortBy, or sortDirection change
+  const sortedPurchases = useMemo(() => {
     const allPurchases = [...purchases, ...manualPurchases];
     
     // Filter out invalid purchases first
@@ -343,7 +379,10 @@ const Purchases = () => {
     console.log(`📊 Purchase counts: Total=${allPurchases.length}, Valid=${validPurchases.length}, Unique=${uniquePurchases.length}`);
     
     return sortPurchases(uniquePurchases, sortBy, sortDirection);
-  };
+  }, [purchases, manualPurchases, sortBy, sortDirection]);
+
+  // Keep getSortedPurchases for backward compatibility with existing code
+  const getSortedPurchases = useCallback(() => sortedPurchases, [sortedPurchases]);
   
   // Sort icon component
   const SortIcon = ({ column }: { column: string }) => {
@@ -499,7 +538,7 @@ const Purchases = () => {
   useEffect(() => {
     const interval = setInterval(() => {
       checkGmailConnectionStatus();
-    }, 30000); // Check every 30 seconds
+    }, 60000); // Check every 60 seconds (reduced frequency for better performance)
 
     return () => clearInterval(interval);
   }, []);
@@ -600,37 +639,11 @@ const Purchases = () => {
     console.log(`🔍 DEBUG - Firebase user available:`, !!user, `user.uid:`, user?.uid);
     console.log(`🔍 DEBUG - Site password user available:`, !!siteUserId, `siteUserId:`, siteUserId);
     
-    // Load existing purchases from Firebase to preserve tracking numbers
-    let existingPurchasesMap = new Map();
-    if (userId) {
-      try {
-        let existingPurchases: any[] = [];
-        const isSitePasswordUser = !user && !!siteUserId;
-        
-        if (isSitePasswordUser) {
-          // For site password users, load from localStorage
-          const localPurchases = localStorage.getItem(`purchases_${userId}`);
-          if (localPurchases) {
-            existingPurchases = JSON.parse(localPurchases);
-          }
-        } else {
-          // For Firebase users, load from Firebase
-          existingPurchases = await getDocuments('purchases');
-          existingPurchases = existingPurchases.filter((p: any) => p.userId === userId);
-        }
-        
-        // Create a map of existing purchases by order number for quick lookup
-        existingPurchases.forEach((p: any) => {
-          if (p.orderNumber) {
-            existingPurchasesMap.set(p.orderNumber, p);
-          }
-        });
-        
-        console.log(`📦 Loaded ${existingPurchasesMap.size} existing purchases from Firebase to preserve tracking numbers`);
-      } catch (error) {
-        console.warn('⚠️ Could not load existing purchases to preserve tracking numbers:', error);
-      }
-    }
+    // REMOVED: Don't load from Firebase during batch updates - this was causing slow performance
+    // Tracking numbers will be preserved when we save to Firebase later in handleBatchedSyncComplete
+    // This avoids expensive Firebase reads on every batch update
+    const existingPurchasesMap = new Map();
+    console.log(`📦 Skipping existing purchases load during batch update (will preserve tracking on save)`);
     
     // Transform the data to match expected component format
     const transformPurchaseData = (purchase: any) => {
@@ -654,7 +667,7 @@ const Purchases = () => {
       // If no tracking number, carrier stays null (will show "-")
       
       return {
-        ...purchase,
+        ...purchase, // Spread all purchase fields first to preserve email_subject, email_date, etc. needed for consolidation
         product: {
           name: purchase.productName || purchase.product?.name || 'Unknown Product',
           brand: purchase.brand || purchase.product?.brand || 'Unknown Brand',
@@ -664,15 +677,22 @@ const Purchases = () => {
           color: purchase.product?.color || 'gray'
         },
         // Map other fields to expected format
-        orderNumber: purchase.orderNumber,
+        orderNumber: purchase.orderNumber || purchase.order_number,
         status: purchase.shippingStatus || purchase.status || 'Ordered',
+        shipping_status: purchase.shipping_status || purchase.shippingStatus || purchase.status || 'Ordered', // Preserve for consolidation
         tracking: tracking,
         carrier: carrier, // Use re-detected carrier
         market: purchase.merchant || purchase.market || 'StockX',
         price: purchase.totalAmount ? `$${purchase.totalAmount.toFixed(2)}` : (purchase.price || '$0.00'),
         originalPrice: purchase.totalAmount ? `$${purchase.totalAmount.toFixed(2)} + $0.00` : (purchase.price || '$0.00'),
-        purchaseDate: purchase.purchaseDate || purchase.purchase_date || purchase.createdAt || new Date().toISOString(),
-        dateAdded: purchase.createdAt || new Date().toISOString(),
+        // Preserve purchase date from consolidation (which should have used order confirmation email date)
+        // Consolidation happens BEFORE transformation, so purchaseDate should already be correct
+        purchaseDate: purchase.purchaseDate, // Use consolidated purchaseDate directly - don't override
+        purchase_date: purchase.purchase_date || purchase.purchaseDate, // Preserve for consolidation
+        email_date: purchase.email_date, // Preserve for consolidation
+        email_subject: purchase.email_subject || purchase.subject, // Preserve for consolidation
+        subject: purchase.subject || purchase.email_subject, // Preserve for consolidation
+        dateAdded: purchase.createdAt || purchase.dateAdded || new Date().toISOString(),
         verified: purchase.verified || 'pending',
         verifiedColor: purchase.verifiedColor || 'orange',
         // Preserve the Firebase ID if it exists
@@ -680,12 +700,85 @@ const Purchases = () => {
       };
     };
     
-    const transformedPurchases = allPurchases.map(transformPurchaseData);
-    
-    // IMPORTANT: Consolidate purchases by order number to merge emails from different batches
+    // IMPORTANT: Consolidate FIRST before transforming, so order confirmation emails can be found
     // This ensures order confirmation emails are found even if they're in different batches
-    // than delivery/shipped emails
-    const consolidatedPurchases = consolidatePurchasesByOrderNumber(transformedPurchases);
+    // than delivery/shipped emails. Consolidation will set the correct purchase date.
+    console.log(`🔄 Frontend consolidation: Starting with ${allPurchases.length} purchases`);
+    
+    // Group purchases by order number to see if we have duplicates
+    const ordersMap = new Map<string, any[]>();
+    allPurchases.forEach(p => {
+      const orderNum = p.orderNumber || p.order_number;
+      if (orderNum) {
+        if (!ordersMap.has(orderNum)) ordersMap.set(orderNum, []);
+        ordersMap.get(orderNum)!.push(p);
+      }
+    });
+    
+    // Log orders that have multiple emails (should be consolidated)
+    const ordersWithMultipleEmails = Array.from(ordersMap.entries()).filter(([_, purchases]) => purchases.length > 1);
+    console.log(`🔍 Found ${ordersWithMultipleEmails.length} orders with multiple emails (should consolidate):`);
+    ordersWithMultipleEmails.slice(0, 5).forEach(([orderNum, purchases]) => {
+      console.log(`   Order ${orderNum} (${purchases.length} emails):`, purchases.map(p => ({
+        status: p.status || p.shipping_status,
+        email_subject: (p.email_subject || p.subject || '').substring(0, 50),
+        email_date: p.email_date,
+        purchaseDate: p.purchaseDate
+      })));
+    });
+    
+    // Log sample purchases to verify they have email_subject and email_date
+    if (allPurchases.length > 0) {
+      // Find a delivery email to check
+      const deliveryEmail = allPurchases.find(p => 
+        (p.status || p.shipping_status || '').toLowerCase() === 'delivered' ||
+        (p.email_subject || p.subject || '').toLowerCase().includes('delivered')
+      );
+      if (deliveryEmail) {
+        console.log(`🔍 Sample DELIVERY email before consolidation:`, {
+          orderNumber: deliveryEmail.orderNumber,
+          status: deliveryEmail.status || deliveryEmail.shipping_status,
+          email_subject: deliveryEmail.email_subject || deliveryEmail.subject,
+          email_date: deliveryEmail.email_date,
+          purchaseDate: deliveryEmail.purchaseDate
+        });
+        
+        // Check if there's an order confirmation email for the same order
+        const sameOrderEmails = allPurchases.filter(p => 
+          (p.orderNumber || p.order_number) === (deliveryEmail.orderNumber || deliveryEmail.order_number)
+        );
+        console.log(`🔍 All emails for order ${deliveryEmail.orderNumber} (${sameOrderEmails.length} total):`, 
+          sameOrderEmails.map(p => ({
+            status: p.status || p.shipping_status,
+            email_subject: (p.email_subject || p.subject || '').substring(0, 60),
+            email_date: p.email_date
+          }))
+        );
+      }
+    }
+    
+    const consolidatedPurchases = consolidatePurchasesByOrderNumber(allPurchases);
+    
+    // Log consolidation results - check if purchase dates were corrected
+    console.log(`🔄 Frontend consolidation: ${allPurchases.length} → ${consolidatedPurchases.length} consolidated purchases`);
+    
+    // Check specific orders that had delivery dates
+    if (ordersWithMultipleEmails.length > 0) {
+      const testOrder = ordersWithMultipleEmails[0][0];
+      const consolidated = consolidatedPurchases.find(p => (p.orderNumber || p.order_number) === testOrder);
+      if (consolidated) {
+        console.log(`🔍 Order ${testOrder} AFTER consolidation:`, {
+          purchaseDate: consolidated.purchaseDate,
+          purchase_date: consolidated.purchase_date,
+          email_date: consolidated.email_date,
+          status: consolidated.status || consolidated.shipping_status,
+          email_subject: consolidated.email_subject || consolidated.subject
+        });
+      }
+    }
+    
+    // Transform AFTER consolidation so consolidated purchase dates are preserved
+    const transformedPurchases = consolidatedPurchases.map(transformPurchaseData);
     
     console.log(`🔍 Sample batched transformed data:`, {
       original: allPurchases[0],
@@ -693,9 +786,9 @@ const Purchases = () => {
       hasProductSize: !!transformedPurchases[0].product?.size,
       productSize: transformedPurchases[0].product?.size,
       hasTracking: !!transformedPurchases[0].tracking,
-      tracking: transformedPurchases[0].tracking
+      tracking: transformedPurchases[0].tracking,
+      purchaseDate: transformedPurchases[0].purchaseDate
     });
-    console.log(`🔄 Consolidation: ${transformedPurchases.length} purchases → ${consolidatedPurchases.length} consolidated purchases`);
     
     setPurchases(consolidatedPurchases);
     
@@ -716,17 +809,34 @@ const Purchases = () => {
       console.log('🔄 Cleared purchases_cleared flag - user manually synced');
     }
     
-    // Save Gmail purchases to Firebase - use the latest purchases from state
+    // CRITICAL: Use the purchases state which was set by handleBatchedPurchasesUpdate
+    // The purchases state is already consolidated and transformed
+    console.log(`📦 Sync complete - purchases state has ${purchases.length} purchases`);
+    
+    // Log a few examples to verify purchase dates were set correctly
+    const deliveryPurchases = purchases.filter(p => 
+      (p.status || p.shipping_status || '').toLowerCase() === 'delivered'
+    );
+    if (deliveryPurchases.length > 0) {
+      console.log(`🔍 Sample delivery purchases (checking purchase dates):`);
+      deliveryPurchases.slice(0, 3).forEach(p => {
+        console.log(`   Order ${p.orderNumber}: purchaseDate="${p.purchaseDate}", email_date="${p.email_date}", status="${p.status || p.shipping_status}"`);
+      });
+    }
+    
+    // Save Gmail purchases to Firebase - purchases were already set by handleBatchedPurchasesUpdate
     if ((user || siteUserId) && purchases.length > 0) {
       try {
         await saveGmailPurchasesToFirebase(purchases);
-        console.log(`💾 Gmail purchases persisted to Firebase for future refreshes`);
+        console.log(`💾 Gmail purchases persisted to Firebase/localStorage for future refreshes`);
       } catch (error) {
         console.warn(`⚠️ Could not save to Firebase (permission issue): ${error}`);
         console.log(`📧 Gmail purchases are still available in memory for this session`);
       }
     } else if (!user && !siteUserId) {
       console.log(`📧 No user authentication - Gmail purchases available in memory only`);
+    } else if (purchases.length === 0) {
+      console.warn(`⚠️ No purchases to save - purchases state is empty!`);
     }
   };
 
@@ -862,6 +972,7 @@ const Purchases = () => {
             console.log(`🔄 Updating existing purchase: ${orderNumber}`);
             
             // Merge new data with existing data, preserving manual edits
+            // IMPORTANT: Prioritize purchaseDate from consolidated purchaseData (from order confirmation email)
             const updatedPurchase = {
               ...existingPurchase,
               // Update with new Gmail data
@@ -870,10 +981,16 @@ const Purchases = () => {
               status: purchaseData.status || existingPurchase.status,
               price: purchaseData.price || existingPurchase.price,
               market: purchaseData.market || existingPurchase.market,
+              // CRITICAL: Use purchaseDate from consolidated purchaseData (order confirmation date) if available
+              // This overwrites the old delivery date with the correct purchase date
               purchaseDate: purchaseData.purchaseDate || existingPurchase.purchaseDate,
-              emailSubject: purchaseData.emailSubject || existingPurchase.emailSubject,
+              purchase_date: purchaseData.purchase_date || purchaseData.purchaseDate || existingPurchase.purchase_date || existingPurchase.purchaseDate, // Preserve for consolidation
+              emailSubject: purchaseData.emailSubject || purchaseData.email_subject || existingPurchase.emailSubject,
+              email_subject: purchaseData.email_subject || purchaseData.emailSubject || existingPurchase.email_subject || existingPurchase.emailSubject, // Preserve for consolidation
               emailId: purchaseData.emailId || existingPurchase.emailId,
-              emailDate: purchaseData.emailDate || existingPurchase.emailDate,
+              emailDate: purchaseData.emailDate || purchaseData.email_date || existingPurchase.emailDate,
+              email_date: purchaseData.email_date || purchaseData.emailDate || existingPurchase.email_date || existingPurchase.emailDate, // Preserve for consolidation
+              shipping_status: purchaseData.shipping_status || purchaseData.status || existingPurchase.shipping_status || existingPurchase.status, // Preserve for consolidation
               // Preserve manual edits (tracking, notes, etc.)
               tracking: existingPurchase.tracking || purchaseData.tracking,
               // Only set carrier if there's a tracking number
@@ -1010,7 +1127,8 @@ const Purchases = () => {
     calculateTotals(mockPurchases);
   };
 
-  const calculateTotals = (purchaseList: any[]) => {
+  // Memoized calculateTotals to avoid recalculating on every render
+  const calculateTotals = useCallback((purchaseList: any[]) => {
     const normalizePrice = (p: any): number => {
       if (!p) return 0;
       // Prefer numeric fields if present
@@ -1032,7 +1150,12 @@ const Purchases = () => {
     const total = purchaseList.reduce((sum, purchase) => sum + normalizePrice(purchase), 0);
     setTotalValue(`$${total.toLocaleString()}`);
     setTotalCount(purchaseList.length);
-  };
+  }, []);
+
+  // Automatically recalculate totals when sorted purchases change
+  useEffect(() => {
+    calculateTotals(sortedPurchases);
+  }, [sortedPurchases, calculateTotals]);
 
   // Firebase functions for manual purchases
   const saveManualPurchaseToFirebase = async (purchase: any) => {
@@ -1080,6 +1203,9 @@ const Purchases = () => {
   };
 
   const loadManualPurchasesFromFirebase = async () => {
+    const startTime = Date.now();
+    console.log('⏱️ loadManualPurchasesFromFirebase START');
+    
     // Get user ID from either Firebase auth or site password auth
     let userId: string | null = null;
     let isSitePasswordUser = false;
@@ -1115,18 +1241,21 @@ const Purchases = () => {
 
     try {
       setLoading(true);
+      console.log(`⏱️ After initial checks: ${Date.now() - startTime}ms`);
       
       let allPurchases: any[] = [];
       
       if (isSitePasswordUser) {
         // For site password users, try localStorage first, then Firebase as fallback
         console.log('🔍 Loading purchases for site password user...');
+        console.log(`⏱️ Before localStorage read: ${Date.now() - startTime}ms`);
         
         // Try localStorage first
         const localPurchases = localStorage.getItem(`purchases_${userId}`);
         if (localPurchases) {
           allPurchases = JSON.parse(localPurchases);
           console.log(`📄 Loaded ${allPurchases.length} purchases from localStorage`);
+          console.log(`⏱️ After localStorage parse: ${Date.now() - startTime}ms`);
         } else {
           console.log('📄 No purchases found in localStorage, trying Firebase...');
           
@@ -1142,8 +1271,10 @@ const Purchases = () => {
       } else {
         // For Firebase users, use Firebase directly
         console.log('🔍 Attempting to load purchases from Firebase...');
+        console.log(`⏱️ Before Firebase read: ${Date.now() - startTime}ms`);
         allPurchases = await getDocuments('purchases');
         console.log(`📄 Firebase returned ${allPurchases.length} total purchases`);
+        console.log(`⏱️ After Firebase read: ${Date.now() - startTime}ms`);
       }
       
       // Filter to only show purchases for this user
@@ -1185,13 +1316,14 @@ const Purchases = () => {
           wasChanged: purchase.carrier !== cleanedPurchase.carrier
         });
         
-        // Update Firebase if carrier was cleaned up
-        if (cleanedPurchase.carrier !== purchase.carrier && purchase.id) {
-          console.log(`💾 Updating carrier in Firebase for ${purchase.orderNumber}: ${purchase.carrier} → ${cleanedPurchase.carrier}`);
-          updateDocument('purchases', purchase.id, { carrier: cleanedPurchase.carrier }, true).catch(err => {
-            console.warn('Could not update carrier in Firebase:', err);
-          });
-        }
+        // REMOVED: Don't update Firebase on every page load - this was causing 30+ second delays
+        // Instead, carrier cleanup will happen when user manually edits tracking
+        // if (cleanedPurchase.carrier !== purchase.carrier && purchase.id) {
+        //   console.log(`💾 Updating carrier in Firebase for ${purchase.orderNumber}: ${purchase.carrier} → ${cleanedPurchase.carrier}`);
+        //   updateDocument('purchases', purchase.id, { carrier: cleanedPurchase.carrier }, true).catch(err => {
+        //     console.warn('Could not update carrier in Firebase:', err);
+        //   });
+        // }
         
         const tracking = cleanedPurchase.tracking || '';
         const carrier = cleanedPurchase.carrier;
@@ -1214,7 +1346,14 @@ const Purchases = () => {
           market: cleanedPurchase.merchant || cleanedPurchase.market || 'StockX',
           price: cleanedPurchase.totalAmount ? `$${cleanedPurchase.totalAmount.toFixed(2)}` : (cleanedPurchase.price || '$0.00'),
           originalPrice: cleanedPurchase.totalAmount ? `$${cleanedPurchase.totalAmount.toFixed(2)} + $0.00` : (cleanedPurchase.price || '$0.00'),
-          purchaseDate: cleanedPurchase.purchaseDate || cleanedPurchase.createdAt || new Date().toISOString(),
+          // Use purchaseDate from consolidation if available, otherwise fall back to createdAt
+          // Consolidation should have set purchaseDate from order confirmation email
+          purchaseDate: cleanedPurchase.purchaseDate || cleanedPurchase.purchase_date || cleanedPurchase.createdAt || new Date().toISOString(),
+          // Preserve consolidation fields
+          purchase_date: cleanedPurchase.purchase_date || cleanedPurchase.purchaseDate,
+          email_subject: cleanedPurchase.email_subject || cleanedPurchase.emailSubject,
+          email_date: cleanedPurchase.email_date || cleanedPurchase.emailDate,
+          shipping_status: cleanedPurchase.shipping_status || cleanedPurchase.status,
           dateAdded: cleanedPurchase.createdAt || new Date().toISOString(),
           verified: cleanedPurchase.verified || 'pending',
           verifiedColor: cleanedPurchase.verifiedColor || 'orange'
@@ -1232,12 +1371,42 @@ const Purchases = () => {
         types: [...new Set(userPurchases.map(p => p.type))]
       });
       
+      // IMPORTANT: Consolidate Gmail purchases BEFORE transforming
+      // This ensures order confirmation emails are found and purchase dates are set correctly
+      console.log(`🔄 Consolidating ${gmailPurchases.length} Gmail purchases before transformation...`);
+      
+      // Log sample purchases to verify they have consolidation fields
+      if (gmailPurchases.length > 0) {
+        console.log(`🔍 Sample purchase before consolidation:`, {
+          orderNumber: gmailPurchases[0].orderNumber,
+          status: gmailPurchases[0].status || gmailPurchases[0].shipping_status,
+          email_subject: gmailPurchases[0].email_subject || gmailPurchases[0].emailSubject,
+          email_date: gmailPurchases[0].email_date || gmailPurchases[0].emailDate,
+          purchaseDate: gmailPurchases[0].purchaseDate,
+          purchase_date: gmailPurchases[0].purchase_date
+        });
+      }
+      
+      const consolidatedGmailPurchases = consolidatePurchasesByOrderNumber(gmailPurchases);
+      console.log(`✅ Consolidation: ${gmailPurchases.length} → ${consolidatedGmailPurchases.length} unique purchases`);
+      
+      // Log sample after consolidation to verify purchase date was set correctly
+      if (consolidatedGmailPurchases.length > 0) {
+        console.log(`🔍 Sample purchase AFTER consolidation:`, {
+          orderNumber: consolidatedGmailPurchases[0].orderNumber,
+          status: consolidatedGmailPurchases[0].status || consolidatedGmailPurchases[0].shipping_status,
+          purchaseDate: consolidatedGmailPurchases[0].purchaseDate,
+          purchase_date: consolidatedGmailPurchases[0].purchase_date,
+          email_date: consolidatedGmailPurchases[0].email_date
+        });
+      }
+      
       // Transform manual purchases
       const transformedManualPurchases = manualPurchases.map(transformPurchaseData);
       setManualPurchases(transformedManualPurchases);
 
-      // Transform Gmail purchases
-      const transformedGmailPurchases = gmailPurchases.map(transformPurchaseData);
+      // Transform Gmail purchases AFTER consolidation (so purchase dates are correct)
+      const transformedGmailPurchases = consolidatedGmailPurchases.map(transformPurchaseData);
       
       // Debug: Log sample transformed data to verify structure
       if (transformedGmailPurchases.length > 0) {
@@ -1264,7 +1433,7 @@ const Purchases = () => {
       const combinedPurchases = consolidatePurchasesByOrderNumber(allUserPurchases);
       console.log(`🔄 Display deduplication: ${allUserPurchases.length} → ${combinedPurchases.length} unique`);
       
-      calculateTotals(combinedPurchases);
+      // Totals will be recalculated automatically via useEffect when purchases change
       
       console.log('✅ Loaded purchases:', {
         manual: manualPurchases.length,
@@ -1274,8 +1443,12 @@ const Purchases = () => {
         source: isSitePasswordUser ? 'localStorage' : 'Firebase'
       });
       
+      const totalTime = Date.now() - startTime;
+      console.log(`⏱️ TOTAL loadManualPurchasesFromFirebase time: ${totalTime}ms`);
+      
     } catch (error) {
       console.error('❌ Error loading purchases:', error);
+      console.log(`⏱️ Error after: ${Date.now() - startTime}ms`);
     } finally {
       setLoading(false);
     }
@@ -2469,20 +2642,19 @@ const Purchases = () => {
               )}
             </div>
             
-            {gmailConnected && (
-              <button
-                onClick={refreshPurchases}
-                disabled={loading}
-                className={`flex items-center space-x-2 ${
-                  currentTheme.name === 'Neon' 
-                    ? 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 shadow-lg hover:shadow-indigo-500/25' 
-                    : 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 shadow-lg hover:shadow-indigo-500/25'
-                } disabled:opacity-50 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200`}
-              >
-                <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
-                <span>Sync Gmail</span>
-              </button>
-            )}
+            <button
+              onClick={refreshPurchases}
+              disabled={loading || !gmailConnected}
+              className={`flex items-center space-x-2 ${
+                currentTheme.name === 'Neon' 
+                  ? 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 shadow-lg hover:shadow-indigo-500/25' 
+                  : 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 shadow-lg hover:shadow-indigo-500/25'
+              } disabled:opacity-50 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200`}
+              title={!gmailConnected ? 'Please connect Gmail first' : 'Sync your Gmail purchases'}
+            >
+              <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+              <span>Sync Gmail</span>
+            </button>
             
             <button
               onClick={() => setShowAddPurchaseModal(true)}
@@ -2604,7 +2776,7 @@ const Purchases = () => {
                 >
                   <input
                     type="checkbox"
-                    checked={selectedPurchases.size > 0 && selectedPurchases.size === getSortedPurchases().length}
+                    checked={selectedPurchases.size > 0 && selectedPurchases.size === sortedPurchases.length}
                     onChange={handleSelectAll}
                     className={`rounded ${currentTheme.name === 'Neon' ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-300'} cursor-pointer`}
                   />
@@ -2890,7 +3062,7 @@ const Purchases = () => {
             <tbody className={`${currentTheme.colors.cardBackground} ${
               currentTheme.name === 'Neon' ? 'divide-y divide-white/10' : 'divide-y divide-gray-100'
             }`}>
-              {getSortedPurchases().map((purchase) => {
+              {sortedPurchases.map((purchase) => {
                 // Safety check to ensure purchase exists and has required structure
                 if (!purchase) return null;
                 
@@ -3134,12 +3306,42 @@ const Purchases = () => {
                   </td>
                   <td className="px-6 py-2 align-middle">
                     <span className={`text-sm ${currentTheme.colors.textPrimary} font-medium`}>
-                      {purchase.purchaseDate || purchase.email_date ? (
-                        purchase.purchaseDate || 
-                        (purchase.email_date ? new Date(purchase.email_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '')
-                      ) : (
-                        <span className={`text-xs ${currentTheme.colors.textSecondary}`}>—</span>
-                      )}
+                      {(() => {
+                        // Prioritize consolidated purchaseDate (from order confirmation email)
+                        if (purchase.purchaseDate) {
+                          // Check if it's already formatted (e.g., "Dec 1")
+                          const shortFormatPattern = /^[A-Za-z]{3}\s+\d{1,2}$/;
+                          if (shortFormatPattern.test(purchase.purchaseDate)) {
+                            return purchase.purchaseDate; // Use formatted string directly
+                          }
+                          // Try to parse as Date
+                          const parsedDate = new Date(purchase.purchaseDate);
+                          if (!isNaN(parsedDate.getTime())) {
+                            return parsedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                          }
+                        }
+                        // Fallback to purchase_date (ISO string from consolidation)
+                        if (purchase.purchase_date) {
+                          const fallbackDate = new Date(purchase.purchase_date);
+                          if (!isNaN(fallbackDate.getTime())) {
+                            return fallbackDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                          }
+                        }
+                        // Last resort: email_date (but this might be delivery date, so log warning)
+                        if (purchase.email_date) {
+                          console.warn(`⚠️ Using email_date for purchase date (might be delivery date): ${purchase.orderNumber}`, {
+                            purchaseDate: purchase.purchaseDate,
+                            purchase_date: purchase.purchase_date,
+                            email_date: purchase.email_date,
+                            status: purchase.status
+                          });
+                          const emailDate = new Date(purchase.email_date);
+                          if (!isNaN(emailDate.getTime())) {
+                            return emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                          }
+                        }
+                        return <span className={`text-xs ${currentTheme.colors.textSecondary}`}>—</span>;
+                      })()}
                     </span>
                   </td>
                   <td className="px-6 py-2 align-middle">

@@ -88,3 +88,5 @@ Check the server logs when you try to connect. Look for:
 
 The redirect URI should be logged as: `🔐 Gmail Auth - Using redirect URI: http://localhost:3000/api/gmail/callback`
 
+
+

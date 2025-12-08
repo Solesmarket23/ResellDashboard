@@ -8,8 +8,8 @@ import { consolidatePurchasesByOrderNumber } from '../../../../lib/utils/statusP
 const BATCH_SIZE = 100; // Process 100 emails per batch (increased from 50)
 const MAX_BATCHES_PER_REQUEST = 1; // Max 1 batch per API call (100 emails total) - reduced for faster testing
 const MAX_TOTAL_EMAILS = 10000; // Maximum total emails to process (changed from 100 to 10,000 for 1 month history)
-const TIMEOUT_PER_EMAIL = 6000; // 6 seconds per email to reduce timeouts
-const PARALLEL_EMAILS = 2; // Reduced from 6 to 2 for more frequent updates - user sees purchases appear faster
+const TIMEOUT_PER_EMAIL = 10000; // 10 seconds per email (increased to handle slow emails)
+const PARALLEL_EMAILS = 4; // Increased from 2 to 4 for faster processing while still showing frequent updates
 
 interface BatchProgress {
   batchIndex: number;
@@ -35,7 +35,8 @@ function getDefaultConfig() {
           "Xpress Order Confirmed:",
           "Order Confirmation:",
           "Order Confirmation",
-          "Purchase Confirmed"
+          "Purchase Confirmed",
+          "Item Arrived For Verification" // StockX sends this when order is placed
         ]
       },
       orderShipped: {
@@ -167,6 +168,7 @@ export async function GET(request: NextRequest) {
     const reset = url.searchParams.get('reset') === 'true';
     const quick = url.searchParams.get('quick') === 'true';
 
+    const startTime = Date.now();
     console.log(`📦 BATCH ${batchIndex}: Starting batch processing...`);
 
     // Set up OAuth2 client
@@ -187,26 +189,57 @@ export async function GET(request: NextRequest) {
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     const config = getDefaultConfig();
 
+    // Quick connection test for first batch to verify auth works (non-blocking)
+    if (batchIndex === 0 && reset) {
+      try {
+        // Quick test query to verify connection - don't wait for full results
+        const testPromise = gmail.users.messages.list({
+          userId: 'me',
+          q: 'from:noreply@stockx.com',
+          maxResults: 1
+        });
+        // Don't await - let it run in background, just verify it starts
+        testPromise.catch(() => {}); // Ignore errors, main query will handle them
+        console.log('🔍 Quick connection test initiated');
+      } catch (e) {
+        // Ignore test errors
+      }
+    }
+
     // Build a rotating set of queries from config to cover confirmation, shipped, delivered etc.
     const queries = generateQueries(config);
-    // Prepend a broader fallback covering all StockX purchases but excluding sales/payouts
-    const fallbackQuery = '(from:noreply@stockx.com OR from:stockx.com) -subject:"You Sold" -subject:"Sale" -subject:"Payout" -subject:"Ship your" -subject:"Bid" -subject:"Ask was matched" -subject:"Offer" -subject:"expires"';
-    if (!queries.includes(fallbackQuery)) {
-      queries.unshift(fallbackQuery);
-    }
+    
+    // CRITICAL: Split queries by date range to avoid Gmail API timeouts
+    // Use narrower date ranges so Gmail API can return results faster
+    // This ensures order confirmation emails and delivery emails are fetched together within each date range
+    // Use specific queries for purchase confirmation, shipping, and delivery emails
+    // Exclude sales-related emails at the Gmail query level for better performance
+    const baseQuery = 'from:noreply@stockx.com (subject:"Order Confirmed" OR subject:"Xpress Order Confirmed" OR subject:"Order Delivered" OR subject:"Order Verified & Shipped") -subject:"Arrived At StockX" -subject:"Shipped To StockX" -subject:"Ship your"';
+    
+    // Replace all queries with date-based queries (most recent first)
+    queries.length = 0; // Clear existing queries
+    queries.push(
+      `${baseQuery} newer_than:7d`,        // Last 7 days (most recent - fastest)
+      `${baseQuery} older_than:7d newer_than:1m`,   // 1 week - 1 month
+      `${baseQuery} older_than:1m newer_than:3m`,   // 1-3 months
+      `${baseQuery} older_than:3m newer_than:6m`,   // 3-6 months
+      `${baseQuery} older_than:6m`                   // 6+ months (oldest)
+    );
 
     const queryIndexParam = parseInt(url.searchParams.get('qIndex') || '0');
     const qIndex = Math.max(0, Math.min(queryIndexParam, queries.length - 1));
     // Removed timeFilter - search all emails, not just recent ones
     // const timeFilter = quick ? ' newer_than:30d' : '';
     const activeQuery = queries[qIndex].trim();
-    console.log(`📦 BATCH ${batchIndex}: Searching with query [${qIndex + 1}/${queries.length}]: ${activeQuery}`);
+    console.log(`📦 BATCH ${batchIndex}: Searching with query [${qIndex + 1}/${queries.length}]: ${activeQuery.substring(0, 100)}...`);
+    console.log(`📦 BATCH ${batchIndex}: Total queries available: ${queries.length}, Current query index: ${qIndex}`);
 
     // Get emails. Support limit parameter for chunked processing
     const isFirstBatch = batchIndex === 0 && reset;
     const limitParam = url.searchParams.get('limit');
     // If limit is specified, use it (for chunked processing), otherwise use default
-    const maxResults = limitParam ? Math.min(parseInt(limitParam), BATCH_SIZE) : Math.min(100, BATCH_SIZE);
+    // Use smaller batch sizes to avoid timeouts - 50 emails per batch is a good balance
+    const maxResults = limitParam ? Math.min(parseInt(limitParam), 50) : 50;
     // Add timeout to Gmail API call to prevent hanging
     // Gmail API returns messages sorted by internalDate descending (newest first) by default
     // This ensures we process today's emails first, then go backwards
@@ -219,11 +252,20 @@ export async function GET(request: NextRequest) {
       // Messages are returned sorted by internalDate descending (newest to oldest)
     });
     
+    // Increase timeout for first few batches as they may take longer
+    // Batch 0 (first batch): 45s, Batch 1: 90s (may need to fetch more emails), Others: 60s
+    const timeoutDuration = (batchIndex === 0 && reset) ? 45000 : (batchIndex === 1 ? 90000 : 60000);
     const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Gmail API timeout after 30 seconds')), 30000)
+      setTimeout(() => reject(new Error(`Gmail API timeout after ${timeoutDuration/1000} seconds`)), timeoutDuration)
     );
     
+    const queryStartTime = Date.now();
+    console.log(`⏱️ BATCH ${batchIndex}: Starting Gmail API query (timeout: ${timeoutDuration/1000}s)...`);
+    
     const response = await Promise.race([gmailListPromise, timeoutPromise]) as any;
+    
+    const queryDuration = Date.now() - queryStartTime;
+    console.log(`⏱️ BATCH ${batchIndex}: Gmail API query completed in ${queryDuration}ms`);
 
     const allMessages = response.data.messages || [];
     // Gmail API returns newest first, but let's ensure we preserve that order
@@ -254,10 +296,12 @@ export async function GET(request: NextRequest) {
     console.log(`📦 BATCH ${batchIndex}: Processing ${batchMessages.length} emails (${isFirstBatch ? 1 : MAX_BATCHES_PER_REQUEST} batches of ${BATCH_SIZE} each)`);
 
     const batchPurchases: any[] = [];
+    const filteredEmails: Array<{subject: string, reason: string, orderNumber?: string}> = [];
     let processedInBatch = 0;
 
     // Process emails in parallel batches for much better performance
     const processEmail = async (message: any, emailIndex: number) => {
+      let subjectHeader = 'Unknown';
       try {
         const emailPromise = gmail.users.messages.get({
           userId: 'me',
@@ -274,7 +318,7 @@ export async function GET(request: NextRequest) {
         ]) as any;
         
         const fromHeader = emailData.data.payload?.headers?.find((h: any) => h.name === 'From')?.value || '';
-        const subjectHeader = emailData.data.payload?.headers?.find((h: any) => h.name === 'Subject')?.value || '';
+        subjectHeader = emailData.data.payload?.headers?.find((h: any) => h.name === 'Subject')?.value || 'Unknown';
         
         // Only log every 5th email to reduce noise
         if (emailIndex % 5 === 0) {
@@ -282,15 +326,41 @@ export async function GET(request: NextRequest) {
         }
         
         const purchase = await parseEmailMessage(emailData.data, config, gmail, false); // Disable debug for performance
-        if (purchase) {
+        
+        // Check if it was filtered
+        if (purchase && (purchase as any).filtered) {
+          const filteredEntry = {
+            subject: (purchase as any).subject,
+            reason: (purchase as any).reason,
+            orderNumber: (purchase as any).orderNumber
+          };
+          filteredEmails.push(filteredEntry);
+          console.log(`🚫 BATCH ${batchIndex}: Filtered email: "${filteredEntry.subject}" - Reason: ${filteredEntry.reason}`);
+          return { type: 'filtered', data: purchase };
+        } else if (purchase) {
           console.log(`✅ BATCH ${batchIndex}: Parsed purchase: ${purchase.product.name} - ${purchase.orderNumber}`);
-          return purchase;
+          return { type: 'purchase', data: purchase };
         } else {
-          return null;
+          // Track filtered emails with unknown reason
+          const filteredEntry = {
+            subject: subjectHeader,
+            reason: 'Unknown (parsing failed)'
+          };
+          filteredEmails.push(filteredEntry);
+          console.log(`🚫 BATCH ${batchIndex}: Filtered email (parsing failed): "${filteredEntry.subject}"`);
+          return { type: 'filtered', subject: subjectHeader };
         }
         
       } catch (error) {
-        console.error(`❌ BATCH ${batchIndex}: Error processing email ${emailIndex + 1}:`, error);
+        const isTimeout = error instanceof Error && error.message === 'Email timeout';
+        console.error(`❌ BATCH ${batchIndex}: Error processing email ${emailIndex + 1} (${subjectHeader}):`, error);
+        // Track error as filtered
+        const errorEntry = {
+          subject: subjectHeader,
+          reason: isTimeout ? 'Timeout (email took too long to fetch)' : `Error: ${error instanceof Error ? error.message : 'Unknown error'}`
+        };
+        filteredEmails.push(errorEntry);
+        console.log(`🚫 BATCH ${batchIndex}: Filtered email (${isTimeout ? 'timeout' : 'error'}): "${errorEntry.subject}" - ${errorEntry.reason}`);
         return null;
       }
     };
@@ -307,9 +377,11 @@ export async function GET(request: NextRequest) {
       const results = await Promise.all(promises);
       
       // Add successful purchases to batch
-      results.forEach(purchase => {
-        if (purchase) {
-          batchPurchases.push(purchase);
+      results.forEach(result => {
+        if (result && result.type === 'purchase') {
+          batchPurchases.push(result.data);
+        } else if (result && result.type === 'filtered') {
+          console.log(`🔍 BATCH ${batchIndex}: Confirmed filtered result in forEach loop`);
         }
         processedInBatch++;
       });
@@ -320,8 +392,37 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Track consolidation details before consolidating
+    const consolidationDetails: Array<{orderNumber: string, emails: Array<{subject: string, status: string}>}> = [];
+    const orderGroups = new Map<string, any[]>();
+    batchPurchases.forEach(p => {
+      const orderNum = p.orderNumber;
+      if (!orderGroups.has(orderNum)) {
+        orderGroups.set(orderNum, []);
+      }
+      orderGroups.get(orderNum)!.push(p);
+    });
+    
+    // Track which orders had multiple emails
+    orderGroups.forEach((purchases, orderNumber) => {
+      if (purchases.length > 1) {
+        console.log(`🔄 BATCH ${batchIndex}: Order ${orderNumber} has ${purchases.length} emails:`, 
+          purchases.map(p => `${p.status || p.shipping_status} (${p.subject?.substring(0, 50)})`));
+        consolidationDetails.push({
+          orderNumber,
+          emails: purchases.map(p => ({
+            subject: p.subject || p.email_subject || 'Unknown',
+            status: p.status || p.shipping_status || 'Unknown'
+          }))
+        });
+      }
+    });
+    
     // Consolidate purchases in this batch
+    console.log(`📦 BATCH ${batchIndex}: Before consolidation: ${batchPurchases.length} purchases`);
     const consolidatedPurchases = consolidateOrderEmails(batchPurchases);
+    console.log(`📦 BATCH ${batchIndex}: After consolidation: ${consolidatedPurchases.length} purchases`);
+    console.log(`📦 BATCH ${batchIndex}: Consolidation details tracked: ${consolidationDetails.length} orders with multiple emails`);
     
     // Sort purchases by date (newest first) to ensure we prioritize recent purchases
     // Gmail API already returns messages newest first, but we sort here to be explicit
@@ -331,23 +432,26 @@ export async function GET(request: NextRequest) {
       return dateB.getTime() - dateA.getTime(); // Descending order (newest first)
     });
     
-    console.log(`📦 BATCH ${batchIndex}: Completed! Processed ${processedInBatch}/${batchMessages.length} emails, found ${consolidatedPurchases.length} purchases (sorted newest first)`);
+    const totalDuration = Date.now() - startTime;
+    console.log(`📦 BATCH ${batchIndex}: Completed! Processed ${processedInBatch}/${batchMessages.length} emails, found ${consolidatedPurchases.length} purchases in ${totalDuration}ms (sorted newest first)`);
 
     // Calculate if there are more batches across pages/queries
     const nextPageToken = response.data.nextPageToken;
-    // Stop after processing 100 emails total
-    const totalProcessedSoFar = (batchIndex * BATCH_SIZE * MAX_BATCHES_PER_REQUEST) + processedInBatch;
-    const hasMorePages = !!nextPageToken && totalProcessedSoFar < MAX_TOTAL_EMAILS;
-    const hasMoreQueries = !nextPageToken && (qIndex + 1 < queries.length) && totalProcessedSoFar < MAX_TOTAL_EMAILS;
-    const hasMore = (hasMorePages || hasMoreQueries) && totalProcessedSoFar < MAX_TOTAL_EMAILS;
+    // Backend doesn't track cumulative total across batches, so just check if more emails are available
+    // Frontend will enforce MAX_TOTAL_EMAILS limit by tracking cumulative total
+    const hasMorePages = !!nextPageToken; // More emails available in current query
+    const hasMoreQueries = !nextPageToken && (qIndex + 1 < queries.length); // More queries to try
+    const hasMore = hasMorePages || hasMoreQueries;
+    
+    console.log(`📦 BATCH ${batchIndex}: hasMorePages=${hasMorePages}, hasMoreQueries=${hasMoreQueries}, hasMore=${hasMore}, nextPageToken=${!!nextPageToken}, qIndex=${qIndex}/${queries.length - 1}`);
 
     const progress: BatchProgress = {
       batchIndex,
       totalBatches: hasMore ? batchIndex + 2 : batchIndex + 1, // simple estimate
       currentBatchSize: batchMessages.length,
       processedInBatch,
-      totalProcessed: (batchIndex * BATCH_SIZE * MAX_BATCHES_PER_REQUEST) + processedInBatch,
-      totalFound: (batchIndex * BATCH_SIZE * MAX_BATCHES_PER_REQUEST) + totalFound, // Cumulative estimate
+      totalProcessed: processedInBatch, // Emails processed in this batch (frontend tracks cumulative)
+      totalFound: totalFound, // Emails found in this batch
       hasMore,
       nextPageToken,
       // extra metadata to let the client advance queries if needed
@@ -355,6 +459,18 @@ export async function GET(request: NextRequest) {
       totalQueries: queries.length
     };
 
+    // Log filtered emails before sending response
+    const expectedFiltered = processedInBatch - consolidatedPurchases.length;
+    console.log(`📊 BATCH ${batchIndex}: Processed ${processedInBatch} emails, found ${consolidatedPurchases.length} purchases`);
+    console.log(`📊 BATCH ${batchIndex}: Expected filtered count: ${expectedFiltered} (${processedInBatch} - ${consolidatedPurchases.length})`);
+    console.log(`📊 BATCH ${batchIndex}: Actual filteredEmails array length: ${filteredEmails.length}`);
+    console.log(`📊 BATCH ${batchIndex}: filteredEmails array contents:`, JSON.stringify(filteredEmails, null, 2));
+    
+    if (expectedFiltered !== filteredEmails.length) {
+      console.warn(`⚠️ BATCH ${batchIndex}: MISMATCH! Expected ${expectedFiltered} filtered but have ${filteredEmails.length} in array`);
+      console.warn(`⚠️ This means ${expectedFiltered - filteredEmails.length} emails were filtered but not tracked`);
+    }
+    
     return NextResponse.json({
       purchases: consolidatedPurchases,
       progress,
@@ -364,7 +480,10 @@ export async function GET(request: NextRequest) {
         totalMessages: totalFound,
         processedInBatch,
         foundPurchases: consolidatedPurchases.length,
-        hasNextPage: !!response.data.nextPageToken
+        hasNextPage: !!response.data.nextPageToken,
+        filteredSubjects: filteredEmails,  // Include filtered emails in response
+        filteredCount: filteredEmails.length, // Also add count for easier debugging
+        consolidationDetails // Include consolidation details
       }
     });
 
@@ -391,7 +510,7 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
 
     // Filter by marketplace - only process StockX emails
     if (!fromHeader.includes('stockx.com')) {
-      return null;
+      return { filtered: true, reason: 'Not from StockX', subject: subjectHeader };
     }
 
     // Additional filtering for sales/non-purchase emails in subject/content
@@ -414,9 +533,12 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
       'arrived at stockx',
       'shipped to stockx'
     ];
-    if (nonPurchaseSubjects.some(k => loweredSubject.includes(k))) {
-      console.log(`🚫 Filtering out non-purchase email: ${subjectHeader}`);
-      return null;
+    
+    for (const keyword of nonPurchaseSubjects) {
+      if (loweredSubject.includes(keyword)) {
+        console.log(`🚫 Filtering out non-purchase email: ${subjectHeader}`);
+        return { filtered: true, reason: `Contains "${keyword}" (sales/marketing)`, subject: subjectHeader };
+      }
     }
 
     // Use the imported parseGmailApiMessage function (disable debug for performance)
@@ -444,11 +566,18 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
     orderInfo.carrier = null;
     // Validate order number to avoid false positives (e.g., "0" or missing)
     const isValidOrderNumber = !!(orderInfo && orderInfo.order_number && orderInfo.order_number !== '0' && (
-      /^(\d{8}-\d{8})$/i.test(orderInfo.order_number) || // 8-8 numeric
-      /^(\d{2}-[A-Z0-9]+)$/i.test(orderInfo.order_number) // 2-ALPHANUM
+      /^(\d{8})$/i.test(orderInfo.order_number) || // 8 digits (e.g., 77937890)
+      /^(\d{8}-\d{8})$/i.test(orderInfo.order_number) || // 8-8 numeric (e.g., 12345678-87654321)
+      /^(\d{2}-[A-Z0-9]+)$/i.test(orderInfo.order_number) // 2-ALPHANUM (e.g., 03-LAWT94ALGY)
     ));
     if (!isValidOrderNumber) {
-      return null;
+      console.log(`⚠️ Filtering out email with invalid/missing order number: "${subjectHeader}" (order_number: "${orderInfo?.order_number || 'MISSING'}")`);
+      return { 
+        filtered: true, 
+        reason: 'Invalid or missing order number', 
+        subject: subjectHeader,
+        orderNumber: orderInfo?.order_number || 'N/A'
+      };
     }
 
     // Categorize the email based on subject
@@ -466,8 +595,25 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
     const emailDateStr = orderInfo.email_date || dateHeader;
     const emailDate = new Date(emailDateStr);
     
-    // Format purchase date - this will be overwritten by consolidation if order confirmation email is found
+    // Format purchase date - IMPORTANT: This is a temporary value
+    // Consolidation will overwrite this with the order confirmation email date if found
+    // For now, use the current email's date, but consolidation will fix it
     const purchaseDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    
+    // Log if this appears to be an order confirmation email
+    const isOrderConfirmation = category.status === 'Ordered' && (
+      subjectHeader.toLowerCase().includes('order confirmed') ||
+      subjectHeader.toLowerCase().includes('order confirmation') ||
+      subjectHeader.toLowerCase().includes('xpress order confirmed') ||
+      subjectHeader.toLowerCase().includes('item arrived for verification')
+    );
+    if (isOrderConfirmation) {
+      console.log(`📅 ORDER CONFIRMATION EMAIL: ${subjectHeader} - Order: ${orderInfo.order_number} - Date: ${purchaseDate}`);
+    } else if (category.status === 'Delivered') {
+      console.log(`📦 DELIVERY EMAIL: ${subjectHeader} - Order: ${orderInfo.order_number} - Date: ${purchaseDate} (will be overwritten by order confirmation during consolidation)`);
+    } else if (category.status === 'Shipped') {
+      console.log(`🚚 SHIPPED EMAIL: ${subjectHeader} - Order: ${orderInfo.order_number} - Date: ${purchaseDate}`);
+    }
     const dateAdded = emailDate.toLocaleDateString('en-US', { 
       month: 'short', 
       day: 'numeric'
@@ -524,6 +670,7 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
       verifiedColor: 'orange',
       emailId: emailData.id,
       subject: subjectHeader, // camelCase for UI
+      email_subject: subjectHeader, // snake_case for consolidation (explicitly set)
       sender: fromHeader,
       emailDate: dateHeader, // camelCase for UI (raw date header string)
       // Use OrderInfo fields directly (like test parser) - these are already correctly set
@@ -595,10 +742,39 @@ function extractTrackingFromShippingEmail(email: any): string | null {
 }
 
 // Categorize emails based on subject patterns
+// IMPORTANT: Check order confirmation patterns FIRST to ensure they're not overridden by shipped/delivered patterns
 function categorizeEmail(subject: string, config: any) {
+  const normalizedSubject = subject.toLowerCase();
+  
+  // PRIORITY 1: Check for order confirmation patterns FIRST (before shipped/delivered)
+  // This ensures order confirmation emails are correctly categorized even if they also mention shipping
+  const orderConfirmationPatterns = [
+    'order confirmed',
+    'order confirmation',
+    'xpress order confirmed',
+    'item arrived for verification',
+    'purchase confirmed'
+  ];
+  
+  for (const pattern of orderConfirmationPatterns) {
+    if (normalizedSubject.includes(pattern)) {
+      console.log(`✅ Categorized as ORDERED (order confirmation): "${subject}"`);
+      return {
+        status: 'Ordered',
+        statusColor: 'orange',
+        priority: STATUS_PRIORITIES['Ordered'] || 1
+      };
+    }
+  }
+  
+  // PRIORITY 2: Check other categories in config order
   for (const [categoryKey, category] of Object.entries(config.emailCategories)) {
+    // Skip orderPlaced category since we already checked it above
+    if (categoryKey === 'orderPlaced') continue;
+    
     for (const pattern of (category as any).subjectPatterns) {
-      if (subject.toLowerCase().includes(pattern.toLowerCase())) {
+      if (normalizedSubject.includes(pattern.toLowerCase())) {
+        console.log(`✅ Categorized as ${(category as any).status}: "${subject}"`);
         return {
           status: (category as any).status,
           statusColor: (category as any).statusColor,
@@ -608,6 +784,8 @@ function categorizeEmail(subject: string, config: any) {
     }
   }
   
+  // Fallback: default to Ordered
+  console.log(`⚠️ No pattern matched for "${subject}" - defaulting to Ordered`);
   return {
     status: 'Ordered',
     statusColor: 'orange',

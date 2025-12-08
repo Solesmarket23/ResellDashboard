@@ -36,6 +36,8 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
   const [currentBatch, setCurrentBatch] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
   const [isForceCompleting, setIsForceCompleting] = useState(false);
+  const [cumulativeEmailsProcessed, setCumulativeEmailsProcessed] = useState(0);
+  const [cumulativeEmailsFound, setCumulativeEmailsFound] = useState(0);
   const isCancelledRef = useRef(false);
   const controllerRef = useRef<AbortController | null>(null);
 
@@ -53,11 +55,27 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
   const startBatchedSync = async () => {
     setIsLoading(true);
     setError(null);
-    setProgress(null);
     setAllPurchases([]);
     setCurrentBatch(0);
     setIsComplete(false);
     isCancelledRef.current = false;
+    
+    // Reset cumulative totals
+    setCumulativeEmailsProcessed(0);
+    setCumulativeEmailsFound(0);
+    
+    // Set initial progress immediately to show "Starting sync..." instead of "Connecting to Gmail..."
+    setProgress({
+      batchIndex: 0,
+      totalBatches: 1,
+      currentBatchSize: 0,
+      processedInBatch: 0,
+      totalProcessed: 0,
+      totalFound: 0,
+      hasMore: true,
+      qIndex: 0,
+      totalQueries: 1
+    });
 
     await processBatches();
   };
@@ -70,12 +88,14 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
     let hasMore = true;
     let lastProcessed = -1;
     let stagnantIterations = 0;
+    let totalEmailsProcessed = 0; // Track cumulative total across all batches
 
-    // Process in smaller chunks for more frequent updates
-    // Instead of processing all 100 emails at once, process 20 at a time
-    const CHUNK_SIZE = 20; // Process 20 emails per API call for more frequent updates
+    // Process in chunks for frequent updates while maintaining good performance
+    const CHUNK_SIZE = 50; // Process 50 emails per API call (was previously configured at 50)
+    const MAX_TOTAL_EMAILS = 10000; // Maximum total emails to process (matches backend config)
+    const MAX_BATCHES = Math.ceil(MAX_TOTAL_EMAILS / CHUNK_SIZE); // Calculate max batches: 10,000 / 50 = 200 batches
     
-    while (hasMore && batchIndex < 50) { // Up to 50 chunks (1,000 emails total) - ~1 month of history
+    while (hasMore && batchIndex < MAX_BATCHES && totalEmailsProcessed < MAX_TOTAL_EMAILS) { // Up to 200 chunks (10,000 emails total)
       try {
         console.log(`🚀 Starting chunk ${batchIndex + 1}...`);
         
@@ -84,7 +104,7 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
           batch: batchIndex.toString(),
           reset: batchIndex === 0 ? 'true' : 'false',
           quick: 'false', // Don't use quick mode for incremental updates
-          limit: CHUNK_SIZE.toString(), // Limit each chunk to 20 emails
+          limit: CHUNK_SIZE.toString(), // Limit each chunk to 50 emails
           qIndex: qIndex.toString() // Pass current query index
         });
         
@@ -102,25 +122,82 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
 
         const controller = new AbortController();
         controllerRef.current = controller;
-        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout per chunk
-        const response = await fetch(`/api/gmail/purchases-batched?${params.toString()}`, { signal: controller.signal });
-        clearTimeout(timeoutId);
-        controllerRef.current = null;
+        // Use shorter timeout - if it times out, we'll move to next query
+        const timeoutDuration = 45000; // 45s timeout for all batches
+        const timeoutId = setTimeout(() => {
+          console.warn(`⏱️ Timeout after ${timeoutDuration/1000}s for batch ${batchIndex + 1} - will try next query`);
+          controller.abort();
+        }, timeoutDuration);
+        
+        console.log(`⏱️ Starting batch ${batchIndex + 1} fetch (timeout: ${timeoutDuration/1000}s)...`);
+        let response;
+        try {
+          response = await fetch(`/api/gmail/purchases-batched?${params.toString()}`, { signal: controller.signal });
+          clearTimeout(timeoutId);
+          controllerRef.current = null;
+          console.log(`✅ Batch ${batchIndex + 1} fetch completed`);
+        } catch (fetchError: any) {
+          clearTimeout(timeoutId);
+          controllerRef.current = null;
+          if (fetchError.name === 'AbortError') {
+            console.warn(`⏱️ Batch ${batchIndex + 1} timed out after ${timeoutDuration/1000}s`);
+            // Don't throw error - instead complete with what we have
+            // This ensures purchases collected so far are saved
+            console.log(`📦 Completing sync with ${allCollectedPurchases.length} purchases found before timeout`);
+            hasMore = false;
+            break; // Exit the loop and trigger onSyncComplete
+          }
+          throw fetchError;
+        }
         
         if (!response.ok) {
-          const errorData = await response.json();
+          const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
           throw new Error(errorData.error || `HTTP ${response.status}`);
         }
 
         const data = await response.json();
-        console.log(`✅ Chunk ${batchIndex + 1} completed: Found ${data.purchases?.length || 0} purchases`);
+        const emailsInThisBatch = data.progress?.processedInBatch || data.debug?.processedInBatch || CHUNK_SIZE;
+        const emailsFoundInThisBatch = data.progress?.totalFound || data.debug?.totalMessages || emailsInThisBatch;
+        totalEmailsProcessed += emailsInThisBatch; // Track cumulative total
+        
+        // Update cumulative totals
+        setCumulativeEmailsProcessed(totalEmailsProcessed);
+        // For cumulative found, we need to track across batches - use the current batch's found count
+        // Since Gmail API returns results per query, we'll use the max found so far
+        setCumulativeEmailsFound(prev => Math.max(prev, totalEmailsProcessed));
+        
+        const purchasesInBatch = data.purchases?.length || 0;
+        console.log(`✅ Chunk ${batchIndex + 1} completed: Found ${purchasesInBatch} purchases, processed ${emailsInThisBatch} emails (total: ${totalEmailsProcessed}/${MAX_TOTAL_EMAILS} emails, ${allCollectedPurchases.length + purchasesInBatch} total purchases)`);
+        
+        // Log query info for debugging
+        if (data.progress) {
+          console.log(`   Query: ${data.progress.qIndex + 1}/${data.progress.totalQueries}, Has more: ${data.progress.hasMore}, Next page: ${!!data.progress.nextPageToken}`);
+        }
 
-        // Update progress immediately
+        // Update progress immediately with cumulative totals
         if (isCancelledRef.current) {
           console.warn('⏹️ Sync cancelled after fetch');
           break;
         }
-        setProgress(data.progress);
+        // Merge backend progress with cumulative frontend totals
+        // Ensure totalFound is at least as large as totalProcessed and purchases found
+        const estimatedTotalFound = Math.max(
+          data.progress?.totalFound || 0,
+          totalEmailsProcessed,
+          allCollectedPurchases.length + purchasesInBatch
+        );
+        setProgress({
+          ...data.progress,
+          totalProcessed: totalEmailsProcessed, // Use cumulative total
+          totalFound: estimatedTotalFound // Use cumulative estimate
+        });
+        
+        // Stop if we've reached the maximum email limit
+        if (totalEmailsProcessed >= MAX_TOTAL_EMAILS) {
+          console.log(`🛑 Reached maximum email limit (${MAX_TOTAL_EMAILS}). Stopping sync.`);
+          hasMore = false;
+          break;
+        }
         
         // Add new purchases to collection and push immediate UI updates
         if (data.purchases && data.purchases.length > 0) {
@@ -137,8 +214,16 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
           onPurchasesUpdate?.(allCollectedPurchases);
         }
 
-        // Check if we should continue
-        hasMore = data.progress.hasMore && !data.isComplete && !isCancelledRef.current;
+        // Check if we should continue (also check email limit)
+        // Important: Even if backend says hasMore=false, check if we should advance to next query
+        const backendSaysHasMore = data.progress.hasMore && !data.isComplete;
+        const shouldAdvanceQuery = !pageToken && data.progress.qIndex !== undefined && 
+                                   (data.progress.qIndex + 1 < (data.progress.totalQueries || 1)) &&
+                                   totalEmailsProcessed < MAX_TOTAL_EMAILS;
+        
+        hasMore = (backendSaysHasMore || shouldAdvanceQuery) && !isCancelledRef.current && totalEmailsProcessed < MAX_TOTAL_EMAILS;
+        
+        console.log(`🔍 Continue check: backendHasMore=${backendSaysHasMore}, shouldAdvanceQuery=${shouldAdvanceQuery}, hasMore=${hasMore}, totalProcessed=${totalEmailsProcessed}/${MAX_TOTAL_EMAILS}`);
 
         // If quick mode returned 0 purchases and no more pages, automatically retry without quick mode
         if (!hasMore && batchIndex === 0 && allCollectedPurchases.length === 0 && params.get('quick') === 'true') {
@@ -173,13 +258,28 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
         // Advance to next query if we've exhausted current query (no more pages)
         if (!pageToken && data.progress.qIndex !== undefined && data.progress.totalQueries) {
           const apiQIndex = data.progress.qIndex;
-          if (apiQIndex + 1 < data.progress.totalQueries) {
-            // Move to next query
+          if (apiQIndex + 1 < data.progress.totalQueries && totalEmailsProcessed < MAX_TOTAL_EMAILS) {
+            // Move to next query - reset pageToken for new query
             qIndex = apiQIndex + 1;
-            console.log(`🔄 Advancing to query ${qIndex + 1}/${data.progress.totalQueries}`);
+            pageToken = undefined; // Reset pageToken for new query
+            hasMore = true; // Ensure we continue processing the next query
+            console.log(`🔄 Advancing to query ${qIndex + 1}/${data.progress.totalQueries} (${totalEmailsProcessed}/${MAX_TOTAL_EMAILS} emails processed so far)`);
           } else {
-            // We've exhausted all queries
-            console.log(`✅ Completed all ${data.progress.totalQueries} queries`);
+            // We've exhausted all queries or hit email limit
+            if (totalEmailsProcessed >= MAX_TOTAL_EMAILS) {
+              console.log(`🛑 Hit email limit (${totalEmailsProcessed}/${MAX_TOTAL_EMAILS}). Stopping.`);
+            } else {
+              console.log(`✅ Completed all ${data.progress.totalQueries} queries`);
+            }
+            hasMore = false;
+          }
+        } else if (!pageToken && data.progress.hasMore === false) {
+          // If backend says no more but we haven't hit limit, check if we should try next query
+          if (qIndex + 1 < (data.progress.totalQueries || 1) && totalEmailsProcessed < MAX_TOTAL_EMAILS) {
+            qIndex++;
+            pageToken = undefined;
+            hasMore = true;
+            console.log(`🔄 No more pages in current query, advancing to query ${qIndex + 1}`);
           }
         }
         
@@ -204,9 +304,8 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
       onSyncComplete?.(allCollectedPurchases.length);
     }
     
-    const totalEmailsProcessed = batchIndex * CHUNK_SIZE;
     console.log(`🎉 Gmail sync complete!`);
-    console.log(`   📧 Total emails processed: ${totalEmailsProcessed}`);
+    console.log(`   📧 Total emails processed: ${totalEmailsProcessed}/${MAX_TOTAL_EMAILS}`);
     console.log(`   📦 Total purchases found: ${allCollectedPurchases.length}`);
     console.log(`   📊 Batches completed: ${batchIndex}`);
   };
@@ -230,9 +329,32 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
     if (error) return error;
     if (isComplete) return `Found ${allPurchases.length} purchases`;
     if (!isLoading) return 'Click to start fetching your purchase emails';
-    if (!progress) return 'Connecting to Gmail...';
+    if (!progress) return 'Preparing sync...';
     
-    return `${progress.totalProcessed} of ${progress.totalFound} emails processed`;
+    // ALWAYS use cumulative totals from our own tracking (ignore backend per-batch totals)
+    const totalProcessed = cumulativeEmailsProcessed;
+    const totalFound = cumulativeEmailsFound;
+    
+    // Show more helpful status messages
+    if (totalProcessed === 0 && totalFound === 0) {
+      // Still searching - show purchases count if we have any
+      if (allPurchases.length > 0) {
+        return `${allPurchases.length} purchases found so far`;
+      }
+      return 'Searching for emails...';
+    }
+    
+    if (totalFound > 0 && totalProcessed === 0) {
+      return `Found ${totalFound} emails, starting to process...`;
+    }
+    
+    // Show cumulative totals - ensure we show at least as many emails as purchases found
+    // (since multiple purchases can come from the same email via consolidation)
+    const displayProcessed = Math.max(totalProcessed, allPurchases.length);
+    const displayFound = Math.max(totalFound, displayProcessed, allPurchases.length);
+    
+    // Always show both counts
+    return `${displayProcessed} of ${displayFound} emails processed`;
   };
 
   return (
