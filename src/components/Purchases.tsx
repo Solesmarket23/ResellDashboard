@@ -2666,20 +2666,21 @@ const Purchases = () => {
                 <span>Historical Sync</span>
               </button>
             )}
-            {/* Export Dropdown - Always visible */}
-            <div className="relative export-dropdown">
-              <button
-                onClick={() => setShowExportDropdown(!showExportDropdown)}
-                className={`flex items-center space-x-2 ${
-                  currentTheme.name === 'Neon' 
-                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 shadow-lg hover:shadow-cyan-500/25' 
-                    : 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 shadow-lg hover:shadow-indigo-500/25'
-                } text-white px-4 py-2 rounded-lg font-medium transition-all duration-200`}
-              >
-                <Download className="w-5 h-5" />
-                <span>Export</span>
-                <ChevronDown className="w-4 h-4" />
-              </button>
+            {/* Export Dropdown - Only show when there are purchases */}
+            {totalCount > 0 && (
+              <div className="relative export-dropdown">
+                <button
+                  onClick={() => setShowExportDropdown(!showExportDropdown)}
+                  className={`flex items-center space-x-2 ${
+                    currentTheme.name === 'Neon' 
+                      ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 shadow-lg hover:shadow-cyan-500/25' 
+                      : 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 shadow-lg hover:shadow-indigo-500/25'
+                  } text-white px-4 py-2 rounded-lg font-medium transition-all duration-200`}
+                >
+                  <Download className="w-5 h-5" />
+                  <span>Export</span>
+                  <ChevronDown className="w-4 h-4" />
+                </button>
               
               {showExportDropdown && (
                 <div className={`absolute left-1/2 transform -translate-x-1/2 mt-2 w-56 ${currentTheme.name === 'Neon' ? 'bg-gray-900' : 'bg-white'} ${currentTheme.colors.border} border rounded-lg shadow-xl z-50`}>
@@ -2719,7 +2720,8 @@ const Purchases = () => {
                   </div>
                 </div>
               )}
-            </div>
+              </div>
+            )}
             
             <button
               onClick={refreshPurchases}
@@ -2820,22 +2822,23 @@ const Purchases = () => {
         </div>
       </div>
 
-      {/* Search Bar */}
-      <div className="mb-6">
-        <div className="relative">
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by product, order number, tracking, size, brand, style ID, or status..."
-            className={`w-full px-4 py-3 pl-12 rounded-lg ${
-              currentTheme.name === 'Neon'
-                ? 'bg-gray-900 border border-white/20 text-gray-300 placeholder-gray-500 focus:border-cyan-500'
-                : 'bg-white border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-indigo-500'
-            } focus:outline-none focus:ring-2 focus:ring-opacity-50 ${
-              currentTheme.name === 'Neon' ? 'focus:ring-cyan-500' : 'focus:ring-indigo-500'
-            } transition-all`}
-          />
+      {/* Search Bar - Only show when there are purchases */}
+      {totalCount > 0 && (
+        <div className="mb-6">
+          <div className="relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by product, order number, tracking, size, brand, style ID, or status..."
+              className={`w-full px-4 py-3 pl-12 rounded-lg ${
+                currentTheme.name === 'Neon'
+                  ? 'bg-gray-900 border border-white/20 text-gray-300 placeholder-gray-500 focus:border-cyan-500'
+                  : 'bg-white border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-indigo-500'
+              } focus:outline-none focus:ring-2 focus:ring-opacity-50 ${
+                currentTheme.name === 'Neon' ? 'focus:ring-cyan-500' : 'focus:ring-indigo-500'
+              } transition-all`}
+            />
           <svg
             className={`absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 ${
               currentTheme.name === 'Neon' ? 'text-gray-500' : 'text-gray-400'
@@ -2865,12 +2868,13 @@ const Purchases = () => {
             </button>
           )}
         </div>
-        {searchQuery && (
-          <p className={`mt-2 text-sm ${currentTheme.name === 'Neon' ? 'text-gray-400' : 'text-gray-600'}`}>
-            Showing {sortedPurchases.length} result{sortedPurchases.length !== 1 ? 's' : ''} for "{searchQuery}"
-          </p>
-        )}
-      </div>
+          {searchQuery && (
+            <p className={`mt-2 text-sm ${currentTheme.name === 'Neon' ? 'text-gray-400' : 'text-gray-600'}`}>
+              Showing {sortedPurchases.length} result{sortedPurchases.length !== 1 ? 's' : ''} for "{searchQuery}"
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Loading State */}
       {loading && (
