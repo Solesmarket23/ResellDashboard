@@ -547,17 +547,29 @@ export default function GmailTestPage() {
               </div>
             )}
             <div className="flex gap-3">
-              <button
-                onClick={startTest}
-                disabled={isRunning || !gmailConnected}
-                className={`px-6 py-3 rounded-lg font-medium transition-all ${
-                  isRunning || !gmailConnected
-                    ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                    : 'bg-blue-600 hover:bg-blue-700 text-white'
-                }`}
-              >
-                {isRunning ? 'Running...' : 'Start Test'}
-              </button>
+              {!isRunning ? (
+                <button
+                  onClick={startTest}
+                  disabled={!gmailConnected}
+                  className={`px-6 py-3 rounded-lg font-medium transition-all ${
+                    !gmailConnected
+                      ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}
+                >
+                  Start Test
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setIsRunning(false);
+                    addLog('🛑 Sync stopped by user', 'warn');
+                  }}
+                  className="px-6 py-3 rounded-lg font-medium bg-orange-600 hover:bg-orange-700 text-white transition-all"
+                >
+                  Stop Sync
+                </button>
+              )}
               {stats && stats.totalEmailsFetched > 0 && (
                 <button
                   onClick={() => {
@@ -567,12 +579,7 @@ export default function GmailTestPage() {
                     setIsRunning(false);
                     setStartTime(null);
                   }}
-                  disabled={isRunning}
-                  className={`px-4 py-3 rounded-lg font-medium transition-all ${
-                    isRunning
-                      ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                      : 'bg-red-600 hover:bg-red-700 text-white'
-                  }`}
+                  className="px-4 py-3 rounded-lg font-medium bg-red-600 hover:bg-red-700 text-white transition-all"
                 >
                   Clear & Restart
                 </button>
