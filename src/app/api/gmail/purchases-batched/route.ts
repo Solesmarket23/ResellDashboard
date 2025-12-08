@@ -635,16 +635,17 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
     if (isOrderConfirmation) {
       // Only set purchase date for order confirmation emails
       purchaseDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-      console.log(`📅 ORDER CONFIRMATION EMAIL: ${subjectHeader} - Order: ${orderInfo.order_number} - Purchase Date: ${purchaseDate}`);
+      console.log(`📅 ORDER CONFIRMATION EMAIL: ${subjectHeader} - Order: ${orderInfo.order_number} - Purchase Date SET TO: "${purchaseDate}"`);
     } else {
       // For delivery/shipped emails, use a placeholder - consolidation will set the real date
       purchaseDate = 'TBD'; // Will be replaced during consolidation
       if (category.status === 'Delivered') {
-        console.log(`📦 DELIVERY EMAIL: ${subjectHeader} - Order: ${orderInfo.order_number} - Delivery Date: ${emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} (purchase date pending order confirmation)`);
+        console.log(`📦 DELIVERY EMAIL: ${subjectHeader} - Order: ${orderInfo.order_number} - Delivery Date: ${emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} - Purchase Date SET TO: "TBD"`);
       } else if (category.status === 'Shipped') {
-        console.log(`🚚 SHIPPED EMAIL: ${subjectHeader} - Order: ${orderInfo.order_number} - Ship Date: ${emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} (purchase date pending order confirmation)`);
+        console.log(`🚚 SHIPPED EMAIL: ${subjectHeader} - Order: ${orderInfo.order_number} - Ship Date: ${emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} - Purchase Date SET TO: "TBD"`);
       }
     }
+    console.log(`🔍 purchaseDate variable value: "${purchaseDate}" (before spreading orderInfo)`);
     const dateAdded = emailDate.toLocaleDateString('en-US', { 
       month: 'short', 
       day: 'numeric'
@@ -674,7 +675,7 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
     // Return in the expected UI format
     // IMPORTANT: Use OrderInfo fields directly (like test parser does) for consolidation
     // Spread orderInfo to include all fields like email_date, email_subject, purchase_date, etc.
-    return {
+    const purchaseObject = {
       id: orderInfo.order_number || `email-${emailData.id}`,
       product: {
         name: orderInfo.product_name || 'Unknown Product',
@@ -710,6 +711,10 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
       // Ensure createdAt is set for fallback
       createdAt: orderInfo.email_date ? new Date(orderInfo.email_date).toISOString() : emailDate.toISOString()
     };
+    
+    console.log(`✅ FINAL purchaseDate in return object: "${purchaseObject.purchaseDate}" for order ${orderInfo.order_number}`);
+    
+    return purchaseObject;
 
   } catch (error) {
     console.error('Error parsing email:', error);
