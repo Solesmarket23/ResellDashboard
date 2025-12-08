@@ -76,11 +76,11 @@ function getDefaultConfig() {
       },
       orderCanceled: {
         name: "Order Canceled/Refunded", 
-        status: "Canceled",
+        status: "Refunded",
         statusColor: "red",
         subjectPatterns: [
           "Order canceled",
-          "Refund Issued:"
+          "Refund Issued"
         ]
       }
     },

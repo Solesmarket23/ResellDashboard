@@ -15,6 +15,7 @@ export const STATUS_PRIORITIES: Record<string, number> = {
   'Refund Issued': 10,
   'Refunded': 10,
   'Canceled': 10, // Treat canceled same as refunded
+  'Order Canceled/Refunded': 10, // Backend uses this status name
   'Delivered': 8,
   'delivered': 8,
   'Shipped': 6,
