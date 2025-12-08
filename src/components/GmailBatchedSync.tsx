@@ -38,6 +38,8 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
   const [isForceCompleting, setIsForceCompleting] = useState(false);
   const [cumulativeEmailsProcessed, setCumulativeEmailsProcessed] = useState(0);
   const [cumulativeEmailsFound, setCumulativeEmailsFound] = useState(0);
+  const [startTime, setStartTime] = useState<number | null>(null);
+  const [elapsedTime, setElapsedTime] = useState(0);
   const isCancelledRef = useRef(false);
   const controllerRef = useRef<AbortController | null>(null);
 
@@ -52,6 +54,19 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
     };
   }, []);
 
+  // Timer effect - update elapsed time every second while loading
+  useEffect(() => {
+    if (!isLoading || !startTime) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isLoading, startTime]);
+
   const startBatchedSync = async () => {
     setIsLoading(true);
     setError(null);
@@ -60,9 +75,11 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
     setIsComplete(false);
     isCancelledRef.current = false;
     
-    // Reset cumulative totals
+    // Reset cumulative totals and timer
     setCumulativeEmailsProcessed(0);
     setCumulativeEmailsFound(0);
+    setStartTime(Date.now());
+    setElapsedTime(0);
     
     // Set initial progress immediately to show "Starting sync..." instead of "Connecting to Gmail..."
     setProgress({
@@ -316,6 +333,15 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
     return Math.round((progress.totalProcessed / progress.totalFound) * 100);
   };
 
+  const formatElapsedTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    if (mins > 0) {
+      return `${mins}m ${secs}s`;
+    }
+    return `${secs}s`;
+  };
+
   const getStatusText = () => {
     if (error) return 'Sync failed';
     if (isComplete) return 'Sync complete!';
@@ -358,20 +384,20 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
   };
 
   return (
-    <div className={`${currentTheme.colors.cardBackground} rounded-lg border ${currentTheme.colors.border} ${className}`}>
-      <div className="p-6">
+    <div className={`${currentTheme.colors.cardBackground} rounded-lg border ${currentTheme.colors.border} shadow-xl ${className}`}>
+      <div className="p-4">
         {/* Header */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg ${currentTheme.colors.accent === 'text-cyan-400' ? 'bg-cyan-500/20' : 'bg-blue-500/20'}`}>
-              <Mail className={`w-5 h-5 ${currentTheme.colors.accent || 'text-blue-500'}`} />
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <div className={`p-1.5 rounded-lg ${currentTheme.colors.accent === 'text-cyan-400' ? 'bg-cyan-500/20' : 'bg-blue-500/20'}`}>
+              <Mail className={`w-4 h-4 ${currentTheme.colors.accent || 'text-blue-500'}`} />
             </div>
             <div>
-              <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>
-                Gmail Purchase Sync
+              <h3 className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>
+                Gmail Sync
               </h3>
-              <p className={`text-sm ${currentTheme.colors.textSecondary}`}>
-                Fetch your purchase confirmation emails
+              <p className={`text-xs ${currentTheme.colors.textSecondary}`}>
+                Fetching purchases
               </p>
             </div>
           </div>
@@ -379,17 +405,17 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
           {!isLoading && (
             <button
               onClick={startBatchedSync}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg ${currentTheme.colors.primary} text-white hover:opacity-90 transition-opacity`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm ${currentTheme.colors.primary} text-white hover:opacity-90 transition-opacity`}
             >
-              <RefreshCw className="w-4 h-4" />
-              Start Sync
+              <RefreshCw className="w-3.5 h-3.5" />
+              Start
             </button>
           )}
         </div>
 
         {/* Progress Section */}
         {(isLoading || progress || isComplete || error) && (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {/* Status */}
             <div className="flex items-center gap-2">
               {error ? (
@@ -401,28 +427,43 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
               ) : null}
               
               <div className="flex-1">
-                <p className={`font-medium ${error ? 'text-red-400' : isComplete ? 'text-green-400' : currentTheme.colors.textPrimary}`}>
+                <p className={`font-medium text-sm ${error ? 'text-red-400' : isComplete ? 'text-green-400' : currentTheme.colors.textPrimary}`}>
                   {getStatusText()}
                 </p>
-                <p className={`text-sm ${currentTheme.colors.textSecondary}`}>
+                <p className={`text-xs ${currentTheme.colors.textSecondary}`}>
                   {getDetailText()}
                 </p>
               </div>
             </div>
 
+            {/* Compact Stats Grid */}
+            {isLoading && (
+              <div className={`grid grid-cols-3 gap-2 p-2 rounded-lg ${currentTheme.name === 'Neon' ? 'bg-white/5' : 'bg-gray-50'}`}>
+                <div className="text-center">
+                  <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Time</div>
+                  <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>
+                    {formatElapsedTime(elapsedTime)}
+                  </div>
+                </div>
+                <div className="text-center">
+                  <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Emails</div>
+                  <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>
+                    {cumulativeEmailsProcessed}
+                  </div>
+                </div>
+                <div className="text-center">
+                  <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Found</div>
+                  <div className={`text-sm font-semibold ${currentTheme.name === 'Neon' ? 'text-emerald-400' : 'text-green-600'}`}>
+                    {allPurchases.length}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Progress Bar */}
             {isLoading && progress && (
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className={`text-sm ${currentTheme.colors.textSecondary}`}>
-                    Batch {currentBatch}{progress.hasMore ? '+' : ''} of {progress.totalBatches || '?'}
-                  </span>
-                  <span className={`text-sm font-medium ${currentTheme.colors.textPrimary}`}>
-                    {getProgressPercentage()}%
-                  </span>
-                </div>
-                
-                <div className={`w-full h-2 rounded-full overflow-hidden ${currentTheme.name === 'Neon' ? 'bg-white/10' : 'bg-gray-200'}`}>
+              <div className="space-y-1.5">
+                <div className={`w-full h-1.5 rounded-full overflow-hidden ${currentTheme.name === 'Neon' ? 'bg-white/10' : 'bg-gray-200'}`}>
                   <div 
                     className={`h-full rounded-full transition-all duration-500 ease-out ${
                       currentTheme.name === 'Neon'
@@ -454,13 +495,27 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
               </div>
             )}
 
-            {/* Purchase Count */}
-            {allPurchases.length > 0 && (
-              <div className={`flex items-center gap-2 p-3 rounded-lg ${currentTheme.name === 'Neon' ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-blue-500/10 border border-blue-500/20'}`}>
-                <Package className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-emerald-400' : 'text-blue-500'}`} />
-                <span className={`text-sm font-medium ${currentTheme.colors.textPrimary}`}>
-                  {allPurchases.length} purchases found so far
-                </span>
+            {/* Complete Stats */}
+            {isComplete && (
+              <div className={`grid grid-cols-3 gap-2 p-2 rounded-lg ${currentTheme.name === 'Neon' ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-green-50 border border-green-200'}`}>
+                <div className="text-center">
+                  <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Time</div>
+                  <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>
+                    {formatElapsedTime(elapsedTime)}
+                  </div>
+                </div>
+                <div className="text-center">
+                  <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Emails</div>
+                  <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>
+                    {cumulativeEmailsProcessed}
+                  </div>
+                </div>
+                <div className="text-center">
+                  <div className={`text-xs ${currentTheme.colors.textSecondary}`}>Found</div>
+                  <div className={`text-sm font-semibold ${currentTheme.name === 'Neon' ? 'text-emerald-400' : 'text-green-600'}`}>
+                    {allPurchases.length}
+                  </div>
+                </div>
               </div>
             )}
 

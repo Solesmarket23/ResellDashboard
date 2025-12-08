@@ -3570,27 +3570,32 @@ const Purchases = () => {
         />
       )}
 
-      {/* Batched Gmail Sync Modal */}
+      {/* Batched Gmail Sync - Compact Corner Notification */}
       {showBatchedSync && (
-        <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
-          <div className="max-w-md w-full mx-4">
-            <GmailBatchedSync
-              onPurchasesUpdate={handleBatchedPurchasesUpdate}
-              onSyncComplete={(totalPurchases) => {
-                handleBatchedSyncComplete(totalPurchases);
-                setShowBatchedSync(false);
-              }}
-              className="relative"
-            />
-            
-            {/* Close button */}
-            <button
-              onClick={() => setShowBatchedSync(false)}
-              className={`absolute top-4 right-4 p-2 rounded-full ${currentTheme.colors.textSecondary} hover:${currentTheme.colors.textPrimary} transition-colors`}
-            >
-              ✕
-            </button>
-          </div>
+        <div className="fixed bottom-6 right-6 z-50 max-w-md w-96 shadow-2xl">
+          <GmailBatchedSync
+            onPurchasesUpdate={handleBatchedPurchasesUpdate}
+            onSyncComplete={(totalPurchases) => {
+              handleBatchedSyncComplete(totalPurchases);
+              setShowBatchedSync(false);
+            }}
+            className="relative"
+          />
+          
+          {/* Close button */}
+          <button
+            onClick={() => setShowBatchedSync(false)}
+            className={`absolute top-2 right-2 p-1.5 rounded-full ${
+              currentTheme.name === 'Neon' 
+                ? 'bg-white/10 hover:bg-white/20 text-gray-400 hover:text-gray-200' 
+                : 'bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-900'
+            } transition-colors`}
+            title="Close sync panel"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
       )}
 
