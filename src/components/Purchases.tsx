@@ -2589,18 +2589,31 @@ const Purchases = () => {
       </div>
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className={`text-2xl font-bold ${currentTheme.colors.textPrimary}`}>Purchases</h1>
-          <p className={`${currentTheme.colors.textSecondary} mt-1`}>
-            {gmailConnected ? 
-              `Showing ${totalCount} purchases from Gmail` : 
-              `Showing ${totalCount} purchases (Demo data)`
-            }
-          </p>
-        </div>
+      <div className="mb-4">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h1 className={`text-2xl font-bold ${currentTheme.colors.textPrimary}`}>Purchases</h1>
+            <p className={`${currentTheme.colors.textSecondary} mt-1`}>
+              {gmailConnected ? 
+                `Showing ${totalCount} purchases from Gmail` : 
+                `Showing ${totalCount} purchases (Demo data)`
+              }
+            </p>
+          </div>
           
-          <div className="flex items-center space-x-2 flex-wrap gap-2">
+          <div className="text-right">
+            <p className={`${currentTheme.colors.textSecondary}`}>Total value:</p>
+            <p className={`text-xl font-bold ${currentTheme.colors.textPrimary}`}>{totalValue}</p>
+            {gmailConnected && (
+              <p className={`text-xs ${currentTheme.name === 'Neon' ? 'text-emerald-400' : 'text-green-600'} flex items-center justify-end mt-1`}>
+                <Mail className="w-3 h-3 mr-1" />
+                Live from Gmail
+              </p>
+            )}
+          </div>
+        </div>
+        
+        <div className="flex items-center space-x-2 flex-wrap gap-2 mb-4">
             {selectedPurchases.size > 0 && (
               <button
                 onClick={handleDeleteSelected}
@@ -2779,17 +2792,6 @@ const Purchases = () => {
                 lastAutoUpdate={lastAutoStatusUpdate}
               />
             )}
-          </div>
-        </div>
-        <div className="text-right">
-          <p className={`${currentTheme.colors.textSecondary}`}>Total value:</p>
-          <p className={`text-xl font-bold ${currentTheme.colors.textPrimary}`}>{totalValue}</p>
-          {gmailConnected && (
-            <p className={`text-xs ${currentTheme.name === 'Neon' ? 'text-emerald-400' : 'text-green-600'} flex items-center justify-end mt-1`}>
-              <Mail className="w-3 h-3 mr-1" />
-              Live from Gmail
-            </p>
-          )}
         </div>
       </div>
 
