@@ -30,6 +30,8 @@ const Purchases = () => {
   const [sortBy, setSortBy] = useState('Purchase Date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [searchQuery, setSearchQuery] = useState('');
+  const [itemsPerPage, setItemsPerPage] = useState(25);
+  const [currentPage, setCurrentPage] = useState(1);
   const [showScanModal, setShowScanModal] = useState(false);
   const [showZXingScanModal, setShowZXingScanModal] = useState(false);
   const [showRemoteScanModal, setShowRemoteScanModal] = useState(false);
@@ -386,6 +388,29 @@ const Purchases = () => {
     
     return sortPurchases(uniquePurchases, sortBy, sortDirection);
   }, [purchases, manualPurchases, sortBy, sortDirection, searchQuery]);
+
+  // Paginate the sorted purchases
+  const paginatedPurchases = useMemo(() => {
+    if (itemsPerPage === -1) {
+      // Show all items
+      return sortedPurchases;
+    }
+    
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return sortedPurchases.slice(startIndex, endIndex);
+  }, [sortedPurchases, currentPage, itemsPerPage]);
+
+  // Calculate total pages
+  const totalPages = useMemo(() => {
+    if (itemsPerPage === -1) return 1;
+    return Math.ceil(sortedPurchases.length / itemsPerPage);
+  }, [sortedPurchases.length, itemsPerPage]);
+
+  // Reset to page 1 when search query or items per page changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, itemsPerPage]);
 
   // Keep getSortedPurchases for backward compatibility with existing code
   const getSortedPurchases = useCallback(() => sortedPurchases, [sortedPurchases]);
@@ -3157,7 +3182,7 @@ const Purchases = () => {
             <tbody className={`${currentTheme.colors.cardBackground} ${
               currentTheme.name === 'Neon' ? 'divide-y divide-white/10' : 'divide-y divide-gray-100'
             }`}>
-              {sortedPurchases.map((purchase) => {
+              {paginatedPurchases.map((purchase) => {
                 // Safety check to ensure purchase exists and has required structure
                 if (!purchase) return null;
                 
@@ -3458,6 +3483,100 @@ const Purchases = () => {
               })}
             </tbody>
           </table>
+        </div>
+        
+        {/* Pagination Controls */}
+        <div className={`flex items-center justify-between px-6 py-4 border-t ${currentTheme.colors.border}`}>
+          <div className="flex items-center gap-4">
+            <span className={`text-sm ${currentTheme.colors.textSecondary}`}>
+              Showing {sortedPurchases.length === 0 ? 0 : (currentPage - 1) * (itemsPerPage === -1 ? sortedPurchases.length : itemsPerPage) + 1} to {Math.min(currentPage * (itemsPerPage === -1 ? sortedPurchases.length : itemsPerPage), sortedPurchases.length)} of {sortedPurchases.length} purchases
+            </span>
+            
+            <div className="flex items-center gap-2">
+              <span className={`text-sm ${currentTheme.colors.textSecondary}`}>Show:</span>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                className={`px-3 py-1.5 rounded-lg text-sm ${
+                  currentTheme.name === 'Neon'
+                    ? 'bg-gray-900 border border-white/20 text-gray-300'
+                    : 'bg-white border border-gray-300 text-gray-900'
+                } focus:outline-none focus:ring-2 ${
+                  currentTheme.name === 'Neon' ? 'focus:ring-cyan-500' : 'focus:ring-indigo-500'
+                }`}
+              >
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={-1}>All</option>
+              </select>
+            </div>
+          </div>
+          
+          {itemsPerPage !== -1 && totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  currentPage === 1
+                    ? 'opacity-50 cursor-not-allowed'
+                    : currentTheme.name === 'Neon'
+                    ? 'bg-white/10 hover:bg-white/20 text-gray-300'
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                }`}
+              >
+                First
+              </button>
+              
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  currentPage === 1
+                    ? 'opacity-50 cursor-not-allowed'
+                    : currentTheme.name === 'Neon'
+                    ? 'bg-white/10 hover:bg-white/20 text-gray-300'
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                }`}
+              >
+                Previous
+              </button>
+              
+              <span className={`px-4 py-1.5 text-sm ${currentTheme.colors.textPrimary}`}>
+                Page {currentPage} of {totalPages}
+              </span>
+              
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  currentPage === totalPages
+                    ? 'opacity-50 cursor-not-allowed'
+                    : currentTheme.name === 'Neon'
+                    ? 'bg-white/10 hover:bg-white/20 text-gray-300'
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                }`}
+              >
+                Next
+              </button>
+              
+              <button
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  currentPage === totalPages
+                    ? 'opacity-50 cursor-not-allowed'
+                    : currentTheme.name === 'Neon'
+                    ? 'bg-white/10 hover:bg-white/20 text-gray-300'
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                }`}
+              >
+                Last
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
