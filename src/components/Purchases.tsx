@@ -3544,7 +3544,7 @@ const Purchases = () => {
             </span>
             
             <div className="flex items-center gap-2">
-              <span className={`text-sm ${currentTheme.colors.textSecondary}`}>Show:</span>
+              <span className={`text-sm ${currentTheme.colors.textSecondary}`}>Results per page:</span>
               <select
                 value={itemsPerPage}
                 onChange={(e) => setItemsPerPage(Number(e.target.value))}
