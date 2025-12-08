@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Mail, Package, Filter, CheckCircle, XCircle, Clock, TrendingUp, AlertCircle } from 'lucide-react';
+import { Mail, Package, Filter, CheckCircle, XCircle, Clock, TrendingUp, AlertCircle, Loader2, Sparkles, BarChart3, RefreshCw } from 'lucide-react';
 
 interface SyncStats {
   totalEmailsFetched: number;
@@ -118,8 +118,26 @@ export default function GmailTestPage() {
     return () => clearInterval(interval);
   }, [isRunning, startTime]);
 
-  const addLog = (message: string) => {
-    setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${message}`]);
+  const addLog = (message: string, icon?: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    const logEntry = icon ? `${icon}|${timestamp}|${message}` : `[${timestamp}] ${message}`;
+    setLogs(prev => [...prev, logEntry]);
+  };
+
+  const renderLogIcon = (iconType: string) => {
+    const iconClass = "w-4 h-4 flex-shrink-0";
+    switch(iconType) {
+      case 'start': return <Loader2 className={`${iconClass} text-blue-400 animate-spin`} />;
+      case 'success': return <CheckCircle className={`${iconClass} text-green-400`} />;
+      case 'complete': return <Sparkles className={`${iconClass} text-yellow-400 animate-pulse`} />;
+      case 'stats': return <BarChart3 className={`${iconClass} text-purple-400`} />;
+      case 'consolidate': return <RefreshCw className={`${iconClass} text-cyan-400`} />;
+      case 'filter': return <Filter className={`${iconClass} text-orange-400`} />;
+      case 'error': return <XCircle className={`${iconClass} text-red-400`} />;
+      case 'fetch': return <Mail className={`${iconClass} text-blue-400`} />;
+      case 'query': return <TrendingUp className={`${iconClass} text-indigo-400`} />;
+      default: return null;
+    }
   };
 
   const startTest = async () => {
@@ -133,7 +151,7 @@ export default function GmailTestPage() {
     setError(null);
     setLogs([]);
     
-    addLog('🚀 Starting Gmail sync test...');
+    addLog('Starting Gmail sync test...', 'start');
     const testStartTime = Date.now();
     setStartTime(testStartTime);
     
@@ -167,8 +185,8 @@ export default function GmailTestPage() {
       let pageToken: string | undefined = undefined;
       let qIndex = 0;
 
-      while (hasMore && batchIndex < 200) {
-        addLog(`📦 Fetching batch ${batchIndex + 1}...`);
+      while (hasMore && batchIndex < 400) {
+        addLog(`Fetching batch ${batchIndex + 1}...`, 'fetch');
 
         const params = new URLSearchParams({
           batchIndex: batchIndex.toString(),
@@ -239,25 +257,39 @@ export default function GmailTestPage() {
 
         // Track individual purchases and filtered emails
         if (data.purchases && data.purchases.length > 0) {
-          // Add all purchases at once (backend already batches them)
-          data.purchases.forEach((p: any) => {
-            allStats.purchasesFound.push({
-              subject: p.subject || p.email_subject || 'Unknown',
-              orderNumber: p.orderNumber || p.order_number || 'N/A',
-              status: p.status || p.shipping_status || 'Unknown'
-            });
-          });
+          // Add purchases progressively (in increments of 5) for smoother UI updates
+          const INCREMENT_SIZE = 5;
+          const newPurchases = data.purchases.map((p: any) => ({
+            subject: p.subject || p.email_subject || 'Unknown',
+            orderNumber: p.orderNumber || p.order_number || 'N/A',
+            status: p.status || p.shipping_status || 'Unknown'
+          }));
           
-          // Consolidate after each batch to remove duplicates
-          const beforeConsolidation = allStats.purchasesFound.length;
-          allStats.purchasesFound = consolidatePurchases(allStats.purchasesFound);
-          const consolidatedThisBatch = beforeConsolidation - allStats.purchasesFound.length;
-          
-          if (consolidatedThisBatch > 0) {
-            allStats.totalConsolidated += consolidatedThisBatch;
+          // Add purchases in small increments with delays
+          for (let i = 0; i < newPurchases.length; i += INCREMENT_SIZE) {
+            const chunk = newPurchases.slice(i, i + INCREMENT_SIZE);
+            allStats.purchasesFound.push(...chunk);
+            
+            // Consolidate after each chunk
+            const beforeConsolidation = allStats.purchasesFound.length;
+            allStats.purchasesFound = consolidatePurchases(allStats.purchasesFound);
+            const consolidatedThisChunk = beforeConsolidation - allStats.purchasesFound.length;
+            
+            if (consolidatedThisChunk > 0) {
+              allStats.totalConsolidated += consolidatedThisChunk;
+            }
+            
+            // Update UI after each chunk
+            allStats.totalPurchasesFound = allStats.purchasesFound.length;
+            setStats({ ...allStats });
+            
+            // Small delay for visual effect (only if not the last chunk)
+            if (i + INCREMENT_SIZE < newPurchases.length) {
+              await new Promise(resolve => setTimeout(resolve, 50));
+            }
           }
           
-          addLog(`   Found ${data.purchases.length} purchases in this batch (${allStats.purchasesFound.length} unique after consolidation)`);
+          addLog(`Found ${data.purchases.length} purchases in this batch (${allStats.purchasesFound.length} unique after consolidation)`, 'success');
         }
 
         // Final update with all filtered emails
@@ -336,8 +368,8 @@ export default function GmailTestPage() {
 
         setStats({ ...allStats });
 
-        addLog(`✅ Batch ${batchIndex + 1}: Found ${purchasesInBatch} purchases, filtered ${filteredInBatch}, processed ${processedInBatch}/${emailsInBatch} emails`);
-        addLog(`   Query: ${currentQueryIndex + 1}/${data.progress?.totalQueries}, Has more: ${data.progress?.hasMore}, Next page: ${!!data.progress?.nextPageToken}`);
+        addLog(`Batch ${batchIndex + 1}: Found ${purchasesInBatch} purchases, filtered ${filteredInBatch}, processed ${processedInBatch}/${emailsInBatch} emails`, 'success');
+        addLog(`Query: ${currentQueryIndex + 1}/${data.progress?.totalQueries}, Has more: ${data.progress?.hasMore}, Next page: ${!!data.progress?.nextPageToken}`, 'query');
 
         // Check if we should continue
         pageToken = data.progress?.nextPageToken;
@@ -351,9 +383,9 @@ export default function GmailTestPage() {
             pageToken = undefined;
             hasMore = true;
             allStats.queriesCompleted = apiQIndex + 1;
-            addLog(`🔄 Advancing to query ${qIndex + 1}/${data.progress.totalQueries}`);
+            addLog(`Advancing to query ${qIndex + 1}/${data.progress.totalQueries}`, 'query');
           } else {
-            addLog(`✅ Completed all ${data.progress.totalQueries} queries`);
+            addLog(`Completed all ${data.progress.totalQueries} queries`, 'success');
             hasMore = false;
             allStats.queriesCompleted = data.progress.totalQueries;
           }
@@ -374,18 +406,32 @@ export default function GmailTestPage() {
       const finalConsolidatedCount = beforeFinalConsolidation - allStats.purchasesFound.length;
       
       if (finalConsolidatedCount > 0) {
-        addLog(`🔄 Final consolidation: removed ${finalConsolidatedCount} more duplicates`);
+        addLog(`Final consolidation: removed ${finalConsolidatedCount} more duplicates`, 'consolidate');
         allStats.totalConsolidated += finalConsolidatedCount;
       }
       
       setStats({ ...allStats });
       
-      addLog(`🎉 Test complete! Processed ${allStats.totalEmailsProcessed} emails, found ${allStats.totalPurchasesFound} unique purchases`);
+      // Determine completion reason
+      if (allStats.totalEmailsProcessed >= 20000) {
+        addLog(`Sync complete! Reached maximum limit of 20,000 emails`, 'complete');
+      } else if (allStats.queriesCompleted === allStats.totalQueries) {
+        addLog(`All caught up! Processed all available emails across ${allStats.totalQueries} time periods`, 'complete');
+      } else {
+        addLog(`Sync complete!`, 'complete');
+      }
+      addLog(`Final Results: ${allStats.totalEmailsProcessed} emails processed → ${allStats.totalPurchasesFound} unique purchases found`, 'stats');
+      if (allStats.totalConsolidated > 0) {
+        addLog(`Consolidated ${allStats.totalConsolidated} duplicate emails into existing purchases`, 'consolidate');
+      }
+      if (allStats.totalFiltered > 0) {
+        addLog(`Filtered out ${allStats.totalFiltered} non-purchase emails`, 'filter');
+      }
 
     } catch (err: any) {
       const errorMsg = err.message || String(err);
       setError(errorMsg);
-      addLog(`❌ Error: ${errorMsg}`);
+      addLog(`Error: ${errorMsg}`, 'error');
       console.error('Gmail test error:', err);
     } finally {
       setIsRunning(false);
@@ -484,7 +530,22 @@ export default function GmailTestPage() {
                 </div>
                 <p className="text-sm text-gray-400">Purchases Found</p>
               </div>
-              <p className="text-3xl font-bold text-green-400">{stats.totalPurchasesFound.toLocaleString()}</p>
+              <p 
+                key={stats.totalPurchasesFound} 
+                className="text-3xl font-bold text-green-400 animate-[scale-up_0.3s_ease-out]"
+                style={{
+                  animation: 'scale-up 0.3s ease-out'
+                }}
+              >
+                {stats.totalPurchasesFound.toLocaleString()}
+              </p>
+              <style dangerouslySetInnerHTML={{__html: `
+                @keyframes scale-up {
+                  0% { transform: scale(0.95); opacity: 0.7; }
+                  50% { transform: scale(1.08); }
+                  100% { transform: scale(1); opacity: 1; }
+                }
+              `}} />
             </div>
 
             {/* Consolidated */}
@@ -754,17 +815,41 @@ export default function GmailTestPage() {
         {/* Logs */}
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-6">
           <h2 className="text-xl font-bold mb-4">Live Logs</h2>
-          <div className="bg-black/50 rounded-lg p-4 h-96 overflow-y-auto font-mono text-sm space-y-1 max-h-96">
+          <div className="bg-black/50 rounded-lg p-4 h-96 overflow-y-auto font-mono text-sm space-y-2 max-h-96">
             {logs.length === 0 ? (
               <p className="text-gray-500">No logs yet. Click "Start Test" to begin.</p>
             ) : (
-              logs.map((log, i) => (
-                <div key={i} className="text-gray-300">
-                  {log}
-                </div>
-              ))
+              logs.map((log, i) => {
+                // Check if log has icon format: icon|timestamp|message
+                const parts = log.split('|');
+                if (parts.length === 3) {
+                  const [iconType, timestamp, message] = parts;
+                  return (
+                    <div key={i} className="flex items-start gap-2 text-gray-300 animate-fade-in">
+                      {renderLogIcon(iconType)}
+                      <span className="text-gray-500 text-xs">[{timestamp}]</span>
+                      <span className="flex-1">{message}</span>
+                    </div>
+                  );
+                }
+                // Fallback for old format
+                return (
+                  <div key={i} className="text-gray-300 animate-fade-in">
+                    {log}
+                  </div>
+                );
+              })
             )}
           </div>
+          <style dangerouslySetInnerHTML={{__html: `
+            @keyframes fade-in {
+              from { opacity: 0; transform: translateY(-4px); }
+              to { opacity: 1; transform: translateY(0); }
+            }
+            .animate-fade-in {
+              animation: fade-in 0.3s ease-out;
+            }
+          `}} />
         </div>
       </div>
     </div>

@@ -7,7 +7,7 @@ import { consolidatePurchasesByOrderNumber } from '../../../../lib/utils/statusP
 // Batch configuration
 const BATCH_SIZE = 100; // Process 100 emails per batch (increased from 50)
 const MAX_BATCHES_PER_REQUEST = 1; // Max 1 batch per API call (100 emails total) - reduced for faster testing
-const MAX_TOTAL_EMAILS = 10000; // Maximum total emails to process (changed from 100 to 10,000 for 1 month history)
+const MAX_TOTAL_EMAILS = 20000; // Maximum total emails to process (20,000 for ~2 years of history)
 const TIMEOUT_PER_EMAIL = 10000; // 10 seconds per email (increased to handle slow emails)
 const PARALLEL_EMAILS = 4; // Increased from 2 to 4 for faster processing while still showing frequent updates
 
@@ -217,13 +217,17 @@ export async function GET(request: NextRequest) {
     const baseQuery = 'from:noreply@stockx.com (subject:"Order Confirmed" OR subject:"Xpress Order Confirmed" OR subject:"Order Delivered" OR subject:"Order Verified & Shipped") -subject:"Arrived At StockX" -subject:"Shipped To StockX" -subject:"Ship your"';
     
     // Replace all queries with date-based queries (most recent first)
+    // Split into smaller date ranges to handle large volumes and avoid timeouts
     queries.length = 0; // Clear existing queries
     queries.push(
-      `${baseQuery} newer_than:7d`,        // Last 7 days (most recent - fastest)
-      `${baseQuery} older_than:7d newer_than:1m`,   // 1 week - 1 month
-      `${baseQuery} older_than:1m newer_than:3m`,   // 1-3 months
-      `${baseQuery} older_than:3m newer_than:6m`,   // 3-6 months
-      `${baseQuery} older_than:6m`                   // 6+ months (oldest)
+      `${baseQuery} newer_than:7d`,                    // Last 7 days
+      `${baseQuery} older_than:7d newer_than:1m`,      // 1 week - 1 month
+      `${baseQuery} older_than:1m newer_than:3m`,      // 1-3 months
+      `${baseQuery} older_than:3m newer_than:6m`,      // 3-6 months
+      `${baseQuery} older_than:6m newer_than:1y`,      // 6 months - 1 year
+      `${baseQuery} older_than:1y newer_than:18m`,     // 1 year - 18 months
+      `${baseQuery} older_than:18m newer_than:2y`,     // 18 months - 2 years
+      `${baseQuery} older_than:2y`                     // 2+ years (for completeness)
     );
 
     const queryIndexParam = parseInt(url.searchParams.get('qIndex') || '0');
@@ -303,6 +307,25 @@ export async function GET(request: NextRequest) {
     const processEmail = async (message: any, emailIndex: number) => {
       let subjectHeader = 'Unknown';
       try {
+        // First, try to get just the subject with a quick metadata call (faster, less likely to timeout)
+        try {
+          const metadataPromise = gmail.users.messages.get({
+            userId: 'me',
+            id: message.id,
+            format: 'metadata',
+            metadataHeaders: ['Subject', 'From']
+          });
+          const metadata = await Promise.race([
+            metadataPromise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Metadata timeout')), 2000))
+          ]) as any;
+          subjectHeader = metadata.data.payload?.headers?.find((h: any) => h.name === 'Subject')?.value || 'Unknown';
+        } catch (metaError) {
+          // If metadata fetch fails, continue with Unknown subject
+          console.log(`⚠️ BATCH ${batchIndex}: Could not fetch subject for email ${emailIndex + 1}`);
+        }
+
+        // Now fetch the full email
         const emailPromise = gmail.users.messages.get({
           userId: 'me',
           id: message.id,
@@ -318,7 +341,11 @@ export async function GET(request: NextRequest) {
         ]) as any;
         
         const fromHeader = emailData.data.payload?.headers?.find((h: any) => h.name === 'From')?.value || '';
-        subjectHeader = emailData.data.payload?.headers?.find((h: any) => h.name === 'Subject')?.value || 'Unknown';
+        // Update subject from full email if we got it
+        const fullSubject = emailData.data.payload?.headers?.find((h: any) => h.name === 'Subject')?.value;
+        if (fullSubject) {
+          subjectHeader = fullSubject;
+        }
         
         // Only log every 5th email to reduce noise
         if (emailIndex % 5 === 0) {
