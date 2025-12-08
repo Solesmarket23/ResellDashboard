@@ -695,7 +695,6 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
       originalPrice: `${price} + $0.00`,
       purchasePrice: orderInfo.purchase_price || 0,
       totalPayment: orderInfo.total_amount || 0,
-      purchaseDate, // This will be overwritten by consolidation if order confirmation email is found
       dateAdded,
       verified: 'pending',
       verifiedColor: 'orange',
@@ -706,6 +705,8 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
       emailDate: dateHeader, // camelCase for UI (raw date header string)
       // Use OrderInfo fields directly (like test parser) - these are already correctly set
       ...orderInfo, // Spread all OrderInfo fields including email_date, email_subject, purchase_date, etc.
+      // CRITICAL: Set purchaseDate AFTER spreading orderInfo to ensure our TBD/date logic is not overwritten
+      purchaseDate, // "TBD" for delivery/shipped, actual date for order confirmation
       // Ensure createdAt is set for fallback
       createdAt: orderInfo.email_date ? new Date(orderInfo.email_date).toISOString() : emailDate.toISOString()
     };
