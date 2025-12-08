@@ -198,24 +198,27 @@ const Purchases = () => {
           const aIsSpecial = !aDate || specialCases.includes(aDate);
           const bIsSpecial = !bDate || specialCases.includes(bDate);
           
-          // Put special cases at the end
-          if (aIsSpecial && bIsSpecial) {
+          // Parse actual dates
+          const aParsed = aIsSpecial ? null : new Date(aDate).getTime();
+          const bParsed = bIsSpecial ? null : new Date(bDate).getTime();
+          
+          // Check if parsing failed
+          const aInvalid = aParsed === null || isNaN(aParsed);
+          const bInvalid = bParsed === null || isNaN(bParsed);
+          
+          // Put invalid/special dates at the end
+          if (aInvalid && bInvalid) {
             aValue = 0;
             bValue = 0;
-          } else if (aIsSpecial) {
-            aValue = direction === 'asc' ? Infinity : -Infinity;
-            bValue = 0;
-          } else if (bIsSpecial) {
-            aValue = 0;
-            bValue = direction === 'asc' ? Infinity : -Infinity;
+          } else if (aInvalid) {
+            // a is invalid, should go to end
+            return direction === 'asc' ? 1 : -1;
+          } else if (bInvalid) {
+            // b is invalid, should go to end
+            return direction === 'asc' ? -1 : 1;
           } else {
-            // Parse actual dates
-            aValue = new Date(aDate).getTime();
-            bValue = new Date(bDate).getTime();
-            
-            // If parsing failed, treat as special case
-            if (isNaN(aValue)) aValue = direction === 'asc' ? Infinity : -Infinity;
-            if (isNaN(bValue)) bValue = direction === 'asc' ? Infinity : -Infinity;
+            aValue = aParsed;
+            bValue = bParsed;
           }
           break;
         case 'dateAdded':
@@ -223,21 +226,22 @@ const Purchases = () => {
           const aDateAdded = a.dateAdded ? a.dateAdded.replace('\n', ' ') : '';
           const bDateAdded = b.dateAdded ? b.dateAdded.replace('\n', ' ') : '';
           
-          if (!aDateAdded && !bDateAdded) {
+          const aAddedParsed = aDateAdded ? new Date(aDateAdded).getTime() : null;
+          const bAddedParsed = bDateAdded ? new Date(bDateAdded).getTime() : null;
+          
+          const aAddedInvalid = aAddedParsed === null || isNaN(aAddedParsed);
+          const bAddedInvalid = bAddedParsed === null || isNaN(bAddedParsed);
+          
+          if (aAddedInvalid && bAddedInvalid) {
             aValue = 0;
             bValue = 0;
-          } else if (!aDateAdded) {
-            aValue = direction === 'asc' ? Infinity : -Infinity;
-            bValue = 0;
-          } else if (!bDateAdded) {
-            aValue = 0;
-            bValue = direction === 'asc' ? Infinity : -Infinity;
+          } else if (aAddedInvalid) {
+            return direction === 'asc' ? 1 : -1;
+          } else if (bAddedInvalid) {
+            return direction === 'asc' ? -1 : 1;
           } else {
-            aValue = new Date(aDateAdded).getTime();
-            bValue = new Date(bDateAdded).getTime();
-            
-            if (isNaN(aValue)) aValue = direction === 'asc' ? Infinity : -Infinity;
-            if (isNaN(bValue)) bValue = direction === 'asc' ? Infinity : -Infinity;
+            aValue = aAddedParsed;
+            bValue = bAddedParsed;
           }
           break;
         case 'verified':
