@@ -384,7 +384,11 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
   };
 
   return (
-    <div className={`${currentTheme.colors.cardBackground} rounded-lg border ${currentTheme.colors.border} shadow-xl ${className}`}>
+    <div className={`${
+      currentTheme.name === 'Neon' 
+        ? 'bg-gray-900/95 backdrop-blur-md' 
+        : 'bg-white'
+    } rounded-lg border ${currentTheme.colors.border} shadow-2xl ${className}`}>
       <div className="p-4">
         {/* Header */}
         <div className="flex items-center justify-between mb-3">
