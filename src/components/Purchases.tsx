@@ -878,7 +878,19 @@ const Purchases = () => {
       purchaseDate: transformedPurchases[0].purchaseDate
     });
     
-    setPurchases(consolidatedPurchases);
+    // MERGE new purchases with existing ones (don't replace)
+    // Create a map of existing purchases by order number
+    const existingOrderNumbers = new Set(purchases.map(p => p.orderNumber));
+    
+    // Filter out any new purchases that already exist (by order number)
+    const newPurchasesOnly = consolidatedPurchases.filter(p => !existingOrderNumbers.has(p.orderNumber));
+    
+    // Merge: keep existing + add only new ones
+    const mergedPurchases = [...purchases, ...newPurchasesOnly];
+    
+    console.log(`🔄 Merging purchases: ${purchases.length} existing + ${newPurchasesOnly.length} new = ${mergedPurchases.length} total`);
+    
+    setPurchases(mergedPurchases);
     
     // Combine with manual purchases for totals
     const combinedPurchases = [...transformedPurchases, ...manualPurchases];
