@@ -3078,12 +3078,12 @@ const Purchases = () => {
                     currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
                   } transition-colors`} 
                   style={{ width: `${columnWidths.size}px` }}
-                  onClick={() => handleSort('size')}
+                  onClick={() => handleSort('brand')}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center">
-                      Size
-                      <SortIcon column="size" />
+                      Brand
+                      <SortIcon column="brand" />
                     </div>
                   </div>
                   <div 
@@ -3096,7 +3096,7 @@ const Purchases = () => {
                     }}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
-                      handleDoubleClickResize('size', 'Size');
+                      handleDoubleClickResize('size', 'Brand');
                     }}
                     title="Drag to resize column, double-click to auto-fit"
                   />
@@ -3323,7 +3323,7 @@ const Purchases = () => {
                           {purchase.product?.name || 'Unknown Product'}
                         </div>
                         <div className={`text-xs ${currentTheme.colors.textSecondary}`} style={{ wordBreak: 'break-word' }}>
-                          {purchase.product?.brand || 'Unknown Brand'}
+                          {purchase.product?.size || purchase.size || 'Size not specified'}
                         </div>
                       </div>
                     </div>
@@ -3345,7 +3345,7 @@ const Purchases = () => {
                   </td>
                   <td className="px-6 py-2 align-middle">
                     <span className={`text-sm ${currentTheme.colors.textPrimary}`}>
-                      {purchase.product?.size || purchase.size || '—'}
+                      {purchase.product?.brand || purchase.extracted_brand || '—'}
                     </span>
                   </td>
                   <td className="px-6 py-2 align-middle">
