@@ -69,6 +69,9 @@ export default function GmailTestPage() {
   const formatPurchaseDate = (dateString: string | undefined): string => {
     if (!dateString || dateString === 'N/A') return 'N/A';
     
+    // Pass through TBD and Unknown without trying to parse as dates
+    if (dateString === 'TBD' || dateString === 'Unknown') return dateString;
+    
     try {
       const date = new Date(dateString);
       
