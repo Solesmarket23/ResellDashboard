@@ -526,6 +526,15 @@ const Purchases = () => {
   const [lastFetchTime, setLastFetchTime] = useState(0);
   const FETCH_COOLDOWN = 5000; // 5 seconds cooldown between fetches
 
+  // Reset any stale sync state on mount (e.g., after page refresh)
+  useEffect(() => {
+    // Close any lingering sync modal from previous session
+    setShowBatchedSync(false);
+    // Reset cooldown timer to allow immediate sync
+    setLastFetchTime(0);
+    console.log('🔄 Reset sync state on component mount');
+  }, []); // Run once on mount
+
   // Load data on component mount
   useEffect(() => {
     // Debug Firebase status
