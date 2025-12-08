@@ -130,7 +130,21 @@ export default function GmailTestPage() {
         consolidatedMap.set(purchase.orderNumber, primaryPurchase);
       }
     });
-    return Array.from(consolidatedMap.values());
+    
+    // After consolidation, replace any remaining "TBD" with "Unknown"
+    // This means we never found an order confirmation email for this purchase
+    const finalPurchases = Array.from(consolidatedMap.values()).map(purchase => {
+      if (purchase.purchaseDate === 'TBD') {
+        console.log(`⚠️ No order confirmation found for ${purchase.orderNumber} - setting date to "Unknown"`);
+        return {
+          ...purchase,
+          purchaseDate: 'Unknown'
+        };
+      }
+      return purchase;
+    });
+    
+    return finalPurchases;
   };
 
   // Check Gmail connection status on mount

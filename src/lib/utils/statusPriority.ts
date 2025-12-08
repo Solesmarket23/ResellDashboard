@@ -274,6 +274,13 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
         p.status || p.shipping_status || 'Ordered'
       );
       
+      // If purchase date is still "TBD" after consolidation, it means we never found an order confirmation
+      // Set it to "Unknown" instead
+      if (primaryPurchase.purchaseDate === 'TBD') {
+        console.log(`⚠️ No order confirmation found for ${orderNumber} - setting purchaseDate to "Unknown"`);
+        primaryPurchase.purchaseDate = 'Unknown';
+      }
+      
       consolidatedPurchases.push(primaryPurchase);
     }
   }
