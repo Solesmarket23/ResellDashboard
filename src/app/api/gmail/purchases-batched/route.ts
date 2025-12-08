@@ -625,7 +625,7 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
     // Format purchase date - IMPORTANT: This is a temporary value
     // Consolidation will overwrite this with the order confirmation email date if found
     // For now, use the current email's date, but consolidation will fix it
-    const purchaseDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const purchaseDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     
     // Log if this appears to be an order confirmation email
     const isOrderConfirmation = category.status === 'Ordered' && (

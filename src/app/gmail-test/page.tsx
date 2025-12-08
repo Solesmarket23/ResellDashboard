@@ -292,14 +292,26 @@ export default function GmailTestPage() {
         if (data.purchases && data.purchases.length > 0) {
           // Add purchases progressively (in increments of 5) for smoother UI updates
           const INCREMENT_SIZE = 5;
-          const newPurchases = data.purchases.map((p: any) => ({
-            subject: p.subject || p.email_subject || 'Unknown',
-            orderNumber: p.orderNumber || p.order_number || 'N/A',
-            status: p.status || p.shipping_status || 'Unknown',
-            size: p.product?.size || p.size || 'N/A',
-            purchaseDate: p.purchase_date || p.purchaseDate || 'N/A',
-            productName: p.product?.name || p.productName || 'Unknown'
-          }));
+          const newPurchases = data.purchases.map((p: any) => {
+            const purchaseDate = p.purchase_date || p.purchaseDate || 'N/A';
+            // Debug: Log the first few purchase dates to see what format we're receiving
+            if (allStats.purchasesFound.length < 3) {
+              console.log(`🔍 Purchase date received from backend:`, {
+                purchase_date: p.purchase_date,
+                purchaseDate: p.purchaseDate,
+                final: purchaseDate,
+                orderNumber: p.orderNumber || p.order_number
+              });
+            }
+            return {
+              subject: p.subject || p.email_subject || 'Unknown',
+              orderNumber: p.orderNumber || p.order_number || 'N/A',
+              status: p.status || p.shipping_status || 'Unknown',
+              size: p.product?.size || p.size || 'N/A',
+              purchaseDate: purchaseDate,
+              productName: p.product?.name || p.productName || 'Unknown'
+            };
+          });
           
           // Add purchases in small increments with delays
           for (let i = 0; i < newPurchases.length; i += INCREMENT_SIZE) {
