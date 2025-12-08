@@ -82,6 +82,14 @@ function getDefaultConfig() {
           "Order canceled",
           "Refund Issued" // Full refund only
         ]
+      },
+      partialRefund: {
+        name: "Partial Refund",
+        status: "Partially Refunded",
+        statusColor: "orange",
+        subjectPatterns: [
+          "A Refund Is On The Way"
+        ]
       }
     },
     marketplaces: {
@@ -543,7 +551,6 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
     // Additional filtering for sales/non-purchase emails in subject/content
     const loweredSubject = subjectHeader.toLowerCase();
     const nonPurchaseSubjects = [
-      'a refund is on the way', // Partial refund notification (not a new purchase)
       'you sold',
       'sale price',
       'payout',
