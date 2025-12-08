@@ -659,7 +659,8 @@ export class OrderConfirmationParser {
         const styleMatch = text.match(/^Style ID:\s*(.+)$/i);
         if (styleMatch) {
           const styleId = styleMatch[1].trim();
-          if (styleId && /^[A-Z0-9\-]+$/i.test(styleId)) {
+          // Updated regex to allow multiple style IDs separated by / (e.g., "HF2881-101 / HF2882-101")
+          if (styleId && /^[A-Z0-9\-]+(?:\s*\/\s*[A-Z0-9\-]+)*$/i.test(styleId)) {
             orderInfo.style_id = styleId;
             console.log(`✅ STYLE ID EXTRACTED using cheerio: "${styleId}"`);
             break;
@@ -669,8 +670,9 @@ export class OrderConfirmationParser {
     } catch (error) {
       // Fallback to regex if cheerio fails
       const stylePatterns = [
-        /<li[^>]*class=["']attributes["'][^>]*>\s*Style ID:\s*([A-Z0-9\-]+)\s*<\/li>/i,
-        /Style ID:\s*([A-Z0-9\-]+)\b/i
+        // Updated patterns to handle multiple style IDs separated by /
+        /<li[^>]*class=["']attributes["'][^>]*>\s*Style ID:\s*([A-Z0-9\-]+(?:\s*\/\s*[A-Z0-9\-]+)*)\s*<\/li>/i,
+        /Style ID:\s*([A-Z0-9\-]+(?:\s*\/\s*[A-Z0-9\-]+)*)\b/i
       ];
       
       for (const pattern of stylePatterns) {
