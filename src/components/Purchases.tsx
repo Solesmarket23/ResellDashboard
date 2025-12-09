@@ -101,6 +101,54 @@ const Purchases = () => {
       actions: true
     };
   });
+
+  // Apply column visibility via CSS
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.id = 'column-visibility-styles';
+    
+    const hiddenColumns = Object.entries(visibleColumns)
+      .filter(([_, visible]) => !visible)
+      .map(([column]) => column);
+    
+    const cssRules = hiddenColumns.map(column => {
+      // Map column keys to their table positions
+      const columnMap: Record<string, number> = {
+        product: 2,
+        status: 3,
+        orderNumber: 4,
+        styleId: 6,
+        tracking: 7,
+        carrier: 8,
+        price: 9,
+        purchaseDate: 10
+      };
+      
+      const position = columnMap[column];
+      if (!position) return '';
+      
+      return `
+        table th:nth-child(${position}),
+        table td:nth-child(${position}) {
+          display: none !important;
+        }
+      `;
+    }).join('\n');
+    
+    style.textContent = cssRules;
+    
+    // Remove old style if exists
+    const oldStyle = document.getElementById('column-visibility-styles');
+    if (oldStyle) oldStyle.remove();
+    
+    // Add new style
+    if (cssRules) document.head.appendChild(style);
+    
+    return () => {
+      const styleToRemove = document.getElementById('column-visibility-styles');
+      if (styleToRemove) styleToRemove.remove();
+    };
+  }, [visibleColumns]);
   const [notification, setNotification] = useState<{
     isVisible: boolean;
     message: string;
@@ -2339,9 +2387,10 @@ const Purchases = () => {
         const purchaseRow = tableElement.querySelector(`[data-purchase-id="${matchedPurchase.id}"]`);
         if (purchaseRow) {
           purchaseRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          purchaseRow.classList.add('bg-yellow-100', 'animate-pulse');
+          // Static highlight - no pulse
+          purchaseRow.classList.add('bg-yellow-100');
           setTimeout(() => {
-            purchaseRow.classList.remove('bg-yellow-100', 'animate-pulse');
+            purchaseRow.classList.remove('bg-yellow-100');
           }, 3000);
         }
       }
@@ -4674,7 +4723,26 @@ const Purchases = () => {
                   </label>
                   <input
                     type="date"
-                    value={editingPurchase.purchaseDate ? (typeof editingPurchase.purchaseDate === 'string' && editingPurchase.purchaseDate.includes('-') ? editingPurchase.purchaseDate : new Date(editingPurchase.purchaseDate).toISOString().split('T')[0]) : ''}
+                    value={(() => {
+                      if (!editingPurchase.purchaseDate) return '';
+                      
+                      // If it's already a valid date string (YYYY-MM-DD format)
+                      if (typeof editingPurchase.purchaseDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(editingPurchase.purchaseDate)) {
+                        return editingPurchase.purchaseDate;
+                      }
+                      
+                      // Try to parse as date
+                      try {
+                        const date = new Date(editingPurchase.purchaseDate);
+                        if (!isNaN(date.getTime())) {
+                          return date.toISOString().split('T')[0];
+                        }
+                      } catch (e) {
+                        // Invalid date, return empty
+                      }
+                      
+                      return '';
+                    })()}
                     onChange={(e) => setEditingPurchase({
                       ...editingPurchase,
                       purchaseDate: e.target.value

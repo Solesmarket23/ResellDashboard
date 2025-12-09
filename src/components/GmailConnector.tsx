@@ -246,8 +246,8 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
         }} />
         
         <div className="relative flex items-center gap-4 px-5 py-4">
-          {/* Icon with pulse effect */}
-          <div className={`relative flex items-center justify-center w-10 h-10 rounded-full ${
+          {/* Icon */}
+          <div className={`flex items-center justify-center w-10 h-10 rounded-full ${
             isNeonTheme 
               ? 'bg-emerald-500/20 ring-2 ring-emerald-500/50' 
               : 'bg-green-100 ring-2 ring-green-300'
@@ -256,10 +256,6 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
               isNeonTheme 
                 ? 'text-emerald-400' 
                 : 'text-green-600'
-            }`} />
-            {/* Pulse animation */}
-            <span className={`absolute inset-0 rounded-full animate-ping opacity-20 ${
-              isNeonTheme ? 'bg-emerald-500' : 'bg-green-500'
             }`} />
           </div>
           
