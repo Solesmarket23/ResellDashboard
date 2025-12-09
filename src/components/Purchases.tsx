@@ -102,6 +102,7 @@ const Purchases = () => {
     };
   });
 
+
   // Apply column visibility via CSS
   useEffect(() => {
     const style = document.createElement('style');
@@ -113,10 +114,12 @@ const Purchases = () => {
     
     const cssRules = hiddenColumns.map(column => {
       // Map column keys to their table positions
+      // Current order: checkbox, product, status, orderNumber, brand, styleId, tracking, carrier, price, purchaseDate, actions
       const columnMap: Record<string, number> = {
         product: 2,
         status: 3,
         orderNumber: 4,
+        brand: 5,
         styleId: 6,
         tracking: 7,
         carrier: 8,
@@ -3033,7 +3036,7 @@ const Purchases = () => {
                 </button>
 
                 {showColumnCustomizer && (
-                  <div className={`absolute right-0 mt-2 w-64 rounded-xl shadow-2xl z-50 border-2 ${
+                  <div className={`absolute right-0 mt-2 w-72 rounded-xl shadow-2xl z-50 border-2 ${
                     currentTheme.name === 'Neon'
                       ? 'bg-gray-900 border-cyan-500/30'
                       : 'bg-white border-gray-200'
@@ -3045,7 +3048,7 @@ const Purchases = () => {
                         Customize Columns
                       </h3>
                       <p className={`text-xs mt-1 ${currentTheme.colors.textSecondary}`}>
-                        Show or hide table columns
+                        Toggle to show/hide columns
                       </p>
                     </div>
                     <div className="py-2 max-h-96 overflow-y-auto">
@@ -3053,6 +3056,7 @@ const Purchases = () => {
                         product: 'Product',
                         status: 'Status',
                         orderNumber: 'Order #',
+                        brand: 'Brand',
                         styleId: 'Style ID',
                         tracking: 'Tracking',
                         carrier: 'Carrier',
@@ -3281,7 +3285,7 @@ const Purchases = () => {
                 <span className={`px-1.5 py-0.5 rounded-full text-xs font-bold ${
                   currentTheme.name === 'Neon' ? 'bg-cyan-500 text-black' : 'bg-blue-500 text-white'
                 }`}>
-                  {activeFilters.status.length + activeFilters.carrier.length + activeFilters.market.length + (activeFilters.hasTracking ? 1 : 0)}
+                  {activeFilters.status.length + activeFilters.market.length + (activeFilters.hasTracking ? 1 : 0)}
                 </span>
               )}
               <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showFilters ? 'rotate-180' : ''}`} />
@@ -3303,22 +3307,6 @@ const Purchases = () => {
                       }`}
                     >
                       <span>{status}</span>
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  ))}
-                  {activeFilters.carrier.map(carrier => (
-                    <button
-                      key={carrier}
-                      onClick={() => toggleCarrierFilter(carrier)}
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200 ${
-                        currentTheme.name === 'Neon'
-                          ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30 border border-green-500/50'
-                          : 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200'
-                      }`}
-                    >
-                      <span>{carrier}</span>
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                       </svg>
@@ -3414,48 +3402,6 @@ const Purchases = () => {
                             : currentTheme.colors.textSecondary
                         }`}>
                           {status}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Carrier Filter */}
-                <div>
-                  <h3 className={`text-xs font-bold uppercase tracking-wider mb-3 ${
-                    currentTheme.name === 'Neon' ? 'text-gray-400' : 'text-gray-500'
-                  }`}>
-                    Carrier
-                  </h3>
-                  <div className="space-y-2.5">
-                    {getUniqueCarriers.map(carrier => (
-                      <label key={carrier} className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer group transition-all duration-200 ${
-                        activeFilters.carrier.includes(carrier)
-                          ? currentTheme.name === 'Neon'
-                            ? 'bg-cyan-500/10 border border-cyan-500/30'
-                            : 'bg-blue-50 border border-blue-200'
-                          : currentTheme.name === 'Neon'
-                            ? 'hover:bg-white/5 border border-transparent'
-                            : 'hover:bg-gray-50 border border-transparent'
-                      }`}>
-                        <div className="relative flex items-center justify-center">
-                          <input
-                            type="checkbox"
-                            checked={activeFilters.carrier.includes(carrier)}
-                            onChange={() => toggleCarrierFilter(carrier)}
-                            className={`w-4 h-4 rounded cursor-pointer transition-all duration-200 ${
-                              currentTheme.name === 'Neon' 
-                                ? 'bg-gray-800 border-2 border-gray-600 checked:bg-cyan-500 checked:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50 focus:ring-offset-0' 
-                                : 'bg-white border-2 border-gray-300 checked:bg-blue-600 checked:border-blue-600 focus:ring-2 focus:ring-blue-500/50 focus:ring-offset-0'
-                            }`}
-                          />
-                        </div>
-                        <span className={`text-sm font-medium transition-all ${
-                          activeFilters.carrier.includes(carrier)
-                            ? currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-700'
-                            : currentTheme.colors.textSecondary
-                        }`}>
-                          {carrier}
                         </span>
                       </label>
                     ))}
