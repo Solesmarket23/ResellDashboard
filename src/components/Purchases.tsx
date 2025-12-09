@@ -4641,7 +4641,7 @@ const Purchases = () => {
                 </div>
               </div>
 
-              {/* Price & Purchase Date */}
+              {/* Price & Credits/Discounts */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className={`block text-sm font-semibold mb-2 ${currentTheme.colors.textPrimary}`}>
@@ -4669,6 +4669,39 @@ const Purchases = () => {
                     />
                   </div>
                 </div>
+                <div>
+                  <label className={`block text-sm font-semibold mb-2 ${currentTheme.colors.textPrimary}`}>
+                    Credits / Discounts
+                    <span className={`ml-2 text-xs font-normal ${currentTheme.colors.textSecondary}`}>
+                      (Optional)
+                    </span>
+                  </label>
+                  <div className="relative">
+                    <span className={`absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold ${currentTheme.colors.textSecondary}`}>
+                      $
+                    </span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={editingPurchase.credits || editingPurchase.discounts || ''}
+                      onChange={(e) => setEditingPurchase({
+                        ...editingPurchase,
+                        credits: e.target.value,
+                        discounts: e.target.value
+                      })}
+                      placeholder="0.00"
+                      className={`w-full pl-8 pr-4 py-3 rounded-lg border text-sm transition-all duration-200 ${
+                        currentTheme.name === 'Neon'
+                          ? 'bg-gray-900 border-white/20 text-white placeholder-gray-500 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50'
+                          : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50'
+                      } focus:outline-none`}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Purchase Date */}
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className={`block text-sm font-semibold mb-2 ${currentTheme.colors.textPrimary}`}>
                     Purchase Date
@@ -4916,6 +4949,8 @@ const Purchases = () => {
                       style_id: editingPurchase.style_id || '',
                       price: editingPurchase.price || '',
                       totalAmount: editingPurchase.totalAmount || 0,
+                      credits: editingPurchase.credits || '',
+                      discounts: editingPurchase.discounts || '',
                       purchaseDate: editingPurchase.purchaseDate || '',
                       orderNumber: editingPurchase.orderNumber || '',
                       tracking: editingPurchase.tracking || '',
