@@ -74,6 +74,33 @@ const Purchases = () => {
   const [extractingTracking, setExtractingTracking] = useState<Set<string>>(new Set()); // Track which orders are being processed
   const [editingTracking, setEditingTracking] = useState<string | null>(null); // Track which purchase is being edited (by id or orderNumber)
   const [editingTrackingValue, setEditingTrackingValue] = useState<string>(''); // Current value being edited
+  const [highlightedPurchase, setHighlightedPurchase] = useState<string | null>(null); // Track which purchase was clicked to view email
+  
+  // Edit/Delete Modal State
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingPurchase, setEditingPurchase] = useState<any>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [purchaseToDelete, setPurchaseToDelete] = useState<any>(null);
+  const [carrierDropdownOpen, setCarrierDropdownOpen] = useState(false);
+  const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
+  const [marketDropdownOpen, setMarketDropdownOpen] = useState(false);
+  
+  // Column Customization State
+  const [showColumnCustomizer, setShowColumnCustomizer] = useState(false);
+  const [visibleColumns, setVisibleColumns] = useState(() => {
+    const saved = localStorage.getItem('visibleColumns');
+    return saved ? JSON.parse(saved) : {
+      product: true,
+      status: true,
+      orderNumber: true,
+      styleId: true,
+      tracking: true,
+      carrier: true,
+      price: true,
+      purchaseDate: true,
+      actions: true
+    };
+  });
   const [notification, setNotification] = useState<{
     isVisible: boolean;
     message: string;
@@ -2063,23 +2090,23 @@ const Purchases = () => {
   };
 
   const getStatusBadge = (status: string, color: string) => {
-    const baseClasses = "px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap";
+    const baseClasses = "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all duration-200";
     if (currentTheme.name === 'Neon') {
       const colorClasses = {
-        green: "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30",
-        orange: "bg-orange-500/20 text-orange-400 border border-orange-500/30",
-        yellow: "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30",
-        blue: "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30",
-        red: "bg-red-500/20 text-red-400 border border-red-500/30"
+        green: "bg-gradient-to-r from-emerald-500/20 to-green-500/20 text-emerald-400 border border-emerald-500/40 shadow-lg shadow-emerald-500/10",
+        orange: "bg-gradient-to-r from-orange-500/20 to-amber-500/20 text-orange-400 border border-orange-500/40 shadow-lg shadow-orange-500/10",
+        yellow: "bg-gradient-to-r from-yellow-500/20 to-amber-500/20 text-yellow-400 border border-yellow-500/40 shadow-lg shadow-yellow-500/10",
+        blue: "bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-400 border border-cyan-500/40 shadow-lg shadow-cyan-500/10",
+        red: "bg-gradient-to-r from-red-500/20 to-rose-500/20 text-red-400 border border-red-500/40 shadow-lg shadow-red-500/10"
       };
       return `${baseClasses} ${colorClasses[color as keyof typeof colorClasses]}`;
     } else {
       const colorClasses = {
-        green: "bg-green-100 text-green-800",
-        orange: "bg-orange-100 text-orange-800",
-        yellow: "bg-yellow-100 text-yellow-800",
-        blue: "bg-blue-100 text-blue-800",
-        red: "bg-red-100 text-red-800"
+        green: "bg-gradient-to-r from-green-100 to-emerald-100 text-green-800 border border-green-200 shadow-sm",
+        orange: "bg-gradient-to-r from-orange-100 to-amber-100 text-orange-800 border border-orange-200 shadow-sm",
+        yellow: "bg-gradient-to-r from-yellow-100 to-amber-100 text-yellow-800 border border-yellow-200 shadow-sm",
+        blue: "bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-800 border border-blue-200 shadow-sm",
+        red: "bg-gradient-to-r from-red-100 to-rose-100 text-red-800 border border-red-200 shadow-sm"
       };
       return `${baseClasses} ${colorClasses[color as keyof typeof colorClasses]}`;
     }
@@ -2937,6 +2964,88 @@ const Purchases = () => {
               )}
               </div>
             )}
+
+            {/* Column Customization Button */}
+            {totalCount > 0 && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowColumnCustomizer(!showColumnCustomizer)}
+                  className={`flex items-center space-x-2 ${
+                    currentTheme.name === 'Neon' 
+                      ? 'bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/40 shadow-lg' 
+                      : 'bg-white hover:bg-gray-50 border border-gray-300 hover:border-gray-400 shadow-lg'
+                  } ${currentTheme.colors.textPrimary} px-4 py-2 rounded-lg font-medium transition-all duration-200`}
+                  title="Customize columns"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+                  </svg>
+                  <span>Columns</span>
+                </button>
+
+                {showColumnCustomizer && (
+                  <div className={`absolute right-0 mt-2 w-64 rounded-xl shadow-2xl z-50 border-2 ${
+                    currentTheme.name === 'Neon'
+                      ? 'bg-gray-900 border-cyan-500/30'
+                      : 'bg-white border-gray-200'
+                  }`}>
+                    <div className={`px-4 py-3 border-b ${
+                      currentTheme.name === 'Neon' ? 'border-white/10' : 'border-gray-200'
+                    }`}>
+                      <h3 className={`font-bold text-sm ${currentTheme.colors.textPrimary}`}>
+                        Customize Columns
+                      </h3>
+                      <p className={`text-xs mt-1 ${currentTheme.colors.textSecondary}`}>
+                        Show or hide table columns
+                      </p>
+                    </div>
+                    <div className="py-2 max-h-96 overflow-y-auto">
+                      {Object.entries({
+                        product: 'Product',
+                        status: 'Status',
+                        orderNumber: 'Order #',
+                        styleId: 'Style ID',
+                        tracking: 'Tracking',
+                        carrier: 'Carrier',
+                        price: 'Price',
+                        purchaseDate: 'Purchase Date'
+                      }).map(([key, label]) => (
+                        <button
+                          key={key}
+                          onClick={() => {
+                            const newColumns = { ...visibleColumns, [key]: !visibleColumns[key] };
+                            setVisibleColumns(newColumns);
+                            localStorage.setItem('visibleColumns', JSON.stringify(newColumns));
+                          }}
+                          className={`w-full flex items-center justify-between px-4 py-2.5 transition-all duration-200 ${
+                            currentTheme.name === 'Neon'
+                              ? 'hover:bg-white/10'
+                              : 'hover:bg-gray-50'
+                          }`}
+                        >
+                          <span className={`text-sm font-medium ${currentTheme.colors.textPrimary}`}>
+                            {label}
+                          </span>
+                          <div className={`w-10 h-5 rounded-full transition-all duration-200 ${
+                            visibleColumns[key]
+                              ? currentTheme.name === 'Neon'
+                                ? 'bg-gradient-to-r from-cyan-500 to-blue-500'
+                                : 'bg-gradient-to-r from-blue-500 to-blue-600'
+                              : currentTheme.name === 'Neon'
+                              ? 'bg-gray-700'
+                              : 'bg-gray-300'
+                          } relative`}>
+                            <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-md transition-all duration-200 ${
+                              visibleColumns[key] ? 'left-5' : 'left-0.5'
+                            }`} />
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             
             <button
               onClick={refreshPurchases}
@@ -3433,15 +3542,19 @@ const Purchases = () => {
       )}
 
       {/* Table */}
-      <div className={`${currentTheme.colors.cardBackground} rounded-lg shadow-sm ${currentTheme.colors.border} border overflow-hidden`}>
+      <div className={`rounded-xl overflow-hidden ${
+        currentTheme.name === 'Neon'
+          ? 'bg-gradient-to-br from-gray-900/50 to-gray-900/30 border border-white/10 shadow-2xl'
+          : 'bg-white border border-gray-200 shadow-lg'
+      }`}>
         <div className="overflow-x-auto max-h-[70vh]">
           <table ref={tableRef} className="w-full" style={{ tableLayout: 'fixed' }}>
             <thead className={`${
               currentTheme.name === 'Neon' 
-                ? 'bg-gray-900 border-b border-white/10' 
-                : 'bg-gray-50 border-b border-gray-200'
+                ? 'bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 border-b border-white/20 backdrop-blur-sm' 
+                : 'bg-gradient-to-r from-gray-50 via-gray-100 to-gray-50 border-b border-gray-300'
             } sticky top-0 z-10`}>
-              <tr className="h-10">
+              <tr className="h-12">
                 <th 
                   className={`relative px-3 py-0 h-10 align-middle text-center`} 
                   style={{ width: `${columnWidths.checkbox}px` }}
@@ -3454,15 +3567,22 @@ const Purchases = () => {
                   />
                 </th>
                 <th 
-                  className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
-                    currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
-                  } transition-colors`} 
+                  className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-200'
+                  }`} 
                   style={{ width: `${columnWidths.product}px` }}
                   onClick={() => handleSort('product')}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      Product
+                  <div className="flex items-center justify-center h-full">
+                    <div className="flex items-center gap-2">
+                      <svg className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                      </svg>
+                      <span className={`text-xs font-bold uppercase tracking-wider ${
+                        currentTheme.name === 'Neon' ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
+                      } transition-colors`}>
+                        Product
+                      </span>
                       <SortIcon column="product" />
                     </div>
                   </div>
@@ -3482,15 +3602,22 @@ const Purchases = () => {
                   />
                 </th>
                 <th 
-                  className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
-                    currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
-                  } transition-colors`} 
+                  className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-200'
+                  }`} 
                   style={{ width: `${columnWidths.status}px` }}
                   onClick={() => handleSort('status')}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      Status
+                  <div className="flex items-center justify-center h-full">
+                    <div className="flex items-center gap-2">
+                      <svg className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className={`text-xs font-bold uppercase tracking-wider ${
+                        currentTheme.name === 'Neon' ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
+                      } transition-colors`}>
+                        Status
+                      </span>
                       <SortIcon column="status" />
                     </div>
                   </div>
@@ -3510,15 +3637,22 @@ const Purchases = () => {
                   />
                 </th>
                 <th 
-                  className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
-                    currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
-                  } transition-colors`} 
+                  className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-200'
+                  }`} 
                   style={{ width: `${columnWidths.orderNumber}px` }}
                   onClick={() => handleSort('orderNumber')}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      Order #
+                  <div className="flex items-center justify-center h-full">
+                    <div className="flex items-center gap-2">
+                      <svg className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                      </svg>
+                      <span className={`text-xs font-bold uppercase tracking-wider ${
+                        currentTheme.name === 'Neon' ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
+                      } transition-colors`}>
+                        Order #
+                      </span>
                       <SortIcon column="orderNumber" />
                     </div>
                   </div>
@@ -3538,15 +3672,22 @@ const Purchases = () => {
                   />
                 </th>
                 <th 
-                  className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
-                    currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
-                  } transition-colors`} 
+                  className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-200'
+                  }`} 
                   style={{ width: `${columnWidths.size}px` }}
                   onClick={() => handleSort('brand')}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      Brand
+                  <div className="flex items-center justify-center h-full">
+                    <div className="flex items-center gap-2">
+                      <svg className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                      </svg>
+                      <span className={`text-xs font-bold uppercase tracking-wider ${
+                        currentTheme.name === 'Neon' ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
+                      } transition-colors`}>
+                        Brand
+                      </span>
                       <SortIcon column="brand" />
                     </div>
                   </div>
@@ -3566,15 +3707,22 @@ const Purchases = () => {
                   />
                 </th>
                 <th 
-                  className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
-                    currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
-                  } transition-colors`} 
+                  className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-200'
+                  }`} 
                   style={{ width: `${columnWidths.styleId}px` }}
                   onClick={() => handleSort('styleId')}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      Style ID
+                  <div className="flex items-center justify-center h-full">
+                    <div className="flex items-center gap-2">
+                      <svg className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l3 3-3 3M6 16l-3-3 3-3" />
+                      </svg>
+                      <span className={`text-xs font-bold uppercase tracking-wider ${
+                        currentTheme.name === 'Neon' ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
+                      } transition-colors`}>
+                        Style ID
+                      </span>
                       <SortIcon column="styleId" />
                     </div>
                   </div>
@@ -3594,15 +3742,23 @@ const Purchases = () => {
                   />
                 </th>
                 <th 
-                  className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
-                    currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
-                  } transition-colors`} 
+                  className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-200'
+                  }`} 
                   style={{ width: `${columnWidths.tracking}px` }}
                   onClick={() => handleSort('tracking')}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      Tracking
+                  <div className="flex items-center justify-center h-full">
+                    <div className="flex items-center gap-2">
+                      <svg className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      <span className={`text-xs font-bold uppercase tracking-wider ${
+                        currentTheme.name === 'Neon' ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
+                      } transition-colors`}>
+                        Tracking
+                      </span>
                       <SortIcon column="tracking" />
                     </div>
                   </div>
@@ -3622,15 +3778,23 @@ const Purchases = () => {
                   />
                 </th>
                 <th 
-                  className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
-                    currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
-                  } transition-colors`} 
+                  className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-200'
+                  }`} 
                   style={{ width: `${columnWidths.carrier}px` }}
                   onClick={() => handleSort('carrier')}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      Carrier
+                  <div className="flex items-center justify-center h-full">
+                    <div className="flex items-center gap-2">
+                      <svg className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0" />
+                      </svg>
+                      <span className={`text-xs font-bold uppercase tracking-wider ${
+                        currentTheme.name === 'Neon' ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
+                      } transition-colors`}>
+                        Carrier
+                      </span>
                       <SortIcon column="carrier" />
                     </div>
                   </div>
@@ -3650,15 +3814,22 @@ const Purchases = () => {
                   />
                 </th>
                 <th 
-                  className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
-                    currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
-                  } transition-colors`} 
+                  className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-200'
+                  }`} 
                   style={{ width: `${columnWidths.total}px` }}
                   onClick={() => handleSort('price')}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      Total
+                  <div className="flex items-center justify-center h-full">
+                    <div className="flex items-center gap-2">
+                      <svg className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className={`text-xs font-bold uppercase tracking-wider ${
+                        currentTheme.name === 'Neon' ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
+                      } transition-colors`}>
+                        Total
+                      </span>
                       <SortIcon column="price" />
                     </div>
                   </div>
@@ -3678,15 +3849,22 @@ const Purchases = () => {
                   />
                 </th>
                 <th 
-                  className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider cursor-pointer select-none ${
-                    currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
-                  } transition-colors`} 
+                  className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-200'
+                  }`} 
                   style={{ width: `${columnWidths.purchaseDate}px` }}
                   onClick={() => handleSort('purchaseDate')}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      Purchase Date
+                  <div className="flex items-center justify-center h-full">
+                    <div className="flex items-center gap-2">
+                      <svg className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <span className={`text-xs font-bold uppercase tracking-wider ${
+                        currentTheme.name === 'Neon' ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
+                      } transition-colors`}>
+                        Purchase Date
+                      </span>
                       <SortIcon column="purchaseDate" />
                     </div>
                   </div>
@@ -3706,12 +3884,19 @@ const Purchases = () => {
                   />
                 </th>
                 <th 
-                  className={`relative px-6 py-0 h-10 align-middle text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`} 
+                  className={`relative px-6 py-0 h-12`} 
                   style={{ width: `${columnWidths.actions}px` }}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      Actions
+                  <div className="flex items-center justify-center h-full">
+                    <div className="flex items-center gap-2">
+                      <svg className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                      </svg>
+                      <span className={`text-xs font-bold uppercase tracking-wider ${
+                        currentTheme.name === 'Neon' ? 'text-gray-300' : 'text-gray-600'
+                      }`}>
+                        Actions
+                      </span>
                     </div>
                   </div>
                   <div 
@@ -3731,8 +3916,8 @@ const Purchases = () => {
                 </th>
               </tr>
             </thead>
-            <tbody className={`${currentTheme.colors.cardBackground} ${
-              currentTheme.name === 'Neon' ? 'divide-y divide-white/10' : 'divide-y divide-gray-100'
+            <tbody className={`${
+              currentTheme.name === 'Neon' ? 'divide-y divide-white/5' : 'divide-y divide-gray-200'
             }`}>
               {paginatedPurchases.map((purchase) => {
                 // Safety check to ensure purchase exists and has required structure
@@ -3742,11 +3927,31 @@ const Purchases = () => {
                 <tr 
                   key={purchase.id?.toString() || Math.random()} 
                   data-purchase-id={purchase.id}
-                  className={`${
-                    currentTheme.name === 'Neon' ? 'hover:bg-white/5' : 'hover:bg-gray-50'
-                  } transition-colors`}
+                  style={highlightedPurchase === (purchase.id?.toString() || purchase.orderNumber) ? {
+                    boxShadow: currentTheme.name === 'Neon' 
+                      ? 'inset 0 0 0 3px #22d3ee, 0 20px 50px rgba(34, 211, 238, 0.3)'
+                      : 'inset 0 0 0 3px #3b82f6, 0 20px 50px rgba(59, 130, 246, 0.3)'
+                  } : undefined}
+                  className={`group transition-all duration-300 ${
+                    // Check if this purchase is highlighted (user clicked email button)
+                    highlightedPurchase === (purchase.id?.toString() || purchase.orderNumber)
+                      ? currentTheme.name === 'Neon'
+                        ? 'bg-gradient-to-r from-cyan-500/30 via-blue-500/20 to-cyan-500/30'
+                        : 'bg-gradient-to-r from-blue-200 via-blue-100 to-blue-200'
+                      : currentTheme.name === 'Neon' 
+                        ? 'hover:bg-gradient-to-r hover:from-cyan-500/5 hover:via-transparent hover:to-cyan-500/5 hover:shadow-lg hover:shadow-cyan-500/5' 
+                        : 'hover:bg-gradient-to-r hover:from-blue-50/50 hover:via-transparent hover:to-blue-50/50 hover:shadow-md'
+                  }`}
                 >
-                  <td className="px-3 py-2 text-center">
+                  <td className="px-3 py-3 text-center relative">
+                    {/* Bold indicator when user is checking email for this purchase */}
+                    {highlightedPurchase === (purchase.id?.toString() || purchase.orderNumber) && (
+                      <div className={`absolute -left-0 top-0 bottom-0 w-2 ${
+                        currentTheme.name === 'Neon' 
+                          ? 'bg-gradient-to-b from-cyan-400 via-cyan-500 to-cyan-400 shadow-lg shadow-cyan-500/50' 
+                          : 'bg-gradient-to-b from-blue-500 via-blue-600 to-blue-500 shadow-lg'
+                      }`} />
+                    )}
                     <input
                       type="checkbox"
                       checked={selectedPurchases.has(purchase.id?.toString() || '')}
@@ -3754,19 +3959,21 @@ const Purchases = () => {
                       className={`rounded ${currentTheme.name === 'Neon' ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-300'} cursor-pointer`}
                     />
                   </td>
-                  <td className="px-6 py-2">
-                    <div className="flex items-start gap-3 min-h-12">
+                  <td className="px-6 py-3">
+                    <div className="flex items-start gap-3 min-h-14">
                       <div 
-                        className={`w-8 h-8 rounded-lg flex-shrink-0 overflow-hidden ${purchase.product?.bgColor || 'bg-gray-100'} flex items-center justify-center shadow-sm mt-1 cursor-pointer hover:ring-2 hover:ring-offset-1 ${
-                          currentTheme.name === 'Neon' ? 'hover:ring-cyan-400' : 'hover:ring-blue-400'
-                        } transition-all duration-200`}
+                        className={`relative w-12 h-12 rounded-xl flex-shrink-0 overflow-hidden ${purchase.product?.bgColor || 'bg-gray-100'} flex items-center justify-center cursor-pointer transition-all duration-300 group-hover:scale-105 group-hover:shadow-xl ${
+                          currentTheme.name === 'Neon' 
+                            ? 'ring-2 ring-white/10 hover:ring-cyan-400' 
+                            : 'ring-2 ring-gray-200 hover:ring-blue-400 shadow-md'
+                        }`}
                         onClick={() => handleImageClick(purchase)}
                         title="Click to preview image"
                       >
                         <img 
                           src={purchase.product?.image || ''} 
                           alt={purchase.product?.name || 'Product'}
-                          className="w-full h-full object-cover rounded-lg"
+                          className="w-full h-full object-cover rounded-xl"
                           onLoad={(e) => {
                             const target = e.target as HTMLImageElement;
                             target.parentElement!.classList.remove(purchase.product?.bgColor || 'bg-gray-100');
@@ -3782,45 +3989,89 @@ const Purchases = () => {
                           }}
                         />
                       </div>
-                      <div className="flex-1">
-                        <div className={`text-sm font-medium ${currentTheme.colors.textPrimary} leading-tight`} style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
+                      <div className="flex-1 py-1">
+                        <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary} leading-tight mb-1`} style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
                           {purchase.product?.name || 'Unknown Product'}
                         </div>
-                        <div className={`text-xs ${currentTheme.colors.textSecondary}`} style={{ wordBreak: 'break-word' }}>
+                        <div className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold ${
+                          currentTheme.name === 'Neon' 
+                            ? 'bg-white/5 text-gray-300 border border-white/10' 
+                            : 'bg-gray-100 text-gray-700 border border-gray-200'
+                        }`}>
                           {purchase.product?.size || purchase.size || 'Size not specified'}
                         </div>
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-2 align-middle">
+                  <td className="px-6 py-3 align-middle">
                     <span className={getStatusBadge(purchase.status, deriveStatusColor(purchase.status, purchase.statusColor))}>
+                      {/* Status icon */}
+                      {(() => {
+                        const statusLower = (purchase.status || '').toLowerCase();
+                        if (statusLower.includes('deliver')) {
+                          return (
+                            <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                            </svg>
+                          );
+                        } else if (statusLower.includes('ship')) {
+                          return (
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                            </svg>
+                          );
+                        } else if (statusLower.includes('refund')) {
+                          return (
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                            </svg>
+                          );
+                        } else {
+                          return (
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          );
+                        }
+                      })()}
                       {purchase.status}
                     </span>
                   </td>
-                  <td className="px-6 py-2 align-middle">
+                  <td className="px-6 py-3 align-middle">
                     <a 
                       href={generateGmailSearchUrl(purchase.orderNumber)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className={`${currentTheme.colors.accent} text-sm font-medium hover:underline whitespace-nowrap transition-colors`}
+                      className={`inline-flex items-center gap-1.5 text-sm font-semibold whitespace-nowrap transition-all duration-200 group/link ${
+                        currentTheme.name === 'Neon'
+                          ? 'text-cyan-400 hover:text-cyan-300'
+                          : 'text-blue-600 hover:text-blue-700'
+                      }`}
                     >
                       {formatOrderNumberForDisplay(purchase.orderNumber)}
+                      <svg className="w-3.5 h-3.5 opacity-0 group-hover/link:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
                     </a>
                   </td>
-                  <td className="px-6 py-2 align-middle">
-                    <span className={`text-sm ${currentTheme.colors.textPrimary}`}>
+                  <td className="px-6 py-3 align-middle">
+                    <span className={`inline-flex items-center gap-1.5 text-sm font-medium ${currentTheme.colors.textPrimary}`}>
                       {purchase.product?.brand || purchase.extracted_brand || '—'}
                     </span>
                   </td>
-                  <td className="px-6 py-2 align-middle">
-                    <span className={`text-sm font-mono ${currentTheme.colors.textPrimary}`}>
+                  <td className="px-6 py-3 align-middle">
+                    <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-mono font-medium ${
+                      currentTheme.name === 'Neon'
+                        ? 'bg-white/5 text-gray-300 border border-white/10'
+                        : 'bg-gray-100 text-gray-700 border border-gray-200'
+                    }`}>
                       {purchase.styleId || purchase.style_id || '—'}
                     </span>
                   </td>
                   <td className="px-6 py-2 align-middle">
                     {editingTracking === (purchase.id || purchase.orderNumber) ? (
                       // Inline editing mode
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1.5">
                         <input
                           type="text"
                           value={editingTrackingValue}
@@ -3833,33 +4084,37 @@ const Purchases = () => {
                             }
                           }}
                           autoFocus
-                          className={`text-sm px-2 py-1 border rounded ${
+                          className={`text-sm px-3 py-1.5 border-2 rounded-lg font-medium transition-all duration-200 ${
                             currentTheme.name === 'Neon' 
-                              ? 'bg-black/50 border-cyan-500 text-white' 
-                              : 'bg-white border-gray-300 text-gray-900'
-                          } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                              ? 'bg-gray-900 border-cyan-500 text-white placeholder-gray-500 focus:border-cyan-400 focus:shadow-lg focus:shadow-cyan-500/20' 
+                              : 'bg-white border-blue-400 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:shadow-lg focus:shadow-blue-500/20'
+                          } focus:outline-none`}
                           placeholder="Enter tracking number"
-                          style={{ minWidth: '150px' }}
+                          style={{ minWidth: '180px' }}
                         />
                         <button
                           onClick={() => handleSaveTracking(purchase)}
-                          className={`px-2 py-1 text-xs rounded ${
+                          className={`p-1.5 rounded-lg transition-all duration-200 ${
                             currentTheme.name === 'Neon'
-                              ? 'bg-green-500 hover:bg-green-600 text-white'
-                              : 'bg-green-500 hover:bg-green-600 text-white'
-                          } transition-colors`}
+                              ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/50 hover:border-emerald-500'
+                              : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border border-emerald-200 hover:border-emerald-300'
+                          }`}
                           title="Save (Enter)">
-                          ✓
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
                         </button>
                         <button
                           onClick={handleCancelEditTracking}
-                          className={`px-2 py-1 text-xs rounded ${
+                          className={`p-1.5 rounded-lg transition-all duration-200 ${
                             currentTheme.name === 'Neon'
-                              ? 'bg-red-500 hover:bg-red-600 text-white'
-                              : 'bg-red-500 hover:bg-red-600 text-white'
-                          } transition-colors`}
+                              ? 'bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/50 hover:border-red-500'
+                              : 'bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 hover:border-red-300'
+                          }`}
                           title="Cancel (Esc)">
-                          ✕
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
                         </button>
                       </div>
                     ) : purchase.tracking && purchase.tracking.trim() !== '' ? (
@@ -3901,36 +4156,58 @@ const Purchases = () => {
                         Not Shipped Yet
                       </button>
                     ) : (purchase.status?.toLowerCase() === 'shipped' || purchase.status?.toLowerCase() === 'delivered') ? (
-                      // Shipped/Delivered but no tracking - show "Add Tracking" button and "View Shipped Email" link
+                      // Shipped/Delivered but no tracking - show primary action button with secondary link
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => handleStartEditTracking(purchase)}
-                          className={`text-xs px-2 py-1 rounded transition-colors ${
-                            currentTheme.name === 'Neon' ? 'bg-cyan-500 hover:bg-cyan-600' : 'bg-blue-500 hover:bg-blue-600'
-                          } text-white hover:shadow-md`}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
+                            currentTheme.name === 'Neon' 
+                              ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white shadow-lg hover:shadow-cyan-500/50' 
+                              : 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white shadow-md hover:shadow-lg'
+                          }`}
                           title="Click to add tracking number">
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                          </svg>
                           Add Tracking
                         </button>
                         <a
                           href={generateGmailShippedEmailUrl(purchase.orderNumber)}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className={`${currentTheme.colors.accent} text-xs hover:underline transition-colors cursor-pointer flex items-center gap-1`}
-                          title="Click to open shipped email in Gmail and manually add tracking number"
-                          onClick={(e) => e.stopPropagation()}
+                          className={`p-1.5 rounded-lg transition-all duration-200 ${
+                            currentTheme.name === 'Neon'
+                              ? 'hover:bg-white/10 text-gray-400 hover:text-cyan-400'
+                              : 'hover:bg-gray-100 text-gray-500 hover:text-blue-600'
+                          }`}
+                          title="View shipped email in Gmail"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // Highlight this purchase so user knows which one they're checking
+                            const purchaseId = purchase.id?.toString() || purchase.orderNumber;
+                            setHighlightedPurchase(purchaseId);
+                            // Auto-remove highlight after 15 seconds
+                            setTimeout(() => {
+                              setHighlightedPurchase(null);
+                            }, 15000);
+                          }}
                         >
-                          <Mail className="w-3 h-3" />
-                          View Email
+                          <Mail className="w-4 h-4" />
                         </a>
                       </div>
                     ) : (
                       // No tracking - show add button
                       <button
                         onClick={() => handleStartEditTracking(purchase)}
-                        className={`text-xs px-2 py-1 rounded transition-colors ${
-                          currentTheme.name === 'Neon' ? 'bg-cyan-500 hover:bg-cyan-600' : 'bg-blue-500 hover:bg-blue-600'
-                        } text-white hover:shadow-md`}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
+                          currentTheme.name === 'Neon' 
+                            ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white shadow-lg hover:shadow-cyan-500/50' 
+                            : 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white shadow-md hover:shadow-lg'
+                        }`}
                         title="Click to add tracking number">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                        </svg>
                         Add Tracking
                       </button>
                     )}
@@ -3967,8 +4244,12 @@ const Purchases = () => {
                       })()}
                     </span>
                   </td>
-                  <td className="px-6 py-2 align-middle">
-                    <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>
+                  <td className="px-6 py-3 align-middle">
+                    <div className={`inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-bold ${
+                      currentTheme.name === 'Neon'
+                        ? 'bg-gradient-to-r from-green-500/20 to-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                        : 'bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 border border-green-200'
+                    }`}>
                       {purchase.price || purchase.totalAmount ? (
                         typeof purchase.totalAmount === 'number' 
                           ? `$${purchase.totalAmount.toFixed(2)}`
@@ -3976,8 +4257,8 @@ const Purchases = () => {
                       ) : '—'}
                     </div>
                   </td>
-                  <td className="px-6 py-2 align-middle">
-                    <span className={`text-sm ${currentTheme.colors.textPrimary} font-medium`}>
+                  <td className="px-6 py-3 align-middle">
+                    <span className={`inline-flex items-center gap-1.5 text-sm font-medium ${currentTheme.colors.textPrimary}`}>
                       {(() => {
                         // Prioritize consolidated purchaseDate (from order confirmation email)
                         if (purchase.purchaseDate) {
@@ -4005,17 +4286,38 @@ const Purchases = () => {
                       })()}
                     </span>
                   </td>
-                  <td className="px-6 py-2 align-middle">
-                    <div className="flex items-center space-x-1">
-                      <button className={`p-1 ${currentTheme.colors.textSecondary} ${
-                        currentTheme.name === 'Neon' ? 'hover:text-cyan-400 hover:bg-white/10' : 'hover:text-gray-600 hover:bg-gray-100'
-                      } rounded transition-colors`}>
+                  <td className="px-6 py-3 align-middle">
+                    <div className="flex items-center gap-1.5">
+                      {/* Edit Purchase */}
+                      <button
+                        onClick={() => {
+                          setEditingPurchase(purchase);
+                          setEditModalOpen(true);
+                        }}
+                        className={`p-2 rounded-lg transition-all duration-200 ${
+                          currentTheme.name === 'Neon'
+                            ? 'hover:bg-white/10 text-gray-400 hover:text-cyan-400'
+                            : 'hover:bg-gray-100 text-gray-500 hover:text-blue-600'
+                        }`}
+                        title="Edit purchase"
+                      >
                         <Edit className="w-4 h-4" />
                       </button>
-                      <button className={`p-1 ${currentTheme.colors.textSecondary} ${
-                        currentTheme.name === 'Neon' ? 'hover:text-cyan-400 hover:bg-white/10' : 'hover:text-gray-600 hover:bg-gray-100'
-                      } rounded transition-colors`}>
-                        <MoreHorizontal className="w-4 h-4" />
+                      
+                      {/* Delete Purchase */}
+                      <button
+                        onClick={() => {
+                          setPurchaseToDelete(purchase);
+                          setDeleteConfirmOpen(true);
+                        }}
+                        className={`p-2 rounded-lg transition-all duration-200 ${
+                          currentTheme.name === 'Neon'
+                            ? 'hover:bg-red-500/20 text-gray-400 hover:text-red-400'
+                            : 'hover:bg-red-50 text-gray-500 hover:text-red-600'
+                        }`}
+                        title="Delete purchase"
+                      >
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </td>
@@ -4027,26 +4329,64 @@ const Purchases = () => {
         </div>
         
         {/* Pagination Controls */}
-        <div className={`flex items-center justify-between px-6 py-4 border-t ${currentTheme.colors.border}`}>
-          <div className="flex items-center gap-4">
-            <span className={`text-sm ${currentTheme.colors.textSecondary}`}>
-              {sortedPurchases.length === 0 
-                ? 'No purchases to display' 
-                : `Showing ${(currentPage - 1) * (itemsPerPage === -1 ? sortedPurchases.length : itemsPerPage) + 1} to ${Math.min(currentPage * (itemsPerPage === -1 ? sortedPurchases.length : itemsPerPage), sortedPurchases.length)} of ${sortedPurchases.length} purchase${sortedPurchases.length === 1 ? '' : 's'}`
-              }
-            </span>
+        <div className={`flex items-center justify-between px-6 py-4 border-t ${
+          currentTheme.name === 'Neon'
+            ? 'border-white/10 bg-gradient-to-r from-gray-900/50 via-gray-800/50 to-gray-900/50'
+            : 'border-gray-200 bg-gradient-to-r from-gray-50 via-white to-gray-50'
+        }`}>
+          <div className="flex items-center gap-6">
+            {/* Pagination Info */}
+            <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg ${
+              currentTheme.name === 'Neon'
+                ? 'bg-white/5 border border-white/10'
+                : 'bg-gray-100 border border-gray-200'
+            }`}>
+              <svg className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span className={`text-sm font-semibold ${
+                sortedPurchases.length === 0
+                  ? currentTheme.colors.textSecondary
+                  : currentTheme.colors.textPrimary
+              }`}>
+                {sortedPurchases.length === 0 
+                  ? 'No purchases to display' 
+                  : (
+                    <>
+                      Showing <span className={`${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`}>
+                        {(currentPage - 1) * (itemsPerPage === -1 ? sortedPurchases.length : itemsPerPage) + 1}
+                      </span> to <span className={`${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`}>
+                        {Math.min(currentPage * (itemsPerPage === -1 ? sortedPurchases.length : itemsPerPage), sortedPurchases.length)}
+                      </span> of <span className={`${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'} font-bold`}>
+                        {sortedPurchases.length}
+                      </span> purchase{sortedPurchases.length === 1 ? '' : 's'}
+                    </>
+                  )
+                }
+              </span>
+            </div>
             
-            <div className="flex items-center gap-2">
-              <span className={`text-sm ${currentTheme.colors.textSecondary}`}>Results per page:</span>
+            {/* Results Per Page Selector */}
+            <div className={`inline-flex items-center gap-3 px-4 py-2 rounded-lg ${
+              currentTheme.name === 'Neon'
+                ? 'bg-white/5 border border-white/10'
+                : 'bg-gray-100 border border-gray-200'
+            }`}>
+              <svg className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+              </svg>
+              <label className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>
+                Rows:
+              </label>
               <select
                 value={itemsPerPage}
                 onChange={(e) => setItemsPerPage(Number(e.target.value))}
-                className={`px-3 py-1.5 rounded-lg text-sm ${
+                className={`px-3 py-1 rounded-md text-sm font-semibold cursor-pointer transition-all duration-200 ${
                   currentTheme.name === 'Neon'
-                    ? 'bg-gray-900 border border-white/20 text-gray-300'
-                    : 'bg-white border border-gray-300 text-gray-900'
+                    ? 'bg-gray-800 border border-white/20 text-cyan-400 hover:bg-gray-700 hover:border-cyan-500/50'
+                    : 'bg-white border border-gray-300 text-blue-600 hover:bg-gray-50 hover:border-blue-400 shadow-sm'
                 } focus:outline-none focus:ring-2 ${
-                  currentTheme.name === 'Neon' ? 'focus:ring-cyan-500' : 'focus:ring-indigo-500'
+                  currentTheme.name === 'Neon' ? 'focus:ring-cyan-500/50' : 'focus:ring-blue-500/50'
                 }`}
               >
                 <option value={10}>10</option>
@@ -4063,12 +4403,12 @@ const Purchases = () => {
               <button
                 onClick={() => setCurrentPage(1)}
                 disabled={currentPage === 1}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
                   currentPage === 1
-                    ? 'opacity-50 cursor-not-allowed'
+                    ? 'opacity-40 cursor-not-allowed'
                     : currentTheme.name === 'Neon'
-                    ? 'bg-white/10 hover:bg-white/20 text-gray-300'
-                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                    ? 'bg-white/10 hover:bg-white/20 text-gray-300 border border-white/20 hover:border-white/40 hover:shadow-lg'
+                    : 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 hover:border-gray-400 shadow-sm hover:shadow-md'
                 }`}
               >
                 First
@@ -4077,44 +4417,54 @@ const Purchases = () => {
               <button
                 onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                 disabled={currentPage === 1}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center gap-1.5 ${
                   currentPage === 1
-                    ? 'opacity-50 cursor-not-allowed'
+                    ? 'opacity-40 cursor-not-allowed'
                     : currentTheme.name === 'Neon'
-                    ? 'bg-white/10 hover:bg-white/20 text-gray-300'
-                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                    ? 'bg-white/10 hover:bg-white/20 text-gray-300 border border-white/20 hover:border-white/40 hover:shadow-lg'
+                    : 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 hover:border-gray-400 shadow-sm hover:shadow-md'
                 }`}
               >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
                 Previous
               </button>
               
-              <span className={`px-4 py-1.5 text-sm ${currentTheme.colors.textPrimary}`}>
+              <span className={`px-5 py-2 rounded-lg text-sm font-bold ${
+                currentTheme.name === 'Neon'
+                  ? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-400 border border-cyan-500/40'
+                  : 'bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 border border-blue-200'
+              }`}>
                 Page {currentPage} of {totalPages}
               </span>
               
               <button
                 onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                 disabled={currentPage === totalPages}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center gap-1.5 ${
                   currentPage === totalPages
-                    ? 'opacity-50 cursor-not-allowed'
+                    ? 'opacity-40 cursor-not-allowed'
                     : currentTheme.name === 'Neon'
-                    ? 'bg-white/10 hover:bg-white/20 text-gray-300'
-                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                    ? 'bg-white/10 hover:bg-white/20 text-gray-300 border border-white/20 hover:border-white/40 hover:shadow-lg'
+                    : 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 hover:border-gray-400 shadow-sm hover:shadow-md'
                 }`}
               >
                 Next
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
               </button>
               
               <button
                 onClick={() => setCurrentPage(totalPages)}
                 disabled={currentPage === totalPages}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
                   currentPage === totalPages
-                    ? 'opacity-50 cursor-not-allowed'
+                    ? 'opacity-40 cursor-not-allowed'
                     : currentTheme.name === 'Neon'
-                    ? 'bg-white/10 hover:bg-white/20 text-gray-300'
-                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                    ? 'bg-white/10 hover:bg-white/20 text-gray-300 border border-white/20 hover:border-white/40 hover:shadow-lg'
+                    : 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 hover:border-gray-400 shadow-sm hover:shadow-md'
                 }`}
               >
                 Last
@@ -4152,6 +4502,511 @@ const Purchases = () => {
         onScanComplete={handlePackageScanComplete}
         purchases={[...purchases, ...manualPurchases]}
       />
+
+      {/* Edit Purchase Modal */}
+      {editModalOpen && editingPurchase && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className={`relative w-full max-w-2xl rounded-2xl shadow-2xl ${
+            currentTheme.name === 'Neon'
+              ? 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 border-2 border-cyan-500/30'
+              : 'bg-white border-2 border-gray-200'
+          }`}>
+            {/* Header */}
+            <div className={`flex items-center justify-between px-6 py-4 border-b ${
+              currentTheme.name === 'Neon' ? 'border-white/10' : 'border-gray-200'
+            }`}>
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-lg ${
+                  currentTheme.name === 'Neon' ? 'bg-cyan-500/20' : 'bg-blue-100'
+                }`}>
+                  <Edit className={`w-5 h-5 ${
+                    currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'
+                  }`} />
+                </div>
+                <div>
+                  <h3 className={`text-xl font-bold ${currentTheme.colors.textPrimary}`}>
+                    Edit Purchase
+                  </h3>
+                  <p className={`text-sm ${currentTheme.colors.textSecondary}`}>
+                    {formatOrderNumberForDisplay(editingPurchase.orderNumber)}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setEditModalOpen(false);
+                  setEditingPurchase(null);
+                }}
+                className={`p-2 rounded-lg transition-all duration-200 ${
+                  currentTheme.name === 'Neon'
+                    ? 'hover:bg-white/10 text-gray-400 hover:text-white'
+                    : 'hover:bg-gray-100 text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="px-6 py-6 space-y-5 max-h-[70vh] overflow-y-auto">
+              {/* Product Image & Name */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={`block text-sm font-semibold mb-2 ${currentTheme.colors.textPrimary}`}>
+                    Product Name
+                  </label>
+                  <input
+                    type="text"
+                    value={editingPurchase.product?.name || editingPurchase.productName || ''}
+                    onChange={(e) => setEditingPurchase({
+                      ...editingPurchase,
+                      product: { ...(editingPurchase.product || {}), name: e.target.value },
+                      productName: e.target.value
+                    })}
+                    placeholder="Enter product name"
+                    className={`w-full px-4 py-3 rounded-lg border text-sm transition-all duration-200 ${
+                      currentTheme.name === 'Neon'
+                        ? 'bg-gray-900 border-white/20 text-white placeholder-gray-500 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50'
+                        : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50'
+                    } focus:outline-none`}
+                  />
+                </div>
+                <div>
+                  <label className={`block text-sm font-semibold mb-2 ${currentTheme.colors.textPrimary}`}>
+                    Brand / Market
+                  </label>
+                  <input
+                    type="text"
+                    value={editingPurchase.product?.brand || editingPurchase.brand || editingPurchase.market || ''}
+                    onChange={(e) => setEditingPurchase({
+                      ...editingPurchase,
+                      product: { ...(editingPurchase.product || {}), brand: e.target.value },
+                      brand: e.target.value,
+                      market: e.target.value
+                    })}
+                    placeholder="e.g., Nike, StockX"
+                    className={`w-full px-4 py-3 rounded-lg border text-sm transition-all duration-200 ${
+                      currentTheme.name === 'Neon'
+                        ? 'bg-gray-900 border-white/20 text-white placeholder-gray-500 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50'
+                        : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50'
+                    } focus:outline-none`}
+                  />
+                </div>
+              </div>
+
+              {/* Size & Style ID */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={`block text-sm font-semibold mb-2 ${currentTheme.colors.textPrimary}`}>
+                    Size
+                  </label>
+                  <input
+                    type="text"
+                    value={editingPurchase.product?.size || editingPurchase.size || ''}
+                    onChange={(e) => setEditingPurchase({
+                      ...editingPurchase,
+                      product: { ...(editingPurchase.product || {}), size: e.target.value },
+                      size: e.target.value
+                    })}
+                    placeholder="e.g., US M 10.5"
+                    className={`w-full px-4 py-3 rounded-lg border text-sm transition-all duration-200 ${
+                      currentTheme.name === 'Neon'
+                        ? 'bg-gray-900 border-white/20 text-white placeholder-gray-500 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50'
+                        : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50'
+                    } focus:outline-none`}
+                  />
+                </div>
+                <div>
+                  <label className={`block text-sm font-semibold mb-2 ${currentTheme.colors.textPrimary}`}>
+                    Style ID
+                  </label>
+                  <input
+                    type="text"
+                    value={editingPurchase.styleId || editingPurchase.style_id || ''}
+                    onChange={(e) => setEditingPurchase({
+                      ...editingPurchase,
+                      styleId: e.target.value,
+                      style_id: e.target.value
+                    })}
+                    placeholder="e.g., DZ5485-612"
+                    className={`w-full px-4 py-3 rounded-lg border text-sm transition-all duration-200 ${
+                      currentTheme.name === 'Neon'
+                        ? 'bg-gray-900 border-white/20 text-white placeholder-gray-500 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50'
+                        : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50'
+                    } focus:outline-none`}
+                  />
+                </div>
+              </div>
+
+              {/* Price & Purchase Date */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={`block text-sm font-semibold mb-2 ${currentTheme.colors.textPrimary}`}>
+                    Price Paid
+                  </label>
+                  <div className="relative">
+                    <span className={`absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold ${currentTheme.colors.textSecondary}`}>
+                      $
+                    </span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={editingPurchase.price || editingPurchase.totalAmount || ''}
+                      onChange={(e) => setEditingPurchase({
+                        ...editingPurchase,
+                        price: e.target.value,
+                        totalAmount: parseFloat(e.target.value) || 0
+                      })}
+                      placeholder="0.00"
+                      className={`w-full pl-8 pr-4 py-3 rounded-lg border text-sm transition-all duration-200 ${
+                        currentTheme.name === 'Neon'
+                          ? 'bg-gray-900 border-white/20 text-white placeholder-gray-500 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50'
+                          : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50'
+                      } focus:outline-none`}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className={`block text-sm font-semibold mb-2 ${currentTheme.colors.textPrimary}`}>
+                    Purchase Date
+                  </label>
+                  <input
+                    type="date"
+                    value={editingPurchase.purchaseDate ? (typeof editingPurchase.purchaseDate === 'string' && editingPurchase.purchaseDate.includes('-') ? editingPurchase.purchaseDate : new Date(editingPurchase.purchaseDate).toISOString().split('T')[0]) : ''}
+                    onChange={(e) => setEditingPurchase({
+                      ...editingPurchase,
+                      purchaseDate: e.target.value
+                    })}
+                    className={`w-full px-4 py-3 rounded-lg border text-sm transition-all duration-200 ${
+                      currentTheme.name === 'Neon'
+                        ? 'bg-gray-900 border-white/20 text-white focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50'
+                        : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50'
+                    } focus:outline-none`}
+                  />
+                </div>
+              </div>
+
+              {/* Order Number */}
+              <div>
+                <label className={`block text-sm font-semibold mb-2 ${currentTheme.colors.textPrimary}`}>
+                  Order Number
+                </label>
+                <input
+                  type="text"
+                  value={editingPurchase.orderNumber || ''}
+                  onChange={(e) => setEditingPurchase({...editingPurchase, orderNumber: e.target.value})}
+                  placeholder="Enter order number"
+                  className={`w-full px-4 py-3 rounded-lg border text-sm transition-all duration-200 ${
+                    currentTheme.name === 'Neon'
+                      ? 'bg-gray-900 border-white/20 text-white placeholder-gray-500 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50'
+                      : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50'
+                  } focus:outline-none`}
+                />
+              </div>
+
+              {/* Tracking Number */}
+              <div>
+                <label className={`block text-sm font-semibold mb-2 ${currentTheme.colors.textPrimary}`}>
+                  Tracking Number
+                </label>
+                <input
+                  type="text"
+                  value={editingPurchase.tracking || ''}
+                  onChange={(e) => setEditingPurchase({...editingPurchase, tracking: e.target.value})}
+                  placeholder="Enter tracking number"
+                  className={`w-full px-4 py-3 rounded-lg border text-sm transition-all duration-200 ${
+                    currentTheme.name === 'Neon'
+                      ? 'bg-gray-900 border-white/20 text-white placeholder-gray-500 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50'
+                      : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50'
+                  } focus:outline-none`}
+                />
+              </div>
+
+              {/* Carrier - Custom Dropdown */}
+              <div>
+                <label className={`block text-sm font-semibold mb-2 ${currentTheme.colors.textPrimary}`}>
+                  Carrier
+                </label>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setCarrierDropdownOpen(!carrierDropdownOpen)}
+                    className={`w-full px-4 py-3 rounded-lg border text-sm text-left transition-all duration-200 flex items-center justify-between ${
+                      currentTheme.name === 'Neon'
+                        ? 'bg-gray-900 border-white/20 text-white focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50'
+                        : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50'
+                    } focus:outline-none`}
+                  >
+                    <span className={!editingPurchase.carrier ? currentTheme.colors.textSecondary : ''}>
+                      {editingPurchase.carrier || 'Select carrier'}
+                    </span>
+                    <svg className={`w-4 h-4 transition-transform duration-200 ${carrierDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {carrierDropdownOpen && (
+                    <div className={`absolute z-10 w-full mt-2 rounded-lg border shadow-xl ${
+                      currentTheme.name === 'Neon'
+                        ? 'bg-gray-900 border-white/20'
+                        : 'bg-white border-gray-200'
+                    }`}>
+                      {['UPS', 'FedEx', 'USPS', 'DHL', 'Other'].map((carrier) => (
+                        <button
+                          key={carrier}
+                          type="button"
+                          onClick={() => {
+                            setEditingPurchase({...editingPurchase, carrier});
+                            setCarrierDropdownOpen(false);
+                          }}
+                          className={`w-full px-4 py-3 text-left text-sm transition-all duration-200 first:rounded-t-lg last:rounded-b-lg ${
+                            editingPurchase.carrier === carrier
+                              ? currentTheme.name === 'Neon'
+                                ? 'bg-cyan-500/20 text-cyan-400'
+                                : 'bg-blue-50 text-blue-700'
+                              : currentTheme.name === 'Neon'
+                              ? 'text-white hover:bg-white/10'
+                              : 'text-gray-900 hover:bg-gray-50'
+                          }`}
+                        >
+                          {carrier}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Status - Custom Dropdown */}
+              <div>
+                <label className={`block text-sm font-semibold mb-2 ${currentTheme.colors.textPrimary}`}>
+                  Status
+                </label>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
+                    className={`w-full px-4 py-3 rounded-lg border text-sm text-left transition-all duration-200 flex items-center justify-between ${
+                      currentTheme.name === 'Neon'
+                        ? 'bg-gray-900 border-white/20 text-white focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50'
+                        : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50'
+                    } focus:outline-none`}
+                  >
+                    <span>{editingPurchase.status || 'Ordered'}</span>
+                    <svg className={`w-4 h-4 transition-transform duration-200 ${statusDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {statusDropdownOpen && (
+                    <div className={`absolute z-10 w-full mt-2 rounded-lg border shadow-xl ${
+                      currentTheme.name === 'Neon'
+                        ? 'bg-gray-900 border-white/20'
+                        : 'bg-white border-gray-200'
+                    }`}>
+                      {['Ordered', 'Shipped', 'Delivered', 'Cancelled', 'Refunded'].map((status) => (
+                        <button
+                          key={status}
+                          type="button"
+                          onClick={() => {
+                            setEditingPurchase({...editingPurchase, status});
+                            setStatusDropdownOpen(false);
+                          }}
+                          className={`w-full px-4 py-3 text-left text-sm transition-all duration-200 first:rounded-t-lg last:rounded-b-lg ${
+                            editingPurchase.status === status
+                              ? currentTheme.name === 'Neon'
+                                ? 'bg-cyan-500/20 text-cyan-400'
+                                : 'bg-blue-50 text-blue-700'
+                              : currentTheme.name === 'Neon'
+                              ? 'text-white hover:bg-white/10'
+                              : 'text-gray-900 hover:bg-gray-50'
+                          }`}
+                        >
+                          {status}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className={`block text-sm font-semibold mb-2 ${currentTheme.colors.textPrimary}`}>
+                  Notes
+                  <span className={`ml-2 text-xs font-normal ${currentTheme.colors.textSecondary}`}>
+                    (Optional)
+                  </span>
+                </label>
+                <textarea
+                  value={editingPurchase.notes || ''}
+                  onChange={(e) => setEditingPurchase({...editingPurchase, notes: e.target.value})}
+                  placeholder="Add any notes about this purchase..."
+                  rows={3}
+                  className={`w-full px-4 py-3 rounded-lg border text-sm transition-all duration-200 resize-none ${
+                    currentTheme.name === 'Neon'
+                      ? 'bg-gray-900 border-white/20 text-white placeholder-gray-500 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50'
+                      : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50'
+                  } focus:outline-none`}
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className={`flex items-center justify-end gap-3 px-6 py-4 border-t ${
+              currentTheme.name === 'Neon' ? 'border-white/10' : 'border-gray-200'
+            }`}>
+              <button
+                onClick={() => {
+                  setEditModalOpen(false);
+                  setEditingPurchase(null);
+                }}
+                className={`px-5 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                  currentTheme.name === 'Neon'
+                    ? 'bg-white/10 hover:bg-white/20 text-gray-300 border border-white/20'
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-300'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  // Save the purchase
+                  if (editingPurchase.id) {
+                    await updateDocument('purchases', editingPurchase.id.toString(), {
+                      productName: editingPurchase.product?.name || editingPurchase.productName || '',
+                      brand: editingPurchase.product?.brand || editingPurchase.brand || '',
+                      market: editingPurchase.market || editingPurchase.product?.brand || '',
+                      size: editingPurchase.product?.size || editingPurchase.size || '',
+                      styleId: editingPurchase.styleId || '',
+                      style_id: editingPurchase.style_id || '',
+                      price: editingPurchase.price || '',
+                      totalAmount: editingPurchase.totalAmount || 0,
+                      purchaseDate: editingPurchase.purchaseDate || '',
+                      orderNumber: editingPurchase.orderNumber || '',
+                      tracking: editingPurchase.tracking || '',
+                      carrier: editingPurchase.carrier || '',
+                      status: editingPurchase.status || 'Ordered',
+                      notes: editingPurchase.notes || '',
+                      product: {
+                        ...(editingPurchase.product || {}),
+                        name: editingPurchase.product?.name || editingPurchase.productName || '',
+                        brand: editingPurchase.product?.brand || editingPurchase.brand || '',
+                        size: editingPurchase.product?.size || editingPurchase.size || ''
+                      }
+                    });
+                    // Refresh purchases
+                    const updatedPurchases = await getDocuments('purchases');
+                    setPurchases(updatedPurchases);
+                  }
+                  setEditModalOpen(false);
+                  setEditingPurchase(null);
+                  setCarrierDropdownOpen(false);
+                  setStatusDropdownOpen(false);
+                }}
+                className={`px-5 py-2.5 rounded-lg text-sm font-bold transition-all duration-200 ${
+                  currentTheme.name === 'Neon'
+                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white shadow-lg shadow-cyan-500/50'
+                    : 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-lg'
+                }`}
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmOpen && purchaseToDelete && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className={`relative w-full max-w-md rounded-2xl shadow-2xl ${
+            currentTheme.name === 'Neon'
+              ? 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 border-2 border-red-500/30'
+              : 'bg-white border-2 border-red-200'
+          }`}>
+            {/* Header */}
+            <div className={`flex items-center justify-between px-6 py-4 border-b ${
+              currentTheme.name === 'Neon' ? 'border-white/10' : 'border-gray-200'
+            }`}>
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-lg ${
+                  currentTheme.name === 'Neon' ? 'bg-red-500/20' : 'bg-red-100'
+                }`}>
+                  <Trash2 className={`w-5 h-5 ${
+                    currentTheme.name === 'Neon' ? 'text-red-400' : 'text-red-600'
+                  }`} />
+                </div>
+                <h3 className={`text-xl font-bold ${currentTheme.colors.textPrimary}`}>
+                  Delete Purchase
+                </h3>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="px-6 py-6">
+              <p className={`text-sm ${currentTheme.colors.textSecondary} mb-4`}>
+                Are you sure you want to delete this purchase? This action cannot be undone.
+              </p>
+              
+              {/* Purchase Preview */}
+              <div className={`flex items-start gap-4 p-4 rounded-xl ${
+                currentTheme.name === 'Neon' ? 'bg-white/5 border border-white/10' : 'bg-gray-50 border border-gray-200'
+              }`}>
+                <img 
+                  src={purchaseToDelete.product?.image || ''} 
+                  alt={purchaseToDelete.product?.name || 'Product'}
+                  className="w-12 h-12 rounded-lg object-cover ring-2 ring-white/20"
+                />
+                <div className="flex-1">
+                  <div className={`font-semibold text-sm ${currentTheme.colors.textPrimary}`}>
+                    {purchaseToDelete.product?.name || 'Unknown Product'}
+                  </div>
+                  <div className={`text-xs ${currentTheme.colors.textSecondary}`}>
+                    Order: {formatOrderNumberForDisplay(purchaseToDelete.orderNumber)}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className={`flex items-center justify-end gap-3 px-6 py-4 border-t ${
+              currentTheme.name === 'Neon' ? 'border-white/10' : 'border-gray-200'
+            }`}>
+              <button
+                onClick={() => {
+                  setDeleteConfirmOpen(false);
+                  setPurchaseToDelete(null);
+                }}
+                className={`px-5 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                  currentTheme.name === 'Neon'
+                    ? 'bg-white/10 hover:bg-white/20 text-gray-300 border border-white/20'
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-300'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  // Delete the purchase
+                  if (purchaseToDelete.id) {
+                    await handleDeletePurchase(purchaseToDelete.id);
+                  }
+                  setDeleteConfirmOpen(false);
+                  setPurchaseToDelete(null);
+                }}
+                className={`px-5 py-2.5 rounded-lg text-sm font-bold transition-all duration-200 ${
+                  currentTheme.name === 'Neon'
+                    ? 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-400 hover:to-red-500 text-white shadow-lg shadow-red-500/50'
+                    : 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-lg'
+                }`}
+              >
+                Delete Purchase
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Reset Confirmation Modal */}
       {showResetConfirm && (
