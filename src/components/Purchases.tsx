@@ -4060,7 +4060,7 @@ const Purchases = () => {
                         ? 'bg-white/5 text-gray-300 border border-white/10'
                         : 'bg-gray-100 text-gray-700 border border-gray-200'
                     }`}>
-                      {purchase.styleId || purchase.style_id || '—'}
+                      {purchase.styleId || purchase.style_id || 'Unknown'}
                     </span>
                   </td>
                   <td className="px-6 py-2 align-middle">
@@ -4181,6 +4181,12 @@ const Purchases = () => {
                             // Highlight this purchase so user knows which one they're checking
                             const purchaseId = purchase.id?.toString() || purchase.orderNumber;
                             setHighlightedPurchase(purchaseId);
+                            
+                            // Auto-click "Add Tracking" button after 1 second delay
+                            setTimeout(() => {
+                              handleStartEditTracking(purchase);
+                            }, 1000);
+                            
                             // Auto-remove highlight after 15 seconds
                             setTimeout(() => {
                               setHighlightedPurchase(null);
