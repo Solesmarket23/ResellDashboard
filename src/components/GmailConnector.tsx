@@ -193,23 +193,38 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
   // Show loading state while checking connection status
   if (isChecking) {
     return (
-      <div className={`flex items-center space-x-3 px-4 py-3 rounded-lg border ${ 
+      <div className={`relative overflow-hidden rounded-xl border transition-all duration-300 ${ 
         isNeonTheme 
-          ? 'bg-gray-500/10 text-gray-400 border-gray-500/30 backdrop-blur-sm' 
-          : 'bg-gray-50 text-gray-800 border-gray-200'
+          ? 'bg-gradient-to-br from-gray-800/50 to-gray-900/50 border-gray-700/50 shadow-lg' 
+          : 'bg-gradient-to-br from-gray-50 to-gray-100 border-gray-200 shadow-sm'
       }`}>
-        <Loader2 className={`w-5 h-5 animate-spin ${ 
-          isNeonTheme 
-            ? 'text-gray-400' 
-            : 'text-gray-600'
-        }`} />
-        <div className="flex-1">
-          <div className="font-medium text-sm">Checking Gmail connection...</div>
-          <div className={`text-xs ${ 
+        <div className="relative flex items-center gap-4 px-5 py-4">
+          <div className={`flex items-center justify-center w-10 h-10 rounded-full ${
             isNeonTheme 
-              ? 'text-gray-400/70' 
-              : 'text-gray-600'
-          }`}>Please wait</div>
+              ? 'bg-gray-700/50' 
+              : 'bg-gray-200'
+          }`}>
+            <Loader2 className={`w-5 h-5 animate-spin ${ 
+              isNeonTheme 
+                ? 'text-gray-400' 
+                : 'text-gray-600'
+            }`} />
+          </div>
+          
+          <div className="flex-1">
+            <div className={`font-semibold text-base ${
+              isNeonTheme ? 'text-gray-300' : 'text-gray-800'
+            }`}>
+              Checking Gmail connection...
+            </div>
+            <div className={`text-sm mt-1 ${
+              isNeonTheme 
+                ? 'text-gray-400' 
+                : 'text-gray-600'
+            }`}>
+              Please wait
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -217,87 +232,198 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
 
   if (isConnected) {
     return (
-      <div className={`flex items-center space-x-3 px-4 py-3 rounded-lg border ${ 
+      <div className={`relative overflow-hidden rounded-xl border transition-all duration-300 ${ 
         isNeonTheme 
-          ? 'bg-green-500/10 text-green-400 border-green-500/30 backdrop-blur-sm' 
-          : 'bg-green-50 text-green-800 border-green-200'
+          ? 'bg-gradient-to-br from-emerald-500/10 via-green-500/10 to-teal-500/10 border-emerald-500/30 shadow-lg shadow-emerald-500/10' 
+          : 'bg-gradient-to-br from-green-50 to-emerald-50 border-green-200 shadow-sm'
       }`}>
-        <CheckCircle className={`w-5 h-5 ${ 
-          isNeonTheme 
-            ? 'text-green-400' 
-            : 'text-green-600'
-        }`} />
-        <div className="flex-1">
-          <div className="font-medium text-sm">Gmail Connected</div>
-          <div className={`text-xs ${ 
+        {/* Animated background gradient */}
+        <div className={`absolute inset-0 opacity-30 ${
+          isNeonTheme ? 'bg-gradient-to-r from-emerald-500/20 via-green-500/20 to-teal-500/20' : ''
+        }`} style={{
+          backgroundSize: '200% 200%',
+          animation: 'gradient 8s ease infinite'
+        }} />
+        
+        <div className="relative flex items-center gap-4 px-5 py-4">
+          {/* Icon with pulse effect */}
+          <div className={`relative flex items-center justify-center w-10 h-10 rounded-full ${
             isNeonTheme 
-              ? 'text-green-400/70' 
-              : 'text-green-600'
+              ? 'bg-emerald-500/20 ring-2 ring-emerald-500/50' 
+              : 'bg-green-100 ring-2 ring-green-300'
           }`}>
-            Purchase emails will be automatically imported
-            {daysRemaining !== null && (
-              <span className="block mt-1">
-                {daysRemaining > 1 ? `Expires in ${daysRemaining} days` : 
-                 daysRemaining === 1 ? 'Expires tomorrow' : 
-                 'Expires today'}
+            <CheckCircle className={`w-5 h-5 ${ 
+              isNeonTheme 
+                ? 'text-emerald-400' 
+                : 'text-green-600'
+            }`} />
+            {/* Pulse animation */}
+            <span className={`absolute inset-0 rounded-full animate-ping opacity-20 ${
+              isNeonTheme ? 'bg-emerald-500' : 'bg-green-500'
+            }`} />
+          </div>
+          
+          {/* Content */}
+          <div className="flex-1 min-w-0">
+            <div className={`font-semibold text-base flex items-center gap-2 ${
+              isNeonTheme ? 'text-emerald-400' : 'text-green-800'
+            }`}>
+              Gmail Connected
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                isNeonTheme 
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' 
+                  : 'bg-green-100 text-green-700 border border-green-300'
+              }`}>
+                Active
               </span>
+            </div>
+            <div className={`text-sm mt-1 ${
+              isNeonTheme 
+                ? 'text-emerald-400/80' 
+                : 'text-green-700'
+            }`}>
+              Purchase emails will be automatically imported
+            </div>
+            {daysRemaining !== null && (
+              <div className={`text-xs mt-1.5 flex items-center gap-1.5 ${
+                isNeonTheme 
+                  ? 'text-emerald-400/60' 
+                  : 'text-green-600'
+              }`}>
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>
+                  {daysRemaining > 1 ? `Expires in ${daysRemaining} days` : 
+                   daysRemaining === 1 ? 'Expires tomorrow' : 
+                   'Expires today'}
+                </span>
+              </div>
             )}
           </div>
+          
+          {/* Disconnect button */}
+          <button
+            onClick={disconnectFromGmail}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${
+              isNeonTheme 
+                ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/50 hover:border-emerald-500' 
+                : 'bg-white hover:bg-green-50 text-green-700 border border-green-300 hover:border-green-400 shadow-sm'
+            }`}
+          >
+            Disconnect
+          </button>
         </div>
-        <button
-          onClick={disconnectFromGmail}
-          className={`text-xs underline ${ 
-            isNeonTheme 
-              ? 'text-green-400 hover:text-green-300' 
-              : 'text-green-700 hover:text-green-900'
-          }`}
-        >
-          Disconnect
-        </button>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className={`flex items-center space-x-3 px-4 py-3 rounded-lg border ${ 
+      <div className={`relative overflow-hidden rounded-xl border transition-all duration-300 ${ 
         isNeonTheme 
-          ? 'bg-red-500/10 text-red-400 border-red-500/30 backdrop-blur-sm' 
-          : 'bg-red-50 text-red-800 border-red-200'
+          ? 'bg-gradient-to-br from-red-500/10 via-rose-500/10 to-pink-500/10 border-red-500/30 shadow-lg shadow-red-500/10' 
+          : 'bg-gradient-to-br from-red-50 to-rose-50 border-red-200 shadow-sm'
       }`}>
-        <AlertCircle className={`w-5 h-5 ${ 
-          isNeonTheme 
-            ? 'text-red-400' 
-            : 'text-red-600'
-        }`} />
-        <div className="flex-1">
-          <div className="font-medium text-sm">Connection Error</div>
-          <div className={`text-xs ${ 
+        <div className="relative flex items-center gap-4 px-5 py-4">
+          <div className={`flex items-center justify-center w-10 h-10 rounded-full ${
             isNeonTheme 
-              ? 'text-red-400/70' 
-              : 'text-red-600'
-          }`}>{error}</div>
-        </div>
-        <div className="flex space-x-2">
-          <button
-            onClick={() => {
-              setError(null);
-              connectToGmail();
-            }}
-            className={`text-xs underline ${ 
+              ? 'bg-red-500/20 ring-2 ring-red-500/50' 
+              : 'bg-red-100 ring-2 ring-red-300'
+          }`}>
+            <AlertCircle className={`w-5 h-5 ${ 
               isNeonTheme 
-                ? 'text-red-400 hover:text-red-300' 
-                : 'text-red-700 hover:text-red-900'
-            }`}
-          >
-            Retry
-          </button>
+                ? 'text-red-400' 
+                : 'text-red-600'
+            }`} />
+          </div>
+          
+          <div className="flex-1 min-w-0">
+            <div className={`font-semibold text-base ${
+              isNeonTheme ? 'text-red-400' : 'text-red-800'
+            }`}>
+              Connection Error
+            </div>
+            <div className={`text-sm mt-1 ${
+              isNeonTheme 
+                ? 'text-red-400/80' 
+                : 'text-red-700'
+            }`}>
+              {error}
+            </div>
+          </div>
+          
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                setError(null);
+                connectToGmail();
+              }}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${
+                isNeonTheme 
+                  ? 'bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/50 hover:border-red-500' 
+                  : 'bg-white hover:bg-red-50 text-red-700 border border-red-300 hover:border-red-400 shadow-sm'
+              }`}
+            >
+              Retry
+            </button>
+            <button
+              onClick={resetGmailConnection}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${
+                isNeonTheme 
+                  ? 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 hover:border-red-500/50' 
+                  : 'bg-white hover:bg-red-50 text-red-700 border border-red-200 hover:border-red-300 shadow-sm'
+              }`}
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isConnecting) {
+    return (
+      <div className={`relative overflow-hidden rounded-xl border transition-all duration-300 ${ 
+        isNeonTheme 
+          ? 'bg-gradient-to-br from-yellow-500/10 via-amber-500/10 to-orange-500/10 border-yellow-500/30 shadow-lg' 
+          : 'bg-gradient-to-br from-yellow-50 to-amber-50 border-yellow-200 shadow-sm'
+      }`}>
+        <div className="relative flex items-center gap-4 px-5 py-4">
+          <div className={`flex items-center justify-center w-10 h-10 rounded-full ${
+            isNeonTheme 
+              ? 'bg-yellow-500/20' 
+              : 'bg-yellow-100'
+          }`}>
+            <Loader2 className={`w-5 h-5 animate-spin ${ 
+              isNeonTheme 
+                ? 'text-yellow-400' 
+                : 'text-yellow-600'
+            }`} />
+          </div>
+          
+          <div className="flex-1">
+            <div className={`font-semibold text-base ${
+              isNeonTheme ? 'text-yellow-400' : 'text-yellow-800'
+            }`}>
+              Connecting to Gmail...
+            </div>
+            <div className={`text-sm mt-1 ${
+              isNeonTheme 
+                ? 'text-yellow-400/80' 
+                : 'text-yellow-700'
+            }`}>
+              Please wait while we establish the connection
+            </div>
+          </div>
+          
           <button
             onClick={resetGmailConnection}
-            className={`text-xs underline ${ 
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${
               isNeonTheme 
-                ? 'text-red-400 hover:text-red-300' 
-                : 'text-red-700 hover:text-red-900'
+                ? 'bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 border border-yellow-500/50' 
+                : 'bg-white hover:bg-yellow-50 text-yellow-700 border border-yellow-300 shadow-sm'
             }`}
           >
             Reset
@@ -307,77 +433,59 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
     );
   }
 
-  if (isConnecting) {
-    return (
-      <div className={`flex items-center space-x-3 px-4 py-3 rounded-lg border ${ 
-        isNeonTheme 
-          ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30 backdrop-blur-sm' 
-          : 'bg-yellow-50 text-yellow-800 border-yellow-200'
-      }`}>
-        <Loader2 className={`w-5 h-5 animate-spin ${ 
+  return (
+    <div className={`relative overflow-hidden rounded-xl border transition-all duration-300 hover:shadow-lg ${ 
+      isNeonTheme 
+        ? 'bg-gradient-to-br from-blue-500/10 via-indigo-500/10 to-purple-500/10 border-blue-500/30 shadow-md hover:shadow-blue-500/20' 
+        : 'bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 shadow-sm hover:shadow-md'
+    }`}>
+      <div className="relative flex items-center gap-4 px-5 py-4">
+        <div className={`flex items-center justify-center w-10 h-10 rounded-full ${
           isNeonTheme 
-            ? 'text-yellow-400' 
-            : 'text-yellow-600'
-        }`} />
-        <div className="flex-1">
-          <div className="font-medium text-sm">Connecting to Gmail...</div>
-          <div className={`text-xs ${ 
+            ? 'bg-blue-500/20 ring-2 ring-blue-500/50' 
+            : 'bg-blue-100 ring-2 ring-blue-300'
+        }`}>
+          <Mail className={`w-5 h-5 ${ 
             isNeonTheme 
-              ? 'text-yellow-400/70' 
-              : 'text-yellow-600'
-          }`}>Please wait while we establish the connection</div>
+              ? 'text-blue-400' 
+              : 'text-blue-600'
+          }`} />
         </div>
-        <button
-          onClick={resetGmailConnection}
-          className={`text-xs underline ${ 
+        
+        <div className="flex-1">
+          <div className={`font-semibold text-base ${
+            isNeonTheme ? 'text-blue-400' : 'text-blue-800'
+          }`}>
+            Connect Gmail
+          </div>
+          <div className={`text-sm mt-1 ${
             isNeonTheme 
-              ? 'text-yellow-400 hover:text-yellow-300' 
-              : 'text-yellow-700 hover:text-yellow-900'
+              ? 'text-blue-400/80' 
+              : 'text-blue-700'
+          }`}>
+            Import purchase emails automatically from StockX, GOAT, and more
+          </div>
+        </div>
+        
+        <button
+          onClick={connectToGmail}
+          disabled={isConnecting}
+          className={`px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${
+            isNeonTheme 
+              ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white shadow-lg hover:shadow-blue-500/50' 
+              : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md hover:shadow-lg'
           }`}
         >
-          Reset
+          {isConnecting ? (
+            <span className="flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Connecting...
+            </span>
+          ) : (
+            <span>Connect</span>
+          )}
         </button>
       </div>
-    );
-  }
-
-  return (
-    <div className={`flex items-center space-x-3 px-4 py-3 rounded-lg border ${ 
-      isNeonTheme 
-        ? 'bg-blue-500/10 text-blue-400 border-blue-500/30 backdrop-blur-sm' 
-        : 'bg-blue-50 text-blue-800 border-blue-200'
-    }`}>
-      <Mail className={`w-5 h-5 ${ 
-        isNeonTheme 
-          ? 'text-blue-400' 
-          : 'text-blue-600'
-      }`} />
-      <div className="flex-1">
-        <div className="font-medium text-sm">Connect Gmail</div>
-        <div className={`text-xs ${ 
-          isNeonTheme 
-            ? 'text-blue-400/70' 
-            : 'text-blue-600'
-        }`}>Import purchase emails automatically from StockX, GOAT, and more</div>
-      </div>
-      <button
-        onClick={connectToGmail}
-        disabled={isConnecting}
-        className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-colors text-sm disabled:opacity-50 ${ 
-          isNeonTheme 
-            ? 'bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/30' 
-            : 'bg-blue-600 hover:bg-blue-700 text-white'
-        }`}
-      >
-        {isConnecting ? (
-          <>
-            <Loader2 className="w-4 h-4 animate-spin" />
-            <span>Connecting...</span>
-          </>
-        ) : (
-          <span>Connect</span>
-        )}
-      </button>
     </div>
   );
 };

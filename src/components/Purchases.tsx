@@ -32,6 +32,20 @@ const Purchases = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [itemsPerPage, setItemsPerPage] = useState(25);
   const [currentPage, setCurrentPage] = useState(1);
+  
+  // Smart Filters State
+  const [activeFilters, setActiveFilters] = useState<{
+    status: string[];
+    carrier: string[];
+    hasTracking: string | null; // 'with' | 'without' | null
+    market: string[];
+  }>({
+    status: [],
+    carrier: [],
+    hasTracking: null,
+    market: []
+  });
+  const [showFilters, setShowFilters] = useState(false);
   const [showScanModal, setShowScanModal] = useState(false);
   const [showZXingScanModal, setShowZXingScanModal] = useState(false);
   const [showRemoteScanModal, setShowRemoteScanModal] = useState(false);
@@ -372,7 +386,7 @@ const Purchases = () => {
     });
   };
   
-  // Memoized sorted purchases - only recalculates when purchases, manualPurchases, sortBy, sortDirection, or searchQuery change
+  // Memoized sorted purchases - only recalculates when purchases, manualPurchases, sortBy, sortDirection, searchQuery, or activeFilters change
   const sortedPurchases = useMemo(() => {
     const allPurchases = [...purchases, ...manualPurchases];
     
@@ -408,6 +422,43 @@ const Purchases = () => {
     
     let uniquePurchases = Array.from(uniqueMap.values());
     
+    // Apply smart filters
+    if (activeFilters.status.length > 0) {
+      uniquePurchases = uniquePurchases.filter(purchase => {
+        const status = (purchase.status || '').toLowerCase();
+        return activeFilters.status.some(filterStatus => status.includes(filterStatus.toLowerCase()));
+      });
+    }
+    
+    if (activeFilters.carrier.length > 0) {
+      uniquePurchases = uniquePurchases.filter(purchase => {
+        const carrier = (purchase.carrier || '').toLowerCase();
+        return activeFilters.carrier.some(filterCarrier => carrier === filterCarrier.toLowerCase());
+      });
+    }
+    
+    if (activeFilters.hasTracking === 'with') {
+      uniquePurchases = uniquePurchases.filter(purchase => {
+        const tracking = (purchase.tracking || '').trim();
+        return tracking && tracking !== 'No tracking' && tracking !== '-';
+      });
+    } else if (activeFilters.hasTracking === 'without') {
+      uniquePurchases = uniquePurchases.filter(purchase => {
+        const tracking = (purchase.tracking || '').trim();
+        return !tracking || tracking === 'No tracking' || tracking === '-';
+      });
+    }
+    
+    if (activeFilters.market.length > 0) {
+      uniquePurchases = uniquePurchases.filter(purchase => {
+        const market = (purchase.market || '').toLowerCase();
+        const brand = (purchase.product?.brand || purchase.brand || '').toLowerCase();
+        return activeFilters.market.some(filterMarket => 
+          market.includes(filterMarket.toLowerCase()) || brand.includes(filterMarket.toLowerCase())
+        );
+      });
+    }
+    
     // Apply search filter if search query exists
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
@@ -435,7 +486,7 @@ const Purchases = () => {
     console.log(`📊 Purchase counts: Total=${allPurchases.length}, Valid=${validPurchases.length}, Unique=${uniquePurchases.length}, Filtered=${uniquePurchases.length}`);
     
     return sortPurchases(uniquePurchases, sortBy, sortDirection);
-  }, [purchases, manualPurchases, sortBy, sortDirection, searchQuery]);
+  }, [purchases, manualPurchases, sortBy, sortDirection, searchQuery, activeFilters]);
 
   // Paginate the sorted purchases
   const paginatedPurchases = useMemo(() => {
@@ -455,13 +506,102 @@ const Purchases = () => {
     return Math.ceil(sortedPurchases.length / itemsPerPage);
   }, [sortedPurchases.length, itemsPerPage]);
 
-  // Reset to page 1 when search query or items per page changes
+  // Reset to page 1 when search query, items per page, or filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, itemsPerPage]);
+  }, [searchQuery, itemsPerPage, activeFilters]);
 
   // Keep getSortedPurchases for backward compatibility with existing code
   const getSortedPurchases = useCallback(() => sortedPurchases, [sortedPurchases]);
+  
+  // Get unique values for filters
+  const getUniqueStatuses = useMemo(() => {
+    const allPurchases = [...purchases, ...manualPurchases];
+    const statuses = new Set<string>();
+    allPurchases.forEach(purchase => {
+      if (purchase.status) {
+        statuses.add(purchase.status);
+      }
+    });
+    return Array.from(statuses).sort();
+  }, [purchases, manualPurchases]);
+
+  const getUniqueCarriers = useMemo(() => {
+    const allPurchases = [...purchases, ...manualPurchases];
+    const carriers = new Set<string>();
+    allPurchases.forEach(purchase => {
+      if (purchase.carrier && purchase.carrier.toLowerCase() !== 'stockx') {
+        carriers.add(purchase.carrier);
+      }
+    });
+    return Array.from(carriers).sort();
+  }, [purchases, manualPurchases]);
+
+  const getUniqueMarkets = useMemo(() => {
+    const allPurchases = [...purchases, ...manualPurchases];
+    const markets = new Set<string>();
+    allPurchases.forEach(purchase => {
+      const market = purchase.market || purchase.product?.brand || purchase.brand;
+      if (market) {
+        markets.add(market);
+      }
+    });
+    return Array.from(markets).sort();
+  }, [purchases, manualPurchases]);
+
+  // Filter handlers
+  const toggleStatusFilter = (status: string) => {
+    setActiveFilters(prev => ({
+      ...prev,
+      status: prev.status.includes(status)
+        ? prev.status.filter(s => s !== status)
+        : [...prev.status, status]
+    }));
+    setCurrentPage(1);
+  };
+
+  const toggleCarrierFilter = (carrier: string) => {
+    setActiveFilters(prev => ({
+      ...prev,
+      carrier: prev.carrier.includes(carrier)
+        ? prev.carrier.filter(c => c !== carrier)
+        : [...prev.carrier, carrier]
+    }));
+    setCurrentPage(1);
+  };
+
+  const toggleTrackingFilter = (value: 'with' | 'without') => {
+    setActiveFilters(prev => ({
+      ...prev,
+      hasTracking: prev.hasTracking === value ? null : value
+    }));
+    setCurrentPage(1);
+  };
+
+  const toggleMarketFilter = (market: string) => {
+    setActiveFilters(prev => ({
+      ...prev,
+      market: prev.market.includes(market)
+        ? prev.market.filter(m => m !== market)
+        : [...prev.market, market]
+    }));
+    setCurrentPage(1);
+  };
+
+  const clearAllFilters = () => {
+    setActiveFilters({
+      status: [],
+      carrier: [],
+      hasTracking: null,
+      market: []
+    });
+    setCurrentPage(1);
+  };
+
+  const hasActiveFilters = activeFilters.status.length > 0 || 
+                           activeFilters.carrier.length > 0 || 
+                           activeFilters.hasTracking !== null || 
+                           activeFilters.market.length > 0;
   
   // Sort icon component
   const SortIcon = ({ column }: { column: string }) => {
@@ -2697,10 +2837,7 @@ const Purchases = () => {
           <div>
             <h1 className={`text-2xl font-bold ${currentTheme.colors.textPrimary}`}>Purchases</h1>
             <p className={`${currentTheme.colors.textSecondary} mt-1`}>
-              {gmailConnected ? 
-                `Showing ${totalCount} purchases from Gmail` : 
-                `Showing ${totalCount} purchases (Demo data)`
-              }
+              Showing {totalCount} purchase{totalCount === 1 ? '' : 's'}
             </p>
           </div>
           
@@ -2956,6 +3093,333 @@ const Purchases = () => {
             <p className={`mt-2 text-sm ${currentTheme.name === 'Neon' ? 'text-gray-400' : 'text-gray-600'}`}>
               Showing {sortedPurchases.length} result{sortedPurchases.length !== 1 ? 's' : ''} for "{searchQuery}"
             </p>
+          )}
+        </div>
+      )}
+
+      {/* Smart Filters - Only show when there are purchases */}
+      {totalCount > 0 && (
+        <div className="mb-6">
+          {/* Compact Filter Bar */}
+          <div className={`flex items-center gap-3 p-4 rounded-lg ${
+            currentTheme.name === 'Neon'
+              ? 'bg-gray-900/50 border border-white/10'
+              : 'bg-gray-50 border border-gray-200'
+          }`}>
+            {/* Filter Toggle Button */}
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg font-medium transition-all duration-200 ${
+                currentTheme.name === 'Neon'
+                  ? 'bg-white/10 hover:bg-white/20 text-gray-300'
+                  : 'bg-white hover:bg-gray-100 text-gray-700 shadow-sm'
+              } ${hasActiveFilters ? (currentTheme.name === 'Neon' ? 'ring-2 ring-cyan-500/50' : 'ring-2 ring-blue-500/50') : ''}`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
+              <span className="text-sm">Filters</span>
+              {hasActiveFilters && (
+                <span className={`px-1.5 py-0.5 rounded-full text-xs font-bold ${
+                  currentTheme.name === 'Neon' ? 'bg-cyan-500 text-black' : 'bg-blue-500 text-white'
+                }`}>
+                  {activeFilters.status.length + activeFilters.carrier.length + activeFilters.market.length + (activeFilters.hasTracking ? 1 : 0)}
+                </span>
+              )}
+              <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showFilters ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Active Filter Pills */}
+            {hasActiveFilters && (
+              <>
+                <div className={`h-6 w-px ${currentTheme.name === 'Neon' ? 'bg-white/10' : 'bg-gray-300'}`} />
+                <div className="flex flex-wrap items-center gap-2 flex-1">
+                  {activeFilters.status.map(status => (
+                    <button
+                      key={status}
+                      onClick={() => toggleStatusFilter(status)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200 ${
+                        currentTheme.name === 'Neon'
+                          ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 border border-blue-500/50'
+                          : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
+                      }`}
+                    >
+                      <span>{status}</span>
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  ))}
+                  {activeFilters.carrier.map(carrier => (
+                    <button
+                      key={carrier}
+                      onClick={() => toggleCarrierFilter(carrier)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200 ${
+                        currentTheme.name === 'Neon'
+                          ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30 border border-green-500/50'
+                          : 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200'
+                      }`}
+                    >
+                      <span>{carrier}</span>
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  ))}
+                  {activeFilters.hasTracking && (
+                    <button
+                      onClick={() => toggleTrackingFilter(activeFilters.hasTracking as 'with' | 'without')}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200 ${
+                        currentTheme.name === 'Neon'
+                          ? 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 border border-purple-500/50'
+                          : 'bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200'
+                      }`}
+                    >
+                      <span>{activeFilters.hasTracking === 'with' ? 'With Tracking' : 'No Tracking'}</span>
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                  {activeFilters.market.map(market => (
+                    <button
+                      key={market}
+                      onClick={() => toggleMarketFilter(market)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200 ${
+                        currentTheme.name === 'Neon'
+                          ? 'bg-orange-500/20 text-orange-400 hover:bg-orange-500/30 border border-orange-500/50'
+                          : 'bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200'
+                      }`}
+                    >
+                      <span>{market}</span>
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={clearAllFilters}
+                  className={`px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200 whitespace-nowrap ${
+                    currentTheme.name === 'Neon'
+                      ? 'bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/50'
+                      : 'bg-red-50 hover:bg-red-100 text-red-600 border border-red-200'
+                  }`}
+                >
+                  Clear All
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Expandable Filter Panel */}
+          {showFilters && (
+            <div className={`mt-3 p-6 rounded-lg border ${
+              currentTheme.name === 'Neon'
+                ? 'bg-black/40 border-white/10 backdrop-blur-sm'
+                : 'bg-white border-gray-200 shadow-sm'
+            }`}>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {/* Status Filter */}
+                <div>
+                  <h3 className={`text-xs font-bold uppercase tracking-wider mb-3 ${
+                    currentTheme.name === 'Neon' ? 'text-gray-400' : 'text-gray-500'
+                  }`}>
+                    Status
+                  </h3>
+                  <div className="space-y-2.5">
+                    {getUniqueStatuses.map(status => (
+                      <label key={status} className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer group transition-all duration-200 ${
+                        activeFilters.status.includes(status)
+                          ? currentTheme.name === 'Neon'
+                            ? 'bg-cyan-500/10 border border-cyan-500/30'
+                            : 'bg-blue-50 border border-blue-200'
+                          : currentTheme.name === 'Neon'
+                            ? 'hover:bg-white/5 border border-transparent'
+                            : 'hover:bg-gray-50 border border-transparent'
+                      }`}>
+                        <div className="relative flex items-center justify-center">
+                          <input
+                            type="checkbox"
+                            checked={activeFilters.status.includes(status)}
+                            onChange={() => toggleStatusFilter(status)}
+                            className={`w-4 h-4 rounded cursor-pointer transition-all duration-200 ${
+                              currentTheme.name === 'Neon' 
+                                ? 'bg-gray-800 border-2 border-gray-600 checked:bg-cyan-500 checked:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50 focus:ring-offset-0' 
+                                : 'bg-white border-2 border-gray-300 checked:bg-blue-600 checked:border-blue-600 focus:ring-2 focus:ring-blue-500/50 focus:ring-offset-0'
+                            }`}
+                          />
+                        </div>
+                        <span className={`text-sm font-medium transition-all ${
+                          activeFilters.status.includes(status)
+                            ? currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-700'
+                            : currentTheme.colors.textSecondary
+                        }`}>
+                          {status}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Carrier Filter */}
+                <div>
+                  <h3 className={`text-xs font-bold uppercase tracking-wider mb-3 ${
+                    currentTheme.name === 'Neon' ? 'text-gray-400' : 'text-gray-500'
+                  }`}>
+                    Carrier
+                  </h3>
+                  <div className="space-y-2.5">
+                    {getUniqueCarriers.map(carrier => (
+                      <label key={carrier} className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer group transition-all duration-200 ${
+                        activeFilters.carrier.includes(carrier)
+                          ? currentTheme.name === 'Neon'
+                            ? 'bg-cyan-500/10 border border-cyan-500/30'
+                            : 'bg-blue-50 border border-blue-200'
+                          : currentTheme.name === 'Neon'
+                            ? 'hover:bg-white/5 border border-transparent'
+                            : 'hover:bg-gray-50 border border-transparent'
+                      }`}>
+                        <div className="relative flex items-center justify-center">
+                          <input
+                            type="checkbox"
+                            checked={activeFilters.carrier.includes(carrier)}
+                            onChange={() => toggleCarrierFilter(carrier)}
+                            className={`w-4 h-4 rounded cursor-pointer transition-all duration-200 ${
+                              currentTheme.name === 'Neon' 
+                                ? 'bg-gray-800 border-2 border-gray-600 checked:bg-cyan-500 checked:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50 focus:ring-offset-0' 
+                                : 'bg-white border-2 border-gray-300 checked:bg-blue-600 checked:border-blue-600 focus:ring-2 focus:ring-blue-500/50 focus:ring-offset-0'
+                            }`}
+                          />
+                        </div>
+                        <span className={`text-sm font-medium transition-all ${
+                          activeFilters.carrier.includes(carrier)
+                            ? currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-700'
+                            : currentTheme.colors.textSecondary
+                        }`}>
+                          {carrier}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Tracking Filter */}
+                <div>
+                  <h3 className={`text-xs font-bold uppercase tracking-wider mb-3 ${
+                    currentTheme.name === 'Neon' ? 'text-gray-400' : 'text-gray-500'
+                  }`}>
+                    Tracking
+                  </h3>
+                  <div className="space-y-2.5">
+                    <label className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer group transition-all duration-200 ${
+                      activeFilters.hasTracking === 'with'
+                        ? currentTheme.name === 'Neon'
+                          ? 'bg-cyan-500/10 border border-cyan-500/30'
+                          : 'bg-blue-50 border border-blue-200'
+                        : currentTheme.name === 'Neon'
+                          ? 'hover:bg-white/5 border border-transparent'
+                          : 'hover:bg-gray-50 border border-transparent'
+                    }`}>
+                      <div className="relative flex items-center justify-center">
+                        <input
+                          type="checkbox"
+                          checked={activeFilters.hasTracking === 'with'}
+                          onChange={() => toggleTrackingFilter('with')}
+                          className={`w-4 h-4 rounded cursor-pointer transition-all duration-200 ${
+                            currentTheme.name === 'Neon' 
+                              ? 'bg-gray-800 border-2 border-gray-600 checked:bg-cyan-500 checked:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50 focus:ring-offset-0' 
+                              : 'bg-white border-2 border-gray-300 checked:bg-blue-600 checked:border-blue-600 focus:ring-2 focus:ring-blue-500/50 focus:ring-offset-0'
+                          }`}
+                        />
+                      </div>
+                      <span className={`text-sm font-medium transition-all ${
+                        activeFilters.hasTracking === 'with'
+                          ? currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-700'
+                          : currentTheme.colors.textSecondary
+                      }`}>
+                        With Tracking
+                      </span>
+                    </label>
+                    <label className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer group transition-all duration-200 ${
+                      activeFilters.hasTracking === 'without'
+                        ? currentTheme.name === 'Neon'
+                          ? 'bg-cyan-500/10 border border-cyan-500/30'
+                          : 'bg-blue-50 border border-blue-200'
+                        : currentTheme.name === 'Neon'
+                          ? 'hover:bg-white/5 border border-transparent'
+                          : 'hover:bg-gray-50 border border-transparent'
+                    }`}>
+                      <div className="relative flex items-center justify-center">
+                        <input
+                          type="checkbox"
+                          checked={activeFilters.hasTracking === 'without'}
+                          onChange={() => toggleTrackingFilter('without')}
+                          className={`w-4 h-4 rounded cursor-pointer transition-all duration-200 ${
+                            currentTheme.name === 'Neon' 
+                              ? 'bg-gray-800 border-2 border-gray-600 checked:bg-cyan-500 checked:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50 focus:ring-offset-0' 
+                              : 'bg-white border-2 border-gray-300 checked:bg-blue-600 checked:border-blue-600 focus:ring-2 focus:ring-blue-500/50 focus:ring-offset-0'
+                          }`}
+                        />
+                      </div>
+                      <span className={`text-sm font-medium transition-all ${
+                        activeFilters.hasTracking === 'without'
+                          ? currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-700'
+                          : currentTheme.colors.textSecondary
+                      }`}>
+                        Without Tracking
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Market/Brand Filter */}
+                <div>
+                  <h3 className={`text-xs font-bold uppercase tracking-wider mb-3 ${
+                    currentTheme.name === 'Neon' ? 'text-gray-400' : 'text-gray-500'
+                  }`}>
+                    Market/Brand
+                  </h3>
+                  <div className={`space-y-2.5 max-h-40 overflow-y-auto pr-2 ${
+                    currentTheme.name === 'Neon' 
+                      ? 'scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-gray-900' 
+                      : 'scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100'
+                  }`}>
+                    {getUniqueMarkets.map(market => (
+                      <label key={market} className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer group transition-all duration-200 ${
+                        activeFilters.market.includes(market)
+                          ? currentTheme.name === 'Neon'
+                            ? 'bg-cyan-500/10 border border-cyan-500/30'
+                            : 'bg-blue-50 border border-blue-200'
+                          : currentTheme.name === 'Neon'
+                            ? 'hover:bg-white/5 border border-transparent'
+                            : 'hover:bg-gray-50 border border-transparent'
+                      }`}>
+                        <div className="relative flex items-center justify-center">
+                          <input
+                            type="checkbox"
+                            checked={activeFilters.market.includes(market)}
+                            onChange={() => toggleMarketFilter(market)}
+                            className={`w-4 h-4 rounded cursor-pointer transition-all duration-200 ${
+                              currentTheme.name === 'Neon' 
+                                ? 'bg-gray-800 border-2 border-gray-600 checked:bg-cyan-500 checked:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50 focus:ring-offset-0' 
+                                : 'bg-white border-2 border-gray-300 checked:bg-blue-600 checked:border-blue-600 focus:ring-2 focus:ring-blue-500/50 focus:ring-offset-0'
+                            }`}
+                          />
+                        </div>
+                        <span className={`text-sm font-medium transition-all ${
+                          activeFilters.market.includes(market)
+                            ? currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-700'
+                            : currentTheme.colors.textSecondary
+                        }`}>
+                          {market}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       )}
