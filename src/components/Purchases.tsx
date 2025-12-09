@@ -4674,20 +4674,29 @@ const Purchases = () => {
                     Purchase Date
                   </label>
                   <input
-                    type="date"
+                    type="text"
                     value={(() => {
                       if (!editingPurchase.purchaseDate) return '';
                       
-                      // If it's already a valid date string (YYYY-MM-DD format)
+                      // If it's in YYYY-MM-DD format, convert to MM/DD/YYYY
                       if (typeof editingPurchase.purchaseDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(editingPurchase.purchaseDate)) {
+                        const [year, month, day] = editingPurchase.purchaseDate.split('-');
+                        return `${month}/${day}/${year}`;
+                      }
+                      
+                      // If it's already in MM/DD/YYYY format, return as-is
+                      if (typeof editingPurchase.purchaseDate === 'string' && /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(editingPurchase.purchaseDate)) {
                         return editingPurchase.purchaseDate;
                       }
                       
-                      // Try to parse as date
+                      // Try to parse as date and format to MM/DD/YYYY
                       try {
                         const date = new Date(editingPurchase.purchaseDate);
                         if (!isNaN(date.getTime())) {
-                          return date.toISOString().split('T')[0];
+                          const month = String(date.getMonth() + 1).padStart(2, '0');
+                          const day = String(date.getDate()).padStart(2, '0');
+                          const year = date.getFullYear();
+                          return `${month}/${day}/${year}`;
                         }
                       } catch (e) {
                         // Invalid date, return empty
@@ -4695,14 +4704,19 @@ const Purchases = () => {
                       
                       return '';
                     })()}
-                    onChange={(e) => setEditingPurchase({
-                      ...editingPurchase,
-                      purchaseDate: e.target.value
-                    })}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      // Allow user to type freely, will validate on save
+                      setEditingPurchase({
+                        ...editingPurchase,
+                        purchaseDate: value
+                      });
+                    }}
+                    placeholder="mm/dd/yyyy"
                     className={`w-full px-4 py-3 rounded-lg border text-sm transition-all duration-200 ${
                       currentTheme.name === 'Neon'
-                        ? 'bg-gray-900 border-white/20 text-white focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50'
-                        : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50'
+                        ? 'bg-gray-900 border-white/20 text-white placeholder-gray-500 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50'
+                        : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50'
                     } focus:outline-none`}
                   />
                 </div>
