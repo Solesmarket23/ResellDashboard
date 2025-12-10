@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { RefreshCw, Clock, CheckCircle } from 'lucide-react';
+import { RefreshCw, Clock, CheckCircle, Mail } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
 import { db } from '../lib/firebase/firebase';
@@ -686,54 +686,6 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
           </div>
         )}
       </div>
-    </div>
-  );
-                      <span className={currentTheme.colors.textSecondary}>Not run yet</span>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Status Update Status */}
-              {isStatusEnabled && (
-                <div className="flex items-center justify-between">
-                  <span className={currentTheme.colors.textSecondary}>Status Check:</span>
-                  <div className="flex items-center space-x-1">
-                    {isUpdatingStatus ? (
-                      <>
-                        <RefreshCw className="w-3 h-3 animate-spin text-yellow-500" />
-                        <span className="text-yellow-500">Checking...</span>
-                      </>
-                    ) : lastStatusUpdate ? (
-                      <>
-                        <CheckCircle className="w-3 h-3 text-green-500" />
-                        <span className={currentTheme.colors.textSecondary}>
-                          {lastStatusUpdate.toLocaleTimeString()}
-                        </span>
-                      </>
-                    ) : (
-                      <span className={currentTheme.colors.textSecondary}>Not run yet</span>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Next Run Time */}
-              {nextSync && !(isSyncing || isUpdatingStatus) && (
-                <div className="flex items-center justify-between">
-                  <span className={currentTheme.colors.textSecondary}>Next check:</span>
-                  <div className="flex items-center space-x-1">
-                    <Clock className="w-3 h-3" />
-                    <span className={currentTheme.colors.textSecondary}>
-                      {formatTimeUntilNext()}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 };
