@@ -5705,7 +5705,6 @@ const AddPurchaseModal = ({ onClose, onSuccess }: { onClose: () => void; onSucce
           </div>
         </form>
       </div>
-    </div>
 
       {/* Gmail Batched Sync Modal */}
       <GmailBatchedSyncModal 
