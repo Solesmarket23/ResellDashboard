@@ -13,8 +13,14 @@ export const metadata: Metadata = {
   title: "Flip Flow - Reseller Dashboard",
   description: "Track your reselling business with real-time metrics and insights",
   manifest: "/manifest.json",
-  themeColor: "#1a1a1a",
-  viewport: "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no",
+};
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: '#1a1a1a',
 };
 
 export default function RootLayout({
