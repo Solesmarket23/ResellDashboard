@@ -122,16 +122,19 @@ export async function POST(request: NextRequest) {
               
               if (existing) {
                 // Update existing purchase
+                console.log(`🔄 Updating purchase ${purchase.orderNumber} with doc ID: ${existing.id}`);
                 await adminDb.collection('purchases').doc(existing.id).update({
-                  ...purchase,
-                  userId: userId,
-                  type: 'gmail',
+                  status: purchase.status,
+                  purchaseDate: purchase.purchaseDate,
+                  email_subject: purchase.email_subject,
+                  email_date: purchase.email_date,
                   updatedAt: new Date().toISOString(),
                   syncedAt: new Date().toISOString()
                 });
                 updatedCount++;
               } else {
                 // Create new purchase
+                console.log(`➕ Creating new purchase ${purchase.orderNumber}`);
                 await adminDb.collection('purchases').add({
                   ...purchase,
                   userId: userId,
@@ -142,7 +145,7 @@ export async function POST(request: NextRequest) {
                 savedCount++;
               }
             } catch (error) {
-              console.error(`Failed to save/update purchase ${purchase.orderNumber}:`, error);
+              console.error(`❌ Failed to save/update purchase ${purchase.orderNumber}:`, error);
               skippedCount++;
             }
           }
