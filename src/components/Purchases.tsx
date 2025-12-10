@@ -18,6 +18,7 @@ import ImagePreviewModal from './ImagePreviewModal';
 import AutoEmailSync from './AutoEmailSync';
 import SimpleAutoSync from './SimpleAutoSync';
 import GmailBatchedSync from './GmailBatchedSync';
+import GmailBatchedSyncModal from './GmailBatchedSyncModal';
 import StreamingHistoricalSync from './StreamingHistoricalSync';
 import StatusUpdater from './StatusUpdater';
 import FixItemProducts from './FixItemProducts';
@@ -67,6 +68,7 @@ const Purchases = () => {
   const [hasBeenReset, setHasBeenReset] = useState(false);
   const [showBatchedSync, setShowBatchedSync] = useState(false);
   const [showStreamingHistoricalSync, setShowStreamingHistoricalSync] = useState(false);
+  const [showGmailBatchedSyncModal, setShowGmailBatchedSyncModal] = useState(false);
   const [selectedPurchases, setSelectedPurchases] = useState<Set<string>>(new Set());
   const [isAutoStatusEnabled, setIsAutoStatusEnabled] = useState(false);
   const [lastAutoStatusUpdate, setLastAutoStatusUpdate] = useState<Date | null>(null);
@@ -3102,22 +3104,20 @@ const Purchases = () => {
             
 
             <button
-              onClick={refreshPurchases}
-              disabled={loading || !gmailConnected || showBatchedSync}
+              onClick={() => setShowGmailBatchedSyncModal(true)}
+              disabled={!gmailConnected}
               className={`flex items-center space-x-2 ${
                 currentTheme.name === 'Neon' 
                   ? 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 shadow-lg hover:shadow-indigo-500/25' 
                   : 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 shadow-lg hover:shadow-indigo-500/25'
               } disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-medium transition-all duration-200`}
               title={
-                showBatchedSync 
-                  ? 'Sync already in progress' 
-                  : !gmailConnected 
+                !gmailConnected 
                   ? 'Please connect Gmail first' 
-                  : 'Sync your Gmail purchases'
+                  : 'Import all historical Gmail purchases'
               }
             >
-              <RefreshCw className={`w-5 h-5 ${loading || showBatchedSync ? 'animate-spin' : ''}`} />
+              <RefreshCw className="w-5 h-5" />
               <span>Sync Gmail</span>
             </button>
             
@@ -5705,6 +5705,17 @@ const AddPurchaseModal = ({ onClose, onSuccess }: { onClose: () => void; onSucce
           </div>
         </form>
       </div>
+    </div>
+
+      {/* Gmail Batched Sync Modal */}
+      <GmailBatchedSyncModal 
+        isOpen={showGmailBatchedSyncModal}
+        onClose={() => setShowGmailBatchedSyncModal(false)}
+        onComplete={() => {
+          // Reload purchases after sync completes
+          loadManualPurchasesFromFirebase();
+        }}
+      />
     </div>
   );
 };
