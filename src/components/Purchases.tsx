@@ -71,7 +71,6 @@ const Purchases = () => {
   const [isAutoStatusEnabled, setIsAutoStatusEnabled] = useState(false);
   const [lastAutoStatusUpdate, setLastAutoStatusUpdate] = useState<Date | null>(null);
   const [showFixItemProducts, setShowFixItemProducts] = useState(false);
-  const [showExportDropdown, setShowExportDropdown] = useState(false);
   const [showMoreActionsDropdown, setShowMoreActionsDropdown] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [extractingTracking, setExtractingTracking] = useState<Set<string>>(new Set()); // Track which orders are being processed
@@ -875,11 +874,6 @@ const Purchases = () => {
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Element;
-      if (showExportDropdown) {
-        if (!target.closest('.export-dropdown')) {
-          setShowExportDropdown(false);
-        }
-      }
       if (showMoreActionsDropdown) {
         if (!target.closest('.more-actions-dropdown')) {
           setShowMoreActionsDropdown(false);
@@ -889,7 +883,7 @@ const Purchases = () => {
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showExportDropdown, showMoreActionsDropdown]);
+  }, [showMoreActionsDropdown]);
 
   // Periodic Gmail connection check
   useEffect(() => {
@@ -3022,62 +3016,6 @@ const Purchases = () => {
                 <span>Historical Sync</span>
               </button>
             )}
-            {/* Export Dropdown - Only show when there are purchases */}
-            {totalCount > 0 && (
-              <div className="relative export-dropdown">
-                <button
-                  onClick={() => setShowExportDropdown(!showExportDropdown)}
-                  className={`flex items-center space-x-2 ${
-                    currentTheme.name === 'Neon' 
-                      ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 shadow-lg hover:shadow-cyan-500/25' 
-                      : 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 shadow-lg hover:shadow-indigo-500/25'
-                  } text-white px-4 py-2 rounded-lg font-medium transition-all duration-200`}
-                >
-                  <Download className="w-5 h-5" />
-                  <span>Export</span>
-                  <ChevronDown className="w-4 h-4" />
-                </button>
-              
-              {showExportDropdown && (
-                <div className={`absolute left-1/2 transform -translate-x-1/2 mt-2 w-56 ${currentTheme.name === 'Neon' ? 'bg-gray-900' : 'bg-white'} ${currentTheme.colors.border} border rounded-lg shadow-xl z-50`}>
-                  <div className="py-2">
-                    <button
-                      onClick={handleExportExcel}
-                      className={`w-full flex items-center space-x-3 px-4 py-2 text-sm hover:bg-gray-100 ${
-                        currentTheme.name === 'Neon' ? 'hover:bg-white/10 text-gray-300' : 'text-gray-700'
-                      }`}
-                    >
-                      <FileSpreadsheet className="w-4 h-4" />
-                      <span>Export as Excel</span>
-                    </button>
-                    <button
-                      onClick={handleExportCSV}
-                      className={`w-full flex items-center space-x-3 px-4 py-2 text-sm hover:bg-gray-100 ${
-                        currentTheme.name === 'Neon' ? 'hover:bg-white/10 text-gray-300' : 'text-gray-700'
-                      }`}
-                    >
-                      <FileText className="w-4 h-4" />
-                      <span>Export as CSV</span>
-                    </button>
-                    {selectedPurchases.size > 0 && (
-                      <>
-                        <div className={`border-t ${currentTheme.name === 'Neon' ? 'border-white/10' : 'border-gray-200'} my-1`} />
-                        <button
-                          onClick={handleExportSelected}
-                          className={`w-full flex items-center space-x-3 px-4 py-2 text-sm hover:bg-gray-100 ${
-                            currentTheme.name === 'Neon' ? 'hover:bg-white/10 text-gray-300' : 'text-gray-700'
-                          }`}
-                        >
-                          <FileSpreadsheet className="w-4 h-4" />
-                          <span>Export Selected ({selectedPurchases.size})</span>
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
-              </div>
-            )}
 
             {/* Column Customization Button */}
             {totalCount > 0 && (
@@ -3212,6 +3150,50 @@ const Purchases = () => {
               {showMoreActionsDropdown && (
                 <div className={`absolute right-0 mt-2 w-56 ${currentTheme.name === 'Neon' ? 'bg-gray-900' : 'bg-white'} ${currentTheme.colors.border} border rounded-lg shadow-xl z-50`}>
                   <div className="py-2">
+                    {/* Export options - Only show when there are purchases */}
+                    {totalCount > 0 && (
+                      <>
+                        <button
+                          onClick={() => {
+                            handleExportExcel();
+                            setShowMoreActionsDropdown(false);
+                          }}
+                          className={`w-full flex items-center space-x-3 px-4 py-2 text-sm hover:bg-gray-100 ${
+                            currentTheme.name === 'Neon' ? 'hover:bg-white/10 text-gray-300' : 'text-gray-700'
+                          }`}
+                        >
+                          <FileSpreadsheet className="w-4 h-4" />
+                          <span>Export as Excel</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            handleExportCSV();
+                            setShowMoreActionsDropdown(false);
+                          }}
+                          className={`w-full flex items-center space-x-3 px-4 py-2 text-sm hover:bg-gray-100 ${
+                            currentTheme.name === 'Neon' ? 'hover:bg-white/10 text-gray-300' : 'text-gray-700'
+                          }`}
+                        >
+                          <FileText className="w-4 h-4" />
+                          <span>Export as CSV</span>
+                        </button>
+                        {selectedPurchases.size > 0 && (
+                          <button
+                            onClick={() => {
+                              handleExportSelected();
+                              setShowMoreActionsDropdown(false);
+                            }}
+                            className={`w-full flex items-center space-x-3 px-4 py-2 text-sm hover:bg-gray-100 ${
+                              currentTheme.name === 'Neon' ? 'hover:bg-white/10 text-gray-300' : 'text-gray-700'
+                            }`}
+                          >
+                            <FileSpreadsheet className="w-4 h-4" />
+                            <span>Export Selected ({selectedPurchases.size})</span>
+                          </button>
+                        )}
+                        <div className={`border-t ${currentTheme.name === 'Neon' ? 'border-white/10' : 'border-gray-200'} my-1`} />
+                      </>
+                    )}
                     {gmailConnected && purchases.length > 0 && (
                       <button
                         onClick={() => {
