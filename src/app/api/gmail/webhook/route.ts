@@ -78,7 +78,8 @@ export async function POST(request: NextRequest) {
     const { consolidatePurchasesByOrderNumber } = await import('@/lib/utils/statusPriority');
     
     // Fire and forget - fetch purchases and save to Firebase
-    fetch(`https://www.solesmarket.com/api/gmail/purchases-batched?limit=20&reset=false`, {
+    // Use limit=100 to ensure we find order confirmation emails even if they're a few days old
+    fetch(`https://www.solesmarket.com/api/gmail/purchases-batched?limit=100&reset=false`, {
       method: 'GET',
       headers: {
         'Cookie': `gmail_access_token=${gmailTokens.access_token}; gmail_refresh_token=${gmailTokens.refresh_token || ''}`
