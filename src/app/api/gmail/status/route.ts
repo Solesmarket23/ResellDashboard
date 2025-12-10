@@ -9,6 +9,7 @@ export async function GET(request: NextRequest) {
     const refreshToken = cookieStore.get('gmail_refresh_token')?.value;
     const gmailConnected = cookieStore.get('gmail_connected')?.value;
     const connectedAt = cookieStore.get('gmail_connected_at')?.value;
+    const userId = cookieStore.get('userId')?.value || cookieStore.get('siteUserId')?.value;
 
     if (!accessToken) {
       return NextResponse.json({ 
@@ -84,6 +85,28 @@ export async function GET(request: NextRequest) {
       const timeSinceConnection = now - connectionTime;
       daysSinceConnection = Math.floor(timeSinceConnection / (24 * 60 * 60 * 1000));
       daysRemaining = 7 - daysSinceConnection;
+    }
+
+    // Save Gmail email and tokens to Firebase for webhook lookups
+    if (userId && profile.data.emailAddress) {
+      try {
+        const { getAdminDb } = await import('@/lib/firebase/firebaseAdmin');
+        const adminDb = getAdminDb();
+        
+        await adminDb.collection('users').doc(userId).set({
+          gmailEmail: profile.data.emailAddress,
+          gmailTokens: {
+            access_token: accessToken,
+            refresh_token: refreshToken
+          },
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+        
+        console.log(`✅ Saved Gmail email ${profile.data.emailAddress} for user ${userId}`);
+      } catch (error) {
+        console.error('Failed to save Gmail email to Firebase:', error);
+        // Don't fail the request if Firebase save fails
+      }
     }
 
     return NextResponse.json({ 
