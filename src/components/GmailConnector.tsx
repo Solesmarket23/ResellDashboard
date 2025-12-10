@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Mail, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
+import { useAuth } from '../lib/contexts/AuthContext';
 
 interface GmailConnectorProps {
   onConnectionChange?: (connected: boolean) => void;
@@ -10,6 +11,7 @@ interface GmailConnectorProps {
 
 const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) => {
   const { currentTheme } = useTheme();
+  const { user } = useAuth();
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isChecking, setIsChecking] = useState(false); // Start as false, only show when actually checking
@@ -61,12 +63,15 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
     try {
       console.log('📬 Registering Gmail webhook...');
       
-      // Call watch endpoint - it will get tokens from cookies
+      // Call watch endpoint with Firebase user ID
       const response = await fetch('/api/gmail/watch', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-        }
+        },
+        body: JSON.stringify({
+          userId: user?.uid // Pass Firebase user ID
+        })
       });
 
       if (response.ok) {
