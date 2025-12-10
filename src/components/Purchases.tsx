@@ -1599,12 +1599,30 @@ const Purchases = () => {
       
       let allPurchases: any[] = [];
       
-      // Load from Firebase for all users (both site password and Firebase auth)
-      console.log('🔍 Loading purchases from Firebase...');
-      console.log(`⏱️ Before Firebase read: ${Date.now() - startTime}ms`);
-      allPurchases = await getDocuments('purchases');
-      console.log(`📄 Firebase returned ${allPurchases.length} total purchases`);
-      console.log(`⏱️ After Firebase read: ${Date.now() - startTime}ms`);
+      // Load purchases based on auth type
+      if (isSitePasswordUser) {
+        // For site password users, use API endpoint (Firebase Admin SDK)
+        console.log('🔍 Loading purchases via API for site password user...');
+        console.log(`⏱️ Before API call: ${Date.now() - startTime}ms`);
+        
+        const response = await fetch(`/api/purchases/list?userId=${userId}`);
+        if (response.ok) {
+          const data = await response.json();
+          allPurchases = data.purchases || [];
+          console.log(`📄 API returned ${allPurchases.length} purchases`);
+        } else {
+          console.error('Failed to load purchases from API:', response.status);
+          allPurchases = [];
+        }
+        console.log(`⏱️ After API call: ${Date.now() - startTime}ms`);
+      } else {
+        // For Firebase auth users, use Firebase directly
+        console.log('🔍 Loading purchases from Firebase...');
+        console.log(`⏱️ Before Firebase read: ${Date.now() - startTime}ms`);
+        allPurchases = await getDocuments('purchases');
+        console.log(`📄 Firebase returned ${allPurchases.length} total purchases`);
+        console.log(`⏱️ After Firebase read: ${Date.now() - startTime}ms`);
+      }
       
       // Filter to only show purchases for this user
       const userPurchases = allPurchases.filter(
