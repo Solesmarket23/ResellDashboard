@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
       refreshToken = cookieStore.get('gmail_refresh_token')?.value;
     }
     if (!userId) {
-      userId = cookieStore.get('userId')?.value || cookieStore.get('siteUserId')?.value;
+      userId = cookieStore.get('userId')?.value || cookieStore.get('siteUserId')?.value || cookieStore.get('site-user-id')?.value;
     }
 
     if (!accessToken) {

@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
     const refreshToken = cookieStore.get('gmail_refresh_token')?.value;
     const gmailConnected = cookieStore.get('gmail_connected')?.value;
     const connectedAt = cookieStore.get('gmail_connected_at')?.value;
-    const userId = cookieStore.get('userId')?.value || cookieStore.get('siteUserId')?.value;
+    const userId = cookieStore.get('userId')?.value || cookieStore.get('siteUserId')?.value || cookieStore.get('site-user-id')?.value;
 
     if (!accessToken) {
       return NextResponse.json({ 
