@@ -1671,22 +1671,22 @@ const Purchases = () => {
       
       // Transform Firebase data to expected component format
       const transformPurchaseData = (purchase: any) => {
-        // Log purchase data for debugging
-        console.log(`🔍 Transforming purchase: ${purchase.orderNumber}`, {
-          tracking: purchase.tracking,
-          carrier: purchase.carrier,
-          hasTracking: !!(purchase.tracking && purchase.tracking.trim() !== '')
-        });
+        // Log purchase data for debugging - DISABLED FOR PERFORMANCE
+        // console.log(`🔍 Transforming purchase: ${purchase.orderNumber}`, {
+        //   tracking: purchase.tracking,
+        //   carrier: purchase.carrier,
+        //   hasTracking: !!(purchase.tracking && purchase.tracking.trim() !== '')
+        // });
         
         // Clean up invalid carrier values
         const cleanedPurchase = cleanupCarrier(purchase);
         
-        console.log(`✅ After cleanup:`, {
-          orderNumber: purchase.orderNumber,
-          originalCarrier: purchase.carrier,
-          cleanedCarrier: cleanedPurchase.carrier,
-          wasChanged: purchase.carrier !== cleanedPurchase.carrier
-        });
+        // console.log(`✅ After cleanup:`, {
+        //   orderNumber: purchase.orderNumber,
+        //   originalCarrier: purchase.carrier,
+        //   cleanedCarrier: cleanedPurchase.carrier,
+        //   wasChanged: purchase.carrier !== cleanedPurchase.carrier
+        // });
         
         // REMOVED: Don't update Firebase on every page load - this was causing 30+ second delays
         // Instead, carrier cleanup will happen when user manually edits tracking
@@ -2301,31 +2301,31 @@ const Purchases = () => {
     const tracking = purchase.tracking || '';
     const carrier = purchase.carrier;
     
-    console.log(`🧹 cleanupCarrier for ${purchase.orderNumber}:`, { tracking, carrier });
+    // DISABLED FOR PERFORMANCE - console.log(`🧹 cleanupCarrier for ${purchase.orderNumber}:`, { tracking, carrier });
     
     // If no tracking number, carrier should be null
     if (!tracking || tracking.trim() === '') {
-      console.log(`  → No tracking, setting carrier to null`);
+      // DISABLED FOR PERFORMANCE - console.log(`  → No tracking, setting carrier to null`);
       return { ...purchase, carrier: null };
     }
     
     // If carrier is invalid, try to detect from tracking number
     if (carrier && !isValidCarrier(carrier)) {
-      console.log(`  → Invalid carrier "${carrier}", detecting from tracking...`);
+      // DISABLED FOR PERFORMANCE - console.log(`  → Invalid carrier "${carrier}", detecting from tracking...`);
       const detectedCarrier = detectCarrierFromTrackingNumber(tracking);
-      console.log(`  → Detected carrier: ${detectedCarrier}`);
+      // DISABLED FOR PERFORMANCE - console.log(`  → Detected carrier: ${detectedCarrier}`);
       return { ...purchase, carrier: detectedCarrier };
     }
     
     // If no carrier but we have tracking, try to detect
     if (!carrier) {
-      console.log(`  → No carrier, detecting from tracking...`);
+      // DISABLED FOR PERFORMANCE - console.log(`  → No carrier, detecting from tracking...`);
       const detectedCarrier = detectCarrierFromTrackingNumber(tracking);
-      console.log(`  → Detected carrier: ${detectedCarrier}`);
+      // DISABLED FOR PERFORMANCE - console.log(`  → Detected carrier: ${detectedCarrier}`);
       return { ...purchase, carrier: detectedCarrier };
     }
     
-    console.log(`  → Carrier is valid, keeping: ${carrier}`);
+    // DISABLED FOR PERFORMANCE - console.log(`  → Carrier is valid, keeping: ${carrier}`);
     return purchase;
   };
 
