@@ -94,24 +94,60 @@ export async function POST(request: NextRequest) {
           const consolidated = consolidatePurchasesByOrderNumber(purchases);
           console.log(`🔄 Consolidated ${purchases.length} → ${consolidated.length} unique purchases`);
           
-          // Save to Firebase using Admin SDK
+          // Check for existing purchases to avoid duplicates
+          const existingPurchasesSnapshot = await adminDb
+            .collection('purchases')
+            .where('userId', '==', userId)
+            .where('type', '==', 'gmail')
+            .get();
+          
+          const existingPurchasesMap = new Map();
+          existingPurchasesSnapshot.docs.forEach(doc => {
+            const data = doc.data();
+            if (data.orderNumber) {
+              existingPurchasesMap.set(data.orderNumber, { id: doc.id, ...data });
+            }
+          });
+          
+          console.log(`📦 Found ${existingPurchasesMap.size} existing purchases in Firebase`);
+          
+          // Save or update purchases using Admin SDK
           let savedCount = 0;
+          let updatedCount = 0;
+          let skippedCount = 0;
+          
           for (const purchase of consolidated) {
             try {
-              await adminDb.collection('purchases').add({
-                ...purchase,
-                userId: userId,
-                type: 'gmail',
-                createdAt: new Date().toISOString(),
-                syncedAt: new Date().toISOString()
-              });
-              savedCount++;
+              const existing = existingPurchasesMap.get(purchase.orderNumber);
+              
+              if (existing) {
+                // Update existing purchase
+                await adminDb.collection('purchases').doc(existing.id).update({
+                  ...purchase,
+                  userId: userId,
+                  type: 'gmail',
+                  updatedAt: new Date().toISOString(),
+                  syncedAt: new Date().toISOString()
+                });
+                updatedCount++;
+              } else {
+                // Create new purchase
+                await adminDb.collection('purchases').add({
+                  ...purchase,
+                  userId: userId,
+                  type: 'gmail',
+                  createdAt: new Date().toISOString(),
+                  syncedAt: new Date().toISOString()
+                });
+                savedCount++;
+              }
             } catch (error) {
-              console.error(`Failed to save purchase ${purchase.orderNumber}:`, error);
+              console.error(`Failed to save/update purchase ${purchase.orderNumber}:`, error);
+              skippedCount++;
             }
           }
           
-          console.log(`✅ Webhook saved ${savedCount}/${consolidated.length} purchases to Firebase for user ${userId}`);
+          console.log(`✅ Webhook processed ${consolidated.length} purchases: ${savedCount} new, ${updatedCount} updated, ${skippedCount} skipped`);
         }
         
         // Update last webhook sync time
