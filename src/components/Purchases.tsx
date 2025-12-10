@@ -39,13 +39,16 @@ const Purchases = () => {
     carrier: string[];
     hasTracking: string | null; // 'with' | 'without' | null
     market: string[];
+    size: string[];
   }>({
     status: [],
     carrier: [],
     hasTracking: null,
-    market: []
+    market: [],
+    size: []
   });
   const [showFilters, setShowFilters] = useState(false);
+  const [sizeSearchQuery, setSizeSearchQuery] = useState('');
   const [showScanModal, setShowScanModal] = useState(false);
   const [showZXingScanModal, setShowZXingScanModal] = useState(false);
   const [showRemoteScanModal, setShowRemoteScanModal] = useState(false);
@@ -248,6 +251,7 @@ const Purchases = () => {
   const [resizingColumn, setResizingColumn] = useState<string | null>(null);
   const [justClickedResize, setJustClickedResize] = useState(false);
   const tableRef = useRef<HTMLTableElement>(null);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
   
   // Helper function to sort purchases
   const sortPurchases = (purchases: any[], sortKey: string, direction: 'asc' | 'desc') => {
@@ -537,6 +541,15 @@ const Purchases = () => {
       });
     }
     
+    if (activeFilters.size.length > 0) {
+      uniquePurchases = uniquePurchases.filter(purchase => {
+        const size = (purchase.product?.size || purchase.size || '').toLowerCase();
+        return activeFilters.size.some(filterSize => 
+          size.includes(filterSize.toLowerCase())
+        );
+      });
+    }
+    
     // Apply search filter if search query exists
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
@@ -627,6 +640,18 @@ const Purchases = () => {
     return Array.from(markets).sort();
   }, [purchases, manualPurchases]);
 
+  const getUniqueSizes = useMemo(() => {
+    const allPurchases = [...purchases, ...manualPurchases];
+    const sizes = new Set<string>();
+    allPurchases.forEach(purchase => {
+      const size = purchase.product?.size || purchase.size;
+      if (size && size !== 'Size not specified') {
+        sizes.add(size);
+      }
+    });
+    return Array.from(sizes).sort();
+  }, [purchases, manualPurchases]);
+
   // Filter handlers
   const toggleStatusFilter = (status: string) => {
     setActiveFilters(prev => ({
@@ -666,12 +691,37 @@ const Purchases = () => {
     setCurrentPage(1);
   };
 
+  const toggleSizeFilter = (size: string) => {
+    setActiveFilters(prev => ({
+      ...prev,
+      size: prev.size.includes(size)
+        ? prev.size.filter(s => s !== size)
+        : [...prev.size, size]
+    }));
+    setCurrentPage(1);
+  };
+
+  const handleSizeSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && sizeSearchQuery.trim()) {
+      const searchValue = sizeSearchQuery.trim();
+      if (!activeFilters.size.includes(searchValue)) {
+        setActiveFilters(prev => ({
+          ...prev,
+          size: [...prev.size, searchValue]
+        }));
+      }
+      setSizeSearchQuery('');
+      setCurrentPage(1);
+    }
+  };
+
   const clearAllFilters = () => {
     setActiveFilters({
       status: [],
       carrier: [],
       hasTracking: null,
-      market: []
+      market: [],
+      size: []
     });
     setCurrentPage(1);
   };
@@ -679,7 +729,8 @@ const Purchases = () => {
   const hasActiveFilters = activeFilters.status.length > 0 || 
                            activeFilters.carrier.length > 0 || 
                            activeFilters.hasTracking !== null || 
-                           activeFilters.market.length > 0;
+                           activeFilters.market.length > 0 ||
+                           activeFilters.size.length > 0;
   
   // Sort icon component
   const SortIcon = ({ column }: { column: string }) => {
@@ -2908,6 +2959,17 @@ const Purchases = () => {
           }} 
         />
         
+        {/* Auto Email Sync */}
+        <AutoEmailSync 
+          isGmailConnected={gmailConnected}
+          purchases={sortedPurchases}
+          onNewPurchases={(count) => {
+            console.log(`🎉 Auto sync found ${count} new purchases`);
+            // Reload purchases from Firebase
+            loadManualPurchasesFromFirebase();
+          }}
+        />
+        
       </div>
 
       {/* Header */}
@@ -3343,6 +3405,22 @@ const Purchases = () => {
                       </svg>
                     </button>
                   ))}
+                  {activeFilters.size.map(size => (
+                    <button
+                      key={size}
+                      onClick={() => toggleSizeFilter(size)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200 ${
+                        currentTheme.name === 'Neon'
+                          ? 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 border border-purple-500/50'
+                          : 'bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200'
+                      }`}
+                    >
+                      <span>{size}</span>
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  ))}
                 </div>
                 <button
                   onClick={clearAllFilters}
@@ -3521,6 +3599,32 @@ const Purchases = () => {
                       </label>
                     ))}
                   </div>
+                </div>
+
+                {/* Size Filter */}
+                <div>
+                  <h3 className={`text-xs font-bold uppercase tracking-wider mb-3 ${
+                    currentTheme.name === 'Neon' ? 'text-gray-400' : 'text-gray-500'
+                  }`}>
+                    Size
+                  </h3>
+                  <input
+                    type="text"
+                    value={sizeSearchQuery}
+                    onChange={(e) => setSizeSearchQuery(e.target.value)}
+                    onKeyDown={handleSizeSearch}
+                    placeholder="Type size and press Enter..."
+                    className={`w-full px-4 py-2.5 rounded-lg border text-sm transition-all duration-200 ${
+                      currentTheme.name === 'Neon'
+                        ? 'bg-gray-900 border-white/20 text-white placeholder-gray-500 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50'
+                        : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50'
+                    } focus:outline-none`}
+                  />
+                  <p className={`text-xs mt-2 ${
+                    currentTheme.name === 'Neon' ? 'text-gray-500' : 'text-gray-400'
+                  }`}>
+                    e.g., "US 10", "US M 12", "US L"
+                  </p>
                 </div>
               </div>
             </div>
@@ -3955,7 +4059,7 @@ const Purchases = () => {
                     />
                   </td>
                   <td className="px-6 py-3">
-                    <div className="flex items-start gap-3 min-h-14">
+                    <div className="flex items-center gap-3 min-h-14">
                       <div 
                         className={`relative w-12 h-12 rounded-xl flex-shrink-0 overflow-hidden ${purchase.product?.bgColor || 'bg-gray-100'} flex items-center justify-center cursor-pointer transition-all duration-300 group-hover:scale-105 group-hover:shadow-xl ${
                           currentTheme.name === 'Neon' 
@@ -4042,6 +4146,17 @@ const Purchases = () => {
                           ? 'text-cyan-400 hover:text-cyan-300'
                           : 'text-blue-600 hover:text-blue-700'
                       }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // Highlight this purchase so user knows which one they're checking
+                        const purchaseId = purchase.id?.toString() || purchase.orderNumber;
+                        setHighlightedPurchase(purchaseId);
+                        
+                        // Auto-remove highlight after 15 seconds
+                        setTimeout(() => {
+                          setHighlightedPurchase(null);
+                        }, 15000);
+                      }}
                     >
                       {formatOrderNumberForDisplay(purchase.orderNumber)}
                       <svg className="w-3.5 h-3.5 opacity-0 group-hover/link:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -4576,7 +4691,7 @@ const Purchases = () => {
                 </div>
                 <div>
                   <label className={`block text-sm font-semibold mb-2 ${currentTheme.colors.textPrimary}`}>
-                    Brand / Market
+                    Brand
                   </label>
                   <input
                     type="text"
@@ -4587,7 +4702,7 @@ const Purchases = () => {
                       brand: e.target.value,
                       market: e.target.value
                     })}
-                    placeholder="e.g., Nike, StockX"
+                    placeholder="e.g., Nike, Adidas"
                     className={`w-full px-4 py-3 rounded-lg border text-sm transition-all duration-200 ${
                       currentTheme.name === 'Neon'
                         ? 'bg-gray-900 border-white/20 text-white placeholder-gray-500 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50'

@@ -57,6 +57,33 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Empty dependency array - only run once on mount
 
+  const registerGmailWebhook = async (statusData: any) => {
+    try {
+      console.log('📬 Registering Gmail webhook...');
+      
+      const response = await fetch('/api/gmail/watch', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: statusData.userId,
+          accessToken: statusData.accessToken,
+          refreshToken: statusData.refreshToken
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('✅ Gmail webhook registered:', result);
+      } else {
+        console.warn('⚠️ Gmail webhook registration failed:', await response.text());
+      }
+    } catch (error) {
+      console.warn('⚠️ Gmail webhook registration error:', error);
+    }
+  };
+
   const checkConnectionStatus = async () => {
     // Only show checking state if not already connected
     if (!isConnected) {
@@ -98,6 +125,12 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
         setDaysRemaining(data.daysRemaining || null);
         onConnectionChange?.(true);
         setError(null);
+        
+        // Register Gmail webhook for push notifications (fire and forget)
+        registerGmailWebhook(data).catch(err => {
+          console.warn('⚠️ Failed to register Gmail webhook:', err);
+          // Don't show error to user - webhook is optional enhancement
+        });
       }
     } catch (error) {
       console.error('❌ Gmail connection check failed:', error);

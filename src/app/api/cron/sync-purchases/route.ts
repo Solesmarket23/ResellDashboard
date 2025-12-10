@@ -25,12 +25,16 @@ export async function GET(request: NextRequest) {
     }
 
     // Import adminDb lazily to avoid initialization errors
-    const { adminDb } = await import('@/lib/firebase/firebaseAdmin');
+    const { getAdminDb } = await import('@/lib/firebase/firebaseAdmin');
     
-    if (!adminDb) {
+    let adminDb;
+    try {
+      adminDb = getAdminDb();
+    } catch (error) {
+      console.error('Failed to initialize Firebase Admin:', error);
       return NextResponse.json({ 
         error: 'Firebase Admin not initialized',
-        message: 'Missing Firebase Admin credentials'
+        message: error instanceof Error ? error.message : 'Missing Firebase Admin credentials'
       }, { status: 500 });
     }
 

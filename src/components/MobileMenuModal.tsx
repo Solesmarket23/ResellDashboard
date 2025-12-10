@@ -49,7 +49,6 @@ const menuSections = [
       { id: 'purchases', label: 'Purchases', icon: ShoppingCart },
       { id: 'deliveries', label: 'Deliveries', icon: Truck },
       { id: 'sales', label: 'Sales', icon: TrendingUp },
-      { id: 'profit-calculator', label: 'Profit Calculator', icon: Calculator },
     ]
   },
   {
