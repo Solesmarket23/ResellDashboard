@@ -2593,44 +2593,61 @@ const Purchases = () => {
           setManualPurchases(updatedManualPurchases);
         }
 
-        // Save to Firebase OR localStorage depending on auth type
+        // Save to Firebase for all users (both Firebase auth and site password users)
         const siteUserId = localStorage.getItem('siteUserId');
         const userId = user?.uid || siteUserId;
         
-        if (user && updatedPurchase.id) {
-          // Firebase authenticated user - save to Firebase
-          try {
-            await updateDocument('purchases', updatedPurchase.id, {
-              tracking: '',
-              carrier: null
-            }, true);
-            console.log(`✅ Cleared tracking in Firebase`);
-          } catch (error) {
-            console.error('Error saving to Firebase:', error);
-            setNotification({
-              isVisible: true,
-              message: `Tracking cleared locally but failed to save to Firebase: ${error instanceof Error ? error.message : 'Unknown error'}`,
-              type: 'error'
-            });
-          }
-        } else if (siteUserId) {
-          // Site password user - save to localStorage
-          try {
-            const allPurchasesForStorage = [...updatedPurchases, ...updatedManualPurchases];
-            const storageKey = `purchases_${siteUserId}`;
-            localStorage.setItem(storageKey, JSON.stringify(allPurchasesForStorage));
-            console.log(`✅ Cleared tracking in localStorage`);
-            console.log(`📦 Total purchases in storage: ${allPurchasesForStorage.length}`);
-          } catch (error) {
-            console.error('Error saving to localStorage:', error);
-            setNotification({
-              isVisible: true,
-              message: `Failed to save to localStorage: ${error instanceof Error ? error.message : 'Unknown error'}`,
-              type: 'error'
-            });
+        if (userId && updatedPurchase.id) {
+          // Save to Firebase using API endpoint for site password users
+          const isSitePasswordUser = !user && siteUserId;
+          
+          if (isSitePasswordUser) {
+            // Site password user - use Admin SDK via API
+            try {
+              const response = await fetch('/api/purchases/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  purchaseId: updatedPurchase.id,
+                  updates: {
+                    tracking: '',
+                    carrier: null
+                  }
+                })
+              });
+              
+              if (!response.ok) {
+                throw new Error('Failed to update purchase');
+              }
+              
+              console.log(`✅ Cleared tracking in Firebase via API`);
+            } catch (error) {
+              console.error('Error clearing tracking in Firebase:', error);
+              setNotification({
+                isVisible: true,
+                message: `Failed to clear tracking: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                type: 'error'
+              });
+            }
+          } else {
+            // Firebase authenticated user - save directly
+            try {
+              await updateDocument('purchases', updatedPurchase.id, {
+                tracking: '',
+                carrier: null
+              }, true);
+              console.log(`✅ Cleared tracking in Firebase`);
+            } catch (error) {
+              console.error('Error clearing tracking in Firebase:', error);
+              setNotification({
+                isVisible: true,
+                message: `Failed to clear tracking: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                type: 'error'
+              });
+            }
           }
         } else {
-          console.warn('⚠️ Cannot save: missing userId', { userId, purchaseId: updatedPurchase.id });
+          console.warn('⚠️ Cannot save: missing userId or purchaseId', { userId, purchaseId: updatedPurchase.id });
         }
       }
       
@@ -2671,44 +2688,61 @@ const Purchases = () => {
           setManualPurchases(updatedManualPurchases);
         }
 
-        // Save to Firebase OR localStorage depending on auth type
+        // Save to Firebase for all users (both Firebase auth and site password users)
         const siteUserId = localStorage.getItem('siteUserId');
         const userId = user?.uid || siteUserId;
         
-        if (user && updatedPurchase.id) {
-          // Firebase authenticated user - save to Firebase
-          try {
-            await updateDocument('purchases', updatedPurchase.id, {
-              tracking: trackingNumber,
-              carrier: updatedPurchase.carrier
-            }, true);
-            console.log(`✅ Saved tracking to Firebase: ${trackingNumber} (carrier: ${updatedPurchase.carrier || 'null'})`);
-          } catch (error) {
-            console.error('Error saving tracking to Firebase:', error);
-            setNotification({
-              isVisible: true,
-              message: `Tracking saved locally but failed to save to Firebase: ${error instanceof Error ? error.message : 'Unknown error'}`,
-              type: 'error'
-            });
-          }
-        } else if (siteUserId) {
-          // Site password user - save to localStorage
-          try {
-            const allPurchasesForStorage = [...updatedPurchases, ...updatedManualPurchases];
-            const storageKey = `purchases_${siteUserId}`;
-            localStorage.setItem(storageKey, JSON.stringify(allPurchasesForStorage));
-            console.log(`✅ Saved tracking to localStorage: ${trackingNumber} (carrier: ${updatedPurchase.carrier || 'null'})`);
-            console.log(`📦 Total purchases in storage: ${allPurchasesForStorage.length}`);
-          } catch (error) {
-            console.error('Error saving to localStorage:', error);
-            setNotification({
-              isVisible: true,
-              message: `Failed to save to localStorage: ${error instanceof Error ? error.message : 'Unknown error'}`,
-              type: 'error'
-            });
+        if (userId && updatedPurchase.id) {
+          // Save to Firebase using API endpoint for site password users
+          const isSitePasswordUser = !user && siteUserId;
+          
+          if (isSitePasswordUser) {
+            // Site password user - use Admin SDK via API
+            try {
+              const response = await fetch('/api/purchases/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  purchaseId: updatedPurchase.id,
+                  updates: {
+                    tracking: trackingNumber,
+                    carrier: updatedPurchase.carrier
+                  }
+                })
+              });
+              
+              if (!response.ok) {
+                throw new Error('Failed to update purchase');
+              }
+              
+              console.log(`✅ Saved tracking to Firebase via API: ${trackingNumber} (carrier: ${updatedPurchase.carrier || 'null'})`);
+            } catch (error) {
+              console.error('Error saving tracking to Firebase:', error);
+              setNotification({
+                isVisible: true,
+                message: `Failed to save tracking: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                type: 'error'
+              });
+            }
+          } else {
+            // Firebase authenticated user - save directly
+            try {
+              await updateDocument('purchases', updatedPurchase.id, {
+                tracking: trackingNumber,
+                carrier: updatedPurchase.carrier
+              }, true);
+              console.log(`✅ Saved tracking to Firebase: ${trackingNumber} (carrier: ${updatedPurchase.carrier || 'null'})`);
+            } catch (error) {
+              console.error('Error saving tracking to Firebase:', error);
+              setNotification({
+                isVisible: true,
+                message: `Failed to save tracking: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                type: 'error'
+              });
+            }
           }
         } else {
-          console.warn('⚠️ Cannot save: missing userId', { userId, purchaseId: updatedPurchase.id });
+          console.warn('⚠️ Cannot save: missing userId or purchaseId', { userId, purchaseId: updatedPurchase.id });
         }
       }
 
