@@ -71,11 +71,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true });
     }
 
-    // Trigger purchase sync and save to Firebase
+    // Trigger purchase sync and save to Firebase using Admin SDK
     console.log(`🔄 Triggering sync for user ${userId} with historyId ${historyId}`);
     
-    // Import Firebase utilities
-    const { addDocument } = await import('@/lib/firebase/firebaseUtils');
+    // Import consolidation utility
     const { consolidatePurchasesByOrderNumber } = await import('@/lib/utils/statusPriority');
     
     // Fire and forget - fetch purchases and save to Firebase
@@ -95,11 +94,11 @@ export async function POST(request: NextRequest) {
           const consolidated = consolidatePurchasesByOrderNumber(purchases);
           console.log(`🔄 Consolidated ${purchases.length} → ${consolidated.length} unique purchases`);
           
-          // Save to Firebase
+          // Save to Firebase using Admin SDK
           let savedCount = 0;
           for (const purchase of consolidated) {
             try {
-              await addDocument('purchases', {
+              await adminDb.collection('purchases').add({
                 ...purchase,
                 userId: userId,
                 type: 'gmail',
