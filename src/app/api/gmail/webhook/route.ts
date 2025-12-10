@@ -49,8 +49,13 @@ export async function POST(request: NextRequest) {
       .get();
     
     if (usersSnapshot.empty) {
-      console.log(`⚠️ No user found for email: ${emailAddress}`);
-      return NextResponse.json({ received: true });
+      console.log(`⚠️ No Firebase user found for email: ${emailAddress}`);
+      console.log(`💡 For site password users, webhooks require storing Gmail email in Firebase`);
+      console.log(`💡 Webhook will work automatically for Firebase authenticated users`);
+      return NextResponse.json({ 
+        received: true,
+        note: 'Site password users: webhooks require Firebase user record with gmailEmail field'
+      });
     }
     
     const userDoc = usersSnapshot.docs[0];

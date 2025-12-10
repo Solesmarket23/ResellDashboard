@@ -366,7 +366,8 @@ function LoginForm() {
             </div>
           </div>
 
-          {/* Google Sign In */}
+          {/* Google Sign In - TEMPORARILY DISABLED - Uncomment to re-enable */}
+          {/* 
           <div className="mt-6">
             <button
               onClick={handleGoogleSignIn}
@@ -400,6 +401,7 @@ function LoginForm() {
               )}
             </button>
           </div>
+          */}
 
           {/* Footer */}
           <div className="mt-6 text-center text-xs text-gray-500">
