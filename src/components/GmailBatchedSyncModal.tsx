@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { X, Mail, Package, Filter, CheckCircle, Clock, TrendingUp, Loader2, Sparkles, BarChart3, RefreshCw, AlertCircle } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 
@@ -33,9 +33,12 @@ interface GmailBatchedSyncModalProps {
   isOpen: boolean;
   onClose: () => void;
   onComplete: () => void;
+  onSavePurchases?: (purchases: any[]) => Promise<void>;
+  onRefresh?: () => void;
 }
 
-const GmailBatchedSyncModal: React.FC<GmailBatchedSyncModalProps> = ({ isOpen, onClose, onComplete }) => {
+const GmailBatchedSyncModal: React.FC<GmailBatchedSyncModalProps> = ({ isOpen, onClose, onComplete, onSavePurchases, onRefresh }) => {
+  console.log('🔄 GmailBatchedSyncModal RENDER CALLED', { isOpen });
   const { currentTheme } = useTheme();
   const [isRunning, setIsRunning] = useState(false);
   const [stats, setStats] = useState<SyncStats | null>(null);
@@ -71,7 +74,9 @@ const GmailBatchedSyncModal: React.FC<GmailBatchedSyncModalProps> = ({ isOpen, o
 
   // Auto-start sync when modal opens
   useEffect(() => {
+    console.log('🔄 GmailBatchedSyncModal useEffect', { isOpen, isRunning, isComplete });
     if (isOpen && !isRunning && !isComplete) {
+      console.log('🚀 Starting sync from useEffect...');
       startSync();
     }
   }, [isOpen]);
@@ -116,13 +121,22 @@ const GmailBatchedSyncModal: React.FC<GmailBatchedSyncModalProps> = ({ isOpen, o
     return Array.from(consolidatedMap.values());
   };
 
+  // AbortController to cancel in-flight requests
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   const startSync = async () => {
+    console.log('🔄 startSync called');
     setIsRunning(true);
     setError(null);
     setLogs([]);
     setIsComplete(false);
     
+    // Create new AbortController for this sync session
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    
     addLog('🚀 Starting historical Gmail sync...');
+    console.log('📝 Added initial log message');
     const syncStartTime = Date.now();
     setStartTime(syncStartTime);
     
@@ -153,8 +167,9 @@ const GmailBatchedSyncModal: React.FC<GmailBatchedSyncModalProps> = ({ isOpen, o
       let pageToken: string | undefined = undefined;
       let qIndex = 0;
       const purchasesFound: any[] = [];
+      let shouldStop = false;
 
-      while (hasMore && batchIndex < 400) {
+      while (hasMore && batchIndex < 400 && !shouldStop && !abortController.signal.aborted) {
         addLog(`📦 Fetching batch ${batchIndex + 1}...`);
 
         const params = new URLSearchParams({
@@ -170,10 +185,15 @@ const GmailBatchedSyncModal: React.FC<GmailBatchedSyncModalProps> = ({ isOpen, o
         let response;
         try {
           response = await fetch(`/api/gmail/purchases-batched?${params.toString()}`, {
-            signal: AbortSignal.timeout(90000)
+            signal: abortController.signal
           });
         } catch (fetchErr: any) {
-          if (fetchErr.name === 'TimeoutError' || fetchErr.name === 'AbortError') {
+          if (fetchErr.name === 'AbortError') {
+            addLog(`🛑 Sync stopped by user`);
+            shouldStop = true;
+            break;
+          }
+          if (fetchErr.name === 'TimeoutError') {
             addLog(`⏱️ Batch ${batchIndex + 1} timed out - advancing to next query`);
             if (qIndex + 1 < (allStats.totalQueries || 5)) {
               qIndex++;
@@ -216,11 +236,7 @@ const GmailBatchedSyncModal: React.FC<GmailBatchedSyncModalProps> = ({ isOpen, o
         // Track purchases
         if (data.purchases && data.purchases.length > 0) {
           data.purchases.forEach((p: any) => {
-            purchasesFound.push({
-              subject: p.subject || 'Unknown',
-              orderNumber: p.orderNumber || p.order_number || 'N/A',
-              status: p.status || 'Unknown'
-            });
+            purchasesFound.push(p); // Store full purchase object, not just summary
           });
 
           // Consolidate and update count
@@ -253,6 +269,21 @@ const GmailBatchedSyncModal: React.FC<GmailBatchedSyncModalProps> = ({ isOpen, o
 
         batchIndex++;
 
+        // Save purchases every 5 batches (or ~500 emails) to update UI
+        if (onSavePurchases && purchasesFound.length > 0 && batchIndex % 5 === 0) {
+          try {
+            const consolidated = consolidatePurchases(purchasesFound);
+            await onSavePurchases(consolidated);
+            console.log(`💾 Auto-saved ${consolidated.length} purchases at batch ${batchIndex}`);
+            // Refresh the UI to show new purchases
+            if (onRefresh) {
+              onRefresh();
+            }
+          } catch (saveError) {
+            console.error('Error auto-saving purchases:', saveError);
+          }
+        }
+
         // Small delay between batches
         if (hasMore) {
           await new Promise(resolve => setTimeout(resolve, 500));
@@ -260,148 +291,135 @@ const GmailBatchedSyncModal: React.FC<GmailBatchedSyncModalProps> = ({ isOpen, o
       }
 
       setStats({ ...allStats });
-      setIsComplete(true);
-      addLog(`🎉 Sync complete! Found ${allStats.totalPurchasesFound} unique purchases from ${allStats.totalEmailsProcessed} emails`);
       
-      // Call onComplete to refresh the purchases list
-      onComplete();
+      if (!shouldStop) {
+        setIsComplete(true);
+        
+        // Final save of all purchases
+        if (onSavePurchases && purchasesFound.length > 0) {
+          try {
+            const consolidated = consolidatePurchases(purchasesFound);
+            await onSavePurchases(consolidated);
+            console.log(`✅ Final save: ${consolidated.length} unique purchases`);
+          } catch (saveError) {
+            console.error('Error saving purchases:', saveError);
+          }
+        }
+        
+        // Call onComplete to refresh the purchases list
+        onComplete();
+      }
 
     } catch (err: any) {
-      const errorMsg = err.message || String(err);
-      setError(errorMsg);
-      addLog(`❌ Error: ${errorMsg}`);
-      console.error('Gmail sync error:', err);
+      // Don't show error if it was aborted by user
+      if (err.name !== 'AbortError') {
+        const errorMsg = err.message || String(err);
+        setError(errorMsg);
+        addLog(`❌ Error: ${errorMsg}`);
+        console.error('Gmail sync error:', err);
+      }
     } finally {
       setIsRunning(false);
       setStartTime(null);
+      abortControllerRef.current = null;
     }
   };
 
   if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+    <div className="fixed bottom-4 right-4 z-50 w-96 max-h-[600px] flex flex-col">
       <div 
-        className={`w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-xl shadow-2xl ${
+        className={`rounded-xl shadow-2xl overflow-hidden flex flex-col ${
           currentTheme.name === 'Neon'
             ? 'bg-gray-900 border border-cyan-500/30'
             : 'bg-white border border-gray-200'
         }`}
       >
         {/* Header */}
-        <div className={`sticky top-0 z-10 flex items-center justify-between p-6 border-b ${
+        <div className={`flex items-center justify-between p-4 border-b ${
           currentTheme.name === 'Neon'
             ? 'bg-gray-900 border-white/10'
             : 'bg-gray-50 border-gray-200'
         }`}>
-          <div>
-            <h2 className={`text-2xl font-bold ${currentTheme.colors.textPrimary}`}>
-              {isComplete ? '✅ Sync Complete!' : '🔄 Syncing Gmail Purchases'}
+          <div className="flex items-center gap-2 min-w-0">
+            {isRunning && (
+              <Loader2 className={`w-4 h-4 animate-spin flex-shrink-0 ${
+                currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'
+              }`} />
+            )}
+            {isComplete && <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />}
+            <h2 className={`text-sm font-bold truncate ${currentTheme.colors.textPrimary}`}>
+              {isComplete ? 'Sync Complete!' : 'Syncing Gmail'}
             </h2>
-            <p className={`text-sm mt-1 ${currentTheme.colors.textSecondary}`}>
-              {isComplete 
-                ? 'All historical purchases have been imported'
-                : 'Importing your purchase history from Gmail...'}
-            </p>
           </div>
           <button
             onClick={onClose}
             disabled={isRunning}
-            className={`p-2 rounded-lg transition-colors ${
+            className={`p-1 rounded-lg transition-colors flex-shrink-0 ${
               isRunning ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-100'
             } ${currentTheme.colors.textSecondary}`}
           >
-            <X className="w-6 h-6" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-6">
+        <div className="p-4 space-y-3 overflow-y-auto flex-1">
           {/* Error */}
           {error && (
-            <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="font-medium text-red-400">Sync Failed</p>
-                <p className="text-sm text-red-300 mt-1">{error}</p>
+            <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-red-400">Sync Failed</p>
+                <p className="text-xs text-red-300 mt-0.5 break-words">{error}</p>
               </div>
             </div>
           )}
 
           {/* Stats Grid */}
           {stats && (
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              {/* Emails Fetched */}
-              <div className={`rounded-lg p-4 border ${
-                currentTheme.name === 'Neon'
-                  ? 'bg-gray-800/50 border-white/10'
-                  : 'bg-gray-50 border-gray-200'
-              }`}>
-                <div className="flex items-center gap-2 mb-2">
-                  <Mail className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-blue-400' : 'text-blue-600'}`} />
-                  <p className={`text-xs ${currentTheme.colors.textSecondary}`}>Fetched</p>
-                </div>
-                <p className={`text-2xl font-bold ${currentTheme.colors.textPrimary}`}>
-                  {stats.totalEmailsFetched.toLocaleString()}
-                </p>
-              </div>
-
-              {/* Emails Processed */}
-              <div className={`rounded-lg p-4 border ${
-                currentTheme.name === 'Neon'
-                  ? 'bg-gray-800/50 border-white/10'
-                  : 'bg-gray-50 border-gray-200'
-              }`}>
-                <div className="flex items-center gap-2 mb-2">
-                  <TrendingUp className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-purple-400' : 'text-purple-600'}`} />
-                  <p className={`text-xs ${currentTheme.colors.textSecondary}`}>Processed</p>
-                </div>
-                <p className={`text-2xl font-bold ${currentTheme.colors.textPrimary}`}>
-                  {stats.totalEmailsProcessed.toLocaleString()}
-                </p>
-              </div>
-
+            <div className="grid grid-cols-3 gap-2">
               {/* Purchases Found */}
-              <div className={`rounded-lg p-4 border ${
+              <div className={`rounded-lg p-2 border ${
                 currentTheme.name === 'Neon'
                   ? 'bg-gradient-to-br from-green-500/10 to-emerald-500/10 border-green-500/30'
                   : 'bg-green-50 border-green-200'
               }`}>
-                <div className="flex items-center gap-2 mb-2">
-                  <Package className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-green-400' : 'text-green-600'}`} />
-                  <p className={`text-xs ${currentTheme.colors.textSecondary}`}>Purchases</p>
+                <div className="flex items-center gap-1 mb-1">
+                  <Package className={`w-3 h-3 ${currentTheme.name === 'Neon' ? 'text-green-400' : 'text-green-600'}`} />
+                  <p className={`text-[10px] ${currentTheme.colors.textSecondary}`}>Purchases</p>
                 </div>
-                <p className={`text-2xl font-bold ${currentTheme.name === 'Neon' ? 'text-green-400' : 'text-green-600'}`}>
+                <p className={`text-lg font-bold ${currentTheme.name === 'Neon' ? 'text-green-400' : 'text-green-600'}`}>
                   {stats.totalPurchasesFound.toLocaleString()}
                 </p>
               </div>
 
-              {/* Consolidated */}
-              <div className={`rounded-lg p-4 border ${
+              {/* Emails Processed */}
+              <div className={`rounded-lg p-2 border ${
                 currentTheme.name === 'Neon'
                   ? 'bg-gray-800/50 border-white/10'
                   : 'bg-gray-50 border-gray-200'
               }`}>
-                <div className="flex items-center gap-2 mb-2">
-                  <RefreshCw className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-cyan-600'}`} />
-                  <p className={`text-xs ${currentTheme.colors.textSecondary}`}>Merged</p>
+                <div className="flex items-center gap-1 mb-1">
+                  <Mail className={`w-3 h-3 ${currentTheme.name === 'Neon' ? 'text-blue-400' : 'text-blue-600'}`} />
+                  <p className={`text-[10px] ${currentTheme.colors.textSecondary}`}>Processed</p>
                 </div>
-                <p className={`text-2xl font-bold ${currentTheme.colors.textPrimary}`}>
-                  {stats.totalConsolidated.toLocaleString()}
+                <p className={`text-lg font-bold ${currentTheme.colors.textPrimary}`}>
+                  {stats.totalEmailsProcessed.toLocaleString()}
                 </p>
               </div>
 
               {/* Filtered */}
-              <div className={`rounded-lg p-4 border ${
+              <div className={`rounded-lg p-2 border ${
                 currentTheme.name === 'Neon'
                   ? 'bg-gray-800/50 border-white/10'
                   : 'bg-gray-50 border-gray-200'
               }`}>
-                <div className="flex items-center gap-2 mb-2">
-                  <Filter className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-orange-400' : 'text-orange-600'}`} />
-                  <p className={`text-xs ${currentTheme.colors.textSecondary}`}>Filtered</p>
+                <div className="flex items-center gap-1 mb-1">
+                  <Filter className={`w-3 h-3 ${currentTheme.name === 'Neon' ? 'text-orange-400' : 'text-orange-600'}`} />
+                  <p className={`text-[10px] ${currentTheme.colors.textSecondary}`}>Filtered</p>
                 </div>
-                <p className={`text-2xl font-bold ${currentTheme.colors.textPrimary}`}>
+                <p className={`text-lg font-bold ${currentTheme.colors.textPrimary}`}>
                   {stats.totalFiltered.toLocaleString()}
                 </p>
               </div>
@@ -410,23 +428,23 @@ const GmailBatchedSyncModal: React.FC<GmailBatchedSyncModalProps> = ({ isOpen, o
 
           {/* Progress Info */}
           {stats && (
-            <div className={`rounded-lg p-4 border ${
+            <div className={`rounded-lg p-3 border ${
               currentTheme.name === 'Neon'
                 ? 'bg-gray-800/50 border-white/10'
                 : 'bg-gray-50 border-gray-200'
             }`}>
               <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <Clock className={`w-4 h-4 ${currentTheme.colors.textSecondary}`} />
-                  <span className={`text-sm font-medium ${currentTheme.colors.textPrimary}`}>
-                    Progress: {stats.queriesCompleted}/{stats.totalQueries} queries
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Clock className={`w-3 h-3 flex-shrink-0 ${currentTheme.colors.textSecondary}`} />
+                  <span className={`text-xs font-medium truncate ${currentTheme.colors.textPrimary}`}>
+                    {stats.queriesCompleted}/{stats.totalQueries} queries
                   </span>
                 </div>
-                <span className={`text-sm ${currentTheme.colors.textSecondary}`}>
+                <span className={`text-xs flex-shrink-0 ml-2 ${currentTheme.colors.textSecondary}`}>
                   {formatTime(stats.timeElapsed)}
                 </span>
               </div>
-              <div className={`h-2 rounded-full overflow-hidden ${
+              <div className={`h-1.5 rounded-full overflow-hidden ${
                 currentTheme.name === 'Neon' ? 'bg-gray-700' : 'bg-gray-200'
               }`}>
                 <div 
@@ -438,8 +456,8 @@ const GmailBatchedSyncModal: React.FC<GmailBatchedSyncModalProps> = ({ isOpen, o
                   }}
                 />
               </div>
-              <p className={`text-xs mt-2 ${currentTheme.colors.textSecondary}`}>
-                {stats.batchesCompleted} batches completed • {stats.timeElapsed > 0 
+              <p className={`text-[10px] mt-1.5 ${currentTheme.colors.textSecondary}`}>
+                Batch {stats.batchesCompleted} • {stats.timeElapsed > 0 
                   ? `${Math.round(stats.totalEmailsProcessed / stats.timeElapsed)} emails/sec`
                   : '0 emails/sec'
                 }
@@ -447,49 +465,29 @@ const GmailBatchedSyncModal: React.FC<GmailBatchedSyncModalProps> = ({ isOpen, o
             </div>
           )}
 
-          {/* Logs */}
-          <div className={`rounded-lg border ${
-            currentTheme.name === 'Neon'
-              ? 'bg-black/30 border-white/10'
-              : 'bg-gray-50 border-gray-200'
-          }`}>
-            <div className="p-3 border-b border-inherit">
-              <h3 className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>Live Logs</h3>
-            </div>
-            <div className="p-4 h-64 overflow-y-auto font-mono text-xs space-y-1">
-              {logs.length === 0 ? (
-                <p className={currentTheme.colors.textSecondary}>Starting sync...</p>
-              ) : (
-                logs.map((log, i) => (
-                  <div key={i} className={`${currentTheme.colors.textSecondary} animate-fade-in`}>
-                    {log}
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
           {/* Actions */}
-          <div className="flex items-center justify-end gap-3">
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-inherit">
             {isRunning && (
               <button
                 onClick={() => {
+                  console.log('🛑 Stop button clicked');
                   setIsRunning(false);
-                  addLog('🛑 Sync stopped by user');
+                  abortControllerRef.current?.abort();
+                  addLog('🛑 Stopping sync...');
                 }}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                   currentTheme.name === 'Neon'
                     ? 'bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30'
                     : 'bg-red-50 hover:bg-red-100 text-red-600 border border-red-200'
                 }`}
               >
-                Stop Sync
+                Stop
               </button>
             )}
             {isComplete && (
               <button
                 onClick={onClose}
-                className={`px-6 py-2 rounded-lg font-medium transition-colors ${
+                className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                   currentTheme.name === 'Neon'
                     ? 'bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white'
                     : 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white'

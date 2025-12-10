@@ -217,8 +217,8 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
 
         const controller = new AbortController();
         controllerRef.current = controller;
-        // Use shorter timeout - if it times out, we'll move to next query
-        const timeoutDuration = 45000; // 45s timeout for all batches
+        // Timeout per batch (backend now processes only 10 emails per batch = ~10-15s)
+        const timeoutDuration = 30000; // 30s timeout per batch (generous for 10 emails)
         const timeoutId = setTimeout(() => {
           console.warn(`⏱️ Timeout after ${timeoutDuration/1000}s for batch ${batchIndex + 1} - will try next query`);
           controller.abort();
@@ -294,18 +294,16 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
           break;
         }
         
-        // Add new purchases to collection and push immediate UI updates
+        // Add new purchases to collection and update parent immediately
         if (data.purchases && data.purchases.length > 0) {
-          // Add purchases one by one for smoother UI updates
+          // Add purchases to collection
           for (const p of data.purchases) {
             allCollectedPurchases = [...allCollectedPurchases, p];
             setAllPurchases(prev => [...prev, p]);
-            // Update parent immediately for each purchase found
-            onPurchasesUpdate?.([...allCollectedPurchases]);
           }
           console.log(`📊 Total purchases so far: ${allCollectedPurchases.length}`);
-        } else {
-          // Still update parent even if no purchases found in this chunk
+          
+          // Update parent immediately after adding purchases from this batch
           onPurchasesUpdate?.(allCollectedPurchases);
         }
 

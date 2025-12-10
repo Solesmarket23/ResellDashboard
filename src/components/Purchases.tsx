@@ -18,7 +18,6 @@ import ImagePreviewModal from './ImagePreviewModal';
 import AutoEmailSync from './AutoEmailSync';
 import SimpleAutoSync from './SimpleAutoSync';
 import GmailBatchedSync from './GmailBatchedSync';
-import GmailBatchedSyncModal from './GmailBatchedSyncModal';
 import StreamingHistoricalSync from './StreamingHistoricalSync';
 import StatusUpdater from './StatusUpdater';
 import FixItemProducts from './FixItemProducts';
@@ -69,6 +68,11 @@ const Purchases = () => {
   const [showBatchedSync, setShowBatchedSync] = useState(false);
   const [showStreamingHistoricalSync, setShowStreamingHistoricalSync] = useState(false);
   const [showGmailBatchedSyncModal, setShowGmailBatchedSyncModal] = useState(false);
+  
+  // Debug: Track modal state changes
+  useEffect(() => {
+    console.log('🔄 Purchases: showGmailBatchedSyncModal changed to:', showGmailBatchedSyncModal);
+  }, [showGmailBatchedSyncModal]);
   const [selectedPurchases, setSelectedPurchases] = useState<Set<string>>(new Set());
   const [isAutoStatusEnabled, setIsAutoStatusEnabled] = useState(false);
   const [lastAutoStatusUpdate, setLastAutoStatusUpdate] = useState<Date | null>(null);
@@ -1267,42 +1271,47 @@ const Purchases = () => {
         // Get existing purchases from localStorage
         const existingPurchases = JSON.parse(localStorage.getItem(`purchases_${userId}`) || '[]');
         
-        // Remove old Gmail purchases for this user
-        const filteredPurchases = existingPurchases.filter(
-          (purchase: any) => !(purchase.userId === userId && purchase.type === 'gmail')
-        );
+        // Create a map of existing purchases by order number for efficient lookup
+        const existingMap = new Map();
+        existingPurchases.forEach((p: any) => {
+          if (p.orderNumber) {
+            existingMap.set(p.orderNumber, p);
+          }
+        });
         
-        // Add new Gmail purchases
-        const updatedPurchases = [...filteredPurchases, ...purchaseDataList];
+        // Merge new purchases with existing ones (new purchases override old ones with same order number)
+        purchaseDataList.forEach((newPurchase: any) => {
+          if (newPurchase.orderNumber) {
+            existingMap.set(newPurchase.orderNumber, newPurchase);
+          }
+        });
+        
+        // Convert map back to array
+        const updatedPurchases = Array.from(existingMap.values());
         
         // Save to localStorage
         localStorage.setItem(`purchases_${userId}`, JSON.stringify(updatedPurchases));
         
-        console.log(`✅ Gmail purchases saved to localStorage: ${purchaseDataList.length} unique purchases`);
-        
-        // Also try to save to Firebase as backup (might fail due to permissions)
-        try {
-          console.log('💾 Also attempting to save to Firebase as backup...');
-          for (const purchaseData of purchaseDataList) {
-            await addDocument('purchases', purchaseData);
-          }
-          console.log('✅ Also saved to Firebase as backup');
-        } catch (firebaseError) {
-          console.warn('⚠️ Firebase backup save failed (expected for site password users):', firebaseError);
-        }
+        console.log(`✅ Gmail purchases saved to localStorage: ${purchaseDataList.length} new/updated, ${updatedPurchases.length} total purchases`);
         
       } else {
         // For Firebase users, save to Firebase
         console.log('💾 Saving purchases to Firebase for Firebase user...');
         
-        // Clear existing Gmail purchases for this user first
-        console.log('🔍 Loading existing purchases to clear old ones...');
+        // Get existing Gmail purchases to merge (not delete)
+        console.log('🔍 Loading existing purchases to merge...');
         const existingPurchases = await getDocuments('purchases');
         console.log(`📄 Found ${existingPurchases.length} existing purchases in Firebase`);
         
-        const existingGmailPurchases = existingPurchases.filter(
-          (purchase: any) => purchase.userId === userId && purchase.type === 'gmail'
-        );
+        // Create a map of existing Gmail purchases by order number
+        const existingGmailMap = new Map();
+        existingPurchases.forEach((purchase: any) => {
+          if (purchase.userId === userId && purchase.type === 'gmail' && purchase.orderNumber) {
+            existingGmailMap.set(purchase.orderNumber, purchase);
+          }
+        });
+        
+        const existingGmailPurchases = Array.from(existingGmailMap.values());
         
         console.log(`🗑️ Found ${existingGmailPurchases.length} existing Gmail purchases for user ${userId}`);
         
@@ -3104,7 +3113,24 @@ const Purchases = () => {
             
 
             <button
-              onClick={() => setShowGmailBatchedSyncModal(true)}
+              onClick={() => {
+                console.log('🔄 Sync Gmail button clicked', { gmailConnected, showGmailBatchedSyncModal });
+                
+                // Clear the "purchases cleared" flag immediately when sync starts
+                const siteUserId = localStorage.getItem('siteUserId');
+                const userId = user?.uid || siteUserId;
+                if (userId) {
+                  const clearedFlag = localStorage.getItem(`purchases_cleared_${userId}`);
+                  if (clearedFlag === 'true') {
+                    localStorage.removeItem(`purchases_cleared_${userId}`);
+                    // Also clear old purchases from localStorage so we start fresh
+                    localStorage.removeItem(`purchases_${userId}`);
+                    console.log('🔄 Cleared purchases_cleared flag and old purchases - starting fresh sync');
+                  }
+                }
+                
+                setShowGmailBatchedSyncModal(true);
+              }}
               disabled={!gmailConnected}
               className={`flex items-center space-x-2 ${
                 currentTheme.name === 'Neon' 
@@ -5367,6 +5393,35 @@ const Purchases = () => {
               />
             )}
       
+      {/* Batched Gmail Sync - Draggable Notification */}
+      {showGmailBatchedSyncModal && (
+        <div className="fixed inset-0 z-50 pointer-events-none">
+          <div className="relative w-full h-full">
+            <GmailBatchedSync
+              onPurchasesUpdate={async (purchases) => {
+                console.log(`📧 Received ${purchases.length} purchases from sync`);
+                
+                // Save purchases as they come in
+                await saveGmailPurchasesToFirebase(purchases);
+                
+                // Only reload UI after each batch (not after every single purchase)
+                // The GmailBatchedSync component calls this once per batch with all accumulated purchases
+                loadManualPurchasesFromFirebase();
+              }}
+              onSyncComplete={(totalPurchases) => {
+                console.log(`🎉 Sync complete! Total: ${totalPurchases} purchases`);
+                setShowGmailBatchedSyncModal(false);
+                // Final reload after sync completes
+                loadManualPurchasesFromFirebase();
+              }}
+              onClose={() => setShowGmailBatchedSyncModal(false)}
+              autoStart={true}
+              consolidatedCount={sortedPurchases.length}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Neon Notification */}
       {notification.isVisible && (
         <NeonNotification
@@ -5705,16 +5760,6 @@ const AddPurchaseModal = ({ onClose, onSuccess }: { onClose: () => void; onSucce
           </div>
         </form>
       </div>
-
-      {/* Gmail Batched Sync Modal */}
-      <GmailBatchedSyncModal 
-        isOpen={showGmailBatchedSyncModal}
-        onClose={() => setShowGmailBatchedSyncModal(false)}
-        onComplete={() => {
-          // Reload purchases after sync completes
-          loadManualPurchasesFromFirebase();
-        }}
-      />
     </div>
   );
 };

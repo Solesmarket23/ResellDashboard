@@ -39,16 +39,53 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
   const nextSyncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Load settings from Firebase on component mount
+  // Helper function to get user ID (Firebase or site password)
+  const getUserId = (): string | null => {
+    if (user?.uid) {
+      return user.uid;
+    }
+    // Check for site password authentication
+    if (typeof window !== 'undefined') {
+      const siteUserId = localStorage.getItem('siteUserId');
+      return siteUserId;
+    }
+    return null;
+  };
+
+  // Load settings from Firebase or localStorage on component mount
   useEffect(() => {
     const loadSettings = async () => {
-      if (!user?.uid) {
-      console.warn('No user ID available, skipping settings load');
-      return;
-    }
+      const userId = getUserId();
+      if (!userId) {
+        console.warn('No user ID available, skipping settings load');
+        return;
+      }
       
+      const isSitePasswordUser = !user?.uid && typeof window !== 'undefined' && localStorage.getItem('siteUserId');
+      
+      if (isSitePasswordUser) {
+        // Load from localStorage for site password users
+        try {
+          const settingsKey = `autoMonitoring_${userId}`;
+          const savedSettings = localStorage.getItem(settingsKey);
+          if (savedSettings) {
+            const settings = JSON.parse(savedSettings);
+            if (settings.isEnabled !== undefined) setIsEnabled(settings.isEnabled);
+            if (settings.isStatusEnabled !== undefined) setIsStatusEnabled(settings.isStatusEnabled);
+            if (settings.syncInterval !== undefined) setSyncInterval(settings.syncInterval);
+            if (settings.lastSync) setLastSync(new Date(settings.lastSync));
+            if (settings.lastStatusUpdate) setLastStatusUpdate(new Date(settings.lastStatusUpdate));
+            console.log('Auto monitoring settings loaded from localStorage', settings);
+          }
+        } catch (error) {
+          console.error('Error loading auto monitoring settings from localStorage:', error);
+        }
+        return;
+      }
+      
+      // Load from Firebase for Firebase users
       try {
-        const userRef = doc(db, 'users', user.uid);
+        const userRef = doc(db, 'users', userId);
         const userDoc = await getDoc(userRef);
         
         if (userDoc.exists()) {
@@ -79,7 +116,7 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
         console.error('Error details:', {
           code: error?.code,
           message: error?.message,
-          userId: user?.uid
+          userId: userId
         });
       }
     };
@@ -87,7 +124,7 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
     loadSettings();
   }, [user]);
 
-  // Save settings to Firebase when they change
+  // Save settings to Firebase or localStorage when they change
   const saveSettings = useRef(
     async (settings: {
       isEnabled: boolean;
@@ -96,37 +133,54 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
       lastSync: Date | null;
       lastStatusUpdate: Date | null;
     }, immediate = false) => {
-      if (!user?.uid) {
+      const userId = getUserId();
+      if (!userId) {
         console.warn('No user ID available, skipping save');
         return;
       }
 
-      const saveToFirebase = async () => {
+      const isSitePasswordUser = !user?.uid && typeof window !== 'undefined' && localStorage.getItem('siteUserId');
+      
+      const saveToStorage = async () => {
         try {
-          const userRef = doc(db, 'users', user.uid);
-          await setDoc(userRef, {
-            autoMonitoring: {
+          if (isSitePasswordUser) {
+            // Save to localStorage for site password users
+            const settingsKey = `autoMonitoring_${userId}`;
+            localStorage.setItem(settingsKey, JSON.stringify({
               isEnabled: settings.isEnabled,
               isStatusEnabled: settings.isStatusEnabled,
               syncInterval: settings.syncInterval,
               lastSync: settings.lastSync ? settings.lastSync.toISOString() : null,
               lastStatusUpdate: settings.lastStatusUpdate ? settings.lastStatusUpdate.toISOString() : null,
-            }
-          }, { merge: true });
-          console.log('Auto monitoring settings saved to Firebase', settings);
+            }));
+            console.log('Auto monitoring settings saved to localStorage', settings);
+          } else {
+            // Save to Firebase for Firebase users
+            const userRef = doc(db, 'users', userId);
+            await setDoc(userRef, {
+              autoMonitoring: {
+                isEnabled: settings.isEnabled,
+                isStatusEnabled: settings.isStatusEnabled,
+                syncInterval: settings.syncInterval,
+                lastSync: settings.lastSync ? settings.lastSync.toISOString() : null,
+                lastStatusUpdate: settings.lastStatusUpdate ? settings.lastStatusUpdate.toISOString() : null,
+              }
+            }, { merge: true });
+            console.log('Auto monitoring settings saved to Firebase', settings);
+          }
         } catch (error: any) {
           console.error('Error saving auto monitoring settings:', error);
         }
       };
 
       if (immediate) {
-        await saveToFirebase();
+        await saveToStorage();
       } else {
         // Debounce saves
         if (saveTimeoutRef.current) {
           clearTimeout(saveTimeoutRef.current);
         }
-        saveTimeoutRef.current = setTimeout(saveToFirebase, 1000);
+        saveTimeoutRef.current = setTimeout(saveToStorage, 1000);
       }
     }
   ).current;
@@ -180,14 +234,26 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
       return;
     }
 
+    const userId = getUserId();
+    if (!userId) {
+      console.error('No user ID available for status update');
+      return;
+    }
+
     console.log('Starting status update...');
     setIsUpdatingStatus(true);
 
     try {
+      const isSitePasswordUser = !user?.uid && typeof window !== 'undefined' && localStorage.getItem('siteUserId');
+      
       const response = await fetch('/api/deliveries/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ purchases }),
+        body: JSON.stringify({ 
+          userId: userId,
+          purchases,
+          fromLocalStorage: isSitePasswordUser
+        }),
         credentials: 'include'
       });
 

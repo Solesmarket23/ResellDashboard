@@ -5,11 +5,11 @@ import { parseGmailApiMessage, orderInfoToDict, OrderInfo } from '../../../../li
 import { consolidatePurchasesByOrderNumber } from '../../../../lib/utils/statusPriority';
 
 // Batch configuration
-const BATCH_SIZE = 100; // Process 100 emails per batch (increased from 50)
-const MAX_BATCHES_PER_REQUEST = 1; // Max 1 batch per API call (100 emails total) - reduced for faster testing
+const BATCH_SIZE = 10; // Process 10 emails per batch for frequent UI updates (every ~10 seconds)
+const MAX_BATCHES_PER_REQUEST = 1; // Max 1 batch per API call (10 emails total) - for real-time updates
 const MAX_TOTAL_EMAILS = 20000; // Maximum total emails to process (20,000 for ~2 years of history)
 const TIMEOUT_PER_EMAIL = 10000; // 10 seconds per email (increased to handle slow emails)
-const PARALLEL_EMAILS = 4; // Increased from 2 to 4 for faster processing while still showing frequent updates
+const PARALLEL_EMAILS = 4; // Process 4 emails in parallel for faster processing
 
 interface BatchProgress {
   batchIndex: number;
@@ -249,9 +249,9 @@ export async function GET(request: NextRequest) {
     // Get emails. Support limit parameter for chunked processing
     const isFirstBatch = batchIndex === 0 && reset;
     const limitParam = url.searchParams.get('limit');
-    // If limit is specified, use it (for chunked processing), otherwise use default
-    // Use smaller batch sizes to avoid timeouts - 50 emails per batch is a good balance
-    const maxResults = limitParam ? Math.min(parseInt(limitParam), 50) : 50;
+    // If limit is specified, use it (for chunked processing), otherwise use BATCH_SIZE
+    // Use BATCH_SIZE for frequent UI updates
+    const maxResults = limitParam ? Math.min(parseInt(limitParam), BATCH_SIZE) : BATCH_SIZE;
     // Add timeout to Gmail API call to prevent hanging
     // Gmail API returns messages sorted by internalDate descending (newest first) by default
     // This ensures we process today's emails first, then go backwards
