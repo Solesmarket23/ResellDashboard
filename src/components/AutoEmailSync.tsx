@@ -424,125 +424,270 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
   // Always show the component, but disable it when Gmail not connected
 
   return (
-    <div className={`p-4 rounded-lg border ${
+    <div className={`rounded-xl overflow-hidden border transition-all duration-300 ${
       currentTheme.name === 'Neon' 
-        ? 'bg-white/5 border-white/10' 
-        : 'bg-gray-50 border-gray-200'
+        ? 'bg-gradient-to-br from-gray-900/50 to-gray-900/30 border-white/10 shadow-xl' 
+        : 'bg-white border-gray-200 shadow-lg'
     }`}>
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center space-x-2">
-          <RefreshCw className={`w-4 h-4 ${(isSyncing || isUpdatingStatus) ? 'animate-spin' : ''} ${
-            currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'
-          }`} />
-          <span className={`font-medium text-sm ${currentTheme.colors.textPrimary}`}>
-            Auto Monitoring
-          </span>
-        </div>
-        
-        <div className="flex items-center space-x-2">
-          <span className={`text-xs ${currentTheme.colors.textSecondary}`}>
-            {(isEnabled || isStatusEnabled) ? 'Active' : 'Inactive'}
-          </span>
+      {/* Header */}
+      <div className={`px-6 py-4 border-b ${
+        currentTheme.name === 'Neon'
+          ? 'bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 border-white/10'
+          : 'bg-gradient-to-r from-gray-50 via-gray-100 to-gray-50 border-gray-200'
+      }`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg ${
+              currentTheme.name === 'Neon'
+                ? 'bg-cyan-500/20 ring-2 ring-cyan-500/30'
+                : 'bg-blue-100 ring-2 ring-blue-200'
+            }`}>
+              <RefreshCw className={`w-5 h-5 ${(isSyncing || isUpdatingStatus) ? 'animate-spin' : ''} ${
+                currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'
+              }`} />
+            </div>
+            <div>
+              <h3 className={`text-sm font-bold ${currentTheme.colors.textPrimary}`}>
+                Auto Monitoring
+              </h3>
+              <p className={`text-xs ${currentTheme.colors.textSecondary}`}>
+                {isGmailConnected ? 'Automated email sync & status tracking' : 'Connect Gmail to enable'}
+              </p>
+            </div>
+          </div>
+          
+          {/* Active/Inactive Badge */}
+          <div className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-300 ${
+            (isEnabled || isStatusEnabled)
+              ? currentTheme.name === 'Neon'
+                ? 'bg-gradient-to-r from-green-500/20 to-emerald-500/20 text-green-400 ring-2 ring-green-500/30 shadow-lg shadow-green-500/20'
+                : 'bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 ring-2 ring-green-200'
+              : currentTheme.name === 'Neon'
+                ? 'bg-white/5 text-gray-400 ring-1 ring-white/20'
+                : 'bg-gray-100 text-gray-500 ring-1 ring-gray-200'
+          }`}>
+            {(isEnabled || isStatusEnabled) ? '● Active' : '○ Inactive'}
+          </div>
         </div>
       </div>
 
-      {!isGmailConnected && (
-        <div className={`text-xs ${currentTheme.colors.textSecondary} mt-2`}>
-          Connect Gmail above to enable automatic monitoring
-        </div>
-      )}
-
-      {isGmailConnected && (
-        <div className="space-y-3">
-          {/* Email Sync Toggle */}
-          <div className="flex items-center justify-between">
-            <span className={`text-xs ${currentTheme.colors.textSecondary}`}>
-              Auto Email Sync
-            </span>
-            <button
-              onClick={handleToggle}
-              className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                isEnabled 
+      {/* Content */}
+      <div className="p-6">
+        {!isGmailConnected ? (
+          <div className={`text-center py-8 ${
+            currentTheme.name === 'Neon'
+              ? 'bg-white/5 border border-white/10'
+              : 'bg-gray-50 border border-gray-200'
+          } rounded-lg`}>
+            <Mail className={`w-12 h-12 mx-auto mb-3 ${currentTheme.colors.textSecondary}`} />
+            <p className={`text-sm font-medium ${currentTheme.colors.textPrimary} mb-1`}>
+              Gmail Connection Required
+            </p>
+            <p className={`text-xs ${currentTheme.colors.textSecondary}`}>
+              Connect Gmail above to enable automatic monitoring
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {/* Controls Grid */}
+            <div className="grid grid-cols-1 gap-4">
+              {/* Auto Email Sync */}
+              <div className={`p-4 rounded-lg border transition-all duration-300 ${
+                isEnabled
                   ? currentTheme.name === 'Neon'
-                    ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                    : 'bg-green-100 text-green-800'
+                    ? 'bg-cyan-500/5 border-cyan-500/30 ring-2 ring-cyan-500/20'
+                    : 'bg-blue-50 border-blue-200 ring-2 ring-blue-100'
                   : currentTheme.name === 'Neon'
-                    ? 'bg-white/10 text-gray-300 border border-white/20'
-                    : 'bg-gray-100 text-gray-600'
-              }`}
-            >
-              {isEnabled ? 'ON' : 'OFF'}
-            </button>
-          </div>
+                    ? 'bg-white/5 border-white/10 hover:border-white/20'
+                    : 'bg-gray-50 border-gray-200 hover:border-gray-300'
+              }`}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Mail className={`w-4 h-4 ${isEnabled ? (currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600') : currentTheme.colors.textSecondary}`} />
+                    <span className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>
+                      Auto Email Sync
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleToggle}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${
+                      isEnabled 
+                        ? currentTheme.name === 'Neon'
+                          ? 'bg-gradient-to-r from-cyan-500 to-blue-500 shadow-lg shadow-cyan-500/50'
+                          : 'bg-gradient-to-r from-blue-500 to-blue-600 shadow-lg shadow-blue-500/50'
+                        : currentTheme.name === 'Neon'
+                          ? 'bg-gray-700'
+                          : 'bg-gray-300'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${
+                        isEnabled ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+                <p className={`text-xs ${currentTheme.colors.textSecondary} ml-6`}>
+                  Automatically fetch new purchase emails
+                </p>
+              </div>
 
-          {/* Status Monitoring Toggle */}
-          <div className="flex items-center justify-between">
-            <span className={`text-xs ${currentTheme.colors.textSecondary}`}>
-              Auto Status Updates
-            </span>
-            <button
-              onClick={handleStatusToggle}
-              disabled={purchases.length === 0}
-              className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                purchases.length === 0
-                  ? 'opacity-50 cursor-not-allowed bg-gray-100 text-gray-400'
-                  : isStatusEnabled 
-                    ? currentTheme.name === 'Neon'
-                      ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
-                      : 'bg-yellow-100 text-yellow-800'
-                    : currentTheme.name === 'Neon'
-                      ? 'bg-white/10 text-gray-300 border border-white/20'
-                      : 'bg-gray-100 text-gray-600'
-              }`}
-            >
-              {isStatusEnabled ? 'ON' : 'OFF'}
-            </button>
-          </div>
-
-          {/* Interval Setting */}
-          {(isEnabled || isStatusEnabled) && (
-            <div className="flex items-center justify-between">
-              <span className={`text-xs ${currentTheme.colors.textSecondary}`}>
-                Check every:
-              </span>
-              <select
-                value={syncInterval}
-                onChange={(e) => handleIntervalChange(Number(e.target.value))}
-                className={`text-xs px-2 py-1 rounded border ${
-                  currentTheme.name === 'Neon'
-                    ? 'bg-white/10 border-white/20 text-gray-300'
-                    : 'bg-white border-gray-300'
-                }`}
-              >
-                <option value={5}>5 minutes</option>
-                <option value={15}>15 minutes</option>
-                <option value={30}>30 minutes</option>
-                <option value={60}>1 hour</option>
-              </select>
+              {/* Auto Status Updates */}
+              <div className={`p-4 rounded-lg border transition-all duration-300 ${
+                isStatusEnabled
+                  ? currentTheme.name === 'Neon'
+                    ? 'bg-yellow-500/5 border-yellow-500/30 ring-2 ring-yellow-500/20'
+                    : 'bg-yellow-50 border-yellow-200 ring-2 ring-yellow-100'
+                  : currentTheme.name === 'Neon'
+                    ? 'bg-white/5 border-white/10 hover:border-white/20'
+                    : 'bg-gray-50 border-gray-200 hover:border-gray-300'
+              } ${purchases.length === 0 ? 'opacity-50' : ''}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Clock className={`w-4 h-4 ${isStatusEnabled ? (currentTheme.name === 'Neon' ? 'text-yellow-400' : 'text-yellow-600') : currentTheme.colors.textSecondary}`} />
+                    <span className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>
+                      Auto Status Updates
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleStatusToggle}
+                    disabled={purchases.length === 0}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${
+                      purchases.length === 0
+                        ? 'opacity-50 cursor-not-allowed bg-gray-400'
+                        : isStatusEnabled 
+                          ? currentTheme.name === 'Neon'
+                            ? 'bg-gradient-to-r from-yellow-500 to-orange-500 shadow-lg shadow-yellow-500/50'
+                            : 'bg-gradient-to-r from-yellow-500 to-yellow-600 shadow-lg shadow-yellow-500/50'
+                          : currentTheme.name === 'Neon'
+                            ? 'bg-gray-700'
+                            : 'bg-gray-300'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${
+                        isStatusEnabled ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+                <p className={`text-xs ${currentTheme.colors.textSecondary} ml-6`}>
+                  Track delivery status changes automatically
+                </p>
+              </div>
             </div>
-          )}
 
-          {/* Status Indicators */}
-          {(isEnabled || isStatusEnabled) && (
-            <div className="space-y-1 text-xs">
-              {/* Email Sync Status */}
-              {isEnabled && (
-                <div className="flex items-center justify-between">
-                  <span className={currentTheme.colors.textSecondary}>Email Sync:</span>
-                  <div className="flex items-center space-x-1">
-                    {isSyncing ? (
-                      <>
-                        <RefreshCw className="w-3 h-3 animate-spin text-blue-500" />
-                        <span className="text-blue-500">Syncing...</span>
-                      </>
-                    ) : lastSync ? (
-                      <>
-                        <CheckCircle className="w-3 h-3 text-green-500" />
-                        <span className={currentTheme.colors.textSecondary}>
-                          {lastSync.toLocaleTimeString()}
+            {/* Interval Selector */}
+            {(isEnabled || isStatusEnabled) && (
+              <div className={`p-4 rounded-lg border ${
+                currentTheme.name === 'Neon'
+                  ? 'bg-white/5 border-white/10'
+                  : 'bg-gray-50 border-gray-200'
+              }`}>
+                <label className={`block text-xs font-semibold mb-2 ${currentTheme.colors.textPrimary}`}>
+                  Check every:
+                </label>
+                <select
+                  value={syncInterval}
+                  onChange={(e) => handleIntervalChange(Number(e.target.value))}
+                  className={`w-full px-3 py-2 rounded-lg border text-sm font-medium transition-all duration-200 ${
+                    currentTheme.name === 'Neon'
+                      ? 'bg-gray-900 border-white/20 text-white focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50'
+                      : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50'
+                  } focus:outline-none`}
+                >
+                  <option value={5}>⚡ Every 5 minutes</option>
+                  <option value={15}>🔄 Every 15 minutes</option>
+                  <option value={30}>⏱️ Every 30 minutes</option>
+                  <option value={60}>⏰ Every hour</option>
+                </select>
+              </div>
+            )}
+
+            {/* Status Display */}
+            {(isEnabled || isStatusEnabled) && (
+              <div className={`grid grid-cols-1 gap-3 p-4 rounded-lg border ${
+                currentTheme.name === 'Neon'
+                  ? 'bg-gradient-to-br from-gray-900/50 to-gray-900/30 border-white/10'
+                  : 'bg-gradient-to-br from-gray-50 to-white border-gray-200'
+              }`}>
+                {/* Email Sync Status */}
+                {isEnabled && (
+                  <div className="flex items-center justify-between">
+                    <span className={`text-xs font-medium ${currentTheme.colors.textSecondary}`}>
+                      Email Sync:
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {isSyncing ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-500" />
+                          <span className="text-xs font-semibold text-blue-500">Syncing...</span>
+                        </>
+                      ) : lastSync ? (
+                        <>
+                          <CheckCircle className="w-3.5 h-3.5 text-green-500" />
+                          <span className={`text-xs font-semibold ${currentTheme.colors.textPrimary}`}>
+                            {lastSync.toLocaleTimeString()}
+                          </span>
+                        </>
+                      ) : (
+                        <span className={`text-xs font-medium ${currentTheme.colors.textSecondary}`}>
+                          Not run yet
                         </span>
-                      </>
-                    ) : (
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Status Check */}
+                {isStatusEnabled && (
+                  <div className="flex items-center justify-between">
+                    <span className={`text-xs font-medium ${currentTheme.colors.textSecondary}`}>
+                      Status Check:
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {isUpdatingStatus ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-yellow-500" />
+                          <span className="text-xs font-semibold text-yellow-500">Checking...</span>
+                        </>
+                      ) : lastStatusUpdate ? (
+                        <>
+                          <CheckCircle className="w-3.5 h-3.5 text-green-500" />
+                          <span className={`text-xs font-semibold ${currentTheme.colors.textPrimary}`}>
+                            {lastStatusUpdate.toLocaleTimeString()}
+                          </span>
+                        </>
+                      ) : (
+                        <span className={`text-xs font-medium ${currentTheme.colors.textSecondary}`}>
+                          Not run yet
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Next Check */}
+                <div className={`flex items-center justify-between pt-3 border-t ${
+                  currentTheme.name === 'Neon' ? 'border-white/10' : 'border-gray-200'
+                }`}>
+                  <span className={`text-xs font-medium ${currentTheme.colors.textSecondary}`}>
+                    Next check:
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <Clock className={`w-3.5 h-3.5 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} />
+                    <span className={`text-xs font-semibold ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`}>
+                      {getTimeUntilNextSync()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
                       <span className={currentTheme.colors.textSecondary}>Not run yet</span>
                     )}
                   </div>
