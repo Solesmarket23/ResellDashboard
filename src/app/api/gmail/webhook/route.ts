@@ -71,25 +71,49 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true });
     }
 
-    // Trigger purchase sync in the background (don't wait for it)
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://resell-dashboard-zeta.vercel.app';
+    // Trigger purchase sync and save to Firebase
+    console.log(`🔄 Triggering sync for user ${userId} with historyId ${historyId}`);
     
-    // Fire and forget - don't await
-    fetch(`${baseUrl}/api/gmail/purchases`, {
-      method: 'POST',
+    // Import Firebase utilities
+    const { addDocument } = await import('@/lib/firebase/firebaseUtils');
+    const { consolidatePurchasesByOrderNumber } = await import('@/lib/utils/statusPriority');
+    
+    // Fire and forget - fetch purchases and save to Firebase
+    fetch(`https://www.solesmarket.com/api/gmail/purchases-batched?limit=20&reset=false`, {
+      method: 'GET',
       headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        accessToken: gmailTokens.access_token,
-        maxResults: 10, // Only check recent emails
-        userId: userId,
-        historyId: historyId // Use historyId for incremental sync
-      })
+        'Cookie': `gmail_access_token=${gmailTokens.access_token}; gmail_refresh_token=${gmailTokens.refresh_token || ''}`
+      }
     }).then(async (response) => {
       if (response.ok) {
         const result = await response.json();
-        console.log(`✅ Webhook triggered sync for ${userId}: ${result.newPurchases || 0} new purchases`);
+        const purchases = result.purchases || [];
+        console.log(`📧 Webhook found ${purchases.length} purchases`);
+        
+        if (purchases.length > 0) {
+          // Consolidate purchases by order number
+          const consolidated = consolidatePurchasesByOrderNumber(purchases);
+          console.log(`🔄 Consolidated ${purchases.length} → ${consolidated.length} unique purchases`);
+          
+          // Save to Firebase
+          let savedCount = 0;
+          for (const purchase of consolidated) {
+            try {
+              await addDocument('purchases', {
+                ...purchase,
+                userId: userId,
+                type: 'gmail',
+                createdAt: new Date().toISOString(),
+                syncedAt: new Date().toISOString()
+              });
+              savedCount++;
+            } catch (error) {
+              console.error(`Failed to save purchase ${purchase.orderNumber}:`, error);
+            }
+          }
+          
+          console.log(`✅ Webhook saved ${savedCount}/${consolidated.length} purchases to Firebase for user ${userId}`);
+        }
         
         // Update last webhook sync time
         await adminDb.collection('users').doc(userId).update({
@@ -97,7 +121,8 @@ export async function POST(request: NextRequest) {
           lastHistoryId: historyId
         });
       } else {
-        console.error(`❌ Webhook sync failed for ${userId}: ${response.status}`);
+        const errorText = await response.text();
+        console.error(`❌ Webhook sync failed for ${userId}: ${response.status} - ${errorText}`);
       }
     }).catch(error => {
       console.error(`❌ Webhook sync error for ${userId}:`, error);

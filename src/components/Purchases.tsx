@@ -1264,37 +1264,8 @@ const Purchases = () => {
         syncedAt: new Date().toISOString()
       }));
       
-      if (isSitePasswordUser) {
-        // For site password users, save to localStorage
-        console.log('💾 Saving purchases to localStorage for site password user...');
-        
-        // Get existing purchases from localStorage
-        const existingPurchases = JSON.parse(localStorage.getItem(`purchases_${userId}`) || '[]');
-        
-        // Create a map of existing purchases by order number for efficient lookup
-        const existingMap = new Map();
-        existingPurchases.forEach((p: any) => {
-          if (p.orderNumber) {
-            existingMap.set(p.orderNumber, p);
-          }
-        });
-        
-        // Merge new purchases with existing ones (new purchases override old ones with same order number)
-        purchaseDataList.forEach((newPurchase: any) => {
-          if (newPurchase.orderNumber) {
-            existingMap.set(newPurchase.orderNumber, newPurchase);
-          }
-        });
-        
-        // Convert map back to array
-        const updatedPurchases = Array.from(existingMap.values());
-        
-        // Save to localStorage
-        localStorage.setItem(`purchases_${userId}`, JSON.stringify(updatedPurchases));
-        
-        console.log(`✅ Gmail purchases saved to localStorage: ${purchaseDataList.length} new/updated, ${updatedPurchases.length} total purchases`);
-        
-      } else {
+      // Save to Firebase for both site password users and Firebase auth users
+      {
         // For Firebase users, save to Firebase
         console.log('💾 Saving purchases to Firebase for Firebase user...');
         
@@ -1628,37 +1599,12 @@ const Purchases = () => {
       
       let allPurchases: any[] = [];
       
-      if (isSitePasswordUser) {
-        // For site password users, try localStorage first, then Firebase as fallback
-        console.log('🔍 Loading purchases for site password user...');
-        console.log(`⏱️ Before localStorage read: ${Date.now() - startTime}ms`);
-        
-        // Try localStorage first
-        const localPurchases = localStorage.getItem(`purchases_${userId}`);
-        if (localPurchases) {
-          allPurchases = JSON.parse(localPurchases);
-          console.log(`📄 Loaded ${allPurchases.length} purchases from localStorage`);
-          console.log(`⏱️ After localStorage parse: ${Date.now() - startTime}ms`);
-        } else {
-          console.log('📄 No purchases found in localStorage, trying Firebase...');
-          
-          // Fallback to Firebase (might fail due to permissions)
-          try {
-            allPurchases = await getDocuments('purchases');
-            console.log(`📄 Firebase returned ${allPurchases.length} total purchases`);
-          } catch (firebaseError) {
-            console.warn('⚠️ Firebase access failed for site password user:', firebaseError);
-            allPurchases = [];
-          }
-        }
-      } else {
-        // For Firebase users, use Firebase directly
-        console.log('🔍 Attempting to load purchases from Firebase...');
-        console.log(`⏱️ Before Firebase read: ${Date.now() - startTime}ms`);
-        allPurchases = await getDocuments('purchases');
-        console.log(`📄 Firebase returned ${allPurchases.length} total purchases`);
-        console.log(`⏱️ After Firebase read: ${Date.now() - startTime}ms`);
-      }
+      // Load from Firebase for all users (both site password and Firebase auth)
+      console.log('🔍 Loading purchases from Firebase...');
+      console.log(`⏱️ Before Firebase read: ${Date.now() - startTime}ms`);
+      allPurchases = await getDocuments('purchases');
+      console.log(`📄 Firebase returned ${allPurchases.length} total purchases`);
+      console.log(`⏱️ After Firebase read: ${Date.now() - startTime}ms`);
       
       // Filter to only show purchases for this user
       const userPurchases = allPurchases.filter(
