@@ -57,9 +57,9 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
     const loadSettings = async () => {
       const userId = getUserId();
       if (!userId) {
-        console.warn('No user ID available, skipping settings load');
-        return;
-      }
+      console.warn('No user ID available, skipping settings load');
+      return;
+    }
       
       const isSitePasswordUser = !user?.uid && typeof window !== 'undefined' && localStorage.getItem('siteUserId');
       
@@ -157,16 +157,16 @@ const AutoEmailSync: React.FC<AutoEmailSyncProps> = ({
           } else {
             // Save to Firebase for Firebase users
             const userRef = doc(db, 'users', userId);
-            await setDoc(userRef, {
-              autoMonitoring: {
-                isEnabled: settings.isEnabled,
-                isStatusEnabled: settings.isStatusEnabled,
-                syncInterval: settings.syncInterval,
-                lastSync: settings.lastSync ? settings.lastSync.toISOString() : null,
-                lastStatusUpdate: settings.lastStatusUpdate ? settings.lastStatusUpdate.toISOString() : null,
-              }
-            }, { merge: true });
-            console.log('Auto monitoring settings saved to Firebase', settings);
+          await setDoc(userRef, {
+            autoMonitoring: {
+              isEnabled: settings.isEnabled,
+              isStatusEnabled: settings.isStatusEnabled,
+              syncInterval: settings.syncInterval,
+              lastSync: settings.lastSync ? settings.lastSync.toISOString() : null,
+              lastStatusUpdate: settings.lastStatusUpdate ? settings.lastStatusUpdate.toISOString() : null,
+            }
+          }, { merge: true });
+          console.log('Auto monitoring settings saved to Firebase', settings);
           }
         } catch (error: any) {
           console.error('Error saving auto monitoring settings:', error);

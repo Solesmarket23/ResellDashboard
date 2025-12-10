@@ -1264,9 +1264,32 @@ const Purchases = () => {
         syncedAt: new Date().toISOString()
       }));
       
-      // Save to Firebase for both site password users and Firebase auth users
-      {
-        // For Firebase users, save to Firebase
+      if (isSitePasswordUser) {
+        // Site password user - use API endpoint to save
+        console.log('💾 Saving purchases via API for site password user...');
+        
+        try {
+          const response = await fetch('/api/purchases/save-gmail', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId,
+              purchases: purchaseDataList
+            })
+          });
+          
+          if (!response.ok) {
+            throw new Error('Failed to save purchases via API');
+          }
+          
+          const result = await response.json();
+          console.log(`✅ Gmail purchases saved via API: ${result.saved} saved, ${result.deleted} deleted`);
+        } catch (error) {
+          console.error('❌ Error saving Gmail purchases via API:', error);
+          throw error;
+        }
+      } else {
+        // Firebase user - save directly using client SDK
         console.log('💾 Saving purchases to Firebase for Firebase user...');
         
         // Get existing Gmail purchases to merge (not delete)
@@ -1401,7 +1424,7 @@ const Purchases = () => {
         }
         
         console.log(`✅ Gmail sync complete: ${createdCount} created, ${updatedCount} updated, ${purchasesToDelete.length} deleted`);
-      }
+      } // End of Firebase user block
       
     } catch (error) {
       console.error('❌ Error saving Gmail purchases:', error);
@@ -2564,6 +2587,9 @@ const Purchases = () => {
   const handleSaveTracking = async (purchase: any) => {
     const trackingNumber = editingTrackingValue.trim();
     const purchaseId = purchase.id || purchase.orderNumber;
+    
+    // Clear highlight when saving tracking
+    setHighlightedPurchase(null);
 
     // Validate tracking number format (optional - allow any input)
     if (trackingNumber === '') {
@@ -2768,6 +2794,8 @@ const Purchases = () => {
   const handleCancelEditTracking = () => {
     setEditingTracking(null);
     setEditingTrackingValue('');
+    // Clear highlight when canceling
+    setHighlightedPurchase(null);
   };
 
   // Handler for status updates from StatusUpdater component
@@ -3723,13 +3751,7 @@ const Purchases = () => {
         </div>
       )}
 
-      {/* Loading State */}
-      {loading && (
-        <div className="flex items-center justify-center py-8">
-          <RefreshCw className={`w-6 h-6 animate-spin ${currentTheme.colors.accent} mr-2`} />
-          <span className={`${currentTheme.colors.textSecondary}`}>Fetching purchases from Gmail...</span>
-        </div>
-      )}
+      {/* Loading State - Removed to make purchases populate more seamlessly */}
 
       {/* Table */}
       <div className={`rounded-xl overflow-hidden ${
@@ -4242,11 +4264,7 @@ const Purchases = () => {
                         // Highlight this purchase so user knows which one they're checking
                         const purchaseId = purchase.id?.toString() || purchase.orderNumber;
                         setHighlightedPurchase(purchaseId);
-                        
-                        // Auto-remove highlight after 15 seconds
-                        setTimeout(() => {
-                          setHighlightedPurchase(null);
-                        }, 15000);
+                        // Highlight will be removed when user saves/cancels tracking
                       }}
                     >
                       {formatOrderNumberForDisplay(purchase.orderNumber)}
@@ -4392,11 +4410,7 @@ const Purchases = () => {
                             setTimeout(() => {
                               handleStartEditTracking(purchase);
                             }, 1000);
-                            
-                            // Auto-remove highlight after 15 seconds
-                            setTimeout(() => {
-                              setHighlightedPurchase(null);
-                            }, 15000);
+                            // Highlight will be removed when user saves/cancels tracking
                           }}
                         >
                           <Mail className="w-4 h-4" />

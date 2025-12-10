@@ -305,18 +305,18 @@ const GmailBatchedSyncModal: React.FC<GmailBatchedSyncModalProps> = ({ isOpen, o
             console.error('Error saving purchases:', saveError);
           }
         }
-        
-        // Call onComplete to refresh the purchases list
-        onComplete();
+      
+      // Call onComplete to refresh the purchases list
+      onComplete();
       }
 
     } catch (err: any) {
       // Don't show error if it was aborted by user
       if (err.name !== 'AbortError') {
-        const errorMsg = err.message || String(err);
-        setError(errorMsg);
-        addLog(`❌ Error: ${errorMsg}`);
-        console.error('Gmail sync error:', err);
+      const errorMsg = err.message || String(err);
+      setError(errorMsg);
+      addLog(`❌ Error: ${errorMsg}`);
+      console.error('Gmail sync error:', err);
       }
     } finally {
       setIsRunning(false);

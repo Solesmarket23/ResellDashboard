@@ -101,8 +101,13 @@ export async function POST(request: NextRequest) {
           
           for (const purchase of consolidated) {
             try {
+              // Remove the 'id' field if it exists (it might be set to orderNumber by frontend)
+              // Firebase will auto-generate a new document ID
+              const purchaseData = { ...purchase };
+              delete purchaseData.id; // Remove id field to let Firebase auto-generate it
+              
               await adminDb.collection('purchases').add({
-                ...purchase,
+                ...purchaseData,
                 userId: userId,
                 type: 'gmail',
                 createdAt: new Date().toISOString(),
