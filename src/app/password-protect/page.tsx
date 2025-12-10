@@ -34,10 +34,9 @@ function LoginForm() {
           localStorage.setItem('siteUserEmail', data.email || 'user@solesmarket.com');
           console.log('🔐 Stored user data in localStorage');
         }
-        // Redirect to login/signup page
-        const loginUrl = `/login?from=${encodeURIComponent(from)}`;
-        console.log('🔐 Redirecting to login:', loginUrl);
-        window.location.href = loginUrl;
+        // Redirect directly to dashboard (skip login page since we disabled Firebase auth)
+        console.log('🔐 Redirecting to dashboard:', from);
+        window.location.href = from;
       } else {
         setError('Invalid password');
       }
