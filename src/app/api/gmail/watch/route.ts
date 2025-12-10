@@ -1,17 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { google } from 'googleapis';
+import { cookies } from 'next/headers';
 
 // API route to register Gmail push notifications for a user
 // This tells Gmail to send webhook notifications when new emails arrive
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, accessToken, refreshToken } = await request.json();
+    const cookieStore = cookies();
+    
+    // Try to get from request body first, fall back to cookies
+    let userId, accessToken, refreshToken;
+    
+    try {
+      const body = await request.json();
+      userId = body.userId;
+      accessToken = body.accessToken;
+      refreshToken = body.refreshToken;
+    } catch (e) {
+      // No body or invalid JSON, use cookies
+    }
+    
+    // Fall back to cookies if not in body
+    if (!accessToken) {
+      accessToken = cookieStore.get('gmail_access_token')?.value;
+    }
+    if (!refreshToken) {
+      refreshToken = cookieStore.get('gmail_refresh_token')?.value;
+    }
+    if (!userId) {
+      userId = cookieStore.get('userId')?.value || cookieStore.get('siteUserId')?.value;
+    }
 
-    if (!userId || !accessToken) {
+    if (!accessToken) {
       return NextResponse.json({ 
-        error: 'Missing required parameters',
-        message: 'userId and accessToken are required'
+        error: 'Missing access token',
+        message: 'Gmail not connected'
+      }, { status: 400 });
+    }
+
+    if (!userId) {
+      return NextResponse.json({ 
+        error: 'Missing user ID',
+        message: 'User not authenticated'
       }, { status: 400 });
     }
 

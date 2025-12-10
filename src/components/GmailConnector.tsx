@@ -61,23 +61,20 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
     try {
       console.log('📬 Registering Gmail webhook...');
       
+      // Call watch endpoint - it will get tokens from cookies
       const response = await fetch('/api/gmail/watch', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userId: statusData.userId,
-          accessToken: statusData.accessToken,
-          refreshToken: statusData.refreshToken
-        })
+        }
       });
 
       if (response.ok) {
         const result = await response.json();
         console.log('✅ Gmail webhook registered:', result);
       } else {
-        console.warn('⚠️ Gmail webhook registration failed:', await response.text());
+        const errorText = await response.text();
+        console.warn('⚠️ Gmail webhook registration failed:', errorText);
       }
     } catch (error) {
       console.warn('⚠️ Gmail webhook registration error:', error);
