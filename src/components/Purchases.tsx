@@ -961,6 +961,94 @@ const Purchases = () => {
     };
   }, [user, purchases.length]); // Re-run when user changes or purchase count changes
 
+  // 🔥 NEW: Polling for site password users (since they can't use Firebase real-time)
+  useEffect(() => {
+    // Only poll for site password users
+    if (user) {
+      console.log('⏭️ Skipping polling (Firebase user has real-time listener)');
+      return;
+    }
+
+    const siteUserId = localStorage.getItem('siteUserId');
+    if (!siteUserId) {
+      return;
+    }
+
+    console.log('⏰ Setting up polling for site password user...');
+    
+    // Poll every 10 seconds for new purchases
+    const pollInterval = setInterval(async () => {
+      try {
+        console.log('🔄 Polling for new purchases...');
+        
+        // Get current purchase count
+        const currentCount = purchases.length;
+        
+        // Fetch latest purchases from API
+        const response = await fetch(`/api/purchases/list?userId=${siteUserId}`);
+        if (!response.ok) {
+          console.error('❌ Failed to poll purchases');
+          return;
+        }
+        
+        const data = await response.json();
+        const latestPurchases = data.purchases || [];
+        
+        // Consolidate to get unique purchases
+        const consolidated = consolidatePurchasesByOrderNumber(latestPurchases);
+        
+        // Check if we have new purchases
+        if (consolidated.length > currentCount) {
+          const newCount = consolidated.length - currentCount;
+          console.log(`✨ NEW PURCHASES DETECTED via polling: ${newCount}`);
+          
+          // Get the IDs of existing purchases
+          const existingIds = new Set(purchases.map((p: any) => p.id));
+          
+          // Find the new purchase IDs
+          const newIds = new Set(
+            consolidated
+              .filter((p: any) => !existingIds.has(p.id))
+              .map((p: any) => p.id)
+          );
+          
+          // Update state with new purchases
+          setNewPurchaseIds(newIds);
+          setNewPurchaseCount(newCount);
+          setShowNewPurchaseToast(true);
+          
+          // Auto-hide toast after 5 seconds
+          setTimeout(() => {
+            setShowNewPurchaseToast(false);
+          }, 5000);
+          
+          // Update purchases
+          setPurchases(consolidated);
+          setManualPurchases(consolidated);
+          
+          // Update totals
+          const totalPrice = consolidated.reduce((sum: number, p: any) => {
+            const price = parseFloat(p.price?.replace(/[^0-9.]/g, '') || '0');
+            return sum + price;
+          }, 0);
+          setTotalValue(`$${totalPrice.toFixed(2)}`);
+          setTotalCount(consolidated.length);
+        }
+        
+      } catch (error) {
+        console.error('❌ Error polling purchases:', error);
+      }
+    }, 10000); // Poll every 10 seconds
+
+    console.log('✅ Polling active (every 10 seconds)');
+
+    // Cleanup on unmount
+    return () => {
+      console.log('⏰ Cleaning up polling');
+      clearInterval(pollInterval);
+    };
+  }, [user, purchases.length]); // Re-run when user changes or purchase count changes
+
   // Check Gmail connection status
   const checkGmailConnectionStatus = async () => {
     try {

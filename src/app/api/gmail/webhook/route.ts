@@ -149,13 +149,13 @@ export async function POST(request: NextRequest) {
                 syncedAt: new Date().toISOString()
               });
               savedCount++;
-              console.log(`✅ Saved purchase ${purchase.orderNumber}`);
+              console.log(`✅ Saved purchase ${purchase.orderNumber} - 🔴 REAL-TIME UPDATE`);
             } catch (error) {
               console.error(`❌ Failed to save purchase ${purchase.orderNumber}:`, error);
             }
           }
           
-          console.log(`✅ Webhook saved ${savedCount}/${consolidated.length} new purchases`);
+          console.log(`✅ Webhook saved ${savedCount}/${consolidated.length} new purchases - 🔴 REAL-TIME UPDATES TRIGGERED`);
         }
         
         // Update last webhook sync time
