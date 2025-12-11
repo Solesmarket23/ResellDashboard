@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/cron/sync-purchases",
-      "schedule": "*/15 * * * *"
+      "schedule": "0 3 * * *"
     },
     {
       "path": "/api/cron/renew-gmail-watches",
