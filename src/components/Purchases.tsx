@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { ChevronDown, Edit, MoreHorizontal, Camera, RefreshCw, Mail, Trash2, Settings, Plus, Shield, Wrench, Download, FileSpreadsheet, FileText, FileJson } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
-import { addDocument, getDocuments, updateDocument, deleteDocument } from '../lib/firebase/firebaseUtils';
+import { addDocument, getDocuments, updateDocument, deleteDocument, subscribeToCollection } from '../lib/firebase/firebaseUtils';
 import { generateGmailSearchUrl, generateGmailShippedEmailUrl, formatOrderNumberForDisplay } from '../lib/utils/orderNumberUtils';
 import { exportToCSV, exportToExcel, exportToJSON, getExportStats, ExportablePurchase } from '../lib/utils/exportUtils';
 import { consolidatePurchasesByOrderNumber, getStatusPriority } from '../lib/utils/statusPriority';
@@ -83,6 +83,11 @@ const Purchases = () => {
   const [editingTracking, setEditingTracking] = useState<string | null>(null); // Track which purchase is being edited (by id or orderNumber)
   const [editingTrackingValue, setEditingTrackingValue] = useState<string>(''); // Current value being edited
   const [highlightedPurchase, setHighlightedPurchase] = useState<string | null>(null); // Track which purchase was clicked to view email
+  
+  // Real-time updates state
+  const [newPurchaseIds, setNewPurchaseIds] = useState<Set<string>>(new Set()); // Track new purchases from webhook
+  const [showNewPurchaseToast, setShowNewPurchaseToast] = useState(false);
+  const [newPurchaseCount, setNewPurchaseCount] = useState(0);
   
   // Edit/Delete Modal State
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -877,6 +882,84 @@ const Purchases = () => {
     // Check Gmail connection status on mount
     checkGmailConnectionStatus();
   }, [user]);
+
+  // 🔥 NEW: Real-time Firebase listener for purchases
+  useEffect(() => {
+    // Only set up listener for Firebase users (not site password users)
+    // Site password users rely on API endpoints which don't have real-time capability
+    if (!user) {
+      console.log('⏭️ Skipping real-time listener (site password user)');
+      return;
+    }
+
+    const userId = user.uid;
+    console.log('🔴 Setting up real-time listener for purchases...');
+
+    // Get current purchase IDs to detect new ones
+    const existingPurchaseIds = new Set(purchases.map((p: any) => p.id));
+    console.log(`📊 Current purchase count: ${existingPurchaseIds.size}`);
+
+    // Subscribe to purchases collection changes
+    const unsubscribe = subscribeToCollection(
+      'purchases',
+      (updatedPurchases: any[]) => {
+        // Filter for current user's purchases
+        const userPurchases = updatedPurchases.filter((p: any) => p.userId === userId);
+        console.log(`🔴 Real-time update: ${userPurchases.length} purchases for user ${userId}`);
+
+        // Detect new purchases (ones not in our existing set)
+        const newPurchases = userPurchases.filter((p: any) => !existingPurchaseIds.has(p.id));
+        
+        if (newPurchases.length > 0) {
+          console.log(`✨ NEW PURCHASES DETECTED: ${newPurchases.length}`);
+          
+          // Track the new purchase IDs for highlighting
+          const newIds = new Set(newPurchases.map((p: any) => p.id));
+          setNewPurchaseIds(newIds);
+          
+          // Show toast notification
+          setNewPurchaseCount(newPurchases.length);
+          setShowNewPurchaseToast(true);
+          
+          // Auto-hide toast after 5 seconds
+          setTimeout(() => {
+            setShowNewPurchaseToast(false);
+          }, 5000);
+          
+          // Log the new purchases
+          newPurchases.forEach((p: any) => {
+            console.log(`  📦 New: ${p.product?.name || 'Unknown'} - ${p.orderNumber}`);
+          });
+        }
+
+        // Update purchases state with consolidated data
+        const consolidated = consolidatePurchasesByOrderNumber(userPurchases);
+        console.log(`🔄 Consolidation: ${userPurchases.length} → ${consolidated.length} unique`);
+        
+        setPurchases(consolidated);
+        setManualPurchases(consolidated);
+        
+        // Update totals
+        const totalPrice = consolidated.reduce((sum: number, p: any) => {
+          const price = parseFloat(p.price?.replace(/[^0-9.]/g, '') || '0');
+          return sum + price;
+        }, 0);
+        setTotalValue(`$${totalPrice.toFixed(2)}`);
+        setTotalCount(consolidated.length);
+      },
+      (error: any) => {
+        console.error('❌ Real-time listener error:', error);
+      }
+    );
+
+    console.log('✅ Real-time listener active');
+
+    // Cleanup on unmount
+    return () => {
+      console.log('🔴 Cleaning up real-time listener');
+      unsubscribe();
+    };
+  }, [user, purchases.length]); // Re-run when user changes or purchase count changes
 
   // Check Gmail connection status
   const checkGmailConnectionStatus = async () => {
@@ -4164,6 +4247,9 @@ const Purchases = () => {
                 // Safety check to ensure purchase exists and has required structure
                 if (!purchase) return null;
                 
+                // Check if this is a new purchase from webhook
+                const isNewPurchase = newPurchaseIds.has(purchase.id?.toString() || '');
+                
                 return (
                 <tr 
                   key={purchase.id?.toString() || Math.random()} 
@@ -4172,10 +4258,20 @@ const Purchases = () => {
                     boxShadow: currentTheme.name === 'Neon' 
                       ? 'inset 0 0 0 3px #22d3ee, 0 20px 50px rgba(34, 211, 238, 0.3)'
                       : 'inset 0 0 0 3px #3b82f6, 0 20px 50px rgba(59, 130, 246, 0.3)'
+                  } : isNewPurchase ? {
+                    boxShadow: currentTheme.name === 'Neon'
+                      ? 'inset 0 0 0 2px #10b981, 0 15px 40px rgba(16, 185, 129, 0.3)'
+                      : 'inset 0 0 0 2px #10b981, 0 15px 40px rgba(16, 185, 129, 0.2)',
+                    animation: 'pulse-glow 2s ease-in-out infinite'
                   } : undefined}
                   className={`group transition-all duration-300 ${
+                    // Check if this is a NEW purchase (from webhook)
+                    isNewPurchase
+                      ? currentTheme.name === 'Neon'
+                        ? 'bg-gradient-to-r from-green-500/30 via-emerald-500/20 to-green-500/30 animate-pulse-slow'
+                        : 'bg-gradient-to-r from-green-100 via-emerald-50 to-green-100 animate-pulse-slow'
                     // Check if this purchase is highlighted (user clicked email button)
-                    highlightedPurchase === (purchase.id?.toString() || purchase.orderNumber)
+                    : highlightedPurchase === (purchase.id?.toString() || purchase.orderNumber)
                       ? currentTheme.name === 'Neon'
                         ? 'bg-gradient-to-r from-cyan-500/30 via-blue-500/20 to-cyan-500/30'
                         : 'bg-gradient-to-r from-blue-200 via-blue-100 to-blue-200'
@@ -4185,8 +4281,20 @@ const Purchases = () => {
                   }`}
                 >
                   <td className="px-3 py-3 text-center relative">
+                    {/* NEW Purchase Indicator */}
+                    {isNewPurchase && (
+                      <div className={`absolute -left-0 top-0 bottom-0 w-2 ${
+                        currentTheme.name === 'Neon' 
+                          ? 'bg-gradient-to-b from-green-400 via-emerald-500 to-green-400 shadow-lg shadow-green-500/50' 
+                          : 'bg-gradient-to-b from-green-500 via-emerald-600 to-green-500 shadow-lg'
+                      }`} 
+                      style={{
+                        animation: 'pulse-glow 2s ease-in-out infinite'
+                      }}
+                      />
+                    )}
                     {/* Bold indicator when user is checking email for this purchase */}
-                    {highlightedPurchase === (purchase.id?.toString() || purchase.orderNumber) && (
+                    {!isNewPurchase && highlightedPurchase === (purchase.id?.toString() || purchase.orderNumber) && (
                       <div className={`absolute -left-0 top-0 bottom-0 w-2 ${
                         currentTheme.name === 'Neon' 
                           ? 'bg-gradient-to-b from-cyan-400 via-cyan-500 to-cyan-400 shadow-lg shadow-cyan-500/50' 
@@ -5471,6 +5579,121 @@ const Purchases = () => {
           onClose={() => setNotification({ ...notification, isVisible: false })}
         />
       )}
+
+      {/* 🔥 NEW: Real-time Purchase Toast Notification */}
+      {showNewPurchaseToast && (
+        <div 
+          className="fixed top-4 right-4 z-[9999] animate-slide-in-right"
+          style={{
+            animation: 'slideInRight 0.3s ease-out'
+          }}
+        >
+          <div 
+            className={`
+              ${currentTheme.colors.cardBg} 
+              ${currentTheme.colors.border} 
+              border-2 rounded-lg shadow-2xl p-4 pr-12 min-w-[300px] max-w-[400px]
+              backdrop-blur-sm
+            `}
+            style={{
+              boxShadow: `0 0 20px ${currentTheme.colors.accent}40, 0 0 40px ${currentTheme.colors.accent}20`
+            }}
+          >
+            <div className="flex items-start gap-3">
+              {/* Icon */}
+              <div 
+                className={`
+                  ${currentTheme.colors.accent} 
+                  rounded-full p-2 flex-shrink-0
+                  animate-pulse
+                `}
+                style={{
+                  boxShadow: `0 0 15px ${currentTheme.colors.accent}`
+                }}
+              >
+                <Mail className="w-5 h-5 text-white" />
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 pt-0.5">
+                <h4 className={`${currentTheme.colors.text} font-semibold text-sm mb-1`}>
+                  New Purchase{newPurchaseCount > 1 ? 's' : ''} Detected!
+                </h4>
+                <p className={`${currentTheme.colors.textSecondary} text-xs`}>
+                  {newPurchaseCount} new {newPurchaseCount > 1 ? 'purchases have' : 'purchase has'} been added from Gmail
+                </p>
+              </div>
+
+              {/* Close Button */}
+              <button
+                onClick={() => setShowNewPurchaseToast(false)}
+                className={`
+                  ${currentTheme.colors.textSecondary} 
+                  hover:${currentTheme.colors.text}
+                  transition-colors absolute top-2 right-2
+                `}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Progress Bar */}
+            <div 
+              className={`
+                mt-3 h-1 ${currentTheme.colors.cardBgSecondary} rounded-full overflow-hidden
+              `}
+            >
+              <div 
+                className={`h-full ${currentTheme.colors.accent}`}
+                style={{
+                  animation: 'progressBar 5s linear forwards',
+                  boxShadow: `0 0 10px ${currentTheme.colors.accent}`
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add keyframe animations */}
+      <style jsx>{`
+        @keyframes slideInRight {
+          from {
+            transform: translateX(400px);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+
+        @keyframes progressBar {
+          from {
+            width: 100%;
+          }
+          to {
+            width: 0%;
+          }
+        }
+
+        @keyframes pulse-glow {
+          0%, 100% {
+            opacity: 1;
+            filter: brightness(1);
+          }
+          50% {
+            opacity: 0.8;
+            filter: brightness(1.3);
+          }
+        }
+
+        .animate-pulse-slow {
+          animation: pulse-glow 3s ease-in-out infinite;
+        }
+      `}</style>
     </div>
   );
 };
