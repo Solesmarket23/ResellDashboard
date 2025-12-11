@@ -93,6 +93,21 @@ export async function GET(request: NextRequest) {
         const { getAdminDb } = await import('@/lib/firebase/firebaseAdmin');
         const adminDb = getAdminDb();
         
+        // First, ensure user document exists (especially for site password users)
+        const userDoc = await adminDb.collection('users').doc(userId).get();
+        
+        if (!userDoc.exists) {
+          // Create user document if it doesn't exist (for site password users)
+          console.log(`📝 Creating user document for user ${userId}`);
+          await adminDb.collection('users').doc(userId).set({
+            userId: userId,
+            userType: 'site-password',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
+        }
+        
+        // Now save/update Gmail email and tokens
         await adminDb.collection('users').doc(userId).set({
           gmailEmail: profile.data.emailAddress,
           gmailTokens: {

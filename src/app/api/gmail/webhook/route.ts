@@ -38,6 +38,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true });
     }
 
+    console.log(`🔍 Looking up user for Gmail: ${emailAddress}`);
+
     // Find the user with this email address
     const { getAdminDb } = await import('@/lib/firebase/firebaseAdmin');
     const adminDb = getAdminDb();
@@ -50,11 +52,13 @@ export async function POST(request: NextRequest) {
     
     if (usersSnapshot.empty) {
       console.log(`⚠️ No Firebase user found for email: ${emailAddress}`);
-      console.log(`💡 For site password users, webhooks require storing Gmail email in Firebase`);
-      console.log(`💡 Webhook will work automatically for Firebase authenticated users`);
+      console.log(`💡 This likely means:`);
+      console.log(`   1. User hasn't connected Gmail yet (no gmailEmail saved)`);
+      console.log(`   2. User is a site password user without Firebase user document`);
+      console.log(`   3. Gmail status endpoint hasn't been called yet to save gmailEmail`);
       return NextResponse.json({ 
         received: true,
-        note: 'Site password users: webhooks require Firebase user record with gmailEmail field'
+        note: 'No user found - gmailEmail must be saved in Firebase for webhooks to work'
       });
     }
     
@@ -63,13 +67,20 @@ export async function POST(request: NextRequest) {
     const userData = userDoc.data();
     
     console.log(`✅ Found user ${userId} for ${emailAddress}`);
+    console.log(`📊 User data: userType=${userData.userType || 'firebase'}, hasTokens=${!!userData.gmailTokens}`);
     
     // Get Gmail tokens
     const gmailTokens = userData.gmailTokens;
     if (!gmailTokens?.access_token) {
       console.log(`⚠️ No Gmail tokens for user ${userId}`);
-      return NextResponse.json({ received: true });
+      console.log(`💡 User document exists but tokens are missing - this should not happen`);
+      return NextResponse.json({ 
+        received: true,
+        note: 'User found but missing Gmail tokens'
+      });
     }
+
+    console.log(`🔑 Using access token: ${gmailTokens.access_token.substring(0, 30)}...`);
 
     // Trigger purchase sync and save to Firebase using Admin SDK
     console.log(`🔄 Triggering sync for user ${userId} with historyId ${historyId}`);
