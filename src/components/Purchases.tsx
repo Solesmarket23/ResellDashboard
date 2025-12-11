@@ -1505,6 +1505,27 @@ const Purchases = () => {
           
           const result = await response.json();
           console.log(`✅ Gmail purchases saved via API: ${result.saved} saved, ${result.deleted} deleted`);
+          
+          // 🔥 CRITICAL: Reload purchases from API to get correct Firebase document IDs
+          console.log('🔄 Reloading purchases to get Firebase document IDs...');
+          const listResponse = await fetch(`/api/purchases/list?userId=${userId}`);
+          if (listResponse.ok) {
+            const listData = await listResponse.json();
+            const reloadedPurchases = listData.purchases || [];
+            console.log(`✅ Reloaded ${reloadedPurchases.length} purchases with correct IDs`);
+            
+            // Verify IDs are correct
+            if (reloadedPurchases.length > 0) {
+              const firstId = reloadedPurchases[0].id;
+              const isOrderNumber = firstId?.startsWith('03-');
+              console.log(`${isOrderNumber ? '❌ STILL WRONG' : '✅ CORRECT'}: First ID is "${firstId}"`);
+            }
+            
+            // Return reloaded purchases with correct Firebase document IDs
+            return reloadedPurchases;
+          } else {
+            console.warn('⚠️ Failed to reload purchases, using original data');
+          }
         } catch (error) {
           console.error('❌ Error saving Gmail purchases via API:', error);
           throw error;
