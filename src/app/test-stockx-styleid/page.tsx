@@ -25,7 +25,10 @@ interface SearchResult {
 }
 
 export default function TestStockXStyleId() {
+  const [activeTab, setActiveTab] = useState<'styleid' | 'variant'>('styleid');
   const [styleId, setStyleId] = useState('');
+  const [productId, setProductId] = useState('');
+  const [variantId, setVariantId] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<SearchResult | null>(null);
 
@@ -59,6 +62,39 @@ export default function TestStockXStyleId() {
     }
   };
 
+  const testVariantMarketData = async () => {
+    if (!productId.trim() || !variantId.trim()) {
+      alert('Please enter both Product ID and Variant ID');
+      return;
+    }
+
+    setLoading(true);
+    setResult(null);
+
+    try {
+      const response = await fetch('/api/test-variant-market-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          productId: productId.trim(),
+          variantId: variantId.trim()
+        })
+      });
+
+      const data = await response.json();
+      setResult(data as any);
+    } catch (error) {
+      setResult({
+        success: false,
+        styleId: '',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        logs: ['Failed to fetch']
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const testExamples = [
     { id: 'FZ8117-400', name: 'Nike Sabrina 3 Ice Cold' },
     { id: 'ID5480', name: 'adidas Yeezy Slide Salt' },
@@ -80,7 +116,32 @@ export default function TestStockXStyleId() {
           </p>
         </div>
 
+        {/* Tab Selector */}
+        <div className="bg-gray-800 rounded-lg p-2 mb-6 border border-gray-700 flex gap-2">
+          <button
+            onClick={() => setActiveTab('styleid')}
+            className={`flex-1 px-4 py-2 rounded-md font-semibold transition-colors ${
+              activeTab === 'styleid'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            }`}
+          >
+            Test by StyleId
+          </button>
+          <button
+            onClick={() => setActiveTab('variant')}
+            className={`flex-1 px-4 py-2 rounded-md font-semibold transition-colors ${
+              activeTab === 'variant'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            }`}
+          >
+            Test by Product/Variant ID
+          </button>
+        </div>
+
         {/* Input Section */}
+        {activeTab === 'styleid' ? (
         <div className="bg-gray-800 rounded-lg p-6 mb-6 border border-gray-700">
           <label className="block text-white font-semibold mb-2">
             Enter StyleId:
@@ -120,6 +181,54 @@ export default function TestStockXStyleId() {
             </div>
           </div>
         </div>
+        ) : (
+        <div className="bg-gray-800 rounded-lg p-6 mb-6 border border-gray-700">
+          <h3 className="text-white font-semibold text-lg mb-4">Test Market Data API</h3>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-white font-semibold mb-2">
+                Product ID:
+              </label>
+              <input
+                type="text"
+                value={productId}
+                onChange={(e) => setProductId(e.target.value)}
+                placeholder="e.g., 2d9c05af-5a83-479d-8221-eceee97bc0df"
+                className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none font-mono text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-white font-semibold mb-2">
+                Variant ID:
+              </label>
+              <input
+                type="text"
+                value={variantId}
+                onChange={(e) => setVariantId(e.target.value)}
+                placeholder="e.g., 3d2dac3d-5616-41dd-8dcb-cfa507399f99"
+                className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none font-mono text-sm"
+              />
+            </div>
+
+            <button
+              onClick={testVariantMarketData}
+              disabled={loading || !productId.trim() || !variantId.trim()}
+              className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
+            >
+              {loading ? 'Testing...' : 'Get Market Data'}
+            </button>
+          </div>
+
+          <div className="mt-4 p-4 bg-blue-900/20 border border-blue-600 rounded-lg">
+            <p className="text-blue-300 text-sm">
+              💡 <strong>Tip:</strong> Get Product ID and Variant ID from the Arbitrage Finder results. 
+              This tests the variant-specific market data endpoint.
+            </p>
+          </div>
+        </div>
+        )}
 
         {/* Results Section */}
         {result && (
