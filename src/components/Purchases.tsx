@@ -1875,6 +1875,16 @@ const Purchases = () => {
           const data = await response.json();
           allPurchases = data.purchases || [];
           console.log(`📄 API returned ${allPurchases.length} purchases`);
+          
+          // 🔥 DEBUG: Verify IDs are correct
+          if (allPurchases.length > 0) {
+            const firstPurchase = allPurchases[0];
+            const isOrderNumber = firstPurchase.id?.startsWith('03-');
+            console.log(`🔍 ID Check: First purchase ID = "${firstPurchase.id}" ${isOrderNumber ? '❌ (ORDER NUMBER!)' : '✅ (Firebase ID)'}`);
+            if (isOrderNumber) {
+              console.error('❌❌❌ CRITICAL: API is returning order numbers as IDs! This will break tracking save!');
+            }
+          }
         } else {
           console.error('Failed to load purchases from API:', response.status);
           allPurchases = [];
@@ -5709,15 +5719,18 @@ const Purchases = () => {
                 // Save purchases as they come in
                 await saveGmailPurchasesToFirebase(purchases);
                 
-                // Only reload UI after each batch (not after every single purchase)
-                // The GmailBatchedSync component calls this once per batch with all accumulated purchases
-                loadManualPurchasesFromFirebase();
+                // 🔥 CRITICAL: Reload purchases to get correct Firebase document IDs
+                console.log('🔄 Reloading purchases after save to get correct Firebase IDs...');
+                await loadManualPurchasesFromFirebase();
+                console.log('✅ Purchases reloaded with correct IDs');
               }}
-              onSyncComplete={(totalPurchases) => {
+              onSyncComplete={async (totalPurchases) => {
                 console.log(`🎉 Sync complete! Total: ${totalPurchases} purchases`);
                 setShowGmailBatchedSyncModal(false);
                 // Final reload after sync completes
-                loadManualPurchasesFromFirebase();
+                console.log('🔄 Final reload after sync complete...');
+                await loadManualPurchasesFromFirebase();
+                console.log('✅ Final reload complete');
               }}
               onClose={() => setShowGmailBatchedSyncModal(false)}
               autoStart={true}
