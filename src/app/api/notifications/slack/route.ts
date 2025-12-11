@@ -41,14 +41,18 @@ function extractBrandFromProductName(productName: string): string {
 
 /**
  * Fetch real-time StockX market price for a product
+ * Prioritizes styleId search for accuracy, falls back to product name
  */
 async function fetchStockXMarketPrice(
   productName: string, 
   size: string,
-  request: NextRequest
+  request: NextRequest,
+  styleId?: string
 ): Promise<number | null> {
   try {
-    console.log(`🔍 Fetching StockX price for: ${productName} (Size: ${size})`);
+    const searchTerm = styleId || productName;
+    const searchType = styleId ? 'StyleId' : 'Product Name';
+    console.log(`🔍 Fetching StockX price for: ${productName} (Size: ${size}) using ${searchType}: ${searchTerm}`);
     
     // Get StockX credentials from cookies
     const accessToken = request.cookies.get('stockx_access_token')?.value;
@@ -60,11 +64,11 @@ async function fetchStockXMarketPrice(
       return null;
     }
     
-    // Step 1: Search for the product
-    const searchQuery = encodeURIComponent(productName);
-    const searchUrl = `https://api.stockx.com/v2/search?query=${searchQuery}`;
+    // Step 1: Search for the product using StyleId (much more accurate!) or product name
+    const searchQuery = encodeURIComponent(searchTerm);
+    const searchUrl = `https://api.stockx.com/v2/catalog/search?query=${searchQuery}&pageSize=5`;
     
-    console.log(`🔎 Searching StockX: ${searchUrl}`);
+    console.log(`🔎 Searching StockX by ${searchType}: ${searchUrl}`);
     
     const searchResponse = await fetch(searchUrl, {
       method: 'GET',
@@ -85,11 +89,11 @@ async function fetchStockXMarketPrice(
     const products = searchData.results || searchData.Products || [];
     
     if (products.length === 0) {
-      console.log(`❌ No products found for: ${productName}`);
+      console.log(`❌ No products found for ${searchType}: ${searchTerm}`);
       return null;
     }
     
-    // Get the first matching product
+    // Get the first matching product (when using styleId, should be exact match)
     const product = products[0];
     const productId = product.id || product.uuid || product.productId;
     
@@ -98,7 +102,7 @@ async function fetchStockXMarketPrice(
       return null;
     }
     
-    console.log(`✅ Found product: ${product.title || product.name} (ID: ${productId})`);
+    console.log(`✅ Found product: ${product.title || product.name} (ID: ${productId})${styleId ? ' via StyleId ✨' : ''}`);
     
     // Step 2: Get market data for this product
     const marketUrl = `https://api.stockx.com/v2/catalog/products/${productId}/market-data`;
@@ -295,6 +299,7 @@ export async function POST(request: NextRequest) {
 
       const productName = purchase.productName || purchase.product?.name || 'Unknown Product';
       const productSize = purchase.productSize || purchase.size || purchase.product?.size || 'Unknown';
+      const styleId = purchase.styleId || purchase.style_id || null;
       
       // Extract brand from product name
       let productBrand = purchase.productBrand || purchase.brand;
@@ -337,12 +342,12 @@ export async function POST(request: NextRequest) {
         marketPrice = typeof purchase.marketPrice === 'number' ? purchase.marketPrice : parseFloat(purchase.marketPrice);
       }
       
-      // If no market price cached, fetch real-time from StockX
+      // If no market price cached, fetch real-time from StockX (prioritize styleId for accuracy!)
       if (!marketPrice || marketPrice <= 0) {
-        const realtimePrice = await fetchStockXMarketPrice(productName, productSize, request);
+        const realtimePrice = await fetchStockXMarketPrice(productName, productSize, request, styleId);
         if (realtimePrice) {
           marketPrice = realtimePrice;
-          console.log(`✅ Real-time price fetched: ${productName} = $${marketPrice}`);
+          console.log(`✅ Real-time price fetched: ${productName}${styleId ? ` (StyleId: ${styleId})` : ''} = $${marketPrice}`);
         }
       } else {
         console.log(`📦 Using cached price: ${productName} = $${marketPrice}`);
