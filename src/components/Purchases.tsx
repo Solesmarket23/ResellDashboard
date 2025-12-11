@@ -899,6 +899,9 @@ const Purchases = () => {
     const existingPurchaseIds = new Set(purchases.map((p: any) => p.id));
     console.log(`📊 Current purchase count: ${existingPurchaseIds.size}`);
 
+    // Track if this is the first snapshot (initial load)
+    let isFirstSnapshot = true;
+
     // Subscribe to purchases collection changes
     const unsubscribe = subscribeToCollection(
       'purchases',
@@ -907,35 +910,47 @@ const Purchases = () => {
         // updatedPurchases already filtered for current user by subscribeToCollection
         console.log(`🔴 Real-time update: ${updatedPurchases.length} purchases for user ${userId}`);
 
-        // Detect new purchases (ones not in our existing set)
-        const newPurchases = updatedPurchases.filter((p: any) => !existingPurchaseIds.has(p.id));
-        
-        if (newPurchases.length > 0) {
-          console.log(`✨ NEW PURCHASES DETECTED: ${newPurchases.length}`);
-          
-          // Track the new purchase IDs for highlighting
-          const newIds = new Set(newPurchases.map((p: any) => p.id));
-          setNewPurchaseIds(newIds);
-          
-          // Show toast notification
-          setNewPurchaseCount(newPurchases.length);
-          setShowNewPurchaseToast(true);
-          
-          // Auto-hide toast after 5 seconds
-          setTimeout(() => {
-            setShowNewPurchaseToast(false);
-          }, 5000);
-          
-          // Log the new purchases
-          newPurchases.forEach((p: any) => {
-            console.log(`  📦 New: ${p.product?.name || 'Unknown'} - ${p.orderNumber}`);
-          });
-        }
-
-        // Update purchases state with consolidated data
+        // Consolidate first to get accurate count
         const consolidated = consolidatePurchasesByOrderNumber(updatedPurchases);
         console.log(`🔄 Consolidation: ${updatedPurchases.length} → ${consolidated.length} unique`);
-        
+
+        // Only detect "new" purchases after the initial load
+        if (!isFirstSnapshot) {
+          // Detect new purchases (ones not in our existing set)
+          const newPurchases = consolidated.filter((p: any) => !existingPurchaseIds.has(p.id));
+          
+          if (newPurchases.length > 0) {
+            console.log(`✨ NEW PURCHASES DETECTED: ${newPurchases.length}`);
+            
+            // Track the new purchase IDs for highlighting
+            const newIds = new Set(newPurchases.map((p: any) => p.id));
+            setNewPurchaseIds(newIds);
+            
+            // Show toast notification
+            setNewPurchaseCount(newPurchases.length);
+            setShowNewPurchaseToast(true);
+            
+            // Auto-hide toast after 5 seconds
+            setTimeout(() => {
+              setShowNewPurchaseToast(false);
+            }, 5000);
+            
+            // Log the new purchases
+            newPurchases.forEach((p: any) => {
+              console.log(`  📦 New: ${p.product?.name || 'Unknown'} - ${p.orderNumber}`);
+            });
+
+            // Update existing IDs set for next comparison
+            consolidated.forEach((p: any) => existingPurchaseIds.add(p.id));
+          }
+        } else {
+          console.log('📸 First snapshot received - not treating as "new" purchases');
+          // Update the existing IDs set with all current purchases
+          consolidated.forEach((p: any) => existingPurchaseIds.add(p.id));
+          isFirstSnapshot = false;
+        }
+
+        // Always update purchases state
         setPurchases(consolidated);
         setManualPurchases(consolidated);
         
@@ -961,7 +976,7 @@ const Purchases = () => {
         unsubscribe();
       }
     };
-  }, [user, purchases.length]); // Re-run when user changes or purchase count changes
+  }, [user]); // Only re-run when user changes, not on purchases.length
 
   // 🔥 NEW: Polling for site password users (since they can't use Firebase real-time)
   useEffect(() => {
@@ -978,13 +993,17 @@ const Purchases = () => {
 
     console.log('⏰ Setting up polling for site password user...');
     
+    // Track if this is the first poll (initial state)
+    let isFirstPoll = true;
+    
     // Poll every 10 seconds for new purchases
     const pollInterval = setInterval(async () => {
       try {
         console.log('🔄 Polling for new purchases...');
         
-        // Get current purchase count
+        // Get current purchase count and IDs
         const currentCount = purchases.length;
+        const existingIds = new Set(purchases.map((p: any) => p.id));
         
         // Fetch latest purchases from API
         const response = await fetch(`/api/purchases/list?userId=${siteUserId}`);
@@ -999,13 +1018,10 @@ const Purchases = () => {
         // Consolidate to get unique purchases
         const consolidated = consolidatePurchasesByOrderNumber(latestPurchases);
         
-        // Check if we have new purchases
-        if (consolidated.length > currentCount) {
+        // Only show toast for NEW purchases after first poll
+        if (!isFirstPoll && consolidated.length > currentCount) {
           const newCount = consolidated.length - currentCount;
           console.log(`✨ NEW PURCHASES DETECTED via polling: ${newCount}`);
-          
-          // Get the IDs of existing purchases
-          const existingIds = new Set(purchases.map((p: any) => p.id));
           
           // Find the new purchase IDs
           const newIds = new Set(
@@ -1023,19 +1039,22 @@ const Purchases = () => {
           setTimeout(() => {
             setShowNewPurchaseToast(false);
           }, 5000);
-          
-          // Update purchases
-          setPurchases(consolidated);
-          setManualPurchases(consolidated);
-          
-          // Update totals
-          const totalPrice = consolidated.reduce((sum: number, p: any) => {
-            const price = parseFloat(p.price?.replace(/[^0-9.]/g, '') || '0');
-            return sum + price;
-          }, 0);
-          setTotalValue(`$${totalPrice.toFixed(2)}`);
-          setTotalCount(consolidated.length);
+        } else if (isFirstPoll) {
+          console.log('📸 First poll - not treating as "new" purchases');
+          isFirstPoll = false;
         }
+        
+        // Always update purchases
+        setPurchases(consolidated);
+        setManualPurchases(consolidated);
+        
+        // Update totals
+        const totalPrice = consolidated.reduce((sum: number, p: any) => {
+          const price = parseFloat(p.price?.replace(/[^0-9.]/g, '') || '0');
+          return sum + price;
+        }, 0);
+        setTotalValue(`$${totalPrice.toFixed(2)}`);
+        setTotalCount(consolidated.length);
         
       } catch (error) {
         console.error('❌ Error polling purchases:', error);
@@ -1049,7 +1068,7 @@ const Purchases = () => {
       console.log('⏰ Cleaning up polling');
       clearInterval(pollInterval);
     };
-  }, [user, purchases.length]); // Re-run when user changes or purchase count changes
+  }, [user]); // Only re-run when user changes
 
   // Check Gmail connection status
   const checkGmailConnectionStatus = async () => {
