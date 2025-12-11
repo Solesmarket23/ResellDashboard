@@ -993,17 +993,14 @@ const Purchases = () => {
 
     console.log('⏰ Setting up polling for site password user...');
     
-    // Track if this is the first poll (initial state)
+    // Use a ref to track purchase IDs across polls (avoids stale closure)
+    const purchaseIdsRef = { current: new Set(purchases.map((p: any) => p.id)) };
     let isFirstPoll = true;
     
     // Poll every 10 seconds for new purchases
     const pollInterval = setInterval(async () => {
       try {
         console.log('🔄 Polling for new purchases...');
-        
-        // Get current purchase count and IDs
-        const currentCount = purchases.length;
-        const existingIds = new Set(purchases.map((p: any) => p.id));
         
         // Fetch latest purchases from API
         const response = await fetch(`/api/purchases/list?userId=${siteUserId}`);
@@ -1018,31 +1015,38 @@ const Purchases = () => {
         // Consolidate to get unique purchases
         const consolidated = consolidatePurchasesByOrderNumber(latestPurchases);
         
-        // Only show toast for NEW purchases after first poll
-        if (!isFirstPoll && consolidated.length > currentCount) {
-          const newCount = consolidated.length - currentCount;
-          console.log(`✨ NEW PURCHASES DETECTED via polling: ${newCount}`);
-          
-          // Find the new purchase IDs
-          const newIds = new Set(
-            consolidated
-              .filter((p: any) => !existingIds.has(p.id))
-              .map((p: any) => p.id)
-          );
+        // Detect NEW purchases by comparing Firebase doc IDs
+        const latestIds = new Set(consolidated.map((p: any) => p.id));
+        const newPurchaseIds = consolidated.filter((p: any) => !purchaseIdsRef.current.has(p.id));
+        
+        // Only show toast if we found genuinely new purchases (after first poll)
+        if (!isFirstPoll && newPurchaseIds.length > 0) {
+          console.log(`✨ NEW PURCHASES DETECTED via polling: ${newPurchaseIds.length}`);
           
           // Update state with new purchases
+          const newIds = new Set(newPurchaseIds.map((p: any) => p.id));
           setNewPurchaseIds(newIds);
-          setNewPurchaseCount(newCount);
+          setNewPurchaseCount(newPurchaseIds.length);
           setShowNewPurchaseToast(true);
           
           // Auto-hide toast after 5 seconds
           setTimeout(() => {
             setShowNewPurchaseToast(false);
           }, 5000);
+          
+          // Log the new purchases
+          newPurchaseIds.forEach((p: any) => {
+            console.log(`  📦 New: ${p.product?.name || 'Unknown'} - ${p.orderNumber}`);
+          });
         } else if (isFirstPoll) {
-          console.log('📸 First poll - not treating as "new" purchases');
+          console.log(`📸 First poll - loaded ${consolidated.length} existing purchases`);
           isFirstPoll = false;
+        } else {
+          console.log(`✅ No new purchases (${consolidated.length} total)`);
         }
+        
+        // Update the ref with current IDs for next comparison
+        purchaseIdsRef.current = latestIds;
         
         // Always update purchases
         setPurchases(consolidated);
