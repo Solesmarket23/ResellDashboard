@@ -84,12 +84,20 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
       consolidatedPurchases.push(orderPurchases[0]);
     } else {
       // Sort by priority (highest first)
-      console.log(`🔄 CONSOLIDATING ${orderPurchases.length} emails for order ${orderNumber}:`);
+      // Only log consolidation details if there are many duplicates (10+)
+      const shouldLogDetails = orderPurchases.length >= 10;
+      
+      if (shouldLogDetails) {
+        console.log(`🔄 CONSOLIDATING ${orderPurchases.length} emails for order ${orderNumber}:`);
+      }
+      
       orderPurchases.forEach((p, idx) => {
         const status = p.status || p.shipping_status || 'Ordered';
         const priority = getStatusPriority(status);
         const subject = (p.email_subject || p.subject || 'N/A').substring(0, 60);
-        console.log(`   ${idx + 1}. Status="${status}" (priority=${priority}), Subject="${subject}"`);
+        if (shouldLogDetails) {
+          console.log(`   ${idx + 1}. Status="${status}" (priority=${priority}), Subject="${subject}"`);
+        }
       });
       
       const sortedPurchases = orderPurchases.sort((a, b) => {
@@ -97,15 +105,18 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
         const statusB = b.status || b.shipping_status || 'Ordered';
         const priorityA = getStatusPriority(statusA);
         const priorityB = getStatusPriority(statusB);
-        console.log(`   Comparing: "${statusA}" (${priorityA}) vs "${statusB}" (${priorityB})`);
+        if (shouldLogDetails) {
+          console.log(`   Comparing: "${statusA}" (${priorityA}) vs "${statusB}" (${priorityB})`);
+        }
         return compareStatusPriority(statusB, statusA);
       });
       
       // Use the highest priority purchase as the base
       const primaryPurchase = { ...sortedPurchases[0] };
       const primaryStatus = primaryPurchase.status || primaryPurchase.shipping_status || 'Ordered';
-      console.log(`✅ PRIMARY PURCHASE selected: Status="${primaryStatus}" (priority=${getStatusPriority(primaryStatus)}), Subject="${(primaryPurchase.email_subject || primaryPurchase.subject || 'N/A').substring(0, 60)}"`);
-      
+      if (shouldLogDetails) {
+        console.log(`✅ PRIMARY PURCHASE selected: Status="${primaryStatus}" (priority=${getStatusPriority(primaryStatus)}), Subject="${(primaryPurchase.email_subject || primaryPurchase.subject || 'N/A').substring(0, 60)}"`);
+      }
       // ALWAYS find the order confirmation email for purchase date
       // Check multiple ways to identify order confirmation emails:
       // PRIORITY: Subject match is most reliable (works even if email was miscategorized)
@@ -152,7 +163,7 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
                               filename.includes('xpress-order-confirmed'));
         
         const found = subjectMatch || statusMatch || filenameMatch;
-        if (found) {
+        if (found && shouldLogDetails) {
           const matchType = subjectMatch ? 'subject' : (statusMatch ? 'status' : 'filename');
           console.log(`🔍 Order confirmation email detected (${matchType}): status="${status}", subject="${p.email_subject || p.subject}", filename="${p.filename}"`);
         }
@@ -163,10 +174,11 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
       // This overwrites any purchase date that might have been set from the primary (shipped/delivered) email
       if (orderConfirmationEmail) {
         const originalPurchaseDate = primaryPurchase.purchaseDate;
-        console.log(`📅 Found order confirmation email for ${orderNumber}:`);
-        console.log(`   Order confirmation: status="${orderConfirmationEmail.status || orderConfirmationEmail.shipping_status}", subject="${orderConfirmationEmail.email_subject || orderConfirmationEmail.subject || 'N/A'}", email_date="${orderConfirmationEmail.email_date}"`);
-        console.log(`   Primary purchase (before): status="${primaryPurchase.status || primaryPurchase.shipping_status}", purchaseDate="${originalPurchaseDate}", email_date="${primaryPurchase.email_date}"`);
-        
+        if (shouldLogDetails) {
+          console.log(`📅 Found order confirmation email for ${orderNumber}:`);
+          console.log(`   Order confirmation: status="${orderConfirmationEmail.status || orderConfirmationEmail.shipping_status}", subject="${orderConfirmationEmail.email_subject || orderConfirmationEmail.subject || 'N/A'}", email_date="${orderConfirmationEmail.email_date}"`);
+          console.log(`   Primary purchase (before): status="${primaryPurchase.status || primaryPurchase.shipping_status}", purchaseDate="${originalPurchaseDate}", email_date="${primaryPurchase.email_date}"`);
+        }
         let purchaseDateSet = false;
         
         // Priority 1: Use email_date from order confirmation email - ALWAYS overwrite
@@ -192,8 +204,9 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
                 ? orderConfirmationEmail.email_date
                 : emailDate.toISOString();
               purchaseDateSet = true;
-              console.log(`✅ OVERWROTE purchase date: "${originalPurchaseDate}" → "${formattedDate}" (from order confirmation email dated ${emailDate.toLocaleDateString()})`);
-            } else {
+              if (shouldLogDetails) {
+                console.log(`✅ OVERWROTE purchase date: "${originalPurchaseDate}" → "${formattedDate}" (from order confirmation email dated ${emailDate.toLocaleDateString()})`);
+              }            } else {
               console.warn(`⚠️ Invalid email_date: "${orderConfirmationEmail.email_date}" (parsed to invalid date)`);
             }
           } catch (e) {
@@ -206,7 +219,9 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
           primaryPurchase.purchaseDate = orderConfirmationEmail.purchaseDate;
           primaryPurchase.purchase_date = orderConfirmationEmail.purchase_date || orderConfirmationEmail.email_date || orderConfirmationEmail.createdAt;
           purchaseDateSet = true;
-          console.log(`✅ Using existing purchaseDate from order confirmation: ${primaryPurchase.purchaseDate}`);
+          if (shouldLogDetails) {
+            console.log(`✅ Using existing purchaseDate from order confirmation: ${primaryPurchase.purchaseDate}`);
+          }
         }
         
         // Priority 3: Final fallback to createdAt from order confirmation email
@@ -219,29 +234,35 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
               primaryPurchase.purchase_date = orderConfirmationEmail.createdAt;
               primaryPurchase.email_date = orderConfirmationEmail.createdAt;
               purchaseDateSet = true;
-              console.log(`✅ Set purchase date from order confirmation createdAt: ${formattedDate}`);
+              if (shouldLogDetails) {
+                console.log(`✅ Set purchase date from order confirmation createdAt: ${formattedDate}`);
+              }
             }
           } catch (e) {
             console.warn(`⚠️ Failed to parse createdAt: ${orderConfirmationEmail.createdAt}`, e);
           }
         }
       } else {
-        console.log(`⚠️ No order confirmation email found for ${orderNumber}`);
-        console.log(`   Available emails (${sortedPurchases.length} total):`);
-        sortedPurchases.forEach((p, idx) => {
-          const status = (p.status || p.shipping_status || '').toLowerCase();
-          const subject = (p.email_subject || p.subject || 'N/A').substring(0, 60);
-          const emailDate = p.email_date || p.createdAt || 'N/A';
-          console.log(`     ${idx + 1}. status="${status}", subject="${subject}", email_date="${emailDate}"`);
-        });
-        console.log(`   ⚠️ WARNING: No order confirmation email found - setting purchase date to "TBD"`);
-        console.log(`   💡 TIP: Order confirmation emails should have status="ordered" and subject containing "Order Confirmed", "Order Confirmation", or "Item Arrived For Verification"`);
-        
+        // Only log warning if there are many duplicates (suggests something might be wrong)
+        if (shouldLogDetails) {
+          console.log(`⚠️ No order confirmation email found for ${orderNumber}`);
+          console.log(`   Available emails (${sortedPurchases.length} total):`);
+          sortedPurchases.forEach((p, idx) => {
+            const status = (p.status || p.shipping_status || '').toLowerCase();
+            const subject = (p.email_subject || p.subject || 'N/A').substring(0, 60);
+            const emailDate = p.email_date || p.createdAt || 'N/A';
+            console.log(`     ${idx + 1}. status="${status}", subject="${subject}", email_date="${emailDate}"`);
+          });
+          console.log(`   ⚠️ WARNING: No order confirmation email found - setting purchase date to "TBD"`);
+          console.log(`   💡 TIP: Order confirmation emails should have status="ordered" and subject containing "Order Confirmed", "Order Confirmation", or "Item Arrived For Verification"`);
+        }
         // Set purchase date to "TBD" when no order confirmation email is found
         // We should ONLY use the order confirmation email date, not shipped/delivered dates
         primaryPurchase.purchaseDate = 'TBD';
         primaryPurchase.purchase_date = '';
-        console.log(`   ✅ Set purchaseDate to "TBD" for order ${orderNumber}`);
+        if (shouldLogDetails) {
+          console.log(`   ✅ Set purchaseDate to "TBD" for order ${orderNumber}`);
+        }
       }
       
       // Merge useful data from other purchases (e.g., tracking numbers, updated dates)
