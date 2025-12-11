@@ -31,12 +31,24 @@ export async function GET(request: NextRequest) {
       .where('userId', '==', userId)
       .get();
     
-    const purchases = purchasesSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    const purchases = purchasesSnapshot.docs.map(doc => {
+      const data = doc.data();
+      // CRITICAL: Put id AFTER spread to ensure Firebase document ID is used
+      // (data might have an 'id' field set to orderNumber which we need to overwrite)
+      return {
+        ...data,
+        id: doc.id  // Overwrite any 'id' in data with the actual Firebase document ID
+      };
+    });
     
     console.log(`✅ Found ${purchases.length} purchases for user ${userId}`);
+    
+    // Debug: Verify first purchase has correct ID
+    if (purchases.length > 0) {
+      const firstId = purchases[0].id;
+      const isOrderNumber = firstId?.startsWith('03-');
+      console.log(`🔍 First purchase ID: "${firstId}" ${isOrderNumber ? '❌ STILL ORDER NUMBER!' : '✅ Correct Firebase ID'}`);
+    }
     
     return NextResponse.json({ 
       purchases,
