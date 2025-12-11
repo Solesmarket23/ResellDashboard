@@ -88,6 +88,19 @@ export async function POST(request: NextRequest) {
     // Import consolidation utility
     const { consolidatePurchasesByOrderNumber } = await import('@/lib/utils/statusPriority');
     
+    // Check recent webhook activity to prevent duplicate processing
+    const recentWebhookTime = userData.lastWebhookSync || 0;
+    const timeSinceLastWebhook = Date.now() - recentWebhookTime;
+    
+    if (timeSinceLastWebhook < 5000) { // 5 seconds
+      console.log(`⏭️ Skipping webhook - last processed ${timeSinceLastWebhook}ms ago (too recent, likely duplicate notification)`);
+      return NextResponse.json({ 
+        received: true,
+        skipped: true,
+        reason: 'Recent webhook already processed'
+      });
+    }
+    
     // Check for duplicates before saving to avoid quota waste
     // Get existing purchase order numbers for this user
     const existingPurchasesSnapshot = await adminDb
@@ -106,8 +119,8 @@ export async function POST(request: NextRequest) {
     console.log(`📊 Found ${existingOrderNumbers.size} existing purchase order numbers for user ${userId}`);
     
     // Fire and forget - fetch purchases and save to Firebase
-    // Use limit=20 for webhooks (only recent emails) instead of 100
-    fetch(`https://www.solesmarket.com/api/gmail/purchases-batched?limit=20&reset=false`, {
+    // Use limit=5 for webhooks (only very recent emails) to avoid reprocessing
+    fetch(`https://www.solesmarket.com/api/gmail/purchases-batched?limit=5&reset=false`, {
       method: 'GET',
       headers: {
         'Cookie': `gmail_access_token=${gmailTokens.access_token}; gmail_refresh_token=${gmailTokens.refresh_token || ''}`
