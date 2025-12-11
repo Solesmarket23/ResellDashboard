@@ -457,6 +457,7 @@ function convertOrderInfoToPurchase(orderInfo: any, userId: string) {
     brand: brand,
     productBrand: brand,
     styleId: orderInfo.style_id || null,
+    productUrl: orderInfo.product_url || null,
     merchant: orderInfo.merchant,
     shippingStatus: getStatusFromOrderInfo(orderInfo),
     trackingNumber: orderInfo.tracking_number,

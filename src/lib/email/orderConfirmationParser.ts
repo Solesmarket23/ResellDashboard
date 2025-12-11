@@ -31,6 +31,9 @@ export interface OrderInfo {
   product_image_url: string;
   product_image_alt: string;
   
+  // StockX product URL (e.g., https://stockx.com/nike-ja-3-max-volume-gs)
+  product_url: string;
+  
   // Pricing breakdown
   purchase_price: number;
   processing_fee: number;
@@ -72,6 +75,7 @@ function createDefaultOrderInfo(): OrderInfo {
     style_id: "",
     product_image_url: "",
     product_image_alt: "",
+    product_url: "",
     purchase_price: 0.0,
     processing_fee: 0.0,
     shipping_fee: 0.0,
@@ -365,6 +369,7 @@ export class OrderConfirmationParser {
     this.extractStockXOrderNumber(htmlContent, textContent, orderInfo);
     this.extractStockXProductInfo(htmlContent, textContent, orderInfo);
     this.extractStockXProductImage(htmlContent, orderInfo);
+    this.extractStockXProductUrl(htmlContent, orderInfo);
 
     // If product name is missing or clearly polluted, try using image alt
     if (!orderInfo.product_name || orderInfo.product_name.length < 4 || /class=|style=|<div|<span|\bOrder\b|\bView Order\b/i.test(orderInfo.product_name)) {
@@ -1114,6 +1119,83 @@ export class OrderConfirmationParser {
             }
           }
           break;
+        }
+      }
+    }
+  }
+  
+  /**
+   * Extract StockX product URL from email
+   */
+  private extractStockXProductUrl(htmlContent: string, orderInfo: OrderInfo): void {
+    const $ = cheerio.load(htmlContent);
+    
+    // Look for links to stockx.com products
+    const productLinkPatterns = [
+      // Look for links in product name areas
+      () => $('a[href*="stockx.com/"]:not([href*="track"]):not([href*="orders"]):not([href*="account"])').first(),
+      // Look for "View Product" or similar buttons
+      () => $('a[href*="stockx.com/"][href*="-"]').first(),
+      // Look for any stockx.com product link (has dashes in URL)
+      () => $('a').filter(function() {
+        const href = $(this).attr('href') || '';
+        return href.includes('stockx.com/') && 
+               href.match(/stockx\.com\/[a-z0-9-]+/) && 
+               !href.includes('/orders') && 
+               !href.includes('/account') &&
+               !href.includes('/track');
+      }).first()
+    ];
+    
+    for (const searchFunc of productLinkPatterns) {
+      try {
+        const link = searchFunc();
+        if (link.length > 0) {
+          let href = link.attr('href') || '';
+          
+          // Clean up the URL
+          if (href) {
+            // Remove query parameters and fragments
+            href = href.split('?')[0].split('#')[0];
+            
+            // Ensure it's a full URL
+            if (href.startsWith('/')) {
+              href = `https://stockx.com${href}`;
+            } else if (!href.startsWith('http')) {
+              href = `https://stockx.com/${href}`;
+            }
+            
+            // Validate it looks like a product URL
+            if (href.match(/stockx\.com\/[a-z0-9-]{3,}/)) {
+              orderInfo.product_url = href;
+              console.log(`✅ Product URL extracted: ${href}`);
+              break;
+            }
+          }
+        }
+      } catch (error) {
+        continue;
+      }
+    }
+    
+    // If no URL found via cheerio, try regex on raw HTML
+    if (!orderInfo.product_url) {
+      const urlPatterns = [
+        /href="(https:\/\/stockx\.com\/[a-z0-9-]+(?:\?[^"]*)?)"[^>]*>/i,
+        /href="(https:\/\/www\.stockx\.com\/[a-z0-9-]+(?:\?[^"]*)?)"[^>]*>/i,
+        /<a[^>]*href="(https:\/\/stockx\.com\/(?!orders|account|track)[a-z0-9-]+)"[^>]*>/i
+      ];
+      
+      for (const pattern of urlPatterns) {
+        const match = htmlContent.match(pattern);
+        if (match && match[1]) {
+          // Clean URL
+          let url = match[1].split('?')[0].split('#')[0];
+          if (url.match(/stockx\.com\/[a-z0-9-]{3,}/)) {
+            orderInfo.product_url = url;
+            console.log(`✅ Product URL extracted via regex: ${url}`);
+            break;
+          }
         }
       }
     }
