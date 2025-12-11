@@ -88,9 +88,26 @@ export async function POST(request: NextRequest) {
     // Import consolidation utility
     const { consolidatePurchasesByOrderNumber } = await import('@/lib/utils/statusPriority');
     
+    // Check for duplicates before saving to avoid quota waste
+    // Get existing purchase order numbers for this user
+    const existingPurchasesSnapshot = await adminDb
+      .collection('purchases')
+      .where('userId', '==', userId)
+      .where('type', '==', 'gmail')
+      .select('orderNumber') // Only fetch orderNumber field for efficiency
+      .get();
+    
+    const existingOrderNumbers = new Set(
+      existingPurchasesSnapshot.docs
+        .map(doc => doc.data().orderNumber)
+        .filter(Boolean)
+    );
+    
+    console.log(`📊 Found ${existingOrderNumbers.size} existing purchase order numbers for user ${userId}`);
+    
     // Fire and forget - fetch purchases and save to Firebase
-    // Use limit=100 to ensure we find order confirmation emails even if they're a few days old
-    fetch(`https://www.solesmarket.com/api/gmail/purchases-batched?limit=100&reset=false`, {
+    // Use limit=20 for webhooks (only recent emails) instead of 100
+    fetch(`https://www.solesmarket.com/api/gmail/purchases-batched?limit=20&reset=false`, {
       method: 'GET',
       headers: {
         'Cookie': `gmail_access_token=${gmailTokens.access_token}; gmail_refresh_token=${gmailTokens.refresh_token || ''}`
@@ -106,11 +123,18 @@ export async function POST(request: NextRequest) {
           const consolidated = consolidatePurchasesByOrderNumber(purchases);
           console.log(`🔄 Consolidated ${purchases.length} → ${consolidated.length} unique purchases`);
           
-          // For webhooks, just save new purchases
-          // The frontend already handles deduplication, so we don't need to check for existing purchases
+          // Filter out purchases that already exist
+          const newPurchases = consolidated.filter(p => !existingOrderNumbers.has(p.orderNumber));
+          console.log(`🆕 ${newPurchases.length} new purchases (${consolidated.length - newPurchases.length} already exist)`);
+          
+          if (newPurchases.length === 0) {
+            console.log('⏭️ No new purchases to save');
+            return;
+          }
+          
           let savedCount = 0;
           
-          for (const purchase of consolidated) {
+          for (const purchase of newPurchases) {
             try {
               // Remove the 'id' field if it exists (it might be set to orderNumber by frontend)
               // Firebase will auto-generate a new document ID
