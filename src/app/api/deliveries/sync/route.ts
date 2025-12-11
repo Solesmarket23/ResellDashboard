@@ -471,6 +471,7 @@ export async function POST(request: NextRequest) {
         productName: purchase.product?.name || purchase.productName || 'Unknown Product',
         productBrand: purchase.product?.brand || purchase.brand || 'Unknown Brand',
         productSize: purchase.product?.size || purchase.size || 'Unknown Size',
+        productImage: purchase.product?.image || purchase.productImage || purchase.image || null,
         status: deliveryStatus,
         estimatedDelivery: estimatedDelivery,
         actualDelivery: deliveryStatus === 'delivered' ? estimatedDelivery : undefined,

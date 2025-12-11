@@ -21,6 +21,7 @@ interface DeliveryItem {
   productName: string;
   productBrand: string;
   productSize: string;
+  productImage?: string;
   status: 'shipped' | 'in_transit' | 'out_for_delivery' | 'delivered' | 'exception' | 'unknown';
   estimatedDelivery: string;
   actualDelivery?: string;
@@ -964,10 +965,28 @@ const DeliveriesNew: React.FC = () => {
                         }`}
                       >
                         <div className="flex items-center gap-3">
-                          {/* Status Icon */}
-                          <div className="flex-shrink-0">
-                    {getStatusIcon(delivery.status)}
-                          </div>
+                          {/* Product Image */}
+                          {delivery.productImage ? (
+                            <div className="flex-shrink-0">
+                              <img 
+                                src={delivery.productImage} 
+                                alt={delivery.productName}
+                                className="w-12 h-12 object-cover rounded-lg border border-gray-200 dark:border-gray-700"
+                                onError={(e) => {
+                                  // Fallback to status icon if image fails to load
+                                  e.currentTarget.style.display = 'none';
+                                  e.currentTarget.nextElementSibling!.style.display = 'flex';
+                                }}
+                              />
+                              <div className="hidden flex-shrink-0">
+                                {getStatusIcon(delivery.status)}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex-shrink-0">
+                              {getStatusIcon(delivery.status)}
+                            </div>
+                          )}
                           
                           {/* Main Info */}
                           <div className="flex-1 min-w-0">
@@ -1185,7 +1204,22 @@ const DeliveriesNew: React.FC = () => {
                       {/* Product */}
                       <td className="px-4 py-4">
                         <div className="flex items-center gap-3">
-                          {getStatusIcon(delivery.status)}
+                          {delivery.productImage ? (
+                            <img 
+                              src={delivery.productImage} 
+                              alt={delivery.productName}
+                              className="w-10 h-10 object-cover rounded-lg border border-gray-200 dark:border-gray-700 flex-shrink-0"
+                              onError={(e) => {
+                                // Fallback to status icon if image fails to load
+                                e.currentTarget.style.display = 'none';
+                                const statusIcon = e.currentTarget.parentElement?.querySelector('.status-icon-fallback');
+                                if (statusIcon) statusIcon.classList.remove('hidden');
+                              }}
+                            />
+                          ) : null}
+                          <div className={`${delivery.productImage ? 'hidden' : ''} status-icon-fallback`}>
+                            {getStatusIcon(delivery.status)}
+                          </div>
                           <div className="min-w-0">
                             <div className={`text-sm font-medium ${currentTheme.colors.textPrimary} truncate`}>
                               {delivery.productName}
