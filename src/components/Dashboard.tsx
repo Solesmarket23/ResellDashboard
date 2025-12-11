@@ -139,7 +139,7 @@ const Dashboard = () => {
   };
 
   // Load purchases data (sales are handled by useSales hook)
-  const loadPurchasesData = async () => {
+  const loadPurchasesData = async (skipCache = false) => {
     if (!user) {
       console.log('📊 Dashboard: No user found, skipping purchases load');
       setPurchasesLoading(false);
@@ -147,30 +147,48 @@ const Dashboard = () => {
     }
 
     try {
-      console.log('📊 Dashboard: Starting purchases load for user:', user.uid);
-      setPurchasesLoading(true);
-      
       // Check if user is using site password (localStorage)
       const siteUserId = localStorage.getItem('siteUserId');
+      const userId = siteUserId || user.uid;
+      
+      // Try cache first (unless explicitly skipping)
+      if (!skipCache) {
+        const { dataCache, CacheKeys } = await import('@/lib/utils/dataCache');
+        const cachedPurchases = dataCache.get<any[]>(CacheKeys.purchases(userId));
+        if (cachedPurchases) {
+          console.log('📊 Dashboard: Using cached purchases');
+          setUserPurchases(cachedPurchases);
+          return;
+        }
+      }
+      
+      console.log('📊 Dashboard: Starting purchases load for user:', userId);
+      setPurchasesLoading(true);
+      
+      let userPurchasesData: any[] = [];
       
       if (siteUserId) {
         // Load from localStorage for site password users (much faster)
         console.log('📊 Dashboard: Loading from localStorage (site password user)');
         const storageKey = `purchases_${siteUserId}`;
         const purchasesJson = localStorage.getItem(storageKey);
-        const userPurchasesData = purchasesJson ? JSON.parse(purchasesJson) : [];
+        userPurchasesData = purchasesJson ? JSON.parse(purchasesJson) : [];
         console.log('📊 Dashboard: Found', userPurchasesData.length, 'purchases in localStorage');
-        setUserPurchases(userPurchasesData);
       } else {
         // Load purchases from Firebase (only for this user, with limit)
         console.log('📊 Dashboard: Loading from Firebase...');
         const allPurchases = await getDocuments('purchases');
-        const userPurchasesData = allPurchases.filter(
+        userPurchasesData = allPurchases.filter(
           (purchase: any) => purchase.userId === user.uid
         );
         console.log('📊 Dashboard: Found', userPurchasesData.length, 'purchases');
-        setUserPurchases(userPurchasesData);
       }
+      
+      setUserPurchases(userPurchasesData);
+      
+      // Cache the results
+      const { dataCache, CacheKeys, CacheTTL } = await import('@/lib/utils/dataCache');
+      dataCache.set(CacheKeys.purchases(userId), userPurchasesData, CacheTTL.MEDIUM);
       
       console.log('📊 Dashboard: Purchases load completed successfully');
       
@@ -244,14 +262,14 @@ const Dashboard = () => {
   useEffect(() => {
     if (!user) return;
 
-    // Refresh purchases data every 30 seconds when user is active
+    // Refresh purchases data every 5 minutes when user is active (reduced from 30s to save Firebase reads)
     const interval = setInterval(() => {
       // Only refresh if the document is visible (user is actively using the app)
       if (!document.hidden) {
-        console.log('🔄 Auto-refresh triggered (30s interval) - refreshing purchases');
+        console.log('🔄 Auto-refresh triggered (5min interval) - refreshing purchases');
         loadPurchasesData();
       }
-    }, 30000); // 30 seconds
+    }, 5 * 60 * 1000); // 5 minutes (300 seconds)
 
     return () => {
       console.log('📡 Dashboard: Cleaning up interval');

@@ -181,7 +181,7 @@ export const useSales = () => {
   };
 
   // Load sales data from Firebase
-  const loadSalesData = async (showLoading = true) => {
+  const loadSalesData = async (showLoading = true, skipCache = false) => {
     const userId = getUserId();
     if (!userId) {
       console.log('🔄 useSales: No user found, skipping sales load');
@@ -195,6 +195,26 @@ export const useSales = () => {
     }
 
     try {
+      // Try cache first (unless explicitly skipping)
+      if (!skipCache) {
+        const { dataCache, CacheKeys } = await import('@/lib/utils/dataCache');
+        const cachedSales = dataCache.get<any[]>(CacheKeys.sales(userId));
+        if (cachedSales && cachedSales.length > 0) {
+          console.log('📦 useSales: Using cached sales data');
+          const normalized = cachedSales.map((sale: any) => ({
+            ...sale,
+            platform: sale.platform || (sale.source?.includes('stockx') ? 'stockx' : 'manual')
+          }));
+          setSales(normalized);
+          setManualSales(normalized);
+          setStockxSales([]);
+          setMetrics(calculateMetrics(normalized));
+          setConnectionState({ status: 'connected', lastUpdated: new Date(), error: null });
+          if (showLoading) setLoading(false);
+          return;
+        }
+      }
+      
       if (showLoading) {
         setLoading(true);
       }
@@ -280,6 +300,11 @@ export const useSales = () => {
       
       console.log(`✅ useSales: Background loading completed. Total sales loaded: ${aggregatedSales.length}`);
       
+      // Cache the final aggregated sales data
+      const { dataCache, CacheKeys, CacheTTL } = await import('@/lib/utils/dataCache');
+      dataCache.set(CacheKeys.sales(userId), aggregatedSales, CacheTTL.MEDIUM);
+      console.log('📦 useSales: Cached sales data');
+      
     } catch (err) {
       console.error('❌ useSales: Error loading sales:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to load sales data';
@@ -321,8 +346,12 @@ export const useSales = () => {
       
       console.log('✅ useSales: Sale deleted from Firebase');
       
-      // Refresh data after deletion
-      await loadSalesData(false);
+      // Invalidate cache to force fresh data load
+      const { dataCache, CacheKeys } = await import('@/lib/utils/dataCache');
+      dataCache.invalidate(CacheKeys.sales(userId));
+      
+      // Refresh data after deletion (will bypass cache due to invalidation)
+      await loadSalesData(false, true);
       
       console.log('✅ useSales: Sale deleted successfully and data refreshed');
       return true;
@@ -409,14 +438,14 @@ export const useSales = () => {
         clearInterval(refreshIntervalRef.current);
       }
 
-      // Set up new interval for auto-refresh every 60 seconds (reduced frequency)
+      // Set up new interval for auto-refresh every 5 minutes (reduced frequency to save Firebase reads)
       refreshIntervalRef.current = setInterval(() => {
         // Only refresh if document is visible (user is actively using the app)
         if (!document.hidden && mountedRef.current) {
-          console.log('🔄 useSales: Auto-refresh triggered (60s interval)');
+          console.log('🔄 useSales: Auto-refresh triggered (5min interval)');
           loadSalesData(false);
         }
-      }, 60000); // 60 seconds (reduced from 30)
+      }, 5 * 60 * 1000); // 5 minutes (300 seconds)
     };
 
     setupAutoRefresh();
