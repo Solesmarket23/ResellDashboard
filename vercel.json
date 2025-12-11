@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/auto-reprice",
-      "schedule": "* * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/sync-purchases",

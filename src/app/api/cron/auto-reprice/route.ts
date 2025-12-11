@@ -37,18 +37,25 @@ export async function GET(request: NextRequest) {
 
     console.log('🔄 Cron job started: auto-reprice');
     
-    // Get all users with auto-repricing enabled
-    const usersSnapshot = await adminDb.collection('users').get();
+    // Query only users with auto-repricing enabled (more efficient than loading all users)
+    const usersSnapshot = await adminDb.collection('users')
+      .where('stockxAutoRepricingEnabled', '==', true)
+      .get();
+    
+    console.log(`📊 Found ${usersSnapshot.size} users with auto-repricing enabled`);
+    
+    if (usersSnapshot.empty) {
+      return NextResponse.json({
+        success: true,
+        message: 'No users have auto-repricing enabled',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
     const activeUsers: string[] = [];
     
     for (const userDoc of usersSnapshot.docs) {
       const userData = userDoc.data();
-      // Check if user has auto-repricing enabled
-      const autoRepricingEnabled = userData.stockxAutoRepricingEnabled === true;
-      
-      if (!autoRepricingEnabled) {
-        continue;
-      }
 
       // Check if enough time has passed based on user's interval preference
       const repricingConfig = userData.stockxAutoRepricingConfig || {};
@@ -69,7 +76,7 @@ export async function GET(request: NextRequest) {
       activeUsers.push(userDoc.id);
     }
 
-    console.log(`📊 Found ${activeUsers.length} users with auto-repricing enabled`);
+    console.log(`🎯 ${activeUsers.length} users ready for repricing (passed interval check)`);
 
     if (activeUsers.length === 0) {
       return NextResponse.json({
@@ -108,8 +115,15 @@ export async function GET(request: NextRequest) {
         const stockxTokens = userData.stockxTokens;
         
         if (!stockxTokens?.access_token) {
-          console.log(`❌ No StockX access token for user ${userId}`);
+          console.log(`⏭️ Skipping user ${userId}: No StockX access token`);
           errors.push(`User ${userId}: Missing StockX access token`);
+          continue;
+        }
+        
+        // Quick token validation: check if it looks valid (not expired format check)
+        if (stockxTokens.access_token.length < 20) {
+          console.log(`⏭️ Skipping user ${userId}: Invalid access token format`);
+          errors.push(`User ${userId}: Invalid access token format`);
           continue;
         }
 
@@ -132,8 +146,19 @@ export async function GET(request: NextRequest) {
         });
 
         if (!listingsResponse.ok) {
-          console.log(`❌ Failed to fetch listings for user ${userId}: ${listingsResponse.status}`);
-          errors.push(`User ${userId}: Failed to fetch listings (${listingsResponse.status})`);
+          const statusCode = listingsResponse.status;
+          console.log(`⏭️ Skipping user ${userId}: Failed to fetch listings (${statusCode})`);
+          
+          // Add more specific error messages
+          if (statusCode === 401) {
+            errors.push(`User ${userId}: StockX token expired or invalid (401)`);
+          } else if (statusCode === 429) {
+            errors.push(`User ${userId}: Rate limited by StockX (429)`);
+          } else {
+            errors.push(`User ${userId}: Failed to fetch listings (${statusCode})`);
+          }
+          
+          // Skip to next user - don't waste Firebase reads on settings/logs
           continue;
         }
 
