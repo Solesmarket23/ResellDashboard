@@ -902,13 +902,13 @@ const Purchases = () => {
     // Subscribe to purchases collection changes
     const unsubscribe = subscribeToCollection(
       'purchases',
+      userId, // Pass userId as second parameter
       (updatedPurchases: any[]) => {
-        // Filter for current user's purchases
-        const userPurchases = updatedPurchases.filter((p: any) => p.userId === userId);
-        console.log(`🔴 Real-time update: ${userPurchases.length} purchases for user ${userId}`);
+        // updatedPurchases already filtered for current user by subscribeToCollection
+        console.log(`🔴 Real-time update: ${updatedPurchases.length} purchases for user ${userId}`);
 
         // Detect new purchases (ones not in our existing set)
-        const newPurchases = userPurchases.filter((p: any) => !existingPurchaseIds.has(p.id));
+        const newPurchases = updatedPurchases.filter((p: any) => !existingPurchaseIds.has(p.id));
         
         if (newPurchases.length > 0) {
           console.log(`✨ NEW PURCHASES DETECTED: ${newPurchases.length}`);
@@ -933,8 +933,8 @@ const Purchases = () => {
         }
 
         // Update purchases state with consolidated data
-        const consolidated = consolidatePurchasesByOrderNumber(userPurchases);
-        console.log(`🔄 Consolidation: ${userPurchases.length} → ${consolidated.length} unique`);
+        const consolidated = consolidatePurchasesByOrderNumber(updatedPurchases);
+        console.log(`🔄 Consolidation: ${updatedPurchases.length} → ${consolidated.length} unique`);
         
         setPurchases(consolidated);
         setManualPurchases(consolidated);
@@ -957,7 +957,9 @@ const Purchases = () => {
     // Cleanup on unmount
     return () => {
       console.log('🔴 Cleaning up real-time listener');
-      unsubscribe();
+      if (unsubscribe) {
+        unsubscribe();
+      }
     };
   }, [user, purchases.length]); // Re-run when user changes or purchase count changes
 
