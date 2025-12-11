@@ -179,6 +179,38 @@ export async function POST(request: NextRequest) {
 }
 
 // Helper function to determine if an email looks like a purchase
+// Helper function to extract brand from product name
+function extractBrandFromProductName(productName: string): string {
+  if (!productName) return 'Unknown';
+  
+  const brandPatterns = [
+    { pattern: /^(Nike|Air Jordan|Jordan)\b/i, brand: 'Nike' },
+    { pattern: /^(adidas|Adidas|Yeezy)\b/i, brand: 'adidas' },
+    { pattern: /^(New Balance)\b/i, brand: 'New Balance' },
+    { pattern: /^(Converse)\b/i, brand: 'Converse' },
+    { pattern: /^(Vans)\b/i, brand: 'Vans' },
+    { pattern: /^(Puma)\b/i, brand: 'Puma' },
+    { pattern: /^(UGG)\b/i, brand: 'UGG' },
+    { pattern: /^(ASICS|Asics)\b/i, brand: 'ASICS' },
+    { pattern: /^(Reebok)\b/i, brand: 'Reebok' },
+    { pattern: /^(Denim Tears)\b/i, brand: 'Denim Tears' },
+    { pattern: /^(Off-White|Off White)\b/i, brand: 'Off-White' },
+    { pattern: /^(Supreme)\b/i, brand: 'Supreme' },
+    { pattern: /^(Fear of God|FOG)\b/i, brand: 'Fear of God' },
+    { pattern: /^(Stone Island)\b/i, brand: 'Stone Island' }
+  ];
+  
+  for (const { pattern, brand } of brandPatterns) {
+    if (pattern.test(productName)) {
+      return brand;
+    }
+  }
+  
+  // Fallback: take first word
+  const firstWord = productName.split(' ')[0];
+  return firstWord || 'Unknown';
+}
+
 function isPurchaseEmail(from: string, subject: string): boolean {
   const purchaseKeywords = [
     'order', 'purchase', 'confirmation', 'shipped', 'delivered', 
@@ -195,12 +227,14 @@ function isPurchaseEmail(from: string, subject: string): boolean {
 
 // Convert OrderInfo to purchase format
 function convertOrderInfoToPurchase(orderInfo: any) {
+  const brand = extractBrandFromProductName(orderInfo.product_name);
+  
   return {
     id: `purchase_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     orderNumber: orderInfo.order_number,
     product: {
       name: orderInfo.product_name,
-      brand: orderInfo.product_variant || 'Unknown Brand',
+      brand: brand,
       size: orderInfo.size,
       image: orderInfo.product_image_url || `https://picsum.photos/200/200?random=${orderInfo.order_number}`,
       bgColor: 'bg-gray-500',
@@ -220,7 +254,8 @@ function convertOrderInfoToPurchase(orderInfo: any) {
     totalAmount: orderInfo.total_amount || 0,
     productName: orderInfo.product_name,
     size: orderInfo.size,
-    brand: orderInfo.product_variant,
+    brand: brand,
+    productBrand: brand,
     merchant: orderInfo.merchant,
     shippingStatus: getStatusFromOrderInfo(orderInfo),
     trackingNumber: orderInfo.tracking_number,

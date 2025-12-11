@@ -4,6 +4,186 @@ import { getDocumentsServer } from '@/lib/firebase/firebaseServerUtils';
 import { trackingService } from '@/lib/tracking/trackingService';
 
 /**
+ * Helper function to extract brand from product name
+ */
+function extractBrandFromProductName(productName: string): string {
+  if (!productName) return 'Unknown';
+  
+  const brandPatterns = [
+    { pattern: /^(Nike|Air Jordan|Jordan)\b/i, brand: 'Nike' },
+    { pattern: /^(adidas|Adidas|Yeezy)\b/i, brand: 'adidas' },
+    { pattern: /^(New Balance)\b/i, brand: 'New Balance' },
+    { pattern: /^(Converse)\b/i, brand: 'Converse' },
+    { pattern: /^(Vans)\b/i, brand: 'Vans' },
+    { pattern: /^(Puma)\b/i, brand: 'Puma' },
+    { pattern: /^(UGG)\b/i, brand: 'UGG' },
+    { pattern: /^(ASICS|Asics)\b/i, brand: 'ASICS' },
+    { pattern: /^(Reebok)\b/i, brand: 'Reebok' },
+    { pattern: /^(Denim Tears)\b/i, brand: 'Denim Tears' },
+    { pattern: /^(Off-White|Off White)\b/i, brand: 'Off-White' },
+    { pattern: /^(Supreme)\b/i, brand: 'Supreme' },
+    { pattern: /^(Fear of God|FOG)\b/i, brand: 'Fear of God' },
+    { pattern: /^(Stone Island)\b/i, brand: 'Stone Island' },
+    { pattern: /^(Travis Scott)\b/i, brand: 'Travis Scott' },
+    { pattern: /^(Balenciaga)\b/i, brand: 'Balenciaga' }
+  ];
+  
+  for (const { pattern, brand } of brandPatterns) {
+    if (pattern.test(productName)) {
+      return brand;
+    }
+  }
+  
+  // Fallback: take first word
+  const firstWord = productName.split(' ')[0];
+  return firstWord || 'Unknown';
+}
+
+/**
+ * Fetch real-time StockX market price for a product
+ */
+async function fetchStockXMarketPrice(
+  productName: string, 
+  size: string,
+  request: NextRequest
+): Promise<number | null> {
+  try {
+    console.log(`🔍 Fetching StockX price for: ${productName} (Size: ${size})`);
+    
+    // Get StockX credentials from cookies
+    const accessToken = request.cookies.get('stockx_access_token')?.value;
+    const refreshToken = request.cookies.get('stockx_refresh_token')?.value;
+    const apiKey = process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID;
+    
+    if (!accessToken || !apiKey) {
+      console.log(`⚠️ No StockX credentials available, skipping price fetch`);
+      return null;
+    }
+    
+    // Step 1: Search for the product
+    const searchQuery = encodeURIComponent(productName);
+    const searchUrl = `https://api.stockx.com/v2/search?query=${searchQuery}`;
+    
+    console.log(`🔎 Searching StockX: ${searchUrl}`);
+    
+    const searchResponse = await fetch(searchUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'X-API-Key': apiKey,
+        'Accept': 'application/json',
+        'User-Agent': 'ResellDashboard/1.0'
+      }
+    });
+    
+    if (!searchResponse.ok) {
+      console.log(`❌ StockX search failed: ${searchResponse.status}`);
+      return null;
+    }
+    
+    const searchData = await searchResponse.json();
+    const products = searchData.results || searchData.Products || [];
+    
+    if (products.length === 0) {
+      console.log(`❌ No products found for: ${productName}`);
+      return null;
+    }
+    
+    // Get the first matching product
+    const product = products[0];
+    const productId = product.id || product.uuid || product.productId;
+    
+    if (!productId) {
+      console.log(`❌ No productId found in search results`);
+      return null;
+    }
+    
+    console.log(`✅ Found product: ${product.title || product.name} (ID: ${productId})`);
+    
+    // Step 2: Get market data for this product
+    const marketUrl = `https://api.stockx.com/v2/catalog/products/${productId}/market-data`;
+    
+    console.log(`💰 Fetching market data: ${marketUrl}`);
+    
+    const marketResponse = await fetch(marketUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'X-API-Key': apiKey,
+        'Accept': 'application/json',
+        'User-Agent': 'ResellDashboard/1.0'
+      }
+    });
+    
+    if (!marketResponse.ok) {
+      console.log(`❌ Market data fetch failed: ${marketResponse.status}`);
+      return null;
+    }
+    
+    const marketData = await marketResponse.json();
+    const variants = Array.isArray(marketData) ? marketData : [];
+    
+    if (variants.length === 0) {
+      console.log(`❌ No market data available`);
+      return null;
+    }
+    
+    // Step 3: Find the variant matching the size
+    let targetVariant = null;
+    
+    // Try exact size match
+    if (size && size !== 'Unknown') {
+      targetVariant = variants.find((v: any) => {
+        const variantSize = v.variantValue || v.size || v.sizeValue || v.shoeSize || v.displaySize;
+        return variantSize === size || variantSize === `US M ${size}` || variantSize === `US W ${size}`;
+      });
+    }
+    
+    // If no exact match, use first variant with pricing
+    if (!targetVariant) {
+      targetVariant = variants.find((v: any) => 
+        (v.lowestAskAmount && parseInt(v.lowestAskAmount) > 0) ||
+        (v.flexLowestAskAmount && parseInt(v.flexLowestAskAmount) > 0)
+      ) || variants[0];
+    }
+    
+    if (!targetVariant) {
+      console.log(`❌ No matching variant found`);
+      return null;
+    }
+    
+    // Step 4: Extract the lowest ask price (in cents, convert to dollars)
+    const standardAsk = parseInt(targetVariant.lowestAskAmount) || 0;
+    const flexAsk = parseInt(targetVariant.flexLowestAskAmount) || 0;
+    
+    // Use the lower of the two prices
+    let lowestAskCents = 0;
+    if (standardAsk > 0 && flexAsk > 0) {
+      lowestAskCents = Math.min(standardAsk, flexAsk);
+    } else if (standardAsk > 0) {
+      lowestAskCents = standardAsk;
+    } else if (flexAsk > 0) {
+      lowestAskCents = flexAsk;
+    }
+    
+    if (lowestAskCents === 0) {
+      console.log(`❌ No pricing data available`);
+      return null;
+    }
+    
+    const lowestAsk = lowestAskCents / 100; // Convert cents to dollars
+    
+    console.log(`✅ Found market price: $${lowestAsk} for ${targetVariant.variantValue || 'variant'}`);
+    
+    return lowestAsk;
+    
+  } catch (error) {
+    console.error(`❌ Error fetching StockX price for ${productName}:`, error);
+    return null;
+  }
+}
+
+/**
  * POST /api/notifications/slack
  * Send delivery summary to Slack
  */
@@ -75,8 +255,10 @@ export async function POST(request: NextRequest) {
     console.log(`🔄 Fetching live tracking data for ${trackingNumbers.length} packages`);
     const liveTrackingData = await trackingService.getBulkTrackingInfo(trackingNumbers);
 
-    // Build deliveries array with live tracking data
-    const deliveries = purchasesWithTracking.map((purchase: any) => {
+    // Build deliveries array with live tracking data AND real-time StockX prices
+    console.log(`💰 Fetching real-time StockX prices for ${purchasesWithTracking.length} items...`);
+    
+    const deliveries = await Promise.all(purchasesWithTracking.map(async (purchase: any) => {
       const trackingValue = purchase.tracking || purchase.trackingNumber || purchase.tracking_number;
       const liveTracking = liveTrackingData.find(lt => lt.trackingNumber === trackingValue);
       
@@ -112,6 +294,15 @@ export async function POST(request: NextRequest) {
       }
 
       const productName = purchase.productName || purchase.product?.name || 'Unknown Product';
+      const productSize = purchase.productSize || purchase.size || purchase.product?.size || 'Unknown';
+      
+      // Extract brand from product name
+      let productBrand = purchase.productBrand || purchase.brand;
+      
+      // If brand is missing or is the color (from product_variant bug), extract from name
+      if (!productBrand || productBrand === 'Unknown Brand' || productBrand.length < 3) {
+        productBrand = extractBrandFromProductName(productName);
+      }
       
       // Calculate profit: Market Price - Purchase Price - $1 (pricing strategy)
       let purchasePrice: number | undefined;
@@ -139,11 +330,22 @@ export async function POST(request: NextRequest) {
         purchasePrice = undefined;
       }
 
-      // Get current market price from StockX
+      // Get current market price from StockX - try cached first, then fetch real-time
       if (purchase.lowestAsk) {
         marketPrice = typeof purchase.lowestAsk === 'number' ? purchase.lowestAsk : parseFloat(purchase.lowestAsk);
       } else if (purchase.marketPrice) {
         marketPrice = typeof purchase.marketPrice === 'number' ? purchase.marketPrice : parseFloat(purchase.marketPrice);
+      }
+      
+      // If no market price cached, fetch real-time from StockX
+      if (!marketPrice || marketPrice <= 0) {
+        const realtimePrice = await fetchStockXMarketPrice(productName, productSize, request);
+        if (realtimePrice) {
+          marketPrice = realtimePrice;
+          console.log(`✅ Real-time price fetched: ${productName} = $${marketPrice}`);
+        }
+      } else {
+        console.log(`📦 Using cached price: ${productName} = $${marketPrice}`);
       }
 
       // Calculate estimated profit: Market Price - Purchase Price - $1
@@ -155,8 +357,8 @@ export async function POST(request: NextRequest) {
 
       return {
         productName,
-        productBrand: purchase.productBrand || purchase.brand || 'Unknown Brand',
-        productSize: purchase.productSize || purchase.size || purchase.product?.size || 'Unknown',
+        productBrand,
+        productSize,
         trackingNumber: trackingValue,
         carrier: liveTracking?.carrier || purchase.carrier || 'Unknown',
         estimatedDelivery,
@@ -165,7 +367,7 @@ export async function POST(request: NextRequest) {
         marketPrice,
         estimatedProfit
       };
-    });
+    }));
 
     // Calculate summary stats
     const today = new Date();
