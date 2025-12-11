@@ -4414,7 +4414,8 @@ const Purchases = () => {
                 if (!purchase) return null;
                 
                 // Check if this is a new purchase from webhook
-                const isNewPurchase = newPurchaseIds.has(purchase.id?.toString() || '');
+                // DISABLED: Too distracting with all purchases highlighted
+                const isNewPurchase = false; // newPurchaseIds.has(purchase.id?.toString() || '');
                 
                 return (
                 <tr 
