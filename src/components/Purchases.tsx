@@ -477,12 +477,21 @@ const Purchases = () => {
   const sortedPurchases = useMemo(() => {
     const allPurchases = [...purchases, ...manualPurchases];
     
+    console.log(`🔍 SEARCH DEBUG:`, {
+      searchQuery,
+      purchasesCount: purchases.length,
+      manualPurchasesCount: manualPurchases.length,
+      allPurchasesCount: allPurchases.length
+    });
+    
     // Filter out invalid purchases first
     const validPurchases = allPurchases.filter(purchase => 
       purchase && 
       typeof purchase === 'object' && 
       purchase.orderNumber
     );
+    
+    console.log(`✅ Valid purchases: ${validPurchases.length}`);
     
     // Deduplicate by order number before sorting using status priority system
     const uniqueMap = new Map();
@@ -508,6 +517,8 @@ const Purchases = () => {
     });
     
     let uniquePurchases = Array.from(uniqueMap.values());
+    
+    console.log(`🔢 After deduplication: ${uniquePurchases.length} unique purchases`);
     
     // Apply smart filters
     if (activeFilters.status.length > 0) {
@@ -555,9 +566,14 @@ const Purchases = () => {
       });
     }
     
+    console.log(`🎯 After filters: ${uniquePurchases.length} purchases`);
+    
     // Apply search filter if search query exists
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
+      console.log(`🔎 Applying search filter: "${query}"`);
+      
+      const beforeSearch = uniquePurchases.length;
       uniquePurchases = uniquePurchases.filter(purchase => {
         // Search across multiple fields
         const productName = (purchase.product?.name || purchase.productName || '').toLowerCase();
@@ -568,14 +584,27 @@ const Purchases = () => {
         const status = (purchase.status || '').toLowerCase();
         const styleId = (purchase.styleId || purchase.style_id || '').toLowerCase();
         
-        return productName.includes(query) ||
+        const matches = productName.includes(query) ||
                orderNumber.includes(query) ||
                tracking.includes(query) ||
                size.includes(query) ||
                brand.includes(query) ||
                status.includes(query) ||
                styleId.includes(query);
+        
+        if (!matches) {
+          console.log(`❌ No match for:`, {
+            query,
+            productName: productName.substring(0, 50),
+            orderNumber,
+            brand,
+            size
+          });
+        }
+        
+        return matches;
       });
+      console.log(`🔎 Search results: ${uniquePurchases.length} of ${beforeSearch} purchases match "${query}"`);
     }
     
     // Debug logging
