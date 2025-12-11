@@ -2855,6 +2855,7 @@ const Purchases = () => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
+                  userId: userId,
                   purchaseId: updatedPurchase.id,
                   updates: {
                     tracking: '',
@@ -2864,7 +2865,8 @@ const Purchases = () => {
               });
               
               if (!response.ok) {
-                throw new Error('Failed to update purchase');
+                const errorData = await response.json();
+                throw new Error(errorData.details || 'Failed to update purchase');
               }
               
               console.log(`✅ Cleared tracking in Firebase via API`);
@@ -2950,6 +2952,7 @@ const Purchases = () => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
+                  userId: userId,
                   purchaseId: updatedPurchase.id,
                   updates: {
                     tracking: trackingNumber,
@@ -2959,7 +2962,8 @@ const Purchases = () => {
               });
               
               if (!response.ok) {
-                throw new Error('Failed to update purchase');
+                const errorData = await response.json();
+                throw new Error(errorData.details || 'Failed to update purchase');
               }
               
               console.log(`✅ Saved tracking to Firebase via API: ${trackingNumber} (carrier: ${updatedPurchase.carrier || 'null'})`);
