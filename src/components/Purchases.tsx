@@ -2807,7 +2807,29 @@ const Purchases = () => {
 
   const handleSaveTracking = async (purchase: any) => {
     const trackingNumber = editingTrackingValue.trim();
-    const purchaseId = purchase.id || purchase.orderNumber;
+    
+    // Debug: Log the purchase object to see what ID we have
+    console.log('🔍 Purchase object for tracking save:', {
+      id: purchase.id,
+      orderNumber: purchase.orderNumber,
+      hasId: !!purchase.id,
+      idType: typeof purchase.id
+    });
+    
+    // CRITICAL: Use only the Firebase document ID, never the order number
+    const purchaseId = purchase.id;
+    
+    if (!purchaseId) {
+      console.error('❌ Cannot save tracking: Purchase has no Firebase document ID');
+      setNotification({
+        isVisible: true,
+        message: 'Cannot save: Purchase missing ID. Please refresh the page.',
+        type: 'error'
+      });
+      setEditingTracking(null);
+      setEditingTrackingValue('');
+      return;
+    }
     
     // Clear highlight when saving tracking
     setHighlightedPurchase(null);
@@ -2844,7 +2866,7 @@ const Purchases = () => {
         const siteUserId = localStorage.getItem('siteUserId');
         const userId = user?.uid || siteUserId;
         
-        if (userId && updatedPurchase.id) {
+        if (userId && purchaseId) {
           // Save to Firebase using API endpoint for site password users
           const isSitePasswordUser = !user && siteUserId;
           
@@ -2856,7 +2878,7 @@ const Purchases = () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   userId: userId,
-                  purchaseId: updatedPurchase.id,
+                  purchaseId: purchaseId,
                   updates: {
                     tracking: '',
                     carrier: null
@@ -2881,7 +2903,7 @@ const Purchases = () => {
           } else {
             // Firebase authenticated user - save directly
             try {
-              await updateDocument('purchases', updatedPurchase.id, {
+              await updateDocument('purchases', purchaseId, {
                 tracking: '',
                 carrier: null
               }, true);
@@ -2896,7 +2918,7 @@ const Purchases = () => {
             }
           }
         } else {
-          console.warn('⚠️ Cannot save: missing userId or purchaseId', { userId, purchaseId: updatedPurchase.id });
+          console.warn('⚠️ Cannot save: missing userId or purchaseId', { userId, purchaseId });
         }
       }
       
@@ -2941,7 +2963,7 @@ const Purchases = () => {
         const siteUserId = localStorage.getItem('siteUserId');
         const userId = user?.uid || siteUserId;
         
-        if (userId && updatedPurchase.id) {
+        if (userId && purchaseId) {
           // Save to Firebase using API endpoint for site password users
           const isSitePasswordUser = !user && siteUserId;
           
@@ -2953,7 +2975,7 @@ const Purchases = () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   userId: userId,
-                  purchaseId: updatedPurchase.id,
+                  purchaseId: purchaseId,
                   updates: {
                     tracking: trackingNumber,
                     carrier: updatedPurchase.carrier
@@ -2978,7 +3000,7 @@ const Purchases = () => {
           } else {
             // Firebase authenticated user - save directly
             try {
-              await updateDocument('purchases', updatedPurchase.id, {
+              await updateDocument('purchases', purchaseId, {
                 tracking: trackingNumber,
                 carrier: updatedPurchase.carrier
               }, true);
@@ -2993,7 +3015,7 @@ const Purchases = () => {
             }
           }
         } else {
-          console.warn('⚠️ Cannot save: missing userId or purchaseId', { userId, purchaseId: updatedPurchase.id });
+          console.warn('⚠️ Cannot save: missing userId or purchaseId', { userId, purchaseId });
         }
       }
 
