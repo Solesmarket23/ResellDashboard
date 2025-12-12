@@ -256,10 +256,9 @@ export async function POST(request: NextRequest) {
             const resetPrice = isFiniteNumber(listing.pricingStrategy.resetPrice)
               ? listing.pricingStrategy.resetPrice
               : 999;
-            const beatByRaw = isFiniteNumber(listing.pricingStrategy.beatBy)
-              ? listing.pricingStrategy.beatBy
-              : (isFiniteNumber(listing.pricingStrategy.value) ? listing.pricingStrategy.value : 1);
-            const beatBy = Math.max(1, beatByRaw);
+            // Two-step is intentionally hardcoded to undercut by $1 (no per-listing input).
+            // Ignore any legacy beatBy/value values stored in settings.
+            const beatBy = 1;
             twoStepMeta = { resetPrice, beatBy };
 
             // Compute the final target price from current market

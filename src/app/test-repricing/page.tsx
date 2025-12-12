@@ -65,7 +65,8 @@ export default function TestRepricing() {
   // Strategy settings
   const [strategyType, setStrategyType] = useState<'beat_lowest' | 'match_lowest' | 'percentage_below' | 'reset_then_beat_lowest'>('beat_lowest');
   const [strategyValue, setStrategyValue] = useState('1');
-  const [resetPrice, setResetPrice] = useState('999');
+  const RESET_PRICE = 999;
+  const TWO_STEP_BEAT_BY = 1;
   const [allowTwoStep, setAllowTwoStep] = useState(false);
   const [minPrice, setMinPrice] = useState('80');
   const [maxPrice, setMaxPrice] = useState('150');
@@ -78,12 +79,6 @@ export default function TestRepricing() {
       return String(Math.max(0, Math.min(100, n)));
     }
     // dollar undercut amount must be positive
-    return String(Math.max(1, n));
-  };
-
-  const clampResetPrice = (raw: string) => {
-    const n = parseFloat(raw);
-    if (!Number.isFinite(n)) return '999';
     return String(Math.max(1, n));
   };
 
@@ -213,8 +208,8 @@ export default function TestRepricing() {
           pricingStrategy: {
             type: strategyType,
             value: parseFloat(clampStrategyValue(strategyValue)),
-            resetPrice: strategyType === 'reset_then_beat_lowest' ? parseFloat(clampResetPrice(resetPrice)) : undefined,
-            beatBy: strategyType === 'reset_then_beat_lowest' ? parseFloat(clampStrategyValue(strategyValue)) : undefined
+            resetPrice: strategyType === 'reset_then_beat_lowest' ? RESET_PRICE : undefined,
+            beatBy: strategyType === 'reset_then_beat_lowest' ? TWO_STEP_BEAT_BY : undefined
           },
           minPrice: parseFloat(minPrice),
           maxPrice: parseFloat(maxPrice)
@@ -288,7 +283,7 @@ export default function TestRepricing() {
     setFlexLowestAsk('');
     setStrategyType('beat_lowest');
     setStrategyValue('1');
-    setResetPrice('999');
+    // Reset price is hardcoded; nothing to reset here.
     setAllowTwoStep(false);
     setMinPrice('80');
     setMaxPrice('150');
@@ -504,15 +499,21 @@ export default function TestRepricing() {
               <label className="block text-white font-semibold mb-2">
                 {strategyType === 'percentage_below' ? 'Percentage (%)' : 'Amount ($)'}
               </label>
-              <input
-                type="number"
-                value={strategyValue}
-                onChange={(e) => setStrategyValue(clampStrategyValue(e.target.value))}
-                placeholder={strategyType === 'percentage_below' ? '5' : '1'}
-                className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg border border-gray-600 focus:border-purple-500 focus:outline-none"
-                min={strategyType === 'percentage_below' ? 0 : 1}
-                max={strategyType === 'percentage_below' ? 100 : undefined}
-              />
+              {strategyType === 'reset_then_beat_lowest' ? (
+                <div className="w-full px-4 py-3 bg-gray-900/50 text-gray-300 rounded-lg border border-gray-600">
+                  ${TWO_STEP_BEAT_BY}
+                </div>
+              ) : (
+                <input
+                  type="number"
+                  value={strategyValue}
+                  onChange={(e) => setStrategyValue(clampStrategyValue(e.target.value))}
+                  placeholder={strategyType === 'percentage_below' ? '5' : '1'}
+                  className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg border border-gray-600 focus:border-purple-500 focus:outline-none"
+                  min={strategyType === 'percentage_below' ? 0 : 1}
+                  max={strategyType === 'percentage_below' ? 100 : undefined}
+                />
+              )}
             </div>
 
             {strategyType === 'reset_then_beat_lowest' && (
@@ -521,14 +522,9 @@ export default function TestRepricing() {
                   <label className="block text-white font-semibold mb-2">
                     Reset Price (step 1)
                   </label>
-                  <input
-                    type="number"
-                    value={resetPrice}
-                    onChange={(e) => setResetPrice(clampResetPrice(e.target.value))}
-                    placeholder="999"
-                    className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg border border-gray-600 focus:border-purple-500 focus:outline-none"
-                    min={1}
-                  />
+                  <div className="w-full px-4 py-3 bg-gray-900/50 text-gray-300 rounded-lg border border-gray-600">
+                    ${RESET_PRICE}
+                  </div>
                 </div>
                 <div className="flex items-end">
                   <button
@@ -584,7 +580,7 @@ export default function TestRepricing() {
               {strategyType === 'percentage_below' && 
                 `New Price = $${lowestAsk} × (1 - ${clampStrategyValue(strategyValue)}%) = $${(parseFloat(lowestAsk) * (1 - parseFloat(clampStrategyValue(strategyValue))/100)).toFixed(2)}`}
               {strategyType === 'reset_then_beat_lowest' &&
-                `Two-step: set $${clampResetPrice(resetPrice)} then set $${lowestAsk} - $${clampStrategyValue(strategyValue)} = $${(parseFloat(lowestAsk) - parseFloat(clampStrategyValue(strategyValue))).toFixed(2)}`}
+                `Two-step: set $${RESET_PRICE} then set $${lowestAsk} - $${TWO_STEP_BEAT_BY} = $${(parseFloat(lowestAsk) - TWO_STEP_BEAT_BY).toFixed(2)}`}
             </p>
           </div>
         </div>

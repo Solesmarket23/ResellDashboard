@@ -26,8 +26,7 @@ interface IndividualPricingStrategy {
   type: 'beat_lowest' | 'match_lowest' | 'percentage_below' | 'manual' | 'keep_current' | 'market_peek' | 'reset_then_beat_lowest';
   value?: number; // Amount for beat_lowest or percentage
   manualPrice?: number;
-  resetPrice?: number;
-  beatBy?: number;
+  beatBy?: number; // legacy; two-step is now hardcoded to beat by $1
   peekSettings?: {
     frequency: 'conservative' | 'balanced' | 'aggressive'; // 8h, 6h, 4h
     lastPeekTime?: string;
@@ -185,6 +184,8 @@ export default function StockXRepricing() {
   const [sortColumn, setSortColumn] = useState<'product' | 'size' | 'price' | 'market' | 'status' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
+  const LISTINGS_CACHE_KEY = 'stockx_listings_cache_v1';
+
   const getTrueAsk = useCallback((listing: Listing): number | null => {
     const std = typeof listing.lowestAsk === 'number' && listing.lowestAsk > 0 ? listing.lowestAsk : null;
     const flex = typeof listing.flexLowestAsk === 'number' && listing.flexLowestAsk > 0 ? listing.flexLowestAsk : null;
@@ -289,6 +290,33 @@ export default function StockXRepricing() {
     });
   }, [authUser]);
 
+  // Load cached listings immediately for a "sticky" UX across refreshes
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LISTINGS_CACHE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      const cachedListings = Array.isArray(parsed?.listings) ? parsed.listings : null;
+      const cachedAt = typeof parsed?.cachedAt === 'number' ? parsed.cachedAt : null;
+      if (!cachedListings || !cachedAt) return;
+
+      // Only use cache if it's reasonably fresh (6 hours)
+      if (Date.now() - cachedAt > 6 * 60 * 60 * 1000) return;
+
+      setListings(
+        cachedListings.map((l: any) => ({
+          ...l,
+          selected: false
+        }))
+      );
+      setLastFetchTime(new Date(cachedAt));
+      console.log('📦 Loaded cached listings:', cachedListings.length);
+    } catch (e) {
+      console.warn('⚠️ Failed to load cached listings:', e);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Load settings when auth user changes
   useEffect(() => {
     console.log('👤 Auth user changed:', authUser ? `${authUser.email} (${authUser.uid})` : 'No user');
@@ -300,20 +328,18 @@ export default function StockXRepricing() {
     }
   }, [authUser]);
 
-  // Fetch listings when component mounts and user is authenticated AND settings are loaded
+  // Fetch listings on mount. StockX listing fetch is cookie-based and does NOT require Firebase auth.
   const hasInitiallyFetched = useRef(false);
   useEffect(() => {
-    if (authUser && settingsLoaded && !loading && !hasInitiallyFetched.current) {
-      console.log('📋 Initial load - fetching listings after settings loaded...');
+    if (!loading && !hasInitiallyFetched.current) {
+      console.log('📋 Initial load - fetching listings...');
       hasInitiallyFetched.current = true;
-      fetchListings(true); // Force reload to ensure fresh data
+      fetchListings(false); // Don't force; fetchListings will show loading only if list is empty
     }
-  }, [authUser, settingsLoaded]); // Depend on both user and settings loaded state
+  }, []); // Run once
 
   // Auto-refresh listings every 3 minutes to catch new listings
   useEffect(() => {
-    if (!authUser || !settingsLoaded) return;
-    
     console.log('⏰ Setting up auto-refresh for listings (every 3 minutes)...');
     
     const refreshInterval = setInterval(() => {
@@ -325,7 +351,7 @@ export default function StockXRepricing() {
       console.log('🛑 Clearing listings auto-refresh interval');
       clearInterval(refreshInterval);
     };
-  }, [authUser, settingsLoaded]);
+  }, []);
 
   // Load auto-repricing settings
   useEffect(() => {
@@ -845,7 +871,7 @@ export default function StockXRepricing() {
           // Still failing after refresh attempt
           setAuthenticated(false);
           setAuthError(true);
-          setListings([]);
+          // Don't wipe existing listings; keep UI usable and allow manual re-auth/refresh
           return;
         }
         
@@ -972,6 +998,44 @@ export default function StockXRepricing() {
         
         setListings(finalListings);
         setLastFetchTime(new Date());
+
+        // Persist listings so the table is not empty after navigation/refresh.
+        // Store a minimal payload to reduce localStorage size.
+        try {
+          const minimal = finalListings.map((l: any) => ({
+            listingId: l.listingId,
+            productId: l.productId,
+            variantId: l.variantId,
+            productName: l.productName,
+            size: l.size,
+            currentPrice: l.currentPrice,
+            originalPrice: l.originalPrice,
+            styleId: l.styleId,
+            brand: l.brand,
+            colorway: l.colorway,
+            condition: l.condition,
+            status: l.status,
+            createdAt: l.createdAt,
+            updatedAt: l.updatedAt,
+            retailPrice: l.retailPrice,
+            lowestAsk: l.lowestAsk,
+            flexLowestAsk: l.flexLowestAsk,
+            highestBid: l.highestBid,
+            lastSale: l.lastSale,
+            category: l.category,
+            inventoryType: l.inventoryType,
+            pricingStrategy: l.pricingStrategy,
+            minPrice: l.minPrice,
+            maxPrice: l.maxPrice,
+            autoDeactivate: l.autoDeactivate
+          }));
+          localStorage.setItem(
+            LISTINGS_CACHE_KEY,
+            JSON.stringify({ cachedAt: Date.now(), listings: minimal })
+          );
+        } catch (e) {
+          console.warn('⚠️ Failed to cache listings:', e);
+        }
         
         // Store listing stats if available
         if (data.rawCount !== undefined || data.trueDuplicatesRemoved !== undefined || data.investigation) {
@@ -1369,8 +1433,7 @@ export default function StockXRepricing() {
     } else if (type === 'manual') {
       newStrategy.manualPrice = listing.pricingStrategy?.manualPrice || listing.currentPrice;
     } else if (type === 'reset_then_beat_lowest') {
-      newStrategy.resetPrice = listing.pricingStrategy?.resetPrice || 999;
-      newStrategy.beatBy = listing.pricingStrategy?.beatBy || 1;
+      // Hardcoded two-step: reset $999 then beat by $1
     } else if (type === 'market_peek') {
       newStrategy.peekSettings = {
         frequency: listing.pricingStrategy?.peekSettings?.frequency || 'balanced',
@@ -1469,6 +1532,79 @@ export default function StockXRepricing() {
         autoDeactivate: l.autoDeactivate
       });
       }
+
+      // If user saved the Two-step strategy, run it immediately (LIVE) for this listing/group leader.
+      if (pendingStrategy.type === 'reset_then_beat_lowest') {
+        const hasBounds = !!listing.minPrice && listing.minPrice > 0 && !!listing.maxPrice && listing.maxPrice > 0;
+        if (!hasBounds) {
+          const ok = window.confirm(
+            'Two-step will run LIVE now.\n\nWarning: you have no Min/Max safety bounds set for this listing.\n\nRun anyway?'
+          );
+          if (!ok) {
+            setBulkActionMessage('✅ Two-step saved. (Not executed: missing Min/Max and you cancelled.)');
+            setTimeout(() => setBulkActionMessage(null), 5000);
+          } else {
+            setBulkActionMessage('⚡ Two-step saved. Running now...');
+          }
+          // If user cancelled, skip execution but continue to clear pending changes below.
+          if (!ok) {
+            // Remove from pending changes
+            setPendingStrategyChanges(prev => {
+              const newPending = { ...prev };
+              delete newPending[listingId];
+              return newPending;
+            });
+            return;
+          }
+        } else {
+          setBulkActionMessage('⚡ Two-step saved. Running now...');
+        }
+
+        // Only run leaders (followers will be synced by the server when inventoryGroups are provided)
+        const leadersToReprice = listingsToUpdate.filter(l => {
+          if (!l.inventoryGroupId) return true;
+          const group = inventoryGroups.get(l.inventoryGroupId);
+          if (!group || group.listings.length <= 1) return true;
+          return l.isGroupLeader;
+        });
+
+        setLoading(true);
+        try {
+          const response = await fetch('/api/stockx/repricing', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              listings: leadersToReprice.map(l => ({
+                ...l,
+                pricingStrategy: pendingStrategy,
+                // Estimate cost basis if not provided (matches executeRepricing behavior)
+                costBasis: l.costBasis || l.retailPrice || l.originalPrice * 0.7
+              })),
+              strategy,
+              dryRun: false,
+              useIndividualStrategies: true,
+              allowTwoStep: true,
+              inventoryGroups: Array.from(inventoryGroups.values())
+            })
+          });
+
+          const data = await response.json().catch(() => null);
+          if (response.ok && data?.success) {
+            setResults(Array.isArray(data.results) ? data.results : []);
+            setBulkActionMessage('✅ Two-step executed successfully.');
+            // Refresh listings to show new prices
+            await fetchListings(true);
+          } else {
+            setBulkActionMessage(`❌ Two-step execution failed: ${data?.error || data?.message || 'Unknown error'}`);
+          }
+        } catch (error) {
+          console.error('Two-step execution error:', error);
+          setBulkActionMessage('❌ Two-step execution failed. Check console logs.');
+        } finally {
+          setLoading(false);
+          setTimeout(() => setBulkActionMessage(null), 7000);
+        }
+      }
       
       // Show success message
       const strategyLabel = pendingStrategy.type === 'beat_lowest' ? 'Beat Lowest by $1' :
@@ -1479,8 +1615,11 @@ export default function StockXRepricing() {
                            pendingStrategy.type === 'manual' ? 'Manual' :
                            'Keep Current';
       
-      setBulkActionMessage(`✅ Pricing rule saved: ${strategyLabel} (Min: $${listing.minPrice}, Max: $${listing.maxPrice})`);
-      setTimeout(() => setBulkActionMessage(null), 5000);
+      // Avoid overwriting the "running now" message for two-step
+      if (pendingStrategy.type !== 'reset_then_beat_lowest') {
+        setBulkActionMessage(`✅ Pricing rule saved: ${strategyLabel} (Min: $${listing.minPrice}, Max: $${listing.maxPrice})`);
+        setTimeout(() => setBulkActionMessage(null), 5000);
+      }
       
       // Remove from pending changes
       setPendingStrategyChanges(prev => {
@@ -1535,34 +1674,6 @@ export default function StockXRepricing() {
     ));
     
     // Save to Firebase
-    saveSettingToFirebase(listingId, {
-      pricingStrategy: newStrategy,
-      minPrice: listing.minPrice,
-      maxPrice: listing.maxPrice,
-      autoDeactivate: listing.autoDeactivate
-    });
-  };
-
-  const updateResetPrice = (listingId: string, resetPrice: number) => {
-    const listing = listings.find(l => l.listingId === listingId);
-    if (!listing) return;
-    const safeReset = Math.max(1, Math.round(resetPrice || 0));
-    const newStrategy = { ...listing.pricingStrategy!, resetPrice: safeReset };
-    setListings(prev => prev.map(l => (l.listingId === listingId ? { ...l, pricingStrategy: newStrategy } : l)));
-    saveSettingToFirebase(listingId, {
-      pricingStrategy: newStrategy,
-      minPrice: listing.minPrice,
-      maxPrice: listing.maxPrice,
-      autoDeactivate: listing.autoDeactivate
-    });
-  };
-
-  const updateBeatBy = (listingId: string, beatBy: number) => {
-    const listing = listings.find(l => l.listingId === listingId);
-    if (!listing) return;
-    const safeBeatBy = Math.max(1, Math.round(beatBy || 0));
-    const newStrategy = { ...listing.pricingStrategy!, beatBy: safeBeatBy };
-    setListings(prev => prev.map(l => (l.listingId === listingId ? { ...l, pricingStrategy: newStrategy } : l)));
     saveSettingToFirebase(listingId, {
       pricingStrategy: newStrategy,
       minPrice: listing.minPrice,
@@ -2041,11 +2152,10 @@ export default function StockXRepricing() {
             break;
 
           case 'reset_then_beat_lowest': {
-            const resetPrice = listing.pricingStrategy.resetPrice || 999;
-            const beatBy2 = Math.max(1, listing.pricingStrategy.beatBy || 1);
+            const beatBy2 = 1;
             // Preview is "what you'll end up at" (step 2). Step 1 happens server-side.
             newPrice = Math.max(1, Math.round(marketPrice - beatBy2));
-            reason = `Two-step: reset $${resetPrice}, then beat by $${beatBy2}`;
+            reason = `Two-step: reset $999, then beat by $1`;
             break;
           }
             
@@ -3405,33 +3515,39 @@ export default function StockXRepricing() {
                             <option value="aggressive">4h</option>
                           </select>
                         ) : (listing.pricingStrategy?.type === 'reset_then_beat_lowest') ? (
-                          <div className="flex items-center gap-1">
-                            <input
-                              type="number"
-                              min="1"
-                              value={listing.pricingStrategy?.resetPrice || 999}
-                              onChange={(e) => updateResetPrice(listing.listingId, parseFloat(e.target.value))}
-                              className={`w-[70px] text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
-                                isNeon 
-                                  ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
-                                  : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
-                              }`}
-                              placeholder="Reset"
-                              title="Reset price (step 1)"
-                            />
-                            <input
-                              type="number"
-                              min="1"
-                              value={listing.pricingStrategy?.beatBy || 1}
-                              onChange={(e) => updateBeatBy(listing.listingId, parseFloat(e.target.value))}
-                              className={`w-[70px] text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
-                                isNeon 
-                                  ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
-                                  : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
-                              }`}
-                              placeholder="Beat by"
-                              title="Undercut amount (step 2)"
-                            />
+                          <div className="flex items-end gap-2">
+                            <div className="flex flex-col gap-0.5">
+                              <span className={`text-[10px] uppercase tracking-wide ${isNeon ? 'text-gray-500' : 'text-gray-500'}`}>
+                                Reset
+                              </span>
+                              <div
+                                className={`w-[88px] text-xs px-2 py-1 rounded border ${
+                                  isNeon
+                                    ? 'bg-gray-800/60 border-gray-600/60 text-gray-400'
+                                    : 'bg-gray-50 border-gray-300 text-gray-500'
+                                }`}
+                                title="Step 1 is hardcoded to $999 to reveal true lowest asks"
+                                aria-label="Two-step reset price (hardcoded)"
+                              >
+                                $999
+                              </div>
+                            </div>
+                            <div className="flex flex-col gap-0.5">
+                              <span className={`text-[10px] uppercase tracking-wide ${isNeon ? 'text-gray-500' : 'text-gray-500'}`}>
+                                Beat by
+                              </span>
+                              <div
+                                className={`w-[78px] text-xs px-2 py-1 rounded border ${
+                                  isNeon
+                                    ? 'bg-gray-800/60 border-gray-600/60 text-gray-400'
+                                    : 'bg-gray-50 border-gray-300 text-gray-500'
+                                }`}
+                                title="Step 2 is hardcoded to beat by $1"
+                                aria-label="Two-step beat-by amount (hardcoded)"
+                              >
+                                $1
+                              </div>
+                            </div>
                           </div>
                         ) : (listing.pricingStrategy?.type === 'percentage_below' ||
                             listing.pricingStrategy?.type === 'manual') ? (

@@ -43,6 +43,11 @@ function getBaseUrl(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const force = searchParams.get('force') === '1' || searchParams.get('force') === 'true';
+    const dryRun = searchParams.get('dryRun') === '1' || searchParams.get('dryRun') === 'true';
+    const onlyUserId = searchParams.get('userId')?.trim() || null;
+
     // Verify this is a legitimate cron request
     if (!verifyCronRequest(request)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -59,48 +64,67 @@ export async function GET(request: NextRequest) {
       }, { status: 500 });
     }
 
-    console.log('🔄 Cron job started: auto-reprice');
-    
-    // Query only users with auto-repricing enabled (more efficient than loading all users)
-    const usersSnapshot = await adminDb.collection('users')
-      .where('stockxAutoRepricingEnabled', '==', true)
-      .get();
-    
-    console.log(`📊 Found ${usersSnapshot.size} users with auto-repricing enabled`);
-    
-    if (usersSnapshot.empty) {
-      return NextResponse.json({
-        success: true,
-        message: 'No users have auto-repricing enabled',
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    const activeUsers: string[] = [];
-    
-    for (const userDoc of usersSnapshot.docs) {
-      const userData = userDoc.data();
+    console.log('🔄 Cron job started: auto-reprice', { force, dryRun, onlyUserId });
 
-      // Check if enough time has passed based on user's interval preference
-      const repricingConfig = userData.stockxAutoRepricingConfig || {};
-      const intervalMinutes = repricingConfig.intervalMinutes || 5; // Default: 5 minutes
-      const lastRepricedAt = userData.lastRepricedAt;
+    const activeUsers: string[] = [];
+
+    if (onlyUserId) {
+      const userDoc = await adminDb.collection('users').doc(onlyUserId).get();
+      if (!userDoc.exists) {
+        return NextResponse.json({ success: false, error: `User ${onlyUserId} not found` }, { status: 404 });
+      }
+
+      const userData = userDoc.data() || {};
+      if (!force && userData.stockxAutoRepricingEnabled !== true) {
+        return NextResponse.json({
+          success: true,
+          message: `User ${onlyUserId} is not auto-repricing enabled (pass ?force=1 to override)`,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      activeUsers.push(onlyUserId);
+      console.log(`🎯 Running for single user: ${onlyUserId}`);
+    } else {
+      // Query only users with auto-repricing enabled (more efficient than loading all users)
+      const usersSnapshot = await adminDb.collection('users')
+        .where('stockxAutoRepricingEnabled', '==', true)
+        .get();
       
-      if (lastRepricedAt) {
-        const lastRepricedTime = new Date(lastRepricedAt).getTime();
-        const now = Date.now();
-        const minutesSinceLastReprice = (now - lastRepricedTime) / (1000 * 60);
-        
-        if (minutesSinceLastReprice < intervalMinutes) {
-          console.log(`⏭️ Skipping user ${userDoc.id}: Only ${Math.floor(minutesSinceLastReprice)} minutes since last reprice (interval: ${intervalMinutes} minutes)`);
-          continue;
-        }
+      console.log(`📊 Found ${usersSnapshot.size} users with auto-repricing enabled`);
+      
+      if (usersSnapshot.empty) {
+        return NextResponse.json({
+          success: true,
+          message: 'No users have auto-repricing enabled',
+          timestamp: new Date().toISOString()
+        });
       }
       
-      activeUsers.push(userDoc.id);
+      for (const userDoc of usersSnapshot.docs) {
+        const userData = userDoc.data();
+
+        // Check if enough time has passed based on user's interval preference (unless forced)
+        const repricingConfig = userData.stockxAutoRepricingConfig || {};
+        const intervalMinutes = repricingConfig.intervalMinutes || 5; // Default: 5 minutes
+        const lastRepricedAt = userData.lastRepricedAt;
+        
+        if (!force && lastRepricedAt) {
+          const lastRepricedTime = new Date(lastRepricedAt).getTime();
+          const now = Date.now();
+          const minutesSinceLastReprice = (now - lastRepricedTime) / (1000 * 60);
+          
+          if (minutesSinceLastReprice < intervalMinutes) {
+            console.log(`⏭️ Skipping user ${userDoc.id}: Only ${Math.floor(minutesSinceLastReprice)} minutes since last reprice (interval: ${intervalMinutes} minutes)`);
+            continue;
+          }
+        }
+        
+        activeUsers.push(userDoc.id);
+      }
     }
 
-    console.log(`🎯 ${activeUsers.length} users ready for repricing (passed interval check)`);
+    console.log(`🎯 ${activeUsers.length} users ready for repricing${force ? ' (forced)' : ' (passed interval check)'}`);
 
     if (activeUsers.length === 0) {
       return NextResponse.json({
@@ -283,7 +307,7 @@ export async function GET(request: NextRequest) {
                 aggressiveness: 'moderate'
               }
             },
-            dryRun: false,
+            dryRun,
             useIndividualStrategies: true // Use individual pricing rules per listing
           })
         });
@@ -312,10 +336,12 @@ export async function GET(request: NextRequest) {
         totalListingsRepriced += successCount;
         console.log(`✅ Successfully repriced ${successCount} listings for user ${userId}`);
 
-        // Update lastRepricedAt timestamp
-        await adminDb.collection('users').doc(userId).update({
-          lastRepricedAt: new Date().toISOString()
-        });
+        // Update lastRepricedAt timestamp only for LIVE runs
+        if (!dryRun) {
+          await adminDb.collection('users').doc(userId).update({
+            lastRepricedAt: new Date().toISOString()
+          });
+        }
 
         // Log the repricing action
         await adminDb.collection('repricing_logs').add({
@@ -325,7 +351,9 @@ export async function GET(request: NextRequest) {
           listingsRepriced: successCount,
           strategy: repricingConfig.strategy,
           intervalMinutes: repricingConfig.intervalMinutes || 5,
-          automated: true
+          automated: true,
+          dryRun,
+          forced: force
         });
 
         // Add a small delay between users to avoid overwhelming the API
@@ -341,6 +369,9 @@ export async function GET(request: NextRequest) {
       success: true,
       message: 'Auto-repricing completed',
       results: {
+        force,
+        dryRun,
+        onlyUserId: onlyUserId || undefined,
         totalUsers: activeUsers.length,
         totalListingsRepriced,
         errors: errors.length > 0 ? errors : undefined
