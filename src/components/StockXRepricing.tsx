@@ -413,8 +413,10 @@ export default function StockXRepricing() {
   const loadSavedSettings = async (userId: string) => {
     try {
       console.log('🔄 Loading saved settings for user:', userId);
-      const settings = await getDocuments('stockxPricingSettings');
-      const userSettings = settings.filter(s => s.userId === userId);
+      // Prefer server-side fetch (works even without Firebase authUser via site-user-id cookie)
+      const res = await fetch(`/api/stockx/pricing-settings?userId=${encodeURIComponent(userId)}`);
+      const json = await res.json().catch(() => null);
+      const userSettings = Array.isArray(json?.settings) ? json.settings : [];
       console.log(`📊 Found ${userSettings.length} saved settings in Firebase`);
       
       // Convert to a map for easier lookup
@@ -444,11 +446,23 @@ export default function StockXRepricing() {
   };
 
   const saveSettingToFirebase = async (listingId: string, settings: any) => {
-    if (!authUser || savingSettings) {
-      console.log('❌ Skipping save - no user or already saving', {
-        hasUser: !!authUser,
-        savingSettings 
-      });
+    if (savingSettings) return;
+
+    // Support site-password sessions (no Firebase authUser) by using site-user-id cookie.
+    const siteUserId = (() => {
+      try {
+        const cookies = document.cookie.split(';');
+        const userIdCookie = cookies.find(c => c.trim().startsWith('site-user-id='));
+        if (!userIdCookie) return null;
+        return decodeURIComponent(userIdCookie.split('=')[1]);
+      } catch {
+        return null;
+      }
+    })();
+
+    const effectiveUserId = authUser?.uid || siteUserId;
+    if (!effectiveUserId) {
+      console.log('❌ Skipping save - no user id available');
       return;
     }
     
@@ -502,7 +516,6 @@ export default function StockXRepricing() {
       }
       
       const settingData: any = {
-        userId: authUser.uid,
         listingId,
         pricingStrategy: cleanPricingStrategy,
         autoDeactivate: settings.autoDeactivate || false,
@@ -537,28 +550,24 @@ export default function StockXRepricing() {
       }
       
       console.log('📦 Final setting data to save:', settingData);
-      
-      if (existingSetting?.id) {
-        console.log(`🔄 Updating existing document: ${existingSetting.id}`);
-        // Update existing document with merge to preserve other fields
-        await updateDocument('stockxPricingSettings', existingSetting.id, settingData, true);
-        // Merge the new data with existing in state
-        const mergedData = { ...existingSetting, ...settingData };
-        setSavedSettings(prev => ({
-          ...prev,
-          [listingId]: mergedData
-        }));
-        console.log(`✅ Document updated successfully`);
-      } else {
-        console.log(`🆕 Creating new document`);
-        // Create new document
-        const docRef = await addDocument('stockxPricingSettings', settingData);
-        setSavedSettings(prev => ({
-          ...prev,
-          [listingId]: { ...settingData, id: docRef.id }
-        }));
-        console.log(`✅ Document created with ID: ${docRef.id}`);
+
+      // Save via server route (Firebase Admin) for consistent behavior across auth modes
+      const resp = await fetch('/api/stockx/pricing-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': effectiveUserId },
+        body: JSON.stringify({ userId: effectiveUserId, listingId, settings: settingData })
+      });
+      const out = await resp.json().catch(() => null);
+      if (!resp.ok || !out?.success) {
+        throw new Error(out?.error || `Failed to save settings (${resp.status})`);
       }
+
+      // Update local state so UI stays in sync immediately
+      setSavedSettings(prev => ({
+        ...prev,
+        [listingId]: { ...prev[listingId], ...settingData, id: out.id, userId: effectiveUserId }
+      }));
+      setSettingsLoaded(true);
       console.log('🎉 Settings saved successfully to Firebase');
     } catch (error) {
       console.error('❌ Error saving settings:', error);
@@ -960,7 +969,7 @@ export default function StockXRepricing() {
         
         // Apply saved settings to the grouped listings
         let finalListings = groupedListings;
-        if (authUser && Object.keys(savedSettings).length > 0) {
+        if (Object.keys(savedSettings).length > 0) {
           console.log('🔧 Applying saved settings after grouping...');
           console.log('📊 Settings loaded:', settingsLoaded);
           console.log('📊 Number of saved settings:', Object.keys(savedSettings).length);
@@ -1063,35 +1072,22 @@ export default function StockXRepricing() {
         }
         
         // If user is logged in but settings haven't loaded yet, load them now
-        if (authUser && !settingsLoaded) {
-          console.log('🔄 Loading saved settings for user after listings fetch...');
-          await loadSavedSettings(authUser.uid);
-          
-          // Re-apply settings to the listings we just fetched
-          const refreshedSettings = await getDocuments('stockxPricingSettings');
-          const userSettings = refreshedSettings.filter(s => s.userId === authUser.uid);
-          const settingsMap: Record<string, any> = {};
-          userSettings.forEach(setting => {
-            settingsMap[setting.listingId] = setting;
-          });
-          
-          if (Object.keys(settingsMap).length > 0) {
-            console.log('🔧 Re-applying settings to fetched listings...');
-            const updatedListings = finalListings.map(listing => {
-              const saved = settingsMap[listing.listingId];
-              if (saved) {
-                console.log(`✅ Applying saved settings to ${listing.listingId}`);
-                return {
-                  ...listing,
-                  pricingStrategy: saved.pricingStrategy || listing.pricingStrategy,
-                  minPrice: saved.hasOwnProperty('minPrice') ? saved.minPrice : listing.minPrice,
-                  maxPrice: saved.hasOwnProperty('maxPrice') ? saved.maxPrice : listing.maxPrice,
-                  autoDeactivate: saved.hasOwnProperty('autoDeactivate') ? saved.autoDeactivate : listing.autoDeactivate
-                };
-              }
-              return listing;
-            });
-            setListings(updatedListings);
+        // If settings haven't loaded yet, try to load them using whichever user id is available.
+        if (!settingsLoaded) {
+          const effectiveUserId = authUser?.uid || (() => {
+            try {
+              const cookies = document.cookie.split(';');
+              const userIdCookie = cookies.find(c => c.trim().startsWith('site-user-id='));
+              if (!userIdCookie) return null;
+              return decodeURIComponent(userIdCookie.split('=')[1]);
+            } catch {
+              return null;
+            }
+          })();
+
+          if (effectiveUserId) {
+            console.log('🔄 Loading saved settings after listings fetch...');
+            await loadSavedSettings(effectiveUserId);
           }
         }
       } else if (data.error && data.error.includes('token')) {
@@ -3515,40 +3511,14 @@ export default function StockXRepricing() {
                             <option value="aggressive">4h</option>
                           </select>
                         ) : (listing.pricingStrategy?.type === 'reset_then_beat_lowest') ? (
-                          <div className="flex items-end gap-2">
-                            <div className="flex flex-col gap-0.5">
-                              <span className={`text-[10px] uppercase tracking-wide ${isNeon ? 'text-gray-500' : 'text-gray-500'}`}>
-                                Reset
-                              </span>
-                              <div
-                                className={`w-[88px] text-xs px-2 py-1 rounded border ${
-                                  isNeon
-                                    ? 'bg-gray-800/60 border-gray-600/60 text-gray-400'
-                                    : 'bg-gray-50 border-gray-300 text-gray-500'
-                                }`}
-                                title="Step 1 is hardcoded to $999 to reveal true lowest asks"
-                                aria-label="Two-step reset price (hardcoded)"
-                              >
-                                $999
-                              </div>
-                            </div>
-                            <div className="flex flex-col gap-0.5">
-                              <span className={`text-[10px] uppercase tracking-wide ${isNeon ? 'text-gray-500' : 'text-gray-500'}`}>
-                                Beat by
-                              </span>
-                              <div
-                                className={`w-[78px] text-xs px-2 py-1 rounded border ${
-                                  isNeon
-                                    ? 'bg-gray-800/60 border-gray-600/60 text-gray-400'
-                                    : 'bg-gray-50 border-gray-300 text-gray-500'
-                                }`}
-                                title="Step 2 is hardcoded to beat by $1"
-                                aria-label="Two-step beat-by amount (hardcoded)"
-                              >
-                                $1
-                              </div>
-                            </div>
-                          </div>
+                          <span
+                            className={`text-xs whitespace-nowrap ${
+                              isNeon ? 'text-gray-400' : 'text-gray-600'
+                            }`}
+                            title="Two-step is fully automatic: set $999 to reveal true lowest asks, then undercut by $1."
+                          >
+                            Auto: $999 → -$1
+                          </span>
                         ) : (listing.pricingStrategy?.type === 'percentage_below' ||
                             listing.pricingStrategy?.type === 'manual') ? (
                           <div className="flex items-center gap-1">
@@ -4052,17 +4022,23 @@ export default function StockXRepricing() {
                         </span>
                       </td>
                       <td className="p-3">
+                        {(() => {
+                          const cp = (result as any).competitivePosition as string | undefined;
+                          const label = (cp || 'unknown').replace('_', ' ');
+                          return (
                         <span className={`font-medium ${
                           isNeon 
-                            ? result.competitivePosition === 'lowest_ask' 
+                            ? cp === 'lowest_ask' 
                               ? 'text-emerald-400'
-                              : result.competitivePosition === 'competitive'
+                              : cp === 'competitive'
                               ? 'text-cyan-400'
                               : 'text-gray-400'
-                            : getCompetitivePositionColor(result.competitivePosition)
+                            : getCompetitivePositionColor(cp as any)
                         }`}>
-                          {result.competitivePosition.replace('_', ' ')}
+                          {label}
                         </span>
+                          );
+                        })()}
                       </td>
                     </tr>
                   );
