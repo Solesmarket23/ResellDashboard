@@ -3,11 +3,14 @@ import { NextRequest, NextResponse } from 'next/server';
 export async function GET(request: NextRequest) {
   // Check if admin can be initialized
   let hasAdminCredentials = false;
+  let adminInitError: string | null = null;
   try {
-    const { adminDb } = await import('@/lib/firebase/firebaseAdmin');
-    hasAdminCredentials = !!adminDb;
+    const { getAdminDb } = await import('@/lib/firebase/firebaseAdmin');
+    const db = getAdminDb();
+    hasAdminCredentials = !!db;
   } catch (error) {
     console.error('Failed to import Firebase Admin:', error);
+    adminInitError = error instanceof Error ? error.message : String(error);
   }
 
   const paused = process.env.CRON_PAUSED === '1' || process.env.CRON_PAUSED === 'true';
@@ -18,6 +21,7 @@ export async function GET(request: NextRequest) {
       ? 'Cron endpoints are configured and ready' 
       : 'Cron endpoints are configured but Firebase Admin credentials are missing',
     paused,
+    adminInitError: adminInitError || undefined,
     endpoints: [
       {
         name: 'Price Monitor',

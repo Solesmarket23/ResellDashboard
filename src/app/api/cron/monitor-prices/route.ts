@@ -69,8 +69,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Import adminDb lazily to avoid initialization errors
-    const { adminDb } = await import('@/lib/firebase/firebaseAdmin');
-    
+    const { getAdminDb } = await import('@/lib/firebase/firebaseAdmin');
+    const adminDb = getAdminDb();
     if (!adminDb) {
       return NextResponse.json({ 
         error: 'Firebase Admin not initialized',
