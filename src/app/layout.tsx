@@ -6,6 +6,7 @@ import { ThemeProvider } from "@/lib/contexts/ThemeContext";
 import { DeepgramContextProvider } from "@/lib/contexts/DeepgramContext";
 import { PriceMonitorProvider } from "@/lib/contexts/PriceMonitorContext";
 import Script from 'next/script';
+import NativeAppClass from '@/app/components/NativeAppClass';
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -62,6 +63,7 @@ export default function RootLayout({
           <ThemeProvider>
             <PriceMonitorProvider>
               <DeepgramContextProvider>
+                <NativeAppClass />
                 <div className="flex flex-col min-h-screen">
                   <main className="flex-1 pb-safe-bottom sm:pb-0">
                     {children}

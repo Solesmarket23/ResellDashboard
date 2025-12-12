@@ -15,9 +15,17 @@ interface RepricingStrategy {
 }
 
 interface IndividualPricingStrategy {
-  type: 'beat_lowest' | 'match_lowest' | 'percentage_below' | 'manual' | 'keep_current';
+  type:
+    | 'beat_lowest'
+    | 'match_lowest'
+    | 'percentage_below'
+    | 'manual'
+    | 'keep_current'
+    | 'reset_then_beat_lowest';
   value?: number;
   manualPrice?: number;
+  resetPrice?: number;
+  beatBy?: number;
 }
 
 interface ListingToReprice {
@@ -25,16 +33,103 @@ interface ListingToReprice {
   productId: string;
   variantId: string;
   currentPrice: number;
-  originalPrice: number;
-  costBasis: number;
-  daysListed: number;
-  views: number;
-  saves: number;
+  originalPrice?: number;
+  costBasis?: number;
+  daysListed?: number;
+  views?: number;
+  saves?: number;
   // Individual pricing settings
   pricingStrategy?: IndividualPricingStrategy;
   minPrice?: number;
   maxPrice?: number;
   autoDeactivate?: boolean;
+}
+
+function normalizePercent(value: unknown, fallback: number) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return fallback;
+  // Accept either 0.2 or 20 as "20%"
+  return value > 1 ? value / 100 : value;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function parseStockXMoneyToDollars(raw: unknown): number | null {
+  if (raw === null || raw === undefined) return null;
+  const n = typeof raw === 'string' ? parseInt(raw, 10) : Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  // StockX sometimes returns cents (e.g. 12345) and sometimes dollars (e.g. 123)
+  return n > 1000 ? n / 100 : n;
+}
+
+function minPositive(a: number | null, b: number | null): number | null {
+  if (a === null && b === null) return null;
+  if (a === null) return b;
+  if (b === null) return a;
+  return Math.min(a, b);
+}
+
+async function pollListingOperationStatus(args: {
+  listingId: string;
+  operationId: string;
+  accessToken: string;
+  timeoutMs?: number;
+}) {
+  const { listingId, operationId, accessToken } = args;
+  const timeoutMs = args.timeoutMs ?? 30_000;
+  const apiKey = process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID || '';
+
+  const startedAt = Date.now();
+  let attempts = 0;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    attempts++;
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    try {
+      const statusResponse = await fetch(
+        `https://api.stockx.com/v2/selling/listings/${listingId}/operations/${operationId}`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'X-API-Key': apiKey,
+            'Accept': 'application/json',
+            'User-Agent': 'ResellDashboard/1.0'
+          }
+        }
+      );
+
+      if (!statusResponse.ok) {
+        // Keep polling on transient failures
+        continue;
+      }
+
+      const statusData = await statusResponse.json();
+      const status: string | undefined = statusData.operationStatus;
+
+      const successStatuses = new Set(['SUCCEEDED', 'SUCCESSFUL', 'COMPLETED']);
+      const failureStatuses = new Set(['FAILED', 'ERROR']);
+      const pendingStatuses = new Set(['PENDING', 'IN_PROGRESS']);
+
+      if (status && successStatuses.has(status)) {
+        return { complete: true, success: true, status, attempts, data: statusData };
+      }
+      if (status && failureStatuses.has(status)) {
+        return { complete: true, success: false, status, attempts, data: statusData };
+      }
+      if (status && pendingStatuses.has(status)) {
+        continue;
+      }
+
+      // Unknown status: keep polling for a bit
+    } catch {
+      // keep polling
+    }
+  }
+
+  return { complete: false, success: true, status: 'TIMEOUT', attempts };
 }
 
 export async function POST(request: NextRequest) {
@@ -45,15 +140,15 @@ export async function POST(request: NextRequest) {
     const userId = request.headers.get('x-user-id'); // Get user ID from cron job
     
     console.log('🔍 Repricing API - Auth header:', request.headers.get('authorization') ? 'Present' : 'Missing');
-    console.log('🔍 Access token from header:', accessToken ? `${accessToken.substring(0, 20)}...` : 'None');
+    console.log('🔍 Access token from header:', accessToken ? 'Present' : 'None');
     console.log('🔍 User ID from header:', userId || 'None');
     
     if (!accessToken) {
       // Fall back to cookies for browser requests
-    const cookieStore = cookies();
+      const cookieStore = cookies();
       accessToken = cookieStore.get('stockx_access_token')?.value;
       refreshToken = cookieStore.get('stockx_refresh_token')?.value;
-      console.log('🔍 Access token from cookies:', accessToken ? `${accessToken.substring(0, 20)}...` : 'None');
+      console.log('🔍 Access token from cookies:', accessToken ? 'Present' : 'None');
     } else if (userId) {
       // If we have a user ID from cron job, load refresh token from Firebase
       try {
@@ -80,13 +175,17 @@ export async function POST(request: NextRequest) {
       strategy, 
       dryRun = true,
       notificationEmail,
-      useIndividualStrategies = false
+      useIndividualStrategies = false,
+      minPriceChange,
+      allowTwoStep = false
     }: {
       listings: ListingToReprice[];
       strategy: RepricingStrategy;
       dryRun?: boolean;
       notificationEmail?: string;
       useIndividualStrategies?: boolean;
+      minPriceChange?: number;
+      allowTwoStep?: boolean;
     } = await request.json();
 
     console.log(`🔄 Starting repricing for ${listings.length} listings (dry run: ${dryRun})`);
@@ -98,6 +197,25 @@ export async function POST(request: NextRequest) {
 
     for (const listing of listings) {
       try {
+        const isTwoStepStrategy =
+          useIndividualStrategies && listing.pricingStrategy?.type === 'reset_then_beat_lowest';
+        let twoStepMeta:
+          | {
+              resetPrice: number;
+              beatBy: number;
+              // Standard + flex asks used for decisions (in dollars)
+              initialLowestAsk?: number | null;
+              initialFlexLowestAsk?: number | null;
+              competitorLowestAsk?: number | null;
+              competitorFlexLowestAsk?: number | null;
+              mode?: 'peek_next_lowest' | 'direct_undercut';
+              resetOperationId?: string;
+              resetOperationStatus?: string;
+              finalOperationId?: string;
+              finalOperationStatus?: string;
+            }
+          | undefined;
+
         // Get current market data
         let marketData;
         try {
@@ -133,6 +251,118 @@ export async function POST(request: NextRequest) {
         let skipReason: string | null = null;
         
         if (useIndividualStrategies && listing.pricingStrategy) {
+          // Special case: two-step strategy (temporary reset to a high price, then undercut)
+          if (listing.pricingStrategy.type === 'reset_then_beat_lowest') {
+            const resetPrice = isFiniteNumber(listing.pricingStrategy.resetPrice)
+              ? listing.pricingStrategy.resetPrice
+              : 999;
+            const beatByRaw = isFiniteNumber(listing.pricingStrategy.beatBy)
+              ? listing.pricingStrategy.beatBy
+              : (isFiniteNumber(listing.pricingStrategy.value) ? listing.pricingStrategy.value : 1);
+            const beatBy = Math.max(1, beatByRaw);
+            twoStepMeta = { resetPrice, beatBy };
+
+            // Compute the final target price from current market
+            const initialLowestAsk = parseStockXMoneyToDollars((marketData as any).lowestAskAmount);
+            const initialFlexLowestAsk = parseStockXMoneyToDollars((marketData as any).flexLowestAskAmount);
+            const initialBestAsk = minPositive(initialLowestAsk, initialFlexLowestAsk);
+            const computedFinal = initialBestAsk !== null ? Math.max(1, initialBestAsk - beatBy) : listing.currentPrice;
+            const shouldPeekNextLowest = initialBestAsk !== null ? listing.currentPrice <= initialBestAsk : true;
+            twoStepMeta.initialLowestAsk = initialLowestAsk;
+            twoStepMeta.initialFlexLowestAsk = initialFlexLowestAsk;
+            twoStepMeta.mode = shouldPeekNextLowest ? 'peek_next_lowest' : 'direct_undercut';
+
+            if (!allowTwoStep) {
+              repricingResults.push({
+                listingId: listing.listingId,
+                currentPrice: listing.currentPrice,
+                newPrice: listing.currentPrice,
+                action: 'no_change',
+                reason: 'Two-step strategy blocked (allowTwoStep=false)',
+                twoStep: {
+                  ...twoStepMeta,
+                  computedFinal
+                }
+              });
+              continue;
+            }
+
+            // For dry runs we still want to apply constraints/thresholds below,
+            // so we set newPrice here and fall through into the normal pipeline.
+            if (dryRun) {
+              newPrice = computedFinal;
+              skipReason = shouldPeekNextLowest
+                ? `Two-step (dry-run): would set $${resetPrice} to reveal next-lowest ask, then undercut by $${beatBy}`
+                : initialBestAsk !== null
+                  ? `Two-step not needed (already not lowest): undercut $${initialBestAsk} - $${beatBy} = $${computedFinal}`
+                  : 'Two-step: no market ask available';
+              twoStepMeta = {
+                ...twoStepMeta,
+                computedFinal
+              } as any;
+            } else {
+              // If we're NOT currently the lowest ask, don't do the risky reset step.
+              // Just undercut the current lowest ask directly.
+              if (!shouldPeekNextLowest) {
+                newPrice = computedFinal;
+                twoStepMeta = {
+                  ...twoStepMeta,
+                  mode: 'direct_undercut',
+                  computedFinal
+                } as any;
+              } else {
+              // Step 1: set to reset price (intentionally may violate maxPrice; it's temporary)
+              const resetResult = await updateListingPrice(listing.listingId, resetPrice, accessToken, {
+                waitForCompletion: true,
+                timeoutMs: 30_000
+              });
+              if (!resetResult.success) {
+                repricingResults.push({
+                  listingId: listing.listingId,
+                  currentPrice: listing.currentPrice,
+                  newPrice: listing.currentPrice,
+                  action: 'failed',
+                  reason: `Two-step reset failed: ${resetResult.error || 'Unknown error'}`,
+                  twoStep: {
+                    ...twoStepMeta,
+                    mode: 'peek_next_lowest',
+                    resetOperationId: resetResult.operation?.operationId,
+                    resetOperationStatus: resetResult.operationStatus
+                  }
+                });
+                continue;
+              }
+  
+              if (twoStepMeta) {
+                twoStepMeta.resetOperationId = resetResult.operation?.operationId;
+                twoStepMeta.resetOperationStatus = resetResult.operationStatus;
+              }
+  
+              // Small delay, then refetch market data and compute final undercut price
+              await new Promise(resolve => setTimeout(resolve, 1500));
+              const refreshedMarket = await fetchMarketData(listing.productId, listing.variantId, accessToken);
+              // Use refreshed market data for competitivePosition calculations
+              marketData = refreshedMarket;
+
+              const competitorLowestAsk = parseStockXMoneyToDollars((refreshedMarket as any).lowestAskAmount);
+              const competitorFlexLowestAsk = parseStockXMoneyToDollars((refreshedMarket as any).flexLowestAskAmount);
+              const competitorBestAsk = minPositive(competitorLowestAsk, competitorFlexLowestAsk);
+              newPrice = competitorBestAsk !== null ? Math.max(1, competitorBestAsk - beatBy) : listing.currentPrice;
+
+              // Attach metadata for transparency
+              twoStepMeta = {
+                ...twoStepMeta,
+                mode: 'peek_next_lowest',
+                competitorLowestAsk,
+                competitorFlexLowestAsk,
+                computedFinal: newPrice
+              } as any;
+  
+              // Continue into the normal constraint/safety/update pipeline for final price
+              }
+            }
+
+          } else {
           newPrice = calculateIndividualPrice(listing, marketData);
           
           // Check if we're already the lowest ask for "beat_lowest" strategy
@@ -141,6 +371,7 @@ export async function POST(request: NextRequest) {
             if (listing.currentPrice <= lowestAsk) {
               skipReason = `Already lowest ask at $${listing.currentPrice} (market: $${lowestAsk})`;
             }
+          }
           }
         } else {
           newPrice = calculateNewPrice(listing, marketData, strategy);
@@ -157,26 +388,65 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // Apply min/max price constraints if individual strategies are used
-        if (useIndividualStrategies && listing.minPrice && listing.maxPrice) {
+        // Apply min/max price constraints if individual strategies are used (support one-sided bounds)
+        if (useIndividualStrategies) {
+          const hasMin = isFiniteNumber(listing.minPrice);
+          const hasMax = isFiniteNumber(listing.maxPrice);
           const originalNewPrice = newPrice;
-          newPrice = Math.max(listing.minPrice, Math.min(listing.maxPrice, newPrice));
-          
-          // Check if we need to deactivate the listing
-          if (listing.autoDeactivate && (originalNewPrice < listing.minPrice || originalNewPrice > listing.maxPrice)) {
-            // Deactivate the listing
+
+          if (hasMin) newPrice = Math.max(listing.minPrice!, newPrice);
+          if (hasMax) newPrice = Math.min(listing.maxPrice!, newPrice);
+
+          // If autoDeactivate is enabled and the calculated price would violate bounds, deactivate instead of clamping.
+          const violatesMin = hasMin && originalNewPrice < listing.minPrice!;
+          const violatesMax = hasMax && originalNewPrice > listing.maxPrice!;
+          if (listing.autoDeactivate && (violatesMin || violatesMax)) {
             if (!dryRun) {
               await deactivateListing(listing.listingId, accessToken);
             }
+
+            const rangeLabel =
+              hasMin && hasMax
+                ? `[${listing.minPrice}, ${listing.maxPrice}]`
+                : hasMin
+                  ? `[${listing.minPrice}, ∞)`
+                  : hasMax
+                    ? `(-∞, ${listing.maxPrice}]`
+                    : 'unbounded';
+
             repricingResults.push({
               listingId: listing.listingId,
               currentPrice: listing.currentPrice,
-              newPrice: listing.currentPrice, // Keep current price
+              newPrice: listing.currentPrice,
               action: dryRun ? 'would_deactivate' : 'deactivated',
-              reason: `Price ${originalNewPrice} outside range [${listing.minPrice}, ${listing.maxPrice}]`
+              reason: `Calculated price $${originalNewPrice} outside allowed range ${rangeLabel}`
             });
             continue;
           }
+        }
+
+        // Optional: skip tiny changes to reduce churn
+        if (isFiniteNumber(minPriceChange) && Math.abs(newPrice - listing.currentPrice) < minPriceChange) {
+          repricingResults.push({
+            listingId: listing.listingId,
+            currentPrice: listing.currentPrice,
+            newPrice: listing.currentPrice,
+            action: 'no_change',
+            reason: `Change $${Math.abs(newPrice - listing.currentPrice).toFixed(2)} below threshold $${minPriceChange}`
+          });
+          continue;
+        }
+
+        // Re-check after constraints/thresholds
+        if (newPrice === listing.currentPrice) {
+          repricingResults.push({
+            listingId: listing.listingId,
+            currentPrice: listing.currentPrice,
+            newPrice: listing.currentPrice,
+            action: 'no_change',
+            reason: skipReason || 'No change after constraints'
+          });
+          continue;
         }
 
         // Apply safety checks (only for global strategies, not individual)
@@ -190,7 +460,18 @@ export async function POST(request: NextRequest) {
 
         // Execute repricing if not dry run
         if (!dryRun) {
-          const updateResult = await updateListingPrice(listing.listingId, newPrice, accessToken);
+          const updateResult = await updateListingPrice(
+            listing.listingId,
+            newPrice,
+            accessToken,
+            // Only wait for completion on the FINAL step of the two-step strategy (LIVE mode)
+            isTwoStepStrategy ? { waitForCompletion: true, timeoutMs: 30_000 } : undefined
+          );
+
+          if (twoStepMeta) {
+            twoStepMeta.finalOperationId = updateResult.operation?.operationId;
+            twoStepMeta.finalOperationStatus = updateResult.operationStatus;
+          }
           
           repricingResults.push({
             listingId: listing.listingId,
@@ -199,7 +480,10 @@ export async function POST(request: NextRequest) {
             action: updateResult.success ? 'updated' : 'failed',
             reason: updateResult.success ? 'Price updated successfully' : updateResult.error,
             profitChange: calculateProfitChange(listing, newPrice),
-            competitivePosition: analyzeCompetitivePosition(newPrice, marketData)
+            competitivePosition: analyzeCompetitivePosition(newPrice, marketData),
+            operationId: updateResult.operation?.operationId,
+            operationStatus: updateResult.operationStatus,
+            twoStep: twoStepMeta
           });
         } else {
           repricingResults.push({
@@ -209,7 +493,8 @@ export async function POST(request: NextRequest) {
             action: 'would_update',
             reason: 'Dry run - would update price',
             profitChange: calculateProfitChange(listing, newPrice),
-            competitivePosition: analyzeCompetitivePosition(newPrice, marketData)
+            competitivePosition: analyzeCompetitivePosition(newPrice, marketData),
+            twoStep: twoStepMeta
           });
         }
 
@@ -303,16 +588,16 @@ function calculateNewPrice(listing: ListingToReprice, marketData: any, strategy:
 
 function calculateCompetitivePrice(listing: ListingToReprice, lowestAsk: number, settings: any) {
   const buffer = settings.competitiveBuffer || 1;
-  const proposedPrice = Math.max(lowestAsk - buffer, listing.costBasis * 1.1);
+  const proposedPrice = Math.max(1, lowestAsk - buffer);
   
   return Math.min(proposedPrice, listing.currentPrice * 0.95); // Max 5% reduction
 }
 
 function calculateMarginBasedPrice(listing: ListingToReprice, lowestAsk: number, highestBid: number, settings: any) {
-  const minMargin = settings.minProfitMargin || 0.15;
-  const minPrice = listing.costBasis * (1 + minMargin);
+  const minMargin = normalizePercent(settings.minProfitMargin, 0.15);
+  const minPrice = isFiniteNumber(listing.costBasis) ? listing.costBasis * (1 + minMargin) : 1;
   
-  return Math.max(Math.min(lowestAsk - 1, listing.currentPrice * 0.9), minPrice);
+  return Math.max(Math.min(lowestAsk - 1, listing.currentPrice * 0.9), minPrice, 1);
 }
 
 function calculateVelocityBasedPrice(listing: ListingToReprice, lowestAsk: number, settings: any) {
@@ -335,7 +620,8 @@ function calculateVelocityBasedPrice(listing: ListingToReprice, lowestAsk: numbe
     }
   }
   
-  return Math.max(listing.currentPrice * reductionFactor, listing.costBasis * 1.05);
+  const costFloor = isFiniteNumber(listing.costBasis) ? listing.costBasis * 1.05 : 1;
+  return Math.max(listing.currentPrice * reductionFactor, costFloor, 1);
 }
 
 function calculateHybridPrice(listing: ListingToReprice, lowestAsk: number, highestBid: number, settings: any) {
@@ -358,8 +644,8 @@ function calculateHybridPrice(listing: ListingToReprice, lowestAsk: number, high
 }
 
 function performSafetyChecks(listing: ListingToReprice, newPrice: number, strategy: RepricingStrategy) {
-  const maxReduction = strategy.settings.maxPriceReduction || 0.20;
-  const minPrice = listing.costBasis * 1.05; // Minimum 5% profit
+  const maxReduction = normalizePercent(strategy.settings.maxPriceReduction, 0.20);
+  const minPrice = isFiniteNumber(listing.costBasis) ? listing.costBasis * 1.05 : undefined; // Minimum 5% profit
   
   // Check maximum price reduction
   const reductionPercent = (listing.currentPrice - newPrice) / listing.currentPrice;
@@ -370,8 +656,8 @@ function performSafetyChecks(listing: ListingToReprice, newPrice: number, strate
     };
   }
   
-  // Check minimum price
-  if (newPrice < minPrice) {
+  // Check minimum price (only when cost basis is available)
+  if (typeof minPrice === 'number' && newPrice < minPrice) {
     return {
       passed: false,
       reason: `New price $${newPrice} below minimum profitable price $${minPrice.toFixed(2)}`
@@ -381,7 +667,12 @@ function performSafetyChecks(listing: ListingToReprice, newPrice: number, strate
   return { passed: true };
 }
 
-async function updateListingPrice(listingId: string, newPrice: number, accessToken: string) {
+async function updateListingPrice(
+  listingId: string,
+  newPrice: number,
+  accessToken: string,
+  options?: { waitForCompletion?: boolean; timeoutMs?: number }
+) {
   try {
     console.log(`🔄 Updating listing ${listingId} to $${newPrice}`);
     
@@ -408,7 +699,24 @@ async function updateListingPrice(listingId: string, newPrice: number, accessTok
 
     const result = await response.json();
     console.log(`✅ Update initiated, operation ID: ${result.operationId}`);
-    return { success: true, operation: result };
+
+    if (options?.waitForCompletion && result?.operationId) {
+      const op = await pollListingOperationStatus({
+        listingId,
+        operationId: result.operationId,
+        accessToken,
+        timeoutMs: options.timeoutMs
+      });
+
+      if (op.complete && !op.success) {
+        const opError = op.data?.error?.message || op.data?.error || 'Operation failed';
+        return { success: false, error: opError, operation: result, operationStatus: op.status };
+      }
+
+      return { success: true, operation: result, operationStatus: op.status, operationPolled: true };
+    }
+
+    return { success: true, operation: result, operationPolled: false };
   } catch (error) {
     console.error(`❌ Update error:`, error);
     return { success: false, error: (error as Error).message };
@@ -416,6 +724,7 @@ async function updateListingPrice(listingId: string, newPrice: number, accessTok
 }
 
 function calculateProfitChange(listing: ListingToReprice, newPrice: number) {
+  if (!isFiniteNumber(listing.costBasis)) return null;
   const currentProfit = listing.currentPrice - listing.costBasis;
   const newProfit = newPrice - listing.costBasis;
   return newProfit - currentProfit;
@@ -450,7 +759,7 @@ function calculateIndividualPrice(listing: ListingToReprice, marketData: any): n
       return listing.currentPrice;
       
     case 'beat_lowest':
-      const beatBy = listing.pricingStrategy.value || 1;
+      const beatBy = Math.max(1, listing.pricingStrategy.value || 1);
       
       // If we're already the lowest ask (or lower), don't change price
       if (listing.currentPrice <= lowestAsk) {
@@ -467,11 +776,15 @@ function calculateIndividualPrice(listing: ListingToReprice, marketData: any): n
       return lowestAsk;
       
     case 'percentage_below':
-      const percentage = listing.pricingStrategy.value || 5;
-      return Math.max(1, lowestAsk * (1 - percentage / 100));
+      const percentage = Math.max(0, Math.min(100, listing.pricingStrategy.value || 5));
+      return Math.max(1, Math.round(lowestAsk * (1 - percentage / 100)));
       
     case 'manual':
       return listing.pricingStrategy.manualPrice || listing.currentPrice;
+
+    // Note: this is executed via the special two-step branch above.
+    case 'reset_then_beat_lowest':
+      return listing.currentPrice;
       
     default:
       return listing.currentPrice;

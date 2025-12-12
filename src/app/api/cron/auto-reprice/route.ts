@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { headers } from 'next/headers';
 
 // Verify this is a legitimate cron request
 function verifyCronRequest(request: NextRequest) {
-  const authHeader = headers().get('authorization');
-  const userAgent = headers().get('user-agent');
-  const host = headers().get('host');
+  const authHeader = request.headers.get('authorization');
+  const userAgent = request.headers.get('user-agent');
+  const host = request.headers.get('host');
   
   // Allow requests from:
   // 1. Vercel crons (with secret)
@@ -15,6 +14,31 @@ function verifyCronRequest(request: NextRequest) {
          userAgent?.includes('GitHub-Actions') ||
          host?.includes('localhost') ||
          host?.includes('solesmarket.com');
+}
+
+function getBaseUrl(request: NextRequest) {
+  // Prefer explicit config for cron (Vercel/GitHub Actions)
+  const envUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.APP_URL ||
+    process.env.VERCEL_URL ||
+    '';
+
+  if (envUrl) {
+    // VERCEL_URL is often just the hostname
+    if (!envUrl.startsWith('http://') && !envUrl.startsWith('https://')) {
+      return `https://${envUrl}`;
+    }
+    return envUrl;
+  }
+
+  // Fallback to request host (useful for local/ngrok manual triggers)
+  const host = request.headers.get('host');
+  const proto = request.headers.get('x-forwarded-proto') || 'https';
+  if (host) return `${proto}://${host}`;
+
+  // Final fallback (should rarely happen)
+  return 'http://localhost:3000';
 }
 
 export async function GET(request: NextRequest) {
@@ -236,10 +260,8 @@ export async function GET(request: NextRequest) {
         console.log(`🎯 Repricing ${itemsToReprice.length} listings (skipped ${listings.length - itemsToReprice.length} manual/keep_current)`);
 
         // Call the repricing API internally (using individual strategies per listing)
-        // Always use production URL to avoid Vercel deployment protection
-        const baseUrl = 'https://www.solesmarket.com';
-        
-        console.log(`🔑 Using access token: ${stockxTokens.access_token.substring(0, 30)}...`);
+        const baseUrl = getBaseUrl(request);
+        console.log(`🌐 Using baseUrl for repricing: ${baseUrl}`);
         
         const repriceResponse = await fetch(`${baseUrl}/api/stockx/repricing`, {
           method: 'POST',

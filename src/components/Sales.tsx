@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Calendar, TrendingUp, ArrowUp, ExternalLink, Plus, Sparkles, Trash2, X, ChevronDown, ChevronLeft, ChevronRight, Loader2, Wifi, WifiOff, AlertCircle, RefreshCw, Package, DollarSign, Link, Upload } from 'lucide-react';
+import { Search, Calendar, ExternalLink, Plus, Sparkles, Trash2, X, ChevronDown, ChevronLeft, ChevronRight, Loader2, Wifi, WifiOff, AlertCircle, RefreshCw, Package, DollarSign, Link, Upload } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
@@ -1194,47 +1194,33 @@ const Sales = () => {
   const totalProfit = sortedSales.reduce((sum, sale) => sum + (Number(sale.profit) || 0), 0);
   const avgProfit = totalSales > 0 ? Math.round(totalProfit / totalSales) : 0;
 
-  const metricsDisplay = [
-    {
-      title: 'Total Sales',
-      value: totalSales.toString(),
-      icon: ArrowUp,
-      iconColor: isNeon ? 'text-cyan-400' : 'text-blue-600'
-    },
-    {
-      title: 'Total Revenue',
-      value: `$${totalRevenue.toLocaleString()}`,
-      icon: TrendingUp,
-      iconColor: isNeon ? 'text-cyan-400' : 'text-blue-600'
-    },
-    {
-      title: 'Total Profit',
-      value: `$${totalProfit.toLocaleString()}`,
-      icon: TrendingUp,
-      iconColor: isNeon ? 'text-emerald-400' : 'text-green-600',
-      valueColor: isNeon ? 'text-emerald-400' : 'text-green-600'
-    },
-    {
-      title: 'Avg Profit',
-      value: `$${avgProfit}`,
-      icon: Calendar,
-      iconColor: isNeon ? 'text-cyan-400' : 'text-blue-600'
-    }
-  ];
-
   return (
     <div className={`flex-1 ${currentTheme.colors.background} p-8`}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className={`text-2xl font-bold ${
-            isNeon ? 'text-white' : 'text-gray-900'
-          }`}>Sales Tracking</h1>
-          <p className={`${
-            isNeon ? 'text-gray-300' : 'text-gray-600'
-          } mt-1`}>Record and track all your sales across marketplaces</p>
+      <div className="mb-4">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h1 className={`text-2xl font-bold ${currentTheme.colors.textPrimary}`}>Sales</h1>
+            <p className={`${currentTheme.colors.textSecondary} mt-1`}>
+              Showing {totalSales} sale{totalSales === 1 ? '' : 's'}
+            </p>
+          </div>
+          
+          <div className="text-right">
+            <p className={`${currentTheme.colors.textSecondary}`}>Total revenue:</p>
+            <p className={`text-xl font-bold ${currentTheme.colors.textPrimary}`}>
+              ${totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+            <p className={`text-sm ${currentTheme.colors.textSecondary} mt-1`}>
+              Profit: <span className={`font-semibold ${isNeon ? 'text-emerald-400' : 'text-green-600'}`}>
+                ${totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </p>
+          </div>
         </div>
-        <div className="flex items-center space-x-3">
+        
+        {/* Action Buttons */}
+        <div className="flex items-center space-x-3 justify-end">
           <button 
             onClick={handleTestSaleConfetti}
             disabled={isLoading || isAddingTestSale}
@@ -1581,37 +1567,6 @@ const Sales = () => {
             )}
           </div>
 
-          {/* Metrics Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-            {metricsDisplay.map((metric, index) => {
-              const Icon = metric.icon;
-              return (
-                <div key={index} className={`${
-                  isNeon 
-                    ? 'dark-neon-card' 
-                    : `${currentTheme.colors.cardBackground} border border-gray-200`
-                } rounded-lg p-6 shadow-sm transition-all duration-200 hover:shadow-lg ${
-                  isNeon ? 'hover:shadow-cyan-500/20' : ''
-                }`}>
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className={`text-sm font-medium ${
-                      isNeon ? 'text-gray-300' : 'text-gray-600'
-                    }`}>{metric.title}</h3>
-                    <Icon className={`w-5 h-5 ${metric.iconColor}`} />
-                  </div>
-                  <div className="space-y-1">
-                    <p className={`text-2xl font-bold ${
-                      metric.valueColor || (isNeon ? 'text-white' : 'text-gray-900')
-                    }`}>{metric.value}</p>
-                    <p className={`text-sm ${
-                      isNeon ? 'text-gray-400' : 'text-gray-500'
-                    }`}>Updated live</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
           {/* Search */}
           <div className="mb-6">
             <div className="relative">
@@ -1630,32 +1585,20 @@ const Sales = () => {
             </div>
           </div>
 
-          {/* Sales Summary */}
-          <div className="flex items-center justify-between mb-6">
-            <p className={isNeon ? 'text-gray-300' : 'text-gray-600'}>
-              Showing {totalSales} of {totalSales} sales
-            </p>
-            <p className={isNeon ? 'text-gray-300' : 'text-gray-600'}>
-              Total revenue: <span className={`font-semibold ${
-                isNeon ? 'text-white' : 'text-gray-900'
-              }`}>${totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-            </p>
-          </div>
-
           {/* Sales Table */}
-          <div className={`${
-            isNeon 
-              ? 'dark-neon-card' 
-              : `${currentTheme.colors.cardBackground} border border-gray-200`
-          } rounded-lg shadow-sm overflow-hidden`}>
+          <div className={`rounded-xl overflow-hidden ${
+            currentTheme.name === 'Neon'
+              ? 'bg-gradient-to-br from-gray-900/50 to-gray-900/30 border border-white/10 shadow-2xl'
+              : 'bg-white border border-gray-200 shadow-lg'
+          }`}>
             <div className="overflow-x-auto max-h-[70vh]">
               <table ref={tableRef} className="w-full" style={{ tableLayout: 'fixed' }}>
                 <thead className={`${
-                  isNeon 
-                    ? 'bg-gray-900 border-b border-white/10' 
-                    : 'bg-gray-50 border-b border-gray-200'
+                  currentTheme.name === 'Neon' 
+                    ? 'bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 border-b border-white/20 backdrop-blur-sm' 
+                    : 'bg-gradient-to-r from-gray-50 via-gray-100 to-gray-50 border-b border-gray-300'
                 } sticky top-0 z-10`}>
-                  <tr className="h-10">
+                  <tr className="h-12">
                     {/* Product Column */}
                     <th 
                       className={`relative px-3 py-0 h-10 align-middle text-left text-xs font-medium ${

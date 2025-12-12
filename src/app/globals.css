@@ -613,8 +613,9 @@ input[type="password"]::selection {
   transform: scale(0.95);
 }
 
-/* Mobile App Styles - Prevent white background and bouncing */
-html, body {
+/* Mobile App Styles (Capacitor only) - Prevent white background and bouncing.
+   IMPORTANT: These must NOT apply on web or scrolling will be disabled everywhere. */
+html.native-app, html.native-app body {
   margin: 0;
   padding: 0;
   width: 100%;
@@ -623,41 +624,25 @@ html, body {
   position: fixed;
   overscroll-behavior: none;
   -webkit-overflow-scrolling: touch;
-}
-
-/* Prevent white background on mobile */
-html {
   background-color: #111827;
 }
 
-body {
-  background-color: #111827;
-}
-
-/* Prevent overscroll bounce on iOS */
-body {
-  position: fixed;
-  overflow: hidden;
-  width: 100%;
-  height: 100%;
-}
-
-/* Ensure root div takes full height */
-#__next {
+/* Ensure root container takes full height in legacy pages (native only) */
+html.native-app #__next {
   height: 100%;
   overflow: hidden;
   background-color: #111827;
 }
 
-/* Prevent pull-to-refresh and overscroll */
-* {
+/* Prevent pull-to-refresh and overscroll (native only) */
+html.native-app * {
   overscroll-behavior: none;
   -webkit-overflow-scrolling: touch;
 }
 
-/* Mobile-specific: prevent bounce/rubber-band effect */
+/* Mobile-specific: prevent bounce/rubber-band effect (native only) */
 @supports (-webkit-touch-callout: none) {
-  body {
+  html.native-app body {
     position: fixed;
     overflow: hidden;
     width: 100%;
@@ -665,13 +650,13 @@ body {
     height: -webkit-fill-available;
   }
   
-  html {
+  html.native-app {
     height: -webkit-fill-available;
   }
 }
 
-/* Ensure no white gaps around content */
-.mobile-app-container {
+/* Ensure no white gaps around content (native only) */
+html.native-app .mobile-app-container {
   position: fixed;
   top: 0;
   left: 0;

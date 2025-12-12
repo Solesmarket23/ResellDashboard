@@ -2,8 +2,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { refreshStockXTokens, setStockXTokenCookies } from '@/lib/stockx/tokenRefresh';
 
+function parseStockXMoneyToDollars(raw: any): number | null {
+  if (raw === null || raw === undefined) return null;
+  const n = typeof raw === 'string' ? parseInt(raw, 10) : Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  // StockX is inconsistent across endpoints. Some return dollars (e.g. "113"),
+  // others return cents (e.g. "11300"). Use a heuristic.
+  return n >= 1000 ? n / 100 : n;
+}
+
 export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const filterListingId = searchParams.get('listingId')?.trim() || null;
+    const includeMarket = searchParams.get('includeMarket') === '1' || searchParams.get('includeMarket') === 'true';
+
     // Get access token from cookies
     const cookieStore = cookies();
     let accessToken = cookieStore.get('stockx_access_token')?.value;
@@ -17,9 +30,9 @@ export async function GET(request: NextRequest) {
     }
 
     console.log('🛍️ Fetching StockX listings...');
-    console.log('🔑 API Key:', process.env.STOCKX_API_KEY ? `Present (${process.env.STOCKX_API_KEY.substring(0, 8)}...)` : 'Missing');
+    console.log('🔑 API Key:', process.env.STOCKX_API_KEY ? 'Present' : 'Missing');
     console.log('🔐 Client ID:', process.env.STOCKX_CLIENT_ID ? 'Present' : 'Missing');
-    console.log('🎫 Access token:', accessToken ? `${accessToken.substring(0, 20)}...` : 'Missing');
+    console.log('🎫 Access token:', accessToken ? 'Present' : 'Missing');
 
     // Function to fetch a page of listings
     const fetchPage = async (pageNum: number, token: string) => {
@@ -33,7 +46,7 @@ export async function GET(request: NextRequest) {
       console.log('📍 Fetching from:', url);
       
       const apiKey = process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID || '';
-      console.log('🔐 Using API Key:', apiKey ? `${apiKey.substring(0, 8)}...` : 'EMPTY');
+      console.log('🔐 Using API Key:', apiKey ? 'Present' : 'EMPTY');
       
       const response = await fetch(url, {
         method: 'GET',
@@ -183,23 +196,27 @@ export async function GET(request: NextRequest) {
         
         if (response.ok) {
           const data = await response.json();
-          // The market data endpoint returns an array, find the matching variant
-          const variantData = Array.isArray(data) 
-            ? data.find((item: any) => item.variantId === variantId)
-            : data;
+          // The market data endpoint often returns { variants: [...] }
+          const variants = data?.variants || data;
+          const variantData = Array.isArray(variants)
+            ? variants.find((item: any) => item.variantId === variantId)
+            : variants;
           
           if (variantData) {
+            const standardAsk = parseStockXMoneyToDollars(variantData.lowestAskAmount);
+            const flexAsk = parseStockXMoneyToDollars(variantData.flexLowestAskAmount);
             return {
-              lowestAsk: variantData.lowestAskAmount ? parseInt(variantData.lowestAskAmount) / 100 : null,
-              highestBid: variantData.highestBidAmount ? parseInt(variantData.highestBidAmount) / 100 : null,
-              lastSale: variantData.lastSaleAmount ? parseInt(variantData.lastSaleAmount) / 100 : null
+              lowestAsk: standardAsk, // standard lowest ask
+              flexLowestAsk: flexAsk, // flex lowest ask
+              highestBid: parseStockXMoneyToDollars(variantData.highestBidAmount),
+              lastSale: parseStockXMoneyToDollars(variantData.lastSaleAmount)
             };
           }
         }
       } catch (error) {
         console.error(`Error fetching market data for ${productId}/${variantId}:`, error);
       }
-      return { lowestAsk: null, highestBid: null, lastSale: null };
+      return { lowestAsk: null, flexLowestAsk: null, highestBid: null, lastSale: null };
     };
 
     // Transform the data to match our component's expectations
@@ -220,8 +237,14 @@ export async function GET(request: NextRequest) {
       const productId = listing.productId || listing.product?.productId || listing.product?.id || '';
       const variantId = listing.variantId || listing.variant?.variantId || listing.variant?.id || '';
       
-      // Don't fetch market data during initial load - it will be fetched when needed
+      // Don't fetch market data during initial load unless explicitly requested for a single listing
       let marketData = { lowestAsk: null, highestBid: null, lastSale: null };
+      if (includeMarket && filterListingId) {
+        const id = listing.listingId || listing.id || `listing-${index}`;
+        if (id === filterListingId && productId && variantId) {
+          marketData = await fetchMarketData(productId, variantId, newAccessToken);
+        }
+      }
       
       return {
         listingId: listing.listingId || listing.id || `listing-${index}`,
@@ -240,7 +263,9 @@ export async function GET(request: NextRequest) {
         updatedAt: listing.updatedAt || listing.updated_at,
         // Additional useful fields
         retailPrice: parseFloat(listing.product?.retailPrice || listing.retailPrice || '0'),
-        lowestAsk: marketData.lowestAsk || parseFloat(listing.product?.lowestAsk || listing.lowestAsk || '0'),
+        // Keep standard + flex separate; also include bestAsk for convenience
+        lowestAsk: (marketData as any).lowestAsk ?? parseFloat(listing.product?.lowestAsk || listing.lowestAsk || '0'),
+        flexLowestAsk: (marketData as any).flexLowestAsk ?? null,
         highestBid: marketData.highestBid || parseFloat(listing.product?.highestBid || listing.highestBid || '0'),
         lastSale: marketData.lastSale || parseFloat(listing.product?.lastSale || listing.lastSale || '0'),
         category: listing.product?.category || listing.category || '',
@@ -699,10 +724,14 @@ export async function GET(request: NextRequest) {
       debugInfo.discrepancy.filteredListings = filteredListingsAnalysis.slice(0, 5);
     }
 
+    const filtered = filterListingId
+      ? deduplicatedListings.filter((l: any) => l.listingId === filterListingId)
+      : deduplicatedListings;
+
     const successResponse = NextResponse.json({
       success: true,
-      listings: deduplicatedListings,
-      totalCount: deduplicatedListings.length,
+      listings: filtered,
+      totalCount: filtered.length,
       rawCount: activeListings.length,
       trueDuplicatesRemoved: duplicateListingIds.length,
       duplicateListingIds: duplicateListingIds,
@@ -714,11 +743,9 @@ export async function GET(request: NextRequest) {
           ? `Removed ${duplicateListingIds.length} true duplicates` 
           : 'No true duplicates found - all listings appear to be legitimate variations'
       },
-      actualCount: deduplicatedListings.length - testListings.filter((t: any) => 
-        !duplicateListingIds.includes(t.listingId)
-      ).length, // Count without test listings (excluding removed duplicates)
-      testListingCount: testListings.length,
-      debugInfo, // Include debug info for client
+      actualCount: filtered.length,
+      testListingCount: filterListingId ? 0 : testListings.length,
+      debugInfo: filterListingId ? undefined : debugInfo, // avoid huge logs when requesting a single listing
       timestamp: new Date().toISOString()
     });
 

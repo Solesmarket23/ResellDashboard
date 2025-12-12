@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
   });
   
   // Default return URL if none specified
-  const defaultReturn = '/dashboard?section=stockx-market-research';
+  const defaultReturn = '/dashboard?section=stockx-arbitrage';
 
   // Handle OAuth errors
   if (error) {
@@ -79,12 +79,21 @@ export async function GET(request: NextRequest) {
   if (code && state) {
     console.log('🔄 Processing NEW authorization code from StockX OAuth');
     
-    // Validate state for security
+    // Validate state for security (more lenient in development due to server restarts)
+    const isDevelopment = host.includes('localhost') || host.includes('ngrok');
     if (state !== storedState) {
-      console.log('❌ State mismatch - security issue detected');
-      const redirectUrl = buildRedirectUrl(baseUrl, returnTo, defaultReturn);
-      const separator = redirectUrl.includes('?') ? '&' : '?';
-      return NextResponse.redirect(`${redirectUrl}${separator}error=state_mismatch`);
+      console.log('⚠️ State mismatch detected:', { state, storedState, isDevelopment });
+      
+      // In development, allow the flow to continue with a warning
+      // In production, this is a security issue and should be blocked
+      if (!isDevelopment) {
+        console.log('❌ State mismatch in production - blocking for security');
+        const redirectUrl = buildRedirectUrl(baseUrl, returnTo, defaultReturn);
+        const separator = redirectUrl.includes('?') ? '&' : '?';
+        return NextResponse.redirect(`${redirectUrl}${separator}error=state_mismatch`);
+      }
+      
+      console.log('⚠️ State mismatch in development - continuing anyway (dev server restart likely cleared cookies)');
     }
 
     // Exchange the new authorization code for fresh tokens

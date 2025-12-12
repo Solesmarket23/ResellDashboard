@@ -8,6 +8,7 @@ export async function GET(request: NextRequest) {
   try {
     const adminDb = getAdminDb();
     const userId = 'pPK6LZ0u8Qcsdxqj21yra3esJ493';
+    const baseUrl = request.nextUrl.origin;
 
     // Get user data
     const userDoc = await adminDb.collection('users').doc(userId).get();
@@ -50,7 +51,7 @@ export async function GET(request: NextRequest) {
     };
 
     // Call the repricing API
-    const repriceResponse = await fetch('https://www.solesmarket.com/api/stockx/repricing', {
+    const repriceResponse = await fetch(`${baseUrl}/api/stockx/repricing`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -77,7 +78,7 @@ export async function GET(request: NextRequest) {
       response: responseData,
       sentData: {
         hasAccessToken: !!userData.stockxTokens.access_token,
-        accessTokenPreview: userData.stockxTokens.access_token.substring(0, 20) + '...',
+        baseUrl,
         listingsCount: testData.listings.length
       }
     });

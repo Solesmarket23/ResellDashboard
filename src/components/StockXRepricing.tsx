@@ -23,9 +23,11 @@ interface RepricingStrategy {
 }
 
 interface IndividualPricingStrategy {
-  type: 'beat_lowest' | 'match_lowest' | 'percentage_below' | 'manual' | 'keep_current' | 'market_peek';
+  type: 'beat_lowest' | 'match_lowest' | 'percentage_below' | 'manual' | 'keep_current' | 'market_peek' | 'reset_then_beat_lowest';
   value?: number; // Amount for beat_lowest or percentage
   manualPrice?: number;
+  resetPrice?: number;
+  beatBy?: number;
   peekSettings?: {
     frequency: 'conservative' | 'balanced' | 'aggressive'; // 8h, 6h, 4h
     lastPeekTime?: string;
@@ -67,6 +69,7 @@ interface Listing {
   createdAt?: string;
   retailPrice?: number;
   lowestAsk?: number;
+  flexLowestAsk?: number;
   highestBid?: number;
   lastSale?: number;
   category?: string;
@@ -178,8 +181,18 @@ export default function StockXRepricing() {
   const [inventoryGroups, setInventoryGroups] = useState<Map<string, InventoryGroup>>(new Map());
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [copiedStyleIds, setCopiedStyleIds] = useState<Record<string, boolean>>({});
+  const [copiedListingIds, setCopiedListingIds] = useState<Record<string, boolean>>({});
   const [sortColumn, setSortColumn] = useState<'product' | 'size' | 'price' | 'market' | 'status' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const getTrueAsk = useCallback((listing: Listing): number | null => {
+    const std = typeof listing.lowestAsk === 'number' && listing.lowestAsk > 0 ? listing.lowestAsk : null;
+    const flex = typeof listing.flexLowestAsk === 'number' && listing.flexLowestAsk > 0 ? listing.flexLowestAsk : null;
+    if (std === null && flex === null) return null;
+    if (std === null) return flex;
+    if (flex === null) return std;
+    return Math.min(std, flex);
+  }, []);
   
   // Auto-repricing settings
   const [showAutoRepricingSettings, setShowAutoRepricingSettings] = useState(true); // Default to expanded
@@ -213,8 +226,8 @@ export default function StockXRepricing() {
         bValue = b.currentPrice;
         break;
       case 'market':
-        aValue = a.lowestAsk || 0;
-        bValue = b.lowestAsk || 0;
+        aValue = getTrueAsk(a) || 0;
+        bValue = getTrueAsk(b) || 0;
         break;
       case 'status':
         aValue = a.status || '';
@@ -910,6 +923,7 @@ export default function StockXRepricing() {
             selected: false,
             // Apply cached prices if available and recent
             lowestAsk: isRecentCache && cached.lowestAsk ? cached.lowestAsk : listing.lowestAsk,
+            flexLowestAsk: isRecentCache && cached.flexLowestAsk ? cached.flexLowestAsk : listing.flexLowestAsk,
             highestBid: isRecentCache && cached.highestBid ? cached.highestBid : listing.highestBid,
             lastSale: isRecentCache && cached.lastSale ? cached.lastSale : listing.lastSale
           };
@@ -971,7 +985,7 @@ export default function StockXRepricing() {
         // Auto-fetch market prices for first page of listings (in background)
         if (!forceReload && finalListings.length > 0) {
           const firstPageListings = finalListings.slice(0, itemsPerPage);
-          const listingsNeedingPrices = firstPageListings.filter(l => !l.lowestAsk || l.lowestAsk === 0);
+          const listingsNeedingPrices = firstPageListings.filter(l => (!l.lowestAsk || l.lowestAsk === 0) && (!l.flexLowestAsk || l.flexLowestAsk === 0));
           
           if (listingsNeedingPrices.length > 0) {
             console.log(`🔄 Auto-fetching market prices for ${listingsNeedingPrices.length} listings...`);
@@ -1056,7 +1070,7 @@ export default function StockXRepricing() {
     if (!listing || listing.selected) return; // If already selected or not found, skip
     
     // If we don't have market data for this listing, fetch it
-    if (!listing.lowestAsk || listing.lowestAsk === 0) {
+    if ((!listing.lowestAsk || listing.lowestAsk === 0) && (!listing.flexLowestAsk || listing.flexLowestAsk === 0)) {
       try {
         const response = await fetch('/api/stockx/listings/market-data', {
           method: 'POST',
@@ -1083,6 +1097,7 @@ export default function StockXRepricing() {
                   ? { 
                       ...l, 
                       lowestAsk: marketInfo.marketData.lowestAsk,
+                      flexLowestAsk: marketInfo.marketData.flexLowestAsk,
                       highestBid: marketInfo.marketData.highestBid,
                       lastSale: marketInfo.marketData.lastSale
                     }
@@ -1111,7 +1126,7 @@ export default function StockXRepricing() {
     
     // If selecting all on current page, fetch market data for listings that don't have it
     if (!allPageSelected) {
-      const listingsNeedingData = paginatedListings.filter(l => !l.lowestAsk || l.lowestAsk === 0);
+      const listingsNeedingData = paginatedListings.filter(l => (!l.lowestAsk || l.lowestAsk === 0) && (!l.flexLowestAsk || l.flexLowestAsk === 0));
       if (listingsNeedingData.length > 0) {
         try {
           // No need to limit since we're already paginated
@@ -1139,6 +1154,7 @@ export default function StockXRepricing() {
                   return {
                     ...listing,
                     lowestAsk: marketInfo.marketData.lowestAsk,
+                    flexLowestAsk: marketInfo.marketData.flexLowestAsk,
                     highestBid: marketInfo.marketData.highestBid,
                     lastSale: marketInfo.marketData.lastSale
                   };
@@ -1183,6 +1199,7 @@ export default function StockXRepricing() {
               return {
                 ...listing,
                 lowestAsk: marketInfo.marketData.lowestAsk,
+                flexLowestAsk: marketInfo.marketData.flexLowestAsk,
                 highestBid: marketInfo.marketData.highestBid,
                 lastSale: marketInfo.marketData.lastSale
               };
@@ -1193,9 +1210,10 @@ export default function StockXRepricing() {
             // Cache market data to localStorage
             try {
               const cacheData = updated.reduce((acc: any, listing) => {
-                if (listing.lowestAsk || listing.highestBid) {
+                if (listing.lowestAsk || listing.flexLowestAsk || listing.highestBid) {
                   acc[listing.listingId] = {
                     lowestAsk: listing.lowestAsk,
+                    flexLowestAsk: listing.flexLowestAsk,
                     highestBid: listing.highestBid,
                     lastSale: listing.lastSale,
                     cachedAt: Date.now()
@@ -1226,7 +1244,7 @@ export default function StockXRepricing() {
     // This is for manual refresh of current page only
     try {
       setLoading(true);
-      const listingsNeedingData = paginatedListings.filter(l => !l.lowestAsk || l.lowestAsk === 0);
+      const listingsNeedingData = paginatedListings.filter(l => (!l.lowestAsk || l.lowestAsk === 0) && (!l.flexLowestAsk || l.flexLowestAsk === 0));
       
       if (listingsNeedingData.length === 0) {
         // If all have prices, refresh all on current page
@@ -1350,6 +1368,9 @@ export default function StockXRepricing() {
       newStrategy.value = listing.pricingStrategy?.value || 5;
     } else if (type === 'manual') {
       newStrategy.manualPrice = listing.pricingStrategy?.manualPrice || listing.currentPrice;
+    } else if (type === 'reset_then_beat_lowest') {
+      newStrategy.resetPrice = listing.pricingStrategy?.resetPrice || 999;
+      newStrategy.beatBy = listing.pricingStrategy?.beatBy || 1;
     } else if (type === 'market_peek') {
       newStrategy.peekSettings = {
         frequency: listing.pricingStrategy?.peekSettings?.frequency || 'balanced',
@@ -1453,6 +1474,7 @@ export default function StockXRepricing() {
       const strategyLabel = pendingStrategy.type === 'beat_lowest' ? 'Beat Lowest by $1' :
                            pendingStrategy.type === 'match_lowest' ? 'Match Lowest' :
                            pendingStrategy.type === 'market_peek' ? 'Market Peek' :
+                           pendingStrategy.type === 'reset_then_beat_lowest' ? 'Two-step: reset then beat lowest' :
                            pendingStrategy.type === 'percentage_below' ? `Below ${pendingStrategy.value}%` :
                            pendingStrategy.type === 'manual' ? 'Manual' :
                            'Keep Current';
@@ -1513,6 +1535,34 @@ export default function StockXRepricing() {
     ));
     
     // Save to Firebase
+    saveSettingToFirebase(listingId, {
+      pricingStrategy: newStrategy,
+      minPrice: listing.minPrice,
+      maxPrice: listing.maxPrice,
+      autoDeactivate: listing.autoDeactivate
+    });
+  };
+
+  const updateResetPrice = (listingId: string, resetPrice: number) => {
+    const listing = listings.find(l => l.listingId === listingId);
+    if (!listing) return;
+    const safeReset = Math.max(1, Math.round(resetPrice || 0));
+    const newStrategy = { ...listing.pricingStrategy!, resetPrice: safeReset };
+    setListings(prev => prev.map(l => (l.listingId === listingId ? { ...l, pricingStrategy: newStrategy } : l)));
+    saveSettingToFirebase(listingId, {
+      pricingStrategy: newStrategy,
+      minPrice: listing.minPrice,
+      maxPrice: listing.maxPrice,
+      autoDeactivate: listing.autoDeactivate
+    });
+  };
+
+  const updateBeatBy = (listingId: string, beatBy: number) => {
+    const listing = listings.find(l => l.listingId === listingId);
+    if (!listing) return;
+    const safeBeatBy = Math.max(1, Math.round(beatBy || 0));
+    const newStrategy = { ...listing.pricingStrategy!, beatBy: safeBeatBy };
+    setListings(prev => prev.map(l => (l.listingId === listingId ? { ...l, pricingStrategy: newStrategy } : l)));
     saveSettingToFirebase(listingId, {
       pricingStrategy: newStrategy,
       minPrice: listing.minPrice,
@@ -1818,7 +1868,7 @@ export default function StockXRepricing() {
     setShowBulkPricingModal(false);
     
     // Optional: Auto-refresh market prices for selected items
-    if (selectedListings.some(l => !l.lowestAsk)) {
+    if (selectedListings.some(l => !getTrueAsk(l))) {
       await fetchMarketDataForListings(selectedListings);
     }
   };
@@ -1838,11 +1888,12 @@ export default function StockXRepricing() {
         let newPrice = listing.currentPrice;
         
         if (rule === 'beat_lowest') {
-          newPrice = (listing.lowestAsk || listing.currentPrice) - value;
+          const market = getTrueAsk(listing) || listing.currentPrice;
+          newPrice = market - value;
         } else if (rule === 'match_lowest') {
-          newPrice = listing.lowestAsk || listing.currentPrice;
+          newPrice = getTrueAsk(listing) || listing.currentPrice;
         } else if (rule === 'percentage') {
-          const marketPrice = listing.lowestAsk || listing.currentPrice;
+          const marketPrice = getTrueAsk(listing) || listing.currentPrice;
           newPrice = marketPrice * (1 - value / 100);
         }
         
@@ -1853,7 +1904,7 @@ export default function StockXRepricing() {
           listingId: listing.listingId,
           currentPrice: listing.currentPrice,
           newPrice,
-          marketPrice: listing.lowestAsk || 0
+          marketPrice: getTrueAsk(listing) || 0
         };
       });
 
@@ -1900,7 +1951,7 @@ export default function StockXRepricing() {
       // Calculate new prices based on custom rule
       const updates = selectedListings.map(listing => {
         let newPrice = listing.currentPrice;
-        const marketPrice = listing.lowestAsk || listing.currentPrice;
+        const marketPrice = getTrueAsk(listing) || listing.currentPrice;
         
         switch (type) {
           case 'below_dollar':
@@ -1969,7 +2020,7 @@ export default function StockXRepricing() {
       let reason = 'No pricing rule set';
       
       if (listing.pricingStrategy) {
-        const marketPrice = listing.lowestAsk || listing.currentPrice;
+        const marketPrice = getTrueAsk(listing) || listing.currentPrice;
         
         switch (listing.pricingStrategy.type) {
           case 'beat_lowest':
@@ -1988,6 +2039,15 @@ export default function StockXRepricing() {
             newPrice = Math.max(1, Math.round(marketPrice * (1 - percentage / 100)));
             reason = `${percentage}% below market`;
             break;
+
+          case 'reset_then_beat_lowest': {
+            const resetPrice = listing.pricingStrategy.resetPrice || 999;
+            const beatBy2 = Math.max(1, listing.pricingStrategy.beatBy || 1);
+            // Preview is "what you'll end up at" (step 2). Step 1 happens server-side.
+            newPrice = Math.max(1, Math.round(marketPrice - beatBy2));
+            reason = `Two-step: reset $${resetPrice}, then beat by $${beatBy2}`;
+            break;
+          }
             
           case 'manual':
             newPrice = listing.pricingStrategy.manualPrice || listing.currentPrice;
@@ -2118,6 +2178,24 @@ export default function StockXRepricing() {
       setCopiedStyleIds(prev => ({ ...prev, [listingId]: true }));
       setTimeout(() => {
         setCopiedStyleIds(prev => ({ ...prev, [listingId]: false }));
+      }, 2000);
+    });
+  };
+
+  const copyListingIdentifiers = (listing: Listing) => {
+    const payload = [
+      `productName: ${listing.productName}`,
+      `styleId: ${listing.styleId || ''}`,
+      `listingId: ${listing.listingId}`,
+      `productId: ${listing.productId}`,
+      `variantId: ${listing.variantId}`,
+      `marketDataUrl: https://api.stockx.com/v2/catalog/products/${listing.productId}/variants/${listing.variantId}/market-data`
+    ].join('\n');
+
+    navigator.clipboard.writeText(payload).then(() => {
+      setCopiedListingIds(prev => ({ ...prev, [listing.listingId]: true }));
+      setTimeout(() => {
+        setCopiedListingIds(prev => ({ ...prev, [listing.listingId]: false }));
       }, 2000);
     });
   };
@@ -3222,6 +3300,22 @@ export default function StockXRepricing() {
                                 )}
                               </button>
                             )}
+
+                            <button
+                              onClick={() => copyListingIdentifiers(listing)}
+                              className={`p-0.5 rounded transition-all ${
+                                copiedListingIds[listing.listingId]
+                                  ? isNeon ? 'text-green-400' : 'text-green-600'
+                                  : isNeon ? 'text-gray-500 hover:text-cyan-400' : 'text-gray-400 hover:text-gray-600'
+                              }`}
+                              title="Copy listingId + productId + variantId + market-data URL"
+                            >
+                              {copiedListingIds[listing.listingId] ? (
+                                <Check className="w-3 h-3" />
+                              ) : (
+                                <Copy className="w-3 h-3" />
+                              )}
+                            </button>
                           </div>
                         </div>
                         {/* Group Leader Indicator */}
@@ -3258,7 +3352,12 @@ export default function StockXRepricing() {
                       ${listing.currentPrice}
                     </td>
                     <td className={`p-2 font-medium text-sm ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-                      ${listing.lowestAsk || '-'}
+                      <div className="flex flex-col leading-tight">
+                        <span>${listing.lowestAsk || '-'}</span>
+                        <span className={`text-[11px] ${isNeon ? 'text-gray-500' : 'text-gray-500'}`}>
+                          Flex: ${listing.flexLowestAsk || '-'}
+                        </span>
+                      </div>
                     </td>
                     <td className="p-2">
                       <div className="flex items-center gap-2">
@@ -3268,6 +3367,7 @@ export default function StockXRepricing() {
                           options={[
                             { value: 'keep_current', label: 'Keep Current' },
                             { value: 'market_peek', label: '🔍 Market Peek' },
+                            { value: 'reset_then_beat_lowest', label: '⚡ Two-step: reset then beat lowest' },
                             { value: 'beat_lowest', label: 'Beat Lowest by $1' },
                             { value: 'match_lowest', label: 'Match Lowest' },
                             { value: 'percentage_below', label: listing.pricingStrategy?.type === 'percentage_below' ? `-${listing.pricingStrategy?.value || 5}%` : 'Below %' },
@@ -3304,6 +3404,35 @@ export default function StockXRepricing() {
                             <option value="balanced">6h</option>
                             <option value="aggressive">4h</option>
                           </select>
+                        ) : (listing.pricingStrategy?.type === 'reset_then_beat_lowest') ? (
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              min="1"
+                              value={listing.pricingStrategy?.resetPrice || 999}
+                              onChange={(e) => updateResetPrice(listing.listingId, parseFloat(e.target.value))}
+                              className={`w-[70px] text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
+                                isNeon 
+                                  ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
+                                  : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
+                              }`}
+                              placeholder="Reset"
+                              title="Reset price (step 1)"
+                            />
+                            <input
+                              type="number"
+                              min="1"
+                              value={listing.pricingStrategy?.beatBy || 1}
+                              onChange={(e) => updateBeatBy(listing.listingId, parseFloat(e.target.value))}
+                              className={`w-[70px] text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
+                                isNeon 
+                                  ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
+                                  : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
+                              }`}
+                              placeholder="Beat by"
+                              title="Undercut amount (step 2)"
+                            />
+                          </div>
                         ) : (listing.pricingStrategy?.type === 'percentage_below' ||
                             listing.pricingStrategy?.type === 'manual') ? (
                           <div className="flex items-center gap-1">

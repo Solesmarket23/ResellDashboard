@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
+function parseStockXMoneyToDollars(raw: any): number | null {
+  if (raw === null || raw === undefined) return null;
+  const n = typeof raw === 'string' ? parseInt(raw, 10) : Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  // StockX is inconsistent across endpoints. Some return dollars (e.g. "113"),
+  // others return cents (e.g. "11300"). Use a heuristic.
+  return n >= 1000 ? n / 100 : n;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const cookieStore = cookies();
@@ -49,9 +58,10 @@ export async function POST(request: NextRequest) {
             return {
               listingId: listing.listingId,
               marketData: {
-                lowestAsk: variantData.lowestAskAmount ? parseInt(variantData.lowestAskAmount) : null,
-                highestBid: variantData.highestBidAmount ? parseInt(variantData.highestBidAmount) : null,
-                lastSale: variantData.lastSaleAmount ? parseInt(variantData.lastSaleAmount) : null,
+                lowestAsk: parseStockXMoneyToDollars(variantData.lowestAskAmount),
+                flexLowestAsk: parseStockXMoneyToDollars(variantData.flexLowestAskAmount),
+                highestBid: parseStockXMoneyToDollars(variantData.highestBidAmount),
+                lastSale: parseStockXMoneyToDollars(variantData.lastSaleAmount),
                 numberOfAsks: variantData.numberOfAsks || 0,
                 numberOfBids: variantData.numberOfBids || 0
               }
