@@ -17,6 +17,15 @@ function verifyCronRequest(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    if (process.env.CRON_PAUSED === '1' || process.env.CRON_PAUSED === 'true') {
+      return NextResponse.json({
+        success: true,
+        paused: true,
+        message: 'Cron paused via CRON_PAUSED',
+        timestamp: new Date().toISOString()
+      });
+    }
+
     if (!verifyCronRequest(request)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

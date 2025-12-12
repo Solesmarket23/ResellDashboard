@@ -43,6 +43,15 @@ function getBaseUrl(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    if (process.env.CRON_PAUSED === '1' || process.env.CRON_PAUSED === 'true') {
+      return NextResponse.json({
+        success: true,
+        paused: true,
+        message: 'Cron paused via CRON_PAUSED',
+        timestamp: new Date().toISOString()
+      });
+    }
+
     const { searchParams } = new URL(request.url);
     const force = searchParams.get('force') === '1' || searchParams.get('force') === 'true';
     const dryRun = searchParams.get('dryRun') === '1' || searchParams.get('dryRun') === 'true';

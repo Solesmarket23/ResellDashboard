@@ -4,6 +4,15 @@ import { trackingService } from '@/lib/tracking/trackingService';
 
 export async function GET(request: NextRequest) {
   try {
+    if (process.env.CRON_PAUSED === '1' || process.env.CRON_PAUSED === 'true') {
+      return NextResponse.json({
+        success: true,
+        paused: true,
+        message: 'Cron paused via CRON_PAUSED',
+        timestamp: new Date().toISOString()
+      });
+    }
+
     // Verify this is a CRON request
     const authHeader = request.headers.get('authorization');
     const cronSecret = process.env.CRON_SECRET;
