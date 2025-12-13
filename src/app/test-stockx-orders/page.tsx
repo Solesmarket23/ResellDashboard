@@ -345,6 +345,43 @@ export default function TestStockXOrders() {
     }
   };
 
+  const ymd = (d: Date) => {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const setQuickRange = (range: 'last_7' | 'last_30' | 'last_90' | 'this_month' | 'last_month' | 'this_year' | 'last_12_months') => {
+    const now = new Date();
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    let start = new Date(end);
+
+    if (range === 'this_month') {
+      start = new Date(end.getFullYear(), end.getMonth(), 1);
+    } else if (range === 'last_month') {
+      start = new Date(end.getFullYear(), end.getMonth() - 1, 1);
+      // end of last month
+      const lastMonthEnd = new Date(end.getFullYear(), end.getMonth(), 0);
+      setFromDate(ymd(start));
+      setToDate(ymd(lastMonthEnd));
+      return;
+    } else if (range === 'this_year') {
+      start = new Date(end.getFullYear(), 0, 1);
+    } else if (range === 'last_7') {
+      start.setDate(start.getDate() - 6);
+    } else if (range === 'last_30') {
+      start.setDate(start.getDate() - 29);
+    } else if (range === 'last_90') {
+      start.setDate(start.getDate() - 89);
+    } else if (range === 'last_12_months') {
+      start = new Date(end.getFullYear(), end.getMonth() - 11, 1);
+    }
+
+    setFromDate(ymd(start));
+    setToDate(ymd(end));
+  };
+
   const last12MonthsRange = () => {
     const end = new Date();
     const start = new Date(end.getFullYear(), end.getMonth() - 11, 1);
@@ -1680,15 +1717,54 @@ export default function TestStockXOrders() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => {
-                  const now = new Date();
-                  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-                  setFromDate(start.toISOString().slice(0, 10));
-                  setToDate(now.toISOString().slice(0, 10));
+                  setQuickRange('this_month');
                 }}
                 className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10"
                 title="Set date range to this month"
               >
                 This month
+              </button>
+              <button
+                onClick={() => setQuickRange('last_7')}
+                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
+                title="Last 7 days"
+              >
+                7d
+              </button>
+              <button
+                onClick={() => setQuickRange('last_30')}
+                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
+                title="Last 30 days"
+              >
+                30d
+              </button>
+              <button
+                onClick={() => setQuickRange('last_90')}
+                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
+                title="Last 90 days"
+              >
+                90d
+              </button>
+              <button
+                onClick={() => setQuickRange('last_month')}
+                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
+                title="Last month"
+              >
+                Last month
+              </button>
+              <button
+                onClick={() => setQuickRange('this_year')}
+                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
+                title="This year"
+              >
+                This year
+              </button>
+              <button
+                onClick={() => setQuickRange('last_12_months')}
+                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
+                title="Last 12 months"
+              >
+                12m
               </button>
               <button
                 onClick={() => {
