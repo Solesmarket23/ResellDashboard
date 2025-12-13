@@ -159,6 +159,7 @@ export default function TestStockXOrders() {
   const [selected, setSelected] = useState<{ orderNumber: string; data: any } | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [selectedSalesDay, setSelectedSalesDay] = useState<string | null>(null);
+  const [orderSearchQuery, setOrderSearchQuery] = useState('');
 
   type VerificationMonthRow = { month: string; success: number; failed: number; failureRate: number };
   type VerificationBrandRow = {
@@ -714,6 +715,16 @@ export default function TestStockXOrders() {
     return normalizeMoney(row?.metrics?.netPayout ?? row?.pricing?.payout ?? raw?.payout);
   };
 
+  const getRowBrand = (row: any) => {
+    const raw = row?.rawData || row;
+    return String(row?.product?.brand || raw?.product?.brand || raw?.variant?.product?.brand || raw?.brand || '').trim();
+  };
+
+  const getRowCategory = (row: any) => {
+    const raw = row?.rawData || row;
+    return String(row?.product?.category || raw?.product?.category || raw?.variant?.product?.category || raw?.category || '').trim();
+  };
+
   const sortIndicator = (col: NonNullable<typeof sortBy>) =>
     sortBy === col ? (sortDir === 'asc' ? '▲' : '▼') : '⇅';
 
@@ -755,6 +766,27 @@ export default function TestStockXOrders() {
     // Hide DIDNOTSHIP by default (these are not fulfilled sales)
     if (!showDidNotShip) {
       filtered = filtered.filter((r) => getRowStatus(r) !== 'DIDNOTSHIP');
+    }
+
+    // Search filter (matches Purchases UX: filters the displayed table + derived analytics)
+    if (orderSearchQuery.trim()) {
+      const q = orderSearchQuery.toLowerCase().trim();
+      filtered = filtered.filter((r) => {
+        const orderNo = getRowOrderNumber(r).toLowerCase();
+        const status = getRowStatus(r).toLowerCase();
+        const product = getRowProductName(r).toLowerCase();
+        const size = getRowSize(r).toLowerCase();
+        const brand = getRowBrand(r).toLowerCase();
+        const category = getRowCategory(r).toLowerCase();
+        return (
+          orderNo.includes(q) ||
+          status.includes(q) ||
+          product.includes(q) ||
+          size.includes(q) ||
+          brand.includes(q) ||
+          category.includes(q)
+        );
+      });
     }
 
     // 2) Apply sorting
@@ -849,6 +881,7 @@ export default function TestStockXOrders() {
     selectedHistoryStatuses,
     selectedActiveStatuses,
     showDidNotShip,
+    orderSearchQuery,
     sortBy,
     sortDir,
   ]);
@@ -2439,6 +2472,48 @@ export default function TestStockXOrders() {
                     );
                   })()}
                 </div>
+              )}
+            </div>
+
+            <div className="p-4 border-b border-white/10">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={orderSearchQuery}
+                  onChange={(e) => setOrderSearchQuery(e.target.value)}
+                  placeholder="Search by order #, product, size, brand, category, or status..."
+                  className="w-full px-4 py-3 pl-12 rounded-lg bg-gray-900 border border-white/10 text-gray-200 placeholder-gray-500 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 transition-all"
+                />
+                <svg
+                  className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                  />
+                </svg>
+                {orderSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setOrderSearchQuery('')}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-200 transition-colors"
+                    title="Clear search"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+              {orderSearchQuery && (
+                <p className="mt-2 text-sm text-gray-400">
+                  Showing {displayedOrders.length} result{displayedOrders.length !== 1 ? 's' : ''} for "{orderSearchQuery}"
+                </p>
               )}
             </div>
 
