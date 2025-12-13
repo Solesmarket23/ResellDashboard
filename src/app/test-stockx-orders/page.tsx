@@ -114,7 +114,9 @@ export default function TestStockXOrders() {
   const [selected, setSelected] = useState<{ orderNumber: string; data: any } | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
 
-  const [sortBy, setSortBy] = useState<'status' | 'created' | null>(null);
+  const [sortBy, setSortBy] = useState<
+    'orderNumber' | 'status' | 'product' | 'size' | 'sale' | 'fees' | 'payout' | 'created' | null
+  >(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   type LogLevel = 'info' | 'warn' | 'error';
@@ -188,6 +190,44 @@ export default function TestStockXOrders() {
     return Number.isNaN(t) ? null : t;
   };
 
+  const getRowProductName = (row: any) => {
+    const raw = row?.rawData || row;
+    return String(
+      row?.product?.name ||
+        raw?.product?.productName ||
+        raw?.product?.name ||
+        raw?.variant?.product?.productName ||
+        raw?.variant?.product?.name ||
+        '—'
+    );
+  };
+
+  const getRowSize = (row: any) => {
+    const raw = row?.rawData || row;
+    return String(row?.variant?.size || raw?.variant?.size || raw?.variant?.variantValue || raw?.size || '').trim();
+  };
+
+  const getRowSale = (row: any) => {
+    const raw = row?.rawData || row;
+    return normalizeMoney(row?.metrics?.salePrice ?? row?.pricing?.salePrice ?? raw?.amount ?? raw?.price);
+  };
+  const getRowFees = (row: any) => {
+    const raw = row?.rawData || row;
+    return normalizeMoney(row?.metrics?.totalFees ?? row?.pricing?.totalFees ?? raw?.totalFees);
+  };
+  const getRowPayout = (row: any) => {
+    const raw = row?.rawData || row;
+    return normalizeMoney(row?.metrics?.netPayout ?? row?.pricing?.payout ?? raw?.payout);
+  };
+
+  const sortIndicator = (col: NonNullable<typeof sortBy>) =>
+    sortBy === col ? (sortDir === 'asc' ? '▲' : '▼') : '⇅';
+
+  const toggleSort = (col: NonNullable<typeof sortBy>, defaultDir: 'asc' | 'desc' = 'asc') => {
+    setSortBy(col);
+    setSortDir((d) => (sortBy === col ? (d === 'asc' ? 'desc' : 'asc') : defaultDir));
+  };
+
   const displayedOrders = useMemo(() => {
     // 1) Apply filters live to already-fetched rows
     let filtered = [...orders];
@@ -215,11 +255,71 @@ export default function TestStockXOrders() {
     if (!sortBy) return filtered;
     const dir = sortDir === 'asc' ? 1 : -1;
     return filtered.sort((a: any, b: any) => {
+      if (sortBy === 'orderNumber') {
+        const ao = getRowOrderNumber(a);
+        const bo = getRowOrderNumber(b);
+        const cmp = ao.localeCompare(bo);
+        if (cmp !== 0) return cmp * dir;
+      }
       if (sortBy === 'status') {
         const as = getRowStatus(a);
         const bs = getRowStatus(b);
         const cmp = as.localeCompare(bs);
         if (cmp !== 0) return cmp * dir;
+      }
+      if (sortBy === 'product') {
+        const ap = getRowProductName(a);
+        const bp = getRowProductName(b);
+        const cmp = ap.localeCompare(bp);
+        if (cmp !== 0) return cmp * dir;
+      }
+      if (sortBy === 'size') {
+        const asz = getRowSize(a);
+        const bsz = getRowSize(b);
+        const cmp = asz.localeCompare(bsz);
+        if (cmp !== 0) return cmp * dir;
+      }
+      if (sortBy === 'sale') {
+        const av = getRowSale(a);
+        const bv = getRowSale(b);
+        if (av === null && bv === null) {
+          // fall through
+        } else if (av === null) {
+          return 1;
+        } else if (bv === null) {
+          return -1;
+        } else {
+          const cmp = av - bv;
+          if (cmp !== 0) return cmp * dir;
+        }
+      }
+      if (sortBy === 'fees') {
+        const av = getRowFees(a);
+        const bv = getRowFees(b);
+        if (av === null && bv === null) {
+          // fall through
+        } else if (av === null) {
+          return 1;
+        } else if (bv === null) {
+          return -1;
+        } else {
+          const cmp = av - bv;
+          if (cmp !== 0) return cmp * dir;
+        }
+      }
+      if (sortBy === 'payout') {
+        const av = getRowPayout(a);
+        const bv = getRowPayout(b);
+        if (av === null && bv === null) {
+          // fall through
+        } else if (av === null) {
+          return 1;
+        } else if (bv === null) {
+          return -1;
+        } else {
+          const cmp = av - bv;
+          if (cmp !== 0) return cmp * dir;
+        }
       }
       if (sortBy === 'created') {
         const at = getRowCreatedTs(a);
@@ -1194,42 +1294,92 @@ export default function TestStockXOrders() {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-gray-950/80 backdrop-blur border-b border-white/10">
                   <tr>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">Order #</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-300">
                       <button
                         type="button"
-                        onClick={() => {
-                          setSortBy('status');
-                          setSortDir((d) => (sortBy === 'status' ? (d === 'asc' ? 'desc' : 'asc') : 'asc'));
-                        }}
+                        onClick={() => toggleSort('orderNumber', 'asc')}
+                        className="inline-flex items-center gap-2 hover:text-white"
+                        title="Sort by order number"
+                      >
+                        Order #
+                        <span className="text-xs text-gray-400">{sortIndicator('orderNumber')}</span>
+                      </button>
+                    </th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                      <button
+                        type="button"
+                        onClick={() => toggleSort('status', 'asc')}
                         className="inline-flex items-center gap-2 hover:text-white"
                         title="Sort by status"
                       >
                         Status
-                        <span className="text-xs text-gray-400">
-                          {sortBy === 'status' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
-                        </span>
+                        <span className="text-xs text-gray-400">{sortIndicator('status')}</span>
                       </button>
                     </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">Product</th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">Size</th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">Sale</th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">Fees</th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">Payout</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-300">
                       <button
                         type="button"
-                        onClick={() => {
-                          setSortBy('created');
-                          setSortDir((d) => (sortBy === 'created' ? (d === 'asc' ? 'desc' : 'asc') : 'desc'));
-                        }}
+                        onClick={() => toggleSort('product', 'asc')}
+                        className="inline-flex items-center gap-2 hover:text-white"
+                        title="Sort by product"
+                      >
+                        Product
+                        <span className="text-xs text-gray-400">{sortIndicator('product')}</span>
+                      </button>
+                    </th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                      <button
+                        type="button"
+                        onClick={() => toggleSort('size', 'asc')}
+                        className="inline-flex items-center gap-2 hover:text-white"
+                        title="Sort by size"
+                      >
+                        Size
+                        <span className="text-xs text-gray-400">{sortIndicator('size')}</span>
+                      </button>
+                    </th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                      <button
+                        type="button"
+                        onClick={() => toggleSort('sale', 'desc')}
+                        className="inline-flex items-center gap-2 hover:text-white"
+                        title="Sort by sale price"
+                      >
+                        Sale
+                        <span className="text-xs text-gray-400">{sortIndicator('sale')}</span>
+                      </button>
+                    </th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                      <button
+                        type="button"
+                        onClick={() => toggleSort('fees', 'desc')}
+                        className="inline-flex items-center gap-2 hover:text-white"
+                        title="Sort by fees"
+                      >
+                        Fees
+                        <span className="text-xs text-gray-400">{sortIndicator('fees')}</span>
+                      </button>
+                    </th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                      <button
+                        type="button"
+                        onClick={() => toggleSort('payout', 'desc')}
+                        className="inline-flex items-center gap-2 hover:text-white"
+                        title="Sort by payout"
+                      >
+                        Payout
+                        <span className="text-xs text-gray-400">{sortIndicator('payout')}</span>
+                      </button>
+                    </th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                      <button
+                        type="button"
+                        onClick={() => toggleSort('created', 'desc')}
                         className="inline-flex items-center gap-2 hover:text-white"
                         title="Sort by created date"
                       >
                         Created
-                        <span className="text-xs text-gray-400">
-                          {sortBy === 'created' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
-                        </span>
+                        <span className="text-xs text-gray-400">{sortIndicator('created')}</span>
                       </button>
                     </th>
                   </tr>
