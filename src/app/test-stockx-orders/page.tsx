@@ -160,6 +160,7 @@ export default function TestStockXOrders() {
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [selectedSalesDay, setSelectedSalesDay] = useState<string | null>(null);
   const [orderSearchQuery, setOrderSearchQuery] = useState('');
+  const detailsSectionRef = useRef<HTMLDivElement | null>(null);
 
   type VerificationMonthRow = { month: string; success: number; failed: number; failureRate: number };
   type VerificationBrandRow = {
@@ -1558,6 +1559,8 @@ export default function TestStockXOrders() {
   const fetchDetails = async (orderNumber: string) => {
     setDetailsLoading(true);
     setError(null);
+    // Scroll to the details panel immediately so the user sees progress.
+    setTimeout(() => detailsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
     try {
       appendLog('info', 'Fetching order details...', { orderNumber });
       const res = await fetch(`/api/stockx/orders/${encodeURIComponent(orderNumber)}`);
@@ -2690,7 +2693,7 @@ export default function TestStockXOrders() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
+        <div ref={detailsSectionRef} className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
           <div className="p-4 border-b border-white/10 flex items-center justify-between">
             <h2 className="font-semibold">Order Details & Payout Breakdown</h2>
             <div className="text-xs text-gray-400">
