@@ -3290,13 +3290,20 @@ export default function StockXRepricing() {
           </div>
         ) : (
           <>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className={`border-b ${isNeon ? 'border-gray-700' : 'border-gray-200'}`}>
-                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-                    <div className="flex flex-col items-center">
-                      <span className="mb-1">Select</span>
+          <div className={`rounded-xl overflow-hidden ${
+            isNeon
+              ? 'bg-gradient-to-br from-gray-900/50 to-gray-900/30 border border-white/10 shadow-2xl'
+              : 'bg-white border border-gray-200 shadow-lg'
+          }`}>
+            <div className="overflow-x-auto max-h-[70vh]">
+              <table className="w-full" style={{ tableLayout: 'auto' }}>
+                <thead className={`${
+                  isNeon
+                    ? 'bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 border-b border-white/20 backdrop-blur-sm'
+                    : 'bg-gradient-to-r from-gray-50 via-gray-100 to-gray-50 border-b border-gray-300'
+                } sticky top-0 z-10`}>
+                  <tr className="h-12">
+                    <th className="relative px-3 py-0 h-10 align-middle text-center">
                       <input
                         type="checkbox"
                         checked={isAllSelected}
@@ -3304,71 +3311,134 @@ export default function StockXRepricing() {
                           if (el) el.indeterminate = isPartiallySelected;
                         }}
                         onChange={selectAll}
-                        className={`w-4 h-4 ${isNeon ? 'text-cyan-500' : 'text-blue-600'} rounded cursor-pointer`}
+                        className={`rounded ${isNeon ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-300'} cursor-pointer`}
                       />
-                    </div>
-                  </th>
-                  <th 
-                    className={`text-left p-3 cursor-pointer select-none hover:bg-opacity-10 hover:bg-gray-500 transition-colors ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}
-                    onClick={() => handleSort('product')}
-                  >
-                    <div className="flex items-center gap-1">
-                      Product
-                      {sortColumn === 'product' ? (
-                        sortDirection === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
-                      ) : (
-                        <ChevronsUpDown className="w-4 h-4 opacity-50" />
-                      )}
-                    </div>
-                  </th>
-                  <th 
-                    className={`text-left p-3 cursor-pointer select-none hover:bg-opacity-10 hover:bg-gray-500 transition-colors ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}
-                    onClick={() => handleSort('size')}
-                  >
-                    <div className="flex items-center gap-1">
-                      Size
-                      {sortColumn === 'size' ? (
-                        sortDirection === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
-                      ) : (
-                        <ChevronsUpDown className="w-4 h-4 opacity-50" />
-                      )}
-                    </div>
-                  </th>
-                  <th 
-                    className={`text-left p-3 cursor-pointer select-none hover:bg-opacity-10 hover:bg-gray-500 transition-colors ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}
-                    onClick={() => handleSort('price')}
-                  >
-                    <div className="flex items-center gap-1">
-                      My Price
-                      {sortColumn === 'price' ? (
-                        sortDirection === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
-                      ) : (
-                        <ChevronsUpDown className="w-4 h-4 opacity-50" />
-                      )}
-                    </div>
-                  </th>
-                  <th 
-                    className={`text-left p-3 cursor-pointer select-none hover:bg-opacity-10 hover:bg-gray-500 transition-colors ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}
-                    onClick={() => handleSort('market')}
-                  >
-                    <div className="flex items-center gap-1">
-                      Market
-                      {sortColumn === 'market' ? (
-                        sortDirection === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
-                      ) : (
-                        <ChevronsUpDown className="w-4 h-4 opacity-50" />
-                      )}
-                    </div>
-                  </th>
-                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Auto</th>
-                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Pricing Rule</th>
-                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Min</th>
-                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Max</th>
-                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Auto Off</th>
-                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
+                    </th>
+
+                    <th
+                      className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
+                        isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'
+                      }`}
+                      onClick={() => handleSort('product')}
+                    >
+                      <div className="flex items-center justify-center h-full">
+                        <div className="flex items-center gap-2">
+                          <Package className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
+                          <span className={`text-xs font-bold uppercase tracking-wider ${
+                            isNeon ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
+                          } transition-colors`}>
+                            Product
+                          </span>
+                          {sortColumn === 'product' ? (
+                            sortDirection === 'asc'
+                              ? <ChevronUp className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
+                              : <ChevronDown className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
+                          ) : (
+                            <ChevronsUpDown className={`w-4 h-4 ${isNeon ? 'text-gray-500 group-hover:text-cyan-400' : 'text-gray-400 group-hover:text-blue-700'} transition-colors`} />
+                          )}
+                        </div>
+                      </div>
+                    </th>
+
+                    <th
+                      className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
+                        isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'
+                      }`}
+                      onClick={() => handleSort('size')}
+                    >
+                      <div className="flex items-center justify-center h-full">
+                        <div className="flex items-center gap-2">
+                          <Target className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
+                          <span className={`text-xs font-bold uppercase tracking-wider ${
+                            isNeon ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
+                          } transition-colors`}>
+                            Size
+                          </span>
+                          {sortColumn === 'size' ? (
+                            sortDirection === 'asc'
+                              ? <ChevronUp className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
+                              : <ChevronDown className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
+                          ) : (
+                            <ChevronsUpDown className={`w-4 h-4 ${isNeon ? 'text-gray-500 group-hover:text-cyan-400' : 'text-gray-400 group-hover:text-blue-700'} transition-colors`} />
+                          )}
+                        </div>
+                      </div>
+                    </th>
+
+                    <th
+                      className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
+                        isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'
+                      }`}
+                      onClick={() => handleSort('price')}
+                    >
+                      <div className="flex items-center justify-center h-full">
+                        <div className="flex items-center gap-2">
+                          <DollarSign className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
+                          <span className={`text-xs font-bold uppercase tracking-wider ${
+                            isNeon ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
+                          } transition-colors`}>
+                            My Price
+                          </span>
+                          {sortColumn === 'price' ? (
+                            sortDirection === 'asc'
+                              ? <ChevronUp className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
+                              : <ChevronDown className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
+                          ) : (
+                            <ChevronsUpDown className={`w-4 h-4 ${isNeon ? 'text-gray-500 group-hover:text-cyan-400' : 'text-gray-400 group-hover:text-blue-700'} transition-colors`} />
+                          )}
+                        </div>
+                      </div>
+                    </th>
+
+                    <th
+                      className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
+                        isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'
+                      }`}
+                      onClick={() => handleSort('market')}
+                    >
+                      <div className="flex items-center justify-center h-full">
+                        <div className="flex items-center gap-2">
+                          <TrendingDown className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
+                          <span className={`text-xs font-bold uppercase tracking-wider ${
+                            isNeon ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
+                          } transition-colors`}>
+                            Market
+                          </span>
+                          {sortColumn === 'market' ? (
+                            sortDirection === 'asc'
+                              ? <ChevronUp className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
+                              : <ChevronDown className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
+                          ) : (
+                            <ChevronsUpDown className={`w-4 h-4 ${isNeon ? 'text-gray-500 group-hover:text-cyan-400' : 'text-gray-400 group-hover:text-blue-700'} transition-colors`} />
+                          )}
+                        </div>
+                      </div>
+                    </th>
+
+                    {[
+                      { icon: RefreshCw, label: 'Auto' },
+                      { icon: Wrench, label: 'Pricing Rule' },
+                      { icon: Shield, label: 'Min' },
+                      { icon: Shield, label: 'Max' },
+                      { icon: AlertTriangle, label: 'Auto Off' },
+                      { icon: MoreHorizontal, label: 'Actions' }
+                    ].map((col) => (
+                      <th key={col.label} className="relative px-6 py-0 h-12 select-none">
+                        <div className="flex items-center justify-center h-full">
+                          <div className="flex items-center gap-2">
+                            <col.icon className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
+                            <span className={`text-xs font-bold uppercase tracking-wider ${
+                              isNeon ? 'text-gray-300' : 'text-gray-600'
+                            }`}>
+                              {col.label}
+                            </span>
+                          </div>
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className={`${isNeon ? 'divide-y divide-white/5' : 'divide-y divide-gray-200'}`}>
                 {paginatedListings.map((listing) => {
                   // Debug log to see what values are being rendered
                   if (listing.minPrice || listing.maxPrice) {
@@ -3378,20 +3448,27 @@ export default function StockXRepricing() {
                     });
                   }
                   return (
-                  <tr key={listing.listingId} className={`border-b transition-colors ${
-                    isNeon 
-                      ? 'border-gray-700 hover:bg-gray-700/50' 
-                      : 'border-gray-100 hover:bg-gray-50'
-                  } ${listing.selected ? isNeon ? 'bg-gray-800/30' : 'bg-blue-50/30' : ''}`}>
-                    <td className="p-2">
+                  <tr
+                    key={listing.listingId}
+                    className={`group transition-all duration-300 ${
+                      listing.selected
+                        ? isNeon
+                          ? 'bg-gradient-to-r from-cyan-500/15 via-transparent to-cyan-500/15'
+                          : 'bg-gradient-to-r from-blue-100/70 via-transparent to-blue-100/70'
+                        : isNeon
+                          ? 'hover:bg-gradient-to-r hover:from-cyan-500/5 hover:via-transparent hover:to-cyan-500/5 hover:shadow-lg hover:shadow-cyan-500/5'
+                          : 'hover:bg-gradient-to-r hover:from-blue-50/50 hover:via-transparent hover:to-blue-50/50 hover:shadow-md'
+                    }`}
+                  >
+                    <td className="px-3 py-3 text-center relative">
                       <input
                         type="checkbox"
                         checked={listing.selected}
                         onChange={() => toggleListingSelection(listing.listingId)}
-                        className={`w-4 h-4 ${isNeon ? 'text-cyan-500' : 'text-blue-600'} cursor-pointer`}
+                        className={`rounded ${isNeon ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-300'} cursor-pointer`}
                       />
                     </td>
-                    <td className="p-2">
+                    <td className="px-6 py-3">
                       <div className="flex items-center gap-2">
                         <div>
                           <div className={`font-medium text-sm ${isNeon ? 'text-white' : 'text-gray-900'}`}>
@@ -3681,8 +3758,10 @@ export default function StockXRepricing() {
                   </tr>
                 );
                 })}
-              </tbody>
-            </table>
+                })}
+                </tbody>
+              </table>
+            </div>
           </div>
           
           {totalPages > 1 && (
