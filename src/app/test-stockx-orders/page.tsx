@@ -2171,7 +2171,7 @@ export default function TestStockXOrders() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap md:flex-nowrap">
+            <div className="flex items-center gap-2 flex-wrap">
               {/* Primary quick presets */}
               <button
                 onClick={() => setQuickRange('today')}
@@ -2285,7 +2285,7 @@ export default function TestStockXOrders() {
                   setSelectedActiveStatuses([]);
                   setShowQuickPresetsMore(false);
                 }}
-                className="ml-auto h-9 px-3 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200 text-sm whitespace-nowrap"
+                className="sm:ml-auto h-9 px-3 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200 text-sm whitespace-nowrap"
               >
                 Clear
               </button>
