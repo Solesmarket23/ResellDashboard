@@ -11,6 +11,7 @@ type OrderRow = {
   completedAt?: string;
   product?: { name?: string; brand?: string; sku?: string; styleId?: string; category?: string };
   variant?: { size?: string; inventoryType?: string };
+  source?: 'history' | 'active';
   pricing?: {
     salePrice?: number;
     totalFees?: number;
@@ -137,8 +138,97 @@ export default function TestStockXOrders() {
     }
   };
 
+  const isActiveRow = (row: any) => {
+    if (row?.source === 'active') return true;
+    const raw = row?.rawData || row;
+    return Boolean(raw?.orderDate); // active route uses orderDate field
+  };
+
+  const getRowStatus = (row: any) => {
+    const raw = row?.rawData || row;
+    return String((raw?.status || row?.status || row?.orderStatus || raw?.orderStatus || '—')).toUpperCase();
+  };
+
+  const getRowOrderNumber = (row: any) => {
+    const raw = row?.rawData || row;
+    return String(raw?.orderNumber || raw?.orderId || raw?.id || row?.id || raw?.askId || '—');
+  };
+
+  const getRowCreatedTs = (row: any): number | null => {
+    const raw = row?.rawData || row;
+    const iso =
+      row?.createdAt ||
+      raw?.createdAt ||
+      raw?.orderDate ||
+      raw?.created ||
+      row?.rawData?.createdAt ||
+      null;
+    if (!iso) return null;
+    const d = new Date(iso);
+    const t = d.getTime();
+    return Number.isNaN(t) ? null : t;
+  };
+
+  const displayedOrders = useMemo(() => {
+    // 1) Apply filters live to already-fetched rows
+    let filtered = [...orders];
+
+    // Include active toggle
+    if (!includeActive) {
+      filtered = filtered.filter((r) => !isActiveRow(r));
+    }
+
+    // Status filters
+    if (selectedHistoryStatuses.length > 0) {
+      filtered = filtered.filter((r) => {
+        if (isActiveRow(r)) return true; // history filter doesn't hide active rows
+        return selectedHistoryStatuses.includes(getRowStatus(r));
+      });
+    }
+    if (selectedActiveStatuses.length > 0) {
+      filtered = filtered.filter((r) => {
+        if (!isActiveRow(r)) return true; // active filter doesn't hide history rows
+        return selectedActiveStatuses.includes(getRowStatus(r));
+      });
+    }
+
+    // 2) Apply sorting
+    if (!sortBy) return filtered;
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return filtered.sort((a: any, b: any) => {
+      if (sortBy === 'status') {
+        const as = getRowStatus(a);
+        const bs = getRowStatus(b);
+        const cmp = as.localeCompare(bs);
+        if (cmp !== 0) return cmp * dir;
+      }
+      if (sortBy === 'created') {
+        const at = getRowCreatedTs(a);
+        const bt = getRowCreatedTs(b);
+        if (at === null && bt === null) {
+          // fall through
+        } else if (at === null) {
+          return 1;
+        } else if (bt === null) {
+          return -1;
+        } else {
+          const cmp = at - bt;
+          if (cmp !== 0) return cmp * dir;
+        }
+      }
+      return getRowOrderNumber(a).localeCompare(getRowOrderNumber(b)) * dir;
+    });
+  }, [
+    orders,
+    includeActive,
+    selectedHistoryStatuses,
+    selectedActiveStatuses,
+    sortBy,
+    sortDir,
+  ]);
+
   const totals = useMemo(() => {
-    const rows = orders || [];
+    const rows = displayedOrders || [];
     let sale = 0;
     let fees = 0;
     let payout = 0;
@@ -281,7 +371,7 @@ export default function TestStockXOrders() {
       duplicateCount: duplicates.length,
       currency: 'USD',
     };
-  }, [orders]);
+  }, [displayedOrders]);
 
   const fetchHistory = async () => {
     // Quick mode: just fetch the first page (max 100) for the chosen date range.
@@ -613,65 +703,11 @@ export default function TestStockXOrders() {
     window.location.href = `/api/stockx/auth?returnTo=${encodeURIComponent(window.location.href)}`;
   };
 
-  const getRowOrderNumber = (row: any) => {
-    const raw = row?.rawData || row;
-    return String(raw?.orderNumber || raw?.orderId || raw?.id || row?.id || raw?.askId || '—');
-  };
-
-  const getRowStatus = (row: any) => {
-    const raw = row?.rawData || row;
-    return String((raw?.status || row?.status || row?.orderStatus || raw?.orderStatus || '—')).toUpperCase();
-  };
-
-  const getRowCreatedTs = (row: any): number | null => {
-    const raw = row?.rawData || row;
-    const iso =
-      row?.createdAt ||
-      raw?.createdAt ||
-      raw?.orderDate ||
-      raw?.created ||
-      row?.rawData?.createdAt ||
-      null;
-    if (!iso) return null;
-    const d = new Date(iso);
-    const t = d.getTime();
-    return Number.isNaN(t) ? null : t;
-  };
-
   const openGmailSearch = (orderNumber: string) => {
     const q = `"${orderNumber}"`;
     const url = `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(q)}`;
     window.open(url, '_blank', 'noopener,noreferrer');
   };
-
-  const displayedOrders = useMemo(() => {
-    if (!sortBy) return orders;
-    const dir = sortDir === 'asc' ? 1 : -1;
-    return [...orders].sort((a: any, b: any) => {
-      if (sortBy === 'status') {
-        const as = getRowStatus(a);
-        const bs = getRowStatus(b);
-        const cmp = as.localeCompare(bs);
-        if (cmp !== 0) return cmp * dir;
-      }
-      if (sortBy === 'created') {
-        const at = getRowCreatedTs(a);
-        const bt = getRowCreatedTs(b);
-        if (at === null && bt === null) {
-          // fall through
-        } else if (at === null) {
-          return 1; // nulls last
-        } else if (bt === null) {
-          return -1; // nulls last
-        } else {
-          const cmp = at - bt;
-          if (cmp !== 0) return cmp * dir;
-        }
-      }
-      // stable tiebreaker
-      return getRowOrderNumber(a).localeCompare(getRowOrderNumber(b)) * dir;
-    });
-  }, [orders, sortBy, sortDir]);
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 p-6">
