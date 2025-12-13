@@ -642,6 +642,17 @@ export default function TestStockXOrders() {
     return { rows: verificationRows.length, earliest, latest };
   }, [verificationRows]);
 
+  const verificationStatusTotals = useMemo(() => {
+    const totals = { COMPLETED: 0, AUTHFAILED: 0, OTHER: 0 };
+    for (const r of verificationRows || []) {
+      const st = getRowStatus(r);
+      if (st === 'COMPLETED' || st === 'PAYOUTCOMPLETED' || st === 'PAYOUT_COMPLETED') totals.COMPLETED += 1;
+      else if (st === 'AUTHFAILED') totals.AUTHFAILED += 1;
+      else totals.OTHER += 1;
+    }
+    return totals;
+  }, [verificationRows]);
+
   const isActiveRow = (row: any) => {
     if (row?.source === 'active') return true;
     const raw = row?.rawData || row;
@@ -2112,6 +2123,14 @@ export default function TestStockXOrders() {
                   Rows fetched: <span className="text-gray-200 font-semibold">{verificationCoverage.rows}</span> • Coverage:{' '}
                   <span className="text-gray-200 font-semibold">{verificationCoverage.earliest}</span> →{' '}
                   <span className="text-gray-200 font-semibold">{verificationCoverage.latest}</span>
+                </div>
+              ) : null}
+
+              {verificationRows.length > 0 ? (
+                <div className="mt-1 text-xs text-gray-400">
+                  Status counts: <span className="text-gray-200 font-semibold">{verificationStatusTotals.COMPLETED}</span>{' '}
+                  completed • <span className="text-gray-200 font-semibold">{verificationStatusTotals.AUTHFAILED}</span>{' '}
+                  auth failed
                 </div>
               ) : null}
 
