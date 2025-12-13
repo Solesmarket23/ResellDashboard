@@ -337,7 +337,15 @@ export default function TestStockXOrders() {
     const topProducts = Object.entries(productRevenue)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
-      .map(([name, revenue]) => ({ name, revenue }));
+      .map(([name, revenue]) => {
+        const sizeMap = productSizeCounts[name] || {};
+        const topSizeEntry = Object.entries(sizeMap).sort((a, b) => b[1] - a[1])[0];
+        return {
+          name,
+          revenue,
+          topSize: topSizeEntry ? { size: topSizeEntry[0], count: topSizeEntry[1] } : null,
+        };
+      });
     const topProductsByCount = Object.entries(productCount)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
@@ -1120,8 +1128,19 @@ export default function TestStockXOrders() {
                       <div className="space-y-1">
                         {totals.topProducts.map((p: any) => (
                           <div key={p.name} className="flex items-center justify-between text-xs text-gray-200">
-                            <div className="truncate max-w-[220px]">{p.name}</div>
-                            <div className="font-semibold">{fmtMoney(p.revenue, totals.currency)}</div>
+                            <div className="flex-1 pr-3">
+                              <div className="whitespace-normal break-words" title={p.name}>
+                                {p.name}
+                              </div>
+                              <div className="text-[11px] text-gray-400">
+                                {p.topSize
+                                  ? `Top size: ${formatSizeLabel(p.topSize.size)} (${p.topSize.count})`
+                                  : 'Top size: —'}
+                              </div>
+                            </div>
+                            <div className="font-semibold whitespace-nowrap">
+                              {fmtMoney(p.revenue, totals.currency)}
+                            </div>
                           </div>
                         ))}
                       </div>
