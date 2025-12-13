@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { refreshStockXTokens, setStockXTokenCookies } from '@/lib/stockx/tokenRefresh';
 
+// Module-level cache to reduce repeated upstream calls across requests (best-effort in serverless).
+const CATALOG_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+const ORDER_DETAILS_TTL_MS = 10 * 60 * 1000; // 10m
+const catalogCache = new Map<string, { brand: string | null; productType: string | null; ts: number }>();
+const orderDetailsCache = new Map<string, { data: any | null; ts: number }>();
+
 export async function GET(request: NextRequest) {
   try {
     const upstreamCalls = {
@@ -158,6 +164,11 @@ export async function GET(request: NextRequest) {
       const fetchBrand = async (pid: string): Promise<string | null> => {
         if (!pid) return null;
         if (cache.has(pid)) return cache.get(pid)?.brand ?? null;
+        const cachedGlobal = catalogCache.get(pid);
+        if (cachedGlobal && Date.now() - cachedGlobal.ts < CATALOG_TTL_MS) {
+          cache.set(pid, { brand: cachedGlobal.brand, productType: cachedGlobal.productType });
+          return cachedGlobal.brand ?? null;
+        }
         try {
           const res = await fetchWithBackoff(`https://api.stockx.com/v2/catalog/products/${encodeURIComponent(pid)}`, {
             method: 'GET',
@@ -171,15 +182,18 @@ export async function GET(request: NextRequest) {
           }, 'catalog');
           if (!res.ok) {
             cache.set(pid, { brand: null, productType: null });
+            catalogCache.set(pid, { brand: null, productType: null, ts: Date.now() });
             return null;
           }
           const json = await res.json().catch(() => ({}));
           const brand = typeof json?.brand === 'string' ? json.brand.trim() : null;
           const productType = typeof json?.productType === 'string' ? json.productType.trim() : null;
           cache.set(pid, { brand: brand || null, productType: productType || null });
+          catalogCache.set(pid, { brand: brand || null, productType: productType || null, ts: Date.now() });
           return brand || null;
         } catch {
           cache.set(pid, { brand: null, productType: null });
+          catalogCache.set(pid, { brand: null, productType: null, ts: Date.now() });
           return null;
         }
       };
@@ -192,7 +206,7 @@ export async function GET(request: NextRequest) {
         )
       );
 
-      const limit = 5;
+      const limit = 12;
       let idx = 0;
       const workers = Array.from({ length: Math.min(limit, ids.length) }, async () => {
         while (idx < ids.length) {
@@ -235,6 +249,11 @@ export async function GET(request: NextRequest) {
       const fetchDetails = async (orderNumber: string) => {
         if (!orderNumber) return null;
         if (cache.has(orderNumber)) return cache.get(orderNumber);
+        const cachedGlobal = orderDetailsCache.get(orderNumber);
+        if (cachedGlobal && Date.now() - cachedGlobal.ts < ORDER_DETAILS_TTL_MS) {
+          cache.set(orderNumber, cachedGlobal.data);
+          return cachedGlobal.data;
+        }
         try {
           const res = await fetchWithBackoff(`https://api.stockx.com/v2/selling/orders/${encodeURIComponent(orderNumber)}`, {
             method: 'GET',
@@ -248,13 +267,16 @@ export async function GET(request: NextRequest) {
           }, 'orderDetails');
           if (!res.ok) {
             cache.set(orderNumber, null);
+            orderDetailsCache.set(orderNumber, { data: null, ts: Date.now() });
             return null;
           }
           const json = await res.json().catch(() => ({}));
           cache.set(orderNumber, json || null);
+          orderDetailsCache.set(orderNumber, { data: json || null, ts: Date.now() });
           return json || null;
         } catch {
           cache.set(orderNumber, null);
+          orderDetailsCache.set(orderNumber, { data: null, ts: Date.now() });
           return null;
         }
       };
@@ -269,7 +291,7 @@ export async function GET(request: NextRequest) {
           return !(payout && payout.totalPayout !== null && payout.totalPayout !== undefined);
         });
 
-      const limit = 3;
+      const limit = 6;
       let idx = 0;
       const workers = Array.from({ length: Math.min(limit, needs.length) }, async () => {
         while (idx < needs.length) {
