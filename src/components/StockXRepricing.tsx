@@ -3619,11 +3619,13 @@ export default function StockXRepricing() {
                         )}
                       </div>
                     </td>
-                    <td className={`p-2 text-sm ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>{listing.size}</td>
-                    <td className={`p-2 font-medium text-sm ${isNeon ? 'text-cyan-400' : 'text-gray-900'}`}>
+                    <td className={`px-6 py-3 text-sm ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                      {listing.size}
+                    </td>
+                    <td className={`px-6 py-3 font-medium text-sm ${isNeon ? 'text-cyan-400' : 'text-gray-900'}`}>
                       ${listing.currentPrice}
                     </td>
-                    <td className={`p-2 font-medium text-sm ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                    <td className={`px-6 py-3 font-medium text-sm ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                       <div className="flex flex-col leading-tight">
                         <span>${listing.lowestAsk || '-'}</span>
                         <span className={`text-[11px] ${isNeon ? 'text-gray-500' : 'text-gray-500'}`}>
@@ -3631,7 +3633,7 @@ export default function StockXRepricing() {
                         </span>
                       </div>
                     </td>
-                    <td className="p-2">
+                    <td className="px-6 py-3 text-center">
                       <div className="flex items-center justify-center">
                         <input
                           type="checkbox"
@@ -3647,7 +3649,7 @@ export default function StockXRepricing() {
                         />
                       </div>
                     </td>
-                    <td className="p-2">
+                    <td className="px-6 py-3">
                       <div className="flex items-center gap-2">
                         <NeonDropdown
                           value={listing.pricingStrategy?.type || 'keep_current'}
@@ -3746,7 +3748,7 @@ export default function StockXRepricing() {
                         )}
                       </div>
                     </td>
-                    <td className="p-2">
+                    <td className="px-6 py-3">
                       <div className="relative">
                         <span className={`absolute left-2 top-1/2 -translate-y-1/2 text-xs ${
                           isNeon ? 'text-cyan-400' : 'text-gray-600'
@@ -3776,7 +3778,7 @@ export default function StockXRepricing() {
                       />
                       </div>
                     </td>
-                    <td className="p-2">
+                    <td className="px-6 py-3">
                       <div className="relative">
                         <span className={`absolute left-2 top-1/2 -translate-y-1/2 text-xs ${
                           isNeon ? 'text-cyan-400' : 'text-gray-600'
@@ -3806,7 +3808,7 @@ export default function StockXRepricing() {
                       />
                       </div>
                     </td>
-                    <td className="p-2 text-center">
+                    <td className="px-6 py-3 text-center">
                       <input
                         type="checkbox"
                         checked={listing.autoDeactivate || false}
@@ -3814,7 +3816,7 @@ export default function StockXRepricing() {
                         className={`w-4 h-4 ${isNeon ? 'text-cyan-500 accent-cyan-500' : 'text-blue-600'} cursor-pointer`}
                       />
                     </td>
-                    <td className={`p-2 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                    <td className={`px-6 py-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                       <div className="flex items-center gap-2">
                         {listing.pricingStrategy?.type === 'market_peek' ? (
                           <button
