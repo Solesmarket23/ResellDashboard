@@ -3839,7 +3839,6 @@ export default function StockXRepricing() {
                   </tr>
                 );
                 })}
-                })}
                 </tbody>
               </table>
             </div>
