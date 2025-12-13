@@ -239,6 +239,7 @@ export default function TestStockXOrders() {
     const statusCounts: Record<string, number> = {};
     const productRevenue: Record<string, number> = {};
     const productCount: Record<string, number> = {};
+    const productSizeCounts: Record<string, Record<string, number>> = {};
     const brandRevenue: Record<string, number> = {};
     const sizeCounts: Record<string, number> = {};
     const categoryCounts: Record<string, number> = {};
@@ -310,6 +311,9 @@ export default function TestStockXOrders() {
       sizeCounts[sizeName] = (sizeCounts[sizeName] || 0) + 1;
       categoryCounts[categoryName] = (categoryCounts[categoryName] || 0) + 1;
 
+      if (!productSizeCounts[productName]) productSizeCounts[productName] = {};
+      productSizeCounts[productName][sizeName] = (productSizeCounts[productName][sizeName] || 0) + 1;
+
       if (s !== null) {
         productRevenue[productName] = (productRevenue[productName] || 0) + s;
         brandRevenue[brandName] = (brandRevenue[brandName] || 0) + s;
@@ -328,7 +332,15 @@ export default function TestStockXOrders() {
     const topProductsByCount = Object.entries(productCount)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
-      .map(([name, c]) => ({ name, count: c }));
+      .map(([name, c]) => {
+        const sizeMap = productSizeCounts[name] || {};
+        const topSizeEntry = Object.entries(sizeMap).sort((a, b) => b[1] - a[1])[0];
+        return {
+          name,
+          count: c,
+          topSize: topSizeEntry ? { size: topSizeEntry[0], count: topSizeEntry[1] } : null,
+        };
+      });
     const topBrands = Object.entries(brandRevenue)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
@@ -1077,8 +1089,15 @@ export default function TestStockXOrders() {
                       <div className="space-y-1">
                         {totals.topProductsByCount.map((p: any) => (
                           <div key={p.name} className="flex items-center justify-between text-xs text-gray-200">
-                            <div className="truncate max-w-[220px]">{p.name}</div>
-                            <div className="font-semibold">{p.count}</div>
+                            <div className="flex-1 pr-3">
+                              <div className="whitespace-normal break-words" title={p.name}>
+                                {p.name}
+                              </div>
+                              <div className="text-[11px] text-gray-400">
+                                {p.topSize ? `Top size: ${p.topSize.size} (${p.topSize.count})` : 'Top size: —'}
+                              </div>
+                            </div>
+                            <div className="font-semibold whitespace-nowrap">{p.count}</div>
                           </div>
                         ))}
                       </div>
