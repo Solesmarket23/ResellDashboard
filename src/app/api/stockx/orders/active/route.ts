@@ -9,7 +9,10 @@ export async function GET(request: NextRequest) {
       // If API returns a string like "199" or "199.00" (dollars)
       if (typeof value === 'string') {
         const n = parseFloat(value);
-        return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
+        if (!Number.isFinite(n)) return 0;
+        // Sometimes numeric strings can still be cents (e.g. "19900")
+        const dollars = Math.abs(n) > 5000 ? n / 100 : n;
+        return Math.round(dollars * 100) / 100;
       }
       // If API returns number, it might be cents (e.g. 19900) or dollars (e.g. 199)
       if (typeof value === 'number' && Number.isFinite(value)) {
