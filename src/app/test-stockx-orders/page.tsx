@@ -648,7 +648,7 @@ export default function TestStockXOrders() {
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   // History API supports fromDate/toDate filters; active orders API does NOT, so we filter active rows client-side.
-  const inSelectedDateRange = (isoOrDate: string | undefined) => {
+  function inSelectedDateRange(isoOrDate: string | undefined) {
     if (!fromDate && !toDate) return true;
     if (!isoOrDate) return false;
     const d = new Date(isoOrDate);
@@ -671,7 +671,7 @@ export default function TestStockXOrders() {
     if (start && d < start) return false;
     if (end && d > end) return false;
     return true;
-  };
+  }
 
   // StockX orders/history expects YYYY-MM-DD (not full ISO datetime)
   const historyFromDate = () => (fromDate ? fromDate : '');
