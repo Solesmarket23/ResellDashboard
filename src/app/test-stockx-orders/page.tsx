@@ -2139,21 +2139,21 @@ export default function TestStockXOrders() {
               {/* Primary quick presets */}
               <button
                 onClick={() => setQuickRange('today')}
-                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10"
+                className="h-9 px-3 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-sm whitespace-nowrap"
                 title="Set date range to today"
               >
                 Today
               </button>
               <button
                 onClick={() => setQuickRange('this_week')}
-                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
+                className="h-9 px-3 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200 text-sm whitespace-nowrap"
                 title="This week (Mon → today)"
               >
                 This week
               </button>
               <button
                 onClick={() => setQuickRange('this_month')}
-                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
+                className="h-9 px-3 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200 text-sm whitespace-nowrap"
                 title="Set date range to this month"
               >
                 This month
@@ -2164,7 +2164,7 @@ export default function TestStockXOrders() {
                 <button
                   type="button"
                   onClick={() => setShowQuickPresetsMore((v) => !v)}
-                  className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
+                  className="h-9 px-3 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200 text-sm whitespace-nowrap"
                   aria-expanded={showQuickPresetsMore}
                   aria-haspopup="menu"
                   title="More quick presets"
@@ -2249,7 +2249,7 @@ export default function TestStockXOrders() {
                   setSelectedActiveStatuses([]);
                   setShowQuickPresetsMore(false);
                 }}
-                className="ml-auto px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
+                className="ml-auto h-9 px-3 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200 text-sm whitespace-nowrap"
               >
                 Clear
               </button>
