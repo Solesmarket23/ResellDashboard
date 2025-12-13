@@ -71,17 +71,32 @@ export default function TestStockXOrders() {
   const [toDate, setToDate] = useState('');
   const STOCKX_ORDER_STATUSES = useMemo(
     () => [
-      'MATCHED',
+      // ActiveOrderStatus (OpenAPI)
+      'CREATED',
+      'CCAUTHORIZATIONFAILED',
       'SHIPPED',
       'RECEIVED',
       'AUTHENTICATING',
       'AUTHENTICATED',
       'PAYOUTPENDING',
       'PAYOUTCOMPLETED',
+      'SYSTEMFULFILLED',
+      'PAYOUTFAILED',
+      'SUSPENDED',
+      'PENDING',
+
+      // HistoricalOrderStatus (OpenAPI)
       'CANCELED',
       'AUTHFAILED',
+      'DIDNOTSHIP',
       'RETURNED',
       'COMPLETED',
+
+      // UnknownStatus (OpenAPI)
+      'UNKNOWN',
+
+      // Sometimes observed in practice (not in the OpenAPI enums above)
+      'MATCHED',
     ],
     []
   );
