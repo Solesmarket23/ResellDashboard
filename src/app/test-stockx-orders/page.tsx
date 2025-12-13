@@ -43,6 +43,18 @@ function normalizeMoney(n: unknown): number | null {
   return Math.round(n * 100) / 100;
 }
 
+function parseMoneyAny(v: unknown): number | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'number') return normalizeMoney(v);
+  if (typeof v === 'string') {
+    const n = parseFloat(v);
+    if (!Number.isFinite(n)) return null;
+    const dollars = Math.abs(n) > 5000 ? n / 100 : n;
+    return Math.round(dollars * 100) / 100;
+  }
+  return null;
+}
+
 function fmtMoney(n: number | null | undefined, currency = 'USD') {
   if (n === null || n === undefined) return '—';
   try {
@@ -446,9 +458,21 @@ export default function TestStockXOrders() {
     for (const o of rows) {
       const currency = o.pricing?.currency || 'USD';
       void currency; // currency not used in totals (assumes USD)
-      let s = normalizeMoney(o.metrics?.salePrice ?? o.pricing?.salePrice ?? o.rawData?.amount ?? o.rawData?.price);
-      let f = normalizeMoney(o.metrics?.totalFees ?? o.pricing?.totalFees ?? o.rawData?.totalFees);
-      let p = normalizeMoney(o.metrics?.netPayout ?? o.pricing?.payout ?? o.rawData?.payout);
+      let s = parseMoneyAny(
+        o.metrics?.salePrice ??
+          o.pricing?.salePrice ??
+          o.rawData?.payout?.salePrice ??
+          o.rawData?.amount ??
+          o.rawData?.price
+      );
+      let p = parseMoneyAny(
+        o.metrics?.netPayout ??
+          o.pricing?.payout ??
+          o.rawData?.payout?.totalPayout ??
+          o.rawData?.payoutAmount ??
+          o.rawData?.payout
+      );
+      let f = parseMoneyAny(o.metrics?.totalFees ?? o.pricing?.totalFees ?? o.rawData?.totalFees);
 
       // Keep the totals internally consistent when one field is missing.
       // Prefer using payout if available (especially for history), otherwise derive it from sale - fees when both exist.
@@ -1503,9 +1527,19 @@ export default function TestStockXOrders() {
                     const orderNumber = getRowOrderNumber(o);
                     const status = getRowStatus(o);
                     const currency = o?.pricing?.currency || raw?.currencyCode || 'USD';
-                    const sale = normalizeMoney(o?.metrics?.salePrice ?? o?.pricing?.salePrice ?? raw?.amount ?? raw?.price);
-                    const fees = normalizeMoney(o?.metrics?.totalFees ?? o?.pricing?.totalFees ?? raw?.totalFees);
-                    const payout = normalizeMoney(o?.metrics?.netPayout ?? o?.pricing?.payout ?? raw?.payout);
+                    const sale = parseMoneyAny(
+                      o?.metrics?.salePrice ?? o?.pricing?.salePrice ?? raw?.payout?.salePrice ?? raw?.amount ?? raw?.price
+                    );
+                    const payout = parseMoneyAny(
+                      o?.metrics?.netPayout ??
+                        o?.pricing?.payout ??
+                        raw?.payout?.totalPayout ??
+                        raw?.payoutAmount ??
+                        raw?.payout
+                    );
+                    const feesBase = parseMoneyAny(o?.metrics?.totalFees ?? o?.pricing?.totalFees ?? raw?.totalFees);
+                    const fees =
+                      feesBase !== null ? feesBase : sale !== null && payout !== null ? Math.max(0, sale - payout) : null;
                     const productName =
                       o?.product?.name ||
                       raw?.product?.productName ||
@@ -1515,6 +1549,7 @@ export default function TestStockXOrders() {
                       '—';
                     const size = formatSizeLabel(String(o?.variant?.size || raw?.variant?.size || raw?.size || ''));
                     const created = o?.createdAt || raw?.createdAt;
+                    const isProjected = status !== 'PAYOUTCOMPLETED' && status !== 'PAYOUT_COMPLETED' && payout !== null;
 
                     return (
                       <tr
@@ -1541,7 +1576,12 @@ export default function TestStockXOrders() {
                         <td className="px-4 py-3 text-gray-200">{size}</td>
                         <td className="px-4 py-3 text-gray-200">{fmtMoney(sale, currency)}</td>
                         <td className="px-4 py-3 text-gray-200">{fmtMoney(fees, currency)}</td>
-                        <td className="px-4 py-3 text-gray-200">{fmtMoney(payout, currency)}</td>
+                        <td className="px-4 py-3 text-gray-200">
+                          <div className="flex items-center gap-2">
+                            <span>{fmtMoney(payout, currency)}</span>
+                            {isProjected && <span className="text-[11px] text-gray-400">(proj)</span>}
+                          </div>
+                        </td>
                         <td className="px-4 py-3 text-gray-400">{fmtDate(created)}</td>
                       </tr>
                     );
