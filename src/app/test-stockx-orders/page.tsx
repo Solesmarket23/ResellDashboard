@@ -69,7 +69,24 @@ export default function TestStockXOrders() {
   const [pageSize, setPageSize] = useState(25);
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
-  const [orderStatus, setOrderStatus] = useState('');
+  const STOCKX_ORDER_STATUSES = useMemo(
+    () => [
+      'MATCHED',
+      'SHIPPED',
+      'RECEIVED',
+      'AUTHENTICATING',
+      'AUTHENTICATED',
+      'PAYOUTPENDING',
+      'PAYOUTCOMPLETED',
+      'CANCELED',
+      'AUTHFAILED',
+      'RETURNED',
+      'COMPLETED',
+    ],
+    []
+  );
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  const [showStatusDropdown, setShowStatusDropdown] = useState(false);
   const [includeActive, setIncludeActive] = useState(true);
 
   const [orders, setOrders] = useState<OrderRow[]>([]);
@@ -232,37 +249,50 @@ export default function TestStockXOrders() {
       pageSize,
       fromDate: fromDate || undefined,
       toDate: toDate || undefined,
-      orderStatus: orderStatus || undefined,
+      orderStatuses: selectedStatuses.length ? selectedStatuses : undefined,
     });
     try {
-      const qp = new URLSearchParams();
-      qp.set('pageNumber', String(pageNumber));
-      qp.set('pageSize', String(pageSize));
-      if (fromDate) qp.set('fromDate', fromDate);
-      if (toDate) qp.set('toDate', toDate);
-      if (orderStatus) qp.set('orderStatus', orderStatus);
+      const statusesToFetch = selectedStatuses.length ? selectedStatuses : [''];
+      const allRows: OrderRow[] = [];
+      const seen = new Set<string>();
 
-      const res = await fetch(`/api/stockx/orders/history?${qp.toString()}`);
-      const json = await res.json().catch(() => ({}));
+      for (const st of statusesToFetch) {
+        const qp = new URLSearchParams();
+        qp.set('pageNumber', String(pageNumber));
+        qp.set('pageSize', String(pageSize));
+        if (fromDate) qp.set('fromDate', fromDate);
+        if (toDate) qp.set('toDate', toDate);
+        if (st) qp.set('orderStatus', st);
 
-      if (!res.ok) {
-        if (res.status === 401 || json?.authRequired) {
-          setAuthRequired(true);
-          setError(json?.message || 'StockX authentication required.');
-          setOrders([]);
-          appendLog('warn', 'Auth required for orders history', { status: res.status, body: json });
-          return;
+        appendLog('info', 'Requesting history page', { pageNumber, pageSize, orderStatus: st || '(all)' });
+        const res = await fetch(`/api/stockx/orders/history?${qp.toString()}`);
+        const json = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          if (res.status === 401 || json?.authRequired) {
+            setAuthRequired(true);
+            setError(json?.message || 'StockX authentication required.');
+            setOrders([]);
+            appendLog('warn', 'Auth required for orders history', { status: res.status, body: json });
+            return;
+          }
+          throw new Error(json?.error || json?.details || `Request failed (${res.status})`);
         }
-        throw new Error(json?.error || json?.details || `Request failed (${res.status})`);
+
+        const rows: OrderRow[] = Array.isArray(json?.data) ? json.data : [];
+        for (const r of rows) {
+          const raw = r?.rawData || {};
+          const key = String(raw.orderNumber || raw.orderId || raw.id || r.id || raw.askId || JSON.stringify(raw));
+          if (seen.has(key)) continue;
+          seen.add(key);
+          allRows.push(r);
+        }
       }
 
-      const baseRows: OrderRow[] = Array.isArray(json?.data) ? json.data : [];
-      setOrders(baseRows);
-      appendLog('info', 'Fetched order history', {
-        rows: Array.isArray(json?.data) ? json.data.length : 0,
-        hasNextPage: json?.hasNextPage,
-        pageNumber: json?.pageNumber,
-        pageSize: json?.pageSize,
+      setOrders(allRows);
+      appendLog('info', 'Fetched order history (merged)', {
+        rows: allRows.length,
+        statuses: selectedStatuses.length ? selectedStatuses : '(all)',
       });
 
       if (includeActive) {
@@ -286,14 +316,14 @@ export default function TestStockXOrders() {
               status: o.status || 'ACTIVE',
               orderStatus: o.status || 'ACTIVE',
               createdAt: o.orderDate,
-              product: { name: o.productName, brand: o.productBrand, sku: o.sku },
+              product: { name: o.productName, brand: o.productBrand, sku: o.sku, category: o.category },
               variant: { size: o.size },
               pricing: { salePrice: o.salePrice, totalFees: o.fees, payout: o.payout, currency: 'USD' },
               rawData: o,
             }))
           : [];
 
-        setOrders([...baseRows, ...activeRows]);
+        setOrders([...allRows, ...activeRows]);
         appendLog('info', 'Fetched active orders', { rows: activeRows.length });
       }
     } catch (e) {
@@ -322,51 +352,67 @@ export default function TestStockXOrders() {
       maxPages: MAX_PAGES,
       fromDate: fromDate || undefined,
       toDate: toDate || undefined,
-      orderStatus: orderStatus || undefined,
+      orderStatuses: selectedStatuses.length ? selectedStatuses : undefined,
     });
 
     try {
       const all: OrderRow[] = [];
-      let p = 1;
-      let hasNext = true;
+      const seen = new Set<string>();
+      const statusesToFetch = selectedStatuses.length ? selectedStatuses : [''];
 
-      while (hasNext && p <= MAX_PAGES) {
-        const qp = new URLSearchParams();
-        qp.set('pageNumber', String(p));
-        qp.set('pageSize', String(PAGE_SIZE));
-        if (fromDate) qp.set('fromDate', fromDate);
-        if (toDate) qp.set('toDate', toDate);
-        if (orderStatus) qp.set('orderStatus', orderStatus);
+      for (const st of statusesToFetch) {
+        let p = 1;
+        let hasNext = true;
+        appendLog('info', 'Fetching status', { orderStatus: st || '(all)' });
 
-        const res = await fetch(`/api/stockx/orders/history?${qp.toString()}`);
-        const json = await res.json().catch(() => ({}));
+        while (hasNext && p <= MAX_PAGES) {
+          const qp = new URLSearchParams();
+          qp.set('pageNumber', String(p));
+          qp.set('pageSize', String(PAGE_SIZE));
+          if (fromDate) qp.set('fromDate', fromDate);
+          if (toDate) qp.set('toDate', toDate);
+          if (st) qp.set('orderStatus', st);
 
-        if (!res.ok) {
-          if (res.status === 401 || json?.authRequired) {
-            setAuthRequired(true);
-            setError(json?.message || 'StockX authentication required.');
-            appendLog('warn', 'Auth required while fetching all pages', { status: res.status, body: json });
-            return;
+          const res = await fetch(`/api/stockx/orders/history?${qp.toString()}`);
+          const json = await res.json().catch(() => ({}));
+
+          if (!res.ok) {
+            if (res.status === 401 || json?.authRequired) {
+              setAuthRequired(true);
+              setError(json?.message || 'StockX authentication required.');
+              appendLog('warn', 'Auth required while fetching all pages', { status: res.status, body: json });
+              return;
+            }
+            throw new Error(json?.error || json?.details || `Request failed (${res.status})`);
           }
-          throw new Error(json?.error || json?.details || `Request failed (${res.status})`);
+
+          const pageRows: OrderRow[] = Array.isArray(json?.data) ? json.data : [];
+          let added = 0;
+          for (const r of pageRows) {
+            const raw = r?.rawData || {};
+            const key = String(raw.orderNumber || raw.orderId || raw.id || r.id || raw.askId || JSON.stringify(raw));
+            if (seen.has(key)) continue;
+            seen.add(key);
+            all.push(r);
+            added += 1;
+          }
+
+          // Show partial results as we go (so the table fills in while fetching)
+          setOrders([...all]);
+          setAllProgress({ page: p, total: all.length });
+
+          hasNext = Boolean(json?.hasNextPage) && pageRows.length > 0;
+          appendLog('info', `Page ${p} fetched`, {
+            orderStatus: st || '(all)',
+            added,
+            total: all.length,
+            hasNextPage: Boolean(json?.hasNextPage),
+          });
+          p += 1;
+
+          // light delay to reduce rate-limit risk
+          if (hasNext) await sleep(250);
         }
-
-        const pageRows: OrderRow[] = Array.isArray(json?.data) ? json.data : [];
-        all.push(...pageRows);
-        // Show partial results as we go (so the table fills in while fetching)
-        setOrders([...all]);
-        setAllProgress({ page: p, total: all.length });
-
-        hasNext = Boolean(json?.hasNextPage) && pageRows.length > 0;
-        appendLog('info', `Page ${p} fetched`, {
-          added: pageRows.length,
-          total: all.length,
-          hasNextPage: Boolean(json?.hasNextPage),
-        });
-        p += 1;
-
-        // light delay to reduce rate-limit risk
-        if (hasNext) await sleep(250);
       }
 
       setOrders(all);
@@ -387,7 +433,7 @@ export default function TestStockXOrders() {
                 status: o.status || 'ACTIVE',
                 orderStatus: o.status || 'ACTIVE',
                 createdAt: o.orderDate,
-                product: { name: o.productName, brand: o.productBrand, sku: o.sku },
+                product: { name: o.productName, brand: o.productBrand, sku: o.sku, category: o.category },
                 variant: { size: o.size },
                 pricing: { salePrice: o.salePrice, totalFees: o.fees, payout: o.payout, currency: 'USD' },
                 rawData: o,
@@ -568,12 +614,74 @@ export default function TestStockXOrders() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Order Status</label>
-                <input
-                  value={orderStatus}
-                  onChange={(e) => setOrderStatus(e.target.value)}
-                  placeholder='e.g. "COMPLETED"'
-                  className="w-full px-3 py-2 rounded-lg bg-gray-900 border border-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
-                />
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowStatusDropdown((v) => !v)}
+                    className="w-full px-3 py-2 rounded-lg bg-gray-900 border border-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 text-left flex items-center justify-between"
+                    title="Select one or more statuses"
+                  >
+                    <span className="text-gray-200">
+                      {selectedStatuses.length === 0 ? 'All statuses' : `${selectedStatuses.length} selected`}
+                    </span>
+                    <span className="text-gray-400">{showStatusDropdown ? '▲' : '▼'}</span>
+                  </button>
+
+                  {showStatusDropdown && (
+                    <div className="absolute z-20 mt-2 w-full rounded-lg border border-white/10 bg-gray-950 shadow-xl p-2">
+                      <div className="flex items-center justify-between gap-2 px-2 pb-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedStatuses(STOCKX_ORDER_STATUSES)}
+                          className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 border border-white/10"
+                        >
+                          Select all
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedStatuses([])}
+                          className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 border border-white/10"
+                        >
+                          Clear
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowStatusDropdown(false)}
+                          className="ml-auto text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 border border-white/10"
+                        >
+                          Done
+                        </button>
+                      </div>
+
+                      <div className="max-h-56 overflow-auto">
+                        {STOCKX_ORDER_STATUSES.map((st) => {
+                          const checked = selectedStatuses.includes(st);
+                          return (
+                            <label
+                              key={st}
+                              className="flex items-center justify-between gap-2 px-2 py-2 rounded hover:bg-white/5 cursor-pointer"
+                            >
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(e) => {
+                                    const isChecked = e.target.checked;
+                                    setSelectedStatuses((prev) => {
+                                      if (isChecked) return Array.from(new Set([...prev, st]));
+                                      return prev.filter((x) => x !== st);
+                                    });
+                                  }}
+                                />
+                                <span className="text-sm text-gray-200">{st}</span>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Page Size</label>
@@ -620,7 +728,7 @@ export default function TestStockXOrders() {
                 onClick={() => {
                   setFromDate('');
                   setToDate('');
-                  setOrderStatus('');
+                  setSelectedStatuses([]);
                   setPageNumber(1);
                 }}
                 className="ml-auto px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
