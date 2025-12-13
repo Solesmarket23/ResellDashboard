@@ -846,7 +846,30 @@ export default function TestStockXOrders() {
     return String(row?.product?.sku || row?.product?.styleId || raw?.product?.styleId || raw?.sku || raw?.styleId || '').trim();
   };
 
+  const formatAuthStatusLabel = (rawStatus: string) => {
+    const s = String(rawStatus || '').trim();
+    if (!s) return '';
+    const upper = s.toUpperCase();
+    if (upper === 'AUTHENTICATION_SUCCEEDED') return 'Authenticated';
+    if (upper === 'AUTHENTICATION_FAILED') return 'Failed authentication';
+    if (upper === 'AUTHENTICATED') return 'Authenticated';
+    if (upper === 'AUTHENTICATING' || upper === 'AUTHENTICATION_IN_PROGRESS') return 'Authenticating';
+    if (upper === 'AUTHFAILED') return 'Failed verification';
+    // Fallback: nicer Title Case for unknown values
+    return upper
+      .split('_')
+      .filter(Boolean)
+      .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
+      .join(' ');
+  };
+
   const getRowAuthStatus = (row: any) => {
+    const raw = row?.rawData || row;
+    const status = String(raw?.authenticationDetails?.status || '').trim();
+    return formatAuthStatusLabel(status);
+  };
+
+  const getRowAuthStatusRaw = (row: any) => {
     const raw = row?.rawData || row;
     return String(raw?.authenticationDetails?.status || '').trim();
   };
@@ -3037,6 +3060,7 @@ export default function TestStockXOrders() {
                     const size = formatSizeLabel(String(o?.variant?.size || raw?.variant?.size || raw?.size || ''));
                     const created = o?.createdAt || raw?.createdAt;
                     const authStatus = getRowAuthStatus(o) || '—';
+                    const authStatusRaw = getRowAuthStatusRaw(o);
                     const failureNotes = getRowFailureNotes(o) || '—';
                     const carrier = getRowCarrier(o) || '—';
                     const tracking = getRowTracking(o) || '—';
@@ -3078,7 +3102,9 @@ export default function TestStockXOrders() {
                             {isProjected && <span className="text-[11px] text-gray-400">(proj)</span>}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-gray-200">{authStatus}</td>
+                        <td className="px-4 py-3 text-gray-200" title={authStatusRaw || authStatus}>
+                          {authStatus}
+                        </td>
                         <td className="px-4 py-3 text-gray-200" title={failureNotes}>
                           {failureNotes}
                         </td>
