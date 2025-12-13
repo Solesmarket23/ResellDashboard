@@ -1413,6 +1413,9 @@ export default function TestStockXOrders() {
       const statusesToFetch = selectedHistoryStatuses.length ? selectedHistoryStatuses : [''];
       const allRows: OrderRow[] = [];
       const seen = new Set<string>();
+      // Incremental UI updates so users see progress immediately.
+      let addedSinceFlush = 0;
+      const FLUSH_EVERY = 10;
       const apiCalls = {
         historyRequests: 0,
         activeRequests: 0,
@@ -1462,6 +1465,16 @@ export default function TestStockXOrders() {
           if (seen.has(key)) continue;
           seen.add(key);
           allRows.push(r);
+          addedSinceFlush += 1;
+          if (addedSinceFlush >= FLUSH_EVERY) {
+            setOrders([...allRows]);
+            addedSinceFlush = 0;
+          }
+        }
+        // Flush after each status, even if fewer than FLUSH_EVERY
+        if (addedSinceFlush > 0) {
+          setOrders([...allRows]);
+          addedSinceFlush = 0;
         }
       }
 
