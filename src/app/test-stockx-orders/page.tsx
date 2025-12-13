@@ -486,7 +486,9 @@ export default function TestStockXOrders() {
       (statusCounts['COMPLETED'] || 0) +
       (statusCounts['PAYOUTCOMPLETED'] || 0) +
       (statusCounts['PAYOUT_COMPLETED'] || 0);
-    const pendingCount = Math.max(0, rows.length - completedCount);
+    // "Pending" = everything that isn't completed, excluding DIDNOTSHIP (user-requested)
+    const didNotShipCount = statusCounts['DIDNOTSHIP'] || 0;
+    const pendingCount = Math.max(0, rows.length - completedCount - didNotShipCount);
 
     const duplicates = Object.entries(idCounts)
       .filter(([, c]) => c > 1 && !['UNKNOWN_ORDER'].includes(String(c)))
