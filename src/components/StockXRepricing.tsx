@@ -76,6 +76,8 @@ interface Listing {
   selected: boolean;
   // Individual pricing settings
   pricingStrategy?: IndividualPricingStrategy;
+  // Per-listing toggle for cron-based repricing (stored in stockxPricingSettings.enabled)
+  repricingEnabled?: boolean;
   minPrice?: number;
   maxPrice?: number;
   autoDeactivate?: boolean;
@@ -528,6 +530,10 @@ export default function StockXRepricing() {
       const settingData: any = {
         listingId,
         pricingStrategy: cleanPricingStrategy,
+        // Per-listing on/off (default true once opted-in)
+        enabled: settings.enabled !== undefined
+          ? settings.enabled === true
+          : (existingSetting?.enabled !== undefined ? existingSetting.enabled !== false : true),
         autoDeactivate: settings.autoDeactivate || false,
         updatedAt: new Date().toISOString()
       };
@@ -985,6 +991,7 @@ export default function StockXRepricing() {
               });
               return {
                 ...listing,
+                repricingEnabled: saved.hasOwnProperty('enabled') ? saved.enabled !== false : true,
                 pricingStrategy: saved.pricingStrategy || listing.pricingStrategy,
                 minPrice: saved.hasOwnProperty('minPrice') ? saved.minPrice : listing.minPrice,
                 maxPrice: saved.hasOwnProperty('maxPrice') ? saved.maxPrice : listing.maxPrice,
@@ -993,7 +1000,8 @@ export default function StockXRepricing() {
             } else {
               console.log(`⚠️ No saved settings found for ${listing.listingId}`);
             }
-            return listing;
+            // No settings doc = not opted-in = OFF by default
+            return { ...listing, repricingEnabled: false };
           });
         } else {
           console.log('⚠️ Settings not applied:', {
@@ -1918,6 +1926,25 @@ export default function StockXRepricing() {
       minPrice: listing.minPrice,
       maxPrice: listing.maxPrice,
       autoDeactivate: autoDeactivate
+    });
+  };
+
+  const updateRepricingEnabled = (listingId: string, enabled: boolean) => {
+    const listing = listings.find(l => l.listingId === listingId);
+    if (!listing) return;
+
+    // Update UI immediately
+    setListings(prev =>
+      prev.map(l => (l.listingId === listingId ? { ...l, repricingEnabled: enabled } : l))
+    );
+
+    // Persist. If listing had no prior settings doc, this creates one (opt-in).
+    saveSettingToFirebase(listingId, {
+      enabled,
+      pricingStrategy: listing.pricingStrategy || { type: 'keep_current' },
+      minPrice: listing.minPrice,
+      maxPrice: listing.maxPrice,
+      autoDeactivate: listing.autoDeactivate
     });
   };
 
@@ -3337,6 +3364,7 @@ export default function StockXRepricing() {
                       )}
                     </div>
                   </th>
+                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Auto</th>
                   <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Pricing Rule</th>
                   <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Min</th>
                   <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Max</th>
@@ -3461,6 +3489,22 @@ export default function StockXRepricing() {
                         <span className={`text-[11px] ${isNeon ? 'text-gray-500' : 'text-gray-500'}`}>
                           Flex: ${listing.flexLowestAsk || '-'}
                         </span>
+                      </div>
+                    </td>
+                    <td className="p-2">
+                      <div className="flex items-center justify-center">
+                        <input
+                          type="checkbox"
+                          checked={listing.repricingEnabled === true}
+                          onChange={(e) => updateRepricingEnabled(listing.listingId, e.target.checked)}
+                          className={`w-4 h-4 ${isNeon ? 'text-cyan-500 accent-cyan-500' : 'text-blue-600'} cursor-pointer`}
+                          title={
+                            listing.repricingEnabled === true
+                              ? 'Auto-reprice ON (cron will consider this listing)'
+                              : 'Auto-reprice OFF (cron will skip this listing)'
+                          }
+                          aria-label="Auto-reprice toggle"
+                        />
                       </div>
                     </td>
                     <td className="p-2">

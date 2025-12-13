@@ -253,6 +253,12 @@ export async function GET(request: NextRequest) {
               console.log(`⏭️ Skipping listing ${listing.listingId}: No saved settings (opt-in required)`);
               return false;
             }
+
+            // Per-listing toggle: if explicitly disabled, skip
+            if (settings.enabled === false) {
+              console.log(`⏭️ Skipping listing ${listing.listingId}: Auto-reprice disabled for this listing`);
+              return false;
+            }
             
             // Skip if pricing strategy is "manual" or "keep_current"
             if (pricingStrategy?.type === 'manual') {
