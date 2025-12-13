@@ -583,6 +583,12 @@ export default function TestStockXOrders() {
     window.location.href = `/api/stockx/auth?returnTo=${encodeURIComponent(window.location.href)}`;
   };
 
+  const openGmailSearch = (orderNumber: string) => {
+    const q = `"${orderNumber}"`;
+    const url = `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(q)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -1070,7 +1076,19 @@ export default function TestStockXOrders() {
                         onClick={() => fetchDetails(String(orderNumber))}
                         title="Click to load payout breakdown"
                       >
-                        <td className="px-4 py-3 font-semibold text-cyan-200">{String(orderNumber)}</td>
+                        <td className="px-4 py-3 font-semibold text-cyan-200">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openGmailSearch(String(orderNumber));
+                            }}
+                            className="text-left hover:underline underline-offset-4"
+                            title="Search this order number in Gmail"
+                          >
+                            {String(orderNumber)}
+                          </button>
+                        </td>
                         <td className="px-4 py-3 text-gray-200">{status}</td>
                         <td className="px-4 py-3 text-gray-200">{productName}</td>
                         <td className="px-4 py-3 text-gray-200">{size}</td>
