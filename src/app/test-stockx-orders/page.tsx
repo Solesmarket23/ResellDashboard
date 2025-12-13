@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import NeonNotification, { NotificationType } from '@/components/NeonNotification';
 
 type OrderRow = {
@@ -168,6 +168,8 @@ export default function TestStockXOrders() {
   const [selectedHistoryStatuses, setSelectedHistoryStatuses] = useState<string[]>([]);
   const [selectedActiveStatuses, setSelectedActiveStatuses] = useState<string[]>([]);
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
+  const [showQuickPresetsMore, setShowQuickPresetsMore] = useState(false);
+  const quickPresetsMoreRef = useRef<HTMLDivElement | null>(null);
   const [includeActive, setIncludeActive] = useState(true);
   const [showDidNotShip, setShowDidNotShip] = useState(false);
   const [useCache, setUseCache] = useState(true);
@@ -178,6 +180,25 @@ export default function TestStockXOrders() {
   const [selectedSalesDay, setSelectedSalesDay] = useState<string | null>(null);
   const [orderSearchQuery, setOrderSearchQuery] = useState('');
   const detailsSectionRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!showQuickPresetsMore) return;
+    const onDocClick = (e: MouseEvent) => {
+      const el = quickPresetsMoreRef.current;
+      if (!el) return;
+      if (e.target instanceof Node && el.contains(e.target)) return;
+      setShowQuickPresetsMore(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowQuickPresetsMore(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [showQuickPresetsMore]);
 
   type VerificationMonthRow = { month: string; success: number; failed: number; failureRate: number };
   type VerificationBrandRow = {
@@ -2056,22 +2077,14 @@ export default function TestStockXOrders() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap md:flex-nowrap">
+              {/* Primary (most-used) quick presets */}
               <button
-                onClick={() => {
-                  setQuickRange('this_month');
-                }}
+                onClick={() => setQuickRange('this_month')}
                 className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10"
                 title="Set date range to this month"
               >
                 This month
-              </button>
-              <button
-                onClick={() => setQuickRange('last_7')}
-                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
-                title="Last 7 days"
-              >
-                7d
               </button>
               <button
                 onClick={() => setQuickRange('last_30')}
@@ -2088,32 +2101,78 @@ export default function TestStockXOrders() {
                 90d
               </button>
               <button
-                onClick={() => setQuickRange('last_month')}
-                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
-                title="Last month"
-              >
-                Last month
-              </button>
-              <button
                 onClick={() => setQuickRange('this_year')}
                 className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
                 title="This year"
               >
                 This year
               </button>
-              <button
-                onClick={() => setQuickRange('last_12_months')}
-                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
-                title="Last 12 months"
-              >
-                12m
-              </button>
+
+              {/* Less-used presets under More */}
+              <div ref={quickPresetsMoreRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowQuickPresetsMore((v) => !v)}
+                  className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
+                  aria-expanded={showQuickPresetsMore}
+                  aria-haspopup="menu"
+                  title="More quick presets"
+                >
+                  More ▾
+                </button>
+
+                {showQuickPresetsMore && (
+                  <div
+                    role="menu"
+                    className="absolute z-30 mt-2 w-48 rounded-xl border border-white/10 bg-gray-950/95 backdrop-blur shadow-xl overflow-hidden"
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setQuickRange('last_7');
+                        setShowQuickPresetsMore(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-white/10"
+                      title="Last 7 days"
+                    >
+                      7d
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setQuickRange('last_month');
+                        setShowQuickPresetsMore(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-white/10"
+                      title="Last month"
+                    >
+                      Last month
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setQuickRange('last_12_months');
+                        setShowQuickPresetsMore(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-white/10"
+                      title="Last 12 months"
+                    >
+                      12m
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <button
                 onClick={() => {
                   setFromDate('');
                   setToDate('');
                   setSelectedHistoryStatuses([]);
                   setSelectedActiveStatuses([]);
+                  setShowQuickPresetsMore(false);
                 }}
                 className="ml-auto px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
               >
