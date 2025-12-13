@@ -237,6 +237,21 @@ export default function TestStockXOrders() {
       filtered = filtered.filter((r) => !isActiveRow(r));
     }
 
+    // Date range filter applies to ALL rows (history + active)
+    if (fromDate || toDate) {
+      filtered = filtered.filter((r) => {
+        const raw = (r as any)?.rawData || (r as any);
+        const iso =
+          (r as any)?.createdAt ||
+          raw?.createdAt ||
+          raw?.orderDate ||
+          raw?.created ||
+          (r as any)?.rawData?.createdAt ||
+          undefined;
+        return inSelectedDateRange(iso);
+      });
+    }
+
     // Status filters
     const selectedStatusSet = new Set<string>([...selectedHistoryStatuses, ...selectedActiveStatuses]);
     if (selectedStatusSet.size > 0) {
@@ -638,8 +653,21 @@ export default function TestStockXOrders() {
     if (!isoOrDate) return false;
     const d = new Date(isoOrDate);
     if (Number.isNaN(d.getTime())) return false;
-    const start = fromDate ? new Date(`${fromDate}T00:00:00.000Z`) : null;
-    const end = toDate ? new Date(`${toDate}T23:59:59.999Z`) : null;
+    // IMPORTANT: interpret the date picker range in the user's local time (not UTC),
+    // otherwise late-night local times can appear as the prior/next day.
+    const parseLocalDayStart = (yyyyMmDd: string) => {
+      const [y, m, day] = yyyyMmDd.split('-').map((x) => parseInt(x, 10));
+      if (!y || !m || !day) return null;
+      return new Date(y, m - 1, day, 0, 0, 0, 0);
+    };
+    const parseLocalDayEnd = (yyyyMmDd: string) => {
+      const [y, m, day] = yyyyMmDd.split('-').map((x) => parseInt(x, 10));
+      if (!y || !m || !day) return null;
+      return new Date(y, m - 1, day, 23, 59, 59, 999);
+    };
+
+    const start = fromDate ? parseLocalDayStart(fromDate) : null;
+    const end = toDate ? parseLocalDayEnd(toDate) : null;
     if (start && d < start) return false;
     if (end && d > end) return false;
     return true;
