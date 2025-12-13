@@ -420,8 +420,9 @@ export default function TestStockXOrders() {
     return true;
   };
 
-  const historyFromDate = () => (fromDate ? `${fromDate}T00:00:00.000Z` : '');
-  const historyToDate = () => (toDate ? `${toDate}T23:59:59.999Z` : '');
+  // StockX orders/history expects YYYY-MM-DD (not full ISO datetime)
+  const historyFromDate = () => (fromDate ? fromDate : '');
+  const historyToDate = () => (toDate ? toDate : '');
 
   const fetchAllHistory = async () => {
     // StockX caps pageSize at 100; we paginate until hasNextPage is false.
