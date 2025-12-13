@@ -59,6 +59,15 @@ function fmtDate(iso?: string) {
   return d.toLocaleString();
 }
 
+function formatSizeLabel(size: string) {
+  const s = String(size || '').trim();
+  const upper = s.toUpperCase();
+  if (upper === 'S') return 'Small';
+  if (upper === 'M') return 'Medium';
+  if (upper === 'L') return 'Large';
+  return s || '—';
+}
+
 export default function TestStockXOrders() {
   const [loading, setLoading] = useState(false);
   const [allLoading, setAllLoading] = useState(false);
@@ -1047,7 +1056,7 @@ export default function TestStockXOrders() {
                 <div className="text-right font-semibold">{totals.duplicateCount}</div>
                 <div className="text-gray-300">Top size</div>
                 <div className="text-right font-semibold">
-                  {totals.topSize ? `${totals.topSize.size} (${totals.topSize.count})` : '—'}
+                  {totals.topSize ? `${formatSizeLabel(totals.topSize.size)} (${totals.topSize.count})` : '—'}
                 </div>
                 <div className="text-gray-300">Top category</div>
                 <div className="text-right font-semibold">
@@ -1094,7 +1103,9 @@ export default function TestStockXOrders() {
                                 {p.name}
                               </div>
                               <div className="text-[11px] text-gray-400">
-                                {p.topSize ? `Top size: ${p.topSize.size} (${p.topSize.count})` : 'Top size: —'}
+                                {p.topSize
+                                  ? `Top size: ${formatSizeLabel(p.topSize.size)} (${p.topSize.count})`
+                                  : 'Top size: —'}
                               </div>
                             </div>
                             <div className="font-semibold whitespace-nowrap">{p.count}</div>
@@ -1206,7 +1217,7 @@ export default function TestStockXOrders() {
                       raw?.variant?.product?.productName ||
                       raw?.variant?.product?.name ||
                       '—';
-                    const size = o?.variant?.size || raw?.variant?.size || raw?.size || '—';
+                    const size = formatSizeLabel(String(o?.variant?.size || raw?.variant?.size || raw?.size || ''));
                     const created = o?.createdAt || raw?.createdAt;
 
                     return (
