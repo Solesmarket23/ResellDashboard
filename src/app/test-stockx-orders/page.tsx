@@ -202,12 +202,15 @@ export default function TestStockXOrders() {
     | 'orderNumber'
     | 'status'
     | 'product'
+    | 'styleId'
     | 'brand'
     | 'category'
     | 'size'
     | 'sale'
     | 'fees'
     | 'payout'
+    | 'authStatus'
+    | 'failureNotes'
     | 'carrier'
     | 'tracking'
     | 'shipBy'
@@ -803,6 +806,24 @@ export default function TestStockXOrders() {
     return String(raw?.inventoryType || row?.variant?.inventoryType || '').trim();
   };
 
+  const getRowStyleId = (row: any) => {
+    const raw = row?.rawData || row;
+    return String(row?.product?.sku || row?.product?.styleId || raw?.product?.styleId || raw?.sku || raw?.styleId || '').trim();
+  };
+
+  const getRowAuthStatus = (row: any) => {
+    const raw = row?.rawData || row;
+    return String(raw?.authenticationDetails?.status || '').trim();
+  };
+
+  const getRowFailureNotes = (row: any) => {
+    const raw = row?.rawData || row;
+    const v = raw?.authenticationDetails?.failureNotes;
+    if (v === null || v === undefined) return '';
+    if (Array.isArray(v)) return v.filter(Boolean).join('; ');
+    return String(v);
+  };
+
   const sortIndicator = (col: NonNullable<typeof sortBy>) =>
     sortBy === col ? (sortDir === 'asc' ? '▲' : '▼') : '⇅';
 
@@ -889,6 +910,12 @@ export default function TestStockXOrders() {
         const cmp = ap.localeCompare(bp);
         if (cmp !== 0) return cmp * dir;
       }
+      if (sortBy === 'styleId') {
+        const ap = getRowStyleId(a);
+        const bp = getRowStyleId(b);
+        const cmp = ap.localeCompare(bp);
+        if (cmp !== 0) return cmp * dir;
+      }
       if (sortBy === 'brand') {
         const ap = getRowBrand(a);
         const bp = getRowBrand(b);
@@ -948,6 +975,18 @@ export default function TestStockXOrders() {
           const cmp = av - bv;
           if (cmp !== 0) return cmp * dir;
         }
+      }
+      if (sortBy === 'authStatus') {
+        const ap = getRowAuthStatus(a);
+        const bp = getRowAuthStatus(b);
+        const cmp = ap.localeCompare(bp);
+        if (cmp !== 0) return cmp * dir;
+      }
+      if (sortBy === 'failureNotes') {
+        const ap = getRowFailureNotes(a);
+        const bp = getRowFailureNotes(b);
+        const cmp = ap.localeCompare(bp);
+        if (cmp !== 0) return cmp * dir;
       }
       if (sortBy === 'carrier') {
         const ap = getRowCarrier(a);
@@ -2702,6 +2741,17 @@ export default function TestStockXOrders() {
                     <th className="text-left px-4 py-3 font-semibold text-gray-300">
                       <button
                         type="button"
+                        onClick={() => toggleSort('styleId', 'asc')}
+                        className="inline-flex items-center gap-2 hover:text-white"
+                        title="Sort by style ID"
+                      >
+                        Style ID
+                        <span className="text-xs text-gray-400">{sortIndicator('styleId')}</span>
+                      </button>
+                    </th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                      <button
+                        type="button"
                         onClick={() => toggleSort('brand', 'asc')}
                         className="inline-flex items-center gap-2 hover:text-white"
                         title="Sort by brand"
@@ -2763,6 +2813,28 @@ export default function TestStockXOrders() {
                       >
                         Payout
                         <span className="text-xs text-gray-400">{sortIndicator('payout')}</span>
+                      </button>
+                    </th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                      <button
+                        type="button"
+                        onClick={() => toggleSort('authStatus', 'asc')}
+                        className="inline-flex items-center gap-2 hover:text-white"
+                        title="Sort by authentication status"
+                      >
+                        Auth
+                        <span className="text-xs text-gray-400">{sortIndicator('authStatus')}</span>
+                      </button>
+                    </th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                      <button
+                        type="button"
+                        onClick={() => toggleSort('failureNotes', 'asc')}
+                        className="inline-flex items-center gap-2 hover:text-white"
+                        title="Sort by failure notes"
+                      >
+                        Failure notes
+                        <span className="text-xs text-gray-400">{sortIndicator('failureNotes')}</span>
                       </button>
                     </th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-300">
@@ -2848,10 +2920,13 @@ export default function TestStockXOrders() {
                       raw?.variant?.product?.productName ||
                       raw?.variant?.product?.name ||
                       '—';
+                    const styleId = getRowStyleId(o) || '—';
                     const brand = getRowBrand(o) || '—';
                     const category = getRowCategory(o) || '—';
                     const size = formatSizeLabel(String(o?.variant?.size || raw?.variant?.size || raw?.size || ''));
                     const created = o?.createdAt || raw?.createdAt;
+                    const authStatus = getRowAuthStatus(o) || '—';
+                    const failureNotes = getRowFailureNotes(o) || '—';
                     const carrier = getRowCarrier(o) || '—';
                     const tracking = getRowTracking(o) || '—';
                     const shipBy = getRowShipByIso(o);
@@ -2880,6 +2955,7 @@ export default function TestStockXOrders() {
                         </td>
                         <td className="px-4 py-3 text-gray-200">{status}</td>
                         <td className="px-4 py-3 text-gray-200">{productName}</td>
+                        <td className="px-4 py-3 text-gray-200">{styleId}</td>
                         <td className="px-4 py-3 text-gray-200">{brand}</td>
                         <td className="px-4 py-3 text-gray-200">{category}</td>
                         <td className="px-4 py-3 text-gray-200">{size}</td>
@@ -2890,6 +2966,10 @@ export default function TestStockXOrders() {
                             <span>{fmtMoney(payout, currency)}</span>
                             {isProjected && <span className="text-[11px] text-gray-400">(proj)</span>}
                           </div>
+                        </td>
+                        <td className="px-4 py-3 text-gray-200">{authStatus}</td>
+                        <td className="px-4 py-3 text-gray-200" title={failureNotes}>
+                          {failureNotes}
                         </td>
                         <td className="px-4 py-3 text-gray-200">{carrier}</td>
                         <td className="px-4 py-3 text-gray-200">{tracking}</td>
@@ -2902,7 +2982,7 @@ export default function TestStockXOrders() {
 
                   {displayedOrders.length === 0 && (
                     <tr>
-                      <td colSpan={13} className="px-4 py-10 text-center text-gray-400">
+                      <td colSpan={16} className="px-4 py-10 text-center text-gray-400">
                         {loading ? 'Loading…' : 'No orders loaded yet. Click “Fetch Order History”.'}
                       </td>
                     </tr>
