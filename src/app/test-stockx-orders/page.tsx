@@ -106,6 +106,9 @@ export default function TestStockXOrders() {
   const [selected, setSelected] = useState<{ orderNumber: string; data: any } | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
 
+  const [sortBy, setSortBy] = useState<'status' | null>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
   type LogLevel = 'info' | 'warn' | 'error';
   type LogEntry = { ts: string; level: LogLevel; message: string; data?: any };
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -583,11 +586,36 @@ export default function TestStockXOrders() {
     window.location.href = `/api/stockx/auth?returnTo=${encodeURIComponent(window.location.href)}`;
   };
 
+  const getRowOrderNumber = (row: any) => {
+    const raw = row?.rawData || row;
+    return String(raw?.orderNumber || raw?.orderId || raw?.id || row?.id || raw?.askId || '—');
+  };
+
+  const getRowStatus = (row: any) => {
+    const raw = row?.rawData || row;
+    return String((raw?.status || row?.status || row?.orderStatus || raw?.orderStatus || '—')).toUpperCase();
+  };
+
   const openGmailSearch = (orderNumber: string) => {
     const q = `"${orderNumber}"`;
     const url = `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(q)}`;
     window.open(url, '_blank', 'noopener,noreferrer');
   };
+
+  const displayedOrders = useMemo(() => {
+    if (!sortBy) return orders;
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return [...orders].sort((a: any, b: any) => {
+      if (sortBy === 'status') {
+        const as = getRowStatus(a);
+        const bs = getRowStatus(b);
+        const cmp = as.localeCompare(bs);
+        if (cmp !== 0) return cmp * dir;
+      }
+      // stable tiebreaker
+      return getRowOrderNumber(a).localeCompare(getRowOrderNumber(b)) * dir;
+    });
+  }, [orders, sortBy, sortDir]);
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 p-6">
@@ -1031,7 +1059,7 @@ export default function TestStockXOrders() {
           <div className="lg:col-span-2 rounded-xl border border-white/10 bg-white/5 overflow-hidden">
             <div className="p-4 border-b border-white/10 flex items-center justify-between">
               <h2 className="font-semibold">Order History</h2>
-              <div className="text-xs text-gray-400">{orders.length} rows</div>
+              <div className="text-xs text-gray-400">{displayedOrders.length} rows</div>
             </div>
 
             <div className="overflow-auto max-h-[55vh]">
@@ -1039,7 +1067,22 @@ export default function TestStockXOrders() {
                 <thead className="sticky top-0 bg-gray-950/80 backdrop-blur border-b border-white/10">
                   <tr>
                     <th className="text-left px-4 py-3 font-semibold text-gray-300">Order #</th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">Status</th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSortBy('status');
+                          setSortDir((d) => (sortBy === 'status' ? (d === 'asc' ? 'desc' : 'asc') : 'asc'));
+                        }}
+                        className="inline-flex items-center gap-2 hover:text-white"
+                        title="Sort by status"
+                      >
+                        Status
+                        <span className="text-xs text-gray-400">
+                          {sortBy === 'status' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
+                        </span>
+                      </button>
+                    </th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-300">Product</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-300">Size</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-300">Sale</th>
@@ -1049,12 +1092,10 @@ export default function TestStockXOrders() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {orders.map((o: any) => {
+                  {displayedOrders.map((o: any) => {
                     const raw = o?.rawData || o;
-                    const orderNumber =
-                      raw?.orderNumber || raw?.orderId || raw?.id || o?.id || raw?.askId || '—';
-                    const status =
-                      String((raw?.status || o?.status || o?.orderStatus || raw?.orderStatus || '—')).toUpperCase();
+                    const orderNumber = getRowOrderNumber(o);
+                    const status = getRowStatus(o);
                     const currency = o?.pricing?.currency || raw?.currencyCode || 'USD';
                     const sale = normalizeMoney(o?.metrics?.salePrice ?? o?.pricing?.salePrice ?? raw?.amount ?? raw?.price);
                     const fees = normalizeMoney(o?.metrics?.totalFees ?? o?.pricing?.totalFees ?? raw?.totalFees);
@@ -1100,7 +1141,7 @@ export default function TestStockXOrders() {
                     );
                   })}
 
-                  {orders.length === 0 && (
+                  {displayedOrders.length === 0 && (
                     <tr>
                       <td colSpan={8} className="px-4 py-10 text-center text-gray-400">
                         {loading ? 'Loading…' : 'No orders loaded yet. Click “Fetch Order History”.'}
