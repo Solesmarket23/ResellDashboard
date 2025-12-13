@@ -248,9 +248,38 @@ function processOrdersData(rawData: any) {
   }
 
   return orders.map((order: any) => {
+    const parseMoney = (value: any): number | null => {
+      if (value === null || value === undefined) return null;
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        // StockX often uses cents for numeric money (e.g. amount=25000)
+        return value > 5000 ? value / 100 : value;
+      }
+      if (typeof value === 'string') {
+        const n = parseFloat(value);
+        return Number.isFinite(n) ? n : null;
+      }
+      return null;
+    };
+
+    const currencyCode = order.currencyCode || order.currency || order.payout?.currencyCode || 'USD';
+
+    // StockX public API order history uses:
+    // - amount (number, cents)
+    // - payout { salePrice: string, totalPayout: string, totalAdjustments: string, adjustments: [...] }
+    const payoutSale = parseMoney(order.payout?.salePrice);
+    const payoutTotal = parseMoney(order.payout?.totalPayout);
+    const saleFromAmount = parseMoney(order.amount);
+    const salePrice = payoutSale ?? saleFromAmount ?? parseMoney(order.salePrice) ?? parseMoney(order.price) ?? 0;
+    const netPayout = payoutTotal ?? parseMoney(order.payoutAmount) ?? parseMoney(order.netPayout) ?? parseMoney(order.payout) ?? null;
+    const totalFees =
+      netPayout !== null
+        ? Math.max(0, salePrice - netPayout)
+        : parseMoney(order.totalFees);
+
     // Extract comprehensive order information
     const orderData = {
-      id: order.id || order.orderId,
+      id: order.id || order.orderId || order.orderNumber || order.askId,
+      orderNumber: order.orderNumber || order.orderId || order.id || order.askId,
       status: order.status,
       orderStatus: order.orderStatus,
       createdAt: order.createdAt,
@@ -261,32 +290,34 @@ function processOrdersData(rawData: any) {
       // Product information
       product: {
         id: order.product?.id || order.productId,
-        name: order.product?.name || order.productName,
-        brand: order.product?.brand,
-        colorway: order.product?.colorway,
-        imageUrl: order.product?.imageUrl,
-        sku: order.product?.sku,
-        urlKey: order.product?.urlKey,
-        styleId: order.product?.styleId
+        name: order.product?.name || order.productName || order.variant?.product?.name,
+        brand: order.product?.brand || order.variant?.product?.brand,
+        colorway: order.product?.colorway || order.variant?.product?.colorway,
+        imageUrl: order.product?.imageUrl || order.variant?.product?.media?.imageUrl || order.variant?.product?.imageUrl,
+        sku: order.product?.sku || order.variant?.product?.sku,
+        urlKey: order.product?.urlKey || order.variant?.product?.urlKey,
+        styleId: order.product?.styleId || order.variant?.product?.styleId
       },
       
       // Variant information
       variant: {
         id: order.variant?.id || order.variantId,
-        size: order.variant?.size || order.size,
+        size: order.variant?.size || order.size || order.variant?.variantValue,
         condition: order.variant?.condition || order.condition,
         inventoryType: order.variant?.inventoryType || order.inventoryType
       },
       
       // Pricing information
       pricing: {
-        salePrice: order.salePrice || order.price,
-        processingFee: order.processingFee,
-        transactionFee: order.transactionFee,
-        shippingFee: order.shippingFee,
-        totalFees: order.totalFees,
-        payout: order.payout,
-        currency: order.currency || 'USD'
+        salePrice,
+        // These are not explicitly provided in the public order-history schema; we derive totals from payout.
+        processingFee: parseMoney(order.processingFee),
+        transactionFee: parseMoney(order.transactionFee),
+        shippingFee: parseMoney(order.shippingFee),
+        totalFees,
+        payout: netPayout,
+        currency: currencyCode,
+        payoutDetails: order.payout || null
       },
       
       // Shipping information
@@ -320,7 +351,12 @@ function processOrdersData(rawData: any) {
       },
       
       // Calculate profit and metrics
-      metrics: calculateOrderMetrics(order),
+      metrics: calculateOrderMetrics({
+        salePrice,
+        totalFees,
+        netPayout,
+        payoutDetails: order.payout
+      }),
       
       // Raw order data for debugging
       rawData: order
@@ -332,25 +368,38 @@ function processOrdersData(rawData: any) {
 
 // Function to calculate order metrics and profit
 function calculateOrderMetrics(order: any) {
-  const salePrice = order.salePrice || order.price || 0;
-  const totalFees = order.totalFees || 0;
-  const netPayout = order.payout || (salePrice - totalFees);
-  
-  // Calculate fee breakdown
-  const processingFee = order.processingFee || 0;
-  const transactionFee = order.transactionFee || 0;
-  const shippingFee = order.shippingFee || 0;
-  const calculatedFees = processingFee + transactionFee + shippingFee;
+  const salePrice = typeof order.salePrice === 'number' ? order.salePrice : 0;
+  const totalFees = typeof order.totalFees === 'number' ? order.totalFees : 0;
+  const netPayout =
+    typeof order.netPayout === 'number'
+      ? order.netPayout
+      : typeof order.payout === 'number'
+        ? order.payout
+        : salePrice - totalFees;
+
+  // If payout details exist, use adjustments for a better breakdown display (not all fees are itemized).
+  const adjustments: any[] = Array.isArray(order.payoutDetails?.adjustments)
+    ? order.payoutDetails.adjustments
+    : [];
+  const adjustmentsTotal = adjustments.reduce((sum, a) => {
+    const n = typeof a?.amount === 'number' ? a.amount : parseFloat(a?.amount);
+    return sum + (Number.isFinite(n) ? n : 0);
+  }, 0);
   
   return {
     salePrice,
     totalFees,
     netPayout,
     feeBreakdown: {
-      processingFee,
-      transactionFee,
-      shippingFee,
-      calculatedTotal: calculatedFees
+      // These are often not available via history endpoint; keep them for future compatibility.
+      processingFee: order.processingFee || 0,
+      transactionFee: order.transactionFee || 0,
+      shippingFee: order.shippingFee || 0,
+      calculatedTotal: order.processingFee && order.transactionFee && order.shippingFee
+        ? (order.processingFee || 0) + (order.transactionFee || 0) + (order.shippingFee || 0)
+        : null,
+      adjustmentsTotal: adjustmentsTotal || null,
+      adjustmentsCount: adjustments.length || 0
     },
     profitMargin: salePrice > 0 ? ((netPayout / salePrice) * 100).toFixed(2) : 0,
     // Note: To calculate actual profit, you'd need to track purchase cost
