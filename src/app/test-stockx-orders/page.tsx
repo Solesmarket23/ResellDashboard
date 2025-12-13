@@ -60,6 +60,8 @@ function fmtDate(iso?: string) {
 
 export default function TestStockXOrders() {
   const [loading, setLoading] = useState(false);
+  const [allLoading, setAllLoading] = useState(false);
+  const [allProgress, setAllProgress] = useState<{ page: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
 
@@ -140,6 +142,66 @@ export default function TestStockXOrders() {
     }
   };
 
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  const fetchAllHistory = async () => {
+    // StockX caps pageSize at 100; we paginate until hasNextPage is false.
+    const PAGE_SIZE = 100;
+    const MAX_PAGES = 100; // safety cap (10,000 orders max)
+
+    setAllLoading(true);
+    setAllProgress({ page: 0, total: 0 });
+    setError(null);
+    setAuthRequired(false);
+    setSelected(null);
+
+    try {
+      const all: OrderRow[] = [];
+      let p = 1;
+      let hasNext = true;
+
+      while (hasNext && p <= MAX_PAGES) {
+        const qp = new URLSearchParams();
+        qp.set('pageNumber', String(p));
+        qp.set('pageSize', String(PAGE_SIZE));
+        if (fromDate) qp.set('fromDate', fromDate);
+        if (toDate) qp.set('toDate', toDate);
+        if (orderStatus) qp.set('orderStatus', orderStatus);
+
+        const res = await fetch(`/api/stockx/orders/history?${qp.toString()}`);
+        const json = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          if (res.status === 401 || json?.authRequired) {
+            setAuthRequired(true);
+            throw new Error(json?.message || 'StockX authentication required.');
+          }
+          throw new Error(json?.error || json?.details || `Request failed (${res.status})`);
+        }
+
+        const pageRows: OrderRow[] = Array.isArray(json?.data) ? json.data : [];
+        all.push(...pageRows);
+        setAllProgress({ page: p, total: all.length });
+
+        hasNext = Boolean(json?.hasNextPage) && pageRows.length > 0;
+        p += 1;
+
+        // light delay to reduce rate-limit risk
+        if (hasNext) await sleep(250);
+      }
+
+      setOrders(all);
+      setPageNumber(1);
+      setPageSize(PAGE_SIZE);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setOrders([]);
+    } finally {
+      setAllLoading(false);
+      setAllProgress(null);
+    }
+  };
+
   const fetchDetails = async (orderNumber: string) => {
     setDetailsLoading(true);
     setError(null);
@@ -188,10 +250,20 @@ export default function TestStockXOrders() {
             )}
             <button
               onClick={fetchHistory}
-              disabled={loading}
+              disabled={loading || allLoading}
               className="px-4 py-2 rounded-lg font-semibold bg-white/10 hover:bg-white/20 border border-white/15 disabled:opacity-50"
             >
               {loading ? 'Loading…' : 'Fetch Order History'}
+            </button>
+            <button
+              onClick={fetchAllHistory}
+              disabled={allLoading || loading}
+              className="px-4 py-2 rounded-lg font-semibold bg-white/10 hover:bg-white/20 border border-white/15 disabled:opacity-50"
+              title="Fetch all pages (pageSize=100) for the current filters"
+            >
+              {allLoading
+                ? `Fetching all…${allProgress ? ` (page ${allProgress.page}, ${allProgress.total} orders)` : ''}`
+                : 'Fetch ALL'}
             </button>
           </div>
         </div>
