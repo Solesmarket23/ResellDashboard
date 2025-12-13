@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 type OrderRow = {
   id?: string;
@@ -75,6 +75,36 @@ export default function TestStockXOrders() {
   const [selected, setSelected] = useState<{ orderNumber: string; data: any } | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
 
+  type LogLevel = 'info' | 'warn' | 'error';
+  type LogEntry = { ts: string; level: LogLevel; message: string; data?: any };
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const logsEndRef = useRef<HTMLDivElement | null>(null);
+  const appendLog = (level: LogLevel, message: string, data?: any) => {
+    const entry: LogEntry = { ts: new Date().toISOString(), level, message, data };
+    setLogs((prev) => [...prev, entry]);
+    setTimeout(() => logsEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 0);
+  };
+  const clearLogs = () => setLogs([]);
+  const copyLogs = async () => {
+    const text = logs
+      .map((l) => {
+        const base = `[${l.ts}] ${l.level.toUpperCase()}: ${l.message}`;
+        if (l.data === undefined) return base;
+        try {
+          return `${base}\n${JSON.stringify(l.data, null, 2)}`;
+        } catch {
+          return `${base}\n${String(l.data)}`;
+        }
+      })
+      .join('\n\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      appendLog('info', 'Copied logs to clipboard');
+    } catch {
+      appendLog('warn', 'Could not copy logs (clipboard blocked)');
+    }
+  };
+
   const totals = useMemo(() => {
     const rows = orders || [];
     let sale = 0;
@@ -112,6 +142,13 @@ export default function TestStockXOrders() {
     setError(null);
     setAuthRequired(false);
     setSelected(null);
+    appendLog('info', 'Fetching order history (single page)...', {
+      pageNumber,
+      pageSize,
+      fromDate: fromDate || undefined,
+      toDate: toDate || undefined,
+      orderStatus: orderStatus || undefined,
+    });
     try {
       const qp = new URLSearchParams();
       qp.set('pageNumber', String(pageNumber));
@@ -128,15 +165,23 @@ export default function TestStockXOrders() {
           setAuthRequired(true);
           setError(json?.message || 'StockX authentication required.');
           setOrders([]);
+          appendLog('warn', 'Auth required for orders history', { status: res.status, body: json });
           return;
         }
         throw new Error(json?.error || json?.details || `Request failed (${res.status})`);
       }
 
       setOrders(Array.isArray(json?.data) ? json.data : []);
+      appendLog('info', 'Fetched order history', {
+        rows: Array.isArray(json?.data) ? json.data.length : 0,
+        hasNextPage: json?.hasNextPage,
+        pageNumber: json?.pageNumber,
+        pageSize: json?.pageSize,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setOrders([]);
+      appendLog('error', 'Order history request failed', { error: e instanceof Error ? e.message : String(e) });
     } finally {
       setLoading(false);
     }
@@ -150,10 +195,17 @@ export default function TestStockXOrders() {
     const MAX_PAGES = 100; // safety cap (10,000 orders max)
 
     setAllLoading(true);
-    setAllProgress({ page: 0, total: 0 });
+    setAllProgress({ page: 1, total: 0 });
     setError(null);
     setAuthRequired(false);
     setSelected(null);
+    appendLog('info', 'Fetching ALL order history (paginating)...', {
+      pageSize: PAGE_SIZE,
+      maxPages: MAX_PAGES,
+      fromDate: fromDate || undefined,
+      toDate: toDate || undefined,
+      orderStatus: orderStatus || undefined,
+    });
 
     try {
       const all: OrderRow[] = [];
@@ -174,7 +226,9 @@ export default function TestStockXOrders() {
         if (!res.ok) {
           if (res.status === 401 || json?.authRequired) {
             setAuthRequired(true);
-            throw new Error(json?.message || 'StockX authentication required.');
+            setError(json?.message || 'StockX authentication required.');
+            appendLog('warn', 'Auth required while fetching all pages', { status: res.status, body: json });
+            return;
           }
           throw new Error(json?.error || json?.details || `Request failed (${res.status})`);
         }
@@ -184,6 +238,11 @@ export default function TestStockXOrders() {
         setAllProgress({ page: p, total: all.length });
 
         hasNext = Boolean(json?.hasNextPage) && pageRows.length > 0;
+        appendLog('info', `Page ${p} fetched`, {
+          added: pageRows.length,
+          total: all.length,
+          hasNextPage: Boolean(json?.hasNextPage),
+        });
         p += 1;
 
         // light delay to reduce rate-limit risk
@@ -193,9 +252,11 @@ export default function TestStockXOrders() {
       setOrders(all);
       setPageNumber(1);
       setPageSize(PAGE_SIZE);
+      appendLog('info', 'Fetch ALL complete', { total: all.length });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setOrders([]);
+      appendLog('error', 'Fetch ALL failed', { error: e instanceof Error ? e.message : String(e) });
     } finally {
       setAllLoading(false);
       setAllProgress(null);
@@ -206,6 +267,7 @@ export default function TestStockXOrders() {
     setDetailsLoading(true);
     setError(null);
     try {
+      appendLog('info', 'Fetching order details...', { orderNumber });
       const res = await fetch(`/api/stockx/orders/${encodeURIComponent(orderNumber)}`);
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -216,9 +278,11 @@ export default function TestStockXOrders() {
         throw new Error(json?.error || json?.details || `Request failed (${res.status})`);
       }
       setSelected({ orderNumber, data: json?.data });
+      appendLog('info', 'Loaded order details', { orderNumber });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setSelected(null);
+      appendLog('error', 'Order details request failed', { error: e instanceof Error ? e.message : String(e) });
     } finally {
       setDetailsLoading(false);
     }
@@ -265,6 +329,65 @@ export default function TestStockXOrders() {
                 ? `Fetching all…${allProgress ? ` (page ${allProgress.page}, ${allProgress.total} orders)` : ''}`
                 : 'Fetch ALL'}
             </button>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-semibold">Logs</h2>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={copyLogs}
+                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-sm"
+              >
+                Copy
+              </button>
+              <button
+                onClick={clearLogs}
+                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-sm"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+          <div className="mt-3 max-h-[220px] overflow-auto rounded-lg border border-white/10 bg-gray-900/50 p-3">
+            {logs.length === 0 ? (
+              <div className="text-sm text-gray-400">No logs yet. Click “Fetch Order History” or “Fetch ALL”.</div>
+            ) : (
+              <div className="space-y-3">
+                {logs.map((l, idx) => (
+                  <div key={`${l.ts}-${idx}`} className="text-xs">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-gray-400">{l.ts}</div>
+                      <div
+                        className={
+                          l.level === 'error'
+                            ? 'text-red-300'
+                            : l.level === 'warn'
+                              ? 'text-yellow-300'
+                              : 'text-cyan-300'
+                        }
+                      >
+                        {l.level.toUpperCase()}
+                      </div>
+                    </div>
+                    <div className="text-gray-200 mt-1">{l.message}</div>
+                    {l.data !== undefined && (
+                      <pre className="mt-2 text-gray-300 whitespace-pre-wrap break-words">
+                        {(() => {
+                          try {
+                            return JSON.stringify(l.data, null, 2);
+                          } catch {
+                            return String(l.data);
+                          }
+                        })()}
+                      </pre>
+                    )}
+                  </div>
+                ))}
+                <div ref={logsEndRef} />
+              </div>
+            )}
           </div>
         </div>
 
