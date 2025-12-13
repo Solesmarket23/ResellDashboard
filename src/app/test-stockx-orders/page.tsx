@@ -155,7 +155,12 @@ export default function TestStockXOrders() {
       idCounts[orderKey] = (idCounts[orderKey] || 0) + 1;
 
       const productName = String(
-        o.product?.name || o.rawData?.product?.name || o.rawData?.variant?.product?.name || 'Unknown'
+        o.product?.name ||
+          o.rawData?.product?.productName ||
+          o.rawData?.product?.name ||
+          o.rawData?.variant?.product?.productName ||
+          o.rawData?.variant?.product?.name ||
+          'Unknown'
       );
       const brandName = String(
         o.product?.brand || o.rawData?.product?.brand || o.rawData?.variant?.product?.brand || 'Unknown'
@@ -873,7 +878,13 @@ export default function TestStockXOrders() {
                     const sale = normalizeMoney(o?.metrics?.salePrice ?? o?.pricing?.salePrice ?? raw?.amount ?? raw?.price);
                     const fees = normalizeMoney(o?.metrics?.totalFees ?? o?.pricing?.totalFees ?? raw?.totalFees);
                     const payout = normalizeMoney(o?.metrics?.netPayout ?? o?.pricing?.payout ?? raw?.payout);
-                    const productName = o?.product?.name || raw?.product?.name || raw?.variant?.product?.name || '—';
+                    const productName =
+                      o?.product?.name ||
+                      raw?.product?.productName ||
+                      raw?.product?.name ||
+                      raw?.variant?.product?.productName ||
+                      raw?.variant?.product?.name ||
+                      '—';
                     const size = o?.variant?.size || raw?.variant?.size || raw?.size || '—';
                     const created = o?.createdAt || raw?.createdAt;
 
@@ -930,7 +941,12 @@ export default function TestStockXOrders() {
                   const fees = normalizeMoney(d?.payout?.feesTotal ?? d?.feesTotal ?? d?.fees);
                   const status = d?.status || d?.orderStatus || '—';
                   const createdAt = d?.createdAt;
-                  const productName = d?.product?.name || d?.variant?.product?.name || '—';
+                  const productName =
+                    d?.product?.productName ||
+                    d?.product?.name ||
+                    d?.variant?.product?.productName ||
+                    d?.variant?.product?.name ||
+                    '—';
                   const size = d?.variant?.size || '—';
 
                   return (

@@ -289,14 +289,36 @@ function processOrdersData(rawData: any) {
       
       // Product information
       product: {
-        id: order.product?.id || order.productId,
-        name: order.product?.name || order.productName || order.variant?.product?.name,
-        brand: order.product?.brand || order.variant?.product?.brand,
+        // Public API schema uses OrderProduct { productId, productName, styleId }
+        id: order.product?.productId || order.product?.id || order.productId,
+        name:
+          order.product?.productName ||
+          order.product?.name ||
+          order.productName ||
+          order.variant?.product?.productName ||
+          order.variant?.product?.name,
+        brand:
+          order.product?.brand ||
+          order.variant?.product?.brand ||
+          order.brand,
+        category:
+          order.product?.category ||
+          order.variant?.product?.category ||
+          order.category,
         colorway: order.product?.colorway || order.variant?.product?.colorway,
-        imageUrl: order.product?.imageUrl || order.variant?.product?.media?.imageUrl || order.variant?.product?.imageUrl,
-        sku: order.product?.sku || order.variant?.product?.sku,
+        imageUrl:
+          order.product?.imageUrl ||
+          order.variant?.product?.media?.imageUrl ||
+          order.variant?.product?.imageUrl,
+        sku:
+          order.product?.sku ||
+          order.product?.styleId ||
+          order.variant?.product?.sku,
         urlKey: order.product?.urlKey || order.variant?.product?.urlKey,
-        styleId: order.product?.styleId || order.variant?.product?.styleId
+        styleId:
+          order.product?.styleId ||
+          order.variant?.product?.styleId ||
+          order.product?.styleId
       },
       
       // Variant information
