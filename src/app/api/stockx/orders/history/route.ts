@@ -210,9 +210,22 @@ export async function GET(request: NextRequest) {
       const needs = orders
         .filter((o) => {
           const sale = typeof o?.pricing?.salePrice === 'number' ? o.pricing.salePrice : null;
+          if (sale === null || sale <= 0) return false;
+
           const payout = typeof o?.pricing?.payout === 'number' ? o.pricing.payout : null;
-          // Only enrich if we likely have a missing payout (not a real $0 sale)
-          return sale !== null && sale > 0 && (payout === null || payout === 0);
+          const payoutMissing = payout === null || payout === 0;
+
+          const raw = o?.rawData || {};
+          const hasShipment = Boolean(
+            raw?.shipment?.trackingNumber ||
+              raw?.shipment?.shipByDate ||
+              raw?.trackingNumber ||
+              o?.shipping?.trackingNumber
+          );
+          const hasAuth = Boolean(raw?.authenticationDetails?.status || o?.authentication?.authenticationStatus);
+
+          // If we don't have shipment/auth fields (needed for table columns), pull details.
+          return payoutMissing || !hasShipment || !hasAuth;
         })
         .map((o) => String(o?.orderNumber || o?.id || o?.rawData?.orderNumber || '').trim())
         .filter(Boolean);
@@ -241,29 +254,58 @@ export async function GET(request: NextRequest) {
 
       return orders.map((o) => {
         const sale = typeof o?.pricing?.salePrice === 'number' ? o.pricing.salePrice : null;
-        const payout = typeof o?.pricing?.payout === 'number' ? o.pricing.payout : null;
         if (sale === null || sale <= 0) return o;
-        if (payout !== null && payout !== 0) return o;
 
         const orderNumber = String(o?.orderNumber || o?.id || o?.rawData?.orderNumber || '').trim();
         const details = orderNumber ? cache.get(orderNumber) : null;
         if (!details || typeof details !== 'object') return o;
+
+        const raw = o?.rawData || {};
+        const mergedRaw = {
+          ...raw,
+          ...(details?.shipment ? { shipment: details.shipment } : {}),
+          ...(details?.authenticationDetails ? { authenticationDetails: details.authenticationDetails } : {}),
+          ...(details?.inventoryType ? { inventoryType: details.inventoryType } : {}),
+          ...(details?.payout ? { payout: details.payout } : {}),
+        };
+
+        const merged: any = {
+          ...o,
+          rawData: mergedRaw,
+          // Populate our normalized sub-objects too (best effort)
+          shipping: {
+            ...(o.shipping || {}),
+            ...(details?.shipment?.trackingNumber ? { trackingNumber: details.shipment.trackingNumber } : {}),
+            ...(details?.shipment?.carrierCode ? { carrierCode: details.shipment.carrierCode } : {}),
+            ...(details?.shipment?.shipByDate ? { shipByDate: details.shipment.shipByDate } : {}),
+          },
+          authentication: {
+            ...(o.authentication || {}),
+            ...(details?.authenticationDetails?.status ? { authenticationStatus: details.authenticationDetails.status } : {}),
+          },
+        };
+
+        // If payout is missing, backfill money fields from details payout.
+        const payout = typeof o?.pricing?.payout === 'number' ? o.pricing.payout : null;
+        const payoutMissing = payout === null || payout === 0;
+        if (!payoutMissing) return merged;
+
         const detailsPayout = parseMoney(details?.payout?.totalPayout);
         const detailsSale = parseMoney(details?.payout?.salePrice) ?? parseMoney(details?.amount) ?? sale;
-        if (detailsPayout === null) return o;
+        if (detailsPayout === null) return merged;
         const detailsFees = Math.max(0, Math.round((detailsSale - detailsPayout) * 100) / 100);
 
         return {
-          ...o,
+          ...merged,
           pricing: {
-            ...(o.pricing || {}),
+            ...(merged.pricing || {}),
             salePrice: detailsSale,
             payout: detailsPayout,
             totalFees: detailsFees,
-            payoutDetails: details?.payout || o?.pricing?.payoutDetails || null,
+            payoutDetails: details?.payout || merged?.pricing?.payoutDetails || null,
           },
           metrics: {
-            ...(o.metrics || {}),
+            ...(merged.metrics || {}),
             salePrice: detailsSale,
             netPayout: detailsPayout,
             totalFees: detailsFees,

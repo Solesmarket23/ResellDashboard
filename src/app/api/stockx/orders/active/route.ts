@@ -287,8 +287,13 @@ export async function GET(request: NextRequest) {
         .filter((n, i, arr) => arr.indexOf(n) === i)
         .filter((orderNumber) => {
           const o = orders.find((x) => String(x?.orderNumber || x?.orderId || x?.id || '').trim() === orderNumber);
+          if (!o) return false;
           const payout = o?.payout;
-          return !(payout && payout.totalPayout !== null && payout.totalPayout !== undefined);
+          const payoutMissing = !(payout && payout.totalPayout !== null && payout.totalPayout !== undefined);
+          const hasShipment = Boolean(o?.shipment?.trackingNumber || o?.shipment?.shipByDate);
+          const hasAuth = Boolean(o?.authenticationDetails?.status);
+          // Fetch details if payout is missing OR shipment/auth fields are missing.
+          return payoutMissing || !hasShipment || !hasAuth;
         });
 
       const limit = 6;
@@ -305,13 +310,22 @@ export async function GET(request: NextRequest) {
       return orders.map((o) => {
         const orderNumber = String(o?.orderNumber || o?.orderId || o?.id || '').trim();
         const payout = o?.payout;
-        if (payout && payout.totalPayout !== null && payout.totalPayout !== undefined) return o;
         const details = orderNumber ? cache.get(orderNumber) : null;
         if (!details || typeof details !== 'object') return o;
-        if (details?.payout) {
-          return { ...o, payout: details.payout };
+
+        const merged: any = {
+          ...o,
+          ...(details?.shipment ? { shipment: details.shipment } : {}),
+          ...(details?.authenticationDetails ? { authenticationDetails: details.authenticationDetails } : {}),
+          ...(details?.inventoryType ? { inventoryType: details.inventoryType } : {}),
+        };
+
+        // Backfill payout if missing
+        if (!(payout && payout.totalPayout !== null && payout.totalPayout !== undefined) && details?.payout) {
+          return { ...merged, payout: details.payout };
         }
-        return o;
+
+        return merged;
       });
     };
 
@@ -352,6 +366,9 @@ export async function GET(request: NextRequest) {
           buyerLocation: order.shippingAddress?.city || 'Unknown',
           shippingMethod: order.shippingMethod || 'Standard',
           imageUrl: order.variant?.product?.media?.imageUrl,
+          shipment: order.shipment,
+          authenticationDetails: order.authenticationDetails,
+          inventoryType: order.inventoryType,
         };
       }) || [];
 
