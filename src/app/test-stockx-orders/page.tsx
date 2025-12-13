@@ -1747,18 +1747,40 @@ export default function TestStockXOrders() {
                       <div>
                         <div className="flex items-center justify-between gap-3 mb-2">
                           <div className="text-xs text-gray-400">X axis: Date • Y axis: Sales ($)</div>
-                          <div className="text-xs text-gray-200">
-                            {selectedPoint ? (
-                              <span>
-                                <span className="text-gray-400">Selected:</span> {fmtMonthDay(selectedPoint.date)} —{' '}
-                                <span className="font-semibold">{fmtMoney(selectedPoint.sales, totals.currency)}</span> •{' '}
-                                <span className="font-semibold">{selectedPoint.count}</span> items
-                              </span>
-                            ) : (
-                              <span className="text-gray-400">Click a point to see that day’s revenue + items sold</span>
-                            )}
+                          <div className="text-xs text-gray-400">
+                            {selectedPoint ? 'Click another point to change selection' : 'Click a point to see details'}
                           </div>
                         </div>
+
+                        {selectedPoint ? (
+                          <div className="mb-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="text-sm font-semibold text-gray-200">{fmtMonthDay(selectedPoint.date)}</div>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedSalesDay(null)}
+                                className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
+                                title="Clear selection"
+                              >
+                                Clear
+                              </button>
+                            </div>
+                            <div className="mt-2 grid grid-cols-3 gap-3 text-sm">
+                              <div>
+                                <div className="text-xs text-gray-400">Total revenue</div>
+                                <div className="font-semibold text-gray-200">{fmtMoney(selectedPoint.sales, totals.currency)}</div>
+                              </div>
+                              <div>
+                                <div className="text-xs text-gray-400">Items sold</div>
+                                <div className="font-semibold text-gray-200">{selectedPoint.count}</div>
+                              </div>
+                              <div>
+                                <div className="text-xs text-gray-400">Profit</div>
+                                <div className="font-semibold text-gray-200">TBD</div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
 
                         <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[300px]">
                         <defs>
