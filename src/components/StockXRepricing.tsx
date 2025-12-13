@@ -2708,26 +2708,30 @@ export default function StockXRepricing() {
 
   if (!authenticated || authError) {
     return (
-      <div className={`min-h-screen p-6 ${isNeon ? 'bg-gray-900' : 'bg-gray-50'}`}>
-        <h2 className={`text-2xl font-bold mb-4 ${isNeon ? 'text-cyan-400' : 'text-gray-900'}`}>
-          StockX Repricing
-        </h2>
-        <div className="text-center py-8">
-          <p className={`mb-4 ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+      <div className={`min-h-screen ${isNeon ? 'bg-gray-900' : 'bg-gray-50'}`}>
+        <div className="min-h-screen flex items-center justify-center p-6">
+          <div className="text-center max-w-xl w-full">
+            <h2 className={`text-3xl font-bold mb-4 ${isNeon ? 'text-cyan-400' : 'text-gray-900'}`}>
+              StockX Repricing
+            </h2>
+            <p className={`mb-6 ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
             {authError 
               ? "Your StockX session has expired. Please re-authenticate to continue."
               : "Please authenticate with StockX to use the repricing feature."}
-          </p>
-          <button 
-            onClick={() => window.location.href = '/api/stockx/auth?returnTo=' + encodeURIComponent(window.location.origin + '/dashboard?view=stockx-repricing')}
-            className={`px-6 py-2 rounded-lg font-semibold transition-all duration-200 ${
-              isNeon 
-                ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white'
-                : 'bg-green-600 text-white hover:bg-green-700'
-            }`}
-          >
-            {authError ? "Re-authenticate with StockX" : "Authenticate with StockX"}
-          </button>
+            </p>
+            <div className="flex justify-center">
+              <button 
+                onClick={() => window.location.href = '/api/stockx/auth?returnTo=' + encodeURIComponent(window.location.origin + '/dashboard?view=stockx-repricing')}
+                className={`px-6 py-3 rounded-lg font-semibold transition-all duration-200 ${
+                  isNeon 
+                    ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white shadow-lg hover:shadow-cyan-500/20'
+                    : 'bg-green-600 text-white hover:bg-green-700 shadow-lg'
+                }`}
+              >
+                {authError ? "Re-authenticate with StockX" : "Authenticate with StockX"}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     );
