@@ -599,6 +599,49 @@ export default function TestStockXOrders() {
     return Number.isFinite(x) ? x : 0;
   }
 
+  const clearVerificationCache = () => {
+    try {
+      const prefix = 'stockx_verification_cache_v2:';
+      const keys: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(prefix)) keys.push(k);
+      }
+      keys.forEach((k) => localStorage.removeItem(k));
+      appendLog('info', 'Cleared verification cache', { removed: keys.length });
+    } catch {
+      appendLog('warn', 'Could not clear verification cache (storage blocked)');
+    }
+  };
+
+  const verificationCoverage = useMemo(() => {
+    if (!verificationRows || verificationRows.length === 0) return null;
+    let minTs = Number.POSITIVE_INFINITY;
+    let maxTs = 0;
+    let minIso: string | null = null;
+    let maxIso: string | null = null;
+    for (const r of verificationRows) {
+      const raw = (r as any)?.rawData || (r as any);
+      const iso = (r as any)?.createdAt || raw?.createdAt || raw?.orderDate || raw?.created || null;
+      if (!iso) continue;
+      const d = new Date(iso);
+      const t = d.getTime();
+      if (Number.isNaN(t)) continue;
+      if (t < minTs) {
+        minTs = t;
+        minIso = iso;
+      }
+      if (t > maxTs) {
+        maxTs = t;
+        maxIso = iso;
+      }
+    }
+    if (!minIso || !maxIso) return { rows: verificationRows.length, earliest: '—', latest: '—' };
+    const earliest = monthKeyFromIso(minIso) ? fmtMonthYear(monthKeyFromIso(minIso) as string) : '—';
+    const latest = monthKeyFromIso(maxIso) ? fmtMonthYear(monthKeyFromIso(maxIso) as string) : '—';
+    return { rows: verificationRows.length, earliest, latest };
+  }, [verificationRows]);
+
   const isActiveRow = (row: any) => {
     if (row?.source === 'active') return true;
     const raw = row?.rawData || row;
@@ -2012,14 +2055,24 @@ export default function TestStockXOrders() {
                     <code className="text-gray-300">AUTHFAILED</code> vs <code className="text-gray-300">COMPLETED</code>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={fetchVerificationStats}
-                  disabled={verificationLoading}
-                  className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-sm disabled:opacity-50"
-                >
-                  {verificationLoading ? 'Loading…' : 'Load'}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={clearVerificationCache}
+                    className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-sm text-gray-200"
+                    title="Clear cached verification results"
+                  >
+                    Clear cache
+                  </button>
+                  <button
+                    type="button"
+                    onClick={fetchVerificationStats}
+                    disabled={verificationLoading}
+                    className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-sm disabled:opacity-50"
+                  >
+                    {verificationLoading ? 'Loading…' : 'Load'}
+                  </button>
+                </div>
               </div>
 
               <div className="mt-2 flex items-center gap-2">
@@ -2053,6 +2106,14 @@ export default function TestStockXOrders() {
                   </div>
                 ) : null}
               </div>
+
+              {verificationCoverage ? (
+                <div className="mt-2 text-xs text-gray-400">
+                  Rows fetched: <span className="text-gray-200 font-semibold">{verificationCoverage.rows}</span> • Coverage:{' '}
+                  <span className="text-gray-200 font-semibold">{verificationCoverage.earliest}</span> →{' '}
+                  <span className="text-gray-200 font-semibold">{verificationCoverage.latest}</span>
+                </div>
+              ) : null}
 
               {verificationProgress && (
                 <div className="mt-2 text-xs text-gray-400">
