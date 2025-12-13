@@ -198,7 +198,7 @@ export default function StockXRepricing() {
   }, []);
   
   // Auto-repricing settings
-  const [showAutoRepricingSettings, setShowAutoRepricingSettings] = useState(true); // Default to expanded
+  const [showAutoRepricingSettings, setShowAutoRepricingSettings] = useState(false); // Default to collapsed
   const [autoRepricingEnabled, setAutoRepricingEnabled] = useState(false);
   const [autoRepricingInterval, setAutoRepricingInterval] = useState(30);
   const [tempInterval, setTempInterval] = useState(30);
