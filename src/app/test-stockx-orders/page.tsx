@@ -147,6 +147,16 @@ export default function TestStockXOrders() {
     }
   };
 
+  const copySelectedJson = async () => {
+    if (!selected) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(selected.data, null, 2));
+      appendLog('info', 'Copied selected raw JSON to clipboard', { orderNumber: selected.orderNumber });
+    } catch {
+      appendLog('warn', 'Could not copy raw JSON (clipboard blocked)');
+    }
+  };
+
   const isActiveRow = (row: any) => {
     if (row?.source === 'active') return true;
     const raw = row?.rawData || row;
@@ -1347,7 +1357,17 @@ export default function TestStockXOrders() {
             </div>
 
             <div className="lg:col-span-2 rounded-lg border border-white/10 bg-gray-900/40 p-4">
-              <div className="text-sm font-semibold text-gray-200 mb-3">Raw JSON</div>
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div className="text-sm font-semibold text-gray-200">Raw JSON</div>
+                <button
+                  type="button"
+                  onClick={copySelectedJson}
+                  disabled={!selected}
+                  className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-sm disabled:opacity-50"
+                >
+                  Copy
+                </button>
+              </div>
               <pre className="text-xs text-gray-200 overflow-auto max-h-[45vh] whitespace-pre-wrap break-words">
                 {selected ? JSON.stringify(selected.data, null, 2) : '—'}
               </pre>

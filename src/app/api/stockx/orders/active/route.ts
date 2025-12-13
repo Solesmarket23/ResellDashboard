@@ -114,23 +114,42 @@ export async function GET(request: NextRequest) {
     console.log('✅ Active orders fetched successfully:', data);
 
     // Transform StockX API response to our format
-    const transformedOrders = data.orders?.map((order: any) => ({
-      id: order.id,
-      orderNumber: order.orderNumber,
-      productName: order.product?.productName || order.product?.name || order.variant?.product?.productName || order.variant?.product?.name || 'Unknown Product',
-      productBrand: order.product?.brand || order.variant?.product?.brand || 'Unknown Brand',
-      category: order.product?.category || order.variant?.product?.category,
-      size: order.variant?.variantValue || order.variant?.size || 'N/A',
-      sku: order.product?.styleId || order.variant?.sku || 'N/A',
-      status: order.status,
-      salePrice: parseMoney(order.amount),
-      fees: 0,
-      payout: 0,
-      orderDate: order.createdAt,
-      buyerLocation: order.shippingAddress?.city || 'Unknown',
-      shippingMethod: order.shippingMethod || 'Standard',
-      imageUrl: order.variant?.product?.media?.imageUrl
-    })) || [];
+    const transformedOrders =
+      data.orders?.map((order: any) => {
+        const payoutObj = order?.payout;
+        const salePrice = parseMoney(payoutObj?.salePrice ?? order?.amount);
+        const payout =
+          payoutObj && payoutObj.totalPayout !== null && payoutObj.totalPayout !== undefined
+            ? parseMoney(payoutObj.totalPayout)
+            : 0;
+        const fees =
+          payoutObj && payoutObj.totalPayout !== null && payoutObj.totalPayout !== undefined
+            ? Math.max(0, Math.round((salePrice - payout) * 100) / 100)
+            : 0;
+
+        return {
+          id: order.id,
+          orderNumber: order.orderNumber,
+          productName:
+            order.product?.productName ||
+            order.product?.name ||
+            order.variant?.product?.productName ||
+            order.variant?.product?.name ||
+            'Unknown Product',
+          productBrand: order.product?.brand || order.variant?.product?.brand || 'Unknown Brand',
+          category: order.product?.category || order.variant?.product?.category,
+          size: order.variant?.variantValue || order.variant?.size || 'N/A',
+          sku: order.product?.styleId || order.variant?.sku || 'N/A',
+          status: order.status,
+          salePrice,
+          fees,
+          payout,
+          orderDate: order.createdAt,
+          buyerLocation: order.shippingAddress?.city || 'Unknown',
+          shippingMethod: order.shippingMethod || 'Standard',
+          imageUrl: order.variant?.product?.media?.imageUrl,
+        };
+      }) || [];
 
     const successResponse = NextResponse.json({
       orders: transformedOrders,
