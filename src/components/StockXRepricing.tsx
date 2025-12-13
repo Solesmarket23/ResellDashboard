@@ -2761,11 +2761,11 @@ export default function StockXRepricing() {
           <button
             onClick={() => fetchListings(false)}
             disabled={loading}
-            className={`px-6 py-3 rounded-lg font-semibold transition-all duration-200 flex items-center gap-2 ${
+            className={`flex items-center space-x-2 ${
               isNeon
-                ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white disabled:opacity-50'
-                : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50'
-            }`}
+                ? 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 shadow-lg hover:shadow-indigo-500/25'
+                : 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 shadow-lg hover:shadow-indigo-500/25'
+            } disabled:opacity-50 text-white px-6 py-3 rounded-lg font-medium transition-all duration-200`}
           >
             {loading ? (
               <>
@@ -2778,21 +2778,6 @@ export default function StockXRepricing() {
                 Refresh Listings
               </>
             )}
-          </button>
-          <button
-            onClick={() => {
-              console.log('🔥 HARD RELOAD TRIGGERED');
-              window.location.reload();
-            }}
-            disabled={loading}
-            className={`px-4 py-3 rounded-lg font-semibold transition-all duration-200 ${
-              isNeon
-                ? 'bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30'
-                : 'bg-red-100 text-red-800 border border-red-300 hover:bg-red-200'
-            }`}
-            title="Force complete page reload"
-          >
-            Hard Reload
           </button>
         </div>
       </div>
@@ -3311,38 +3296,29 @@ export default function StockXRepricing() {
             <button
               onClick={refreshMarketPrices}
               disabled={loading || isBackgroundRefreshing}
-              className={`px-3 py-1 text-xs rounded-md font-medium transition-all flex items-center gap-1 ${
+              className={`flex items-center space-x-2 ${
                 isNeon
-                  ? 'bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 border border-cyan-500/30 disabled:opacity-50'
-                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-300 disabled:opacity-50'
-              }`}
+                  ? 'bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/40 shadow-lg'
+                  : 'bg-white hover:bg-gray-50 border border-gray-300 hover:border-gray-400 shadow-lg'
+              } ${isNeon ? 'text-gray-300' : 'text-gray-700'} px-4 py-2 rounded-lg font-medium transition-all duration-200 disabled:opacity-50`}
               title="Refresh market prices for current page"
             >
-              <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               Refresh Page
             </button>
             <button
               onClick={refreshAllMarketPrices}
               disabled={loading || isBackgroundRefreshing}
-              className={`px-3 py-1 text-xs rounded-md font-medium transition-all flex items-center gap-1 ${
+              className={`flex items-center space-x-2 ${
                 isNeon
-                  ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30 disabled:opacity-50'
-                  : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-300 disabled:opacity-50'
-              }`}
+                  ? 'bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/40 shadow-lg'
+                  : 'bg-white hover:bg-gray-50 border border-gray-300 hover:border-gray-400 shadow-lg'
+              } ${isNeon ? 'text-gray-300' : 'text-gray-700'} px-4 py-2 rounded-lg font-medium transition-all duration-200 disabled:opacity-50`}
               title="Refresh market prices for ALL listings"
             >
-              <RefreshCw className={`w-3 h-3 ${isBackgroundRefreshing ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${isBackgroundRefreshing ? 'animate-spin' : ''}`} />
               Refresh All ({listings.length})
             </button>
-            {listings.length !== 51 && (
-              <div className={`text-sm px-3 py-1 rounded-full ${
-                isNeon 
-                  ? 'bg-red-500/20 text-red-400 border border-red-500/30' 
-                  : 'bg-red-100 text-red-800 border border-red-300'
-              }`} title="Check browser console for debug info">
-                ⚠️ Expected 51, showing {listings.length}
-              </div>
-            )}
           </div>
         </div>
 
