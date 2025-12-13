@@ -189,11 +189,16 @@ export default function TestStockXOrders() {
   type LogLevel = 'info' | 'warn' | 'error';
   type LogEntry = { ts: string; level: LogLevel; message: string; data?: any };
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const logsEndRef = useRef<HTMLDivElement | null>(null);
+  const logsContainerRef = useRef<HTMLDivElement | null>(null);
   const appendLog = (level: LogLevel, message: string, data?: any) => {
     const entry: LogEntry = { ts: new Date().toISOString(), level, message, data };
     setLogs((prev) => [...prev, entry]);
-    setTimeout(() => logsEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 0);
+    // Scroll the logs panel itself, without moving the whole page.
+    setTimeout(() => {
+      const el = logsContainerRef.current;
+      if (!el) return;
+      el.scrollTop = el.scrollHeight;
+    }, 0);
   };
   const clearLogs = () => setLogs([]);
   const copyLogs = async () => {
@@ -1651,7 +1656,10 @@ export default function TestStockXOrders() {
               </button>
             </div>
           </div>
-          <div className="mt-3 max-h-[220px] overflow-auto rounded-lg border border-white/10 bg-gray-900/50 p-3">
+          <div
+            ref={logsContainerRef}
+            className="mt-3 max-h-[220px] overflow-auto rounded-lg border border-white/10 bg-gray-900/50 p-3"
+          >
             {logs.length === 0 ? (
               <div className="text-sm text-gray-400">No logs yet. Click “Fetch Order History” or “Fetch ALL”.</div>
             ) : (
@@ -1686,7 +1694,6 @@ export default function TestStockXOrders() {
                     )}
                   </div>
                 ))}
-                <div ref={logsEndRef} />
               </div>
             )}
           </div>
