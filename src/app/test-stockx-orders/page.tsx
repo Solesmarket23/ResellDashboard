@@ -1405,96 +1405,6 @@ export default function TestStockXOrders() {
                 <div className="text-right font-semibold">{fmtMoney(totals.avgPayout, totals.currency)}</div>
               </div>
 
-              <div className="mt-4">
-                <div className="text-xs text-gray-400 mb-2">Sales by day</div>
-                {salesByDay.series.length === 0 ? (
-                  <div className="text-sm text-gray-400">No data for chart yet.</div>
-                ) : (
-                  <div className="rounded-lg border border-white/10 bg-gray-950/40 p-2 overflow-hidden">
-                    {(() => {
-                      const W = 640;
-                      const H = 200;
-                      const padL = 52;
-                      const padR = 16;
-                      const padT = 14;
-                      const padB = 28;
-                      const innerW = W - padL - padR;
-                      const innerH = H - padT - padB;
-                      const n = salesByDay.series.length;
-                      const maxY = Math.max(1, salesByDay.maxSales);
-                      const baseY = padT + innerH;
-
-                      const xAt = (i: number) => (n <= 1 ? padL : padL + (i / (n - 1)) * innerW);
-                      const yAt = (v: number) => padT + (1 - v / maxY) * innerH;
-
-                      const pts = salesByDay.series.map((p, i) => ({
-                        x: xAt(i),
-                        y: yAt(p.sales),
-                      }));
-
-                      const lineD =
-                        pts.length === 0
-                          ? ''
-                          : `M ${pts[0].x.toFixed(2)} ${pts[0].y.toFixed(2)} ` +
-                            pts
-                              .slice(1)
-                              .map((p) => `L ${p.x.toFixed(2)} ${p.y.toFixed(2)}`)
-                              .join(' ');
-
-                      const areaD =
-                        pts.length === 0
-                          ? ''
-                          : `M ${pts[0].x.toFixed(2)} ${baseY.toFixed(2)} ` +
-                            pts.map((p) => `L ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ') +
-                            ` L ${pts[pts.length - 1].x.toFixed(2)} ${baseY.toFixed(2)} Z`;
-
-                      const startLabel = salesByDay.series[0]?.date || '';
-                      const endLabel = salesByDay.series[salesByDay.series.length - 1]?.date || '';
-
-                      return (
-                        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[180px]">
-                          <defs>
-                            <linearGradient id="salesArea" x1="0" x2="0" y1="0" y2="1">
-                              <stop offset="0%" stopColor="rgb(34 211 238)" stopOpacity="0.35" />
-                              <stop offset="100%" stopColor="rgb(34 211 238)" stopOpacity="0.02" />
-                            </linearGradient>
-                          </defs>
-
-                          {/* axes */}
-                          <line x1={padL} y1={baseY} x2={W - padR} y2={baseY} stroke="rgba(255,255,255,0.12)" />
-                          <line x1={padL} y1={padT} x2={padL} y2={baseY} stroke="rgba(255,255,255,0.12)" />
-
-                          {/* y labels */}
-                          <text x={padL - 10} y={padT + 10} fill="rgba(255,255,255,0.55)" fontSize="10" textAnchor="end">
-                            {fmtMoney(maxY, totals.currency)}
-                          </text>
-                          <text x={padL - 10} y={baseY} fill="rgba(255,255,255,0.55)" fontSize="10" textAnchor="end" dominantBaseline="middle">
-                            {fmtMoney(0, totals.currency)}
-                          </text>
-
-                          {/* x labels */}
-                          <text x={padL} y={H - 10} fill="rgba(255,255,255,0.55)" fontSize="10" textAnchor="start">
-                            {startLabel}
-                          </text>
-                          <text x={W - padR} y={H - 10} fill="rgba(255,255,255,0.55)" fontSize="10" textAnchor="end">
-                            {endLabel}
-                          </text>
-
-                          {/* series */}
-                          <path d={areaD} fill="url(#salesArea)" />
-                          <path d={lineD} fill="none" stroke="rgb(34 211 238)" strokeWidth="2" />
-
-                          {/* points */}
-                          {pts.map((p, i) => (
-                            <circle key={i} cx={p.x} cy={p.y} r="2.5" fill="rgb(34 211 238)" opacity="0.9" />
-                          ))}
-                        </svg>
-                      );
-                    })()}
-                  </div>
-                )}
-              </div>
-
               {totals.duplicates?.length > 0 && (
                 <div className="mt-3">
                   <div className="text-xs text-gray-400 mb-1">Duplicate order IDs (first 10)</div>
@@ -1596,6 +1506,103 @@ export default function TestStockXOrders() {
                   Export CSV
                 </button>
               </div>
+            </div>
+
+            <div className="p-4 border-b border-white/10">
+              <div className="text-xs text-gray-400 mb-2">Sales by day</div>
+              {salesByDay.series.length === 0 ? (
+                <div className="text-sm text-gray-400">No data for chart yet.</div>
+              ) : (
+                <div className="rounded-lg border border-white/10 bg-gray-950/40 p-3 overflow-hidden">
+                  {(() => {
+                    const W = 900;
+                    const H = 280;
+                    const padL = 58;
+                    const padR = 18;
+                    const padT = 14;
+                    const padB = 32;
+                    const innerW = W - padL - padR;
+                    const innerH = H - padT - padB;
+                    const n = salesByDay.series.length;
+                    const maxY = Math.max(1, salesByDay.maxSales);
+                    const baseY = padT + innerH;
+
+                    const xAt = (i: number) => (n <= 1 ? padL : padL + (i / (n - 1)) * innerW);
+                    const yAt = (v: number) => padT + (1 - v / maxY) * innerH;
+
+                    const pts = salesByDay.series.map((p, i) => ({
+                      x: xAt(i),
+                      y: yAt(p.sales),
+                    }));
+
+                    const lineD =
+                      pts.length === 0
+                        ? ''
+                        : `M ${pts[0].x.toFixed(2)} ${pts[0].y.toFixed(2)} ` +
+                          pts
+                            .slice(1)
+                            .map((p) => `L ${p.x.toFixed(2)} ${p.y.toFixed(2)}`)
+                            .join(' ');
+
+                    const areaD =
+                      pts.length === 0
+                        ? ''
+                        : `M ${pts[0].x.toFixed(2)} ${baseY.toFixed(2)} ` +
+                          pts.map((p) => `L ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ') +
+                          ` L ${pts[pts.length - 1].x.toFixed(2)} ${baseY.toFixed(2)} Z`;
+
+                    const startLabel = salesByDay.series[0]?.date || '';
+                    const endLabel = salesByDay.series[salesByDay.series.length - 1]?.date || '';
+
+                    return (
+                      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[260px]">
+                        <defs>
+                          <linearGradient id="salesArea" x1="0" x2="0" y1="0" y2="1">
+                            <stop offset="0%" stopColor="rgb(34 211 238)" stopOpacity="0.35" />
+                            <stop offset="100%" stopColor="rgb(34 211 238)" stopOpacity="0.02" />
+                          </linearGradient>
+                        </defs>
+
+                        {/* axes */}
+                        <line x1={padL} y1={baseY} x2={W - padR} y2={baseY} stroke="rgba(255,255,255,0.12)" />
+                        <line x1={padL} y1={padT} x2={padL} y2={baseY} stroke="rgba(255,255,255,0.12)" />
+
+                        {/* y labels */}
+                        <text x={padL - 10} y={padT + 12} fill="rgba(255,255,255,0.55)" fontSize="11" textAnchor="end">
+                          {fmtMoney(maxY, totals.currency)}
+                        </text>
+                        <text
+                          x={padL - 10}
+                          y={baseY}
+                          fill="rgba(255,255,255,0.55)"
+                          fontSize="11"
+                          textAnchor="end"
+                          dominantBaseline="middle"
+                        >
+                          {fmtMoney(0, totals.currency)}
+                        </text>
+
+                        {/* x labels */}
+                        <text x={padL} y={H - 10} fill="rgba(255,255,255,0.55)" fontSize="11" textAnchor="start">
+                          {startLabel}
+                        </text>
+                        <text x={W - padR} y={H - 10} fill="rgba(255,255,255,0.55)" fontSize="11" textAnchor="end">
+                          {endLabel}
+                        </text>
+
+                        {/* series */}
+                        <path d={areaD} fill="url(#salesArea)" />
+                        <path d={lineD} fill="none" stroke="rgb(34 211 238)" strokeWidth="2.5" />
+
+                        {/* points */}
+                        {pts.map((p, i) => (
+                          <circle key={i} cx={p.x} cy={p.y} r="3" fill="rgb(34 211 238)" opacity="0.9" />
+                        ))}
+                      </svg>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
 
             <div className="overflow-auto max-h-[55vh]">
