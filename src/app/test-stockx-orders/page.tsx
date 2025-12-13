@@ -71,6 +71,18 @@ function fmtDate(iso?: string) {
   return d.toLocaleString();
 }
 
+function fmtMonthDay(yyyyMmDd?: string) {
+  if (!yyyyMmDd) return '—';
+  const [y, m, d] = String(yyyyMmDd).split('-').map((x) => parseInt(x, 10));
+  if (!y || !m || !d) return String(yyyyMmDd);
+  const dt = new Date(y, m - 1, d);
+  try {
+    return dt.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+  } catch {
+    return String(yyyyMmDd);
+  }
+}
+
 function formatSizeLabel(size: string) {
   const s = String(size || '').trim();
   const upper = s.toUpperCase();
@@ -125,6 +137,7 @@ export default function TestStockXOrders() {
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [selected, setSelected] = useState<{ orderNumber: string; data: any } | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
+  const [selectedSalesDay, setSelectedSalesDay] = useState<string | null>(null);
 
   const [sortBy, setSortBy] = useState<
     'orderNumber' | 'status' | 'product' | 'size' | 'sale' | 'fees' | 'payout' | 'created' | null
@@ -661,10 +674,11 @@ export default function TestStockXOrders() {
     }
 
     if (!start || !end || start > end) {
-      return { series: [] as Array<{ date: string; sales: number }>, maxSales: 0 };
+      return { series: [] as Array<{ date: string; sales: number; count: number }>, maxSales: 0 };
     }
 
     const totalsMap: Record<string, number> = {};
+    const countsMap: Record<string, number> = {};
     for (const r of rows) {
       const raw = (r as any)?.rawData || (r as any);
       const iso = (r as any)?.createdAt || raw?.createdAt || raw?.orderDate || raw?.created || undefined;
@@ -682,15 +696,16 @@ export default function TestStockXOrders() {
       );
       if (sale === null) continue;
       totalsMap[k] = (totalsMap[k] || 0) + sale;
+      countsMap[k] = (countsMap[k] || 0) + 1;
     }
 
-    const series: Array<{ date: string; sales: number }> = [];
+    const series: Array<{ date: string; sales: number; count: number }> = [];
     const cur = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0);
     const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 0, 0, 0, 0);
     while (cur <= endDay) {
       const k = dayKey(cur);
       const sales = Math.round(((totalsMap[k] || 0) as number) * 100) / 100;
-      series.push({ date: k, sales });
+      series.push({ date: k, sales, count: countsMap[k] || 0 });
       cur.setDate(cur.getDate() + 1);
     }
 
@@ -1516,11 +1531,11 @@ export default function TestStockXOrders() {
                 <div className="rounded-lg border border-white/10 bg-gray-950/40 p-3 overflow-hidden">
                   {(() => {
                     const W = 900;
-                    const H = 280;
+                    const H = 320;
                     const padL = 58;
                     const padR = 18;
                     const padT = 14;
-                    const padB = 32;
+                    const padB = 56;
                     const innerW = W - padL - padR;
                     const innerH = H - padT - padB;
                     const n = salesByDay.series.length;
@@ -1533,6 +1548,9 @@ export default function TestStockXOrders() {
                     const pts = salesByDay.series.map((p, i) => ({
                       x: xAt(i),
                       y: yAt(p.sales),
+                      date: p.date,
+                      sales: p.sales,
+                      count: p.count,
                     }));
 
                     const lineD =
@@ -1551,11 +1569,33 @@ export default function TestStockXOrders() {
                           pts.map((p) => `L ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ') +
                           ` L ${pts[pts.length - 1].x.toFixed(2)} ${baseY.toFixed(2)} Z`;
 
-                    const startLabel = salesByDay.series[0]?.date || '';
-                    const endLabel = salesByDay.series[salesByDay.series.length - 1]?.date || '';
+                    const startLabel = fmtMonthDay(salesByDay.series[0]?.date || '');
+                    const endLabel = fmtMonthDay(salesByDay.series[salesByDay.series.length - 1]?.date || '');
+                    const midLabel = n > 2 ? fmtMonthDay(salesByDay.series[Math.floor((n - 1) / 2)]?.date || '') : '';
+
+                    const selectedPoint =
+                      (selectedSalesDay
+                        ? salesByDay.series.find((s) => s.date === selectedSalesDay)
+                        : null) || null;
 
                     return (
-                      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[260px]">
+                      <div>
+                        <div className="flex items-center justify-between gap-3 mb-2">
+                          <div className="text-xs text-gray-400">X axis: Date • Y axis: Sales ($)</div>
+                          <div className="text-xs text-gray-200">
+                            {selectedPoint ? (
+                              <span>
+                                <span className="text-gray-400">Selected:</span> {fmtMonthDay(selectedPoint.date)} —{' '}
+                                <span className="font-semibold">{fmtMoney(selectedPoint.sales, totals.currency)}</span> •{' '}
+                                <span className="font-semibold">{selectedPoint.count}</span> items
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">Click a point to see that day’s revenue + items sold</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[300px]">
                         <defs>
                           <linearGradient id="salesArea" x1="0" x2="0" y1="0" y2="1">
                             <stop offset="0%" stopColor="rgb(34 211 238)" stopOpacity="0.35" />
@@ -1566,6 +1606,27 @@ export default function TestStockXOrders() {
                         {/* axes */}
                         <line x1={padL} y1={baseY} x2={W - padR} y2={baseY} stroke="rgba(255,255,255,0.12)" />
                         <line x1={padL} y1={padT} x2={padL} y2={baseY} stroke="rgba(255,255,255,0.12)" />
+
+                        {/* axis labels */}
+                        <text
+                          x={16}
+                          y={padT + innerH / 2}
+                          fill="rgba(255,255,255,0.55)"
+                          fontSize="11"
+                          textAnchor="middle"
+                          transform={`rotate(-90 16 ${padT + innerH / 2})`}
+                        >
+                          Sales ($)
+                        </text>
+                        <text
+                          x={(padL + (W - padR)) / 2}
+                          y={H - 10}
+                          fill="rgba(255,255,255,0.55)"
+                          fontSize="11"
+                          textAnchor="middle"
+                        >
+                          Date
+                        </text>
 
                         {/* y labels */}
                         <text x={padL - 10} y={padT + 12} fill="rgba(255,255,255,0.55)" fontSize="11" textAnchor="end">
@@ -1583,10 +1644,21 @@ export default function TestStockXOrders() {
                         </text>
 
                         {/* x labels */}
-                        <text x={padL} y={H - 10} fill="rgba(255,255,255,0.55)" fontSize="11" textAnchor="start">
+                        <text x={padL} y={H - 28} fill="rgba(255,255,255,0.55)" fontSize="11" textAnchor="start">
                           {startLabel}
                         </text>
-                        <text x={W - padR} y={H - 10} fill="rgba(255,255,255,0.55)" fontSize="11" textAnchor="end">
+                        {midLabel && (
+                          <text
+                            x={(padL + (W - padR)) / 2}
+                            y={H - 28}
+                            fill="rgba(255,255,255,0.55)"
+                            fontSize="11"
+                            textAnchor="middle"
+                          >
+                            {midLabel}
+                          </text>
+                        )}
+                        <text x={W - padR} y={H - 28} fill="rgba(255,255,255,0.55)" fontSize="11" textAnchor="end">
                           {endLabel}
                         </text>
 
@@ -1595,10 +1667,33 @@ export default function TestStockXOrders() {
                         <path d={lineD} fill="none" stroke="rgb(34 211 238)" strokeWidth="2.5" />
 
                         {/* points */}
-                        {pts.map((p, i) => (
-                          <circle key={i} cx={p.x} cy={p.y} r="3" fill="rgb(34 211 238)" opacity="0.9" />
-                        ))}
+                        {pts.map((p, i) => {
+                          const isSelected = selectedSalesDay === p.date;
+                          const label = `${fmtMonthDay(p.date)} — ${fmtMoney(p.sales, totals.currency)} — ${p.count} items`;
+                          return (
+                            <g
+                              key={`${p.date}-${i}`}
+                              onClick={() => setSelectedSalesDay(p.date)}
+                              style={{ cursor: 'pointer' }}
+                            >
+                              <title>{label}</title>
+                              {/* bigger hit target */}
+                              <circle cx={p.x} cy={p.y} r="10" fill="transparent" />
+                              <circle
+                                cx={p.x}
+                                cy={p.y}
+                                r={isSelected ? 4.5 : 3}
+                                fill="rgb(34 211 238)"
+                                opacity={isSelected ? 1 : 0.9}
+                              />
+                              {isSelected && (
+                                <circle cx={p.x} cy={p.y} r="8" fill="transparent" stroke="rgba(34,211,238,0.55)" />
+                              )}
+                            </g>
+                          );
+                        })}
                       </svg>
+                      </div>
                     );
                   })()}
                 </div>
