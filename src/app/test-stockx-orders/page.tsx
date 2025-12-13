@@ -1837,6 +1837,27 @@ export default function TestStockXOrders() {
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-semibold">Logs</h2>
             <div className="flex items-center gap-2">
+              {process.env.NODE_ENV !== 'production' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const types: NotificationType[] = ['success', 'warning', 'error'];
+                    const type = types[Math.floor(Math.random() * types.length)] || 'success';
+                    showToast(
+                      type,
+                      type === 'success'
+                        ? 'Test toast: success'
+                        : type === 'warning'
+                          ? 'Test toast: warning'
+                          : 'Test toast: error'
+                    );
+                  }}
+                  className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-sm"
+                  title="Dev-only: trigger a sample toast"
+                >
+                  Test toast
+                </button>
+              )}
               <button
                 onClick={copyLogs}
                 className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-sm"
