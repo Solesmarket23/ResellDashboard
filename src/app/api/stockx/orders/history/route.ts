@@ -14,6 +14,7 @@ export async function GET(request: NextRequest) {
   const inventoryTypes = searchParams.get('inventoryTypes');
   const initiatedShipmentDisplayIds = searchParams.get('initiatedShipmentDisplayIds');
   const includeCatalog = searchParams.get('includeCatalog') === '1';
+  const includeDetails = searchParams.get('includeDetails') === '1';
 
   // Get access token from cookies
   const accessToken = request.cookies.get('stockx_access_token')?.value;
@@ -109,6 +110,103 @@ export async function GET(request: NextRequest) {
       });
     };
 
+    const enrichWithOrderDetailsPayout = async (orders: any[], token: string) => {
+      if (!includeDetails) return orders;
+      if (!Array.isArray(orders) || orders.length === 0) return orders;
+
+      const cache = new Map<string, any>();
+      const fetchDetails = async (orderNumber: string) => {
+        if (!orderNumber) return null;
+        if (cache.has(orderNumber)) return cache.get(orderNumber);
+        try {
+          const res = await fetch(`https://api.stockx.com/v2/selling/orders/${encodeURIComponent(orderNumber)}`, {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'x-api-key': apiKey,
+              Accept: 'application/json',
+              'Content-Type': 'application/json',
+              'User-Agent': 'FlipFlow/1.0',
+            },
+          });
+          if (!res.ok) {
+            cache.set(orderNumber, null);
+            return null;
+          }
+          const json = await res.json().catch(() => ({}));
+          cache.set(orderNumber, json || null);
+          return json || null;
+        } catch {
+          cache.set(orderNumber, null);
+          return null;
+        }
+      };
+
+      const needs = orders
+        .filter((o) => {
+          const sale = typeof o?.pricing?.salePrice === 'number' ? o.pricing.salePrice : null;
+          const payout = typeof o?.pricing?.payout === 'number' ? o.pricing.payout : null;
+          // Only enrich if we likely have a missing payout (not a real $0 sale)
+          return sale !== null && sale > 0 && (payout === null || payout === 0);
+        })
+        .map((o) => String(o?.orderNumber || o?.id || o?.rawData?.orderNumber || '').trim())
+        .filter(Boolean);
+
+      const unique = Array.from(new Set(needs));
+      const limit = 3;
+      let idx = 0;
+      const workers = Array.from({ length: Math.min(limit, unique.length) }, async () => {
+        while (idx < unique.length) {
+          const current = unique[idx];
+          idx += 1;
+          await fetchDetails(current);
+        }
+      });
+      await Promise.all(workers);
+
+      const parseMoney = (value: any): number | null => {
+        if (value === null || value === undefined) return null;
+        if (typeof value === 'number' && Number.isFinite(value)) return value > 5000 ? value / 100 : value;
+        if (typeof value === 'string') {
+          const n = parseFloat(value);
+          return Number.isFinite(n) ? n : null;
+        }
+        return null;
+      };
+
+      return orders.map((o) => {
+        const sale = typeof o?.pricing?.salePrice === 'number' ? o.pricing.salePrice : null;
+        const payout = typeof o?.pricing?.payout === 'number' ? o.pricing.payout : null;
+        if (sale === null || sale <= 0) return o;
+        if (payout !== null && payout !== 0) return o;
+
+        const orderNumber = String(o?.orderNumber || o?.id || o?.rawData?.orderNumber || '').trim();
+        const details = orderNumber ? cache.get(orderNumber) : null;
+        if (!details || typeof details !== 'object') return o;
+        const detailsPayout = parseMoney(details?.payout?.totalPayout);
+        const detailsSale = parseMoney(details?.payout?.salePrice) ?? parseMoney(details?.amount) ?? sale;
+        if (detailsPayout === null) return o;
+        const detailsFees = Math.max(0, Math.round((detailsSale - detailsPayout) * 100) / 100);
+
+        return {
+          ...o,
+          pricing: {
+            ...(o.pricing || {}),
+            salePrice: detailsSale,
+            payout: detailsPayout,
+            totalFees: detailsFees,
+            payoutDetails: details?.payout || o?.pricing?.payoutDetails || null,
+          },
+          metrics: {
+            ...(o.metrics || {}),
+            salePrice: detailsSale,
+            netPayout: detailsPayout,
+            totalFees: detailsFees,
+          },
+        };
+      });
+    };
+
     // Build query parameters
     const queryParams = new URLSearchParams();
     
@@ -190,7 +288,8 @@ export async function GET(request: NextRequest) {
             
             // Process the orders data
             const processedOrdersRaw = processOrdersData(ordersData);
-            const processedOrders = await enrichWithCatalogBrand(processedOrdersRaw, tokenData.access_token);
+            const withBrands = await enrichWithCatalogBrand(processedOrdersRaw, tokenData.access_token);
+            const processedOrders = await enrichWithOrderDetailsPayout(withBrands, tokenData.access_token);
             
             // Update the access token cookie
             const successResponse = NextResponse.json({
@@ -273,7 +372,8 @@ export async function GET(request: NextRequest) {
     
     // Process the orders data
     const processedOrdersRaw = processOrdersData(ordersData);
-    const processedOrders = await enrichWithCatalogBrand(processedOrdersRaw, accessToken);
+    const withBrands = await enrichWithCatalogBrand(processedOrdersRaw, accessToken);
+    const processedOrders = await enrichWithOrderDetailsPayout(withBrands, accessToken);
 
     return NextResponse.json({
       success: true,

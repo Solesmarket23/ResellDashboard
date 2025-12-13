@@ -28,6 +28,7 @@ export async function GET(request: NextRequest) {
     const pageSize = Math.min(parseInt(searchParams.get('pageSize') || '100', 10), 100);
     const orderStatus = searchParams.get('orderStatus') || undefined;
     const includeCatalog = searchParams.get('includeCatalog') === '1';
+    const includeDetails = searchParams.get('includeDetails') === '1';
 
     const cookieStore = cookies();
     let accessToken = cookieStore.get('stockx_access_token')?.value;
@@ -185,19 +186,85 @@ export async function GET(request: NextRequest) {
     const ordersRaw = Array.isArray(data.orders) ? data.orders : [];
     const ordersWithBrands = await enrichBrands(ordersRaw, accessToken);
 
+    const enrichPayoutDetails = async (orders: any[], token: string) => {
+      if (!includeDetails) return orders;
+      if (!Array.isArray(orders) || orders.length === 0) return orders;
+
+      const cache = new Map<string, any>();
+      const fetchDetails = async (orderNumber: string) => {
+        if (!orderNumber) return null;
+        if (cache.has(orderNumber)) return cache.get(orderNumber);
+        try {
+          const res = await fetch(`https://api.stockx.com/v2/selling/orders/${encodeURIComponent(orderNumber)}`, {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'x-api-key': apiKey,
+              Accept: 'application/json',
+              'Content-Type': 'application/json',
+              'User-Agent': 'ResellDashboard/1.0',
+            },
+          });
+          if (!res.ok) {
+            cache.set(orderNumber, null);
+            return null;
+          }
+          const json = await res.json().catch(() => ({}));
+          cache.set(orderNumber, json || null);
+          return json || null;
+        } catch {
+          cache.set(orderNumber, null);
+          return null;
+        }
+      };
+
+      const needs = orders
+        .map((o) => String(o?.orderNumber || o?.orderId || o?.id || '').trim())
+        .filter(Boolean)
+        .filter((n, i, arr) => arr.indexOf(n) === i)
+        .filter((orderNumber) => {
+          const o = orders.find((x) => String(x?.orderNumber || x?.orderId || x?.id || '').trim() === orderNumber);
+          const payout = o?.payout;
+          return !(payout && payout.totalPayout !== null && payout.totalPayout !== undefined);
+        });
+
+      const limit = 3;
+      let idx = 0;
+      const workers = Array.from({ length: Math.min(limit, needs.length) }, async () => {
+        while (idx < needs.length) {
+          const current = needs[idx];
+          idx += 1;
+          await fetchDetails(current);
+        }
+      });
+      await Promise.all(workers);
+
+      return orders.map((o) => {
+        const orderNumber = String(o?.orderNumber || o?.orderId || o?.id || '').trim();
+        const payout = o?.payout;
+        if (payout && payout.totalPayout !== null && payout.totalPayout !== undefined) return o;
+        const details = orderNumber ? cache.get(orderNumber) : null;
+        if (!details || typeof details !== 'object') return o;
+        if (details?.payout) {
+          return { ...o, payout: details.payout };
+        }
+        return o;
+      });
+    };
+
+    const ordersWithBrandsAndDetails = await enrichPayoutDetails(ordersWithBrands, accessToken);
+
     // Transform StockX API response to our format
     const transformedOrders =
-      ordersWithBrands?.map((order: any) => {
+      ordersWithBrandsAndDetails?.map((order: any) => {
         const payoutObj = order?.payout;
         const salePrice = parseMoney(payoutObj?.salePrice ?? order?.amount);
-        const payout =
+        const payout: number | null =
           payoutObj && payoutObj.totalPayout !== null && payoutObj.totalPayout !== undefined
             ? parseMoney(payoutObj.totalPayout)
-            : 0;
-        const fees =
-          payoutObj && payoutObj.totalPayout !== null && payoutObj.totalPayout !== undefined
-            ? Math.max(0, Math.round((salePrice - payout) * 100) / 100)
-            : 0;
+            : null;
+        const fees: number | null =
+          payout !== null ? Math.max(0, Math.round((salePrice - payout) * 100) / 100) : null;
         const pid = order?.product?.productId || order?.productId || order?.product?.id || null;
 
         return {

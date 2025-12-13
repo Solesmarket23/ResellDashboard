@@ -538,6 +538,7 @@ export default function TestStockXOrders() {
         qp.set('pageNumber', String(pageNumber));
         qp.set('pageSize', String(pageSize));
         qp.set('includeCatalog', '1');
+        qp.set('includeDetails', '1');
         const fd = historyFromDate();
         const td = historyToDate();
         if (fd) qp.set('fromDate', fd);
@@ -582,6 +583,7 @@ export default function TestStockXOrders() {
         qp.set('pageNumber', '1');
         qp.set('pageSize', '100');
         qp.set('includeCatalog', '1');
+        qp.set('includeDetails', '1');
         const aRes = await fetch(`/api/stockx/orders/active?${qp.toString()}`);
         const aJson = await aRes.json().catch(() => ({}));
 
@@ -689,6 +691,7 @@ export default function TestStockXOrders() {
           qp.set('pageNumber', String(p));
           qp.set('pageSize', String(PAGE_SIZE));
           qp.set('includeCatalog', '1');
+          qp.set('includeDetails', '1');
           const fd = historyFromDate();
           const td = historyToDate();
           if (fd) qp.set('fromDate', fd);
@@ -757,6 +760,7 @@ export default function TestStockXOrders() {
               qp.set('pageNumber', String(p));
               qp.set('pageSize', String(PAGE_SIZE));
               qp.set('includeCatalog', '1');
+              qp.set('includeDetails', '1');
               if (st) qp.set('orderStatus', st);
               const aRes = await fetch(`/api/stockx/orders/active?${qp.toString()}`);
               const aJson = await aRes.json().catch(() => ({}));
