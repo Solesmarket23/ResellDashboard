@@ -44,11 +44,11 @@ export async function GET(request: NextRequest) {
       if (!includeCatalog) return orders;
       if (!Array.isArray(orders) || orders.length === 0) return orders;
 
-      const cache = new Map<string, string | null>();
+      const cache = new Map<string, { brand: string | null; productType: string | null }>();
 
       const fetchBrandForProductId = async (pid: string): Promise<string | null> => {
         if (!pid) return null;
-        if (cache.has(pid)) return cache.get(pid) ?? null;
+        if (cache.has(pid)) return cache.get(pid)?.brand ?? null;
         try {
           const res = await fetch(`https://api.stockx.com/v2/catalog/products/${encodeURIComponent(pid)}`, {
             method: 'GET',
@@ -61,15 +61,16 @@ export async function GET(request: NextRequest) {
             },
           });
           if (!res.ok) {
-            cache.set(pid, null);
+            cache.set(pid, { brand: null, productType: null });
             return null;
           }
           const json = await res.json().catch(() => ({}));
           const brand = typeof json?.brand === 'string' ? json.brand.trim() : null;
-          cache.set(pid, brand || null);
+          const productType = typeof json?.productType === 'string' ? json.productType.trim() : null;
+          cache.set(pid, { brand: brand || null, productType: productType || null });
           return brand || null;
         } catch {
-          cache.set(pid, null);
+          cache.set(pid, { brand: null, productType: null });
           return null;
         }
       };
@@ -97,14 +98,19 @@ export async function GET(request: NextRequest) {
       return orders.map((o) => {
         const pid = String(o?.product?.id || o?.product?.productId || o?.productId || '').trim();
         const existing = typeof o?.product?.brand === 'string' ? o.product.brand.trim() : '';
-        const brand = existing || (pid ? cache.get(pid) || '' : '');
-        if (!brand) return o;
+        const cached = pid ? cache.get(pid) : undefined;
+        const brand = existing || (cached?.brand || '');
+        const existingCategory = typeof o?.product?.category === 'string' ? o.product.category.trim() : '';
+        const category = existingCategory || (cached?.productType || '');
+
+        if (!brand && !category) return o;
         return {
           ...o,
           product: {
             ...(o.product || {}),
             id: o?.product?.id || pid,
-            brand,
+            ...(brand ? { brand } : {}),
+            ...(category ? { category } : {}),
           },
         };
       });
