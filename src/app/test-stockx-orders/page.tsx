@@ -307,8 +307,10 @@ export default function TestStockXOrders() {
         const qp = new URLSearchParams();
         qp.set('pageNumber', String(pageNumber));
         qp.set('pageSize', String(pageSize));
-        if (fromDate) qp.set('fromDate', fromDate);
-        if (toDate) qp.set('toDate', toDate);
+        const fd = historyFromDate();
+        const td = historyToDate();
+        if (fd) qp.set('fromDate', fd);
+        if (td) qp.set('toDate', td);
         if (st) qp.set('orderStatus', st);
 
         appendLog('info', 'Requesting history page', { pageNumber, pageSize, orderStatus: st || '(all)' });
@@ -383,10 +385,13 @@ export default function TestStockXOrders() {
                 )
               );
 
-        setOrders([...allRows, ...filteredActive]);
+        const dateFilteredActive = filteredActive.filter((r) => inSelectedDateRange(r.createdAt));
+
+        setOrders([...allRows, ...dateFilteredActive]);
         appendLog('info', 'Fetched active orders (page 1)', {
           rows: activeRows.length,
           kept: filteredActive.length,
+          keptAfterDateFilter: dateFilteredActive.length,
           hasNextPage: Boolean(aJson?.hasNextPage),
         });
       }
@@ -400,6 +405,22 @@ export default function TestStockXOrders() {
   };
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  // History API supports fromDate/toDate filters; active orders API does NOT, so we filter active rows client-side.
+  const inSelectedDateRange = (isoOrDate: string | undefined) => {
+    if (!fromDate && !toDate) return true;
+    if (!isoOrDate) return false;
+    const d = new Date(isoOrDate);
+    if (Number.isNaN(d.getTime())) return false;
+    const start = fromDate ? new Date(`${fromDate}T00:00:00.000Z`) : null;
+    const end = toDate ? new Date(`${toDate}T23:59:59.999Z`) : null;
+    if (start && d < start) return false;
+    if (end && d > end) return false;
+    return true;
+  };
+
+  const historyFromDate = () => (fromDate ? `${fromDate}T00:00:00.000Z` : '');
+  const historyToDate = () => (toDate ? `${toDate}T23:59:59.999Z` : '');
 
   const fetchAllHistory = async () => {
     // StockX caps pageSize at 100; we paginate until hasNextPage is false.
@@ -434,8 +455,10 @@ export default function TestStockXOrders() {
           const qp = new URLSearchParams();
           qp.set('pageNumber', String(p));
           qp.set('pageSize', String(PAGE_SIZE));
-          if (fromDate) qp.set('fromDate', fromDate);
-          if (toDate) qp.set('toDate', toDate);
+          const fd = historyFromDate();
+          const td = historyToDate();
+          if (fd) qp.set('fromDate', fd);
+          if (td) qp.set('toDate', td);
           if (st) qp.set('orderStatus', st);
 
           const res = await fetch(`/api/stockx/orders/history?${qp.toString()}`);
@@ -544,8 +567,12 @@ export default function TestStockXOrders() {
         };
 
         const activeAll = await fetchActiveAll();
-        setOrders([...all, ...activeAll]);
-        appendLog('info', 'Fetched active orders (all pages)', { total: activeAll.length });
+        const dateFilteredActiveAll = activeAll.filter((r) => inSelectedDateRange(r.createdAt));
+        setOrders([...all, ...dateFilteredActiveAll]);
+        appendLog('info', 'Fetched active orders (all pages)', {
+          total: activeAll.length,
+          keptAfterDateFilter: dateFilteredActiveAll.length,
+        });
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
