@@ -159,6 +159,78 @@ export default function TestStockXOrders() {
     }
   };
 
+  const exportDisplayedOrdersCsv = () => {
+    const escapeCsv = (value: unknown) => {
+      const s = String(value ?? '');
+      const needsQuotes = /[",\n\r]/.test(s);
+      const escaped = s.replace(/"/g, '""');
+      return needsQuotes ? `"${escaped}"` : escaped;
+    };
+
+    const header = [
+      'Order #',
+      'Status',
+      'Product',
+      'Size',
+      'Sale',
+      'Fees',
+      'Payout',
+      'Currency',
+      'Created',
+      'Brand',
+      'Category',
+    ];
+
+    const rows = displayedOrders.map((o: any) => {
+      const raw = o?.rawData || o;
+      const orderNumber = getRowOrderNumber(o);
+      const status = getRowStatus(o);
+      const currency = o?.pricing?.currency || raw?.currencyCode || 'USD';
+      const sale = normalizeMoney(o?.metrics?.salePrice ?? o?.pricing?.salePrice ?? raw?.amount ?? raw?.price);
+      const fees = normalizeMoney(o?.metrics?.totalFees ?? o?.pricing?.totalFees ?? raw?.totalFees);
+      const payout = normalizeMoney(o?.metrics?.netPayout ?? o?.pricing?.payout ?? raw?.payout);
+      const createdAt = raw?.createdAt || raw?.orderDate || o?.createdAt || '';
+      const productName = getRowProductName(o);
+      const size = formatSizeLabel(getRowSize(o));
+      const brand =
+        o?.product?.brand || raw?.product?.brand || raw?.variant?.product?.brand || raw?.brand || '';
+      const category =
+        o?.product?.category || raw?.product?.category || raw?.variant?.product?.category || raw?.category || '';
+
+      return [
+        orderNumber,
+        status,
+        productName,
+        size,
+        sale ?? '',
+        fees ?? '',
+        payout ?? '',
+        currency,
+        createdAt,
+        brand,
+        category,
+      ].map(escapeCsv);
+    });
+
+    const csv = [header.map(escapeCsv).join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+
+    const now = new Date();
+    const stamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const filename = `stockx-orders-${stamp}.csv`;
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    appendLog('info', 'Exported CSV', { rows: displayedOrders.length, filename });
+  };
+
   const isActiveRow = (row: any) => {
     if (row?.source === 'active') return true;
     const raw = row?.rawData || row;
@@ -1317,7 +1389,18 @@ export default function TestStockXOrders() {
           <div className="lg:col-span-2 rounded-xl border border-white/10 bg-white/5 overflow-hidden">
             <div className="p-4 border-b border-white/10 flex items-center justify-between">
               <h2 className="font-semibold">Order History</h2>
-              <div className="text-xs text-gray-400">{displayedOrders.length} rows</div>
+              <div className="flex items-center gap-3">
+                <div className="text-xs text-gray-400">{displayedOrders.length} rows</div>
+                <button
+                  type="button"
+                  onClick={exportDisplayedOrdersCsv}
+                  disabled={displayedOrders.length === 0}
+                  className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-sm disabled:opacity-50"
+                  title="Export the currently displayed rows (filters + sort applied) as CSV"
+                >
+                  Export CSV
+                </button>
+              </div>
             </div>
 
             <div className="overflow-auto max-h-[55vh]">
