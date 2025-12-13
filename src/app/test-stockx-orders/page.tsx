@@ -861,6 +861,7 @@ export default function TestStockXOrders() {
                 <thead className="sticky top-0 bg-gray-950/80 backdrop-blur border-b border-white/10">
                   <tr>
                     <th className="text-left px-4 py-3 font-semibold text-gray-300">Order #</th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300">Status</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-300">Product</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-300">Size</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-300">Sale</th>
@@ -874,6 +875,8 @@ export default function TestStockXOrders() {
                     const raw = o?.rawData || o;
                     const orderNumber =
                       raw?.orderNumber || raw?.orderId || raw?.id || o?.id || raw?.askId || '—';
+                    const status =
+                      String((raw?.status || o?.status || o?.orderStatus || raw?.orderStatus || '—')).toUpperCase();
                     const currency = o?.pricing?.currency || raw?.currencyCode || 'USD';
                     const sale = normalizeMoney(o?.metrics?.salePrice ?? o?.pricing?.salePrice ?? raw?.amount ?? raw?.price);
                     const fees = normalizeMoney(o?.metrics?.totalFees ?? o?.pricing?.totalFees ?? raw?.totalFees);
@@ -896,6 +899,7 @@ export default function TestStockXOrders() {
                         title="Click to load payout breakdown"
                       >
                         <td className="px-4 py-3 font-semibold text-cyan-200">{String(orderNumber)}</td>
+                        <td className="px-4 py-3 text-gray-200">{status}</td>
                         <td className="px-4 py-3 text-gray-200">{productName}</td>
                         <td className="px-4 py-3 text-gray-200">{size}</td>
                         <td className="px-4 py-3 text-gray-200">{fmtMoney(sale, currency)}</td>
@@ -908,7 +912,7 @@ export default function TestStockXOrders() {
 
                   {orders.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="px-4 py-10 text-center text-gray-400">
+                      <td colSpan={8} className="px-4 py-10 text-center text-gray-400">
                         {loading ? 'Loading…' : 'No orders loaded yet. Click “Fetch Order History”.'}
                       </td>
                     </tr>
