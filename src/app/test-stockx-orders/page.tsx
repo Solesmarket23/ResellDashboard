@@ -3119,7 +3119,7 @@ export default function TestStockXOrders() {
 
                   {displayedOrders.length === 0 && (
                     <tr>
-                      <td colSpan={16} className="px-4 py-10 text-center text-gray-400">
+                      <td colSpan={17} className="px-4 py-10 text-center text-gray-400">
                         {loading ? 'Loading…' : 'No orders loaded yet. Click “Fetch Order History”.'}
                       </td>
                     </tr>
