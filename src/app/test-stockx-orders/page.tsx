@@ -133,6 +133,7 @@ export default function TestStockXOrders() {
   const [selectedActiveStatuses, setSelectedActiveStatuses] = useState<string[]>([]);
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
   const [includeActive, setIncludeActive] = useState(true);
+  const [showDidNotShip, setShowDidNotShip] = useState(false);
 
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [selected, setSelected] = useState<{ orderNumber: string; data: any } | null>(null);
@@ -355,6 +356,11 @@ export default function TestStockXOrders() {
       filtered = filtered.filter((r) => selectedStatusSet.has(getRowStatus(r)));
     }
 
+    // Hide DIDNOTSHIP by default (these are not fulfilled sales)
+    if (!showDidNotShip) {
+      filtered = filtered.filter((r) => getRowStatus(r) !== 'DIDNOTSHIP');
+    }
+
     // 2) Apply sorting
     if (!sortBy) return filtered;
     const dir = sortDir === 'asc' ? 1 : -1;
@@ -446,12 +452,14 @@ export default function TestStockXOrders() {
     includeActive,
     selectedHistoryStatuses,
     selectedActiveStatuses,
+    showDidNotShip,
     sortBy,
     sortDir,
   ]);
 
   const totals = useMemo(() => {
     const rows = displayedOrders || [];
+    const rowsForMetrics = rows.filter((r: any) => getRowStatus(r) !== 'DIDNOTSHIP');
     let sale = 0;
     let fees = 0;
     let payout = 0;
@@ -468,7 +476,7 @@ export default function TestStockXOrders() {
     const categoryCounts: Record<string, number> = {};
     const idCounts: Record<string, number> = {};
 
-    for (const o of rows) {
+    for (const o of rowsForMetrics) {
       const currency = o.pricing?.currency || 'USD';
       void currency; // currency not used in totals (assumes USD)
       let s = parseMoneyAny(
@@ -595,9 +603,8 @@ export default function TestStockXOrders() {
       (statusCounts['COMPLETED'] || 0) +
       (statusCounts['PAYOUTCOMPLETED'] || 0) +
       (statusCounts['PAYOUT_COMPLETED'] || 0);
-    // "Pending" = everything that isn't completed, excluding DIDNOTSHIP (user-requested)
-    const didNotShipCount = statusCounts['DIDNOTSHIP'] || 0;
-    const pendingCount = Math.max(0, rows.length - completedCount - didNotShipCount);
+    // "Pending" = everything that isn't completed (DIDNOTSHIP excluded from metrics by design)
+    const pendingCount = Math.max(0, rowsForMetrics.length - completedCount);
 
     const duplicates = Object.entries(idCounts)
       .filter(([, c]) => c > 1 && !['UNKNOWN_ORDER'].includes(String(c)))
@@ -606,6 +613,7 @@ export default function TestStockXOrders() {
 
     return {
       count: rows.length,
+      countForMetrics: rowsForMetrics.length,
       sale,
       fees,
       payout,
@@ -631,7 +639,7 @@ export default function TestStockXOrders() {
   }, [displayedOrders]);
 
   const salesByDay = useMemo(() => {
-    const rows = displayedOrders || [];
+    const rows = (displayedOrders || []).filter((r: any) => getRowStatus(r) !== 'DIDNOTSHIP');
 
     const parseLocalDayStart = (yyyyMmDd: string) => {
       const [y, m, day] = yyyyMmDd.split('-').map((x) => parseInt(x, 10));
@@ -1387,11 +1395,25 @@ export default function TestStockXOrders() {
               Include active/pending orders
             </label>
 
+            <label className="flex items-center gap-2 text-sm text-gray-300">
+              <input
+                type="checkbox"
+                checked={showDidNotShip}
+                onChange={(e) => setShowDidNotShip(e.target.checked)}
+              />
+              Show DIDNOTSHIP rows (excluded from metrics)
+            </label>
+
             <div className="rounded-lg border border-white/10 bg-gray-900/40 p-3">
               <div className="text-xs text-gray-400">Quick analytics (current page)</div>
               <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
                 <div className="text-gray-300">Orders</div>
-                <div className="text-right font-semibold">{totals.count}</div>
+                <div className="text-right font-semibold">
+                  {totals.countForMetrics ?? totals.count}
+                  {totals.countForMetrics !== undefined && totals.countForMetrics !== totals.count ? (
+                    <span className="text-[11px] text-gray-400"> (shown {totals.count})</span>
+                  ) : null}
+                </div>
                 <div className="text-gray-300">Completed</div>
                 <div className="text-right font-semibold">{totals.completedCount}</div>
                 <div className="text-gray-300">Pending</div>
