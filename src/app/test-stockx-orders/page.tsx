@@ -9,7 +9,7 @@ type OrderRow = {
   createdAt?: string;
   updatedAt?: string;
   completedAt?: string;
-  product?: { name?: string; brand?: string; sku?: string; styleId?: string };
+  product?: { name?: string; brand?: string; sku?: string; styleId?: string; category?: string };
   variant?: { size?: string; inventoryType?: string };
   pricing?: {
     salePrice?: number;
@@ -114,7 +114,10 @@ export default function TestStockXOrders() {
     let count = 0;
     const statusCounts: Record<string, number> = {};
     const productRevenue: Record<string, number> = {};
+    const productCount: Record<string, number> = {};
     const brandRevenue: Record<string, number> = {};
+    const sizeCounts: Record<string, number> = {};
+    const categoryCounts: Record<string, number> = {};
     const idCounts: Record<string, number> = {};
 
     for (const o of rows) {
@@ -140,11 +143,24 @@ export default function TestStockXOrders() {
       const brandName = String(
         o.product?.brand || o.rawData?.product?.brand || o.rawData?.variant?.product?.brand || 'Unknown'
       );
+      const sizeName = String(
+        o.variant?.size || o.rawData?.variant?.size || o.rawData?.size || 'Unknown'
+      );
+      const categoryName = String(
+        o.product?.category ||
+          o.rawData?.product?.category ||
+          o.rawData?.variant?.product?.category ||
+          'Unknown'
+      );
 
       if (s !== null || f !== null || p !== null) count += 1;
       if (s !== null) sale += s;
       if (f !== null) fees += f;
       if (p !== null) payout += p;
+
+      productCount[productName] = (productCount[productName] || 0) + 1;
+      sizeCounts[sizeName] = (sizeCounts[sizeName] || 0) + 1;
+      categoryCounts[categoryName] = (categoryCounts[categoryName] || 0) + 1;
 
       if (s !== null) {
         productRevenue[productName] = (productRevenue[productName] || 0) + s;
@@ -161,10 +177,16 @@ export default function TestStockXOrders() {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
       .map(([name, revenue]) => ({ name, revenue }));
+    const topProductsByCount = Object.entries(productCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name, c]) => ({ name, count: c }));
     const topBrands = Object.entries(brandRevenue)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
       .map(([name, revenue]) => ({ name, revenue }));
+    const topSize = Object.entries(sizeCounts).sort((a, b) => b[1] - a[1])[0];
+    const topCategory = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1])[0];
 
     const completedCount =
       (statusCounts['COMPLETED'] || 0) +
@@ -190,7 +212,10 @@ export default function TestStockXOrders() {
       completedCount,
       pendingCount,
       topProducts,
+      topProductsByCount,
       topBrands,
+      topSize: topSize ? { size: topSize[0], count: topSize[1] } : null,
+      topCategory: topCategory ? { category: topCategory[0], count: topCategory[1] } : null,
       duplicates,
       duplicateCount: duplicates.length,
       currency: 'USD',
@@ -624,6 +649,14 @@ export default function TestStockXOrders() {
                 <div className="text-right font-semibold">{totals.pendingCount}</div>
                 <div className="text-gray-300">Duplicates</div>
                 <div className="text-right font-semibold">{totals.duplicateCount}</div>
+                <div className="text-gray-300">Top size</div>
+                <div className="text-right font-semibold">
+                  {totals.topSize ? `${totals.topSize.size} (${totals.topSize.count})` : '—'}
+                </div>
+                <div className="text-gray-300">Top category</div>
+                <div className="text-right font-semibold">
+                  {totals.topCategory ? `${totals.topCategory.category} (${totals.topCategory.count})` : '—'}
+                </div>
                 <div className="text-gray-300">Sales</div>
                 <div className="text-right font-semibold">{fmtMoney(totals.sale, totals.currency)}</div>
                 <div className="text-gray-300">Fees</div>
@@ -654,6 +687,19 @@ export default function TestStockXOrders() {
 
               {(totals.topProducts?.length > 0 || totals.topBrands?.length > 0) && (
                 <div className="mt-3 grid grid-cols-1 gap-3">
+                  {totals.topProductsByCount?.length > 0 && (
+                    <div>
+                      <div className="text-xs text-gray-400 mb-1">Top items (by units sold)</div>
+                      <div className="space-y-1">
+                        {totals.topProductsByCount.map((p: any) => (
+                          <div key={p.name} className="flex items-center justify-between text-xs text-gray-200">
+                            <div className="truncate max-w-[220px]">{p.name}</div>
+                            <div className="font-semibold">{p.count}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {totals.topProducts?.length > 0 && (
                     <div>
                       <div className="text-xs text-gray-400 mb-1">Top products (by revenue)</div>
