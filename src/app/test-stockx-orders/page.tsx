@@ -65,8 +65,6 @@ export default function TestStockXOrders() {
   const [error, setError] = useState<string | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
 
-  const [pageNumber, setPageNumber] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   // IMPORTANT: StockX /selling/orders/history only accepts HistoricalOrderStatus:
@@ -286,6 +284,9 @@ export default function TestStockXOrders() {
   }, [orders]);
 
   const fetchHistory = async () => {
+    // Quick mode: just fetch the first page (max 100) for the chosen date range.
+    const pageNumber = 1;
+    const pageSize = 100;
     setLoading(true);
     setError(null);
     setAuthRequired(false);
@@ -504,8 +505,6 @@ export default function TestStockXOrders() {
       }
 
       setOrders(all);
-      setPageNumber(1);
-      setPageSize(PAGE_SIZE);
       appendLog('info', 'Fetch ALL complete', { total: all.length });
 
       if (includeActive) {
@@ -665,21 +664,21 @@ export default function TestStockXOrders() {
               </button>
             )}
             <button
-              onClick={fetchHistory}
-              disabled={loading || allLoading}
-              className="px-4 py-2 rounded-lg font-semibold bg-white/10 hover:bg-white/20 border border-white/15 disabled:opacity-50"
-            >
-              {loading ? 'Loading…' : 'Fetch Order History'}
-            </button>
-            <button
               onClick={fetchAllHistory}
               disabled={allLoading || loading}
               className="px-4 py-2 rounded-lg font-semibold bg-white/10 hover:bg-white/20 border border-white/15 disabled:opacity-50"
-              title="Fetch all pages (pageSize=100) for the current filters"
             >
               {allLoading
-                ? `Fetching all…${allProgress ? ` (page ${allProgress.page}, ${allProgress.total} orders)` : ''}`
-                : 'Fetch ALL'}
+                ? `Fetching…${allProgress ? ` (page ${allProgress.page}, ${allProgress.total} orders)` : ''}`
+                : 'Fetch for time period'}
+            </button>
+            <button
+              onClick={fetchHistory}
+              disabled={loading || allLoading}
+              className="px-4 py-2 rounded-lg font-semibold bg-white/10 hover:bg-white/20 border border-white/15 disabled:opacity-50"
+              title="Quick fetch (first page only). Useful for debugging."
+            >
+              {loading ? 'Loading…' : 'Quick fetch'}
             </button>
           </div>
         </div>
@@ -747,7 +746,7 @@ export default function TestStockXOrders() {
           <div className="lg:col-span-1 rounded-xl border border-white/10 bg-white/5 p-4 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="font-semibold">Filters</h2>
-              <div className="text-xs text-gray-400">page {pageNumber}</div>
+              <div className="text-xs text-gray-400">Pick a date range then fetch</div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -920,35 +919,9 @@ export default function TestStockXOrders() {
                   )}
                 </div>
               </div>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">Page Size</label>
-                <select
-                  value={pageSize}
-                  onChange={(e) => setPageSize(parseInt(e.target.value, 10))}
-                  className="w-full px-3 py-2 rounded-lg bg-gray-900 border border-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
-                >
-                  {[10, 25, 50, 100].map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-              </div>
             </div>
 
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPageNumber((p) => Math.max(1, p - 1))}
-                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10"
-              >
-                Prev
-              </button>
-              <button
-                onClick={() => setPageNumber((p) => p + 1)}
-                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10"
-              >
-                Next
-              </button>
               <button
                 onClick={() => {
                   const now = new Date();
@@ -967,7 +940,6 @@ export default function TestStockXOrders() {
                   setToDate('');
                   setSelectedHistoryStatuses([]);
                   setSelectedActiveStatuses([]);
-                  setPageNumber(1);
                 }}
                 className="ml-auto px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
               >
