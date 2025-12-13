@@ -72,6 +72,17 @@ function fmtDate(iso?: string) {
   return d.toLocaleString();
 }
 
+function fmtShortDate(iso?: string) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  try {
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch {
+    return d.toLocaleDateString();
+  }
+}
+
 function fmtMonthDay(yyyyMmDd?: string) {
   if (!yyyyMmDd) return '—';
   const [y, m, d] = String(yyyyMmDd).split('-').map((x) => parseInt(x, 10));
@@ -188,7 +199,21 @@ export default function TestStockXOrders() {
   const [verificationRange, setVerificationRange] = useState<{ from: string; to: string } | null>(null);
 
   const [sortBy, setSortBy] = useState<
-    'orderNumber' | 'status' | 'product' | 'size' | 'sale' | 'fees' | 'payout' | 'created' | null
+    | 'orderNumber'
+    | 'status'
+    | 'product'
+    | 'brand'
+    | 'category'
+    | 'size'
+    | 'sale'
+    | 'fees'
+    | 'payout'
+    | 'carrier'
+    | 'tracking'
+    | 'shipBy'
+    | 'inventory'
+    | 'created'
+    | null
   >(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
@@ -750,6 +775,34 @@ export default function TestStockXOrders() {
     return String(row?.product?.category || raw?.product?.category || raw?.variant?.product?.category || raw?.category || '').trim();
   };
 
+  const getRowCarrier = (row: any) => {
+    const raw = row?.rawData || row;
+    return String(raw?.shipment?.carrierCode || raw?.carrierCode || '').trim();
+  };
+
+  const getRowTracking = (row: any) => {
+    const raw = row?.rawData || row;
+    return String(raw?.shipment?.trackingNumber || raw?.trackingNumber || '').trim();
+  };
+
+  const getRowShipByIso = (row: any) => {
+    const raw = row?.rawData || row;
+    return String(raw?.shipment?.shipByDate || '').trim();
+  };
+
+  const getRowShipByTs = (row: any) => {
+    const iso = getRowShipByIso(row);
+    if (!iso) return null;
+    const d = new Date(iso);
+    const t = d.getTime();
+    return Number.isNaN(t) ? null : t;
+  };
+
+  const getRowInventoryType = (row: any) => {
+    const raw = row?.rawData || row;
+    return String(raw?.inventoryType || row?.variant?.inventoryType || '').trim();
+  };
+
   const sortIndicator = (col: NonNullable<typeof sortBy>) =>
     sortBy === col ? (sortDir === 'asc' ? '▲' : '▼') : '⇅';
 
@@ -836,6 +889,18 @@ export default function TestStockXOrders() {
         const cmp = ap.localeCompare(bp);
         if (cmp !== 0) return cmp * dir;
       }
+      if (sortBy === 'brand') {
+        const ap = getRowBrand(a);
+        const bp = getRowBrand(b);
+        const cmp = ap.localeCompare(bp);
+        if (cmp !== 0) return cmp * dir;
+      }
+      if (sortBy === 'category') {
+        const ap = getRowCategory(a);
+        const bp = getRowCategory(b);
+        const cmp = ap.localeCompare(bp);
+        if (cmp !== 0) return cmp * dir;
+      }
       if (sortBy === 'size') {
         const asz = getRowSize(a);
         const bsz = getRowSize(b);
@@ -883,6 +948,38 @@ export default function TestStockXOrders() {
           const cmp = av - bv;
           if (cmp !== 0) return cmp * dir;
         }
+      }
+      if (sortBy === 'carrier') {
+        const ap = getRowCarrier(a);
+        const bp = getRowCarrier(b);
+        const cmp = ap.localeCompare(bp);
+        if (cmp !== 0) return cmp * dir;
+      }
+      if (sortBy === 'tracking') {
+        const ap = getRowTracking(a);
+        const bp = getRowTracking(b);
+        const cmp = ap.localeCompare(bp);
+        if (cmp !== 0) return cmp * dir;
+      }
+      if (sortBy === 'shipBy') {
+        const at = getRowShipByTs(a);
+        const bt = getRowShipByTs(b);
+        if (at === null && bt === null) {
+          // fall through
+        } else if (at === null) {
+          return 1;
+        } else if (bt === null) {
+          return -1;
+        } else {
+          const cmp = at - bt;
+          if (cmp !== 0) return cmp * dir;
+        }
+      }
+      if (sortBy === 'inventory') {
+        const ap = getRowInventoryType(a);
+        const bp = getRowInventoryType(b);
+        const cmp = ap.localeCompare(bp);
+        if (cmp !== 0) return cmp * dir;
       }
       if (sortBy === 'created') {
         const at = getRowCreatedTs(a);
@@ -2605,6 +2702,28 @@ export default function TestStockXOrders() {
                     <th className="text-left px-4 py-3 font-semibold text-gray-300">
                       <button
                         type="button"
+                        onClick={() => toggleSort('brand', 'asc')}
+                        className="inline-flex items-center gap-2 hover:text-white"
+                        title="Sort by brand"
+                      >
+                        Brand
+                        <span className="text-xs text-gray-400">{sortIndicator('brand')}</span>
+                      </button>
+                    </th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                      <button
+                        type="button"
+                        onClick={() => toggleSort('category', 'asc')}
+                        className="inline-flex items-center gap-2 hover:text-white"
+                        title="Sort by category"
+                      >
+                        Category
+                        <span className="text-xs text-gray-400">{sortIndicator('category')}</span>
+                      </button>
+                    </th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                      <button
+                        type="button"
                         onClick={() => toggleSort('size', 'asc')}
                         className="inline-flex items-center gap-2 hover:text-white"
                         title="Sort by size"
@@ -2649,6 +2768,50 @@ export default function TestStockXOrders() {
                     <th className="text-left px-4 py-3 font-semibold text-gray-300">
                       <button
                         type="button"
+                        onClick={() => toggleSort('carrier', 'asc')}
+                        className="inline-flex items-center gap-2 hover:text-white"
+                        title="Sort by carrier"
+                      >
+                        Carrier
+                        <span className="text-xs text-gray-400">{sortIndicator('carrier')}</span>
+                      </button>
+                    </th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                      <button
+                        type="button"
+                        onClick={() => toggleSort('tracking', 'asc')}
+                        className="inline-flex items-center gap-2 hover:text-white"
+                        title="Sort by tracking number"
+                      >
+                        Tracking
+                        <span className="text-xs text-gray-400">{sortIndicator('tracking')}</span>
+                      </button>
+                    </th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                      <button
+                        type="button"
+                        onClick={() => toggleSort('shipBy', 'asc')}
+                        className="inline-flex items-center gap-2 hover:text-white"
+                        title="Sort by ship-by date"
+                      >
+                        Ship by
+                        <span className="text-xs text-gray-400">{sortIndicator('shipBy')}</span>
+                      </button>
+                    </th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                      <button
+                        type="button"
+                        onClick={() => toggleSort('inventory', 'asc')}
+                        className="inline-flex items-center gap-2 hover:text-white"
+                        title="Sort by inventory type"
+                      >
+                        Inventory
+                        <span className="text-xs text-gray-400">{sortIndicator('inventory')}</span>
+                      </button>
+                    </th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                      <button
+                        type="button"
                         onClick={() => toggleSort('created', 'desc')}
                         className="inline-flex items-center gap-2 hover:text-white"
                         title="Sort by created date"
@@ -2685,8 +2848,14 @@ export default function TestStockXOrders() {
                       raw?.variant?.product?.productName ||
                       raw?.variant?.product?.name ||
                       '—';
+                    const brand = getRowBrand(o) || '—';
+                    const category = getRowCategory(o) || '—';
                     const size = formatSizeLabel(String(o?.variant?.size || raw?.variant?.size || raw?.size || ''));
                     const created = o?.createdAt || raw?.createdAt;
+                    const carrier = getRowCarrier(o) || '—';
+                    const tracking = getRowTracking(o) || '—';
+                    const shipBy = getRowShipByIso(o);
+                    const inventoryType = getRowInventoryType(o) || '—';
                     const isProjected = status !== 'PAYOUTCOMPLETED' && status !== 'PAYOUT_COMPLETED' && payout !== null;
 
                     return (
@@ -2711,6 +2880,8 @@ export default function TestStockXOrders() {
                         </td>
                         <td className="px-4 py-3 text-gray-200">{status}</td>
                         <td className="px-4 py-3 text-gray-200">{productName}</td>
+                        <td className="px-4 py-3 text-gray-200">{brand}</td>
+                        <td className="px-4 py-3 text-gray-200">{category}</td>
                         <td className="px-4 py-3 text-gray-200">{size}</td>
                         <td className="px-4 py-3 text-gray-200">{fmtMoney(sale, currency)}</td>
                         <td className="px-4 py-3 text-gray-200">{fmtMoney(fees, currency)}</td>
@@ -2720,6 +2891,10 @@ export default function TestStockXOrders() {
                             {isProjected && <span className="text-[11px] text-gray-400">(proj)</span>}
                           </div>
                         </td>
+                        <td className="px-4 py-3 text-gray-200">{carrier}</td>
+                        <td className="px-4 py-3 text-gray-200">{tracking}</td>
+                        <td className="px-4 py-3 text-gray-200">{fmtShortDate(shipBy)}</td>
+                        <td className="px-4 py-3 text-gray-200">{inventoryType}</td>
                         <td className="px-4 py-3 text-gray-400">{fmtDate(created)}</td>
                       </tr>
                     );
@@ -2727,7 +2902,7 @@ export default function TestStockXOrders() {
 
                   {displayedOrders.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="px-4 py-10 text-center text-gray-400">
+                      <td colSpan={13} className="px-4 py-10 text-center text-gray-400">
                         {loading ? 'Loading…' : 'No orders loaded yet. Click “Fetch Order History”.'}
                       </td>
                     </tr>
