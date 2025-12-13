@@ -4,6 +4,22 @@ import { refreshStockXTokens, setStockXTokenCookies } from '@/lib/stockx/tokenRe
 
 export async function GET(request: NextRequest) {
   try {
+    const parseMoney = (value: any): number => {
+      if (value === null || value === undefined) return 0;
+      // If API returns a string like "199" or "199.00" (dollars)
+      if (typeof value === 'string') {
+        const n = parseFloat(value);
+        return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
+      }
+      // If API returns number, it might be cents (e.g. 19900) or dollars (e.g. 199)
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        // Heuristic: anything large is almost certainly cents
+        const dollars = value > 5000 ? value / 100 : value;
+        return Math.round(dollars * 100) / 100;
+      }
+      return 0;
+    };
+
     const searchParams = request.nextUrl.searchParams;
     const pageNumber = parseInt(searchParams.get('pageNumber') || '1', 10);
     const pageSize = Math.min(parseInt(searchParams.get('pageSize') || '100', 10), 100);
@@ -104,7 +120,7 @@ export async function GET(request: NextRequest) {
       size: order.variant?.variantValue || order.variant?.size || 'N/A',
       sku: order.product?.styleId || order.variant?.sku || 'N/A',
       status: order.status,
-      salePrice: (order.amount ?? 0) / 100, // Convert cents to dollars
+      salePrice: parseMoney(order.amount),
       fees: 0,
       payout: 0,
       orderDate: order.createdAt,
