@@ -183,7 +183,7 @@ export default function StockXRepricing() {
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [copiedStyleIds, setCopiedStyleIds] = useState<Record<string, boolean>>({});
   const [copiedListingIds, setCopiedListingIds] = useState<Record<string, boolean>>({});
-  const [sortColumn, setSortColumn] = useState<'product' | 'size' | 'price' | 'market' | 'status' | null>(null);
+  const [sortColumn, setSortColumn] = useState<'product' | 'size' | 'price' | 'market' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   const LISTINGS_CACHE_KEY = 'stockx_listings_cache_v1';
@@ -231,10 +231,6 @@ export default function StockXRepricing() {
       case 'market':
         aValue = getTrueAsk(a) || 0;
         bValue = getTrueAsk(b) || 0;
-        break;
-      case 'status':
-        aValue = a.status || '';
-        bValue = b.status || '';
         break;
       default:
         return 0;
@@ -3369,19 +3365,7 @@ export default function StockXRepricing() {
                   <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Min</th>
                   <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Max</th>
                   <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Auto Off</th>
-                  <th 
-                    className={`text-left p-3 cursor-pointer select-none hover:bg-opacity-10 hover:bg-gray-500 transition-colors ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}
-                    onClick={() => handleSort('status')}
-                  >
-                    <div className="flex items-center gap-1">
-                      Status
-                      {sortColumn === 'status' ? (
-                        sortDirection === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
-                      ) : (
-                        <ChevronsUpDown className="w-4 h-4 opacity-50" />
-                      )}
-                    </div>
-                  </th>
+                  <th className={`text-left p-3 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -3676,14 +3660,7 @@ export default function StockXRepricing() {
                     </td>
                     <td className={`p-2 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                       <div className="flex items-center gap-2">
-                        <span className={`px-2 py-1 text-xs rounded-full ${
-                          listing.status === 'ACTIVE' 
-                            ? isNeon ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-800'
-                            : isNeon ? 'bg-gray-500/20 text-gray-400' : 'bg-gray-100 text-gray-800'
-                        }`}>
-                          {listing.status}
-                        </span>
-                        {listing.pricingStrategy?.type === 'market_peek' && (
+                        {listing.pricingStrategy?.type === 'market_peek' ? (
                           <button
                             onClick={() => manualPeekNow(listing.listingId)}
                             disabled={activePeeks[listing.listingId]}
@@ -3696,6 +3673,8 @@ export default function StockXRepricing() {
                           >
                             {activePeeks[listing.listingId] ? '👀 Peeking...' : '🔍 Peek'}
                           </button>
+                        ) : (
+                          <span className={`text-xs ${isNeon ? 'text-gray-500' : 'text-gray-500'}`}>—</span>
                         )}
                       </div>
                     </td>
