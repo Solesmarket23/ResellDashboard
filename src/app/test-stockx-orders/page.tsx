@@ -617,6 +617,87 @@ export default function TestStockXOrders() {
     };
   }, [displayedOrders]);
 
+  const salesByDay = useMemo(() => {
+    const rows = displayedOrders || [];
+
+    const parseLocalDayStart = (yyyyMmDd: string) => {
+      const [y, m, day] = yyyyMmDd.split('-').map((x) => parseInt(x, 10));
+      if (!y || !m || !day) return null;
+      return new Date(y, m - 1, day, 0, 0, 0, 0);
+    };
+    const parseLocalDayEnd = (yyyyMmDd: string) => {
+      const [y, m, day] = yyyyMmDd.split('-').map((x) => parseInt(x, 10));
+      if (!y || !m || !day) return null;
+      return new Date(y, m - 1, day, 23, 59, 59, 999);
+    };
+    const dayKey = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+    // Determine chart range (prefer the selected date range; fall back to min/max from rows)
+    let start = fromDate ? parseLocalDayStart(fromDate) : null;
+    let end = toDate ? parseLocalDayEnd(toDate) : null;
+
+    if (!start || !end) {
+      let minTs = Number.POSITIVE_INFINITY;
+      let maxTs = 0;
+      for (const r of rows) {
+        const raw = (r as any)?.rawData || (r as any);
+        const iso = (r as any)?.createdAt || raw?.createdAt || raw?.orderDate || raw?.created || undefined;
+        if (!iso) continue;
+        const d = new Date(iso);
+        const t = d.getTime();
+        if (Number.isNaN(t)) continue;
+        minTs = Math.min(minTs, t);
+        maxTs = Math.max(maxTs, t);
+      }
+      if (!start && Number.isFinite(minTs)) {
+        const d = new Date(minTs);
+        start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+      }
+      if (!end && maxTs > 0) {
+        const d = new Date(maxTs);
+        end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+      }
+    }
+
+    if (!start || !end || start > end) {
+      return { series: [] as Array<{ date: string; sales: number }>, maxSales: 0 };
+    }
+
+    const totalsMap: Record<string, number> = {};
+    for (const r of rows) {
+      const raw = (r as any)?.rawData || (r as any);
+      const iso = (r as any)?.createdAt || raw?.createdAt || raw?.orderDate || raw?.created || undefined;
+      if (!iso) continue;
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) continue;
+      const k = dayKey(d);
+
+      const sale = parseMoneyAny(
+        (r as any)?.metrics?.salePrice ??
+          (r as any)?.pricing?.salePrice ??
+          raw?.payout?.salePrice ??
+          raw?.amount ??
+          raw?.price
+      );
+      if (sale === null) continue;
+      totalsMap[k] = (totalsMap[k] || 0) + sale;
+    }
+
+    const series: Array<{ date: string; sales: number }> = [];
+    const cur = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0);
+    const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 0, 0, 0, 0);
+    while (cur <= endDay) {
+      const k = dayKey(cur);
+      const sales = Math.round(((totalsMap[k] || 0) as number) * 100) / 100;
+      series.push({ date: k, sales });
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    const maxSales = series.reduce((m, x) => Math.max(m, x.sales), 0);
+    return { series, maxSales };
+  }, [displayedOrders, fromDate, toDate]);
+
   const fetchHistory = async () => {
     // Quick mode: just fetch the first page (max 100) for the chosen date range.
     const pageNumber = 1;
@@ -1322,6 +1403,96 @@ export default function TestStockXOrders() {
                 <div className="text-right font-semibold">{fmtMoney(totals.avgSale, totals.currency)}</div>
                 <div className="text-gray-300">Avg payout</div>
                 <div className="text-right font-semibold">{fmtMoney(totals.avgPayout, totals.currency)}</div>
+              </div>
+
+              <div className="mt-4">
+                <div className="text-xs text-gray-400 mb-2">Sales by day</div>
+                {salesByDay.series.length === 0 ? (
+                  <div className="text-sm text-gray-400">No data for chart yet.</div>
+                ) : (
+                  <div className="rounded-lg border border-white/10 bg-gray-950/40 p-2 overflow-hidden">
+                    {(() => {
+                      const W = 640;
+                      const H = 200;
+                      const padL = 52;
+                      const padR = 16;
+                      const padT = 14;
+                      const padB = 28;
+                      const innerW = W - padL - padR;
+                      const innerH = H - padT - padB;
+                      const n = salesByDay.series.length;
+                      const maxY = Math.max(1, salesByDay.maxSales);
+                      const baseY = padT + innerH;
+
+                      const xAt = (i: number) => (n <= 1 ? padL : padL + (i / (n - 1)) * innerW);
+                      const yAt = (v: number) => padT + (1 - v / maxY) * innerH;
+
+                      const pts = salesByDay.series.map((p, i) => ({
+                        x: xAt(i),
+                        y: yAt(p.sales),
+                      }));
+
+                      const lineD =
+                        pts.length === 0
+                          ? ''
+                          : `M ${pts[0].x.toFixed(2)} ${pts[0].y.toFixed(2)} ` +
+                            pts
+                              .slice(1)
+                              .map((p) => `L ${p.x.toFixed(2)} ${p.y.toFixed(2)}`)
+                              .join(' ');
+
+                      const areaD =
+                        pts.length === 0
+                          ? ''
+                          : `M ${pts[0].x.toFixed(2)} ${baseY.toFixed(2)} ` +
+                            pts.map((p) => `L ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ') +
+                            ` L ${pts[pts.length - 1].x.toFixed(2)} ${baseY.toFixed(2)} Z`;
+
+                      const startLabel = salesByDay.series[0]?.date || '';
+                      const endLabel = salesByDay.series[salesByDay.series.length - 1]?.date || '';
+
+                      return (
+                        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[180px]">
+                          <defs>
+                            <linearGradient id="salesArea" x1="0" x2="0" y1="0" y2="1">
+                              <stop offset="0%" stopColor="rgb(34 211 238)" stopOpacity="0.35" />
+                              <stop offset="100%" stopColor="rgb(34 211 238)" stopOpacity="0.02" />
+                            </linearGradient>
+                          </defs>
+
+                          {/* axes */}
+                          <line x1={padL} y1={baseY} x2={W - padR} y2={baseY} stroke="rgba(255,255,255,0.12)" />
+                          <line x1={padL} y1={padT} x2={padL} y2={baseY} stroke="rgba(255,255,255,0.12)" />
+
+                          {/* y labels */}
+                          <text x={padL - 10} y={padT + 10} fill="rgba(255,255,255,0.55)" fontSize="10" textAnchor="end">
+                            {fmtMoney(maxY, totals.currency)}
+                          </text>
+                          <text x={padL - 10} y={baseY} fill="rgba(255,255,255,0.55)" fontSize="10" textAnchor="end" dominantBaseline="middle">
+                            {fmtMoney(0, totals.currency)}
+                          </text>
+
+                          {/* x labels */}
+                          <text x={padL} y={H - 10} fill="rgba(255,255,255,0.55)" fontSize="10" textAnchor="start">
+                            {startLabel}
+                          </text>
+                          <text x={W - padR} y={H - 10} fill="rgba(255,255,255,0.55)" fontSize="10" textAnchor="end">
+                            {endLabel}
+                          </text>
+
+                          {/* series */}
+                          <path d={areaD} fill="url(#salesArea)" />
+                          <path d={lineD} fill="none" stroke="rgb(34 211 238)" strokeWidth="2" />
+
+                          {/* points */}
+                          {pts.map((p, i) => (
+                            <circle key={i} cx={p.x} cy={p.y} r="2.5" fill="rgb(34 211 238)" opacity="0.9" />
+                          ))}
+                        </svg>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
 
               {totals.duplicates?.length > 0 && (
