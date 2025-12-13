@@ -123,6 +123,24 @@ function formatSizeLabel(size: string) {
   return s || '—';
 }
 
+function toTitleCaseLabel(input: string) {
+  const s = String(input || '').trim();
+  if (!s) return '';
+  // Preserve common placeholders / already-good values
+  if (s === '—' || s.toUpperCase() === 'N/A') return s;
+  // Split but keep separators so "streetwear/sneakers" stays readable.
+  const parts = s.split(/(\s+|\/|-)/);
+  return parts
+    .map((p) => {
+      if (!p) return p;
+      if (p === ' ' || p === '/' || p === '-' || /^\s+$/.test(p)) return p;
+      // Keep acronyms like "NBA" / "US" as-is
+      if (/^[A-Z0-9]{2,6}$/.test(p)) return p;
+      return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
+    })
+    .join('');
+}
+
 export default function TestStockXOrders() {
   const [loading, setLoading] = useState(false);
   const [allLoading, setAllLoading] = useState(false);
@@ -811,6 +829,11 @@ export default function TestStockXOrders() {
   const getRowCategory = (row: any) => {
     const raw = row?.rawData || row;
     return String(row?.product?.category || raw?.product?.category || raw?.variant?.product?.category || raw?.category || '').trim();
+  };
+
+  const getRowCategoryLabel = (row: any) => {
+    const raw = getRowCategory(row);
+    return toTitleCaseLabel(raw);
   };
 
   const getRowCarrier = (row: any) => {
@@ -2326,7 +2349,9 @@ export default function TestStockXOrders() {
                 </div>
                 <div className="text-gray-300">Top category</div>
                 <div className="text-right font-semibold">
-                  {totals.topCategory ? `${totals.topCategory.category} (${totals.topCategory.count})` : '—'}
+                  {totals.topCategory
+                    ? `${toTitleCaseLabel(totals.topCategory.category)} (${totals.topCategory.count})`
+                    : '—'}
                 </div>
                 <div className="text-gray-300">Sales</div>
                 <div className="text-right font-semibold">{fmtMoney(totals.sale, totals.currency)}</div>
@@ -3069,7 +3094,8 @@ export default function TestStockXOrders() {
                       '—';
                     const styleId = getRowStyleId(o) || '—';
                     const brand = getRowBrand(o) || '—';
-                    const category = getRowCategory(o) || '—';
+                    const categoryRaw = getRowCategory(o);
+                    const category = getRowCategoryLabel(o) || categoryRaw || '—';
                     const size = formatSizeLabel(String(o?.variant?.size || raw?.variant?.size || raw?.size || ''));
                     const created = o?.createdAt || raw?.createdAt;
                     const authStatus = getRowAuthStatus(o) || '—';
@@ -3105,7 +3131,9 @@ export default function TestStockXOrders() {
                         <td className="px-4 py-3 text-gray-200">{productName}</td>
                         <td className="px-4 py-3 text-gray-200">{styleId}</td>
                         <td className="px-4 py-3 text-gray-200">{brand}</td>
-                        <td className="px-4 py-3 text-gray-200">{category}</td>
+                        <td className="px-4 py-3 text-gray-200" title={categoryRaw || category}>
+                          {category}
+                        </td>
                         <td className="px-4 py-3 text-gray-200">{size}</td>
                         <td className="px-4 py-3 text-gray-200">{fmtMoney(sale, currency)}</td>
                         <td className="px-4 py-3 text-gray-200">{fmtMoney(fees, currency)}</td>
