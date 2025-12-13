@@ -4,9 +4,15 @@ import { refreshStockXTokens, setStockXTokenCookies } from '@/lib/stockx/tokenRe
 
 export async function GET(request: NextRequest) {
   try {
+    const searchParams = request.nextUrl.searchParams;
+    const pageNumber = parseInt(searchParams.get('pageNumber') || '1', 10);
+    const pageSize = Math.min(parseInt(searchParams.get('pageSize') || '100', 10), 100);
+    const orderStatus = searchParams.get('orderStatus') || undefined;
+
     const cookieStore = cookies();
     let accessToken = cookieStore.get('stockx_access_token')?.value;
     const refreshToken = cookieStore.get('stockx_refresh_token')?.value;
+    const apiKey = process.env.STOCKX_API_KEY;
     
     if (!accessToken) {
       return NextResponse.json(
@@ -15,13 +21,28 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: 'Missing StockX API key (STOCKX_API_KEY)' },
+        { status: 500 }
+      );
+    }
+
     console.log('🔍 Fetching active StockX orders...');
 
+    const qp = new URLSearchParams();
+    qp.set('pageNumber', String(Math.max(1, pageNumber)));
+    qp.set('pageSize', String(Math.max(1, pageSize)));
+    if (orderStatus) qp.set('orderStatus', orderStatus);
+
     // Call StockX API for active orders
-    let response = await fetch('https://api.stockx.com/v2/selling/orders/active', {
+    const apiUrl = `https://api.stockx.com/v2/selling/orders/active?${qp.toString()}`;
+    let response = await fetch(apiUrl, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
+        'x-api-key': apiKey,
+        'Accept': 'application/json',
         'Content-Type': 'application/json',
         'User-Agent': 'ResellDashboard/1.0'
       }
@@ -34,10 +55,12 @@ export async function GET(request: NextRequest) {
       
       if (refreshResult.success && refreshResult.accessToken) {
         // Retry with new token
-        response = await fetch('https://api.stockx.com/v2/selling/orders/active', {
+        response = await fetch(apiUrl, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${refreshResult.accessToken}`,
+            'x-api-key': apiKey,
+            'Accept': 'application/json',
             'Content-Type': 'application/json',
             'User-Agent': 'ResellDashboard/1.0'
           }
@@ -55,32 +78,17 @@ export async function GET(request: NextRequest) {
 
     if (!response.ok) {
       console.error('❌ StockX API error:', response.status, response.statusText);
-      
-      // Return mock data for development
-      const mockOrders = [
+
+      const errorText = await response.text().catch(() => '');
+      return NextResponse.json(
         {
-          id: '1',
-          orderNumber: 'SX-2024-001234',
-          productName: 'Air Jordan 1 Retro High OG "Chicago"',
-          productBrand: 'Nike',
-          size: '10.5',
-          sku: 'DZ5485-612',
-          status: 'active',
-          salePrice: 450,
-          fees: 45,
-          payout: 405,
-          orderDate: new Date().toISOString(),
-          buyerLocation: 'New York, NY',
-          shippingMethod: 'Standard',
-          imageUrl: 'https://picsum.photos/400/400?random=1'
-        }
-      ];
-      
-      return NextResponse.json({
-        orders: mockOrders,
-        total: mockOrders.length,
-        source: 'mock'
-      });
+          error: 'StockX API error',
+          statusCode: response.status,
+          details: errorText || response.statusText,
+          authRequired: response.status === 401,
+        },
+        { status: response.status }
+      );
     }
 
     const data = await response.json();
@@ -90,14 +98,15 @@ export async function GET(request: NextRequest) {
     const transformedOrders = data.orders?.map((order: any) => ({
       id: order.id,
       orderNumber: order.orderNumber,
-      productName: order.variant?.product?.name || 'Unknown Product',
-      productBrand: order.variant?.product?.brand || 'Unknown Brand',
-      size: order.variant?.size || 'N/A',
-      sku: order.variant?.sku || 'N/A',
-      status: 'active',
-      salePrice: order.amount / 100, // Convert cents to dollars
-      fees: order.fees / 100,
-      payout: order.payout / 100,
+      productName: order.product?.productName || order.product?.name || order.variant?.product?.productName || order.variant?.product?.name || 'Unknown Product',
+      productBrand: order.product?.brand || order.variant?.product?.brand || 'Unknown Brand',
+      category: order.product?.category || order.variant?.product?.category,
+      size: order.variant?.variantValue || order.variant?.size || 'N/A',
+      sku: order.product?.styleId || order.variant?.sku || 'N/A',
+      status: order.status,
+      salePrice: (order.amount ?? 0) / 100, // Convert cents to dollars
+      fees: 0,
+      payout: 0,
       orderDate: order.createdAt,
       buyerLocation: order.shippingAddress?.city || 'Unknown',
       shippingMethod: order.shippingMethod || 'Standard',
@@ -107,7 +116,11 @@ export async function GET(request: NextRequest) {
     const successResponse = NextResponse.json({
       orders: transformedOrders,
       total: transformedOrders.length,
-      source: 'stockx'
+      source: 'stockx',
+      count: data.count,
+      pageNumber: data.pageNumber,
+      pageSize: data.pageSize,
+      hasNextPage: data.hasNextPage
     });
 
     // If we refreshed the token, set the new cookies
@@ -119,32 +132,12 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('❌ Error fetching active orders:', error);
-    
-    // Return mock data on error
-    const mockOrders = [
+    return NextResponse.json(
       {
-        id: '1',
-        orderNumber: 'SX-2024-001234',
-        productName: 'Air Jordan 1 Retro High OG "Chicago"',
-        productBrand: 'Nike',
-        size: '10.5',
-        sku: 'DZ5485-612',
-        status: 'active',
-        salePrice: 450,
-        fees: 45,
-        payout: 405,
-        orderDate: new Date().toISOString(),
-        buyerLocation: 'New York, NY',
-        shippingMethod: 'Standard',
-        imageUrl: 'https://picsum.photos/400/400?random=1'
-      }
-    ];
-    
-    return NextResponse.json({
-      orders: mockOrders,
-      total: mockOrders.length,
-      source: 'mock',
-      error: 'Failed to fetch from StockX API'
-    });
+        error: 'Failed to fetch active orders',
+        details: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 }
+    );
   }
 }

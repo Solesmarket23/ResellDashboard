@@ -316,7 +316,11 @@ export default function TestStockXOrders() {
 
       if (includeActive) {
         appendLog('info', 'Fetching active (pending) orders...');
-        const aRes = await fetch('/api/stockx/orders/active');
+        // Single-page fetch for active orders (quick mode)
+        const qp = new URLSearchParams();
+        qp.set('pageNumber', '1');
+        qp.set('pageSize', '100');
+        const aRes = await fetch(`/api/stockx/orders/active?${qp.toString()}`);
         const aJson = await aRes.json().catch(() => ({}));
 
         if (!aRes.ok) {
@@ -332,8 +336,8 @@ export default function TestStockXOrders() {
         const activeRows: OrderRow[] = Array.isArray(aJson?.orders)
           ? aJson.orders.map((o: any) => ({
               id: o.id,
-              status: o.status || 'ACTIVE',
-              orderStatus: o.status || 'ACTIVE',
+              status: o.status,
+              orderStatus: o.status,
               createdAt: o.orderDate,
               product: { name: o.productName, brand: o.productBrand, sku: o.sku, category: o.category },
               variant: { size: o.size },
@@ -352,7 +356,11 @@ export default function TestStockXOrders() {
               );
 
         setOrders([...allRows, ...filteredActive]);
-        appendLog('info', 'Fetched active orders', { rows: activeRows.length, kept: filteredActive.length });
+        appendLog('info', 'Fetched active orders (page 1)', {
+          rows: activeRows.length,
+          kept: filteredActive.length,
+          hasNextPage: Boolean(aJson?.hasNextPage),
+        });
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -451,34 +459,65 @@ export default function TestStockXOrders() {
 
       if (includeActive) {
         appendLog('info', 'Fetching active (pending) orders...');
-        const aRes = await fetch('/api/stockx/orders/active');
-        const aJson = await aRes.json().catch(() => ({}));
-        if (!aRes.ok) {
-          appendLog('warn', 'Active orders request failed (non-fatal)', { status: aRes.status, body: aJson });
-        } else {
-          const activeRows: OrderRow[] = Array.isArray(aJson?.orders)
-            ? aJson.orders.map((o: any) => ({
-                id: o.id,
-                status: o.status || 'ACTIVE',
-                orderStatus: o.status || 'ACTIVE',
-                createdAt: o.orderDate,
-                product: { name: o.productName, brand: o.productBrand, sku: o.sku, category: o.category },
-                variant: { size: o.size },
-                pricing: { salePrice: o.salePrice, totalFees: o.fees, payout: o.payout, currency: 'USD' },
-                rawData: o,
-              }))
-            : [];
-          const filteredActive =
-            selectedActiveStatuses.length === 0
-              ? activeRows
-              : activeRows.filter((r) =>
-                  selectedActiveStatuses.includes(
-                    String((r.rawData?.status || r.status || r.orderStatus || '')).toUpperCase()
-                  )
-                );
-          setOrders([...all, ...filteredActive]);
-          appendLog('info', 'Fetched active orders', { rows: activeRows.length, kept: filteredActive.length });
-        }
+        const fetchActiveAll = async () => {
+          const PAGE_SIZE = 100;
+          const MAX_PAGES = 50;
+          const statuses = selectedActiveStatuses.length ? selectedActiveStatuses : [''];
+          const activeAll: OrderRow[] = [];
+          const seenActive = new Set<string>();
+
+          for (const st of statuses) {
+            let p = 1;
+            let hasNext = true;
+            while (hasNext && p <= MAX_PAGES) {
+              const qp = new URLSearchParams();
+              qp.set('pageNumber', String(p));
+              qp.set('pageSize', String(PAGE_SIZE));
+              if (st) qp.set('orderStatus', st);
+              const aRes = await fetch(`/api/stockx/orders/active?${qp.toString()}`);
+              const aJson = await aRes.json().catch(() => ({}));
+              if (!aRes.ok) {
+                appendLog('warn', 'Active orders request failed (non-fatal)', { status: aRes.status, body: aJson });
+                break;
+              }
+              const pageRows: OrderRow[] = Array.isArray(aJson?.orders)
+                ? aJson.orders.map((o: any) => ({
+                    id: o.id,
+                    status: o.status,
+                    orderStatus: o.status,
+                    createdAt: o.orderDate,
+                    product: { name: o.productName, brand: o.productBrand, sku: o.sku, category: o.category },
+                    variant: { size: o.size },
+                    pricing: { salePrice: o.salePrice, totalFees: o.fees, payout: o.payout, currency: 'USD' },
+                    rawData: o,
+                  }))
+                : [];
+              let added = 0;
+              for (const r of pageRows) {
+                const key = String(r.rawData?.orderNumber || r.rawData?.id || r.id || JSON.stringify(r.rawData));
+                if (seenActive.has(key)) continue;
+                seenActive.add(key);
+                activeAll.push(r);
+                added += 1;
+              }
+              appendLog('info', `Active page ${p} fetched`, {
+                orderStatus: st || '(all)',
+                added,
+                total: activeAll.length,
+                hasNextPage: Boolean(aJson?.hasNextPage),
+              });
+              hasNext = Boolean(aJson?.hasNextPage) && pageRows.length > 0;
+              p += 1;
+              if (hasNext) await sleep(200);
+            }
+          }
+
+          return activeAll;
+        };
+
+        const activeAll = await fetchActiveAll();
+        setOrders([...all, ...activeAll]);
+        appendLog('info', 'Fetched active orders (all pages)', { total: activeAll.length });
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
