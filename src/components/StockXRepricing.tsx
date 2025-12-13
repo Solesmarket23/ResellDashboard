@@ -2721,7 +2721,7 @@ export default function StockXRepricing() {
             </p>
             <div className="flex justify-center">
               <button 
-                onClick={() => window.location.href = '/api/stockx/auth?returnTo=' + encodeURIComponent(window.location.origin + '/dashboard?view=stockx-repricing')}
+                onClick={() => window.location.href = '/api/stockx/auth?returnTo=' + encodeURIComponent(window.location.href)}
                 className={`px-6 py-3 rounded-lg font-semibold transition-all duration-200 ${
                   isNeon 
                     ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white shadow-lg hover:shadow-cyan-500/20'
@@ -3334,7 +3334,7 @@ export default function StockXRepricing() {
                   Authentication error detected. You may need to re-authenticate with StockX.
                 </p>
                 <button
-                  onClick={() => window.location.href = '/api/stockx/auth?returnTo=' + encodeURIComponent(window.location.pathname)}
+                  onClick={() => window.location.href = '/api/stockx/auth?returnTo=' + encodeURIComponent(window.location.href)}
                   className={`px-4 py-2 rounded-lg font-semibold transition-all ${
                     isNeon 
                       ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white'
