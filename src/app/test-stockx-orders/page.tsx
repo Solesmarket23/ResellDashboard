@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
+import NeonNotification, { NotificationType } from '@/components/NeonNotification';
 
 type OrderRow = {
   id?: string;
@@ -117,6 +118,11 @@ export default function TestStockXOrders() {
   const [allProgress, setAllProgress] = useState<{ page: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
+  const [notification, setNotification] = useState<{
+    isVisible: boolean;
+    message: string;
+    type: NotificationType;
+  }>({ isVisible: false, message: '', type: 'success' });
 
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
@@ -352,6 +358,18 @@ export default function TestStockXOrders() {
     } catch {
       appendLog('warn', 'Could not clear cache (storage blocked)');
     }
+  };
+
+  const showToast = (type: NotificationType, message: string) => {
+    setNotification({ isVisible: true, message, type });
+  };
+
+  const formatFetchErrorToast = (label: string, status?: number, body?: any) => {
+    if (status === 429) return `${label}: Too many requests (429). Please wait ~30–60s and retry.`;
+    if (status === 504) return `${label}: Timed out (504). Try again (cache helps) or narrow the date range.`;
+    if (status === 401 || body?.authRequired) return `${label}: StockX auth required. Click “Authenticate with StockX”.`;
+    const msg = body?.message || body?.error || body?.details;
+    return `${label}: ${msg ? String(msg) : status ? `Request failed (${status})` : 'Request failed'}`;
   };
 
   const ymd = (d: Date) => {
@@ -595,6 +613,7 @@ export default function TestStockXOrders() {
       appendLog('info', 'Verification stats loaded', { rows: collected.length, months: computed.months.length });
     } catch (e) {
       appendLog('error', 'Verification stats fetch failed', { error: e instanceof Error ? e.message : String(e) });
+      showToast('error', `Verification stats: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setVerificationLoading(false);
       setVerificationProgress(null);
@@ -1235,8 +1254,10 @@ export default function TestStockXOrders() {
             setError(json?.message || 'StockX authentication required.');
             setOrders([]);
             appendLog('warn', 'Auth required for orders history', { status: res.status, body: json });
+            showToast('warning', formatFetchErrorToast('Order history', res.status, json));
             return;
           }
+          showToast('error', formatFetchErrorToast('Order history', res.status, json));
           throw new Error(json?.error || json?.details || `Request failed (${res.status})`);
         }
 
@@ -1279,8 +1300,10 @@ export default function TestStockXOrders() {
           if (aRes.status === 401 || aJson?.authRequired) {
             setAuthRequired(true);
             appendLog('warn', 'Auth required for active orders', { status: aRes.status, body: aJson });
+            showToast('warning', formatFetchErrorToast('Active orders', aRes.status, aJson));
           } else {
             appendLog('warn', 'Active orders request failed (non-fatal)', { status: aRes.status, body: aJson });
+            showToast('warning', formatFetchErrorToast('Active orders', aRes.status, aJson));
           }
           return;
         }
@@ -1324,6 +1347,7 @@ export default function TestStockXOrders() {
       setError(e instanceof Error ? e.message : String(e));
       setOrders([]);
       appendLog('error', 'Order history request failed', { error: e instanceof Error ? e.message : String(e) });
+      showToast('error', `Order history: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setLoading(false);
     }
@@ -1436,8 +1460,10 @@ export default function TestStockXOrders() {
               setAuthRequired(true);
               setError(json?.message || 'StockX authentication required.');
               appendLog('warn', 'Auth required while fetching all pages', { status: res.status, body: json });
+              showToast('warning', formatFetchErrorToast('Fetch ALL', res.status, json));
               return;
             }
+            showToast('error', formatFetchErrorToast('Fetch ALL', res.status, json));
             throw new Error(json?.error || json?.details || `Request failed (${res.status})`);
           }
 
@@ -1503,6 +1529,7 @@ export default function TestStockXOrders() {
               }
               if (!aRes.ok) {
                 appendLog('warn', 'Active orders request failed (non-fatal)', { status: aRes.status, body: aJson });
+                showToast('warning', formatFetchErrorToast('Active orders', aRes.status, aJson));
                 break;
               }
               const pageRows: OrderRow[] = Array.isArray(aJson?.orders)
@@ -1555,6 +1582,7 @@ export default function TestStockXOrders() {
       setError(e instanceof Error ? e.message : String(e));
       setOrders([]);
       appendLog('error', 'Fetch ALL failed', { error: e instanceof Error ? e.message : String(e) });
+      showToast('error', `Fetch ALL: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setAllLoading(false);
       setAllProgress(null);
@@ -1573,8 +1601,10 @@ export default function TestStockXOrders() {
       if (!res.ok) {
         if (res.status === 401 || json?.authRequired) {
           setAuthRequired(true);
+          showToast('warning', formatFetchErrorToast('Order details', res.status, json));
           throw new Error(json?.message || 'StockX authentication required.');
         }
+        showToast('error', formatFetchErrorToast('Order details', res.status, json));
         throw new Error(json?.error || json?.details || `Request failed (${res.status})`);
       }
       setSelected({ orderNumber, data: json?.data });
@@ -1583,6 +1613,7 @@ export default function TestStockXOrders() {
       setError(e instanceof Error ? e.message : String(e));
       setSelected(null);
       appendLog('error', 'Order details request failed', { error: e instanceof Error ? e.message : String(e) });
+      showToast('error', `Order details: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setDetailsLoading(false);
     }
@@ -1600,6 +1631,13 @@ export default function TestStockXOrders() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 p-6">
+      {notification.isVisible && (
+        <NeonNotification
+          message={notification.message}
+          type={notification.type}
+          onClose={() => setNotification((n) => ({ ...n, isVisible: false }))}
+        />
+      )}
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="flex items-center justify-between gap-4">
           <div>
