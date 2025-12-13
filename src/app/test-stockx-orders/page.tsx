@@ -176,6 +176,8 @@ export default function TestStockXOrders() {
   const [verificationMonths, setVerificationMonths] = useState<VerificationMonthRow[]>([]);
   const [verificationBrands, setVerificationBrands] = useState<VerificationBrandRow[]>([]);
   const [selectedVerificationMonth, setSelectedVerificationMonth] = useState<string | null>(null);
+  const [verificationPeriod, setVerificationPeriod] = useState<'last_12_months' | 'ytd'>('last_12_months');
+  const [verificationRange, setVerificationRange] = useState<{ from: string; to: string } | null>(null);
 
   const [sortBy, setSortBy] = useState<
     'orderNumber' | 'status' | 'product' | 'size' | 'sale' | 'fees' | 'payout' | 'created' | null
@@ -390,10 +392,48 @@ export default function TestStockXOrders() {
     return { from, to };
   };
 
-  const computeVerificationStats = (rows: OrderRow[], opts?: { month?: string | null }) => {
+  const ytdRange = () => {
+    const end = new Date();
+    const start = new Date(end.getFullYear(), 0, 1);
+    const from = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
+    const to = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+    return { from, to };
+  };
+
+  const monthKeyFromYmd = (ymdStr: string) => ymdStr.slice(0, 7);
+
+  const listMonthsBetween = (fromYmd: string, toYmd: string) => {
+    const fromKey = monthKeyFromYmd(fromYmd);
+    const toKey = monthKeyFromYmd(toYmd);
+    const [fy, fm] = fromKey.split('-').map((x) => parseInt(x, 10));
+    const [ty, tm] = toKey.split('-').map((x) => parseInt(x, 10));
+    if (!fy || !fm || !ty || !tm) return [];
+    const cur = new Date(fy, fm - 1, 1);
+    const end = new Date(ty, tm - 1, 1);
+    const out: string[] = [];
+    while (cur <= end) {
+      out.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}`);
+      cur.setMonth(cur.getMonth() + 1);
+    }
+    return out;
+  };
+
+  const computeVerificationStats = (
+    rows: OrderRow[],
+    opts?: { month?: string | null; from?: string; to?: string }
+  ) => {
     const byMonth: Record<string, { success: number; failed: number }> = {};
     const byBrand: Record<string, { success: number; failed: number }> = {};
     const monthFilter = opts?.month || null;
+    const rangeFrom = opts?.from || null;
+    const rangeTo = opts?.to || null;
+
+    // Initialize month buckets so months with zero activity still show up
+    if (rangeFrom && rangeTo) {
+      for (const mk of listMonthsBetween(rangeFrom, rangeTo)) {
+        byMonth[mk] = { success: 0, failed: 0 };
+      }
+    }
 
     for (const r of rows) {
       const raw = (r as any)?.rawData || (r as any);
@@ -438,18 +478,22 @@ export default function TestStockXOrders() {
     return { months, brands };
   };
 
-  const fetchVerificationStats12Months = async () => {
-    const { from, to } = last12MonthsRange();
-    const cacheKey = `stockx_verification_cache_v1:${JSON.stringify({ from, to })}`;
+  const fetchVerificationStats = async () => {
+    const { from, to } = verificationPeriod === 'ytd' ? ytdRange() : last12MonthsRange();
+    setVerificationRange({ from, to });
+    const cacheKey = `stockx_verification_cache_v2:${JSON.stringify({ period: verificationPeriod, from, to })}`;
 
     if (useCache) {
       const cached = readCache(cacheKey, 10 * 60 * 1000);
       if (cached?.rows && Array.isArray(cached.rows)) {
         setVerificationRows(cached.rows);
-        const { months } = computeVerificationStats(cached.rows);
+        const { months } = computeVerificationStats(cached.rows, { from, to });
         setVerificationMonths(months);
+        const { brands } = computeVerificationStats(cached.rows, { from, to });
+        setVerificationBrands(brands);
         setSelectedVerificationMonth(null);
-        appendLog('info', 'Using cached verification stats (12 months)', {
+        appendLog('info', 'Using cached verification stats', {
+          period: verificationPeriod,
           from,
           to,
           rows: knownNumber(cached.rows.length),
@@ -462,7 +506,7 @@ export default function TestStockXOrders() {
     setVerificationLoading(true);
     setVerificationProgress({ status: 'starting', page: 0, totalRows: 0 });
     setSelectedVerificationMonth(null);
-    appendLog('info', 'Fetching verification stats (last 12 months)...', { from, to, statuses: ['COMPLETED', 'AUTHFAILED'] });
+    appendLog('info', 'Fetching verification stats...', { period: verificationPeriod, from, to, statuses: ['COMPLETED', 'AUTHFAILED'] });
 
     const collected: OrderRow[] = [];
     const seen = new Set<string>();
@@ -502,7 +546,7 @@ export default function TestStockXOrders() {
             collected.push(r);
           }
 
-          const { months, brands } = computeVerificationStats(collected);
+          const { months, brands } = computeVerificationStats(collected, { from, to });
           setVerificationMonths(months);
           setVerificationBrands(brands);
           setVerificationRows([...collected]);
@@ -514,7 +558,7 @@ export default function TestStockXOrders() {
       }
 
       writeCache(cacheKey, { rows: collected });
-      const computed = computeVerificationStats(collected);
+      const computed = computeVerificationStats(collected, { from, to });
       setVerificationRows([...collected]);
       setVerificationMonths(computed.months);
       setVerificationBrands(computed.brands);
@@ -998,9 +1042,13 @@ export default function TestStockXOrders() {
 
   const verificationBrandsForSelectedMonth = useMemo(() => {
     if (!verificationRows || verificationRows.length === 0) return [] as VerificationBrandRow[];
-    const computed = computeVerificationStats(verificationRows, { month: selectedVerificationMonth });
+    const computed = computeVerificationStats(verificationRows, {
+      month: selectedVerificationMonth,
+      from: verificationRange?.from,
+      to: verificationRange?.to,
+    });
     return computed.brands;
-  }, [verificationRows, selectedVerificationMonth]);
+  }, [verificationRows, selectedVerificationMonth, verificationRange]);
 
   const fetchHistory = async () => {
     // Quick mode: just fetch the first page (max 100) for the chosen date range.
@@ -1942,12 +1990,44 @@ export default function TestStockXOrders() {
                 </div>
                 <button
                   type="button"
-                  onClick={fetchVerificationStats12Months}
+                  onClick={fetchVerificationStats}
                   disabled={verificationLoading}
                   className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-sm disabled:opacity-50"
                 >
                   {verificationLoading ? 'Loading…' : 'Load'}
                 </button>
+              </div>
+
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setVerificationPeriod('last_12_months')}
+                  className={
+                    'text-xs px-2 py-1 rounded border ' +
+                    (verificationPeriod === 'last_12_months'
+                      ? 'border-cyan-400/40 bg-cyan-500/10 text-cyan-100'
+                      : 'border-white/10 bg-white/5 hover:bg-white/10 text-gray-200')
+                  }
+                >
+                  Last 12 months
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVerificationPeriod('ytd')}
+                  className={
+                    'text-xs px-2 py-1 rounded border ' +
+                    (verificationPeriod === 'ytd'
+                      ? 'border-cyan-400/40 bg-cyan-500/10 text-cyan-100'
+                      : 'border-white/10 bg-white/5 hover:bg-white/10 text-gray-200')
+                  }
+                >
+                  YTD
+                </button>
+                {verificationRange ? (
+                  <div className="text-[11px] text-gray-400 ml-auto">
+                    Range: {verificationRange.from} → {verificationRange.to}
+                  </div>
+                ) : null}
               </div>
 
               {verificationProgress && (
