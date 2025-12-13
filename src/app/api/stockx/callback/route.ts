@@ -34,8 +34,19 @@ export async function GET(request: NextRequest) {
     // Get the current host from the request
     const host = request.headers.get('host') || '';
     
-    // Use ngrok URL if available, otherwise use the host
-    let baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `https://${host}`;
+    // Build a base URL that matches the *current* request origin (important for ngrok/local dev).
+    // If NEXT_PUBLIC_BASE_URL is set for production, we still prefer it unless we're on localhost/ngrok.
+    const forwardedProto = request.headers.get('x-forwarded-proto');
+    const proto =
+      forwardedProto ||
+      (request.nextUrl.protocol ? request.nextUrl.protocol.replace(':', '') : undefined) ||
+      'https';
+    const originFromRequest = host ? `${proto}://${host}` : request.nextUrl.origin;
+
+    const envBaseUrl = process.env.NEXT_PUBLIC_BASE_URL?.trim();
+    const isLocalOrTunnel = host.includes('localhost') || host.includes('127.0.0.1') || host.includes('ngrok-free.app');
+
+    let baseUrl = envBaseUrl && !isLocalOrTunnel ? envBaseUrl : originFromRequest;
     
     // Force www version for StockX OAuth compatibility
     if (baseUrl.includes('solesmarket.com') && !baseUrl.includes('www.')) {
