@@ -134,6 +134,7 @@ export default function TestStockXOrders() {
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
   const [includeActive, setIncludeActive] = useState(true);
   const [showDidNotShip, setShowDidNotShip] = useState(false);
+  const [useCache, setUseCache] = useState(true);
 
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [selected, setSelected] = useState<{ orderNumber: string; data: any } | null>(null);
@@ -255,6 +256,57 @@ export default function TestStockXOrders() {
     URL.revokeObjectURL(url);
 
     appendLog('info', 'Exported CSV', { rows: displayedOrders.length, filename });
+  };
+
+  const makeFetchKey = (kind: 'history' | 'all' | 'active', extra?: Record<string, unknown>) => {
+    const keyObj = {
+      kind,
+      fromDate: fromDate || null,
+      toDate: toDate || null,
+      includeActive,
+      historyStatuses: [...selectedHistoryStatuses].sort(),
+      activeStatuses: [...selectedActiveStatuses].sort(),
+      includeCatalog: true,
+      includeDetails: true,
+      ...(extra || {}),
+    };
+    return `stockx_orders_cache_v1:${JSON.stringify(keyObj)}`;
+  };
+
+  const readCache = (key: string, maxAgeMs: number) => {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return null;
+      const ts = Number(parsed.ts || 0);
+      if (!ts || Date.now() - ts > maxAgeMs) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  };
+
+  const writeCache = (key: string, value: any) => {
+    try {
+      localStorage.setItem(key, JSON.stringify({ ts: Date.now(), ...value }));
+    } catch {
+      // ignore quota errors
+    }
+  };
+
+  const clearOrdersCache = () => {
+    try {
+      const keys: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('stockx_orders_cache_v1:')) keys.push(k);
+      }
+      keys.forEach((k) => localStorage.removeItem(k));
+      appendLog('info', 'Cleared orders cache', { removed: keys.length });
+    } catch {
+      appendLog('warn', 'Could not clear cache (storage blocked)');
+    }
   };
 
   const isActiveRow = (row: any) => {
@@ -725,6 +777,20 @@ export default function TestStockXOrders() {
     // Quick mode: just fetch the first page (max 100) for the chosen date range.
     const pageNumber = 1;
     const pageSize = 100;
+    const cacheKey = makeFetchKey('history');
+    if (useCache) {
+      const cached = readCache(cacheKey, 10 * 60 * 1000);
+      if (cached?.orders && Array.isArray(cached.orders)) {
+        setOrders(cached.orders);
+        appendLog('info', 'Using cached results (Fetch for time period)', {
+          cachedAgeSeconds: Math.round((Date.now() - Number(cached.ts || 0)) / 1000),
+          rows: cached.orders.length,
+          debug: cached.debug,
+        });
+        return;
+      }
+    }
+
     setLoading(true);
     setError(null);
     setAuthRequired(false);
@@ -741,6 +807,11 @@ export default function TestStockXOrders() {
       const statusesToFetch = selectedHistoryStatuses.length ? selectedHistoryStatuses : [''];
       const allRows: OrderRow[] = [];
       const seen = new Set<string>();
+      const apiCalls = {
+        historyRequests: 0,
+        activeRequests: 0,
+        upstream: { historyList: 0, activeList: 0, catalog: 0, orderDetails: 0, total: 0 },
+      };
 
       for (const st of statusesToFetch) {
         const qp = new URLSearchParams();
@@ -755,8 +826,15 @@ export default function TestStockXOrders() {
         if (st) qp.set('orderStatus', st);
 
         appendLog('info', 'Requesting history page', { pageNumber, pageSize, orderStatus: st || '(all)' });
+        apiCalls.historyRequests += 1;
         const res = await fetch(`/api/stockx/orders/history?${qp.toString()}`);
         const json = await res.json().catch(() => ({}));
+        if (json?.debug?.upstreamCalls) {
+          apiCalls.upstream.historyList += Number(json.debug.upstreamCalls.historyList || 0);
+          apiCalls.upstream.catalog += Number(json.debug.upstreamCalls.catalog || 0);
+          apiCalls.upstream.orderDetails += Number(json.debug.upstreamCalls.orderDetails || 0);
+          apiCalls.upstream.total += Number(json.debug.upstreamCalls.total || 0);
+        }
 
         if (!res.ok) {
           if (res.status === 401 || json?.authRequired) {
@@ -783,6 +861,7 @@ export default function TestStockXOrders() {
       appendLog('info', 'Fetched order history (merged)', {
         rows: allRows.length,
         statuses: selectedHistoryStatuses.length ? selectedHistoryStatuses : '(all)',
+        apiCalls,
       });
 
       if (includeActive) {
@@ -793,8 +872,15 @@ export default function TestStockXOrders() {
         qp.set('pageSize', '100');
         qp.set('includeCatalog', '1');
         qp.set('includeDetails', '1');
+        apiCalls.activeRequests += 1;
         const aRes = await fetch(`/api/stockx/orders/active?${qp.toString()}`);
         const aJson = await aRes.json().catch(() => ({}));
+        if (aJson?.debug?.upstreamCalls) {
+          apiCalls.upstream.activeList += Number(aJson.debug.upstreamCalls.activeList || 0);
+          apiCalls.upstream.catalog += Number(aJson.debug.upstreamCalls.catalog || 0);
+          apiCalls.upstream.orderDetails += Number(aJson.debug.upstreamCalls.orderDetails || 0);
+          apiCalls.upstream.total += Number(aJson.debug.upstreamCalls.total || 0);
+        }
 
         if (!aRes.ok) {
           if (aRes.status === 401 || aJson?.authRequired) {
@@ -836,8 +922,11 @@ export default function TestStockXOrders() {
           kept: filteredActive.length,
           keptAfterDateFilter: dateFilteredActive.length,
           hasNextPage: Boolean(aJson?.hasNextPage),
+          apiCalls,
         });
       }
+
+      writeCache(cacheKey, { orders: allRows, debug: { apiCalls } });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setOrders([]);
@@ -884,6 +973,20 @@ export default function TestStockXOrders() {
     const PAGE_SIZE = 100;
     const MAX_PAGES = 100; // safety cap (10,000 orders max)
 
+    const cacheKey = makeFetchKey('all');
+    if (useCache) {
+      const cached = readCache(cacheKey, 10 * 60 * 1000);
+      if (cached?.orders && Array.isArray(cached.orders)) {
+        setOrders(cached.orders);
+        appendLog('info', 'Using cached results (Fetch ALL)', {
+          cachedAgeSeconds: Math.round((Date.now() - Number(cached.ts || 0)) / 1000),
+          rows: cached.orders.length,
+          debug: cached.debug,
+        });
+        return;
+      }
+    }
+
     setAllLoading(true);
     setAllProgress({ page: 1, total: 0 });
     setError(null);
@@ -902,6 +1005,11 @@ export default function TestStockXOrders() {
       const all: OrderRow[] = [];
       const seen = new Set<string>();
       const statusesToFetch = selectedHistoryStatuses.length ? selectedHistoryStatuses : [''];
+      const apiCalls = {
+        historyRequests: 0,
+        activeRequests: 0,
+        upstream: { historyList: 0, activeList: 0, catalog: 0, orderDetails: 0, total: 0 },
+      };
 
       for (const st of statusesToFetch) {
         let p = 1;
@@ -922,6 +1030,13 @@ export default function TestStockXOrders() {
 
           const res = await fetch(`/api/stockx/orders/history?${qp.toString()}`);
           const json = await res.json().catch(() => ({}));
+          apiCalls.historyRequests += 1;
+          if (json?.debug?.upstreamCalls) {
+            apiCalls.upstream.historyList += Number(json.debug.upstreamCalls.historyList || 0);
+            apiCalls.upstream.catalog += Number(json.debug.upstreamCalls.catalog || 0);
+            apiCalls.upstream.orderDetails += Number(json.debug.upstreamCalls.orderDetails || 0);
+            apiCalls.upstream.total += Number(json.debug.upstreamCalls.total || 0);
+          }
 
           if (!res.ok) {
             if (res.status === 401 || json?.authRequired) {
@@ -963,7 +1078,7 @@ export default function TestStockXOrders() {
       }
 
       setOrders(all);
-      appendLog('info', 'Fetch ALL complete', { total: all.length });
+      appendLog('info', 'Fetch ALL complete', { total: all.length, apiCalls });
 
       if (includeActive) {
         appendLog('info', 'Fetching active (pending) orders...');
@@ -984,8 +1099,15 @@ export default function TestStockXOrders() {
               qp.set('includeCatalog', '1');
               qp.set('includeDetails', '1');
               if (st) qp.set('orderStatus', st);
+              apiCalls.activeRequests += 1;
               const aRes = await fetch(`/api/stockx/orders/active?${qp.toString()}`);
               const aJson = await aRes.json().catch(() => ({}));
+              if (aJson?.debug?.upstreamCalls) {
+                apiCalls.upstream.activeList += Number(aJson.debug.upstreamCalls.activeList || 0);
+                apiCalls.upstream.catalog += Number(aJson.debug.upstreamCalls.catalog || 0);
+                apiCalls.upstream.orderDetails += Number(aJson.debug.upstreamCalls.orderDetails || 0);
+                apiCalls.upstream.total += Number(aJson.debug.upstreamCalls.total || 0);
+              }
               if (!aRes.ok) {
                 appendLog('warn', 'Active orders request failed (non-fatal)', { status: aRes.status, body: aJson });
                 break;
@@ -1031,8 +1153,11 @@ export default function TestStockXOrders() {
         appendLog('info', 'Fetched active orders (all pages)', {
           total: activeAll.length,
           keptAfterDateFilter: dateFilteredActiveAll.length,
+          apiCalls,
         });
       }
+
+      writeCache(cacheKey, { orders: includeActive ? [...all] : all, debug: { apiCalls } });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setOrders([]);
@@ -1394,6 +1519,24 @@ export default function TestStockXOrders() {
               />
               Include active/pending orders
             </label>
+
+            <label className="flex items-center gap-2 text-sm text-gray-300">
+              <input
+                type="checkbox"
+                checked={useCache}
+                onChange={(e) => setUseCache(e.target.checked)}
+              />
+              Use cache (10 min) to reduce API calls
+            </label>
+
+            <button
+              type="button"
+              onClick={clearOrdersCache}
+              className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-sm text-gray-200"
+              title="Clear cached order-history results"
+            >
+              Clear cache
+            </button>
 
             <label className="flex items-center gap-2 text-sm text-gray-300">
               <input

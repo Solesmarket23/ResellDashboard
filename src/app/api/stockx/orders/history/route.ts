@@ -40,6 +40,12 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    const upstreamCalls = {
+      historyList: 0,
+      catalog: 0,
+      orderDetails: 0,
+    };
+
     const enrichWithCatalogBrand = async (orders: any[], token: string) => {
       if (!includeCatalog) return orders;
       if (!Array.isArray(orders) || orders.length === 0) return orders;
@@ -50,6 +56,7 @@ export async function GET(request: NextRequest) {
         if (!pid) return null;
         if (cache.has(pid)) return cache.get(pid)?.brand ?? null;
         try {
+          upstreamCalls.catalog += 1;
           const res = await fetch(`https://api.stockx.com/v2/catalog/products/${encodeURIComponent(pid)}`, {
             method: 'GET',
             headers: {
@@ -125,6 +132,7 @@ export async function GET(request: NextRequest) {
         if (!orderNumber) return null;
         if (cache.has(orderNumber)) return cache.get(orderNumber);
         try {
+          upstreamCalls.orderDetails += 1;
           const res = await fetch(`https://api.stockx.com/v2/selling/orders/${encodeURIComponent(orderNumber)}`, {
             method: 'GET',
             headers: {
@@ -234,6 +242,7 @@ export async function GET(request: NextRequest) {
     console.log(`📋 Fetching StockX historical orders: ${apiUrl}`);
 
     // Make API call to StockX
+    upstreamCalls.historyList += 1;
     const response = await fetch(apiUrl, {
       method: 'GET',
       headers: {
@@ -278,6 +287,7 @@ export async function GET(request: NextRequest) {
           const tokenData = await refreshResponse.json();
           
           // Retry the request with new token
+          upstreamCalls.historyList += 1;
           const retryResponse = await fetch(apiUrl, {
             method: 'GET',
             headers: {
@@ -305,7 +315,13 @@ export async function GET(request: NextRequest) {
               pageNumber: ordersData.pageNumber || pageNumber,
               pageSize: ordersData.pageSize || pageSize,
               hasNextPage: ordersData.hasNextPage || false,
-              tokenRefreshed: true
+              tokenRefreshed: true,
+              debug: {
+                upstreamCalls: {
+                  ...upstreamCalls,
+                  total: upstreamCalls.historyList + upstreamCalls.catalog + upstreamCalls.orderDetails,
+                },
+              },
             });
 
             successResponse.cookies.set('stockx_access_token', tokenData.access_token, {
@@ -388,6 +404,12 @@ export async function GET(request: NextRequest) {
       pageNumber: ordersData.pageNumber || pageNumber,
       pageSize: ordersData.pageSize || pageSize,
       hasNextPage: ordersData.hasNextPage || false,
+      debug: {
+        upstreamCalls: {
+          ...upstreamCalls,
+          total: upstreamCalls.historyList + upstreamCalls.catalog + upstreamCalls.orderDetails,
+        },
+      },
       appliedFilters: {
         fromDate,
         toDate,

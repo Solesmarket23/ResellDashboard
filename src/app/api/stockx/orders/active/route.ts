@@ -4,6 +4,12 @@ import { refreshStockXTokens, setStockXTokenCookies } from '@/lib/stockx/tokenRe
 
 export async function GET(request: NextRequest) {
   try {
+    const upstreamCalls = {
+      activeList: 0,
+      catalog: 0,
+      orderDetails: 0,
+    };
+
     const parseMoney = (value: any): number => {
       if (value === null || value === undefined) return 0;
       // If API returns a string like "199" or "199.00" (dollars)
@@ -58,6 +64,7 @@ export async function GET(request: NextRequest) {
 
     // Call StockX API for active orders
     const apiUrl = `https://api.stockx.com/v2/selling/orders/active?${qp.toString()}`;
+    upstreamCalls.activeList += 1;
     let response = await fetch(apiUrl, {
       method: 'GET',
       headers: {
@@ -76,6 +83,7 @@ export async function GET(request: NextRequest) {
       
       if (refreshResult.success && refreshResult.accessToken) {
         // Retry with new token
+        upstreamCalls.activeList += 1;
         response = await fetch(apiUrl, {
           method: 'GET',
           headers: {
@@ -124,6 +132,7 @@ export async function GET(request: NextRequest) {
         if (!pid) return null;
         if (cache.has(pid)) return cache.get(pid)?.brand ?? null;
         try {
+          upstreamCalls.catalog += 1;
           const res = await fetch(`https://api.stockx.com/v2/catalog/products/${encodeURIComponent(pid)}`, {
             method: 'GET',
             headers: {
@@ -201,6 +210,7 @@ export async function GET(request: NextRequest) {
         if (!orderNumber) return null;
         if (cache.has(orderNumber)) return cache.get(orderNumber);
         try {
+          upstreamCalls.orderDetails += 1;
           const res = await fetch(`https://api.stockx.com/v2/selling/orders/${encodeURIComponent(orderNumber)}`, {
             method: 'GET',
             headers: {
@@ -305,7 +315,13 @@ export async function GET(request: NextRequest) {
       count: data.count,
       pageNumber: data.pageNumber,
       pageSize: data.pageSize,
-      hasNextPage: data.hasNextPage
+      hasNextPage: data.hasNextPage,
+      debug: {
+        upstreamCalls: {
+          ...upstreamCalls,
+          total: upstreamCalls.activeList + upstreamCalls.catalog + upstreamCalls.orderDetails,
+        },
+      },
     });
 
     // If we refreshed the token, set the new cookies
