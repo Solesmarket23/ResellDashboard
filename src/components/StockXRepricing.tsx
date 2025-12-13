@@ -3376,8 +3376,8 @@ export default function StockXRepricing() {
                       }`}
                       onClick={() => handleSort('product')}
                     >
-                      <div className="flex items-center justify-center h-full">
-                        <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-start h-full">
+                        <div className="flex items-center gap-2 justify-start w-full">
                           <Package className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
                           <span className={`text-xs font-bold uppercase tracking-wider ${
                             isNeon ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
@@ -3401,8 +3401,8 @@ export default function StockXRepricing() {
                       }`}
                       onClick={() => handleSort('size')}
                     >
-                      <div className="flex items-center justify-center h-full">
-                        <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-start h-full">
+                        <div className="flex items-center gap-2 justify-start w-full">
                           <Target className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
                           <span className={`text-xs font-bold uppercase tracking-wider ${
                             isNeon ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
@@ -3426,8 +3426,8 @@ export default function StockXRepricing() {
                       }`}
                       onClick={() => handleSort('price')}
                     >
-                      <div className="flex items-center justify-center h-full">
-                        <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-start h-full">
+                        <div className="flex items-center gap-2 justify-start w-full">
                           <DollarSign className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
                           <span className={`text-xs font-bold uppercase tracking-wider ${
                             isNeon ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
@@ -3451,8 +3451,8 @@ export default function StockXRepricing() {
                       }`}
                       onClick={() => handleSort('market')}
                     >
-                      <div className="flex items-center justify-center h-full">
-                        <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-start h-full">
+                        <div className="flex items-center gap-2 justify-start w-full">
                           <TrendingDown className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
                           <span className={`text-xs font-bold uppercase tracking-wider ${
                             isNeon ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
@@ -3479,8 +3479,12 @@ export default function StockXRepricing() {
                       { icon: MoreHorizontal, label: 'Actions' }
                     ].map((col) => (
                       <th key={col.label} className="relative px-6 py-0 h-12 select-none">
-                        <div className="flex items-center justify-center h-full">
-                          <div className="flex items-center gap-2">
+                        <div className={`flex items-center h-full ${
+                          col.label === 'Auto' || col.label === 'Actions' ? 'justify-center' : 'justify-start'
+                        }`}>
+                          <div className={`flex items-center gap-2 ${
+                            col.label === 'Auto' || col.label === 'Actions' ? 'justify-center' : 'justify-start w-full'
+                          }`}>
                             <col.icon className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
                             <span className={`text-xs font-bold uppercase tracking-wider ${
                               isNeon ? 'text-gray-300' : 'text-gray-600'
