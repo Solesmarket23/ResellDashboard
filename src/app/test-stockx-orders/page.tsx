@@ -83,6 +83,25 @@ function fmtMonthDay(yyyyMmDd?: string) {
   }
 }
 
+function fmtMonthYear(yyyyMm?: string) {
+  if (!yyyyMm) return '—';
+  const [y, m] = String(yyyyMm).split('-').map((x) => parseInt(x, 10));
+  if (!y || !m) return String(yyyyMm);
+  const dt = new Date(y, m - 1, 1);
+  try {
+    return dt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  } catch {
+    return String(yyyyMm);
+  }
+}
+
+function monthKeyFromIso(iso?: string) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
 function formatSizeLabel(size: string) {
   const s = String(size || '').trim();
   const upper = s.toUpperCase();
@@ -140,6 +159,23 @@ export default function TestStockXOrders() {
   const [selected, setSelected] = useState<{ orderNumber: string; data: any } | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [selectedSalesDay, setSelectedSalesDay] = useState<string | null>(null);
+
+  type VerificationMonthRow = { month: string; success: number; failed: number; failureRate: number };
+  type VerificationBrandRow = {
+    brand: string;
+    success: number;
+    failed: number;
+    total: number;
+    failureRate: number;
+  };
+  const [verificationLoading, setVerificationLoading] = useState(false);
+  const [verificationProgress, setVerificationProgress] = useState<{ status: string; page: number; totalRows: number } | null>(
+    null
+  );
+  const [verificationRows, setVerificationRows] = useState<OrderRow[]>([]);
+  const [verificationMonths, setVerificationMonths] = useState<VerificationMonthRow[]>([]);
+  const [verificationBrands, setVerificationBrands] = useState<VerificationBrandRow[]>([]);
+  const [selectedVerificationMonth, setSelectedVerificationMonth] = useState<string | null>(null);
 
   const [sortBy, setSortBy] = useState<
     'orderNumber' | 'status' | 'product' | 'size' | 'sale' | 'fees' | 'payout' | 'created' | null
@@ -308,6 +344,156 @@ export default function TestStockXOrders() {
       appendLog('warn', 'Could not clear cache (storage blocked)');
     }
   };
+
+  const last12MonthsRange = () => {
+    const end = new Date();
+    const start = new Date(end.getFullYear(), end.getMonth() - 11, 1);
+    const from = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
+    const to = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+    return { from, to };
+  };
+
+  const computeVerificationStats = (rows: OrderRow[], opts?: { month?: string | null }) => {
+    const byMonth: Record<string, { success: number; failed: number }> = {};
+    const byBrand: Record<string, { success: number; failed: number }> = {};
+    const monthFilter = opts?.month || null;
+
+    for (const r of rows) {
+      const raw = (r as any)?.rawData || (r as any);
+      const status = getRowStatus(r);
+      const createdIso = (r as any)?.createdAt || raw?.createdAt || raw?.orderDate || raw?.created || undefined;
+      const mk = monthKeyFromIso(createdIso);
+      if (!mk) continue;
+      if (monthFilter && mk !== monthFilter) continue;
+
+      const brand = String(
+        (r as any)?.product?.brand || raw?.product?.brand || raw?.variant?.product?.brand || raw?.brand || 'Unknown'
+      );
+
+      if (!byMonth[mk]) byMonth[mk] = { success: 0, failed: 0 };
+      if (!byBrand[brand]) byBrand[brand] = { success: 0, failed: 0 };
+
+      if (status === 'COMPLETED' || status === 'PAYOUTCOMPLETED' || status === 'PAYOUT_COMPLETED') {
+        byMonth[mk].success += 1;
+        byBrand[brand].success += 1;
+      } else if (status === 'AUTHFAILED') {
+        byMonth[mk].failed += 1;
+        byBrand[brand].failed += 1;
+      }
+    }
+
+    const months = Object.entries(byMonth)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([month, v]) => {
+        const total = v.success + v.failed;
+        const failureRate = total > 0 ? (v.failed / total) * 100 : 0;
+        return { month, success: v.success, failed: v.failed, failureRate };
+      });
+
+    const brands = Object.entries(byBrand)
+      .map(([brand, v]) => {
+        const total = v.success + v.failed;
+        const failureRate = total > 0 ? (v.failed / total) * 100 : 0;
+        return { brand, success: v.success, failed: v.failed, total, failureRate };
+      })
+      .sort((a, b) => b.failureRate - a.failureRate || b.failed - a.failed || b.total - a.total);
+
+    return { months, brands };
+  };
+
+  const fetchVerificationStats12Months = async () => {
+    const { from, to } = last12MonthsRange();
+    const cacheKey = `stockx_verification_cache_v1:${JSON.stringify({ from, to })}`;
+
+    if (useCache) {
+      const cached = readCache(cacheKey, 10 * 60 * 1000);
+      if (cached?.rows && Array.isArray(cached.rows)) {
+        setVerificationRows(cached.rows);
+        const { months } = computeVerificationStats(cached.rows);
+        setVerificationMonths(months);
+        setSelectedVerificationMonth(null);
+        appendLog('info', 'Using cached verification stats (12 months)', {
+          from,
+          to,
+          rows: knownNumber(cached.rows.length),
+          cachedAgeSeconds: Math.round((Date.now() - Number(cached.ts || 0)) / 1000),
+        });
+        return;
+      }
+    }
+
+    setVerificationLoading(true);
+    setVerificationProgress({ status: 'starting', page: 0, totalRows: 0 });
+    setSelectedVerificationMonth(null);
+    appendLog('info', 'Fetching verification stats (last 12 months)...', { from, to, statuses: ['COMPLETED', 'AUTHFAILED'] });
+
+    const collected: OrderRow[] = [];
+    const seen = new Set<string>();
+
+    try {
+      const statusesToFetch = ['COMPLETED', 'AUTHFAILED'];
+      for (const st of statusesToFetch) {
+        let page = 1;
+        let hasNext = true;
+        while (hasNext && page <= 100) {
+          setVerificationProgress({ status: st, page, totalRows: collected.length });
+          const qp = new URLSearchParams();
+          qp.set('pageNumber', String(page));
+          qp.set('pageSize', '100');
+          qp.set('fromDate', from);
+          qp.set('toDate', to);
+          qp.set('orderStatus', st);
+          qp.set('includeCatalog', '1'); // for brand
+          // NOTE: we intentionally do NOT set includeDetails=1 here (keeps upstream calls lower)
+
+          const res = await fetch(`/api/stockx/orders/history?${qp.toString()}`);
+          const json = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            if (res.status === 401 || json?.authRequired) {
+              setAuthRequired(true);
+              throw new Error(json?.message || 'StockX authentication required.');
+            }
+            throw new Error(json?.error || json?.details || `Request failed (${res.status})`);
+          }
+
+          const pageRows: OrderRow[] = Array.isArray(json?.data) ? json.data : [];
+          for (const r of pageRows) {
+            const raw = (r as any)?.rawData || {};
+            const key = String(raw.orderNumber || raw.orderId || raw.id || (r as any).id || raw.askId || JSON.stringify(raw));
+            if (seen.has(key)) continue;
+            seen.add(key);
+            collected.push(r);
+          }
+
+          const { months, brands } = computeVerificationStats(collected);
+          setVerificationMonths(months);
+          setVerificationBrands(brands);
+          setVerificationRows([...collected]);
+
+          hasNext = Boolean(json?.hasNextPage) && pageRows.length > 0;
+          page += 1;
+          if (hasNext) await sleep(200);
+        }
+      }
+
+      writeCache(cacheKey, { rows: collected });
+      const computed = computeVerificationStats(collected);
+      setVerificationRows([...collected]);
+      setVerificationMonths(computed.months);
+      setVerificationBrands(computed.brands);
+      appendLog('info', 'Verification stats loaded', { rows: collected.length, months: computed.months.length });
+    } catch (e) {
+      appendLog('error', 'Verification stats fetch failed', { error: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setVerificationLoading(false);
+      setVerificationProgress(null);
+    }
+  };
+
+  function knownNumber(n: any) {
+    const x = Number(n);
+    return Number.isFinite(x) ? x : 0;
+  }
 
   const isActiveRow = (row: any) => {
     if (row?.source === 'active') return true;
@@ -772,6 +958,12 @@ export default function TestStockXOrders() {
     const maxSales = series.reduce((m, x) => Math.max(m, x.sales), 0);
     return { series, maxSales };
   }, [displayedOrders, fromDate, toDate]);
+
+  const verificationBrandsForSelectedMonth = useMemo(() => {
+    if (!verificationRows || verificationRows.length === 0) return [] as VerificationBrandRow[];
+    const computed = computeVerificationStats(verificationRows, { month: selectedVerificationMonth });
+    return computed.brands;
+  }, [verificationRows, selectedVerificationMonth]);
 
   const fetchHistory = async () => {
     // Quick mode: just fetch the first page (max 100) for the chosen date range.
@@ -1660,6 +1852,102 @@ export default function TestStockXOrders() {
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-lg border border-white/10 bg-gray-900/40 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-gray-200">Failed verification</div>
+                  <div className="text-xs text-gray-400">
+                    Last 12 months: <code className="text-gray-300">AUTHFAILED</code> vs <code className="text-gray-300">COMPLETED</code>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={fetchVerificationStats12Months}
+                  disabled={verificationLoading}
+                  className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-sm disabled:opacity-50"
+                >
+                  {verificationLoading ? 'Loading…' : 'Load'}
+                </button>
+              </div>
+
+              {verificationProgress && (
+                <div className="mt-2 text-xs text-gray-400">
+                  Fetching {verificationProgress.status} — page {verificationProgress.page} — rows {verificationProgress.totalRows}
+                </div>
+              )}
+
+              {verificationMonths.length > 0 ? (
+                <div className="mt-3">
+                  <div className="text-xs text-gray-400 mb-2">Month-by-month</div>
+                  <div className="space-y-1 max-h-[240px] overflow-auto pr-1">
+                    {verificationMonths
+                      .slice()
+                      .reverse()
+                      .map((m) => {
+                        const selected = selectedVerificationMonth === m.month;
+                        return (
+                          <button
+                            key={m.month}
+                            type="button"
+                            onClick={() => setSelectedVerificationMonth((prev) => (prev === m.month ? null : m.month))}
+                            className={
+                              'w-full text-left rounded-lg border px-3 py-2 text-sm ' +
+                              (selected
+                                ? 'border-cyan-400/40 bg-cyan-500/10'
+                                : 'border-white/10 bg-gray-950/30 hover:bg-white/5')
+                            }
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="font-semibold text-gray-200">{fmtMonthYear(m.month)}</div>
+                              <div className="text-gray-300 whitespace-nowrap">
+                                <span className="text-gray-400">Success</span> {m.success} •{' '}
+                                <span className="text-gray-400">Failed</span> {m.failed} •{' '}
+                                <span className="text-gray-400">Fail</span> {m.failureRate.toFixed(1)}%
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3 text-sm text-gray-400">Click “Load” to compute verification stats.</div>
+              )}
+
+              {verificationBrandsForSelectedMonth.length > 0 && (
+                <div className="mt-4">
+                  <div className="text-xs text-gray-400 mb-2">
+                    By brand (failure rate){selectedVerificationMonth ? ` — ${fmtMonthYear(selectedVerificationMonth)}` : ''}
+                  </div>
+                  <div className="overflow-auto rounded-lg border border-white/10 bg-gray-950/30">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-950/70 border-b border-white/10">
+                        <tr>
+                          <th className="text-left px-3 py-2 text-xs font-semibold text-gray-300">Brand</th>
+                          <th className="text-right px-3 py-2 text-xs font-semibold text-gray-300">Success</th>
+                          <th className="text-right px-3 py-2 text-xs font-semibold text-gray-300">Failed</th>
+                          <th className="text-right px-3 py-2 text-xs font-semibold text-gray-300">Fail rate</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {verificationBrandsForSelectedMonth.slice(0, 15).map((b) => (
+                          <tr key={b.brand} className="hover:bg-white/5">
+                            <td className="px-3 py-2 text-gray-200">{b.brand}</td>
+                            <td className="px-3 py-2 text-right text-gray-200">{b.success}</td>
+                            <td className="px-3 py-2 text-right text-gray-200">{b.failed}</td>
+                            <td className="px-3 py-2 text-right text-gray-200">{b.failureRate.toFixed(1)}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="mt-2 text-[11px] text-gray-400">
+                    Failure rate = failed / (success + failed). Profit metric: TBD.
+                  </div>
                 </div>
               )}
             </div>
