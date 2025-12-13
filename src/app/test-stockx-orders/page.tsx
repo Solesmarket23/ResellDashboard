@@ -142,6 +142,9 @@ export default function TestStockXOrders() {
     let fees = 0;
     let payout = 0;
     let count = 0;
+    let saleCount = 0;
+    let payoutCount = 0;
+    let feesCount = 0;
     const statusCounts: Record<string, number> = {};
     const productRevenue: Record<string, number> = {};
     const productCount: Record<string, number> = {};
@@ -153,9 +156,19 @@ export default function TestStockXOrders() {
     for (const o of rows) {
       const currency = o.pricing?.currency || 'USD';
       void currency; // currency not used in totals (assumes USD)
-      const s = normalizeMoney(o.metrics?.salePrice ?? o.pricing?.salePrice ?? o.rawData?.amount ?? o.rawData?.price);
-      const f = normalizeMoney(o.metrics?.totalFees ?? o.pricing?.totalFees ?? o.rawData?.totalFees);
-      const p = normalizeMoney(o.metrics?.netPayout ?? o.pricing?.payout ?? o.rawData?.payout);
+      let s = normalizeMoney(o.metrics?.salePrice ?? o.pricing?.salePrice ?? o.rawData?.amount ?? o.rawData?.price);
+      let f = normalizeMoney(o.metrics?.totalFees ?? o.pricing?.totalFees ?? o.rawData?.totalFees);
+      let p = normalizeMoney(o.metrics?.netPayout ?? o.pricing?.payout ?? o.rawData?.payout);
+
+      // Keep the totals internally consistent when one field is missing.
+      // Prefer using payout if available (especially for history), otherwise derive it from sale - fees when both exist.
+      if (p === null && s !== null && f !== null) {
+        p = Math.round((s - f) * 100) / 100;
+      }
+      // If fees are missing but payout is present, derive fees as sale - payout.
+      if (f === null && s !== null && p !== null) {
+        f = Math.max(0, Math.round((s - p) * 100) / 100);
+      }
 
       const statusRaw = (o.rawData?.status || o.status || o.orderStatus || 'UNKNOWN') as string;
       const status = String(statusRaw || 'UNKNOWN').toUpperCase();
@@ -189,9 +202,18 @@ export default function TestStockXOrders() {
       );
 
       if (s !== null || f !== null || p !== null) count += 1;
-      if (s !== null) sale += s;
-      if (f !== null) fees += f;
-      if (p !== null) payout += p;
+      if (s !== null) {
+        sale += s;
+        saleCount += 1;
+      }
+      if (f !== null) {
+        fees += f;
+        feesCount += 1;
+      }
+      if (p !== null) {
+        payout += p;
+        payoutCount += 1;
+      }
 
       productCount[productName] = (productCount[productName] || 0) + 1;
       sizeCounts[sizeName] = (sizeCounts[sizeName] || 0) + 1;
@@ -205,8 +227,8 @@ export default function TestStockXOrders() {
 
     const feeRate = sale > 0 ? (fees / sale) * 100 : 0;
     const payoutRate = sale > 0 ? (payout / sale) * 100 : 0;
-    const avgSale = rows.length > 0 ? sale / rows.length : 0;
-    const avgPayout = rows.length > 0 ? payout / rows.length : 0;
+    const avgSale = saleCount > 0 ? sale / saleCount : 0;
+    const avgPayout = payoutCount > 0 ? payout / payoutCount : 0;
 
     const topProducts = Object.entries(productRevenue)
       .sort((a, b) => b[1] - a[1])
@@ -243,6 +265,9 @@ export default function TestStockXOrders() {
       payoutRate,
       avgSale,
       avgPayout,
+      saleCount,
+      feesCount,
+      payoutCount,
       statusCounts,
       completedCount,
       pendingCount,
