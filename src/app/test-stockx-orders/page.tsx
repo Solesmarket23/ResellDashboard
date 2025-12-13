@@ -68,33 +68,6 @@ function formatSizeLabel(size: string) {
   return s || '—';
 }
 
-function inferCanonicalBrand(productName: string, explicitBrand?: string) {
-  const canonical = [
-    'Fear of God',
-    'Jordan',
-    'Nike',
-    'New Balance',
-    'Yeezy',
-    'Adidas',
-  ];
-
-  const cleanExplicit = String(explicitBrand || '').trim();
-  if (cleanExplicit) {
-    const found = canonical.find((b) => b.toLowerCase() === cleanExplicit.toLowerCase());
-    if (found) return found;
-  }
-
-  const name = String(productName || '').toLowerCase();
-  if (name.includes('fear of god') || name.includes('essentials')) return 'Fear of God';
-  if (name.includes('jordan')) return 'Jordan';
-  if (name.includes('new balance')) return 'New Balance';
-  if (name.includes('yeezy')) return 'Yeezy';
-  if (name.includes('adidas')) return 'Adidas';
-  if (name.includes('nike')) return 'Nike';
-
-  return 'Unknown';
-}
-
 export default function TestStockXOrders() {
   const [loading, setLoading] = useState(false);
   const [allLoading, setAllLoading] = useState(false);
@@ -326,9 +299,8 @@ export default function TestStockXOrders() {
           o.rawData?.variant?.product?.name ||
           'Unknown'
       );
-      const brandName = inferCanonicalBrand(
-        productName,
-        String(o.product?.brand || o.rawData?.product?.brand || o.rawData?.variant?.product?.brand || '')
+      const brandName = String(
+        o.product?.brand || o.rawData?.product?.brand || o.rawData?.variant?.product?.brand || 'Unknown'
       );
       const sizeName = String(
         o.variant?.size || o.rawData?.variant?.size || o.rawData?.size || 'Unknown'
@@ -465,6 +437,7 @@ export default function TestStockXOrders() {
         const qp = new URLSearchParams();
         qp.set('pageNumber', String(pageNumber));
         qp.set('pageSize', String(pageSize));
+        qp.set('includeCatalog', '1');
         const fd = historyFromDate();
         const td = historyToDate();
         if (fd) qp.set('fromDate', fd);
@@ -508,6 +481,7 @@ export default function TestStockXOrders() {
         const qp = new URLSearchParams();
         qp.set('pageNumber', '1');
         qp.set('pageSize', '100');
+        qp.set('includeCatalog', '1');
         const aRes = await fetch(`/api/stockx/orders/active?${qp.toString()}`);
         const aJson = await aRes.json().catch(() => ({}));
 
@@ -614,6 +588,7 @@ export default function TestStockXOrders() {
           const qp = new URLSearchParams();
           qp.set('pageNumber', String(p));
           qp.set('pageSize', String(PAGE_SIZE));
+          qp.set('includeCatalog', '1');
           const fd = historyFromDate();
           const td = historyToDate();
           if (fd) qp.set('fromDate', fd);
@@ -681,6 +656,7 @@ export default function TestStockXOrders() {
               const qp = new URLSearchParams();
               qp.set('pageNumber', String(p));
               qp.set('pageSize', String(PAGE_SIZE));
+              qp.set('includeCatalog', '1');
               if (st) qp.set('orderStatus', st);
               const aRes = await fetch(`/api/stockx/orders/active?${qp.toString()}`);
               const aJson = await aRes.json().catch(() => ({}));

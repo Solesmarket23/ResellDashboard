@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
     const pageNumber = parseInt(searchParams.get('pageNumber') || '1', 10);
     const pageSize = Math.min(parseInt(searchParams.get('pageSize') || '100', 10), 100);
     const orderStatus = searchParams.get('orderStatus') || undefined;
+    const includeCatalog = searchParams.get('includeCatalog') === '1';
 
     const cookieStore = cookies();
     let accessToken = cookieStore.get('stockx_access_token')?.value;
@@ -113,9 +114,80 @@ export async function GET(request: NextRequest) {
     const data = await response.json();
     console.log('✅ Active orders fetched successfully:', data);
 
+    const enrichBrands = async (orders: any[], token: string) => {
+      if (!includeCatalog) return orders;
+      if (!Array.isArray(orders) || orders.length === 0) return orders;
+
+      const cache = new Map<string, string | null>();
+      const fetchBrand = async (pid: string): Promise<string | null> => {
+        if (!pid) return null;
+        if (cache.has(pid)) return cache.get(pid) ?? null;
+        try {
+          const res = await fetch(`https://api.stockx.com/v2/catalog/products/${encodeURIComponent(pid)}`, {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'x-api-key': apiKey,
+              Accept: 'application/json',
+              'Content-Type': 'application/json',
+              'User-Agent': 'ResellDashboard/1.0',
+            },
+          });
+          if (!res.ok) {
+            cache.set(pid, null);
+            return null;
+          }
+          const json = await res.json().catch(() => ({}));
+          const brand = typeof json?.brand === 'string' ? json.brand.trim() : null;
+          cache.set(pid, brand || null);
+          return brand || null;
+        } catch {
+          cache.set(pid, null);
+          return null;
+        }
+      };
+
+      const ids = Array.from(
+        new Set(
+          orders
+            .map((o) => String(o?.product?.productId || o?.productId || o?.product?.id || '').trim())
+            .filter(Boolean)
+        )
+      );
+
+      const limit = 5;
+      let idx = 0;
+      const workers = Array.from({ length: Math.min(limit, ids.length) }, async () => {
+        while (idx < ids.length) {
+          const current = ids[idx];
+          idx += 1;
+          await fetchBrand(current);
+        }
+      });
+      await Promise.all(workers);
+
+      return orders.map((o) => {
+        const pid = String(o?.product?.productId || o?.productId || o?.product?.id || '').trim();
+        const existing = String(o?.product?.brand || o?.variant?.product?.brand || '').trim();
+        const brand = existing || (pid ? cache.get(pid) || '' : '');
+        if (!brand) return o;
+        return {
+          ...o,
+          product: {
+            ...(o.product || {}),
+            productId: o?.product?.productId || pid,
+            brand,
+          },
+        };
+      });
+    };
+
+    const ordersRaw = Array.isArray(data.orders) ? data.orders : [];
+    const ordersWithBrands = await enrichBrands(ordersRaw, accessToken);
+
     // Transform StockX API response to our format
     const transformedOrders =
-      data.orders?.map((order: any) => {
+      ordersWithBrands?.map((order: any) => {
         const payoutObj = order?.payout;
         const salePrice = parseMoney(payoutObj?.salePrice ?? order?.amount);
         const payout =
@@ -126,10 +198,12 @@ export async function GET(request: NextRequest) {
           payoutObj && payoutObj.totalPayout !== null && payoutObj.totalPayout !== undefined
             ? Math.max(0, Math.round((salePrice - payout) * 100) / 100)
             : 0;
+        const pid = order?.product?.productId || order?.productId || order?.product?.id || null;
 
         return {
           id: order.id,
           orderNumber: order.orderNumber,
+          productId: pid,
           productName:
             order.product?.productName ||
             order.product?.name ||

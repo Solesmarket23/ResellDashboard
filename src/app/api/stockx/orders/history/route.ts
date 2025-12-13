@@ -13,6 +13,7 @@ export async function GET(request: NextRequest) {
   const variantId = searchParams.get('variantId');
   const inventoryTypes = searchParams.get('inventoryTypes');
   const initiatedShipmentDisplayIds = searchParams.get('initiatedShipmentDisplayIds');
+  const includeCatalog = searchParams.get('includeCatalog') === '1';
 
   // Get access token from cookies
   const accessToken = request.cookies.get('stockx_access_token')?.value;
@@ -38,6 +39,76 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    const enrichWithCatalogBrand = async (orders: any[], token: string) => {
+      if (!includeCatalog) return orders;
+      if (!Array.isArray(orders) || orders.length === 0) return orders;
+
+      const cache = new Map<string, string | null>();
+
+      const fetchBrandForProductId = async (pid: string): Promise<string | null> => {
+        if (!pid) return null;
+        if (cache.has(pid)) return cache.get(pid) ?? null;
+        try {
+          const res = await fetch(`https://api.stockx.com/v2/catalog/products/${encodeURIComponent(pid)}`, {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'x-api-key': apiKey,
+              Accept: 'application/json',
+              'Content-Type': 'application/json',
+              'User-Agent': 'FlipFlow/1.0',
+            },
+          });
+          if (!res.ok) {
+            cache.set(pid, null);
+            return null;
+          }
+          const json = await res.json().catch(() => ({}));
+          const brand = typeof json?.brand === 'string' ? json.brand.trim() : null;
+          cache.set(pid, brand || null);
+          return brand || null;
+        } catch {
+          cache.set(pid, null);
+          return null;
+        }
+      };
+
+      const uniqueProductIds = Array.from(
+        new Set(
+          orders
+            .map((o) => String(o?.product?.id || o?.product?.productId || o?.productId || '').trim())
+            .filter(Boolean)
+        )
+      );
+
+      // Concurrency-limited fetch to avoid hammering StockX.
+      const limit = 5;
+      let idx = 0;
+      const workers = Array.from({ length: Math.min(limit, uniqueProductIds.length) }, async () => {
+        while (idx < uniqueProductIds.length) {
+          const current = uniqueProductIds[idx];
+          idx += 1;
+          await fetchBrandForProductId(current);
+        }
+      });
+      await Promise.all(workers);
+
+      return orders.map((o) => {
+        const pid = String(o?.product?.id || o?.product?.productId || o?.productId || '').trim();
+        const existing = typeof o?.product?.brand === 'string' ? o.product.brand.trim() : '';
+        const brand = existing || (pid ? cache.get(pid) || '' : '');
+        if (!brand) return o;
+        return {
+          ...o,
+          product: {
+            ...(o.product || {}),
+            id: o?.product?.id || pid,
+            brand,
+          },
+        };
+      });
+    };
+
     // Build query parameters
     const queryParams = new URLSearchParams();
     
@@ -118,7 +189,8 @@ export async function GET(request: NextRequest) {
             const ordersData = await retryResponse.json();
             
             // Process the orders data
-            const processedOrders = processOrdersData(ordersData);
+            const processedOrdersRaw = processOrdersData(ordersData);
+            const processedOrders = await enrichWithCatalogBrand(processedOrdersRaw, tokenData.access_token);
             
             // Update the access token cookie
             const successResponse = NextResponse.json({
@@ -200,7 +272,8 @@ export async function GET(request: NextRequest) {
     console.log(`✅ Successfully fetched historical orders:`, ordersData);
     
     // Process the orders data
-    const processedOrders = processOrdersData(ordersData);
+    const processedOrdersRaw = processOrdersData(ordersData);
+    const processedOrders = await enrichWithCatalogBrand(processedOrdersRaw, accessToken);
 
     return NextResponse.json({
       success: true,
