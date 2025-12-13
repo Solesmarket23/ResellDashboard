@@ -69,9 +69,16 @@ export default function TestStockXOrders() {
   const [pageSize, setPageSize] = useState(25);
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
-  const STOCKX_ORDER_STATUSES = useMemo(
+  // IMPORTANT: StockX /selling/orders/history only accepts HistoricalOrderStatus:
+  // [AUTHFAILED, DIDNOTSHIP, CANCELED, COMPLETED, RETURNED]
+  const HISTORICAL_ORDER_STATUSES = useMemo(
+    () => ['AUTHFAILED', 'DIDNOTSHIP', 'CANCELED', 'COMPLETED', 'RETURNED'],
+    []
+  );
+
+  // Active statuses are returned by /selling/orders/active; we filter them client-side.
+  const ACTIVE_ORDER_STATUSES = useMemo(
     () => [
-      // ActiveOrderStatus (OpenAPI)
       'CREATED',
       'CCAUTHORIZATIONFAILED',
       'SHIPPED',
@@ -84,23 +91,14 @@ export default function TestStockXOrders() {
       'PAYOUTFAILED',
       'SUSPENDED',
       'PENDING',
-
-      // HistoricalOrderStatus (OpenAPI)
-      'CANCELED',
-      'AUTHFAILED',
-      'DIDNOTSHIP',
-      'RETURNED',
-      'COMPLETED',
-
-      // UnknownStatus (OpenAPI)
-      'UNKNOWN',
-
-      // Sometimes observed in practice (not in the OpenAPI enums above)
+      // Sometimes observed in practice
       'MATCHED',
     ],
     []
   );
-  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+
+  const [selectedHistoryStatuses, setSelectedHistoryStatuses] = useState<string[]>([]);
+  const [selectedActiveStatuses, setSelectedActiveStatuses] = useState<string[]>([]);
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
   const [includeActive, setIncludeActive] = useState(true);
 
@@ -269,10 +267,11 @@ export default function TestStockXOrders() {
       pageSize,
       fromDate: fromDate || undefined,
       toDate: toDate || undefined,
-      orderStatuses: selectedStatuses.length ? selectedStatuses : undefined,
+      historyStatuses: selectedHistoryStatuses.length ? selectedHistoryStatuses : undefined,
+      activeStatuses: selectedActiveStatuses.length ? selectedActiveStatuses : undefined,
     });
     try {
-      const statusesToFetch = selectedStatuses.length ? selectedStatuses : [''];
+      const statusesToFetch = selectedHistoryStatuses.length ? selectedHistoryStatuses : [''];
       const allRows: OrderRow[] = [];
       const seen = new Set<string>();
 
@@ -312,7 +311,7 @@ export default function TestStockXOrders() {
       setOrders(allRows);
       appendLog('info', 'Fetched order history (merged)', {
         rows: allRows.length,
-        statuses: selectedStatuses.length ? selectedStatuses : '(all)',
+        statuses: selectedHistoryStatuses.length ? selectedHistoryStatuses : '(all)',
       });
 
       if (includeActive) {
@@ -343,8 +342,17 @@ export default function TestStockXOrders() {
             }))
           : [];
 
-        setOrders([...allRows, ...activeRows]);
-        appendLog('info', 'Fetched active orders', { rows: activeRows.length });
+        const filteredActive =
+          selectedActiveStatuses.length === 0
+            ? activeRows
+            : activeRows.filter((r) =>
+                selectedActiveStatuses.includes(
+                  String((r.rawData?.status || r.status || r.orderStatus || '')).toUpperCase()
+                )
+              );
+
+        setOrders([...allRows, ...filteredActive]);
+        appendLog('info', 'Fetched active orders', { rows: activeRows.length, kept: filteredActive.length });
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -372,13 +380,14 @@ export default function TestStockXOrders() {
       maxPages: MAX_PAGES,
       fromDate: fromDate || undefined,
       toDate: toDate || undefined,
-      orderStatuses: selectedStatuses.length ? selectedStatuses : undefined,
+      historyStatuses: selectedHistoryStatuses.length ? selectedHistoryStatuses : undefined,
+      activeStatuses: selectedActiveStatuses.length ? selectedActiveStatuses : undefined,
     });
 
     try {
       const all: OrderRow[] = [];
       const seen = new Set<string>();
-      const statusesToFetch = selectedStatuses.length ? selectedStatuses : [''];
+      const statusesToFetch = selectedHistoryStatuses.length ? selectedHistoryStatuses : [''];
 
       for (const st of statusesToFetch) {
         let p = 1;
@@ -459,8 +468,16 @@ export default function TestStockXOrders() {
                 rawData: o,
               }))
             : [];
-          setOrders([...all, ...activeRows]);
-          appendLog('info', 'Fetched active orders', { rows: activeRows.length });
+          const filteredActive =
+            selectedActiveStatuses.length === 0
+              ? activeRows
+              : activeRows.filter((r) =>
+                  selectedActiveStatuses.includes(
+                    String((r.rawData?.status || r.status || r.orderStatus || '')).toUpperCase()
+                  )
+                );
+          setOrders([...all, ...filteredActive]);
+          appendLog('info', 'Fetched active orders', { rows: activeRows.length, kept: filteredActive.length });
         }
       }
     } catch (e) {
@@ -642,7 +659,9 @@ export default function TestStockXOrders() {
                     title="Select one or more statuses"
                   >
                     <span className="text-gray-200">
-                      {selectedStatuses.length === 0 ? 'All statuses' : `${selectedStatuses.length} selected`}
+                      {selectedHistoryStatuses.length === 0 && selectedActiveStatuses.length === 0
+                        ? 'All statuses'
+                        : `History: ${selectedHistoryStatuses.length}, Active: ${selectedActiveStatuses.length}`}
                     </span>
                     <span className="text-gray-400">{showStatusDropdown ? '▲' : '▼'}</span>
                   </button>
@@ -650,54 +669,127 @@ export default function TestStockXOrders() {
                   {showStatusDropdown && (
                     <div className="absolute z-20 mt-2 w-full rounded-lg border border-white/10 bg-gray-950 shadow-xl p-2">
                       <div className="flex items-center justify-between gap-2 px-2 pb-2">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedStatuses(STOCKX_ORDER_STATUSES)}
-                          className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 border border-white/10"
-                        >
-                          Select all
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedStatuses([])}
-                          className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 border border-white/10"
-                        >
-                          Clear
-                        </button>
+                        <div className="text-xs text-gray-400">
+                          History filters are sent to StockX; Active filters are applied locally.
+                        </div>
                         <button
                           type="button"
                           onClick={() => setShowStatusDropdown(false)}
-                          className="ml-auto text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 border border-white/10"
+                          className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 border border-white/10"
                         >
                           Done
                         </button>
                       </div>
 
-                      <div className="max-h-56 overflow-auto">
-                        {STOCKX_ORDER_STATUSES.map((st) => {
-                          const checked = selectedStatuses.includes(st);
-                          return (
-                            <label
-                              key={st}
-                              className="flex items-center justify-between gap-2 px-2 py-2 rounded hover:bg-white/5 cursor-pointer"
-                            >
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={(e) => {
-                                    const isChecked = e.target.checked;
-                                    setSelectedStatuses((prev) => {
-                                      if (isChecked) return Array.from(new Set([...prev, st]));
-                                      return prev.filter((x) => x !== st);
-                                    });
-                                  }}
-                                />
-                                <span className="text-sm text-gray-200">{st}</span>
-                              </div>
-                            </label>
-                          );
-                        })}
+                      <div className="max-h-72 overflow-auto space-y-3 px-2 pb-2">
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <div className="text-xs font-semibold text-gray-300">History (API-supported)</div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedHistoryStatuses(HISTORICAL_ORDER_STATUSES)}
+                                className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 border border-white/10"
+                              >
+                                Select all
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedHistoryStatuses([])}
+                                className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 border border-white/10"
+                              >
+                                Clear
+                              </button>
+                            </div>
+                          </div>
+                          <div className="mt-2 space-y-1">
+                            {HISTORICAL_ORDER_STATUSES.map((st) => {
+                              const checked = selectedHistoryStatuses.includes(st);
+                              return (
+                                <label
+                                  key={st}
+                                  className="flex items-center justify-between gap-2 px-2 py-2 rounded hover:bg-white/5 cursor-pointer"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={(e) => {
+                                        const isChecked = e.target.checked;
+                                        setSelectedHistoryStatuses((prev) => {
+                                          if (isChecked) return Array.from(new Set([...prev, st]));
+                                          return prev.filter((x) => x !== st);
+                                        });
+                                      }}
+                                    />
+                                    <span className="text-sm text-gray-200">{st}</span>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <div className="text-xs font-semibold text-gray-300">Active (client-side filter)</div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedActiveStatuses(ACTIVE_ORDER_STATUSES)}
+                                className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 border border-white/10"
+                              >
+                                Select all
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedActiveStatuses([])}
+                                className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 border border-white/10"
+                              >
+                                Clear
+                              </button>
+                            </div>
+                          </div>
+                          <div className="mt-2 space-y-1">
+                            {ACTIVE_ORDER_STATUSES.map((st) => {
+                              const checked = selectedActiveStatuses.includes(st);
+                              return (
+                                <label
+                                  key={st}
+                                  className="flex items-center justify-between gap-2 px-2 py-2 rounded hover:bg-white/5 cursor-pointer"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={(e) => {
+                                        const isChecked = e.target.checked;
+                                        setSelectedActiveStatuses((prev) => {
+                                          if (isChecked) return Array.from(new Set([...prev, st]));
+                                          return prev.filter((x) => x !== st);
+                                        });
+                                      }}
+                                    />
+                                    <span className="text-sm text-gray-200">{st}</span>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-2 border-t border-white/10">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedHistoryStatuses([]);
+                              setSelectedActiveStatuses([]);
+                            }}
+                            className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 border border-white/10"
+                          >
+                            Clear all
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -748,7 +840,8 @@ export default function TestStockXOrders() {
                 onClick={() => {
                   setFromDate('');
                   setToDate('');
-                  setSelectedStatuses([]);
+                  setSelectedHistoryStatuses([]);
+                  setSelectedActiveStatuses([]);
                   setPageNumber(1);
                 }}
                 className="ml-auto px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
