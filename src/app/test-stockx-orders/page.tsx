@@ -70,6 +70,7 @@ export default function TestStockXOrders() {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [orderStatus, setOrderStatus] = useState('');
+  const [includeActive, setIncludeActive] = useState(true);
 
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [selected, setSelected] = useState<{ orderNumber: string; data: any } | null>(null);
@@ -111,6 +112,9 @@ export default function TestStockXOrders() {
     let fees = 0;
     let payout = 0;
     let count = 0;
+    const statusCounts: Record<string, number> = {};
+    const productRevenue: Record<string, number> = {};
+    const brandRevenue: Record<string, number> = {};
 
     for (const o of rows) {
       const currency = o.pricing?.currency || 'USD';
@@ -118,14 +122,49 @@ export default function TestStockXOrders() {
       const s = normalizeMoney(o.metrics?.salePrice ?? o.pricing?.salePrice ?? o.rawData?.amount ?? o.rawData?.price);
       const f = normalizeMoney(o.metrics?.totalFees ?? o.pricing?.totalFees ?? o.rawData?.totalFees);
       const p = normalizeMoney(o.metrics?.netPayout ?? o.pricing?.payout ?? o.rawData?.payout);
+
+      const statusRaw = (o.rawData?.status || o.status || o.orderStatus || 'UNKNOWN') as string;
+      const status = String(statusRaw || 'UNKNOWN').toUpperCase();
+      statusCounts[status] = (statusCounts[status] || 0) + 1;
+
+      const productName = String(
+        o.product?.name || o.rawData?.product?.name || o.rawData?.variant?.product?.name || 'Unknown'
+      );
+      const brandName = String(
+        o.product?.brand || o.rawData?.product?.brand || o.rawData?.variant?.product?.brand || 'Unknown'
+      );
+
       if (s !== null || f !== null || p !== null) count += 1;
       if (s !== null) sale += s;
       if (f !== null) fees += f;
       if (p !== null) payout += p;
+
+      if (s !== null) {
+        productRevenue[productName] = (productRevenue[productName] || 0) + s;
+        brandRevenue[brandName] = (brandRevenue[brandName] || 0) + s;
+      }
     }
 
     const feeRate = sale > 0 ? (fees / sale) * 100 : 0;
     const payoutRate = sale > 0 ? (payout / sale) * 100 : 0;
+    const avgSale = rows.length > 0 ? sale / rows.length : 0;
+    const avgPayout = rows.length > 0 ? payout / rows.length : 0;
+
+    const topProducts = Object.entries(productRevenue)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name, revenue]) => ({ name, revenue }));
+    const topBrands = Object.entries(brandRevenue)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name, revenue]) => ({ name, revenue }));
+
+    const completedCount =
+      (statusCounts['COMPLETED'] || 0) +
+      (statusCounts['PAYOUTCOMPLETED'] || 0) +
+      (statusCounts['PAYOUT_COMPLETED'] || 0);
+    const pendingCount = Math.max(0, rows.length - completedCount);
+
     return {
       count: rows.length,
       sale,
@@ -133,6 +172,13 @@ export default function TestStockXOrders() {
       payout,
       feeRate,
       payoutRate,
+      avgSale,
+      avgPayout,
+      statusCounts,
+      completedCount,
+      pendingCount,
+      topProducts,
+      topBrands,
       currency: 'USD',
     };
   }, [orders]);
@@ -171,13 +217,46 @@ export default function TestStockXOrders() {
         throw new Error(json?.error || json?.details || `Request failed (${res.status})`);
       }
 
-      setOrders(Array.isArray(json?.data) ? json.data : []);
+      const baseRows: OrderRow[] = Array.isArray(json?.data) ? json.data : [];
+      setOrders(baseRows);
       appendLog('info', 'Fetched order history', {
         rows: Array.isArray(json?.data) ? json.data.length : 0,
         hasNextPage: json?.hasNextPage,
         pageNumber: json?.pageNumber,
         pageSize: json?.pageSize,
       });
+
+      if (includeActive) {
+        appendLog('info', 'Fetching active (pending) orders...');
+        const aRes = await fetch('/api/stockx/orders/active');
+        const aJson = await aRes.json().catch(() => ({}));
+
+        if (!aRes.ok) {
+          if (aRes.status === 401 || aJson?.authRequired) {
+            setAuthRequired(true);
+            appendLog('warn', 'Auth required for active orders', { status: aRes.status, body: aJson });
+          } else {
+            appendLog('warn', 'Active orders request failed (non-fatal)', { status: aRes.status, body: aJson });
+          }
+          return;
+        }
+
+        const activeRows: OrderRow[] = Array.isArray(aJson?.orders)
+          ? aJson.orders.map((o: any) => ({
+              id: o.id,
+              status: o.status || 'ACTIVE',
+              orderStatus: o.status || 'ACTIVE',
+              createdAt: o.orderDate,
+              product: { name: o.productName, brand: o.productBrand, sku: o.sku },
+              variant: { size: o.size },
+              pricing: { salePrice: o.salePrice, totalFees: o.fees, payout: o.payout, currency: 'USD' },
+              rawData: o,
+            }))
+          : [];
+
+        setOrders([...baseRows, ...activeRows]);
+        appendLog('info', 'Fetched active orders', { rows: activeRows.length });
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setOrders([]);
@@ -255,6 +334,30 @@ export default function TestStockXOrders() {
       setPageNumber(1);
       setPageSize(PAGE_SIZE);
       appendLog('info', 'Fetch ALL complete', { total: all.length });
+
+      if (includeActive) {
+        appendLog('info', 'Fetching active (pending) orders...');
+        const aRes = await fetch('/api/stockx/orders/active');
+        const aJson = await aRes.json().catch(() => ({}));
+        if (!aRes.ok) {
+          appendLog('warn', 'Active orders request failed (non-fatal)', { status: aRes.status, body: aJson });
+        } else {
+          const activeRows: OrderRow[] = Array.isArray(aJson?.orders)
+            ? aJson.orders.map((o: any) => ({
+                id: o.id,
+                status: o.status || 'ACTIVE',
+                orderStatus: o.status || 'ACTIVE',
+                createdAt: o.orderDate,
+                product: { name: o.productName, brand: o.productBrand, sku: o.sku },
+                variant: { size: o.size },
+                pricing: { salePrice: o.salePrice, totalFees: o.fees, payout: o.payout, currency: 'USD' },
+                rawData: o,
+              }))
+            : [];
+          setOrders([...all, ...activeRows]);
+          appendLog('info', 'Fetched active orders', { rows: activeRows.length });
+        }
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setOrders([]);
@@ -462,6 +565,18 @@ export default function TestStockXOrders() {
               </button>
               <button
                 onClick={() => {
+                  const now = new Date();
+                  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+                  setFromDate(start.toISOString().slice(0, 10));
+                  setToDate(now.toISOString().slice(0, 10));
+                }}
+                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10"
+                title="Set date range to this month"
+              >
+                This month
+              </button>
+              <button
+                onClick={() => {
                   setFromDate('');
                   setToDate('');
                   setOrderStatus('');
@@ -473,11 +588,24 @@ export default function TestStockXOrders() {
               </button>
             </div>
 
+            <label className="flex items-center gap-2 text-sm text-gray-300">
+              <input
+                type="checkbox"
+                checked={includeActive}
+                onChange={(e) => setIncludeActive(e.target.checked)}
+              />
+              Include active/pending orders
+            </label>
+
             <div className="rounded-lg border border-white/10 bg-gray-900/40 p-3">
               <div className="text-xs text-gray-400">Quick analytics (current page)</div>
               <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
                 <div className="text-gray-300">Orders</div>
                 <div className="text-right font-semibold">{totals.count}</div>
+                <div className="text-gray-300">Completed</div>
+                <div className="text-right font-semibold">{totals.completedCount}</div>
+                <div className="text-gray-300">Pending</div>
+                <div className="text-right font-semibold">{totals.pendingCount}</div>
                 <div className="text-gray-300">Sales</div>
                 <div className="text-right font-semibold">{fmtMoney(totals.sale, totals.currency)}</div>
                 <div className="text-gray-300">Fees</div>
@@ -486,7 +614,42 @@ export default function TestStockXOrders() {
                 <div className="text-right font-semibold">{fmtMoney(totals.payout, totals.currency)}</div>
                 <div className="text-gray-300">Fee rate</div>
                 <div className="text-right font-semibold">{totals.feeRate.toFixed(2)}%</div>
+                <div className="text-gray-300">Avg sale</div>
+                <div className="text-right font-semibold">{fmtMoney(totals.avgSale, totals.currency)}</div>
+                <div className="text-gray-300">Avg payout</div>
+                <div className="text-right font-semibold">{fmtMoney(totals.avgPayout, totals.currency)}</div>
               </div>
+
+              {(totals.topProducts?.length > 0 || totals.topBrands?.length > 0) && (
+                <div className="mt-3 grid grid-cols-1 gap-3">
+                  {totals.topProducts?.length > 0 && (
+                    <div>
+                      <div className="text-xs text-gray-400 mb-1">Top products (by revenue)</div>
+                      <div className="space-y-1">
+                        {totals.topProducts.map((p: any) => (
+                          <div key={p.name} className="flex items-center justify-between text-xs text-gray-200">
+                            <div className="truncate max-w-[220px]">{p.name}</div>
+                            <div className="font-semibold">{fmtMoney(p.revenue, totals.currency)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {totals.topBrands?.length > 0 && (
+                    <div>
+                      <div className="text-xs text-gray-400 mb-1">Top brands (by revenue)</div>
+                      <div className="space-y-1">
+                        {totals.topBrands.map((b: any) => (
+                          <div key={b.name} className="flex items-center justify-between text-xs text-gray-200">
+                            <div className="truncate max-w-[220px]">{b.name}</div>
+                            <div className="font-semibold">{fmtMoney(b.revenue, totals.currency)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {error && (
