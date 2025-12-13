@@ -356,19 +356,29 @@ export default function StockXRepricing() {
   // Load auto-repricing settings
   useEffect(() => {
     const loadAutoRepricingSettings = async () => {
-      if (!authUser) return;
+      // Use Firebase auth user if present, otherwise fall back to site-user-id cookie
+      const userId =
+        authUser?.uid ||
+        (() => {
+          try {
+            const cookies = document.cookie.split(';');
+            const userIdCookie = cookies.find(c => c.trim().startsWith('site-user-id='));
+            if (!userIdCookie) return null;
+            return decodeURIComponent(userIdCookie.split('=')[1]);
+          } catch {
+            return null;
+          }
+        })();
+      if (!userId) return;
       
       try {
-        const { doc, getDoc } = await import('firebase/firestore');
-        const { db } = await import('@/lib/firebase/firebase');
-        
-        const userDoc = await getDoc(doc(db, 'users', authUser.uid));
-        if (userDoc.exists()) {
-          const userData = userDoc.data();
-          setAutoRepricingEnabled(userData.stockxAutoRepricingEnabled || false);
-          if (userData.stockxAutoRepricingConfig?.intervalMinutes) {
-            setAutoRepricingInterval(userData.stockxAutoRepricingConfig.intervalMinutes);
-            setTempInterval(userData.stockxAutoRepricingConfig.intervalMinutes);
+        const res = await fetch(`/api/stockx/auto-repricing-settings?userId=${encodeURIComponent(userId)}`);
+        const json = await res.json().catch(() => null);
+        if (res.ok && json?.success) {
+          setAutoRepricingEnabled(json.enabled === true);
+          if (json.intervalMinutes) {
+            setAutoRepricingInterval(json.intervalMinutes);
+            setTempInterval(json.intervalMinutes);
           }
         }
       } catch (error) {
@@ -788,35 +798,23 @@ export default function StockXRepricing() {
     try {
       setSavingInterval(true);
       console.log('🔄 Saving interval to Firebase for user:', userId);
-      
-      const { doc, updateDoc, setDoc, getDoc } = await import('firebase/firestore');
-      const { db } = await import('@/lib/firebase/firebase');
-      
-      const userDocRef = doc(db, 'users', userId);
-      
-      // Check if document exists, create if not
-      const userDoc = await getDoc(userDocRef);
-      if (!userDoc.exists()) {
-        console.log('📝 Creating new user document...');
-        await setDoc(userDocRef, {
-          stockxAutoRepricingConfig: {
-            intervalMinutes: tempInterval,
-            strategy: 'individual'
-          },
-          autoRepricingEnabled: true,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        });
-      } else {
-        console.log('📝 Updating existing user document...');
-        await updateDoc(userDocRef, {
-          'stockxAutoRepricingConfig.intervalMinutes': tempInterval,
-          'autoRepricingEnabled': true,
-          updatedAt: new Date().toISOString()
-        });
+
+      const resp = await fetch('/api/stockx/auto-repricing-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+        body: JSON.stringify({
+          userId,
+          enabled: true,
+          intervalMinutes: tempInterval
+        })
+      });
+      const out = await resp.json().catch(() => null);
+      if (!resp.ok || !out?.success) {
+        throw new Error(out?.error || `Failed to save (${resp.status})`);
       }
       
       console.log('✅ Interval saved successfully to Firebase');
+      setAutoRepricingEnabled(true);
       setAutoRepricingInterval(tempInterval);
       alert(`✅ Auto-repricing interval updated to ${tempInterval} minutes!`);
     } catch (error) {
