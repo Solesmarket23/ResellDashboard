@@ -235,6 +235,8 @@ export default function TestStockXOrders() {
 
         const pageRows: OrderRow[] = Array.isArray(json?.data) ? json.data : [];
         all.push(...pageRows);
+        // Show partial results as we go (so the table fills in while fetching)
+        setOrders([...all]);
         setAllProgress({ page: p, total: all.length });
 
         hasNext = Boolean(json?.hasNextPage) && pageRows.length > 0;
