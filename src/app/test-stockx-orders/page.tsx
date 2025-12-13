@@ -238,17 +238,9 @@ export default function TestStockXOrders() {
     }
 
     // Status filters
-    if (selectedHistoryStatuses.length > 0) {
-      filtered = filtered.filter((r) => {
-        if (isActiveRow(r)) return true; // history filter doesn't hide active rows
-        return selectedHistoryStatuses.includes(getRowStatus(r));
-      });
-    }
-    if (selectedActiveStatuses.length > 0) {
-      filtered = filtered.filter((r) => {
-        if (!isActiveRow(r)) return true; // active filter doesn't hide history rows
-        return selectedActiveStatuses.includes(getRowStatus(r));
-      });
+    const selectedStatusSet = new Set<string>([...selectedHistoryStatuses, ...selectedActiveStatuses]);
+    if (selectedStatusSet.size > 0) {
+      filtered = filtered.filter((r) => selectedStatusSet.has(getRowStatus(r)));
     }
 
     // 2) Apply sorting
@@ -1019,6 +1011,10 @@ export default function TestStockXOrders() {
                       </div>
 
                       <div className="max-h-72 overflow-auto space-y-3 px-2 pb-2">
+                        <div className="text-[11px] text-gray-400">
+                          Note: we only send the “History (API-supported)” statuses to StockX when fetching. The table view filters to any
+                          checked statuses (history + active).
+                        </div>
                         <div>
                           <div className="flex items-center justify-between">
                             <div className="text-xs font-semibold text-gray-300">History (API-supported)</div>
