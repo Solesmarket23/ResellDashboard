@@ -115,6 +115,7 @@ export default function TestStockXOrders() {
     const statusCounts: Record<string, number> = {};
     const productRevenue: Record<string, number> = {};
     const brandRevenue: Record<string, number> = {};
+    const idCounts: Record<string, number> = {};
 
     for (const o of rows) {
       const currency = o.pricing?.currency || 'USD';
@@ -126,6 +127,12 @@ export default function TestStockXOrders() {
       const statusRaw = (o.rawData?.status || o.status || o.orderStatus || 'UNKNOWN') as string;
       const status = String(statusRaw || 'UNKNOWN').toUpperCase();
       statusCounts[status] = (statusCounts[status] || 0) + 1;
+
+      const raw = o.rawData || {};
+      const orderKey = String(
+        raw.orderNumber || raw.orderId || raw.id || o.id || raw.askId || 'UNKNOWN_ORDER'
+      );
+      idCounts[orderKey] = (idCounts[orderKey] || 0) + 1;
 
       const productName = String(
         o.product?.name || o.rawData?.product?.name || o.rawData?.variant?.product?.name || 'Unknown'
@@ -165,6 +172,11 @@ export default function TestStockXOrders() {
       (statusCounts['PAYOUT_COMPLETED'] || 0);
     const pendingCount = Math.max(0, rows.length - completedCount);
 
+    const duplicates = Object.entries(idCounts)
+      .filter(([, c]) => c > 1 && !['UNKNOWN_ORDER'].includes(String(c)))
+      .sort((a, b) => b[1] - a[1])
+      .map(([key, c]) => ({ key, count: c }));
+
     return {
       count: rows.length,
       sale,
@@ -179,6 +191,8 @@ export default function TestStockXOrders() {
       pendingCount,
       topProducts,
       topBrands,
+      duplicates,
+      duplicateCount: duplicates.length,
       currency: 'USD',
     };
   }, [orders]);
@@ -507,6 +521,7 @@ export default function TestStockXOrders() {
               <div>
                 <label className="block text-xs text-gray-400 mb-1">From (ISO or date)</label>
                 <input
+                  type="date"
                   value={fromDate}
                   onChange={(e) => setFromDate(e.target.value)}
                   placeholder="2025-12-01"
@@ -516,6 +531,7 @@ export default function TestStockXOrders() {
               <div>
                 <label className="block text-xs text-gray-400 mb-1">To</label>
                 <input
+                  type="date"
                   value={toDate}
                   onChange={(e) => setToDate(e.target.value)}
                   placeholder="2025-12-13"
@@ -606,6 +622,8 @@ export default function TestStockXOrders() {
                 <div className="text-right font-semibold">{totals.completedCount}</div>
                 <div className="text-gray-300">Pending</div>
                 <div className="text-right font-semibold">{totals.pendingCount}</div>
+                <div className="text-gray-300">Duplicates</div>
+                <div className="text-right font-semibold">{totals.duplicateCount}</div>
                 <div className="text-gray-300">Sales</div>
                 <div className="text-right font-semibold">{fmtMoney(totals.sale, totals.currency)}</div>
                 <div className="text-gray-300">Fees</div>
@@ -619,6 +637,20 @@ export default function TestStockXOrders() {
                 <div className="text-gray-300">Avg payout</div>
                 <div className="text-right font-semibold">{fmtMoney(totals.avgPayout, totals.currency)}</div>
               </div>
+
+              {totals.duplicates?.length > 0 && (
+                <div className="mt-3">
+                  <div className="text-xs text-gray-400 mb-1">Duplicate order IDs (first 10)</div>
+                  <div className="space-y-1">
+                    {totals.duplicates.slice(0, 10).map((d: any) => (
+                      <div key={d.key} className="flex items-center justify-between text-xs text-gray-200">
+                        <div className="truncate max-w-[220px]">{d.key}</div>
+                        <div className="font-semibold">x{d.count}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {(totals.topProducts?.length > 0 || totals.topBrands?.length > 0) && (
                 <div className="mt-3 grid grid-cols-1 gap-3">
