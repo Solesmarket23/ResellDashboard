@@ -1795,9 +1795,13 @@ export default function TestStockXOrders() {
                 (() => {
                   const d: any = selected.data || {};
                   const currency = d?.currencyCode || d?.currency || 'USD';
-                  const amount = normalizeMoney(d?.amount ?? d?.pricing?.amount ?? d?.price);
-                  const payout = normalizeMoney(d?.payout?.payoutAmount ?? d?.payoutAmount ?? d?.payout);
-                  const fees = normalizeMoney(d?.payout?.feesTotal ?? d?.feesTotal ?? d?.fees);
+                  const sale = parseMoneyAny(d?.payout?.salePrice ?? d?.amount ?? d?.pricing?.amount ?? d?.price);
+                  const payout = parseMoneyAny(
+                    d?.payout?.totalPayout ?? d?.payout?.payoutAmount ?? d?.payoutAmount ?? d?.payout
+                  );
+                  const feesBase = parseMoneyAny(d?.payout?.feesTotal ?? d?.feesTotal ?? d?.fees);
+                  const fees =
+                    feesBase !== null ? feesBase : sale !== null && payout !== null ? Math.max(0, sale - payout) : null;
                   const status = d?.status || d?.orderStatus || '—';
                   const createdAt = d?.createdAt;
                   const productName =
@@ -1824,7 +1828,7 @@ export default function TestStockXOrders() {
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-gray-400">Sale</span>
-                        <span className="font-semibold text-gray-200">{fmtMoney(amount, currency)}</span>
+                        <span className="font-semibold text-gray-200">{fmtMoney(sale, currency)}</span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-gray-400">Fees (est.)</span>
