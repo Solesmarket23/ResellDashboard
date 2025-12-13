@@ -185,6 +185,7 @@ export default function StockXRepricing() {
   const [copiedListingIds, setCopiedListingIds] = useState<Record<string, boolean>>({});
   const [sortColumn, setSortColumn] = useState<'product' | 'size' | 'price' | 'market' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const LISTINGS_CACHE_KEY = 'stockx_listings_cache_v1';
 
@@ -207,8 +208,32 @@ export default function StockXRepricing() {
   // Track pending pricing rule changes
   const [pendingStrategyChanges, setPendingStrategyChanges] = useState<Record<string, IndividualPricingStrategy>>({});
   
+  const filteredListings = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return listings;
+    return listings.filter(l => {
+      const fields = [
+        l.productName,
+        l.size,
+        l.styleId,
+        l.listingId,
+        l.productId,
+        l.variantId,
+        l.inventoryType
+      ]
+        .filter(Boolean)
+        .map(v => String(v).toLowerCase());
+      return fields.some(v => v.includes(q));
+    });
+  }, [listings, searchQuery]);
+
+  // Reset to page 1 when search changes (same UX as Purchases)
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
+
   // Sorting logic
-  const sortedListings = [...listings].sort((a, b) => {
+  const sortedListings = [...filteredListings].sort((a, b) => {
     if (!sortColumn) return 0;
     
     let aValue: any;
@@ -2771,6 +2796,60 @@ export default function StockXRepricing() {
           </button>
         </div>
       </div>
+
+      {/* Search Bar (match Purchases UI) */}
+      {listings.length > 0 && (
+        <div className="mb-6">
+          <div className="relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by product, listing ID, size, style ID, product ID, or variant ID..."
+              className={`w-full px-4 py-3 pl-12 rounded-lg ${
+                isNeon
+                  ? 'bg-gray-900 border border-white/20 text-gray-300 placeholder-gray-500 focus:border-cyan-500'
+                  : 'bg-white border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-indigo-500'
+              } focus:outline-none focus:ring-2 focus:ring-opacity-50 ${
+                isNeon ? 'focus:ring-cyan-500' : 'focus:ring-indigo-500'
+              } transition-all`}
+            />
+            <svg
+              className={`absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 ${
+                isNeon ? 'text-gray-500' : 'text-gray-400'
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className={`absolute right-4 top-1/2 transform -translate-y-1/2 ${
+                  isNeon ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'
+                } transition-colors`}
+                title="Clear search"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+          {searchQuery && (
+            <p className={`mt-2 text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+              Showing {sortedListings.length} result{sortedListings.length !== 1 ? 's' : ''} for "{searchQuery}"
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Auto-Repricing Interval Settings */}
       <div className={`rounded-xl border ${
