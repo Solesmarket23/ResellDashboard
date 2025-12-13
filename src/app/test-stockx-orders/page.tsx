@@ -68,6 +68,33 @@ function formatSizeLabel(size: string) {
   return s || '—';
 }
 
+function inferCanonicalBrand(productName: string, explicitBrand?: string) {
+  const canonical = [
+    'Fear of God',
+    'Jordan',
+    'Nike',
+    'New Balance',
+    'Yeezy',
+    'Adidas',
+  ];
+
+  const cleanExplicit = String(explicitBrand || '').trim();
+  if (cleanExplicit) {
+    const found = canonical.find((b) => b.toLowerCase() === cleanExplicit.toLowerCase());
+    if (found) return found;
+  }
+
+  const name = String(productName || '').toLowerCase();
+  if (name.includes('fear of god') || name.includes('essentials')) return 'Fear of God';
+  if (name.includes('jordan')) return 'Jordan';
+  if (name.includes('new balance')) return 'New Balance';
+  if (name.includes('yeezy')) return 'Yeezy';
+  if (name.includes('adidas')) return 'Adidas';
+  if (name.includes('nike')) return 'Nike';
+
+  return 'Unknown';
+}
+
 export default function TestStockXOrders() {
   const [loading, setLoading] = useState(false);
   const [allLoading, setAllLoading] = useState(false);
@@ -299,8 +326,9 @@ export default function TestStockXOrders() {
           o.rawData?.variant?.product?.name ||
           'Unknown'
       );
-      const brandName = String(
-        o.product?.brand || o.rawData?.product?.brand || o.rawData?.variant?.product?.brand || 'Unknown'
+      const brandName = inferCanonicalBrand(
+        productName,
+        String(o.product?.brand || o.rawData?.product?.brand || o.rawData?.variant?.product?.brand || '')
       );
       const sizeName = String(
         o.variant?.size || o.rawData?.variant?.size || o.rawData?.size || 'Unknown'
