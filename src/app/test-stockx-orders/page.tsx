@@ -428,12 +428,22 @@ export default function TestStockXOrders() {
     return `${yyyy}-${mm}-${dd}`;
   };
 
-  const setQuickRange = (range: 'last_7' | 'last_30' | 'last_90' | 'this_month' | 'last_month' | 'this_year' | 'last_12_months') => {
+  const setQuickRange = (
+    range: 'today' | 'this_week' | 'this_month' | 'this_year' | 'q1' | 'q2' | 'q3' | 'q4' | 'last_month' | 'last_12_months'
+  ) => {
     const now = new Date();
     const end = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     let start = new Date(end);
 
-    if (range === 'this_month') {
+    if (range === 'today') {
+      // start already equals end (today)
+    } else if (range === 'this_week') {
+      // Week-to-date (Mon → today) in local time.
+      const day = end.getDay(); // 0=Sun ... 6=Sat
+      const diffToMonday = (day + 6) % 7;
+      start = new Date(end);
+      start.setDate(end.getDate() - diffToMonday);
+    } else if (range === 'this_month') {
       start = new Date(end.getFullYear(), end.getMonth(), 1);
     } else if (range === 'last_month') {
       start = new Date(end.getFullYear(), end.getMonth() - 1, 1);
@@ -444,12 +454,16 @@ export default function TestStockXOrders() {
       return;
     } else if (range === 'this_year') {
       start = new Date(end.getFullYear(), 0, 1);
-    } else if (range === 'last_7') {
-      start.setDate(start.getDate() - 6);
-    } else if (range === 'last_30') {
-      start.setDate(start.getDate() - 29);
-    } else if (range === 'last_90') {
-      start.setDate(start.getDate() - 89);
+    } else if (range === 'q1' || range === 'q2' || range === 'q3' || range === 'q4') {
+      const year = end.getFullYear();
+      const qIndex = range === 'q1' ? 0 : range === 'q2' ? 1 : range === 'q3' ? 2 : 3;
+      const qStartMonth = qIndex * 3; // 0,3,6,9
+      const qEndMonth = qStartMonth + 2;
+      const qStart = new Date(year, qStartMonth, 1);
+      const qEnd = new Date(year, qEndMonth + 1, 0); // last day of quarter
+      setFromDate(ymd(qStart));
+      setToDate(ymd(qEnd));
+      return;
     } else if (range === 'last_12_months') {
       start = new Date(end.getFullYear(), end.getMonth() - 11, 1);
     }
@@ -2099,34 +2113,27 @@ export default function TestStockXOrders() {
             </div>
 
             <div className="flex items-center gap-2 flex-wrap md:flex-nowrap">
-              {/* Primary (most-used) quick presets */}
+              {/* Primary quick presets */}
+              <button
+                onClick={() => setQuickRange('today')}
+                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10"
+                title="Set date range to today"
+              >
+                Today
+              </button>
+              <button
+                onClick={() => setQuickRange('this_week')}
+                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
+                title="This week (Mon → today)"
+              >
+                This week
+              </button>
               <button
                 onClick={() => setQuickRange('this_month')}
-                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10"
+                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
                 title="Set date range to this month"
               >
                 This month
-              </button>
-              <button
-                onClick={() => setQuickRange('last_30')}
-                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
-                title="Last 30 days"
-              >
-                30d
-              </button>
-              <button
-                onClick={() => setQuickRange('last_90')}
-                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
-                title="Last 90 days"
-              >
-                90d
-              </button>
-              <button
-                onClick={() => setQuickRange('this_year')}
-                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200"
-                title="This year"
-              >
-                This year
               </button>
 
               {/* Less-used presets under More */}
@@ -2151,37 +2158,61 @@ export default function TestStockXOrders() {
                       type="button"
                       role="menuitem"
                       onClick={() => {
-                        setQuickRange('last_7');
+                        setQuickRange('this_year');
                         setShowQuickPresetsMore(false);
                       }}
                       className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-white/10"
-                      title="Last 7 days"
+                      title="This year"
                     >
-                      7d
+                      This year
                     </button>
                     <button
                       type="button"
                       role="menuitem"
                       onClick={() => {
-                        setQuickRange('last_month');
+                        setQuickRange('q4');
                         setShowQuickPresetsMore(false);
                       }}
                       className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-white/10"
-                      title="Last month"
+                      title="Q4 (current year)"
                     >
-                      Last month
+                      Q4
                     </button>
                     <button
                       type="button"
                       role="menuitem"
                       onClick={() => {
-                        setQuickRange('last_12_months');
+                        setQuickRange('q3');
                         setShowQuickPresetsMore(false);
                       }}
                       className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-white/10"
-                      title="Last 12 months"
+                      title="Q3 (current year)"
                     >
-                      12m
+                      Q3
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setQuickRange('q2');
+                        setShowQuickPresetsMore(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-white/10"
+                      title="Q2 (current year)"
+                    >
+                      Q2
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setQuickRange('q1');
+                        setShowQuickPresetsMore(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-white/10"
+                      title="Q1 (current year)"
+                    >
+                      Q1
                     </button>
                   </div>
                 )}
