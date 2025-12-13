@@ -2124,6 +2124,13 @@ export default function TestStockXOrders() {
               {verificationMonths.length > 0 ? (
                 <div className="mt-3">
                   <div className="text-xs text-gray-400 mb-2">Month-by-month</div>
+                  {verificationLoading && verificationCoverage && verificationRange ? (
+                    <div className="mb-2 text-xs text-yellow-200/90">
+                      Loading is still in progress — months outside the current coverage will show <span className="font-semibold">0</span> until more pages
+                      are fetched. Requested range: <span className="font-semibold">{verificationRange.from}</span> →{' '}
+                      <span className="font-semibold">{verificationRange.to}</span>.
+                    </div>
+                  ) : null}
                   <div className="space-y-1 max-h-[240px] overflow-auto pr-1">
                     {verificationMonths
                       .slice()
