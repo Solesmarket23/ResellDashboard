@@ -8,6 +8,35 @@ export async function GET(request: NextRequest) {
       activeList: 0,
       catalog: 0,
       orderDetails: 0,
+      retries429: 0,
+    };
+
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const fetchWithBackoff = async (
+      url: string,
+      init: RequestInit,
+      callCounter: keyof typeof upstreamCalls,
+      maxAttempts = 5
+    ) => {
+      let attempt = 0;
+      while (attempt < maxAttempts) {
+        upstreamCalls[callCounter] += 1;
+        const res = await fetch(url, init);
+        if (res.status !== 429) return res;
+
+        upstreamCalls.retries429 += 1;
+        const retryAfterHeader = res.headers.get('retry-after');
+        const retryAfterSeconds = retryAfterHeader ? parseInt(retryAfterHeader, 10) : NaN;
+        const backoffMs = Number.isFinite(retryAfterSeconds)
+          ? Math.min(30_000, Math.max(500, retryAfterSeconds * 1000))
+          : Math.min(30_000, 500 * Math.pow(2, attempt));
+
+        await res.text().catch(() => '');
+        await sleep(backoffMs);
+        attempt += 1;
+      }
+      upstreamCalls[callCounter] += 1;
+      return await fetch(url, init);
     };
 
     const parseMoney = (value: any): number => {
@@ -64,8 +93,7 @@ export async function GET(request: NextRequest) {
 
     // Call StockX API for active orders
     const apiUrl = `https://api.stockx.com/v2/selling/orders/active?${qp.toString()}`;
-    upstreamCalls.activeList += 1;
-    let response = await fetch(apiUrl, {
+    let response = await fetchWithBackoff(apiUrl, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
@@ -74,7 +102,7 @@ export async function GET(request: NextRequest) {
         'Content-Type': 'application/json',
         'User-Agent': 'ResellDashboard/1.0'
       }
-    });
+    }, 'activeList');
 
     // Handle token refresh if needed
     if (response.status === 401 && refreshToken) {
@@ -83,8 +111,7 @@ export async function GET(request: NextRequest) {
       
       if (refreshResult.success && refreshResult.accessToken) {
         // Retry with new token
-        upstreamCalls.activeList += 1;
-        response = await fetch(apiUrl, {
+        response = await fetchWithBackoff(apiUrl, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${refreshResult.accessToken}`,
@@ -93,7 +120,7 @@ export async function GET(request: NextRequest) {
             'Content-Type': 'application/json',
             'User-Agent': 'ResellDashboard/1.0'
           }
-        });
+        }, 'activeList');
         
         // Store the new access token for later use
         accessToken = refreshResult.accessToken;
@@ -132,8 +159,7 @@ export async function GET(request: NextRequest) {
         if (!pid) return null;
         if (cache.has(pid)) return cache.get(pid)?.brand ?? null;
         try {
-          upstreamCalls.catalog += 1;
-          const res = await fetch(`https://api.stockx.com/v2/catalog/products/${encodeURIComponent(pid)}`, {
+          const res = await fetchWithBackoff(`https://api.stockx.com/v2/catalog/products/${encodeURIComponent(pid)}`, {
             method: 'GET',
             headers: {
               Authorization: `Bearer ${token}`,
@@ -142,7 +168,7 @@ export async function GET(request: NextRequest) {
               'Content-Type': 'application/json',
               'User-Agent': 'ResellDashboard/1.0',
             },
-          });
+          }, 'catalog');
           if (!res.ok) {
             cache.set(pid, { brand: null, productType: null });
             return null;
@@ -210,8 +236,7 @@ export async function GET(request: NextRequest) {
         if (!orderNumber) return null;
         if (cache.has(orderNumber)) return cache.get(orderNumber);
         try {
-          upstreamCalls.orderDetails += 1;
-          const res = await fetch(`https://api.stockx.com/v2/selling/orders/${encodeURIComponent(orderNumber)}`, {
+          const res = await fetchWithBackoff(`https://api.stockx.com/v2/selling/orders/${encodeURIComponent(orderNumber)}`, {
             method: 'GET',
             headers: {
               Authorization: `Bearer ${token}`,
@@ -220,7 +245,7 @@ export async function GET(request: NextRequest) {
               'Content-Type': 'application/json',
               'User-Agent': 'ResellDashboard/1.0',
             },
-          });
+          }, 'orderDetails');
           if (!res.ok) {
             cache.set(orderNumber, null);
             return null;

@@ -526,15 +526,37 @@ export default function TestStockXOrders() {
           qp.set('orderStatus', st);
           qp.set('includeCatalog', '1'); // for brand
           // NOTE: we intentionally do NOT set includeDetails=1 here (keeps upstream calls lower)
+          const url = `/api/stockx/orders/history?${qp.toString()}`;
+          let attempt = 0;
+          let json: any = {};
+          let ok = false;
+          let statusCode = 0;
+          while (attempt < 6 && !ok) {
+            const res = await fetch(url);
+            statusCode = res.status;
+            json = await res.json().catch(() => ({}));
+            ok = res.ok;
+            if (ok) break;
 
-          const res = await fetch(`/api/stockx/orders/history?${qp.toString()}`);
-          const json = await res.json().catch(() => ({}));
-          if (!res.ok) {
             if (res.status === 401 || json?.authRequired) {
               setAuthRequired(true);
               throw new Error(json?.message || 'StockX authentication required.');
             }
-            throw new Error(json?.error || json?.details || `Request failed (${res.status})`);
+
+            // 429: exponential backoff and retry same page
+            if (res.status === 429) {
+              const backoffMs = Math.min(30_000, 800 * Math.pow(2, attempt));
+              appendLog('warn', 'Rate limited (429). Backing off…', { status: st, page, backoffMs });
+              await sleep(backoffMs);
+              attempt += 1;
+              continue;
+            }
+
+            throw new Error(json?.error || json?.details || json?.message || `Request failed (${res.status})`);
+          }
+
+          if (!ok) {
+            throw new Error(json?.error || json?.details || json?.message || `Request failed (${statusCode})`);
           }
 
           const pageRows: OrderRow[] = Array.isArray(json?.data) ? json.data : [];
@@ -553,7 +575,8 @@ export default function TestStockXOrders() {
 
           hasNext = Boolean(json?.hasNextPage) && pageRows.length > 0;
           page += 1;
-          if (hasNext) await sleep(200);
+          // Pace requests to reduce 429 risk
+          if (hasNext) await sleep(600);
         }
       }
 
@@ -1985,7 +2008,8 @@ export default function TestStockXOrders() {
                 <div>
                   <div className="text-sm font-semibold text-gray-200">Failed verification</div>
                   <div className="text-xs text-gray-400">
-                    Last 12 months: <code className="text-gray-300">AUTHFAILED</code> vs <code className="text-gray-300">COMPLETED</code>
+                    {verificationPeriod === 'ytd' ? 'YTD' : 'Last 12 months'}:{' '}
+                    <code className="text-gray-300">AUTHFAILED</code> vs <code className="text-gray-300">COMPLETED</code>
                   </div>
                 </div>
                 <button
