@@ -104,7 +104,7 @@ export default function TestStockXOrders() {
   const [selected, setSelected] = useState<{ orderNumber: string; data: any } | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
 
-  const [sortBy, setSortBy] = useState<'status' | null>(null);
+  const [sortBy, setSortBy] = useState<'status' | 'created' | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   type LogLevel = 'info' | 'warn' | 'error';
@@ -623,6 +623,21 @@ export default function TestStockXOrders() {
     return String((raw?.status || row?.status || row?.orderStatus || raw?.orderStatus || '—')).toUpperCase();
   };
 
+  const getRowCreatedTs = (row: any): number | null => {
+    const raw = row?.rawData || row;
+    const iso =
+      row?.createdAt ||
+      raw?.createdAt ||
+      raw?.orderDate ||
+      raw?.created ||
+      row?.rawData?.createdAt ||
+      null;
+    if (!iso) return null;
+    const d = new Date(iso);
+    const t = d.getTime();
+    return Number.isNaN(t) ? null : t;
+  };
+
   const openGmailSearch = (orderNumber: string) => {
     const q = `"${orderNumber}"`;
     const url = `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(q)}`;
@@ -638,6 +653,20 @@ export default function TestStockXOrders() {
         const bs = getRowStatus(b);
         const cmp = as.localeCompare(bs);
         if (cmp !== 0) return cmp * dir;
+      }
+      if (sortBy === 'created') {
+        const at = getRowCreatedTs(a);
+        const bt = getRowCreatedTs(b);
+        if (at === null && bt === null) {
+          // fall through
+        } else if (at === null) {
+          return 1; // nulls last
+        } else if (bt === null) {
+          return -1; // nulls last
+        } else {
+          const cmp = at - bt;
+          if (cmp !== 0) return cmp * dir;
+        }
       }
       // stable tiebreaker
       return getRowOrderNumber(a).localeCompare(getRowOrderNumber(b)) * dir;
@@ -1088,7 +1117,22 @@ export default function TestStockXOrders() {
                     <th className="text-left px-4 py-3 font-semibold text-gray-300">Sale</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-300">Fees</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-300">Payout</th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">Created</th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSortBy('created');
+                          setSortDir((d) => (sortBy === 'created' ? (d === 'asc' ? 'desc' : 'asc') : 'desc'));
+                        }}
+                        className="inline-flex items-center gap-2 hover:text-white"
+                        title="Sort by created date"
+                      >
+                        Created
+                        <span className="text-xs text-gray-400">
+                          {sortBy === 'created' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
+                        </span>
+                      </button>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
