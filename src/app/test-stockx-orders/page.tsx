@@ -1627,6 +1627,12 @@ export default function TestStockXOrders() {
       activeStatuses: selectedActiveStatuses.length ? selectedActiveStatuses : undefined,
     });
     try {
+      const rowCreatedIso = (r: any): string | null => {
+        const raw = r?.rawData || r;
+        const iso = r?.createdAt || raw?.createdAt || raw?.orderDate || raw?.created || null;
+        return typeof iso === 'string' && iso.trim() ? iso.trim() : null;
+      };
+
       // StockX history endpoint typically requires an explicit orderStatus.
       // Treat "All statuses" as "fetch all API-supported historical statuses and merge".
       const statusesToFetch = selectedHistoryStatuses.length ? selectedHistoryStatuses : HISTORICAL_ORDER_STATUSES;
@@ -1678,6 +1684,29 @@ export default function TestStockXOrders() {
         }
 
         const rows: OrderRow[] = Array.isArray(json?.data) ? json.data : [];
+        if (rows.length > 0) {
+          const sampleDates = rows.slice(0, 5).map((r) => rowCreatedIso(r));
+          const inRange = rows.filter((r) => inSelectedDateRange(rowCreatedIso(r) || undefined)).length;
+          const dateOnlyCount = rows.filter((r) => {
+            const iso = rowCreatedIso(r);
+            return !!iso && /^\d{4}-\d{2}-\d{2}$/.test(iso);
+          }).length;
+          appendLog('info', 'History page response', {
+            orderStatus: st || '(all)',
+            returned: rows.length,
+            inSelectedDateRange: inRange,
+            dateOnlyCount,
+            sampleDates,
+            apiFilters: { fromDate: qp.get('fromDate'), toDate: qp.get('toDate') },
+            upstreamCalls: json?.debug?.upstreamCalls || null,
+          });
+        } else {
+          appendLog('info', 'History page response (0 rows)', {
+            orderStatus: st || '(all)',
+            apiFilters: { fromDate: qp.get('fromDate'), toDate: qp.get('toDate') },
+            upstreamCalls: json?.debug?.upstreamCalls || null,
+          });
+        }
         for (const r of rows) {
           const raw = r?.rawData || {};
           const key = String(raw.orderNumber || raw.orderId || raw.id || r.id || raw.askId || JSON.stringify(raw));
@@ -1701,6 +1730,12 @@ export default function TestStockXOrders() {
       }
 
       setOrders(allRows);
+      appendLog('info', 'Date filter summary (history)', {
+        totalRows: allRows.length,
+        keptAfterDateFilter: allRows.filter((r) => inSelectedDateRange(rowCreatedIso(r) || undefined)).length,
+        fromDate: fromDate || null,
+        toDate: toDate || null,
+      });
       appendLog('info', 'Fetched order history (merged)', {
         rows: allRows.length,
         statuses: selectedHistoryStatuses.length ? selectedHistoryStatuses : '(all)',
@@ -1800,7 +1835,17 @@ export default function TestStockXOrders() {
   function inSelectedDateRange(isoOrDate: string | undefined) {
     if (!fromDate && !toDate) return true;
     if (!isoOrDate) return false;
-    const d = new Date(isoOrDate);
+    // IMPORTANT: StockX sometimes returns date-only strings (YYYY-MM-DD). In JS those parse as UTC midnight,
+    // which can become the prior day in local time and incorrectly filter out "today" sales.
+    // Treat date-only as a local date (noon) to keep day matching intuitive.
+    const dateOnlyMatch = /^\d{4}-\d{2}-\d{2}$/.test(isoOrDate);
+    const d = dateOnlyMatch
+      ? (() => {
+          const [y, m, day] = isoOrDate.split('-').map((x) => parseInt(x, 10));
+          if (!y || !m || !day) return new Date(isoOrDate);
+          return new Date(y, m - 1, day, 12, 0, 0, 0);
+        })()
+      : new Date(isoOrDate);
     if (Number.isNaN(d.getTime())) return false;
     // IMPORTANT: interpret the date picker range in the user's local time (not UTC),
     // otherwise late-night local times can appear as the prior/next day.
@@ -1873,6 +1918,12 @@ export default function TestStockXOrders() {
     });
 
     try {
+      const rowCreatedIso = (r: any): string | null => {
+        const raw = r?.rawData || r;
+        const iso = r?.createdAt || raw?.createdAt || raw?.orderDate || raw?.created || null;
+        return typeof iso === 'string' && iso.trim() ? iso.trim() : null;
+      };
+
       const all: OrderRow[] = [];
       const seen = new Set<string>();
       // StockX history endpoint typically requires an explicit orderStatus.
@@ -1927,6 +1978,28 @@ export default function TestStockXOrders() {
           }
 
           const pageRows: OrderRow[] = Array.isArray(json?.data) ? json.data : [];
+          if (pageRows.length > 0) {
+            const sampleDates = pageRows.slice(0, 5).map((r) => rowCreatedIso(r));
+            const inRange = pageRows.filter((r) => inSelectedDateRange(rowCreatedIso(r) || undefined)).length;
+            const dateOnlyCount = pageRows.filter((r) => {
+              const iso = rowCreatedIso(r);
+              return !!iso && /^\d{4}-\d{2}-\d{2}$/.test(iso);
+            }).length;
+            // Log details for the first page of each status and any page where date filtering would drop everything.
+            if (p === 1 || inRange === 0) {
+              appendLog('info', 'Fetch ALL page response', {
+                orderStatus: st || '(all)',
+                pageNumber: p,
+                returned: pageRows.length,
+                inSelectedDateRange: inRange,
+                dateOnlyCount,
+                sampleDates,
+                apiFilters: { fromDate: qp.get('fromDate'), toDate: qp.get('toDate') },
+                hasNextPage: Boolean(json?.hasNextPage),
+                upstreamCalls: json?.debug?.upstreamCalls || null,
+              });
+            }
+          }
           let added = 0;
           for (const r of pageRows) {
             const raw = r?.rawData || {};
@@ -1940,6 +2013,7 @@ export default function TestStockXOrders() {
               // Show partial results as we go (so the table fills in while fetching)
               setOrders([...all]);
               setAllProgress({ page: p, total: all.length });
+              appendLog('info', 'UI flush (history)', { page: p, totalRows: all.length });
               addedSinceFlush = 0;
               // Yield so React paints progressively instead of batching all updates into one render.
               await sleep(0);
@@ -1950,6 +2024,7 @@ export default function TestStockXOrders() {
           if (addedSinceFlush > 0) {
             setOrders([...all]);
             setAllProgress({ page: p, total: all.length });
+            appendLog('info', 'UI flush (history)', { page: p, totalRows: all.length });
             addedSinceFlush = 0;
             // Yield so the user sees the page results immediately.
             await sleep(0);
@@ -1970,6 +2045,12 @@ export default function TestStockXOrders() {
       }
 
       setOrders(all);
+      appendLog('info', 'Date filter summary (history)', {
+        totalRows: all.length,
+        keptAfterDateFilter: all.filter((r) => inSelectedDateRange(rowCreatedIso(r) || undefined)).length,
+        fromDate: fromDate || null,
+        toDate: toDate || null,
+      });
       appendLog('info', 'Fetch ALL complete', { total: all.length, apiCalls });
 
       if (includeActive) {

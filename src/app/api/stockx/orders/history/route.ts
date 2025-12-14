@@ -22,6 +22,16 @@ export async function GET(request: NextRequest) {
   const includeCatalog = searchParams.get('includeCatalog') === '1';
   const includeDetails = searchParams.get('includeDetails') === '1';
 
+  console.log('📥 /api/stockx/orders/history request', {
+    pageNumber,
+    pageSize,
+    orderStatus: orderStatus || null,
+    fromDate: fromDate || null,
+    toDate: toDate || null,
+    includeCatalog,
+    includeDetails,
+  });
+
   // Get access token from cookies
   const accessToken = request.cookies.get('stockx_access_token')?.value;
   const refreshToken = request.cookies.get('stockx_refresh_token')?.value;
@@ -481,7 +491,24 @@ export async function GET(request: NextRequest) {
     }
 
     const ordersData = await response.json();
-    console.log(`✅ Successfully fetched historical orders:`, ordersData);
+    console.log(`✅ Successfully fetched historical orders`, {
+      pageNumber: ordersData?.pageNumber ?? pageNumber,
+      pageSize: ordersData?.pageSize ?? pageSize,
+      count: ordersData?.count ?? null,
+      hasNextPage: Boolean(ordersData?.hasNextPage),
+      firstOrderDateFields: (() => {
+        const first = Array.isArray(ordersData?.orders) ? ordersData.orders[0] : Array.isArray(ordersData?.data) ? ordersData.data[0] : null;
+        if (!first || typeof first !== 'object') return null;
+        return {
+          createdAt: (first as any)?.createdAt ?? null,
+          orderDate: (first as any)?.orderDate ?? null,
+          completedAt: (first as any)?.completedAt ?? null,
+          updatedAt: (first as any)?.updatedAt ?? null,
+          created: (first as any)?.created ?? null,
+          status: (first as any)?.status ?? null,
+        };
+      })(),
+    });
     
     // Process the orders data
     const processedOrdersRaw = processOrdersData(ordersData);
@@ -569,12 +596,21 @@ function processOrdersData(rawData: any) {
         : parseMoney(order.totalFees);
 
     // Extract comprehensive order information
+    const createdAt =
+      order.createdAt ||
+      order.orderDate ||
+      order.created ||
+      order.completedAt ||
+      order.updatedAt ||
+      order.orderCreatedAt ||
+      null;
+
     const orderData = {
       id: order.id || order.orderId || order.orderNumber || order.askId,
       orderNumber: order.orderNumber || order.orderId || order.id || order.askId,
       status: order.status,
       orderStatus: order.orderStatus,
-      createdAt: order.createdAt,
+      createdAt,
       updatedAt: order.updatedAt,
       completedAt: order.completedAt,
       canceledAt: order.canceledAt,
