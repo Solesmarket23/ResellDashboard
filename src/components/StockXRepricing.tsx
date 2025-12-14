@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { DollarSign, TrendingDown, Target, Zap, RefreshCw, AlertTriangle, CheckCircle, Loader, Package, Copy, Check, ChevronUp, ChevronDown, ChevronsUpDown, Clock, Save, X, Wrench, Shield, MoreHorizontal } from 'lucide-react';
-import NeonDropdown from './NeonDropdown';
+import NeonDropdown, { type NeonDropdownOption } from './NeonDropdown';
 import { addDocument, getDocuments, updateDocument, deleteField } from '@/lib/firebase/firebaseUtils';
 import { auth } from '@/lib/firebase/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -270,6 +270,56 @@ export default function StockXRepricing() {
       return fields.some(v => v.includes(q));
     });
   }, [listings, searchQuery]);
+
+  // UX: richer, self-explanatory pricing rules (grouped + described)
+  const pricingRuleOptions = useMemo<NeonDropdownOption[]>(
+    () => [
+      {
+        value: 'keep_current',
+        label: 'Keep Current',
+        description: 'No automated price changes (manual only).',
+        group: 'Basics',
+      },
+      {
+        value: 'manual',
+        label: 'Manual',
+        description: 'You set a price manually; safety bounds still apply.',
+        group: 'Basics',
+      },
+      {
+        value: 'beat_lowest',
+        label: 'Beat Lowest by $1',
+        description: 'Sets price to (best ask − $1).',
+        group: 'Competitive',
+      },
+      {
+        value: 'match_lowest',
+        label: 'Match Lowest',
+        description: 'Sets price to the best ask.',
+        group: 'Competitive',
+      },
+      {
+        value: 'percentage_below',
+        label: 'Below %',
+        description: 'Sets price to (best ask × (1 − %)).',
+        group: 'Competitive',
+      },
+      {
+        value: 'reset_then_beat_lowest',
+        label: '⚡ Two-step: reset then beat lowest',
+        description: 'Temporarily sets $999 to reveal real asks, then undercuts by $1.',
+        group: 'Advanced',
+        badge: 'Recommended',
+      },
+      {
+        value: 'market_peek',
+        label: '🔍 Market Peek',
+        description: 'Occasionally “peeks” market to re-check the true lowest ask.',
+        group: 'Advanced',
+      },
+    ],
+    []
+  );
 
   // Reset to page 1 when search changes (same UX as Purchases)
   useEffect(() => {
@@ -3716,14 +3766,22 @@ export default function StockXRepricing() {
                         )}
                       </div>
                     </td>
-                    <td className={`px-6 py-3 text-sm ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-                      {listing.size}
+                    <td className="px-6 py-3 text-center">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold ${
+                          isNeon
+                            ? 'bg-white/5 text-gray-300 border border-white/10'
+                            : 'bg-gray-100 text-gray-700 border border-gray-200'
+                        }`}
+                      >
+                        {listing.size}
+                      </span>
                     </td>
-                    <td className={`px-6 py-3 font-medium text-sm ${isNeon ? 'text-cyan-400' : 'text-gray-900'}`}>
+                    <td className={`px-6 py-3 font-medium text-sm text-right tabular-nums ${isNeon ? 'text-cyan-400' : 'text-gray-900'}`}>
                       ${listing.currentPrice}
                     </td>
-                    <td className={`px-6 py-3 font-medium text-sm ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-                      <div className="flex flex-col leading-tight">
+                    <td className={`px-6 py-3 font-medium text-sm text-right tabular-nums ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                      <div className="flex flex-col leading-tight items-end">
                         <span>${listing.lowestAsk || '-'}</span>
                         <span className={`text-[11px] ${isNeon ? 'text-gray-500' : 'text-gray-500'}`}>
                           Flex: ${listing.flexLowestAsk || '-'}
@@ -3751,15 +3809,13 @@ export default function StockXRepricing() {
                         <NeonDropdown
                           value={listing.pricingStrategy?.type || 'keep_current'}
                           onChange={(value) => updateListingStrategy(listing.listingId, value as any)}
-                          options={[
-                            { value: 'keep_current', label: 'Keep Current' },
-                            { value: 'market_peek', label: '🔍 Market Peek' },
-                            { value: 'reset_then_beat_lowest', label: '⚡ Two-step: reset then beat lowest' },
-                            { value: 'beat_lowest', label: 'Beat Lowest by $1' },
-                            { value: 'match_lowest', label: 'Match Lowest' },
-                            { value: 'percentage_below', label: listing.pricingStrategy?.type === 'percentage_below' ? `-${listing.pricingStrategy?.value || 5}%` : 'Below %' },
-                            { value: 'manual', label: 'Manual' }
-                          ]}
+                          options={pricingRuleOptions.map((opt) => {
+                            if (opt.value !== 'percentage_below') return opt;
+                            // Make the selected % visible in the closed state.
+                            if (listing.pricingStrategy?.type !== 'percentage_below') return opt;
+                            const pct = listing.pricingStrategy?.value || 5;
+                            return { ...opt, label: `Below ${pct}%` };
+                          })}
                           isNeon={isNeon}
                           className="flex-1"
                         />
@@ -3881,12 +3937,12 @@ export default function StockXRepricing() {
                           const minPrice = Math.round(parseFloat(e.target.value) || 0);
                           updateMinPrice(listing.listingId, minPrice, { persist: false });
                         }}
-                          className={`w-20 text-xs pl-5 pr-2 py-1 rounded border focus:outline-none focus:ring-2 ${
+                          className={`w-24 text-xs pl-5 pr-2 py-1 rounded border focus:outline-none focus:ring-2 tabular-nums ${
                           isNeon 
                               ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
                               : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
                         }`}
-                          placeholder=""
+                          placeholder="Min"
                       />
                       </div>
                     </td>
@@ -3912,12 +3968,12 @@ export default function StockXRepricing() {
                           const maxPrice = Math.round(parseFloat(e.target.value) || 0);
                           updateMaxPrice(listing.listingId, maxPrice, { persist: false });
                         }}
-                          className={`w-20 text-xs pl-5 pr-2 py-1 rounded border focus:outline-none focus:ring-2 ${
+                          className={`w-24 text-xs pl-5 pr-2 py-1 rounded border focus:outline-none focus:ring-2 tabular-nums ${
                           isNeon 
                               ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
                               : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
                         }`}
-                          placeholder=""
+                          placeholder="Max"
                       />
                       </div>
                     </td>
