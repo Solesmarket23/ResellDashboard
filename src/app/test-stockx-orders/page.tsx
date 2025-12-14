@@ -3296,7 +3296,18 @@ export default function TestStockXOrders() {
                           </button>
                         </td>
                         <td className="px-4 py-3 text-gray-200">{status}</td>
-                        <td className="px-4 py-3 text-gray-200">{productName}</td>
+                        <td className="px-4 py-3 text-gray-200" title={productName}>
+                          <div
+                            style={{
+                              display: '-webkit-box',
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden',
+                            }}
+                          >
+                            {productName}
+                          </div>
+                        </td>
                         <td className="px-4 py-3 text-gray-200">{styleId}</td>
                         <td className="px-4 py-3 text-gray-200">{brand}</td>
                         <td className="px-4 py-3 text-gray-200" title={categoryRaw || category}>
