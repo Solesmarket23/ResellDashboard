@@ -199,6 +199,12 @@ export async function POST(request: NextRequest) {
       try {
         const isTwoStepStrategy =
           useIndividualStrategies && listing.pricingStrategy?.type === 'reset_then_beat_lowest';
+        // If the two-step strategy performs the temporary reset (step 1), the listing's *actual* current
+        // price becomes `resetPrice` (e.g. 999) even though `listing.currentPrice` still reflects the
+        // original price passed into this API. We must compare against the effective current price to
+        // avoid incorrectly short-circuiting and leaving the listing stuck at the reset value.
+        let comparisonCurrentPrice = listing.currentPrice;
+        let didTemporaryReset = false;
         let twoStepMeta:
           | {
               resetPrice: number;
@@ -213,6 +219,8 @@ export async function POST(request: NextRequest) {
               resetOperationStatus?: string;
               finalOperationId?: string;
               finalOperationStatus?: string;
+              revertOperationId?: string;
+              revertOperationStatus?: string;
             }
           | undefined;
 
@@ -336,26 +344,55 @@ export async function POST(request: NextRequest) {
                 twoStepMeta.resetOperationId = resetResult.operation?.operationId;
                 twoStepMeta.resetOperationStatus = resetResult.operationStatus;
               }
+
+              // From this point onward, the listing is (very likely) set to resetPrice on StockX.
+              // Ensure all subsequent "no_change" checks compare against the reset price, otherwise
+              // we can incorrectly skip the final revert/update and leave the listing at $999.
+              didTemporaryReset = true;
+              comparisonCurrentPrice = resetPrice;
   
               // Small delay, then refetch market data and compute final undercut price
-              await new Promise(resolve => setTimeout(resolve, 1500));
-              const refreshedMarket = await fetchMarketData(listing.productId, listing.variantId, accessToken);
+              try {
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                const refreshedMarket = await fetchMarketData(listing.productId, listing.variantId, accessToken);
               // Use refreshed market data for competitivePosition calculations
-              marketData = refreshedMarket;
+                marketData = refreshedMarket;
 
-              const competitorLowestAsk = parseStockXMoneyToDollars((refreshedMarket as any).lowestAskAmount);
-              const competitorFlexLowestAsk = parseStockXMoneyToDollars((refreshedMarket as any).flexLowestAskAmount);
-              const competitorBestAsk = minPositive(competitorLowestAsk, competitorFlexLowestAsk);
-              newPrice = competitorBestAsk !== null ? Math.max(1, competitorBestAsk - beatBy) : listing.currentPrice;
+                const competitorLowestAsk = parseStockXMoneyToDollars((refreshedMarket as any).lowestAskAmount);
+                const competitorFlexLowestAsk = parseStockXMoneyToDollars((refreshedMarket as any).flexLowestAskAmount);
+                const competitorBestAsk = minPositive(competitorLowestAsk, competitorFlexLowestAsk);
+                // If competitorBestAsk is null, we still want to revert back to the original price.
+                newPrice = competitorBestAsk !== null ? Math.max(1, competitorBestAsk - beatBy) : listing.currentPrice;
 
               // Attach metadata for transparency
-              twoStepMeta = {
-                ...twoStepMeta,
-                mode: 'peek_next_lowest',
-                competitorLowestAsk,
-                competitorFlexLowestAsk,
-                computedFinal: newPrice
-              } as any;
+                twoStepMeta = {
+                  ...twoStepMeta,
+                  mode: 'peek_next_lowest',
+                  competitorLowestAsk,
+                  competitorFlexLowestAsk,
+                  computedFinal: newPrice
+                } as any;
+              } catch (err: any) {
+                // If anything fails after the reset succeeded, attempt to revert to the original price.
+                const message = err instanceof Error ? err.message : String(err);
+                const revert = await updateListingPrice(listing.listingId, listing.currentPrice, accessToken, {
+                  waitForCompletion: true,
+                  timeoutMs: 30_000
+                });
+                if (twoStepMeta) {
+                  twoStepMeta.revertOperationId = revert.operation?.operationId;
+                  twoStepMeta.revertOperationStatus = revert.operationStatus;
+                }
+                repricingResults.push({
+                  listingId: listing.listingId,
+                  currentPrice: listing.currentPrice,
+                  newPrice: listing.currentPrice,
+                  action: 'failed',
+                  reason: `Two-step failed after reset: ${message}. Revert ${revert.success ? 'succeeded' : 'failed'}.`,
+                  twoStep: twoStepMeta
+                });
+                continue;
+              }
   
               // Continue into the normal constraint/safety/update pipeline for final price
               }
@@ -376,7 +413,7 @@ export async function POST(request: NextRequest) {
           newPrice = calculateNewPrice(listing, marketData, strategy);
         }
         
-        if (!newPrice || newPrice === listing.currentPrice) {
+        if (!newPrice || newPrice === comparisonCurrentPrice) {
           repricingResults.push({
             listingId: listing.listingId,
             currentPrice: listing.currentPrice,
@@ -425,19 +462,19 @@ export async function POST(request: NextRequest) {
         }
 
         // Optional: skip tiny changes to reduce churn
-        if (isFiniteNumber(minPriceChange) && Math.abs(newPrice - listing.currentPrice) < minPriceChange) {
+        if (isFiniteNumber(minPriceChange) && Math.abs(newPrice - comparisonCurrentPrice) < minPriceChange) {
           repricingResults.push({
             listingId: listing.listingId,
             currentPrice: listing.currentPrice,
             newPrice: listing.currentPrice,
             action: 'no_change',
-            reason: `Change $${Math.abs(newPrice - listing.currentPrice).toFixed(2)} below threshold $${minPriceChange}`
+            reason: `Change $${Math.abs(newPrice - comparisonCurrentPrice).toFixed(2)} below threshold $${minPriceChange}`
           });
           continue;
         }
 
         // Re-check after constraints/thresholds
-        if (newPrice === listing.currentPrice) {
+        if (newPrice === comparisonCurrentPrice) {
           repricingResults.push({
             listingId: listing.listingId,
             currentPrice: listing.currentPrice,
@@ -470,6 +507,34 @@ export async function POST(request: NextRequest) {
           if (twoStepMeta) {
             twoStepMeta.finalOperationId = updateResult.operation?.operationId;
             twoStepMeta.finalOperationStatus = updateResult.operationStatus;
+          }
+
+          // If the two-step reset happened and the final update failed, attempt a best-effort revert
+          // back to the original listing price (so we don't leave the listing stuck at $999).
+          let finalUpdateSucceeded = updateResult.success;
+          if (!finalUpdateSucceeded && didTemporaryReset) {
+            const revert = await updateListingPrice(listing.listingId, listing.currentPrice, accessToken, {
+              waitForCompletion: true,
+              timeoutMs: 30_000
+            });
+            if (twoStepMeta) {
+              twoStepMeta.revertOperationId = revert.operation?.operationId;
+              twoStepMeta.revertOperationStatus = revert.operationStatus;
+            }
+            // Even if revert fails, we keep the action as failed, but with a more informative reason.
+            repricingResults.push({
+              listingId: listing.listingId,
+              currentPrice: listing.currentPrice,
+              newPrice: newPrice,
+              action: 'failed',
+              reason: `Final price update failed: ${updateResult.error || 'Unknown error'}. Revert ${revert.success ? 'succeeded' : 'failed'}.`,
+              profitChange: calculateProfitChange(listing, newPrice),
+              competitivePosition: analyzeCompetitivePosition(newPrice, marketData),
+              operationId: updateResult.operation?.operationId,
+              operationStatus: updateResult.operationStatus,
+              twoStep: twoStepMeta
+            });
+            continue;
           }
           
           repricingResults.push({
