@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "next dev -H 0.0.0.0",
     "build": "next build",
+    "build:isolated": "NEXT_DIST_DIR=.next-build next build",
     "start": "next start",
+    "start:isolated": "NEXT_DIST_DIR=.next-build next start",
     "lint": "next lint",
     "cap:sync": "npx cap sync",
     "cap:sync:ios": "npx cap sync ios",

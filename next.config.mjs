@@ -1,5 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // NOTE: `next build` writes into `distDir`. If you run `next build` while `next dev` is running,
+  // it can corrupt the dev server's on-demand assets (leading to an unstyled page because
+  // /_next/static/* returns 404/500). For local-only isolated builds, set NEXT_DIST_DIR
+  // (see package.json script `build:isolated`).
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   // Allow building despite ESLint errors for mobile app
   eslint: {
     ignoreDuringBuilds: true,
