@@ -1715,6 +1715,8 @@ export default function TestStockXOrders() {
               setOrders([...all]);
               setAllProgress({ page: p, total: all.length });
               addedSinceFlush = 0;
+              // Yield so React paints progressively instead of batching all updates into one render.
+              await sleep(0);
             }
           }
 
@@ -1723,6 +1725,8 @@ export default function TestStockXOrders() {
             setOrders([...all]);
             setAllProgress({ page: p, total: all.length });
             addedSinceFlush = 0;
+            // Yield so the user sees the page results immediately.
+            await sleep(0);
           }
 
           hasNext = Boolean(json?.hasNextPage) && pageRows.length > 0;
@@ -1801,6 +1805,8 @@ export default function TestStockXOrders() {
                   const dateFilteredActiveSoFar = activeAll.filter((x) => inSelectedDateRange(x.createdAt));
                   setOrders([...all, ...dateFilteredActiveSoFar]);
                   activeAddedSinceFlush = 0;
+                  // Yield so React paints progressively instead of batching.
+                  await sleep(0);
                 }
               }
               appendLog('info', `Active page ${p} fetched`, {
@@ -1819,6 +1825,7 @@ export default function TestStockXOrders() {
             const dateFilteredActiveSoFar = activeAll.filter((x) => inSelectedDateRange(x.createdAt));
             setOrders([...all, ...dateFilteredActiveSoFar]);
             activeAddedSinceFlush = 0;
+            await sleep(0);
           }
 
           return activeAll;
