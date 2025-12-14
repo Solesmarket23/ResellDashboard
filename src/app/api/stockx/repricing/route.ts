@@ -48,6 +48,7 @@ interface ListingToReprice {
   lastSeenFlexLowestAsk?: number | null;
   // Duplicate inventory: fixed reserve price for followers (set once and hold)
   reservePrice?: number | null;
+  reservePriceSetAt?: string | null;
 }
 
 function normalizePercent(value: unknown, fallback: number) {
@@ -214,6 +215,7 @@ export async function POST(request: NextRequest) {
     // This matches the common selling reality: only the lowest-priced identical listing sells first,
     // so keeping the rest high avoids racing yourself downward while still keeping inventory listed.
     const RESERVE_MULTIPLIER = 2.5;
+    const RESERVE_REFRESH_MS = 7 * 24 * 60 * 60 * 1000; // refresh followers every 7 days
     const groupKeyFor = (l: ListingToReprice) => `${l.productId}__${l.variantId}`;
     const groupCandidates = new Map<string, ListingToReprice[]>();
     for (const l of listings) {
@@ -363,15 +365,32 @@ export async function POST(request: NextRequest) {
               });
               continue;
             }
-            // "Set once and hold": if we already have a stored reservePrice, use it and do NOT chase market changes.
+            // "Set once and hold" with occasional refresh:
+            // - If we already have a stored reservePrice and it was set < 7 days ago, hold it (no chasing).
+            // - Otherwise refresh it to RESERVE_MULTIPLIER * bestAsk and persist reservePrice(+SetAt) via cron.
             const storedReserve =
               typeof listing.reservePrice === 'number' && Number.isFinite(listing.reservePrice) && listing.reservePrice > 0
                 ? listing.reservePrice
                 : null;
-            newPrice = Math.max(1, Math.round(storedReserve ?? Math.round(bestAsk * RESERVE_MULTIPLIER)));
-            skipReason = storedReserve
-              ? `Reserve pricing (fixed): duplicate inventory (leader ${groupLeaderId} runs Two-step). Hold $${newPrice}`
-              : `Reserve pricing (set once): duplicate inventory (leader ${groupLeaderId} runs Two-step). Set to ${RESERVE_MULTIPLIER}x best ask ($${bestAsk} → $${newPrice})`;
+            const storedAtMs =
+              typeof listing.reservePriceSetAt === 'string' && listing.reservePriceSetAt
+                ? Date.parse(listing.reservePriceSetAt)
+                : Number.NaN;
+            const hasValidStoredAt = Number.isFinite(storedAtMs);
+            const isFresh = storedReserve !== null && hasValidStoredAt && Date.now() - storedAtMs < RESERVE_REFRESH_MS;
+            const computedReserve = Math.max(1, Math.round(Math.round(bestAsk * RESERVE_MULTIPLIER)));
+            newPrice = isFresh ? Math.max(1, Math.round(storedReserve!)) : computedReserve;
+
+            if (storedReserve === null) {
+              skipReason = `Reserve pricing (set once): duplicate inventory (leader ${groupLeaderId} runs Two-step). Set to ${RESERVE_MULTIPLIER}x best ask ($${bestAsk} → $${newPrice})`;
+            } else if (isFresh) {
+              skipReason = `Reserve pricing (fixed): duplicate inventory (leader ${groupLeaderId} runs Two-step). Hold $${newPrice} (refresh every 7d)`;
+            } else {
+              const since = hasValidStoredAt ? listing.reservePriceSetAt : 'unknown';
+              skipReason =
+                `Reserve pricing (refresh 7d): duplicate inventory (leader ${groupLeaderId} runs Two-step). ` +
+                `Was $${Math.max(1, Math.round(storedReserve))} (setAt=${since}) → ${RESERVE_MULTIPLIER}x best ask ($${bestAsk} → $${newPrice})`;
+            }
           } else
           // Special case: two-step strategy (temporary reset to a high price, then undercut)
           if (listing.pricingStrategy.type === 'reset_then_beat_lowest') {

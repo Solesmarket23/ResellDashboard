@@ -412,7 +412,8 @@ export async function GET(request: NextRequest) {
               lastSeenLowestAsk: settings?.lastSeenLowestAsk ?? null,
               lastSeenFlexLowestAsk: settings?.lastSeenFlexLowestAsk ?? null,
               // Duplicate inventory: fixed reserve price for followers
-              reservePrice: settings?.reservePrice ?? null
+              reservePrice: settings?.reservePrice ?? null,
+              reservePriceSetAt: settings?.reservePriceSetAt ?? null
             };
           });
 
@@ -526,16 +527,20 @@ export async function GET(request: NextRequest) {
 
             // If this listing is a reserve follower and we don't have a stored reservePrice yet,
             // store its current price as the fixed reserve price ("set once and hold").
-            if (!(typeof s?.reservePrice === 'number' && Number.isFinite(s.reservePrice) && s.reservePrice > 0)) {
-              if (
-                typeof r?.reason === 'string' &&
-                r.reason.toLowerCase().includes('reserve pricing (set once)')
-              ) {
-                const np = typeof r?.newPrice === 'number' ? r.newPrice : null;
-                if (np && np > 0) {
-                  patch.reservePrice = np;
-                }
+            const reasonLower = typeof r?.reason === 'string' ? r.reason.toLowerCase() : '';
+            const np = typeof r?.newPrice === 'number' ? r.newPrice : null;
+            const hasStoredReserve = typeof s?.reservePrice === 'number' && Number.isFinite(s.reservePrice) && s.reservePrice > 0;
+            const hasStoredSetAt = typeof s?.reservePriceSetAt === 'string' && Boolean(s.reservePriceSetAt);
+
+            // Persist follower reserve price when the repricing API indicates it was set/refreshed.
+            if (reasonLower.includes('reserve pricing (set once)') || reasonLower.includes('reserve pricing (refresh 7d)')) {
+              if (np && np > 0) {
+                patch.reservePrice = np;
+                patch.reservePriceSetAt = nowIso;
               }
+            } else if (hasStoredReserve && !hasStoredSetAt) {
+              // Backfill timestamp for older docs that have reservePrice but no reservePriceSetAt.
+              patch.reservePriceSetAt = nowIso;
             }
 
             batch.set(docRef, patch, { merge: true });
