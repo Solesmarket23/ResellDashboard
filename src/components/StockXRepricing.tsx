@@ -189,6 +189,37 @@ export default function StockXRepricing() {
 
   const LISTINGS_CACHE_KEY = 'stockx_listings_cache_v1';
 
+  const getSiteUserId = useCallback((): string | null => {
+    try {
+      const cookies = document.cookie.split(';');
+      const userIdCookie = cookies.find(c => c.trim().startsWith('site-user-id='));
+      if (!userIdCookie) return null;
+      return decodeURIComponent(userIdCookie.split('=')[1]);
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const applySavedSettingsToListings = useCallback((input: Listing[], settingsMap: Record<string, any>) => {
+    if (!Array.isArray(input) || input.length === 0) return input;
+    const hasAny = settingsMap && Object.keys(settingsMap).length > 0;
+    return input.map(listing => {
+      const saved = hasAny ? settingsMap[listing.listingId] : undefined;
+      if (saved) {
+        return {
+          ...listing,
+          repricingEnabled: Object.prototype.hasOwnProperty.call(saved, 'enabled') ? saved.enabled !== false : true,
+          pricingStrategy: saved.pricingStrategy || listing.pricingStrategy,
+          minPrice: Object.prototype.hasOwnProperty.call(saved, 'minPrice') ? saved.minPrice : listing.minPrice,
+          maxPrice: Object.prototype.hasOwnProperty.call(saved, 'maxPrice') ? saved.maxPrice : listing.maxPrice,
+          autoDeactivate: Object.prototype.hasOwnProperty.call(saved, 'autoDeactivate') ? saved.autoDeactivate : listing.autoDeactivate
+        };
+      }
+      // No settings doc = not opted-in = OFF by default
+      return { ...listing, repricingEnabled: false };
+    });
+  }, []);
+
   const getTrueAsk = useCallback((listing: Listing): number | null => {
     const std = typeof listing.lowestAsk === 'number' && listing.lowestAsk > 0 ? listing.lowestAsk : null;
     const flex = typeof listing.flexLowestAsk === 'number' && listing.flexLowestAsk > 0 ? listing.flexLowestAsk : null;
@@ -340,16 +371,16 @@ export default function StockXRepricing() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load settings when auth user changes
+  // Load pricing settings (works with Firebase auth OR site-user-id cookie)
   useEffect(() => {
-    console.log('👤 Auth user changed:', authUser ? `${authUser.email} (${authUser.uid})` : 'No user');
-    if (authUser) {
-      console.log('🔐 User authenticated, loading settings...');
-      loadSavedSettings(authUser.uid);
-    } else {
-      console.log('⚠️ No user - settings cannot be saved');
-    }
-  }, [authUser]);
+    const effectiveUserId = authUser?.uid || getSiteUserId();
+    console.log(
+      '👤 Effective user changed:',
+      authUser?.uid ? `Firebase (${authUser.uid})` : effectiveUserId ? `Site (${effectiveUserId})` : 'No user id'
+    );
+    if (!effectiveUserId) return;
+    loadSavedSettings(effectiveUserId);
+  }, [authUser, getSiteUserId]);
 
   // Fetch listings on mount. StockX listing fetch is cookie-based and does NOT require Firebase auth.
   const hasInitiallyFetched = useRef(false);
@@ -471,8 +502,45 @@ export default function StockXRepricing() {
       setSavedSettings(settingsMap);
       setSettingsLoaded(true);
       console.log('✅ Settings loaded into state.');
-      
-      // Don't apply settings here - let fetchListings handle it
+
+      // Apply immediately to whatever listings we already have (cached or freshly fetched),
+      // so a page refresh a few seconds after Save still shows the saved values.
+      setListings(prev => {
+        const next = applySavedSettingsToListings(prev, settingsMap);
+        // Also refresh the local cache so the next refresh stays consistent.
+        try {
+          const minimal = next.map((l: any) => ({
+            listingId: l.listingId,
+            productId: l.productId,
+            variantId: l.variantId,
+            productName: l.productName,
+            size: l.size,
+            currentPrice: l.currentPrice,
+            originalPrice: l.originalPrice,
+            styleId: l.styleId,
+            brand: l.brand,
+            colorway: l.colorway,
+            condition: l.condition,
+            status: l.status,
+            createdAt: l.createdAt,
+            updatedAt: l.updatedAt,
+            retailPrice: l.retailPrice,
+            lowestAsk: l.lowestAsk,
+            flexLowestAsk: l.flexLowestAsk,
+            highestBid: l.highestBid,
+            lastSale: l.lastSale,
+            category: l.category,
+            inventoryType: l.inventoryType,
+            pricingStrategy: l.pricingStrategy,
+            repricingEnabled: l.repricingEnabled,
+            minPrice: l.minPrice,
+            maxPrice: l.maxPrice,
+            autoDeactivate: l.autoDeactivate
+          }));
+          localStorage.setItem(LISTINGS_CACHE_KEY, JSON.stringify({ cachedAt: Date.now(), listings: minimal }));
+        } catch {}
+        return next;
+      });
     } catch (error) {
       console.error('❌ Error loading saved settings:', error);
     }
@@ -548,6 +616,14 @@ export default function StockXRepricing() {
         }
       }
       
+      const normalizeBound = (v: any): number | null => {
+        if (v === null || v === undefined) return null;
+        if (typeof v === 'string' && v.trim() === '') return null;
+        const n = Number(v);
+        if (!Number.isFinite(n) || n <= 0) return null;
+        return n;
+      };
+
       const settingData: any = {
         listingId,
         pricingStrategy: cleanPricingStrategy,
@@ -555,18 +631,21 @@ export default function StockXRepricing() {
         enabled: settings.enabled !== undefined
           ? settings.enabled === true
           : (existingSetting?.enabled !== undefined ? existingSetting.enabled !== false : true),
-        autoDeactivate: settings.autoDeactivate || false,
+        autoDeactivate:
+          settings.autoDeactivate !== undefined
+            ? settings.autoDeactivate === true
+            : (existingSetting?.autoDeactivate === true),
         updatedAt: new Date().toISOString()
       };
       
       // Handle minPrice and maxPrice - Firebase doesn't allow undefined values
       if (settings.minPrice !== undefined) {
-        if (settings.minPrice === null || settings.minPrice === 0 || settings.minPrice === '') {
-          // Use deleteField to properly remove the field from Firebase
-          settingData.minPrice = deleteField();
-          console.log(`🗑️ Using deleteField() to remove minPrice`);
+        const min = normalizeBound(settings.minPrice);
+        if (min === null) {
+          settingData.minPrice = null; // server route will delete the field
+          console.log(`🗑️ Clearing minPrice`);
         } else {
-          settingData.minPrice = Number(settings.minPrice);
+          settingData.minPrice = min;
           console.log(`✅ Including minPrice: ${settingData.minPrice}`);
         }
       } else {
@@ -574,12 +653,12 @@ export default function StockXRepricing() {
       }
       
       if (settings.maxPrice !== undefined) {
-        if (settings.maxPrice === null || settings.maxPrice === 0 || settings.maxPrice === '') {
-          // Use deleteField to properly remove the field from Firebase
-          settingData.maxPrice = deleteField();
-          console.log(`🗑️ Using deleteField() to remove maxPrice`);
+        const max = normalizeBound(settings.maxPrice);
+        if (max === null) {
+          settingData.maxPrice = null; // server route will delete the field
+          console.log(`🗑️ Clearing maxPrice`);
         } else {
-          settingData.maxPrice = Number(settings.maxPrice);
+          settingData.maxPrice = max;
           console.log(`✅ Including maxPrice: ${settingData.maxPrice}`);
         }
       } else {
@@ -600,9 +679,13 @@ export default function StockXRepricing() {
       }
 
       // Update local state so UI stays in sync immediately
+      // Mirror server-side deletion semantics (null means delete the field).
+      const localSettingData = { ...settingData };
+      if (localSettingData.minPrice === null) delete localSettingData.minPrice;
+      if (localSettingData.maxPrice === null) delete localSettingData.maxPrice;
       setSavedSettings(prev => ({
         ...prev,
-        [listingId]: { ...prev[listingId], ...settingData, id: out.id, userId: effectiveUserId }
+        [listingId]: { ...prev[listingId], ...localSettingData, id: out.id, userId: effectiveUserId }
       }));
       setSettingsLoaded(true);
       console.log('🎉 Settings saved successfully to Firebase');
@@ -1061,6 +1144,7 @@ export default function StockXRepricing() {
             category: l.category,
             inventoryType: l.inventoryType,
             pricingStrategy: l.pricingStrategy,
+            repricingEnabled: l.repricingEnabled,
             minPrice: l.minPrice,
             maxPrice: l.maxPrice,
             autoDeactivate: l.autoDeactivate
@@ -1499,16 +1583,10 @@ export default function StockXRepricing() {
       return;
     }
     
-    // For manual pricing, min/max are REQUIRED
+    // For manual pricing, we require at least a Min bound as a safety rail.
     if (pendingStrategy.type === 'manual') {
       if (!listing.minPrice || listing.minPrice <= 0) {
         setBulkActionMessage('⚠️ Please enter a Min price before saving manual pricing');
-        setTimeout(() => setBulkActionMessage(null), 5000);
-        return;
-      }
-      
-      if (!listing.maxPrice || listing.maxPrice <= 0) {
-        setBulkActionMessage('⚠️ Please enter a Max price before saving manual pricing');
         setTimeout(() => setBulkActionMessage(null), 5000);
         return;
       }
@@ -1523,10 +1601,14 @@ export default function StockXRepricing() {
       }
     }
     
-    // Warn if automated strategy has no safety bounds (but still allow saving)
-    if (pendingStrategy.type !== 'manual' && pendingStrategy.type !== 'keep_current' && 
-        (!listing.minPrice || !listing.maxPrice)) {
-      console.warn(`⚠️ Saving ${pendingStrategy.type} without min/max safety bounds for listing ${listingId}`);
+    // Warn if automated strategy has NO safety bounds at all (but still allow saving)
+    if (
+      pendingStrategy.type !== 'manual' &&
+      pendingStrategy.type !== 'keep_current' &&
+      (!listing.minPrice || listing.minPrice <= 0) &&
+      (!listing.maxPrice || listing.maxPrice <= 0)
+    ) {
+      console.warn(`⚠️ Saving ${pendingStrategy.type} without any safety bounds for listing ${listingId}`);
     }
     
     // Check if this listing is part of a group
@@ -1558,8 +1640,9 @@ export default function StockXRepricing() {
 
       // If user saved the Two-step strategy, run it immediately (LIVE) for this listing/group leader.
       if (pendingStrategy.type === 'reset_then_beat_lowest') {
-        const hasBounds = !!listing.minPrice && listing.minPrice > 0 && !!listing.maxPrice && listing.maxPrice > 0;
-        if (!hasBounds) {
+        const hasAnyBounds =
+          (!!listing.minPrice && listing.minPrice > 0) || (!!listing.maxPrice && listing.maxPrice > 0);
+        if (!hasAnyBounds) {
           const ok = window.confirm(
             'Two-step will run LIVE now.\n\nWarning: you have no Min/Max safety bounds set for this listing.\n\nRun anyway?'
           );

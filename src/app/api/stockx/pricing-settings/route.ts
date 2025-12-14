@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { FieldValue } from 'firebase-admin/firestore';
 
 function getSiteUserIdFromCookie(request: NextRequest): string | null {
   // cookie name is used elsewhere in the app (see StockXRepricing save interval logic)
@@ -68,10 +69,21 @@ export async function POST(request: NextRequest) {
     }
 
     const nowIso = new Date().toISOString();
+
+    // Support deletion semantics from client: { minPrice: null } / { maxPrice: null }
+    // because Firebase client FieldValue.delete() cannot be JSON-serialized.
+    const normalizedSettings: any = { ...(settings as any) };
+    if (Object.prototype.hasOwnProperty.call(normalizedSettings, 'minPrice') && normalizedSettings.minPrice === null) {
+      normalizedSettings.minPrice = FieldValue.delete();
+    }
+    if (Object.prototype.hasOwnProperty.call(normalizedSettings, 'maxPrice') && normalizedSettings.maxPrice === null) {
+      normalizedSettings.maxPrice = FieldValue.delete();
+    }
+
     const payload = {
       userId,
       listingId,
-      ...settings,
+      ...normalizedSettings,
       updatedAt: nowIso
     };
 
