@@ -11,6 +11,19 @@ function parseStockXMoneyToDollars(raw: any): number | null {
   return n >= 1000 ? n / 100 : n;
 }
 
+function looksLikeHtml(text: string): boolean {
+  const t = text.trim().toLowerCase();
+  return t.startsWith('<!doctype') || t.startsWith('<html') || t.startsWith('<head') || t.startsWith('<body') || t.startsWith('<');
+}
+
+function safeJsonParse(text: string): any | null {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -114,7 +127,41 @@ export async function GET(request: NextRequest) {
       throw new Error(errorMessage);
     }
 
-    const data = await response.json();
+    const firstPageText = await response.text();
+    if (looksLikeHtml(firstPageText)) {
+      // StockX sometimes returns an HTML challenge page (CAPTCHA / auth wall) instead of JSON.
+      // Never bubble raw HTML back to the client; return a JSON error the UI can handle.
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'StockX returned an HTML challenge page (not JSON). Please re-authenticate.',
+          upstream: {
+            kind: 'html',
+            status: response.status,
+            statusText: response.statusText,
+            snippet: firstPageText.slice(0, 3000)
+          }
+        },
+        { status: 502 }
+      );
+    }
+
+    const data = safeJsonParse(firstPageText);
+    if (!data) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'StockX returned an unexpected response (not valid JSON).',
+          upstream: {
+            kind: 'unknown',
+            status: response.status,
+            statusText: response.statusText,
+            snippet: firstPageText.slice(0, 3000)
+          }
+        },
+        { status: 502 }
+      );
+    }
     console.log('✅ Listings response:', {
       hasListings: !!data.listings,
       dataKeys: Object.keys(data),
@@ -195,7 +242,14 @@ export async function GET(request: NextRequest) {
         });
         
         if (response.ok) {
-          const data = await response.json();
+          const text = await response.text();
+          if (looksLikeHtml(text)) {
+            return { lowestAsk: null, flexLowestAsk: null, highestBid: null, lastSale: null };
+          }
+          const data = safeJsonParse(text);
+          if (!data) {
+            return { lowestAsk: null, flexLowestAsk: null, highestBid: null, lastSale: null };
+          }
           // The market data endpoint often returns { variants: [...] }
           const variants = data?.variants || data;
           const variantData = Array.isArray(variants)

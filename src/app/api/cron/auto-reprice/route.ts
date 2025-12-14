@@ -64,8 +64,11 @@ function getBaseUrl(request: NextRequest) {
     return 'https://www.solesmarket.com';
   }
 
-  // Prefer explicit config for cron (Vercel/GitHub Actions)
+  // Prefer explicit config for cron (Vercel/GitHub Actions). This should be a PUBLIC domain
+  // that is NOT protected by Vercel Deployment Protection.
   const envUrl =
+    process.env.CRON_BASE_URL ||
+    process.env.NEXT_PUBLIC_BASE_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
     process.env.APP_URL ||
     process.env.VERCEL_URL ||
@@ -74,14 +77,29 @@ function getBaseUrl(request: NextRequest) {
   if (envUrl) {
     // VERCEL_URL is often just the hostname
     if (!envUrl.startsWith('http://') && !envUrl.startsWith('https://')) {
-      return `https://${envUrl}`;
+      const normalized = `https://${envUrl}`;
+      // If this points at a protected *.vercel.app domain, prefer the public production domain.
+      if (normalized.includes('.vercel.app')) {
+        return 'https://www.solesmarket.com';
+      }
+      return normalized;
+    }
+    // If this points at a protected *.vercel.app domain, prefer the public production domain.
+    if (envUrl.includes('.vercel.app')) {
+      return 'https://www.solesmarket.com';
     }
     return envUrl;
   }
 
   // Fallback to request host (useful for local/ngrok manual triggers)
   const proto = request.headers.get('x-forwarded-proto') || 'https';
-  if (host) return `${proto}://${host}`;
+  if (host) {
+    const derived = `${proto}://${host}`;
+    if (derived.includes('.vercel.app')) {
+      return 'https://www.solesmarket.com';
+    }
+    return derived;
+  }
 
   // Final fallback (should rarely happen)
   return 'http://localhost:3000';

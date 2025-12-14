@@ -155,6 +155,8 @@ export default function StockXRepricing() {
   const [notificationEmail, setNotificationEmail] = useState('');
   const [authenticated, setAuthenticated] = useState(true); // Assume authenticated initially
   const [authError, setAuthError] = useState(false);
+  const [captchaDetected, setCaptchaDetected] = useState(false);
+  const [captchaSnippet, setCaptchaSnippet] = useState<string | null>(null);
   const [customRuleType, setCustomRuleType] = useState('below_dollar');
   const [listingStats, setListingStats] = useState<{
     rawCount?: number;
@@ -996,7 +998,54 @@ export default function StockXRepricing() {
         response = retryResponse;
       }
       
-      const data = await response.json();
+      // Defensive parsing: if something upstream returns HTML (CAPTCHA/auth wall or Next error page),
+      // calling response.json() will throw and break the UI.
+      const rawText = await response.text();
+      const contentType = response.headers.get('content-type') || '';
+      const trimmed = rawText.trim().toLowerCase();
+      const isHtml =
+        contentType.includes('text/html') ||
+        trimmed.startsWith('<!doctype') ||
+        trimmed.startsWith('<html') ||
+        trimmed.startsWith('<head') ||
+        trimmed.startsWith('<body') ||
+        trimmed.startsWith('<');
+
+      if (isHtml) {
+        console.error('❌ Listings API returned HTML (likely auth challenge/CAPTCHA).');
+        setCaptchaDetected(true);
+        setCaptchaSnippet(rawText.slice(0, 3000));
+        setAuthenticated(false);
+        setAuthError(true);
+        setBulkActionMessage('❌ StockX returned an authentication challenge (HTML). Please re-authenticate.');
+        setTimeout(() => setBulkActionMessage(null), 10000);
+        return;
+      }
+
+      let data: any = null;
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        console.error('❌ Listings API returned non-JSON response.');
+        setCaptchaDetected(true);
+        setCaptchaSnippet(rawText.slice(0, 3000));
+        setAuthenticated(false);
+        setAuthError(true);
+        setBulkActionMessage('❌ StockX returned an unexpected response. Please re-authenticate.');
+        setTimeout(() => setBulkActionMessage(null), 10000);
+        return;
+      }
+
+      // If the API explicitly tells us StockX returned HTML, treat it as auth/captcha.
+      if (data?.upstream?.kind === 'html') {
+        setCaptchaDetected(true);
+        setCaptchaSnippet(typeof data?.upstream?.snippet === 'string' ? data.upstream.snippet.slice(0, 3000) : null);
+        setAuthenticated(false);
+        setAuthError(true);
+        setBulkActionMessage('❌ StockX returned an authentication challenge (HTML). Please re-authenticate.');
+        setTimeout(() => setBulkActionMessage(null), 10000);
+        return;
+      }
       
       // Always log the raw response to see what we're getting
       console.log('📦 Raw API Response:', data);
@@ -1043,6 +1092,8 @@ export default function StockXRepricing() {
       
       if (data.success && data.listings && Array.isArray(data.listings)) {
         setAuthenticated(true); // User is authenticated if we got listings
+        setCaptchaDetected(false);
+        setCaptchaSnippet(null);
         
         // Load cached market prices
         let cachedPrices: Record<string, any> = {};
@@ -2798,10 +2849,24 @@ export default function StockXRepricing() {
               StockX Repricing
             </h2>
             <p className={`mb-6 ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-            {authError 
-              ? "Your StockX session has expired. Please re-authenticate to continue."
-              : "Please authenticate with StockX to use the repricing feature."}
+            {captchaDetected
+              ? "StockX returned an authentication challenge (HTML/CAPTCHA). Please re-authenticate to continue."
+              : authError 
+                ? "Your StockX session has expired. Please re-authenticate to continue."
+                : "Please authenticate with StockX to use the repricing feature."}
             </p>
+            {captchaDetected && captchaSnippet && (
+              <details className={`mb-6 text-left ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                <summary className="cursor-pointer text-sm font-medium">
+                  Show details (debug)
+                </summary>
+                <pre className={`mt-3 max-h-40 overflow-auto rounded-lg p-3 text-xs whitespace-pre-wrap ${
+                  isNeon ? 'bg-black/30 border border-slate-700' : 'bg-gray-50 border border-gray-200'
+                }`}>
+                  {captchaSnippet}
+                </pre>
+              </details>
+            )}
             <div className="flex justify-center">
               <button 
                 onClick={() => window.location.href = '/api/stockx/auth?returnTo=' + encodeURIComponent(window.location.href)}
