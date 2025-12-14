@@ -3694,13 +3694,13 @@ export default function StockXRepricing() {
                         className={`rounded ${isNeon ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-300'} cursor-pointer`}
                       />
                     </td>
-                    <td className="px-6 py-3">
-                      <div className="flex items-center gap-2">
-                        <div>
+                    <td className="px-6 py-3 text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        <div className="text-center">
                           <div className={`font-medium text-sm ${isNeon ? 'text-white' : 'text-gray-900'}`}>
                             {listing.productName}
                           </div>
-                          <div className={`text-xs flex items-center gap-1 ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                          <div className={`text-xs flex items-center justify-center gap-1 ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
                             <span>Style code: {listing.styleId || 'N/A'}</span>
                             {listing.styleId && listing.styleId !== 'N/A' && (
                               <button
@@ -3777,11 +3777,11 @@ export default function StockXRepricing() {
                         {listing.size}
                       </span>
                     </td>
-                    <td className={`px-6 py-3 font-medium text-sm text-right tabular-nums ${isNeon ? 'text-cyan-400' : 'text-gray-900'}`}>
+                    <td className={`px-6 py-3 font-medium text-sm text-center tabular-nums ${isNeon ? 'text-cyan-400' : 'text-gray-900'}`}>
                       ${listing.currentPrice}
                     </td>
-                    <td className={`px-6 py-3 font-medium text-sm text-right tabular-nums ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-                      <div className="flex flex-col leading-tight items-end">
+                    <td className={`px-6 py-3 font-medium text-sm text-center tabular-nums ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                      <div className="flex flex-col leading-tight items-center">
                         <span>${listing.lowestAsk || '-'}</span>
                         <span className={`text-[11px] ${isNeon ? 'text-gray-500' : 'text-gray-500'}`}>
                           Flex: ${listing.flexLowestAsk || '-'}
@@ -3805,7 +3805,7 @@ export default function StockXRepricing() {
                       </div>
                     </td>
                     <td className="px-6 py-3">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-center gap-2">
                         <NeonDropdown
                           value={listing.pricingStrategy?.type || 'keep_current'}
                           onChange={(value) => updateListingStrategy(listing.listingId, value as any)}
@@ -3817,7 +3817,7 @@ export default function StockXRepricing() {
                             return { ...opt, label: `Below ${pct}%` };
                           })}
                           isNeon={isNeon}
-                          className="flex-1"
+                          className="w-[260px] max-w-full"
                         />
                         {(pendingStrategyChanges[listing.listingId] || pendingBoundChanges[listing.listingId]) && (
                           <button
@@ -3916,6 +3916,7 @@ export default function StockXRepricing() {
                       </div>
                     </td>
                     <td className="px-6 py-3">
+                      <div className="flex justify-center">
                       <div className="relative">
                         <span className={`absolute left-2 top-1/2 -translate-y-1/2 text-xs ${
                           isNeon ? 'text-cyan-400' : 'text-gray-600'
@@ -3945,8 +3946,10 @@ export default function StockXRepricing() {
                           placeholder="Min"
                       />
                       </div>
+                      </div>
                     </td>
                     <td className="px-6 py-3">
+                      <div className="flex justify-center">
                       <div className="relative">
                         <span className={`absolute left-2 top-1/2 -translate-y-1/2 text-xs ${
                           isNeon ? 'text-cyan-400' : 'text-gray-600'
@@ -3975,6 +3978,7 @@ export default function StockXRepricing() {
                         }`}
                           placeholder="Max"
                       />
+                      </div>
                       </div>
                     </td>
                     <td className="px-6 py-3 text-center">
