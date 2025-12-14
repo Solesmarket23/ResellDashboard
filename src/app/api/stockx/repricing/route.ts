@@ -195,6 +195,36 @@ export async function POST(request: NextRequest) {
     const errors = [];
     let tokenRefreshed = false;
 
+    // Duplicate-inventory behavior:
+    // If a user has multiple identical listings (same productId+variantId) and they are using the
+    // Two-step strategy, we only run Two-step on ONE "leader" listing and price the remaining
+    // listings as a reserve stack at a fixed multiplier of the current best ask.
+    //
+    // This matches the common selling reality: only the lowest-priced identical listing sells first,
+    // so keeping the rest high avoids racing yourself downward while still keeping inventory listed.
+    const RESERVE_MULTIPLIER = 2.5;
+    const groupKeyFor = (l: ListingToReprice) => `${l.productId}__${l.variantId}`;
+    const groupCandidates = new Map<string, ListingToReprice[]>();
+    for (const l of listings) {
+      if (useIndividualStrategies && l.pricingStrategy?.type === 'reset_then_beat_lowest') {
+        const key = groupKeyFor(l);
+        const arr = groupCandidates.get(key) || [];
+        arr.push(l);
+        groupCandidates.set(key, arr);
+      }
+    }
+    const groupLeaderByKey = new Map<string, string>();
+    for (const [key, arr] of groupCandidates.entries()) {
+      // Only apply this behavior for groups with duplicates (2+ listings).
+      if (arr.length < 2) continue;
+      // Choose a stable leader: lowest currentPrice, then listingId tiebreaker.
+      const sorted = [...arr].sort((a, b) => {
+        if (a.currentPrice !== b.currentPrice) return a.currentPrice - b.currentPrice;
+        return String(a.listingId).localeCompare(String(b.listingId));
+      });
+      groupLeaderByKey.set(key, sorted[0].listingId);
+    }
+
     for (const listing of listings) {
       try {
         const isTwoStepStrategy =
@@ -257,8 +287,32 @@ export async function POST(request: NextRequest) {
         // Calculate new price based on strategy
         let newPrice: number;
         let skipReason: string | null = null;
+
+        // If this listing is part of a duplicate group running Two-step, only the leader runs Two-step.
+        // All other listings get priced to a reserve price (multiplier of current best ask).
+        const groupKey = groupKeyFor(listing);
+        const groupLeaderId = groupLeaderByKey.get(groupKey);
+        const isDuplicateTwoStepGroup = !!groupLeaderId && useIndividualStrategies && isTwoStepStrategy;
+        const isReserveFollower = isDuplicateTwoStepGroup && listing.listingId !== groupLeaderId;
         
         if (useIndividualStrategies && listing.pricingStrategy) {
+          if (isReserveFollower) {
+            const stdAsk = parseStockXMoneyToDollars((marketData as any).lowestAskAmount);
+            const flexAsk = parseStockXMoneyToDollars((marketData as any).flexLowestAskAmount);
+            const bestAsk = minPositive(stdAsk, flexAsk);
+            if (bestAsk === null) {
+              repricingResults.push({
+                listingId: listing.listingId,
+                currentPrice: listing.currentPrice,
+                newPrice: listing.currentPrice,
+                action: 'no_change',
+                reason: 'Reserve pricing skipped: no lowest ask available',
+              });
+              continue;
+            }
+            newPrice = Math.max(1, Math.round(bestAsk * RESERVE_MULTIPLIER));
+            skipReason = `Reserve pricing: duplicate inventory (leader ${groupLeaderId} runs Two-step). Set to ${RESERVE_MULTIPLIER}x best ask ($${bestAsk} → $${newPrice})`;
+          } else
           // Special case: two-step strategy (temporary reset to a high price, then undercut)
           if (listing.pricingStrategy.type === 'reset_then_beat_lowest') {
             const resetPrice = isFiniteNumber(listing.pricingStrategy.resetPrice)
