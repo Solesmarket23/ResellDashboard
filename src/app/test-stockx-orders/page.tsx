@@ -1592,6 +1592,18 @@ export default function TestStockXOrders() {
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+  const fetchJsonWithTimeout = async (url: string, opts: RequestInit = {}, timeoutMs = 25000) => {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, { ...opts, signal: controller.signal });
+      const json = await res.json().catch(() => ({}));
+      return { res, json };
+    } finally {
+      clearTimeout(t);
+    }
+  };
+
   // History API supports fromDate/toDate filters; active orders API does NOT, so we filter active rows client-side.
   function inSelectedDateRange(isoOrDate: string | undefined) {
     if (!fromDate && !toDate) return true;
@@ -1768,6 +1780,7 @@ export default function TestStockXOrders() {
             let p = 1;
             let hasNext = true;
             while (hasNext && p <= MAX_PAGES) {
+              appendLog('info', 'Requesting active page', { pageNumber: p, pageSize: PAGE_SIZE, orderStatus: st || '(all)' });
               const qp = new URLSearchParams();
               qp.set('pageNumber', String(p));
               qp.set('pageSize', String(PAGE_SIZE));
@@ -1775,8 +1788,23 @@ export default function TestStockXOrders() {
               qp.set('includeDetails', '1');
               if (st) qp.set('orderStatus', st);
               apiCalls.activeRequests += 1;
-              const aRes = await fetch(`/api/stockx/orders/active?${qp.toString()}`);
-              const aJson = await aRes.json().catch(() => ({}));
+              let aRes: Response;
+              let aJson: any;
+              try {
+                const r = await fetchJsonWithTimeout(`/api/stockx/orders/active?${qp.toString()}`, {}, 25000);
+                aRes = r.res;
+                aJson = r.json;
+              } catch (e) {
+                const msg =
+                  e instanceof DOMException && e.name === 'AbortError'
+                    ? 'Active orders request timed out (25s)'
+                    : e instanceof Error
+                      ? e.message
+                      : String(e);
+                appendLog('warn', 'Active orders request failed (non-fatal)', { pageNumber: p, orderStatus: st || '(all)', error: msg });
+                showToast('warning', `Active orders: ${msg}`);
+                break;
+              }
               if (aJson?.debug?.upstreamCalls) {
                 apiCalls.upstream.activeList += Number(aJson.debug.upstreamCalls.activeList || 0);
                 apiCalls.upstream.catalog += Number(aJson.debug.upstreamCalls.catalog || 0);
