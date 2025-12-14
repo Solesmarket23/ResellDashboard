@@ -2896,7 +2896,7 @@ export default function TestStockXOrders() {
               )}
             </div>
 
-            <div className="overflow-auto max-h-[55vh]">
+            <div className="relative overflow-auto max-h-[55vh] min-h-[320px]">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-gray-950/80 backdrop-blur border-b border-white/10">
                   <tr>
@@ -3181,22 +3181,20 @@ export default function TestStockXOrders() {
                     );
                   })}
 
-                  {displayedOrders.length === 0 && (
-                    <tr>
-                      <td colSpan={17} className="px-4 py-10 text-center text-gray-400">
-                        <div className="flex flex-col items-center justify-center gap-1">
-                          <div className="text-base font-medium text-gray-300">
-                            {loading || allLoading ? 'Loading…' : 'No orders loaded yet.'}
-                          </div>
-                          {!loading && !allLoading && (
-                            <div className="text-sm text-gray-400">Click “Fetch for time period”.</div>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  )}
+                  {/* Empty-state overlay is rendered outside the table so it stays centered within the visible viewport even when horizontally scrolled. */}
                 </tbody>
               </table>
+
+              {displayedOrders.length === 0 && (
+                <div className="absolute inset-x-0 top-14 bottom-0 flex items-center justify-center pointer-events-none">
+                  <div className="text-center">
+                    <div className="text-base font-medium text-gray-300">
+                      {loading || allLoading ? 'Loading…' : 'No orders loaded yet.'}
+                    </div>
+                    {!loading && !allLoading && <div className="mt-1 text-sm text-gray-400">Click “Fetch for time period”.</div>}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
