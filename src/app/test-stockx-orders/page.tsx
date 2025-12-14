@@ -241,8 +241,10 @@ export default function TestStockXOrders() {
   const [verificationMonths, setVerificationMonths] = useState<VerificationMonthRow[]>([]);
   const [verificationBrands, setVerificationBrands] = useState<VerificationBrandRow[]>([]);
   const [selectedVerificationMonth, setSelectedVerificationMonth] = useState<string | null>(null);
-  const [verificationPeriod, setVerificationPeriod] = useState<'last_12_months' | 'ytd'>('last_12_months');
+  const [verificationPeriod, setVerificationPeriod] = useState<'last_12_months' | 'ytd' | 'custom'>('last_12_months');
   const [verificationRange, setVerificationRange] = useState<{ from: string; to: string } | null>(null);
+  const [verificationFrom, setVerificationFrom] = useState<string>('');
+  const [verificationTo, setVerificationTo] = useState<string>('');
 
   const [sortBy, setSortBy] = useState<
     | 'orderNumber'
@@ -515,6 +517,16 @@ export default function TestStockXOrders() {
 
   const monthKeyFromYmd = (ymdStr: string) => ymdStr.slice(0, 7);
 
+  // Keep verification date inputs in sync with the selected preset (unless the user switches to Custom).
+  useEffect(() => {
+    if (verificationPeriod === 'custom') return;
+    const { from, to } = verificationPeriod === 'ytd' ? ytdRange() : last12MonthsRange();
+    setVerificationFrom(from);
+    setVerificationTo(to);
+    setVerificationRange({ from, to });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [verificationPeriod]);
+
   const listMonthsBetween = (fromYmd: string, toYmd: string) => {
     const fromKey = monthKeyFromYmd(fromYmd);
     const toKey = monthKeyFromYmd(toYmd);
@@ -592,7 +604,9 @@ export default function TestStockXOrders() {
   };
 
   const fetchVerificationStats = async () => {
-    const { from, to } = verificationPeriod === 'ytd' ? ytdRange() : last12MonthsRange();
+    const derived = verificationPeriod === 'ytd' ? ytdRange() : last12MonthsRange();
+    const from = verificationFrom || derived.from;
+    const to = verificationTo || derived.to;
     setVerificationRange({ from, to });
     const cacheKey = `stockx_verification_cache_v2:${JSON.stringify({ period: verificationPeriod, from, to })}`;
 
@@ -2550,7 +2564,7 @@ export default function TestStockXOrders() {
                 <div>
                   <div className="text-sm font-semibold text-gray-200">Failed verification</div>
                   <div className="text-xs text-gray-400">
-                    {verificationPeriod === 'ytd' ? 'YTD' : 'Last 12 months'}:{' '}
+                    {verificationPeriod === 'ytd' ? 'YTD' : verificationPeriod === 'custom' ? 'Custom' : 'Last 12 months'}:{' '}
                     <code className="text-gray-300">AUTHFAILED</code> vs <code className="text-gray-300">COMPLETED</code>
                   </div>
                 </div>
@@ -2599,11 +2613,62 @@ export default function TestStockXOrders() {
                 >
                   YTD
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setVerificationPeriod('custom')}
+                  className={
+                    'text-xs px-2 py-1 rounded border ' +
+                    (verificationPeriod === 'custom'
+                      ? 'border-cyan-400/40 bg-cyan-500/10 text-cyan-100'
+                      : 'border-white/10 bg-white/5 hover:bg-white/10 text-gray-200')
+                  }
+                  title="Use a custom date range"
+                >
+                  Custom
+                </button>
                 {verificationRange ? (
                   <div className="text-[11px] text-gray-400 ml-auto">
                     Range: {verificationRange.from} → {verificationRange.to}
                   </div>
                 ) : null}
+              </div>
+
+              {/* Custom date range (same calendar UX as sales fetch) */}
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">From</label>
+                  <input
+                    type="date"
+                    value={verificationFrom}
+                    max={todayYmd}
+                    onChange={(e) => {
+                      let v = e.target.value;
+                      if (v && v > todayYmd) v = todayYmd;
+                      setVerificationPeriod('custom');
+                      setVerificationFrom(v);
+                      // Keep From <= To
+                      if (v && verificationTo && v > verificationTo) setVerificationTo(v);
+                    }}
+                    className="w-full px-3 py-2 rounded-lg bg-gray-900 border border-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">To</label>
+                  <input
+                    type="date"
+                    value={verificationTo}
+                    max={todayYmd}
+                    onChange={(e) => {
+                      let v = e.target.value;
+                      if (v && v > todayYmd) v = todayYmd;
+                      setVerificationPeriod('custom');
+                      setVerificationTo(v);
+                      // Keep From <= To
+                      if (v && verificationFrom && v < verificationFrom) setVerificationFrom(v);
+                    }}
+                    className="w-full px-3 py-2 rounded-lg bg-gray-900 border border-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
+                  />
+                </div>
               </div>
 
               {verificationCoverage ? (
