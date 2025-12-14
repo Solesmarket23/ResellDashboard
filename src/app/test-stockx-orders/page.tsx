@@ -1501,12 +1501,15 @@ export default function TestStockXOrders() {
           if (addedSinceFlush >= FLUSH_EVERY) {
             setOrders([...allRows]);
             addedSinceFlush = 0;
+            // Yield so React paints progressively instead of batching updates.
+            await sleep(0);
           }
         }
         // Flush after each status, even if fewer than FLUSH_EVERY
         if (addedSinceFlush > 0) {
           setOrders([...allRows]);
           addedSinceFlush = 0;
+          await sleep(0);
         }
       }
 
@@ -3249,9 +3252,33 @@ export default function TestStockXOrders() {
                 <div className="absolute inset-x-0 top-14 bottom-0 flex items-center justify-center pointer-events-none">
                   <div className="text-center">
                     <div className="text-base font-medium text-gray-300">
-                      {loading || allLoading ? 'Loading…' : 'No orders loaded yet.'}
+                      {(() => {
+                        const isLoading = loading || allLoading;
+                        if (isLoading) {
+                          // If we already loaded some rows but they're hidden by filters (common with DIDNOTSHIP),
+                          // tell the user so it doesn't feel "stuck".
+                          if (orders.length > 0) return `Loading… (${orders.length} rows loaded so far)`;
+                          return 'Loading…';
+                        }
+                        if (orders.length === 0) return 'No orders loaded yet.';
+                        return '0 rows shown (filters are hiding results).';
+                      })()}
                     </div>
-                    {!loading && !allLoading && <div className="mt-1 text-sm text-gray-400">Click “Fetch for time period”.</div>}
+                    {!loading && !allLoading && orders.length === 0 && (
+                      <div className="mt-1 text-sm text-gray-400">Click “Fetch for time period”.</div>
+                    )}
+                    {orders.length > 0 && (
+                      <div className="mt-1 text-sm text-gray-400">
+                        {(() => {
+                          const didNotShipCount = orders.filter((r: any) => getRowStatus(r) === 'DIDNOTSHIP').length;
+                          const nonDidNotShipCount = orders.length - didNotShipCount;
+                          if (!showDidNotShip && didNotShipCount > 0 && nonDidNotShipCount === 0) {
+                            return `You loaded ${didNotShipCount} DIDNOTSHIP row${didNotShipCount !== 1 ? 's' : ''}. Toggle “Show DIDNOTSHIP rows” to view them.`;
+                          }
+                          return 'Try adjusting Status filters / date range / search (or toggle “Show DIDNOTSHIP rows”).';
+                        })()}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
