@@ -2807,8 +2807,8 @@ export default function TestStockXOrders() {
                   <div className="text-xs text-gray-400 mb-2">Month-by-month</div>
                   {verificationLoading && verificationCoverage && verificationRange ? (
                     <div className="mb-2 text-xs text-yellow-200/90">
-                      Loading is still in progress — months outside the current coverage will show <span className="font-semibold">0</span> until more pages
-                      are fetched. Requested range: <span className="font-semibold">{verificationRange.from}</span> →{' '}
+                      Loading is still in progress — months with no rows fetched yet will show <span className="font-semibold">—</span> until more pages are
+                      fetched. Requested range: <span className="font-semibold">{verificationRange.from}</span> →{' '}
                       <span className="font-semibold">{verificationRange.to}</span>.
                     </div>
                   ) : null}
@@ -2818,6 +2818,8 @@ export default function TestStockXOrders() {
                       .reverse()
                       .map((m) => {
                         const selected = selectedVerificationMonth === m.month;
+                        const total = (m.success || 0) + (m.failed || 0);
+                        const showLoadingPlaceholders = verificationLoading && total === 0;
                         return (
                           <button
                             key={m.month}
@@ -2833,9 +2835,24 @@ export default function TestStockXOrders() {
                             <div className="flex items-center justify-between gap-3">
                               <div className="font-semibold text-gray-200">{fmtMonthYear(m.month)}</div>
                               <div className="text-gray-300 whitespace-nowrap">
-                                <span className="text-gray-400">Success</span> {m.success} •{' '}
-                                <span className="text-gray-400">Failed</span> {m.failed} •{' '}
-                                <span className="text-gray-400">Fail</span> {m.failureRate.toFixed(1)}%
+                                <span className="text-gray-400">Success</span>{' '}
+                                {showLoadingPlaceholders ? (
+                                  <span className="inline-block w-6 text-center text-gray-500 animate-pulse">—</span>
+                                ) : (
+                                  m.success
+                                )}{' '}
+                                • <span className="text-gray-400">Failed</span>{' '}
+                                {showLoadingPlaceholders ? (
+                                  <span className="inline-block w-6 text-center text-gray-500 animate-pulse">—</span>
+                                ) : (
+                                  m.failed
+                                )}{' '}
+                                • <span className="text-gray-400">Fail</span>{' '}
+                                {showLoadingPlaceholders ? (
+                                  <span className="inline-block w-10 text-center text-gray-500 animate-pulse">—</span>
+                                ) : (
+                                  `${m.failureRate.toFixed(1)}%`
+                                )}
                               </div>
                             </div>
                           </button>
