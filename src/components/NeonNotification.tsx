@@ -4,6 +4,7 @@ import { CheckCircle, XCircle, AlertCircle, X } from 'lucide-react';
 export type NotificationType = 'success' | 'error' | 'warning';
 
 interface NeonNotificationProps {
+  isVisible?: boolean;
   message: string;
   type: NotificationType;
   onClose: () => void;
@@ -11,101 +12,107 @@ interface NeonNotificationProps {
 }
 
 const NeonNotification: React.FC<NeonNotificationProps> = ({ 
+  isVisible: controlledVisible,
   message, 
   type, 
   onClose, 
   duration = 5000 
 }) => {
-  const [isVisible, setIsVisible] = useState(true);
+  const EXIT_MS = 220;
+  const shouldShow = controlledVisible ?? true;
+  const [present, setPresent] = useState(false);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsVisible(false);
-      setTimeout(onClose, 300); // Wait for animation to complete
+    // Trigger "enter" animation on mount / when becoming visible.
+    if (!shouldShow) {
+      setPresent(false);
+      return;
+    }
+
+    const raf = requestAnimationFrame(() => setPresent(true));
+
+    const timer = window.setTimeout(() => {
+      setPresent(false);
+      window.setTimeout(onClose, EXIT_MS);
     }, duration);
 
-    return () => clearTimeout(timer);
-  }, [duration, onClose]);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(timer);
+    };
+  }, [duration, onClose, shouldShow]);
 
   const getIcon = () => {
     switch (type) {
       case 'success':
-        return <CheckCircle className="w-6 h-6" />;
+        return <CheckCircle className="w-5 h-5" />;
       case 'error':
-        return <XCircle className="w-6 h-6" />;
+        return <XCircle className="w-5 h-5" />;
       case 'warning':
-        return <AlertCircle className="w-6 h-6" />;
+        return <AlertCircle className="w-5 h-5" />;
     }
   };
 
-  const getColorClasses = () => {
+  const getTone = () => {
     switch (type) {
       case 'success':
-        return 'from-green-400 to-emerald-600 shadow-green-500/50';
+        return {
+          accent: 'bg-emerald-500/90',
+          icon: 'text-emerald-300',
+          progress: 'bg-emerald-400/80',
+        };
       case 'error':
-        return 'from-red-400 to-pink-600 shadow-red-500/50';
+        return {
+          accent: 'bg-rose-500/90',
+          icon: 'text-rose-300',
+          progress: 'bg-rose-400/80',
+        };
       case 'warning':
-        return 'from-yellow-400 to-orange-600 shadow-yellow-500/50';
+        return {
+          accent: 'bg-amber-500/90',
+          icon: 'text-amber-300',
+          progress: 'bg-amber-400/80',
+        };
     }
   };
 
-  const getNeonGlow = () => {
-    switch (type) {
-      case 'success':
-        return 'drop-shadow-[0_0_35px_rgba(74,222,128,0.8)] animate-pulse-glow-green';
-      case 'error':
-        return 'drop-shadow-[0_0_35px_rgba(248,113,113,0.8)] animate-pulse-glow-red';
-      case 'warning':
-        return 'drop-shadow-[0_0_35px_rgba(250,204,21,0.8)] animate-pulse-glow-yellow';
-    }
-  };
+  const tone = getTone();
 
   return (
     <div
       className={`
-        fixed top-20 right-4 z-50
-        transform transition-all duration-300 ease-out
-        ${isVisible ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'}
+        fixed top-6 right-4 z-50
+        transform-gpu transition-all ease-out
+        ${present ? 'translate-x-0 opacity-100' : 'translate-x-6 opacity-0'}
       `}
+      style={{ transitionDuration: `${EXIT_MS}ms` }}
     >
-      <div
-        className={`
-          relative overflow-hidden
-          bg-gradient-to-r ${getColorClasses()}
-          p-[2px] rounded-lg
-          shadow-2xl shadow-black/50
-          ${getNeonGlow()}
-        `}
-      >
-        <div className="bg-black/90 backdrop-blur-sm rounded-[6px] px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className={`text-white ${getNeonGlow()}`}>
-              {getIcon()}
-            </div>
-            <p className="text-white font-medium text-lg tracking-wide">
-              {message}
-            </p>
-            <button
-              onClick={() => {
-                setIsVisible(false);
-                setTimeout(onClose, 300);
-              }}
-              className="ml-4 text-white/70 hover:text-white transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          
-          {/* Animated neon border effect */}
-          <div className="absolute inset-0 rounded-lg pointer-events-none">
-            <div className={`absolute inset-0 bg-gradient-to-r ${getColorClasses()} opacity-20 animate-pulse`} />
-          </div>
+      <div className="relative w-[min(440px,calc(100vw-2rem))] overflow-hidden rounded-xl border border-white/10 bg-gray-950/90 shadow-xl shadow-black/40 backdrop-blur">
+        <div className={`absolute left-0 top-0 h-full w-1 ${tone.accent}`} />
+
+        <div className="flex items-start gap-3 px-4 py-3">
+          <div className={`mt-0.5 ${tone.icon}`}>{getIcon()}</div>
+
+          <p className="flex-1 text-sm font-medium text-gray-100 leading-5">
+            {message}
+          </p>
+
+          <button
+            onClick={() => {
+              setPresent(false);
+              window.setTimeout(onClose, EXIT_MS);
+            }}
+            className="ml-2 text-gray-400 hover:text-gray-200 transition-colors"
+            aria-label="Dismiss notification"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
-        
+
         {/* Progress bar */}
-        <div className="absolute bottom-0 left-0 h-1 bg-black/50">
+        <div className="absolute bottom-0 left-0 h-0.5 w-full bg-white/10">
           <div
-            className={`h-full bg-gradient-to-r ${getColorClasses()} animate-progress`}
+            className={`h-full ${tone.progress} animate-progress`}
             style={{ animationDuration: `${duration}ms` }}
           />
         </div>
