@@ -787,17 +787,19 @@ export default function TestStockXOrders() {
     return Boolean(raw?.orderDate); // active route uses orderDate field
   };
 
-  const getRowStatus = (row: any) => {
+  // NOTE: These are function declarations (not const arrow fns) so they are hoisted.
+  // This avoids runtime "Cannot access X before initialization" when used by useMemo blocks above.
+  function getRowStatus(row: any): string {
     const raw = row?.rawData || row;
     return String((raw?.status || row?.status || row?.orderStatus || raw?.orderStatus || '—')).toUpperCase();
-  };
+  }
 
-  const getRowOrderNumber = (row: any) => {
+  function getRowOrderNumber(row: any): string {
     const raw = row?.rawData || row;
     return String(raw?.orderNumber || raw?.orderId || raw?.id || row?.id || raw?.askId || '—');
-  };
+  }
 
-  const getRowCreatedTs = (row: any): number | null => {
+  function getRowCreatedTs(row: any): number | null {
     const raw = row?.rawData || row;
     const iso =
       row?.createdAt ||
@@ -810,9 +812,9 @@ export default function TestStockXOrders() {
     const d = new Date(iso);
     const t = d.getTime();
     return Number.isNaN(t) ? null : t;
-  };
+  }
 
-  const getRowProductName = (row: any) => {
+  function getRowProductName(row: any): string {
     const raw = row?.rawData || row;
     return String(
       row?.product?.name ||
@@ -822,30 +824,32 @@ export default function TestStockXOrders() {
         raw?.variant?.product?.name ||
         '—'
     );
-  };
+  }
 
-  const getRowSize = (row: any) => {
+  function getRowSize(row: any): string {
     const raw = row?.rawData || row;
     return String(row?.variant?.size || raw?.variant?.size || raw?.variant?.variantValue || raw?.size || '').trim();
-  };
+  }
 
-  const getRowSale = (row: any) => {
+  function getRowSale(row: any): number | null {
     const raw = row?.rawData || row;
     return normalizeMoney(row?.metrics?.salePrice ?? row?.pricing?.salePrice ?? raw?.amount ?? raw?.price);
-  };
-  const getRowFees = (row: any) => {
+  }
+
+  function getRowFees(row: any): number | null {
     const raw = row?.rawData || row;
     return normalizeMoney(row?.metrics?.totalFees ?? row?.pricing?.totalFees ?? raw?.totalFees);
-  };
-  const getRowPayout = (row: any) => {
+  }
+
+  function getRowPayout(row: any): number | null {
     const raw = row?.rawData || row;
     return normalizeMoney(row?.metrics?.netPayout ?? row?.pricing?.payout ?? raw?.payout);
-  };
+  }
 
-  const getRowBrand = (row: any) => {
+  function getRowBrand(row: any): string {
     const raw = row?.rawData || row;
     return String(row?.product?.brand || raw?.product?.brand || raw?.variant?.product?.brand || raw?.brand || '').trim();
-  };
+  }
 
   const getRowCategory = (row: any) => {
     const raw = row?.rawData || row;
