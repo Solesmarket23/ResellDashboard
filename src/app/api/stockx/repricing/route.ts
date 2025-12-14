@@ -353,18 +353,56 @@ export async function POST(request: NextRequest) {
   
               // Small delay, then refetch market data and compute final undercut price
               try {
-                await new Promise(resolve => setTimeout(resolve, 1500));
-                const refreshedMarket = await fetchMarketData(listing.productId, listing.variantId, accessToken);
-              // Use refreshed market data for competitivePosition calculations
-                marketData = refreshedMarket;
+                // After a reset, StockX can take a moment to reflect the new competitive landscape.
+                // Retry a few times to avoid leaving the listing stuck at the temporary reset price.
+                let refreshedMarket: any | null = null;
+                let competitorLowestAsk: number | null = null;
+                let competitorFlexLowestAsk: number | null = null;
+                let competitorBestAsk: number | null = null;
 
-                const competitorLowestAsk = parseStockXMoneyToDollars((refreshedMarket as any).lowestAskAmount);
-                const competitorFlexLowestAsk = parseStockXMoneyToDollars((refreshedMarket as any).flexLowestAskAmount);
-                const competitorBestAsk = minPositive(competitorLowestAsk, competitorFlexLowestAsk);
-                // If competitorBestAsk is null, we still want to revert back to the original price.
-                newPrice = competitorBestAsk !== null ? Math.max(1, competitorBestAsk - beatBy) : listing.currentPrice;
+                for (let attempt = 0; attempt < 4; attempt++) {
+                  // 1.5s, 2.5s, 3.5s, 4.5s
+                  await new Promise(resolve => setTimeout(resolve, 1500 + attempt * 1000));
+                  refreshedMarket = await fetchMarketData(listing.productId, listing.variantId, accessToken);
 
-              // Attach metadata for transparency
+                  competitorLowestAsk = parseStockXMoneyToDollars((refreshedMarket as any).lowestAskAmount);
+                  competitorFlexLowestAsk = parseStockXMoneyToDollars((refreshedMarket as any).flexLowestAskAmount);
+                  competitorBestAsk = minPositive(competitorLowestAsk, competitorFlexLowestAsk);
+
+                  if (competitorBestAsk !== null) break;
+                }
+
+                // Use refreshed market data for competitivePosition calculations (even if asks are null)
+                if (refreshedMarket) marketData = refreshedMarket;
+
+                if (competitorBestAsk === null) {
+                  // We performed the temporary reset, but couldn't read a valid ask afterwards.
+                  // Revert to the original price so the listing is never left at $999.
+                  const revert = await updateListingPrice(listing.listingId, listing.currentPrice, accessToken, {
+                    waitForCompletion: true,
+                    timeoutMs: 30_000
+                  });
+                  if (twoStepMeta) {
+                    twoStepMeta.competitorLowestAsk = competitorLowestAsk;
+                    twoStepMeta.competitorFlexLowestAsk = competitorFlexLowestAsk;
+                    twoStepMeta.computedFinal = listing.currentPrice;
+                    twoStepMeta.revertOperationId = revert.operation?.operationId;
+                    twoStepMeta.revertOperationStatus = revert.operationStatus;
+                  }
+                  repricingResults.push({
+                    listingId: listing.listingId,
+                    currentPrice: listing.currentPrice,
+                    newPrice: listing.currentPrice,
+                    action: 'failed',
+                    reason: `Two-step failed: no lowest ask available after reset. Revert ${revert.success ? 'succeeded' : 'failed'}.`,
+                    twoStep: twoStepMeta
+                  });
+                  continue;
+                }
+
+                newPrice = Math.max(1, competitorBestAsk - beatBy);
+
+                // Attach metadata for transparency
                 twoStepMeta = {
                   ...twoStepMeta,
                   mode: 'peek_next_lowest',
