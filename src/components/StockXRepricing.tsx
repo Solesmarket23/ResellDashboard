@@ -3547,8 +3547,8 @@ export default function StockXRepricing() {
                       }`}
                       onClick={() => handleSort('product')}
                     >
-                      <div className="flex items-center justify-start h-full">
-                        <div className="flex items-center gap-2 justify-start w-full">
+                      <div className="flex items-center justify-center h-full">
+                        <div className="flex items-center gap-2 justify-center w-full">
                           <Package className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
                           <span className={`text-xs font-bold uppercase tracking-wider ${
                             isNeon ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
