@@ -242,9 +242,7 @@ export default function StockXRepricing() {
   // Auto-repricing settings
   const [showAutoRepricingSettings, setShowAutoRepricingSettings] = useState(false); // Default to collapsed
   const [autoRepricingEnabled, setAutoRepricingEnabled] = useState(false);
-  const [autoRepricingInterval, setAutoRepricingInterval] = useState(30);
-  const [tempInterval, setTempInterval] = useState(30);
-  const [savingInterval, setSavingInterval] = useState(false);
+  const [savingAutoRepricing, setSavingAutoRepricing] = useState(false);
   
   // Track pending pricing rule changes
   const [pendingStrategyChanges, setPendingStrategyChanges] = useState<Record<string, IndividualPricingStrategy>>({});
@@ -440,10 +438,6 @@ export default function StockXRepricing() {
         const json = await res.json().catch(() => null);
         if (res.ok && json?.success) {
           setAutoRepricingEnabled(json.enabled === true);
-          if (json.intervalMinutes) {
-            setAutoRepricingInterval(json.intervalMinutes);
-            setTempInterval(json.intervalMinutes);
-          }
         }
       } catch (error) {
         console.error('Error loading auto-repricing settings:', error);
@@ -452,6 +446,52 @@ export default function StockXRepricing() {
     
     loadAutoRepricingSettings();
   }, [authUser]);
+
+  const saveAutoRepricingEnabled = async (enabled: boolean) => {
+    // Try to get user ID from Firebase auth first, then fall back to site user ID from cookies
+    let userId = authUser?.uid;
+
+    if (!userId) {
+      const cookies = document.cookie.split(';');
+      const userIdCookie = cookies.find(c => c.trim().startsWith('site-user-id='));
+      if (userIdCookie) {
+        userId = decodeURIComponent(userIdCookie.split('=')[1]);
+      }
+    }
+
+    if (!userId) {
+      alert('❌ You must be connected to StockX to save settings. Please connect on the StockX Arbitrage page first.');
+      return;
+    }
+
+    try {
+      setSavingAutoRepricing(true);
+
+      const resp = await fetch('/api/stockx/auto-repricing-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+        body: JSON.stringify({
+          userId,
+          enabled,
+          // We run on a fixed cadence; keep the stored interval aligned with the cadence.
+          intervalMinutes: cronCadenceMinutes
+        })
+      });
+      const out = await resp.json().catch(() => null);
+      if (!resp.ok || !out?.success) {
+        throw new Error(out?.error || `Failed to save (${resp.status})`);
+      }
+
+      setAutoRepricingEnabled(enabled);
+      setBulkActionMessage(enabled ? '✅ Auto-repricing enabled' : '✅ Auto-repricing disabled');
+      setTimeout(() => setBulkActionMessage(null), 6000);
+    } catch (error) {
+      console.error('❌ Error saving auto-repricing settings:', error);
+      alert('❌ Failed to save auto-repricing settings. Please try again.');
+    } finally {
+      setSavingAutoRepricing(false);
+    }
+  };
 
   // Apply saved settings - removed to prevent double application
 
@@ -889,61 +929,7 @@ export default function StockXRepricing() {
     await syncInventoryGroup(listing.inventoryGroupId, newPrice, listingId);
   };
 
-  // Save auto-repricing interval
-  const saveAutoRepricingInterval = async () => {
-    console.log('💾 saveAutoRepricingInterval called');
-    console.log('👤 Current user:', authUser ? `${authUser.email} (${authUser.uid})` : 'No user');
-    console.log('⏱️ Temp interval:', tempInterval);
-    console.log('⏱️ Current interval:', autoRepricingInterval);
-    
-    // Try to get user ID from Firebase auth first, then fall back to site user ID from cookies
-    let userId = authUser?.uid;
-    
-    if (!userId) {
-      // Try to get site user ID from cookies as fallback (set by password protection)
-      const cookies = document.cookie.split(';');
-      const userIdCookie = cookies.find(c => c.trim().startsWith('site-user-id='));
-      if (userIdCookie) {
-        userId = decodeURIComponent(userIdCookie.split('=')[1]);
-        console.log('📦 Using site user ID from cookies:', userId);
-      }
-    }
-    
-    if (!userId) {
-      console.error('❌ No user ID found - cannot save interval');
-      alert('❌ You must be connected to StockX to save settings. Please connect on the StockX Arbitrage page first.');
-      return;
-    }
-    
-    try {
-      setSavingInterval(true);
-      console.log('🔄 Saving interval to Firebase for user:', userId);
-
-      const resp = await fetch('/api/stockx/auto-repricing-settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
-        body: JSON.stringify({
-          userId,
-          enabled: true,
-          intervalMinutes: tempInterval
-        })
-      });
-      const out = await resp.json().catch(() => null);
-      if (!resp.ok || !out?.success) {
-        throw new Error(out?.error || `Failed to save (${resp.status})`);
-      }
-      
-      console.log('✅ Interval saved successfully to Firebase');
-      setAutoRepricingEnabled(true);
-      setAutoRepricingInterval(tempInterval);
-      alert(`✅ Auto-repricing interval updated to ${tempInterval} minutes!`);
-    } catch (error) {
-      console.error('❌ Error saving interval:', error);
-      alert('❌ Failed to save interval. Please try again.');
-    } finally {
-      setSavingInterval(false);
-    }
-  };
+  // Interval selection UI removed: automated repricing runs on a fixed cadence.
 
   const fetchListings = async (forceReload = false, isAutoRefresh = false) => {
     console.log(`🔄 Fetching listings... (forceReload: ${forceReload}, autoRefresh: ${isAutoRefresh})`);
@@ -2960,8 +2946,8 @@ export default function StockXRepricing() {
               </h3>
               <p className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
                 {autoRepricingEnabled 
-                  ? `Active - Repricing every ${autoRepricingInterval} minutes`
-                  : 'Configure automatic repricing intervals'}
+                  ? `Active - Automated repricing every ${cronCadenceMinutes} minutes`
+                  : `Automated repricing occurs every ${cronCadenceMinutes} minutes`}
               </p>
             </div>
           </div>
@@ -2985,111 +2971,37 @@ export default function StockXRepricing() {
           <div className={`p-6 border-t ${isNeon ? 'border-slate-700' : 'border-gray-200'}`}>
             <div className="space-y-4">
               <p className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-                Choose how frequently your listings should be automatically repriced. The system will check and update prices based on your selected interval.
+                Automated repricing occurs every {cronCadenceMinutes} minutes.
               </p>
-              <p className={`text-xs ${isNeon ? 'text-gray-500' : 'text-gray-500'}`}>
-                Note: the server cron checks every <span className="font-semibold">{cronCadenceMinutes}</span> minutes, so the fastest effective interval is <span className="font-semibold">{cronCadenceMinutes}</span> minutes.
-              </p>
-
-              <div className="space-y-3">
-                {[
-                  { value: 1, label: '1 minute', desc: 'Ultra aggressive - Instant market response' },
-                  { value: 5, label: '5 minutes', desc: 'Very aggressive - Maximum responsiveness' },
-                  { value: 15, label: '15 minutes', desc: 'Aggressive - Quick market adaptation' },
-                  { value: 30, label: '30 minutes', desc: 'Moderate - Balanced approach' },
-                  { value: 60, label: '1 hour', desc: 'Conservative - Stable pricing' },
-                  { value: 120, label: '2 hours', desc: 'Very conservative - Minimal changes' },
-                  { value: 240, label: '4 hours', desc: 'Minimal - Occasional updates' },
-                ].map((preset) => (
-                  (() => {
-                    const belowCron = preset.value < cronCadenceMinutes;
-                    const isSelected = tempInterval === preset.value;
-                    const isActive = autoRepricingInterval === preset.value;
-                    return (
-                  <div
-                    key={preset.value}
-                    className={`p-4 rounded-lg border-2 transition-all ${
-                      isSelected
-                        ? isNeon
-                          ? 'border-cyan-500 bg-cyan-500/10'
-                          : 'border-blue-500 bg-blue-50'
-                        : isNeon
-                          ? 'border-slate-700 bg-slate-700/30'
-                          : 'border-gray-200 bg-gray-50'
-                    } ${belowCron ? 'opacity-50' : ''}`}
-                  >
-                    <div className="flex items-center justify-between gap-4">
-                      <button
-                        onClick={() => {
-                          if (belowCron) return;
-                          setTempInterval(preset.value);
-                        }}
-                        disabled={belowCron}
-                        className="flex-1 text-left disabled:cursor-not-allowed"
-                      >
-                        <div className="flex items-center gap-2 mb-1">
-                          <Clock className={`w-4 h-4 ${
-                            isSelected
-                              ? isNeon ? 'text-cyan-400' : 'text-blue-600'
-                              : isNeon ? 'text-gray-400' : 'text-gray-500'
-                          }`} />
-                          <span className={`font-semibold ${isNeon ? 'text-white' : 'text-gray-900'}`}>
-                            {preset.label}
-                          </span>
-                          {isActive && (
-                            <span className={`text-xs px-2 py-0.5 rounded ${
-                              isNeon ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-700'
-                            }`}>
-                              Active
-                            </span>
-                          )}
-                          {belowCron && (
-                            <span className={`text-xs px-2 py-0.5 rounded ${
-                              isNeon ? 'bg-yellow-500/20 text-yellow-300' : 'bg-yellow-100 text-yellow-800'
-                            }`}>
-                              Limited by cron ({cronCadenceMinutes}m)
-                            </span>
-                          )}
-                        </div>
-                        <p className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-                          {belowCron
-                            ? `Not available (cron runs every ${cronCadenceMinutes} minutes)`
-                            : preset.desc}
-                        </p>
-                      </button>
-                      
-                      {isSelected && !belowCron && !isActive && (
-                        <button
-                          onClick={() => {
-                            console.log('🖱️ Save button clicked!');
-                            console.log('📊 State:', { tempInterval, autoRepricingInterval, hasUser: !!authUser });
-                            saveAutoRepricingInterval();
-                          }}
-                          disabled={savingInterval}
-                          className={`px-4 py-2 rounded-lg font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
-          isNeon 
-                              ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white'
-                              : 'bg-blue-600 text-white hover:bg-blue-700'
-                          } disabled:opacity-50`}
-                        >
-                          {savingInterval ? (
-                            <>
-                              <Loader className="w-4 h-4 animate-spin" />
-                              Saving...
-                            </>
-                          ) : (
-                            <>
-                              <Save className="w-4 h-4" />
-                              Save
-                            </>
-                          )}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                    );
-                  })()
-                ))}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <button
+                  onClick={() => saveAutoRepricingEnabled(!autoRepricingEnabled)}
+                  disabled={savingAutoRepricing}
+                  className={`px-4 py-2 rounded-lg font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
+                    autoRepricingEnabled
+                      ? isNeon
+                        ? 'bg-red-500/20 border border-red-500/40 text-red-200 hover:bg-red-500/30'
+                        : 'bg-red-50 border border-red-200 text-red-700 hover:bg-red-100'
+                      : isNeon
+                        ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white'
+                        : 'bg-green-600 text-white hover:bg-green-700'
+                  } disabled:opacity-50`}
+                >
+                  {savingAutoRepricing ? (
+                    <>
+                      <Loader className="w-4 h-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      {autoRepricingEnabled ? 'Disable auto-repricing' : 'Enable auto-repricing'}
+                    </>
+                  )}
+                </button>
+                <span className={`text-xs ${isNeon ? 'text-gray-500' : 'text-gray-500'}`}>
+                  Runs automatically every {cronCadenceMinutes} minutes when enabled.
+                </span>
               </div>
             </div>
           </div>
