@@ -43,6 +43,9 @@ interface ListingToReprice {
   minPrice?: number;
   maxPrice?: number;
   autoDeactivate?: boolean;
+  // Market snapshot from previous run (for spam reduction gate)
+  lastSeenLowestAsk?: number | null;
+  lastSeenFlexLowestAsk?: number | null;
 }
 
 function normalizePercent(value: unknown, fallback: number) {
@@ -68,6 +71,12 @@ function minPositive(a: number | null, b: number | null): number | null {
   if (a === null) return b;
   if (b === null) return a;
   return Math.min(a, b);
+}
+
+function equalNullableNumber(a: unknown, b: unknown): boolean {
+  const na = typeof a === 'number' && Number.isFinite(a) ? a : null;
+  const nb = typeof b === 'number' && Number.isFinite(b) ? b : null;
+  return na === nb;
 }
 
 async function pollListingOperationStatus(args: {
@@ -284,6 +293,10 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
+        // Market snapshot (dollars) for logging + persistence + change detection
+        const currentStdAsk = parseStockXMoneyToDollars((marketData as any).lowestAskAmount);
+        const currentFlexAsk = parseStockXMoneyToDollars((marketData as any).flexLowestAskAmount);
+
         // Calculate new price based on strategy
         let newPrice: number;
         let skipReason: string | null = null;
@@ -296,6 +309,38 @@ export async function POST(request: NextRequest) {
         const isReserveFollower = isDuplicateTwoStepGroup && listing.listingId !== groupLeaderId;
         
         if (useIndividualStrategies && listing.pricingStrategy) {
+          // Spam-reduction gate for Two-step:
+          // If market asks haven't changed since last run AND you're still effectively winning,
+          // skip repricing (standard ties count as WIN; flex ties/undercuts beat you).
+          if (
+            listing.pricingStrategy.type === 'reset_then_beat_lowest' &&
+            allowTwoStep === true &&
+            dryRun === false
+          ) {
+            // If flex is <= your price, you are NOT winning (flex wins).
+            const losingToFlex = currentFlexAsk !== null && currentFlexAsk <= listing.currentPrice;
+            // If standard is < your price, you are NOT winning.
+            const losingToStd = currentStdAsk !== null && currentStdAsk < listing.currentPrice;
+            const hasAnyAsk = currentStdAsk !== null || currentFlexAsk !== null;
+            const isWinning = hasAnyAsk ? (!losingToFlex && !losingToStd) : false;
+
+            const unchanged =
+              equalNullableNumber(listing.lastSeenLowestAsk, currentStdAsk) &&
+              equalNullableNumber(listing.lastSeenFlexLowestAsk, currentFlexAsk);
+
+            if (unchanged && isWinning) {
+              repricingResults.push({
+                listingId: listing.listingId,
+                currentPrice: listing.currentPrice,
+                newPrice: listing.currentPrice,
+                action: 'no_change',
+                reason: 'Market unchanged and already winning (standard ties = win; flex ties/undercuts beat you)',
+                market: { lowestAsk: currentStdAsk, flexLowestAsk: currentFlexAsk },
+              });
+              continue;
+            }
+          }
+
           if (isReserveFollower) {
             const stdAsk = parseStockXMoneyToDollars((marketData as any).lowestAskAmount);
             const flexAsk = parseStockXMoneyToDollars((marketData as any).flexLowestAskAmount);
@@ -307,6 +352,7 @@ export async function POST(request: NextRequest) {
                 newPrice: listing.currentPrice,
                 action: 'no_change',
                 reason: 'Reserve pricing skipped: no lowest ask available',
+                market: { lowestAsk: currentStdAsk, flexLowestAsk: currentFlexAsk },
               });
               continue;
             }
@@ -340,6 +386,7 @@ export async function POST(request: NextRequest) {
                 newPrice: listing.currentPrice,
                 action: 'no_change',
                 reason: 'Two-step strategy blocked (allowTwoStep=false)',
+                market: { lowestAsk: currentStdAsk, flexLowestAsk: currentFlexAsk },
                 twoStep: {
                   ...twoStepMeta,
                   computedFinal
@@ -384,6 +431,7 @@ export async function POST(request: NextRequest) {
                   newPrice: listing.currentPrice,
                   action: 'failed',
                   reason: `Two-step reset failed: ${resetResult.error || 'Unknown error'}`,
+                  market: { lowestAsk: currentStdAsk, flexLowestAsk: currentFlexAsk },
                   twoStep: {
                     ...twoStepMeta,
                     mode: 'peek_next_lowest',
@@ -449,6 +497,7 @@ export async function POST(request: NextRequest) {
                     newPrice: listing.currentPrice,
                     action: 'failed',
                     reason: `Two-step failed: no lowest ask available after reset. Revert ${revert.success ? 'succeeded' : 'failed'}.`,
+                    market: { lowestAsk: currentStdAsk, flexLowestAsk: currentFlexAsk },
                     twoStep: twoStepMeta
                   });
                   continue;
@@ -481,6 +530,7 @@ export async function POST(request: NextRequest) {
                   newPrice: listing.currentPrice,
                   action: 'failed',
                   reason: `Two-step failed after reset: ${message}. Revert ${revert.success ? 'succeeded' : 'failed'}.`,
+                  market: { lowestAsk: currentStdAsk, flexLowestAsk: currentFlexAsk },
                   twoStep: twoStepMeta
                 });
                 continue;
@@ -511,7 +561,8 @@ export async function POST(request: NextRequest) {
             currentPrice: listing.currentPrice,
             newPrice: listing.currentPrice,
             action: 'no_change',
-            reason: skipReason || 'Price already optimal'
+            reason: skipReason || 'Price already optimal',
+            market: { lowestAsk: currentStdAsk, flexLowestAsk: currentFlexAsk },
           });
           continue;
         }
@@ -560,7 +611,8 @@ export async function POST(request: NextRequest) {
             currentPrice: listing.currentPrice,
             newPrice: listing.currentPrice,
             action: 'no_change',
-            reason: `Change $${Math.abs(newPrice - comparisonCurrentPrice).toFixed(2)} below threshold $${minPriceChange}`
+            reason: `Change $${Math.abs(newPrice - comparisonCurrentPrice).toFixed(2)} below threshold $${minPriceChange}`,
+            market: { lowestAsk: currentStdAsk, flexLowestAsk: currentFlexAsk },
           });
           continue;
         }
@@ -572,7 +624,8 @@ export async function POST(request: NextRequest) {
             currentPrice: listing.currentPrice,
             newPrice: listing.currentPrice,
             action: 'no_change',
-            reason: skipReason || 'No change after constraints'
+            reason: skipReason || 'No change after constraints',
+            market: { lowestAsk: currentStdAsk, flexLowestAsk: currentFlexAsk },
           });
           continue;
         }
@@ -624,6 +677,7 @@ export async function POST(request: NextRequest) {
               competitivePosition: analyzeCompetitivePosition(newPrice, marketData),
               operationId: updateResult.operation?.operationId,
               operationStatus: updateResult.operationStatus,
+              market: { lowestAsk: currentStdAsk, flexLowestAsk: currentFlexAsk },
               twoStep: twoStepMeta
             });
             continue;
@@ -639,6 +693,7 @@ export async function POST(request: NextRequest) {
             competitivePosition: analyzeCompetitivePosition(newPrice, marketData),
             operationId: updateResult.operation?.operationId,
             operationStatus: updateResult.operationStatus,
+            market: { lowestAsk: currentStdAsk, flexLowestAsk: currentFlexAsk },
             twoStep: twoStepMeta
           });
         } else {
@@ -650,6 +705,7 @@ export async function POST(request: NextRequest) {
             reason: 'Dry run - would update price',
             profitChange: calculateProfitChange(listing, newPrice),
             competitivePosition: analyzeCompetitivePosition(newPrice, marketData),
+            market: { lowestAsk: currentStdAsk, flexLowestAsk: currentFlexAsk },
             twoStep: twoStepMeta
           });
         }

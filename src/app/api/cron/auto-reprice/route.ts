@@ -354,10 +354,10 @@ export async function GET(request: NextRequest) {
           .where('userId', '==', userId)
           .get();
         
-        const savedSettings = new Map();
+        const savedSettings = new Map<string, any>();
         settingsSnapshot.forEach(doc => {
           const data = doc.data();
-          savedSettings.set(data.listingId, data);
+          savedSettings.set(data.listingId, { id: doc.id, ...data });
         });
 
         console.log(`⚙️ Loaded ${savedSettings.size} saved listing settings`);
@@ -407,7 +407,10 @@ export async function GET(request: NextRequest) {
               pricingStrategy: settings?.pricingStrategy,
               minPrice: settings?.minPrice,
               maxPrice: settings?.maxPrice,
-              autoDeactivate: settings?.autoDeactivate
+              autoDeactivate: settings?.autoDeactivate,
+              // Market-change gate inputs (used by repricing API)
+              lastSeenLowestAsk: settings?.lastSeenLowestAsk ?? null,
+              lastSeenFlexLowestAsk: settings?.lastSeenFlexLowestAsk ?? null
             };
           });
 
@@ -465,6 +468,44 @@ export async function GET(request: NextRequest) {
 
         const repriceData = await repriceResponse.json();
         console.log(`📊 Repricing API response:`, JSON.stringify(repriceData, null, 2));
+
+        // Persist market snapshots so future runs can skip when unchanged + you're still winning.
+        // (This reduces StockX push notification spam by avoiding unnecessary update calls.)
+        try {
+          const nowIso = new Date().toISOString();
+          const resultsArr: any[] = Array.isArray(repriceData?.results) ? repriceData.results : [];
+          const batch = adminDb.batch();
+          let writes = 0;
+
+          for (const r of resultsArr) {
+            const listingId = r?.listingId;
+            const market = r?.market;
+            if (!listingId || !market) continue;
+            const s = savedSettings.get(listingId);
+            const docId = s?.id;
+            if (!docId) continue;
+
+            const docRef = adminDb.collection('stockxPricingSettings').doc(docId);
+            batch.set(
+              docRef,
+              {
+                lastSeenLowestAsk: typeof market.lowestAsk === 'number' ? market.lowestAsk : null,
+                lastSeenFlexLowestAsk: typeof market.flexLowestAsk === 'number' ? market.flexLowestAsk : null,
+                lastSeenAt: nowIso,
+                updatedAt: nowIso
+              },
+              { merge: true }
+            );
+            writes++;
+          }
+
+          if (writes > 0) {
+            await batch.commit();
+            console.log(`🧠 Saved market snapshots for ${writes} listing(s)`);
+          }
+        } catch (e) {
+          console.warn('⚠️ Failed to persist market snapshots:', e);
+        }
         
         const successCount = (repriceData.results?.filter((r: any) => (r.success === true) || (r.action === 'updated'))?.length) || 0;
         
