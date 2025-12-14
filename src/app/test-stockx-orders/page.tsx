@@ -3192,7 +3192,14 @@ export default function TestStockXOrders() {
                   {displayedOrders.length === 0 && (
                     <tr>
                       <td colSpan={17} className="px-4 py-10 text-center text-gray-400">
-                        {loading || allLoading ? 'Loading…' : 'No orders loaded yet. Click “Fetch for time period”.'}
+                        <div className="flex flex-col items-center justify-center gap-1">
+                          <div className="text-base font-medium text-gray-300">
+                            {loading || allLoading ? 'Loading…' : 'No orders loaded yet.'}
+                          </div>
+                          {!loading && !allLoading && (
+                            <div className="text-sm text-gray-400">Click “Fetch for time period”.</div>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )}
