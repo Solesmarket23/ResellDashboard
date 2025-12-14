@@ -1960,7 +1960,7 @@ export default function TestStockXOrders() {
             className="mt-3 max-h-[220px] overflow-auto rounded-lg border border-white/10 bg-gray-900/50 p-3"
           >
             {logs.length === 0 ? (
-              <div className="text-sm text-gray-400">No logs yet. Click “Fetch for time period” or “Quick fetch”.</div>
+              <div className="text-sm text-gray-400">No logs yet. Click “Fetch for time period”.</div>
             ) : (
               <div className="space-y-3">
                 {logs.map((l, idx) => (
@@ -2311,14 +2311,6 @@ export default function TestStockXOrders() {
                 {allLoading
                   ? `Fetching…${allProgress ? ` (page ${allProgress.page}, ${allProgress.total} orders)` : ''}`
                   : 'Fetch for time period'}
-              </button>
-              <button
-                onClick={fetchHistory}
-                disabled={loading || allLoading}
-                className="px-4 py-2 rounded-lg font-semibold bg-white/10 hover:bg-white/20 border border-white/15 disabled:opacity-50 whitespace-nowrap"
-                title="Quick fetch (first page only). Useful for debugging."
-              >
-                {loading ? 'Loading…' : 'Quick fetch'}
               </button>
             </div>
 
