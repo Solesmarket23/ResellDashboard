@@ -3226,9 +3226,9 @@ export default function TestStockXOrders() {
                         type="button"
                         onClick={() => toggleSort('created', 'desc')}
                         className="inline-flex items-center gap-2 hover:text-white"
-                        title="Sort by created date"
+                        title="Sort by sale date"
                       >
-                        Created
+                        Sale Date
                         <span className="text-xs text-gray-400">{sortIndicator('created')}</span>
                       </button>
                     </th>
