@@ -1,6 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { refreshStockXTokens } from '@/lib/stockx/tokenRefresh';
 
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(id);
+  }
+}
+
+async function fetchWithRetry(
+  run: () => Promise<Response>,
+  opts: { attempts: number; baseDelayMs: number; retryStatuses: Set<number> }
+): Promise<Response> {
+  let last: Response | null = null;
+  for (let attempt = 0; attempt < opts.attempts; attempt++) {
+    try {
+      const res = await run();
+      last = res;
+      if (!opts.retryStatuses.has(res.status)) return res;
+      // Drain body to avoid leaking resources
+      await res.text().catch(() => '');
+    } catch (e) {
+      // Network/timeout errors: treat as retryable
+      if (attempt === opts.attempts - 1) throw e;
+    }
+    const backoff = Math.min(15_000, opts.baseDelayMs * Math.pow(2, attempt));
+    await sleep(backoff);
+  }
+  // Shouldn't happen, but keep TS happy
+  if (last) return last;
+  return await run();
+}
+
 // Verify this is a legitimate cron request
 function verifyCronRequest(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
@@ -208,7 +246,8 @@ export async function GET(request: NextRequest) {
         
         // Helper: fetch listings, refreshing token once on 401 (common cause of "repricing not working")
         const fetchListings = async (accessToken: string) => {
-          return await fetch(`https://api.stockx.com/v2/selling/listings?${params}`, {
+          const url = `https://api.stockx.com/v2/selling/listings?${params}`;
+          const init: RequestInit = {
             method: 'GET',
             headers: {
               Authorization: `Bearer ${accessToken}`,
@@ -217,13 +256,19 @@ export async function GET(request: NextRequest) {
               Accept: 'application/json',
               'User-Agent': 'ResellDashboard/1.0',
             },
-          });
+          };
+          return await fetchWithTimeout(url, init, 20_000);
         };
 
         let accessToken = stockxTokens.access_token as string;
         let refreshToken = stockxTokens.refresh_token as string | undefined;
 
-        let listingsResponse = await fetchListings(accessToken);
+        const retryStatuses = new Set([429, 500, 502, 503, 504]);
+        let listingsResponse = await fetchWithRetry(() => fetchListings(accessToken), {
+          attempts: 4,
+          baseDelayMs: 750,
+          retryStatuses,
+        });
 
         if (listingsResponse.status === 401 && refreshToken) {
           console.log(`🔄 StockX listings 401 for user ${userId}. Attempting token refresh...`);
@@ -249,7 +294,11 @@ export async function GET(request: NextRequest) {
             }
 
             // Retry listings fetch once with refreshed token
-            listingsResponse = await fetchListings(accessToken);
+            listingsResponse = await fetchWithRetry(() => fetchListings(accessToken), {
+              attempts: 3,
+              baseDelayMs: 750,
+              retryStatuses,
+            });
           } else {
             console.log(`❌ Token refresh failed for user ${userId}: ${refreshed.error || 'Unknown error'}`);
           }
