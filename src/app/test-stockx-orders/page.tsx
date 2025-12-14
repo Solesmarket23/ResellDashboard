@@ -2972,7 +2972,11 @@ export default function TestStockXOrders() {
               )}
             </div>
 
-            <div className="relative overflow-auto max-h-[55vh] min-h-[320px]">
+            <div
+              className={`relative overflow-auto max-h-[55vh] ${
+                displayedOrders.length === 0 ? 'min-h-[320px]' : ''
+              }`}
+            >
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-gray-950/80 backdrop-blur border-b border-white/10">
                   <tr>
