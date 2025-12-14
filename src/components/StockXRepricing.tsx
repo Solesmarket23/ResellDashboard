@@ -3378,11 +3378,14 @@ export default function StockXRepricing() {
                 </button>
               )}
             </div>
-            {searchQuery && (
-              <p className={`mt-2 text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-                Showing {sortedListings.length} result{sortedListings.length !== 1 ? 's' : ''} for "{searchQuery}"
-              </p>
-            )}
+            {/* Reserve space to prevent layout shift while typing */}
+            <div className="mt-2 min-h-[20px]">
+              {searchQuery && (
+                <p className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                  Showing {sortedListings.length} result{sortedListings.length !== 1 ? 's' : ''} for "{searchQuery}"
+                </p>
+              )}
+            </div>
           </div>
         )}
 
