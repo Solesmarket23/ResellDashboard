@@ -1440,7 +1440,9 @@ export default function TestStockXOrders() {
       activeStatuses: selectedActiveStatuses.length ? selectedActiveStatuses : undefined,
     });
     try {
-      const statusesToFetch = selectedHistoryStatuses.length ? selectedHistoryStatuses : [''];
+      // StockX history endpoint typically requires an explicit orderStatus.
+      // Treat "All statuses" as "fetch all API-supported historical statuses and merge".
+      const statusesToFetch = selectedHistoryStatuses.length ? selectedHistoryStatuses : HISTORICAL_ORDER_STATUSES;
       const allRows: OrderRow[] = [];
       const seen = new Set<string>();
       // Incremental UI updates so users see progress immediately.
@@ -1670,7 +1672,9 @@ export default function TestStockXOrders() {
     try {
       const all: OrderRow[] = [];
       const seen = new Set<string>();
-      const statusesToFetch = selectedHistoryStatuses.length ? selectedHistoryStatuses : [''];
+      // StockX history endpoint typically requires an explicit orderStatus.
+      // Treat "All statuses" as "fetch all API-supported historical statuses and merge".
+      const statusesToFetch = selectedHistoryStatuses.length ? selectedHistoryStatuses : HISTORICAL_ORDER_STATUSES;
       // Incremental UI flush: update the table every N rows so users see results appear quickly.
       let addedSinceFlush = 0;
       const FLUSH_EVERY = 10;
