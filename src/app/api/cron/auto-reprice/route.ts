@@ -410,7 +410,9 @@ export async function GET(request: NextRequest) {
               autoDeactivate: settings?.autoDeactivate,
               // Market-change gate inputs (used by repricing API)
               lastSeenLowestAsk: settings?.lastSeenLowestAsk ?? null,
-              lastSeenFlexLowestAsk: settings?.lastSeenFlexLowestAsk ?? null
+              lastSeenFlexLowestAsk: settings?.lastSeenFlexLowestAsk ?? null,
+              // Duplicate inventory: fixed reserve price for followers
+              reservePrice: settings?.reservePrice ?? null
             };
           });
 
@@ -515,16 +517,28 @@ export async function GET(request: NextRequest) {
             if (!docId) continue;
 
             const docRef = adminDb.collection('stockxPricingSettings').doc(docId);
-            batch.set(
-              docRef,
-              {
-                lastSeenLowestAsk: typeof market.lowestAsk === 'number' ? market.lowestAsk : null,
-                lastSeenFlexLowestAsk: typeof market.flexLowestAsk === 'number' ? market.flexLowestAsk : null,
-                lastSeenAt: nowIso,
-                updatedAt: nowIso
-              },
-              { merge: true }
-            );
+            const patch: any = {
+              lastSeenLowestAsk: typeof market.lowestAsk === 'number' ? market.lowestAsk : null,
+              lastSeenFlexLowestAsk: typeof market.flexLowestAsk === 'number' ? market.flexLowestAsk : null,
+              lastSeenAt: nowIso,
+              updatedAt: nowIso
+            };
+
+            // If this listing is a reserve follower and we don't have a stored reservePrice yet,
+            // store its current price as the fixed reserve price ("set once and hold").
+            if (!(typeof s?.reservePrice === 'number' && Number.isFinite(s.reservePrice) && s.reservePrice > 0)) {
+              if (
+                typeof r?.reason === 'string' &&
+                r.reason.toLowerCase().includes('reserve pricing (set once)')
+              ) {
+                const np = typeof r?.newPrice === 'number' ? r.newPrice : null;
+                if (np && np > 0) {
+                  patch.reservePrice = np;
+                }
+              }
+            }
+
+            batch.set(docRef, patch, { merge: true });
             writes++;
           }
 

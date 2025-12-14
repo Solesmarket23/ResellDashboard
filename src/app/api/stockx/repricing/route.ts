@@ -46,6 +46,8 @@ interface ListingToReprice {
   // Market snapshot from previous run (for spam reduction gate)
   lastSeenLowestAsk?: number | null;
   lastSeenFlexLowestAsk?: number | null;
+  // Duplicate inventory: fixed reserve price for followers (set once and hold)
+  reservePrice?: number | null;
 }
 
 function normalizePercent(value: unknown, fallback: number) {
@@ -361,8 +363,15 @@ export async function POST(request: NextRequest) {
               });
               continue;
             }
-            newPrice = Math.max(1, Math.round(bestAsk * RESERVE_MULTIPLIER));
-            skipReason = `Reserve pricing: duplicate inventory (leader ${groupLeaderId} runs Two-step). Set to ${RESERVE_MULTIPLIER}x best ask ($${bestAsk} → $${newPrice})`;
+            // "Set once and hold": if we already have a stored reservePrice, use it and do NOT chase market changes.
+            const storedReserve =
+              typeof listing.reservePrice === 'number' && Number.isFinite(listing.reservePrice) && listing.reservePrice > 0
+                ? listing.reservePrice
+                : null;
+            newPrice = Math.max(1, Math.round(storedReserve ?? Math.round(bestAsk * RESERVE_MULTIPLIER)));
+            skipReason = storedReserve
+              ? `Reserve pricing (fixed): duplicate inventory (leader ${groupLeaderId} runs Two-step). Hold $${newPrice}`
+              : `Reserve pricing (set once): duplicate inventory (leader ${groupLeaderId} runs Two-step). Set to ${RESERVE_MULTIPLIER}x best ask ($${bestAsk} → $${newPrice})`;
           } else
           // Special case: two-step strategy (temporary reset to a high price, then undercut)
           if (listing.pricingStrategy.type === 'reset_then_beat_lowest') {
@@ -784,24 +793,43 @@ export async function POST(request: NextRequest) {
 }
 
 async function fetchMarketData(productId: string, variantId: string, accessToken: string) {
-  const response = await fetch(`https://api.stockx.com/v2/catalog/products/${productId}/variants/${variantId}/market-data`, {
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'X-API-Key': process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID || '',
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'User-Agent': 'ResellDashboard/1.0'
-    }
-  });
+  const apiKey = process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID || '';
+  const url = `https://api.stockx.com/v2/catalog/products/${productId}/variants/${variantId}/market-data`;
 
-  if (!response.ok) {
-    throw new Error(`Market data fetch failed: ${response.status}`);
+  const retryStatuses = new Set([429, 500, 502, 503, 504]);
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'X-API-Key': apiKey,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'User-Agent': 'ResellDashboard/1.0'
+      }
+    });
+
+    if (!response.ok) {
+      if (retryStatuses.has(response.status) && attempt < 3) {
+        // Respect Retry-After if provided; otherwise exponential-ish backoff.
+        const retryAfter = response.headers.get('retry-after');
+        const retryAfterMs = retryAfter ? Math.max(0, Number(retryAfter) * 1000) : 0;
+        const backoffMs = Math.min(8000, 600 * Math.pow(2, attempt));
+        const waitMs = Math.max(retryAfterMs, backoffMs);
+        await response.text().catch(() => '');
+        await new Promise(r => setTimeout(r, waitMs));
+        continue;
+      }
+      throw new Error(`Market data fetch failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    // The market data endpoint returns an object with a 'variants' array
+    const variants = data.variants || data;
+    return Array.isArray(variants) ? variants.find(item => item.variantId === variantId) : data;
   }
 
-  const data = await response.json();
-  // The market data endpoint returns an object with a 'variants' array
-  const variants = data.variants || data;
-  return Array.isArray(variants) ? variants.find(item => item.variantId === variantId) : data;
+  // Should never reach, but keep TS happy.
+  throw new Error('Market data fetch failed: retry exhausted');
 }
 
 function calculateNewPrice(listing: ListingToReprice, marketData: any, strategy: RepricingStrategy) {
