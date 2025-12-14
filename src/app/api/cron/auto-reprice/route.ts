@@ -18,6 +18,14 @@ function verifyCronRequest(request: NextRequest) {
 }
 
 function getBaseUrl(request: NextRequest) {
+  // If this cron request is hitting the production domain, always use it.
+  // This avoids accidentally calling a protected *.vercel.app deployment URL (SSO/Deployment Protection),
+  // which returns HTML instead of the API response.
+  const host = request.headers.get('host') || '';
+  if (host.includes('solesmarket.com')) {
+    return 'https://www.solesmarket.com';
+  }
+
   // Prefer explicit config for cron (Vercel/GitHub Actions)
   const envUrl =
     process.env.NEXT_PUBLIC_APP_URL ||
@@ -34,7 +42,6 @@ function getBaseUrl(request: NextRequest) {
   }
 
   // Fallback to request host (useful for local/ngrok manual triggers)
-  const host = request.headers.get('host');
   const proto = request.headers.get('x-forwarded-proto') || 'https';
   if (host) return `${proto}://${host}`;
 
