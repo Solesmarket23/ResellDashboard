@@ -1635,9 +1635,22 @@ export default function TestStockXOrders() {
     return true;
   }
 
-  // StockX orders/history expects YYYY-MM-DD (not full ISO datetime)
-  const historyFromDate = () => (fromDate ? fromDate : '');
-  const historyToDate = () => (toDate ? toDate : '');
+  // StockX orders/history expects YYYY-MM-DD (not full ISO datetime), but its boundary semantics can be
+  // surprising (timezone / inclusive/exclusive). To avoid "0 results" when the user picks a single day,
+  // we widen the API request window by ±1 day and then filter rows client-side in local time.
+  const addDaysYmd = (yyyyMmDd: string, deltaDays: number) => {
+    const [y, m, d] = yyyyMmDd.split('-').map((x) => parseInt(x, 10));
+    if (!y || !m || !d) return yyyyMmDd;
+    const dt = new Date(y, m - 1, d, 12, 0, 0, 0); // noon avoids DST edge cases
+    dt.setDate(dt.getDate() + deltaDays);
+    const yy = dt.getFullYear();
+    const mm = String(dt.getMonth() + 1).padStart(2, '0');
+    const dd = String(dt.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
+  };
+
+  const historyFromDate = () => (fromDate ? addDaysYmd(fromDate, -1) : '');
+  const historyToDate = () => (toDate ? addDaysYmd(toDate, +1) : '');
 
   const fetchAllHistory = async () => {
     // StockX caps pageSize at 100; we paginate until hasNextPage is false.
