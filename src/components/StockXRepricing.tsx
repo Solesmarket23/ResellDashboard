@@ -113,6 +113,14 @@ export default function StockXRepricing() {
   const { currentTheme } = useTheme();
   const { user: authUser } = useAuth(); // Get user from AuthContext
   const isNeon = currentTheme.name.toLowerCase() === 'neon';
+
+  // Vercel Cron cadence (hard limit): users can't run more frequently than this.
+  // Default matches `vercel.json` (currently */5).
+  const cronCadenceMinutes = (() => {
+    const raw = process.env.NEXT_PUBLIC_AUTO_REPRICE_CRON_MINUTES;
+    const n = raw ? Number(raw) : 5;
+    return Number.isFinite(n) && n > 0 ? n : 5;
+  })();
   
   // StockX Auth Hook for automatic token refresh
   const { startTokenRefreshInterval, checkAndRefreshToken } = useStockXAuth({
@@ -2979,6 +2987,9 @@ export default function StockXRepricing() {
               <p className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
                 Choose how frequently your listings should be automatically repriced. The system will check and update prices based on your selected interval.
               </p>
+              <p className={`text-xs ${isNeon ? 'text-gray-500' : 'text-gray-500'}`}>
+                Note: the server cron checks every <span className="font-semibold">{cronCadenceMinutes}</span> minutes, so the fastest effective interval is <span className="font-semibold">{cronCadenceMinutes}</span> minutes.
+              </p>
 
               <div className="space-y-3">
                 {[
@@ -2990,46 +3001,64 @@ export default function StockXRepricing() {
                   { value: 120, label: '2 hours', desc: 'Very conservative - Minimal changes' },
                   { value: 240, label: '4 hours', desc: 'Minimal - Occasional updates' },
                 ].map((preset) => (
+                  (() => {
+                    const belowCron = preset.value < cronCadenceMinutes;
+                    const isSelected = tempInterval === preset.value;
+                    const isActive = autoRepricingInterval === preset.value;
+                    return (
                   <div
                     key={preset.value}
                     className={`p-4 rounded-lg border-2 transition-all ${
-                      tempInterval === preset.value
+                      isSelected
                         ? isNeon
                           ? 'border-cyan-500 bg-cyan-500/10'
                           : 'border-blue-500 bg-blue-50'
                         : isNeon
                           ? 'border-slate-700 bg-slate-700/30'
                           : 'border-gray-200 bg-gray-50'
-                    }`}
+                    } ${belowCron ? 'opacity-50' : ''}`}
                   >
                     <div className="flex items-center justify-between gap-4">
                       <button
-                        onClick={() => setTempInterval(preset.value)}
-                        className="flex-1 text-left"
+                        onClick={() => {
+                          if (belowCron) return;
+                          setTempInterval(preset.value);
+                        }}
+                        disabled={belowCron}
+                        className="flex-1 text-left disabled:cursor-not-allowed"
                       >
                         <div className="flex items-center gap-2 mb-1">
                           <Clock className={`w-4 h-4 ${
-                            tempInterval === preset.value 
+                            isSelected
                               ? isNeon ? 'text-cyan-400' : 'text-blue-600'
                               : isNeon ? 'text-gray-400' : 'text-gray-500'
                           }`} />
                           <span className={`font-semibold ${isNeon ? 'text-white' : 'text-gray-900'}`}>
                             {preset.label}
                           </span>
-                          {autoRepricingInterval === preset.value && (
+                          {isActive && (
                             <span className={`text-xs px-2 py-0.5 rounded ${
                               isNeon ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-700'
                             }`}>
                               Active
                             </span>
                           )}
+                          {belowCron && (
+                            <span className={`text-xs px-2 py-0.5 rounded ${
+                              isNeon ? 'bg-yellow-500/20 text-yellow-300' : 'bg-yellow-100 text-yellow-800'
+                            }`}>
+                              Limited by cron ({cronCadenceMinutes}m)
+                            </span>
+                          )}
                         </div>
                         <p className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-                          {preset.desc}
+                          {belowCron
+                            ? `Not available (cron runs every ${cronCadenceMinutes} minutes)`
+                            : preset.desc}
                         </p>
                       </button>
                       
-                      {tempInterval === preset.value && autoRepricingInterval !== preset.value && (
+                      {isSelected && !belowCron && !isActive && (
                         <button
                           onClick={() => {
                             console.log('🖱️ Save button clicked!');
@@ -3058,6 +3087,8 @@ export default function StockXRepricing() {
                       )}
                     </div>
                   </div>
+                    );
+                  })()
                 ))}
               </div>
             </div>
