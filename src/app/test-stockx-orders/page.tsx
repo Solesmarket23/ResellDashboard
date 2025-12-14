@@ -1652,6 +1652,9 @@ export default function TestStockXOrders() {
       const all: OrderRow[] = [];
       const seen = new Set<string>();
       const statusesToFetch = selectedHistoryStatuses.length ? selectedHistoryStatuses : [''];
+      // Incremental UI flush: update the table every N rows so users see results appear quickly.
+      let addedSinceFlush = 0;
+      const FLUSH_EVERY = 10;
       const apiCalls = {
         historyRequests: 0,
         activeRequests: 0,
@@ -1706,11 +1709,21 @@ export default function TestStockXOrders() {
             seen.add(key);
             all.push(r);
             added += 1;
+            addedSinceFlush += 1;
+            if (addedSinceFlush >= FLUSH_EVERY) {
+              // Show partial results as we go (so the table fills in while fetching)
+              setOrders([...all]);
+              setAllProgress({ page: p, total: all.length });
+              addedSinceFlush = 0;
+            }
           }
 
-          // Show partial results as we go (so the table fills in while fetching)
-          setOrders([...all]);
-          setAllProgress({ page: p, total: all.length });
+          // Flush at end of each page even if fewer than FLUSH_EVERY were added
+          if (addedSinceFlush > 0) {
+            setOrders([...all]);
+            setAllProgress({ page: p, total: all.length });
+            addedSinceFlush = 0;
+          }
 
           hasNext = Boolean(json?.hasNextPage) && pageRows.length > 0;
           appendLog('info', `Page ${p} fetched`, {
@@ -1737,6 +1750,8 @@ export default function TestStockXOrders() {
           const statuses = selectedActiveStatuses.length ? selectedActiveStatuses : [''];
           const activeAll: OrderRow[] = [];
           const seenActive = new Set<string>();
+          let activeAddedSinceFlush = 0;
+          const ACTIVE_FLUSH_EVERY = 10;
 
           for (const st of statuses) {
             let p = 1;
@@ -1781,6 +1796,12 @@ export default function TestStockXOrders() {
                 seenActive.add(key);
                 activeAll.push(r);
                 added += 1;
+                activeAddedSinceFlush += 1;
+                if (activeAddedSinceFlush >= ACTIVE_FLUSH_EVERY) {
+                  const dateFilteredActiveSoFar = activeAll.filter((x) => inSelectedDateRange(x.createdAt));
+                  setOrders([...all, ...dateFilteredActiveSoFar]);
+                  activeAddedSinceFlush = 0;
+                }
               }
               appendLog('info', `Active page ${p} fetched`, {
                 orderStatus: st || '(all)',
@@ -1792,6 +1813,12 @@ export default function TestStockXOrders() {
               p += 1;
               if (hasNext) await sleep(200);
             }
+          }
+
+          if (activeAddedSinceFlush > 0) {
+            const dateFilteredActiveSoFar = activeAll.filter((x) => inSelectedDateRange(x.createdAt));
+            setOrders([...all, ...dateFilteredActiveSoFar]);
+            activeAddedSinceFlush = 0;
           }
 
           return activeAll;
