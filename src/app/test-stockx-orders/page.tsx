@@ -3326,7 +3326,7 @@ export default function TestStockXOrders() {
                           {authStatus}
                         </td>
                         <td className="px-4 py-3 text-gray-200" title={failureNotes}>
-                          {failureNotes}
+                          <div className="whitespace-nowrap truncate max-w-[260px]">{failureNotes}</div>
                         </td>
                         <td className="px-4 py-3 text-gray-200">{carrier}</td>
                         <td className="px-4 py-3 text-gray-200">{tracking}</td>
