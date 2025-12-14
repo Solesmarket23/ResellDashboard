@@ -5,7 +5,8 @@ export async function GET(request: NextRequest) {
   let hasAdminCredentials = false;
   let adminInitError: string | null = null;
   try {
-    const { getAdminDb } = await import('@/lib/firebase/firebaseAdmin');
+    // Keep consistent with other cron routes
+    const { getAdminDb } = await import('@/lib/firebase/admin');
     const db = getAdminDb();
     hasAdminCredentials = !!db;
   } catch (error) {
@@ -24,17 +25,31 @@ export async function GET(request: NextRequest) {
     adminInitError: adminInitError || undefined,
     endpoints: [
       {
+        name: 'Auto Reprice (StockX)',
+        path: '/api/cron/auto-reprice',
+        schedule: '*/1 * * * * (every 1 minute)',
+        description: 'Auto-reprices StockX listings for users who enabled auto-repricing',
+        enabled: hasAdminCredentials && !paused
+      },
+      {
         name: 'Price Monitor',
         path: '/api/cron/monitor-prices',
-        schedule: '*/15 * * * * (every 15 minutes)',
+        schedule: '*/5 * * * * (every 5 minutes)',
         description: 'Monitors price changes for all tracked products',
         enabled: hasAdminCredentials && !paused
       },
       {
         name: 'Purchase Sync',
         path: '/api/cron/sync-purchases',
-        schedule: '0 * * * * (every hour)',
+        schedule: '0 3 * * * (daily at 3:00 AM)',
         description: 'Auto-syncs Gmail purchases for all users',
+        enabled: hasAdminCredentials && !paused
+      },
+      {
+        name: 'Renew Gmail Watches',
+        path: '/api/cron/renew-gmail-watches',
+        schedule: '0 */12 * * * (every 12 hours)',
+        description: 'Renews Gmail watch subscriptions for users',
         enabled: hasAdminCredentials && !paused
       }
     ],
