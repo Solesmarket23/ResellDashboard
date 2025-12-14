@@ -2014,7 +2014,7 @@ export default function TestStockXOrders() {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs text-gray-400 mb-1">From (ISO or date)</label>
+                <label className="block text-xs text-gray-400 mb-1">From</label>
                 <input
                   type="date"
                   value={fromDate}
