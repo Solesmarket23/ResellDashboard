@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { refreshStockXTokens } from '@/lib/stockx/tokenRefresh';
 
 // Verify this is a legitimate cron request
 function verifyCronRequest(request: NextRequest) {
@@ -76,6 +77,13 @@ export async function GET(request: NextRequest) {
     console.log('🔄 Cron job started: auto-reprice', { force, dryRun, onlyUserId });
 
     const activeUsers: string[] = [];
+    const apiKey = process.env.STOCKX_API_KEY || '';
+    if (!apiKey) {
+      return NextResponse.json(
+        { success: false, error: 'Missing STOCKX_API_KEY', message: 'Set STOCKX_API_KEY in environment variables' },
+        { status: 500 }
+      );
+    }
 
     if (onlyUserId) {
       const userDoc = await adminDb.collection('users').doc(onlyUserId).get();
@@ -191,16 +199,54 @@ export async function GET(request: NextRequest) {
           pageNumber: '1'
         });
         
-        const listingsResponse = await fetch(`https://api.stockx.com/v2/selling/listings?${params}`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${stockxTokens.access_token}`,
-            'X-API-Key': process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID || '',
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'User-Agent': 'ResellDashboard/1.0'
+        // Helper: fetch listings, refreshing token once on 401 (common cause of "repricing not working")
+        const fetchListings = async (accessToken: string) => {
+          return await fetch(`https://api.stockx.com/v2/selling/listings?${params}`, {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'x-api-key': apiKey,
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+              'User-Agent': 'ResellDashboard/1.0',
+            },
+          });
+        };
+
+        let accessToken = stockxTokens.access_token as string;
+        let refreshToken = stockxTokens.refresh_token as string | undefined;
+
+        let listingsResponse = await fetchListings(accessToken);
+
+        if (listingsResponse.status === 401 && refreshToken) {
+          console.log(`🔄 StockX listings 401 for user ${userId}. Attempting token refresh...`);
+          const refreshed = await refreshStockXTokens(refreshToken);
+          if (refreshed.success && refreshed.accessToken) {
+            accessToken = refreshed.accessToken;
+            refreshToken = refreshed.refreshToken || refreshToken;
+            try {
+              await adminDb.collection('users').doc(userId).set(
+                {
+                  stockxTokens: {
+                    ...(userData.stockxTokens || {}),
+                    access_token: accessToken,
+                    refresh_token: refreshToken,
+                    updated_at: new Date().toISOString(),
+                  },
+                },
+                { merge: true }
+              );
+              console.log(`✅ Refreshed StockX tokens saved to Firebase for user ${userId}`);
+            } catch (e) {
+              console.warn(`⚠️ Token refresh succeeded but failed to persist for user ${userId}:`, e);
+            }
+
+            // Retry listings fetch once with refreshed token
+            listingsResponse = await fetchListings(accessToken);
+          } else {
+            console.log(`❌ Token refresh failed for user ${userId}: ${refreshed.error || 'Unknown error'}`);
           }
-        });
+        }
 
         if (!listingsResponse.ok) {
           const statusCode = listingsResponse.status;
@@ -208,7 +254,7 @@ export async function GET(request: NextRequest) {
           
           // Add more specific error messages
           if (statusCode === 401) {
-            errors.push(`User ${userId}: StockX token expired or invalid (401)`);
+            errors.push(`User ${userId}: StockX token expired/invalid or API key rejected (401)`);
           } else if (statusCode === 429) {
             errors.push(`User ${userId}: Rate limited by StockX (429)`);
           } else {
@@ -306,8 +352,8 @@ export async function GET(request: NextRequest) {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${stockxTokens.access_token}`,
-            'x-api-key': process.env.STOCKX_API_KEY || '',
+            Authorization: `Bearer ${accessToken}`,
+            'x-api-key': apiKey,
             'x-user-id': userId
           },
           body: JSON.stringify({
