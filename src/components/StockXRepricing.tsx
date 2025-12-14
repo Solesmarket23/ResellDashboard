@@ -186,6 +186,7 @@ export default function StockXRepricing() {
   const [isPreviewMinimized, setIsPreviewMinimized] = useState(false);
   const [showPreviewResults, setShowPreviewResults] = useState(false);
   const [savedSettings, setSavedSettings] = useState<Record<string, any>>({});
+  const savedSettingsRef = useRef<Record<string, any>>({});
   const [savingSettings, setSavingSettings] = useState(false);
   const [activePeeks, setActivePeeks] = useState<Record<string, boolean>>({});
   const [peekScheduler, setPeekScheduler] = useState<NodeJS.Timeout | null>(null);
@@ -449,6 +450,18 @@ export default function StockXRepricing() {
     loadAutoRepricingSettings();
   }, [authUser]);
 
+  // Keep a ref to the latest saved settings so async flows (like "Save → run two-step → fetchListings")
+  // don't accidentally use a stale closure and wipe newly saved min/max from the UI.
+  useEffect(() => {
+    savedSettingsRef.current = savedSettings;
+  }, [savedSettings]);
+
+  // If saved settings change (e.g. user clicks Save), re-apply them to the current listings in-memory
+  // so the UI stays consistent even if a background refresh comes in.
+  useEffect(() => {
+    setListings(prev => applySavedSettingsToListings(prev, savedSettingsRef.current));
+  }, [applySavedSettingsToListings, savedSettings]);
+
   const saveAutoRepricingEnabled = async (enabled: boolean) => {
     // Try to get user ID from Firebase auth first, then fall back to site user ID from cookies
     let userId = authUser?.uid;
@@ -551,7 +564,10 @@ export default function StockXRepricing() {
         });
       });
       
-      setSavedSettings(settingsMap);
+      setSavedSettings(() => {
+        savedSettingsRef.current = settingsMap;
+        return settingsMap;
+      });
       setSettingsLoaded(true);
       console.log('✅ Settings loaded into state.');
 
@@ -735,10 +751,14 @@ export default function StockXRepricing() {
       const localSettingData = { ...settingData };
       if (localSettingData.minPrice === null) delete localSettingData.minPrice;
       if (localSettingData.maxPrice === null) delete localSettingData.maxPrice;
-      setSavedSettings(prev => ({
-        ...prev,
-        [listingId]: { ...prev[listingId], ...localSettingData, id: out.id, userId: effectiveUserId }
-      }));
+      setSavedSettings(prev => {
+        const next = {
+          ...prev,
+          [listingId]: { ...prev[listingId], ...localSettingData, id: out.id, userId: effectiveUserId }
+        };
+        savedSettingsRef.current = next;
+        return next;
+      });
       setSettingsLoaded(true);
       console.log('🎉 Settings saved successfully to Firebase');
     } catch (error) {
@@ -1123,14 +1143,16 @@ export default function StockXRepricing() {
         const groupedListings = processInventoryGroups(enrichedListings);
         
         // Apply saved settings to the grouped listings
+        // IMPORTANT: use the ref to avoid stale closures when this runs right after a Save.
+        const currentSaved = savedSettingsRef.current || {};
         let finalListings = groupedListings;
-        if (Object.keys(savedSettings).length > 0) {
+        if (Object.keys(currentSaved).length > 0) {
           console.log('🔧 Applying saved settings after grouping...');
           console.log('📊 Settings loaded:', settingsLoaded);
-          console.log('📊 Number of saved settings:', Object.keys(savedSettings).length);
+          console.log('📊 Number of saved settings:', Object.keys(currentSaved).length);
           
           finalListings = groupedListings.map(listing => {
-            const saved = savedSettings[listing.listingId];
+            const saved = currentSaved[listing.listingId];
             if (saved) {
               console.log(`✅ Restoring settings for ${listing.listingId}:`, {
                 savedMinPrice: saved.minPrice,
@@ -1158,7 +1180,7 @@ export default function StockXRepricing() {
           console.log('⚠️ Settings not applied:', {
             hasUser: !!authUser,
             settingsLoaded,
-            savedSettingsCount: Object.keys(savedSettings).length
+            savedSettingsCount: Object.keys(currentSaved).length
           });
         }
         
