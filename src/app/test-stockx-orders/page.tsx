@@ -656,6 +656,19 @@ export default function TestStockXOrders() {
       d.setUTCDate(d.getUTCDate() + days);
       return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
     };
+    const monthStartEndYmd = (monthKey: string) => {
+      // monthKey: YYYY-MM
+      const [yy, mm] = monthKey.split('-').map((x) => parseInt(x, 10));
+      const y = Number.isFinite(yy) ? yy : 1970;
+      const m = Number.isFinite(mm) ? mm : 1;
+      const start = `${y}-${String(m).padStart(2, '0')}-01`;
+      // last day of month: Date.UTC(y, m, 0)
+      const last = new Date(Date.UTC(y, m, 0));
+      const end = `${last.getUTCFullYear()}-${String(last.getUTCMonth() + 1).padStart(2, '0')}-${String(
+        last.getUTCDate()
+      ).padStart(2, '0')}`;
+      return { start, end };
+    };
     const rowCreatedIso = (r: any) => {
       const raw = r?.rawData || r;
       return r?.createdAt || raw?.createdAt || raw?.orderDate || raw?.created || null;
@@ -711,25 +724,65 @@ export default function TestStockXOrders() {
     try {
       const statusesToFetch = ['COMPLETED', 'AUTHFAILED'];
 
-      // Determine which parts of the requested range still need to be fetched.
-      // - If we have an overlap seed, fetch the missing earlier and/or later slice.
-      // - If no overlap, fetch the full [from,to].
-      const segments: Array<{ from: string; to: string }> = [];
-      if (!seedFrom || !seedTo) {
-        segments.push({ from, to });
-      } else {
-        // Earlier missing slice
-        if (ymdToUtcMsStart(from) < ymdToUtcMsStart(seedFrom)) {
-          segments.push({ from, to: addDaysYmd(seedFrom, -1) });
-        }
-        // Later missing slice
-        if (ymdToUtcMsStart(to) > ymdToUtcMsStart(seedTo)) {
-          segments.push({ from: addDaysYmd(seedTo, 1), to });
-        }
+      // Month-by-month fetching (A then B per month):
+      // For each month in the requested range:
+      //   - fetch COMPLETED for that month
+      //   - fetch AUTHFAILED for that month
+      // This gives a more intuitive, progressive month list and avoids "global A then global B".
+      const monthsInRange = listMonthsBetween(from, to);
+      if (monthsInRange.length === 0) {
+        writeCache(cacheKey, { rows: collected });
+        const computed = computeVerificationStats(collected, { from, to });
+        setVerificationRows([...collected]);
+        setVerificationMonths(computed.months);
+        setVerificationBrands(computed.brands);
+        appendLog('info', 'Verification stats loaded (no months in range)', { rows: collected.length });
+        return;
       }
 
-      if (segments.length === 0) {
-        // Fully covered by cached/in-memory overlap; no network calls needed.
+      const desiredFromMs = ymdToUtcMsStart(from);
+      const desiredToMs = ymdToUtcMsStart(to);
+      const seedFromMs = seedFrom ? ymdToUtcMsStart(seedFrom) : null;
+      const seedToMs = seedTo ? ymdToUtcMsStart(seedTo) : null;
+
+      const buildMonthSegments = (monthKey: string) => {
+        const { start: monthStart, end: monthEnd } = monthStartEndYmd(monthKey);
+        // Clamp to requested range
+        const segStart = Math.max(ymdToUtcMsStart(monthStart), desiredFromMs);
+        const segEnd = Math.min(ymdToUtcMsStart(monthEnd), desiredToMs);
+        if (segStart > segEnd) return [] as Array<{ from: string; to: string; monthKey: string }>;
+        const startYmd =
+          segStart === ymdToUtcMsStart(monthStart) ? monthStart : from; // safe fallback; recompute below
+        // Convert ms->ymd for boundaries
+        const msToYmd = (ms: number) => {
+          const d = new Date(ms);
+          return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+        };
+        const desiredStartYmd = msToYmd(segStart);
+        const desiredEndYmd = msToYmd(segEnd);
+
+        // No seed overlap: fetch whole month segment
+        if (!seedFromMs || !seedToMs) return [{ from: desiredStartYmd, to: desiredEndYmd, monthKey }];
+
+        // If month segment is fully outside the overlap seed: fetch whole month segment
+        if (segEnd < seedFromMs || segStart > seedToMs) return [{ from: desiredStartYmd, to: desiredEndYmd, monthKey }];
+
+        // Otherwise, fetch only the uncovered part(s) of this month segment
+        const out: Array<{ from: string; to: string; monthKey: string }> = [];
+        if (segStart < seedFromMs) {
+          const beforeTo = msToYmd(Math.min(segEnd, ymdToUtcMsStart(addDaysYmd(seedFrom!, -1))));
+          out.push({ from: desiredStartYmd, to: beforeTo, monthKey });
+        }
+        if (segEnd > seedToMs) {
+          const afterFrom = msToYmd(Math.max(segStart, ymdToUtcMsStart(addDaysYmd(seedTo!, 1))));
+          out.push({ from: afterFrom, to: desiredEndYmd, monthKey });
+        }
+        return out.filter((s) => ymdToUtcMsStart(s.from) <= ymdToUtcMsStart(s.to));
+      };
+
+      const allMonthSegments = monthsInRange.flatMap((mk) => buildMonthSegments(mk));
+      if (allMonthSegments.length === 0) {
+        // Fully covered by existing overlap; no network calls needed.
         const computed = computeVerificationStats(collected, { from, to });
         setVerificationRows([...collected]);
         setVerificationMonths(computed.months);
@@ -743,12 +796,17 @@ export default function TestStockXOrders() {
         return;
       }
 
-      for (const st of statusesToFetch) {
-        for (const seg of segments) {
+      // Process month segments in chronological order for more natural progress in the UI.
+      const monthSegmentsSorted = allMonthSegments
+        .slice()
+        .sort((a, b) => a.monthKey.localeCompare(b.monthKey) || a.from.localeCompare(b.from));
+
+      for (const seg of monthSegmentsSorted) {
+        for (const st of statusesToFetch) {
           let page = 1;
           let hasNext = true;
           while (hasNext && page <= 100) {
-            setVerificationProgress({ status: st, page, totalRows: collected.length });
+            setVerificationProgress({ status: `${seg.monthKey} ${st}`, page, totalRows: collected.length });
             const qp = new URLSearchParams();
             qp.set('pageNumber', String(page));
             qp.set('pageSize', '100');
@@ -777,7 +835,13 @@ export default function TestStockXOrders() {
               // 429: exponential backoff and retry same page
               if (res.status === 429) {
                 const backoffMs = Math.min(30_000, 800 * Math.pow(2, attempt));
-                appendLog('warn', 'Rate limited (429). Backing off…', { status: st, page, backoffMs, range: seg });
+                appendLog('warn', 'Rate limited (429). Backing off…', {
+                  status: st,
+                  month: seg.monthKey,
+                  page,
+                  backoffMs,
+                  range: { from: seg.from, to: seg.to },
+                });
                 await sleep(backoffMs);
                 attempt += 1;
                 continue;
