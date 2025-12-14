@@ -203,6 +203,36 @@ export async function POST(request: NextRequest) {
     console.log(`🔄 Starting repricing for ${listings.length} listings (dry run: ${dryRun})`);
     console.log(`🎯 Using individual strategies: ${useIndividualStrategies}`);
 
+    // Per-request market data cache to reduce upstream calls (StockX can 429).
+    const MARKET_CACHE_TTL_MS = 30_000;
+    const marketCache = new Map<string, { ts: number; data: any }>();
+    const marketInFlight = new Map<string, Promise<any>>();
+    const marketKeyFor = (productId: string, variantId: string) => `${productId}:${variantId}`;
+    const getMarketData = async (
+      productId: string,
+      variantId: string,
+      opts?: { bustCache?: boolean }
+    ) => {
+      const bustCache = opts?.bustCache === true;
+      const key = marketKeyFor(productId, variantId);
+      if (!bustCache) {
+        const cached = marketCache.get(key);
+        if (cached && Date.now() - cached.ts < MARKET_CACHE_TTL_MS) return cached.data;
+        const inFlight = marketInFlight.get(key);
+        if (inFlight) return await inFlight;
+      }
+
+      const p = fetchMarketData(productId, variantId, accessToken);
+      if (!bustCache) marketInFlight.set(key, p);
+      try {
+        const data = await p;
+        if (!bustCache) marketCache.set(key, { ts: Date.now(), data });
+        return data;
+      } finally {
+        if (!bustCache) marketInFlight.delete(key);
+      }
+    };
+
     const repricingResults = [];
     const errors = [];
     let tokenRefreshed = false;
@@ -270,7 +300,7 @@ export async function POST(request: NextRequest) {
         // Get current market data
         let marketData;
         try {
-          marketData = await fetchMarketData(listing.productId, listing.variantId, accessToken);
+          marketData = await getMarketData(listing.productId, listing.variantId);
         } catch (error: any) {
           // If we get a 401 and haven't tried refreshing yet, refresh the token
           if (error.message?.includes('401') && !tokenRefreshed && refreshToken) {
@@ -283,11 +313,25 @@ export async function POST(request: NextRequest) {
               console.log('✅ Token refreshed successfully');
               
               // Retry fetching market data with new token
-              marketData = await fetchMarketData(listing.productId, listing.variantId, accessToken);
+              marketData = await getMarketData(listing.productId, listing.variantId, { bustCache: true });
             } else {
               throw new Error('Token refresh failed: ' + refreshResult.error);
             }
           } else {
+            const msg = String(error?.message || error);
+            // Rate limited: treat as a soft skip so one 429 doesn't "fail" a listing.
+            if (msg.includes('429')) {
+              console.warn(`⏳ Rate limited (429) fetching market data; skipping listing ${listing.listingId} for now.`);
+              repricingResults.push({
+                listingId: listing.listingId,
+                currentPrice: listing.currentPrice,
+                newPrice: listing.currentPrice,
+                action: 'no_change',
+                reason: 'Skipped: rate limited fetching market data (429). Will retry on next run.',
+                market: { lowestAsk: null, flexLowestAsk: null },
+              });
+              continue;
+            }
             throw error;
           }
         }
@@ -523,7 +567,7 @@ export async function POST(request: NextRequest) {
                 for (let attempt = 0; attempt < 4; attempt++) {
                   // 1.5s, 2.5s, 3.5s, 4.5s
                   await new Promise(resolve => setTimeout(resolve, 1500 + attempt * 1000));
-                  refreshedMarket = await fetchMarketData(listing.productId, listing.variantId, accessToken);
+                  refreshedMarket = await getMarketData(listing.productId, listing.variantId, { bustCache: true });
 
                   competitorLowestAsk = parseStockXMoneyToDollars((refreshedMarket as any).lowestAskAmount);
                   competitorFlexLowestAsk = parseStockXMoneyToDollars((refreshedMarket as any).flexLowestAskAmount);
@@ -816,7 +860,7 @@ async function fetchMarketData(productId: string, variantId: string, accessToken
   const url = `https://api.stockx.com/v2/catalog/products/${productId}/variants/${variantId}/market-data`;
 
   const retryStatuses = new Set([429, 500, 502, 503, 504]);
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 6; attempt++) {
     const response = await fetch(url, {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
@@ -828,12 +872,14 @@ async function fetchMarketData(productId: string, variantId: string, accessToken
     });
 
     if (!response.ok) {
-      if (retryStatuses.has(response.status) && attempt < 3) {
+      if (retryStatuses.has(response.status) && attempt < 5) {
         // Respect Retry-After if provided; otherwise exponential-ish backoff.
         const retryAfter = response.headers.get('retry-after');
-        const retryAfterMs = retryAfter ? Math.max(0, Number(retryAfter) * 1000) : 0;
-        const backoffMs = Math.min(8000, 600 * Math.pow(2, attempt));
-        const waitMs = Math.max(retryAfterMs, backoffMs);
+        const retryAfterSeconds = retryAfter ? parseInt(retryAfter, 10) : NaN;
+        const retryAfterMs = Number.isFinite(retryAfterSeconds) ? Math.max(0, retryAfterSeconds * 1000) : 0;
+        const baseBackoffMs = Math.min(30_000, 800 * Math.pow(2, attempt)); // 0.8s, 1.6s, 3.2s, 6.4s, 12.8s, 25.6s
+        const jitterMs = Math.floor(Math.random() * 250);
+        const waitMs = Math.max(retryAfterMs, baseBackoffMs) + jitterMs;
         await response.text().catch(() => '');
         await new Promise(r => setTimeout(r, waitMs));
         continue;
