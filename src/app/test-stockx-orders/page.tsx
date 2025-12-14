@@ -560,10 +560,22 @@ export default function TestStockXOrders() {
       }
     }
 
+    const inYmdRange = (iso: unknown, fromYmd?: string | null, toYmd?: string | null) => {
+      if (!fromYmd || !toYmd) return true;
+      if (!iso) return false;
+      const d = new Date(String(iso));
+      const t = d.getTime();
+      if (Number.isNaN(t)) return false;
+      const from = new Date(`${fromYmd}T00:00:00.000Z`).getTime();
+      const to = new Date(`${toYmd}T23:59:59.999Z`).getTime();
+      return t >= from && t <= to;
+    };
+
     for (const r of rows) {
       const raw = (r as any)?.rawData || (r as any);
       const status = getRowStatus(r);
       const createdIso = (r as any)?.createdAt || raw?.createdAt || raw?.orderDate || raw?.created || undefined;
+      if (!inYmdRange(createdIso, rangeFrom, rangeTo)) continue;
       const mk = monthKeyFromIso(createdIso);
       if (!mk) continue;
       if (monthFilter && mk !== monthFilter) continue;
@@ -607,6 +619,8 @@ export default function TestStockXOrders() {
     const derived = verificationPeriod === 'ytd' ? ytdRange() : last12MonthsRange();
     const from = verificationFrom || derived.from;
     const to = verificationTo || derived.to;
+    const prevRange = verificationRange;
+    const prevRows = verificationRows;
     setVerificationRange({ from, to });
     const cacheKey = `stockx_verification_cache_v2:${JSON.stringify({ period: verificationPeriod, from, to })}`;
 
@@ -635,75 +649,166 @@ export default function TestStockXOrders() {
     setSelectedVerificationMonth(null);
     appendLog('info', 'Fetching verification stats...', { period: verificationPeriod, from, to, statuses: ['COMPLETED', 'AUTHFAILED'] });
 
+    const ymdToUtcMsStart = (ymd: string) => new Date(`${ymd}T00:00:00.000Z`).getTime();
+    const ymdToUtcMsEnd = (ymd: string) => new Date(`${ymd}T23:59:59.999Z`).getTime();
+    const addDaysYmd = (ymd: string, days: number) => {
+      const d = new Date(`${ymd}T00:00:00.000Z`);
+      d.setUTCDate(d.getUTCDate() + days);
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+    };
+    const rowCreatedIso = (r: any) => {
+      const raw = r?.rawData || r;
+      return r?.createdAt || raw?.createdAt || raw?.orderDate || raw?.created || null;
+    };
+    const rowInRange = (r: any, f: string, t: string) => {
+      const iso = rowCreatedIso(r);
+      if (!iso) return false;
+      const d = new Date(String(iso));
+      const ms = d.getTime();
+      if (Number.isNaN(ms)) return false;
+      return ms >= ymdToUtcMsStart(f) && ms <= ymdToUtcMsEnd(t);
+    };
+
+    // Reuse already-loaded rows when the new range overlaps the currently loaded range.
+    // This prevents re-fetching months we already have (fewer upstream calls and faster UX).
+    const reusePossible =
+      prevRows &&
+      prevRows.length > 0 &&
+      prevRange &&
+      typeof prevRange.from === 'string' &&
+      typeof prevRange.to === 'string';
+    let seedFrom: string | null = null;
+    let seedTo: string | null = null;
+    if (reusePossible) {
+      const overlapFrom = ymdToUtcMsStart(from) <= ymdToUtcMsStart(prevRange!.to) ? (ymdToUtcMsStart(from) >= ymdToUtcMsStart(prevRange!.from) ? from : prevRange!.from) : null;
+      const overlapTo = ymdToUtcMsStart(to) >= ymdToUtcMsStart(prevRange!.from) ? (ymdToUtcMsStart(to) <= ymdToUtcMsStart(prevRange!.to) ? to : prevRange!.to) : null;
+      if (overlapFrom && overlapTo && ymdToUtcMsStart(overlapFrom) <= ymdToUtcMsStart(overlapTo)) {
+        seedFrom = overlapFrom;
+        seedTo = overlapTo;
+      }
+    }
+
     const collected: OrderRow[] = [];
     const seen = new Set<string>();
+    if (seedFrom && seedTo) {
+      const seeded = prevRows.filter((r) => rowInRange(r, seedFrom!, seedTo!));
+      for (const r of seeded) {
+        const raw = (r as any)?.rawData || {};
+        const key = String(raw.orderNumber || raw.orderId || raw.id || (r as any).id || raw.askId || JSON.stringify(raw));
+        if (seen.has(key)) continue;
+        seen.add(key);
+        collected.push(r);
+      }
+      appendLog('info', 'Reusing already-loaded verification rows', {
+        prevFrom: prevRange?.from,
+        prevTo: prevRange?.to,
+        overlapFrom: seedFrom,
+        overlapTo: seedTo,
+        reusedRows: collected.length,
+      });
+    }
 
     try {
       const statusesToFetch = ['COMPLETED', 'AUTHFAILED'];
+
+      // Determine which parts of the requested range still need to be fetched.
+      // - If we have an overlap seed, fetch the missing earlier and/or later slice.
+      // - If no overlap, fetch the full [from,to].
+      const segments: Array<{ from: string; to: string }> = [];
+      if (!seedFrom || !seedTo) {
+        segments.push({ from, to });
+      } else {
+        // Earlier missing slice
+        if (ymdToUtcMsStart(from) < ymdToUtcMsStart(seedFrom)) {
+          segments.push({ from, to: addDaysYmd(seedFrom, -1) });
+        }
+        // Later missing slice
+        if (ymdToUtcMsStart(to) > ymdToUtcMsStart(seedTo)) {
+          segments.push({ from: addDaysYmd(seedTo, 1), to });
+        }
+      }
+
+      if (segments.length === 0) {
+        // Fully covered by cached/in-memory overlap; no network calls needed.
+        const computed = computeVerificationStats(collected, { from, to });
+        setVerificationRows([...collected]);
+        setVerificationMonths(computed.months);
+        setVerificationBrands(computed.brands);
+        writeCache(cacheKey, { rows: collected });
+        appendLog('info', 'Verification stats already covered by existing data (no fetch needed)', {
+          from,
+          to,
+          rows: collected.length,
+        });
+        return;
+      }
+
       for (const st of statusesToFetch) {
-        let page = 1;
-        let hasNext = true;
-        while (hasNext && page <= 100) {
-          setVerificationProgress({ status: st, page, totalRows: collected.length });
-          const qp = new URLSearchParams();
-          qp.set('pageNumber', String(page));
-          qp.set('pageSize', '100');
-          qp.set('fromDate', from);
-          qp.set('toDate', to);
-          qp.set('orderStatus', st);
-          qp.set('includeCatalog', '1'); // for brand
-          // NOTE: we intentionally do NOT set includeDetails=1 here (keeps upstream calls lower)
-          const url = `/api/stockx/orders/history?${qp.toString()}`;
-          let attempt = 0;
-          let json: any = {};
-          let ok = false;
-          let statusCode = 0;
-          while (attempt < 6 && !ok) {
-            const res = await fetch(url);
-            statusCode = res.status;
-            json = await res.json().catch(() => ({}));
-            ok = res.ok;
-            if (ok) break;
+        for (const seg of segments) {
+          let page = 1;
+          let hasNext = true;
+          while (hasNext && page <= 100) {
+            setVerificationProgress({ status: st, page, totalRows: collected.length });
+            const qp = new URLSearchParams();
+            qp.set('pageNumber', String(page));
+            qp.set('pageSize', '100');
+            qp.set('fromDate', seg.from);
+            qp.set('toDate', seg.to);
+            qp.set('orderStatus', st);
+            qp.set('includeCatalog', '1'); // for brand
+            // NOTE: we intentionally do NOT set includeDetails=1 here (keeps upstream calls lower)
+            const url = `/api/stockx/orders/history?${qp.toString()}`;
+            let attempt = 0;
+            let json: any = {};
+            let ok = false;
+            let statusCode = 0;
+            while (attempt < 6 && !ok) {
+              const res = await fetch(url);
+              statusCode = res.status;
+              json = await res.json().catch(() => ({}));
+              ok = res.ok;
+              if (ok) break;
 
-            if (res.status === 401 || json?.authRequired) {
-              setAuthRequired(true);
-              throw new Error(json?.message || 'StockX authentication required.');
+              if (res.status === 401 || json?.authRequired) {
+                setAuthRequired(true);
+                throw new Error(json?.message || 'StockX authentication required.');
+              }
+
+              // 429: exponential backoff and retry same page
+              if (res.status === 429) {
+                const backoffMs = Math.min(30_000, 800 * Math.pow(2, attempt));
+                appendLog('warn', 'Rate limited (429). Backing off…', { status: st, page, backoffMs, range: seg });
+                await sleep(backoffMs);
+                attempt += 1;
+                continue;
+              }
+
+              throw new Error(json?.error || json?.details || json?.message || `Request failed (${res.status})`);
             }
 
-            // 429: exponential backoff and retry same page
-            if (res.status === 429) {
-              const backoffMs = Math.min(30_000, 800 * Math.pow(2, attempt));
-              appendLog('warn', 'Rate limited (429). Backing off…', { status: st, page, backoffMs });
-              await sleep(backoffMs);
-              attempt += 1;
-              continue;
+            if (!ok) {
+              throw new Error(json?.error || json?.details || json?.message || `Request failed (${statusCode})`);
             }
 
-            throw new Error(json?.error || json?.details || json?.message || `Request failed (${res.status})`);
+            const pageRows: OrderRow[] = Array.isArray(json?.data) ? json.data : [];
+            for (const r of pageRows) {
+              const raw = (r as any)?.rawData || {};
+              const key = String(raw.orderNumber || raw.orderId || raw.id || (r as any).id || raw.askId || JSON.stringify(raw));
+              if (seen.has(key)) continue;
+              seen.add(key);
+              collected.push(r);
+            }
+
+            const { months, brands } = computeVerificationStats(collected, { from, to });
+            setVerificationMonths(months);
+            setVerificationBrands(brands);
+            setVerificationRows([...collected]);
+
+            hasNext = Boolean(json?.hasNextPage) && pageRows.length > 0;
+            page += 1;
+            // Pace requests to reduce 429 risk
+            if (hasNext) await sleep(600);
           }
-
-          if (!ok) {
-            throw new Error(json?.error || json?.details || json?.message || `Request failed (${statusCode})`);
-          }
-
-          const pageRows: OrderRow[] = Array.isArray(json?.data) ? json.data : [];
-          for (const r of pageRows) {
-            const raw = (r as any)?.rawData || {};
-            const key = String(raw.orderNumber || raw.orderId || raw.id || (r as any).id || raw.askId || JSON.stringify(raw));
-            if (seen.has(key)) continue;
-            seen.add(key);
-            collected.push(r);
-          }
-
-          const { months, brands } = computeVerificationStats(collected, { from, to });
-          setVerificationMonths(months);
-          setVerificationBrands(brands);
-          setVerificationRows([...collected]);
-
-          hasNext = Boolean(json?.hasNextPage) && pageRows.length > 0;
-          page += 1;
-          // Pace requests to reduce 429 risk
-          if (hasNext) await sleep(600);
         }
       }
 
