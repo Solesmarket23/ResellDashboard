@@ -329,6 +329,11 @@ export async function POST(request: NextRequest) {
               equalNullableNumber(listing.lastSeenFlexLowestAsk, currentFlexAsk);
 
             if (unchanged && isWinning) {
+              console.log(
+                `⏭️ Two-step skip (market unchanged + already winning): ${listing.listingId} ` +
+                  `(price=$${listing.currentPrice}, lowestAsk=${currentStdAsk ?? 'null'}, flexLowestAsk=${currentFlexAsk ?? 'null'}, ` +
+                  `lastSeenLowestAsk=${listing.lastSeenLowestAsk ?? 'null'}, lastSeenFlexLowestAsk=${listing.lastSeenFlexLowestAsk ?? 'null'})`
+              );
               repricingResults.push({
                 listingId: listing.listingId,
                 currentPrice: listing.currentPrice,

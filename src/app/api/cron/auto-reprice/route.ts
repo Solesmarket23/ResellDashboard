@@ -469,6 +469,35 @@ export async function GET(request: NextRequest) {
         const repriceData = await repriceResponse.json();
         console.log(`📊 Repricing API response:`, JSON.stringify(repriceData, null, 2));
 
+        // Extra clarity logs for skip reasons (helps debug "why didn't it reprice?")
+        try {
+          const resultsArr: any[] = Array.isArray(repriceData?.results) ? repriceData.results : [];
+          const skipsUnchangedWinning = resultsArr.filter(
+            r =>
+              r?.action === 'no_change' &&
+              typeof r?.reason === 'string' &&
+              r.reason.toLowerCase().includes('market unchanged') &&
+              r.reason.toLowerCase().includes('winning')
+          );
+
+          if (skipsUnchangedWinning.length > 0) {
+            console.log(
+              `⏭️ Skipping ${skipsUnchangedWinning.length} listing(s): market unchanged + already winning (will check again next cron)`
+            );
+            for (const r of skipsUnchangedWinning.slice(0, 25)) {
+              const m = r?.market || {};
+              console.log(
+                `  - ${r.listingId}: lowestAsk=${m.lowestAsk ?? 'null'} flexLowestAsk=${m.flexLowestAsk ?? 'null'} (no update)`
+              );
+            }
+            if (skipsUnchangedWinning.length > 25) {
+              console.log(`  ... and ${skipsUnchangedWinning.length - 25} more`);
+            }
+          }
+        } catch (e) {
+          console.warn('⚠️ Failed to compute skip logs:', e);
+        }
+
         // Persist market snapshots so future runs can skip when unchanged + you're still winning.
         // (This reduces StockX push notification spam by avoiding unnecessary update calls.)
         try {
