@@ -1913,23 +1913,6 @@ export default function TestStockXOrders() {
                 Authenticate with StockX
               </button>
             )}
-            <button
-              onClick={fetchAllHistory}
-              disabled={allLoading || loading}
-              className="px-4 py-2 rounded-lg font-semibold bg-white/10 hover:bg-white/20 border border-white/15 disabled:opacity-50"
-            >
-              {allLoading
-                ? `Fetching…${allProgress ? ` (page ${allProgress.page}, ${allProgress.total} orders)` : ''}`
-                : 'Fetch for time period'}
-            </button>
-            <button
-              onClick={fetchHistory}
-              disabled={loading || allLoading}
-              className="px-4 py-2 rounded-lg font-semibold bg-white/10 hover:bg-white/20 border border-white/15 disabled:opacity-50"
-              title="Quick fetch (first page only). Useful for debugging."
-            >
-              {loading ? 'Loading…' : 'Quick fetch'}
-            </button>
           </div>
         </div>
 
@@ -1977,7 +1960,7 @@ export default function TestStockXOrders() {
             className="mt-3 max-h-[220px] overflow-auto rounded-lg border border-white/10 bg-gray-900/50 p-3"
           >
             {logs.length === 0 ? (
-              <div className="text-sm text-gray-400">No logs yet. Click “Fetch Order History” or “Fetch ALL”.</div>
+              <div className="text-sm text-gray-400">No logs yet. Click “Fetch for time period” or “Quick fetch”.</div>
             ) : (
               <div className="space-y-3">
                 {logs.map((l, idx) => (
@@ -2315,6 +2298,27 @@ export default function TestStockXOrders() {
                 className="sm:ml-auto h-9 px-3 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200 text-sm whitespace-nowrap"
               >
                 Clear
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={fetchAllHistory}
+                disabled={allLoading || loading}
+                className="flex-1 px-4 py-2 rounded-lg font-semibold bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white disabled:opacity-50"
+                title="Fetch all pages for the selected time period (fills table as results arrive)"
+              >
+                {allLoading
+                  ? `Fetching…${allProgress ? ` (page ${allProgress.page}, ${allProgress.total} orders)` : ''}`
+                  : 'Fetch for time period'}
+              </button>
+              <button
+                onClick={fetchHistory}
+                disabled={loading || allLoading}
+                className="px-4 py-2 rounded-lg font-semibold bg-white/10 hover:bg-white/20 border border-white/15 disabled:opacity-50 whitespace-nowrap"
+                title="Quick fetch (first page only). Useful for debugging."
+              >
+                {loading ? 'Loading…' : 'Quick fetch'}
               </button>
             </div>
 
@@ -3188,7 +3192,7 @@ export default function TestStockXOrders() {
                   {displayedOrders.length === 0 && (
                     <tr>
                       <td colSpan={17} className="px-4 py-10 text-center text-gray-400">
-                        {loading ? 'Loading…' : 'No orders loaded yet. Click “Fetch Order History”.'}
+                        {loading || allLoading ? 'Loading…' : 'No orders loaded yet. Click “Fetch for time period”.'}
                       </td>
                     </tr>
                   )}
