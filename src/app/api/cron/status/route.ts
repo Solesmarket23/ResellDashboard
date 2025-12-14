@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function GET(request: NextRequest) {
   // Check if admin can be initialized
   let hasAdminCredentials = false;
@@ -27,7 +30,7 @@ export async function GET(request: NextRequest) {
       {
         name: 'Auto Reprice (StockX)',
         path: '/api/cron/auto-reprice',
-        schedule: '*/1 * * * * (every 1 minute)',
+        schedule: '*/5 * * * * (every 5 minutes)',
         description: 'Auto-reprices StockX listings for users who enabled auto-repricing',
         enabled: hasAdminCredentials && !paused
       },
@@ -64,5 +67,11 @@ export async function GET(request: NextRequest) {
         ? 'Cron jobs are PAUSED via CRON_PAUSED'
         : 'Cron jobs are active and running on Vercel'
       : 'Add Firebase Admin credentials to Vercel environment variables to activate cron jobs'
+  }, {
+    headers: {
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      Pragma: 'no-cache',
+      Expires: '0',
+    },
   });
 }
