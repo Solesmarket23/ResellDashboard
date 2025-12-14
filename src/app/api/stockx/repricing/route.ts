@@ -313,7 +313,27 @@ export async function POST(request: NextRequest) {
               console.log('✅ Token refreshed successfully');
               
               // Retry fetching market data with new token
-              marketData = await getMarketData(listing.productId, listing.variantId, { bustCache: true });
+              try {
+                marketData = await getMarketData(listing.productId, listing.variantId, { bustCache: true });
+              } catch (retryErr: any) {
+                const retryMsg = String(retryErr?.message || retryErr);
+                // If the retry got rate-limited, treat it as a soft skip (do NOT throw).
+                if (retryMsg.includes('429')) {
+                  console.warn(
+                    `⏳ Rate limited (429) fetching market data after token refresh; skipping listing ${listing.listingId} for now.`
+                  );
+                  repricingResults.push({
+                    listingId: listing.listingId,
+                    currentPrice: listing.currentPrice,
+                    newPrice: listing.currentPrice,
+                    action: 'no_change',
+                    reason: 'Skipped: rate limited fetching market data (429). Will retry on next run.',
+                    market: { lowestAsk: null, flexLowestAsk: null },
+                  });
+                  continue;
+                }
+                throw retryErr;
+              }
             } else {
               throw new Error('Token refresh failed: ' + refreshResult.error);
             }
