@@ -395,6 +395,31 @@ export async function POST(request: NextRequest) {
               continue;
             }
 
+            // IMPORTANT: Min/Max bounds should prevent unnecessary $999 peeks.
+            // If the final undercut would be clamped to Min/Max anyway, skip the reset step entirely to reduce
+            // StockX push notification spam. We still fetch market data every run, so when market rises above Min,
+            // Two-step can resume automatically.
+            const hasMinBound = isFiniteNumber(listing.minPrice);
+            const hasMaxBound = isFiniteNumber(listing.maxPrice);
+            const boundedTarget = (() => {
+              let t = computedFinal;
+              if (hasMinBound) t = Math.max(listing.minPrice!, t);
+              if (hasMaxBound) t = Math.min(listing.maxPrice!, t);
+              return t;
+            })();
+
+            if (!dryRun && boundedTarget !== computedFinal) {
+              // Do NOT peek/reset if we'd just clamp. Set directly to the bounded value.
+              newPrice = boundedTarget;
+              skipReason =
+                hasMinBound && boundedTarget === listing.minPrice
+                  ? `Two-step skipped: market under Min ($${listing.minPrice})`
+                  : hasMaxBound && boundedTarget === listing.maxPrice
+                    ? `Two-step skipped: market over Max ($${listing.maxPrice})`
+                    : 'Two-step skipped: bounded target differs';
+              twoStepMeta = { ...twoStepMeta, computedFinal } as any;
+              // continue into the normal constraint/update pipeline with newPrice already bounded
+            } else
             // For dry runs we still want to apply constraints/thresholds below,
             // so we set newPrice here and fall through into the normal pipeline.
             if (dryRun) {
