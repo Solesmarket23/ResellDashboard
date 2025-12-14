@@ -400,6 +400,10 @@ export async function GET(request: NextRequest) {
 
         console.log(`🎯 Repricing ${itemsToReprice.length} listings (skipped ${listings.length - itemsToReprice.length} manual/keep_current)`);
 
+        const allowTwoStepForBatch = itemsToReprice.some(
+          (i: any) => String(i?.pricingStrategy?.type || '') === 'reset_then_beat_lowest'
+        );
+
         // Call the repricing API internally (using individual strategies per listing)
         const baseUrl = getBaseUrl(request);
         console.log(`🌐 Using baseUrl for repricing: ${baseUrl}`);
@@ -425,7 +429,9 @@ export async function GET(request: NextRequest) {
               }
             },
             dryRun,
-            useIndividualStrategies: true // Use individual pricing rules per listing
+            useIndividualStrategies: true, // Use individual pricing rules per listing
+            // Required for the reset_then_beat_lowest strategy to execute (otherwise repricing route blocks it)
+            allowTwoStep: allowTwoStepForBatch
           })
         });
 
