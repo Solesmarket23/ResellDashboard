@@ -155,6 +155,13 @@ export default function TestStockXOrders() {
 
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const todayYmd = useMemo(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }, []);
   // IMPORTANT: StockX /selling/orders/history only accepts HistoricalOrderStatus:
   // [AUTHFAILED, DIDNOTSHIP, CANCELED, COMPLETED, RETURNED]
   const HISTORICAL_ORDER_STATUSES = useMemo(
@@ -2018,7 +2025,14 @@ export default function TestStockXOrders() {
                 <input
                   type="date"
                   value={fromDate}
-                  onChange={(e) => setFromDate(e.target.value)}
+                  max={todayYmd}
+                  onChange={(e) => {
+                    let v = e.target.value;
+                    if (v && v > todayYmd) v = todayYmd;
+                    setFromDate(v);
+                    // Keep From <= To
+                    if (v && toDate && v > toDate) setToDate(v);
+                  }}
                   placeholder="2025-12-01"
                   className="w-full px-3 py-2 rounded-lg bg-gray-900 border border-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
                 />
@@ -2028,7 +2042,14 @@ export default function TestStockXOrders() {
                 <input
                   type="date"
                   value={toDate}
-                  onChange={(e) => setToDate(e.target.value)}
+                  max={todayYmd}
+                  onChange={(e) => {
+                    let v = e.target.value;
+                    if (v && v > todayYmd) v = todayYmd;
+                    setToDate(v);
+                    // Keep From <= To
+                    if (v && fromDate && v < fromDate) setFromDate(v);
+                  }}
                   placeholder="2025-12-13"
                   className="w-full px-3 py-2 rounded-lg bg-gray-900 border border-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
                 />
