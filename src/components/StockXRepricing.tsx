@@ -246,6 +246,8 @@ export default function StockXRepricing() {
   
   // Track pending pricing rule changes
   const [pendingStrategyChanges, setPendingStrategyChanges] = useState<Record<string, IndividualPricingStrategy>>({});
+  const [pendingBoundChanges, setPendingBoundChanges] = useState<Record<string, true>>({});
+  const [rowSaveState, setRowSaveState] = useState<Record<string, 'idle' | 'saving' | 'saved'>>({});
   
   const filteredListings = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -1612,24 +1614,26 @@ export default function StockXRepricing() {
     ));
   };
 
-  // Save the pending pricing rule change
+  // Save the pending pricing rule change (and any pending min/max bound edits)
   const savePricingRuleChange = async (listingId: string) => {
     console.log('💾 Save button clicked for listing:', listingId);
     
     const listing = listings.find(l => l.listingId === listingId);
     const pendingStrategy = pendingStrategyChanges[listingId];
+    const hasPendingBounds = pendingBoundChanges[listingId] === true;
+    const strategyToSave = pendingStrategy || listing?.pricingStrategy || { type: 'keep_current' as const };
     
     console.log('📋 Listing found:', !!listing);
     console.log('📋 Pending strategy:', pendingStrategy);
     console.log('📋 Current user:', authUser);
     
-    if (!listing || !pendingStrategy) {
-      console.error('❌ Cannot save: missing listing or pending strategy');
+    if (!listing || !strategyToSave) {
+      console.error('❌ Cannot save: missing listing');
       return;
     }
     
     // For manual pricing, we require at least a Min bound as a safety rail.
-    if (pendingStrategy.type === 'manual') {
+    if (strategyToSave.type === 'manual') {
       if (!listing.minPrice || listing.minPrice <= 0) {
         setBulkActionMessage('⚠️ Please enter a Min price before saving manual pricing');
         setTimeout(() => setBulkActionMessage(null), 5000);
@@ -1648,12 +1652,12 @@ export default function StockXRepricing() {
     
     // Warn if automated strategy has NO safety bounds at all (but still allow saving)
     if (
-      pendingStrategy.type !== 'manual' &&
-      pendingStrategy.type !== 'keep_current' &&
+      strategyToSave.type !== 'manual' &&
+      strategyToSave.type !== 'keep_current' &&
       (!listing.minPrice || listing.minPrice <= 0) &&
       (!listing.maxPrice || listing.maxPrice <= 0)
     ) {
-      console.warn(`⚠️ Saving ${pendingStrategy.type} without any safety bounds for listing ${listingId}`);
+      console.warn(`⚠️ Saving ${strategyToSave.type} without any safety bounds for listing ${listingId}`);
     }
     
     // Check if this listing is part of a group
@@ -1667,24 +1671,25 @@ export default function StockXRepricing() {
     setListings(prev => prev.map(l => {
       const shouldUpdate = listingsToUpdate.some(ul => ul.listingId === l.listingId);
       return shouldUpdate
-          ? { ...l, pricingStrategy: pendingStrategy }
+          ? { ...l, pricingStrategy: strategyToSave }
         : l;
     }));
     }
     
     // Save to Firebase for all updated listings
     try {
+      setRowSaveState(prev => ({ ...prev, [listingId]: 'saving' }));
       for (const l of listingsToUpdate) {
         await saveSettingToFirebase(l.listingId, {
-          pricingStrategy: pendingStrategy,
-        minPrice: l.minPrice,
-        maxPrice: l.maxPrice,
-        autoDeactivate: l.autoDeactivate
+          pricingStrategy: strategyToSave,
+          minPrice: l.minPrice,
+          maxPrice: l.maxPrice,
+          autoDeactivate: l.autoDeactivate
       });
       }
 
       // If user saved the Two-step strategy, run it immediately (LIVE) for this listing/group leader.
-      if (pendingStrategy.type === 'reset_then_beat_lowest') {
+      if (pendingStrategy?.type === 'reset_then_beat_lowest') {
         const hasAnyBounds =
           (!!listing.minPrice && listing.minPrice > 0) || (!!listing.maxPrice && listing.maxPrice > 0);
         if (!hasAnyBounds) {
@@ -1705,6 +1710,12 @@ export default function StockXRepricing() {
               delete newPending[listingId];
               return newPending;
             });
+            setPendingBoundChanges(prev => {
+              const next = { ...prev };
+              delete next[listingId];
+              return next;
+            });
+            setRowSaveState(prev => ({ ...prev, [listingId]: 'idle' }));
             return;
           }
         } else {
@@ -1758,16 +1769,17 @@ export default function StockXRepricing() {
       }
       
       // Show success message
-      const strategyLabel = pendingStrategy.type === 'beat_lowest' ? 'Beat Lowest by $1' :
-                           pendingStrategy.type === 'match_lowest' ? 'Match Lowest' :
-                           pendingStrategy.type === 'market_peek' ? 'Market Peek' :
-                           pendingStrategy.type === 'reset_then_beat_lowest' ? 'Two-step: reset then beat lowest' :
-                           pendingStrategy.type === 'percentage_below' ? `Below ${pendingStrategy.value}%` :
-                           pendingStrategy.type === 'manual' ? 'Manual' :
+      const strategyLabel = strategyToSave.type === 'beat_lowest' ? 'Beat Lowest by $1' :
+                           strategyToSave.type === 'match_lowest' ? 'Match Lowest' :
+                           strategyToSave.type === 'market_peek' ? 'Market Peek' :
+                           strategyToSave.type === 'reset_then_beat_lowest' ? 'Two-step: reset then beat lowest' :
+                           strategyToSave.type === 'percentage_below' ? `Below ${(strategyToSave as any).value}%` :
+                           strategyToSave.type === 'manual' ? 'Manual' :
+                           hasPendingBounds ? 'Bounds updated' :
                            'Keep Current';
       
       // Avoid overwriting the "running now" message for two-step
-      if (pendingStrategy.type !== 'reset_then_beat_lowest') {
+      if (pendingStrategy?.type !== 'reset_then_beat_lowest') {
         setBulkActionMessage(`✅ Pricing rule saved: ${strategyLabel} (Min: $${listing.minPrice}, Max: $${listing.maxPrice})`);
         setTimeout(() => setBulkActionMessage(null), 5000);
       }
@@ -1778,10 +1790,21 @@ export default function StockXRepricing() {
         delete newPending[listingId];
         return newPending;
       });
+      setPendingBoundChanges(prev => {
+        const next = { ...prev };
+        delete next[listingId];
+        return next;
+      });
+
+      setRowSaveState(prev => ({ ...prev, [listingId]: 'saved' }));
+      setTimeout(() => {
+        setRowSaveState(prev => ({ ...prev, [listingId]: 'idle' }));
+      }, 1500);
     } catch (error) {
       console.error('Error saving pricing rule:', error);
       setBulkActionMessage('❌ Failed to save pricing rule. Please try again.');
       setTimeout(() => setBulkActionMessage(null), 5000);
+      setRowSaveState(prev => ({ ...prev, [listingId]: 'idle' }));
     }
   };
 
@@ -1969,40 +1992,10 @@ export default function StockXRepricing() {
         ? { ...l, minPrice: newMinPrice }
         : l;
     }));
-    
-    // Persist to Firebase only when explicitly requested (e.g. onBlur).
-    // This prevents saving partial values while typing and avoids accidental overwrites
-    // when clicking "Save" for strategy changes.
-    if (opts?.persist) {
-      listingsToUpdate.forEach(l => {
-        // Ensure we have a default pricing strategy if none exists
-        const pricingStrategy = l.pricingStrategy || { type: 'keep_current' };
-        
-        // Build settings object with only defined values
-        const settings: any = {
-          pricingStrategy,
-          autoDeactivate: l.autoDeactivate || false
-        };
-        
-        // Only include prices if they have values
-        if (newMinPrice !== undefined && newMinPrice !== null && newMinPrice !== 0) {
-          settings.minPrice = newMinPrice;
-          console.log(`✅ Including minPrice in settings: ${newMinPrice}`);
-        } else if (newMinPrice === 0 || newMinPrice === undefined) {
-          // Explicitly set to null to remove from Firebase
-          settings.minPrice = null;
-          console.log(`🗑️ Removing minPrice (value was: ${newMinPrice})`);
-        }
-        
-        if (l.maxPrice !== undefined && l.maxPrice !== null && l.maxPrice !== 0) {
-          settings.maxPrice = l.maxPrice;
-          console.log(`✅ Including existing maxPrice in settings: ${l.maxPrice}`);
-        }
-        
-        console.log(`📤 Calling saveSettingToFirebase for ${l.listingId} with:`, settings);
-        saveSettingToFirebase(l.listingId, settings);
-      });
-    }
+
+    // Mark row dirty so the Save button appears.
+    // If editing a group leader, saving will apply to the full group via Save.
+    setPendingBoundChanges(prev => ({ ...prev, [listingId]: true }));
   };
 
   const updateMaxPrice = (listingId: string, maxPrice: number, opts?: { persist?: boolean }) => {
@@ -2031,38 +2024,9 @@ export default function StockXRepricing() {
         ? { ...l, maxPrice: newMaxPrice }
         : l;
     }));
-    
-    if (opts?.persist) {
-      // Save to Firebase for all updated listings
-      listingsToUpdate.forEach(l => {
-        // Ensure we have a default pricing strategy if none exists
-        const pricingStrategy = l.pricingStrategy || { type: 'keep_current' };
-        
-        // Build settings object with only defined values
-        const settings: any = {
-          pricingStrategy,
-          autoDeactivate: l.autoDeactivate || false
-        };
-        
-        // Only include prices if they have values
-        if (l.minPrice !== undefined && l.minPrice !== null && l.minPrice !== 0) {
-          settings.minPrice = l.minPrice;
-          console.log(`✅ Including existing minPrice in settings: ${l.minPrice}`);
-        }
-        
-        if (newMaxPrice !== undefined && newMaxPrice !== null && newMaxPrice !== 0) {
-          settings.maxPrice = newMaxPrice;
-          console.log(`✅ Including maxPrice in settings: ${newMaxPrice}`);
-        } else if (newMaxPrice === 0 || newMaxPrice === undefined) {
-          // Explicitly set to null to remove from Firebase
-          settings.maxPrice = null;
-          console.log(`🗑️ Removing maxPrice (value was: ${newMaxPrice})`);
-        }
-        
-        console.log(`📤 Calling saveSettingToFirebase for ${l.listingId} with:`, settings);
-        saveSettingToFirebase(l.listingId, settings);
-      });
-    }
+
+    // Mark row dirty so the Save button appears.
+    setPendingBoundChanges(prev => ({ ...prev, [listingId]: true }));
   };
 
   const updateAutoDeactivate = (listingId: string, autoDeactivate: boolean) => {
@@ -3746,7 +3710,7 @@ export default function StockXRepricing() {
                           isNeon={isNeon}
                           className="flex-1"
                         />
-                        {pendingStrategyChanges[listing.listingId] && (
+                        {(pendingStrategyChanges[listing.listingId] || pendingBoundChanges[listing.listingId]) && (
                           <button
                             onClick={() => savePricingRuleChange(listing.listingId)}
                             className={`px-2 py-1 rounded text-xs font-semibold transition-all whitespace-nowrap flex items-center gap-1 ${
@@ -3756,8 +3720,22 @@ export default function StockXRepricing() {
                             }`}
                             title="Save pricing rule"
                           >
-                            <Save className="w-3 h-3" />
-                            Save
+                            {rowSaveState[listing.listingId] === 'saving' ? (
+                              <>
+                                <Loader className="w-3 h-3 animate-spin" />
+                                Saving…
+                              </>
+                            ) : rowSaveState[listing.listingId] === 'saved' ? (
+                              <>
+                                <Check className="w-3 h-3" />
+                                Saved
+                              </>
+                            ) : (
+                              <>
+                                <Save className="w-3 h-3" />
+                                Save
+                              </>
+                            )}
                           </button>
                         )}
                         {listing.pricingStrategy?.type === 'market_peek' ? (
@@ -3848,7 +3826,7 @@ export default function StockXRepricing() {
                         onBlur={(e) => {
                           console.log(`💾 Min price onBlur for ${listing.listingId}: ${e.target.value} - Saving to Firebase`);
                           const minPrice = Math.round(parseFloat(e.target.value) || 0);
-                          updateMinPrice(listing.listingId, minPrice, { persist: true });
+                          updateMinPrice(listing.listingId, minPrice, { persist: false });
                         }}
                           className={`w-20 text-xs pl-5 pr-2 py-1 rounded border focus:outline-none focus:ring-2 ${
                           isNeon 
@@ -3879,7 +3857,7 @@ export default function StockXRepricing() {
                         onBlur={(e) => {
                           console.log(`💾 Max price onBlur for ${listing.listingId}: ${e.target.value} - Saving to Firebase`);
                           const maxPrice = Math.round(parseFloat(e.target.value) || 0);
-                          updateMaxPrice(listing.listingId, maxPrice, { persist: true });
+                          updateMaxPrice(listing.listingId, maxPrice, { persist: false });
                         }}
                           className={`w-20 text-xs pl-5 pr-2 py-1 rounded border focus:outline-none focus:ring-2 ${
                           isNeon 
