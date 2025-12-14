@@ -3215,9 +3215,9 @@ export default function TestStockXOrders() {
                         type="button"
                         onClick={() => toggleSort('inventory', 'asc')}
                         className="inline-flex items-center gap-2 hover:text-white"
-                        title="Sort by inventory type"
+                        title="Sort by sale type"
                       >
-                        Inventory
+                        Sale Type
                         <span className="text-xs text-gray-400">{sortIndicator('inventory')}</span>
                       </button>
                     </th>
