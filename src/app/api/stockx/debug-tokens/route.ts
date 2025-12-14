@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
   const expiresAt = tokenExpiresAt ? parseInt(tokenExpiresAt) : null;
   const isExpired = expiresAt ? now >= expiresAt : null;
   const timeRemaining = expiresAt ? expiresAt - now : null;
+  const cookieMaxAgeSeconds = 2592000; // 30 days
   
   // Convert time remaining to human readable
   let timeRemainingHuman = 'Unknown';
@@ -34,6 +35,7 @@ export async function GET(request: NextRequest) {
     expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
     timeRemaining: timeRemainingHuman,
     currentTime: new Date(now).toISOString(),
+    cookie: { maxAgeSeconds: cookieMaxAgeSeconds, maxAgeDays: cookieMaxAgeSeconds / 86400 },
     debug: {
       accessTokenPreview: accessToken ? `${accessToken.substring(0, 20)}...` : null,
       refreshTokenPreview: refreshToken ? `${refreshToken.substring(0, 20)}...` : null,

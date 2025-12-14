@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { refreshStockXTokens, setStockXTokenCookies } from '@/lib/stockx/tokenRefresh';
 
+// Best-effort in-memory cache to reduce repeated upstream calls (works per serverless instance).
+// This endpoint is frequently polled by the dashboard; StockX can 429 if we call too often.
+const LISTINGS_CACHE_TTL_MS = 60 * 1000; // 60s
+const listingsCache = new Map<
+  string,
+  { ts: number; payload: any; status: number; tokenRefreshed: boolean; newAccessToken?: string; newRefreshToken?: string }
+>();
+
 function parseStockXMoneyToDollars(raw: any): number | null {
   if (raw === null || raw === undefined) return null;
   const n = typeof raw === 'string' ? parseInt(raw, 10) : Number(raw);
@@ -29,11 +37,13 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const filterListingId = searchParams.get('listingId')?.trim() || null;
     const includeMarket = searchParams.get('includeMarket') === '1' || searchParams.get('includeMarket') === 'true';
+    const force = searchParams.get('force') === '1' || searchParams.get('force') === 'true';
 
     // Get access token from cookies
     const cookieStore = cookies();
     let accessToken = cookieStore.get('stockx_access_token')?.value;
     const refreshToken = cookieStore.get('stockx_refresh_token')?.value;
+    const siteUserId = cookieStore.get('site-user-id')?.value || null;
 
     if (!accessToken) {
       return NextResponse.json({ 
@@ -42,10 +52,43 @@ export async function GET(request: NextRequest) {
       }, { status: 401 });
     }
 
+    // Cache key should never mix users. Prefer site-user-id when available; otherwise fall back to token prefix.
+    const cacheKey = `${siteUserId || accessToken.slice(0, 16)}|listingId=${filterListingId || ''}|includeMarket=${includeMarket ? '1' : '0'}`;
+    const cached = listingsCache.get(cacheKey);
+    if (!force && cached && Date.now() - cached.ts < LISTINGS_CACHE_TTL_MS) {
+      const res = NextResponse.json(cached.payload, { status: cached.status });
+      // If we refreshed the token during the cached fetch, preserve that on cached responses too.
+      if (cached.tokenRefreshed && cached.newAccessToken) {
+        setStockXTokenCookies(res, cached.newAccessToken, cached.newRefreshToken);
+      }
+      return res;
+    }
+
     console.log('🛍️ Fetching StockX listings...');
     console.log('🔑 API Key:', process.env.STOCKX_API_KEY ? 'Present' : 'Missing');
     console.log('🔐 Client ID:', process.env.STOCKX_CLIENT_ID ? 'Present' : 'Missing');
     console.log('🎫 Access token:', accessToken ? 'Present' : 'Missing');
+
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const fetchWithBackoff = async (url: string, init: RequestInit, maxAttempts = 5) => {
+      let attempt = 0;
+      while (attempt < maxAttempts) {
+        const res = await fetch(url, init);
+        if (res.status !== 429) return res;
+
+        const retryAfterHeader = res.headers.get('retry-after');
+        const retryAfterSeconds = retryAfterHeader ? parseInt(retryAfterHeader, 10) : NaN;
+        const backoffMs = Number.isFinite(retryAfterSeconds)
+          ? Math.min(30_000, Math.max(500, retryAfterSeconds * 1000))
+          : Math.min(30_000, 500 * Math.pow(2, attempt));
+
+        // Drain body so the connection can be reused
+        await res.text().catch(() => '');
+        await sleep(backoffMs);
+        attempt += 1;
+      }
+      return await fetch(url, init);
+    };
 
     // Function to fetch a page of listings
     const fetchPage = async (pageNum: number, token: string) => {
@@ -61,7 +104,7 @@ export async function GET(request: NextRequest) {
       const apiKey = process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID || '';
       console.log('🔐 Using API Key:', apiKey ? 'Present' : 'EMPTY');
       
-      const response = await fetch(url, {
+      const response = await fetchWithBackoff(url, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -70,7 +113,7 @@ export async function GET(request: NextRequest) {
           'Accept': 'application/json',
           'User-Agent': 'ResellDashboard/1.0'
         }
-      });
+      }, 5);
       
       console.log('📊 Response status:', response.status);
       
@@ -105,6 +148,34 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // If we are still rate-limited after backoff, surface it as a real 429 to the UI.
+    if (response.status === 429) {
+      const retryAfterHeader = response.headers.get('retry-after');
+      const retryAfterSeconds = retryAfterHeader ? parseInt(retryAfterHeader, 10) : NaN;
+      const bodyText = await response.text().catch(() => '');
+      const payload = {
+        success: false,
+        error: 'Too Many Requests',
+        message: 'Rate limited by StockX (429). Please wait and retry.',
+        retryAfterSeconds: Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : undefined,
+        upstream: {
+          status: response.status,
+          statusText: response.statusText,
+          snippet: bodyText.slice(0, 1000),
+        },
+      };
+      const rateRes = NextResponse.json(payload, { status: 429 });
+      if (Number.isFinite(retryAfterSeconds)) {
+        rateRes.headers.set('Retry-After', String(retryAfterSeconds));
+      }
+      if (tokenRefreshed) {
+        setStockXTokenCookies(rateRes, newAccessToken, newRefreshToken);
+      }
+      // Cache the 429 briefly too, to avoid hammering when multiple tabs refresh simultaneously.
+      listingsCache.set(cacheKey, { ts: Date.now(), payload, status: 429, tokenRefreshed, newAccessToken, newRefreshToken });
+      return rateRes;
+    }
+
     if (!response.ok) {
       const errorText = await response.text();
       console.error('❌ StockX API error:', {
@@ -131,7 +202,7 @@ export async function GET(request: NextRequest) {
     if (looksLikeHtml(firstPageText)) {
       // StockX sometimes returns an HTML challenge page (CAPTCHA / auth wall) instead of JSON.
       // Never bubble raw HTML back to the client; return a JSON error the UI can handle.
-      return NextResponse.json(
+      const payload = 
         {
           success: false,
           error: 'StockX returned an HTML challenge page (not JSON). Please re-authenticate.',
@@ -141,14 +212,18 @@ export async function GET(request: NextRequest) {
             statusText: response.statusText,
             snippet: firstPageText.slice(0, 3000)
           }
-        },
-        { status: 502 }
-      );
+        };
+      const htmlRes = NextResponse.json(payload, { status: 502 });
+      if (tokenRefreshed) {
+        setStockXTokenCookies(htmlRes, newAccessToken, newRefreshToken);
+      }
+      listingsCache.set(cacheKey, { ts: Date.now(), payload, status: 502, tokenRefreshed, newAccessToken, newRefreshToken });
+      return htmlRes;
     }
 
     const data = safeJsonParse(firstPageText);
     if (!data) {
-      return NextResponse.json(
+      const payload = 
         {
           success: false,
           error: 'StockX returned an unexpected response (not valid JSON).',
@@ -158,9 +233,13 @@ export async function GET(request: NextRequest) {
             statusText: response.statusText,
             snippet: firstPageText.slice(0, 3000)
           }
-        },
-        { status: 502 }
-      );
+        };
+      const badJsonRes = NextResponse.json(payload, { status: 502 });
+      if (tokenRefreshed) {
+        setStockXTokenCookies(badJsonRes, newAccessToken, newRefreshToken);
+      }
+      listingsCache.set(cacheKey, { ts: Date.now(), payload, status: 502, tokenRefreshed, newAccessToken, newRefreshToken });
+      return badJsonRes;
     }
     console.log('✅ Listings response:', {
       hasListings: !!data.listings,
@@ -808,18 +887,57 @@ export async function GET(request: NextRequest) {
       setStockXTokenCookies(successResponse, newAccessToken, newRefreshToken);
     }
 
+    // Cache successful response for a short time.
+    try {
+      const payload = {
+        success: true,
+        listings: filtered,
+        totalCount: filtered.length,
+        rawCount: activeListings.length,
+        trueDuplicatesRemoved: duplicateListingIds.length,
+        duplicateListingIds: duplicateListingIds,
+        investigation: {
+          productSizeGroupsWithMultiples: potentialDuplicates.length,
+          totalPotentialDuplicates: potentialDuplicates.reduce((sum, [_, listings]) => sum + (listings.length - 1), 0),
+          trueDuplicateGroups: trueDuplicateGroups.length,
+          message: trueDuplicateGroups.length > 0
+            ? `Removed ${duplicateListingIds.length} true duplicates`
+            : 'No true duplicates found - all listings appear to be legitimate variations',
+        },
+        actualCount: filtered.length,
+        testListingCount: filterListingId ? 0 : testListings.length,
+        debugInfo: filterListingId ? undefined : debugInfo,
+        timestamp: new Date().toISOString(),
+      };
+      listingsCache.set(cacheKey, {
+        ts: Date.now(),
+        payload,
+        status: 200,
+        tokenRefreshed,
+        newAccessToken,
+        newRefreshToken,
+      });
+    } catch {
+      // ignore cache failures
+    }
+
     return successResponse;
 
   } catch (error) {
     console.error('❌ Error fetching listings:', error);
     console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace');
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Failed to fetch listings', 
-      message: error instanceof Error ? error.message : 'Unknown error',
-      details: error instanceof Error ? error.stack : String(error),
-      timestamp: new Date().toISOString()
-    }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    const is429 = /(^|\b)(429|too many requests)(\b|$)/i.test(message);
+    return NextResponse.json(
+      { 
+        success: false, 
+        error: is429 ? 'Too Many Requests' : 'Failed to fetch listings', 
+        message,
+        details: error instanceof Error ? error.stack : String(error),
+        timestamp: new Date().toISOString(),
+      },
+      { status: is429 ? 429 : 500 }
+    );
   }
 }
 

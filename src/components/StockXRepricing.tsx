@@ -199,6 +199,8 @@ export default function StockXRepricing() {
   const [searchQuery, setSearchQuery] = useState('');
 
   const LISTINGS_CACHE_KEY = 'stockx_listings_cache_v1';
+  const listingsCooldownUntilRef = useRef<number>(0);
+  const listingsLastFetchStartedAtRef = useRef<number>(0);
 
   const getSiteUserId = useCallback((): string | null => {
     try {
@@ -403,14 +405,14 @@ export default function StockXRepricing() {
     }
   }, []); // Run once
 
-  // Auto-refresh listings every 3 minutes to catch new listings
+  // Auto-refresh listings periodically to catch new listings
   useEffect(() => {
-    console.log('⏰ Setting up auto-refresh for listings (every 3 minutes)...');
+    console.log('⏰ Setting up auto-refresh for listings (every 10 minutes)...');
     
     const refreshInterval = setInterval(() => {
       console.log('🔄 Auto-refreshing listings to check for new items...');
-      fetchListings(true, true); // Force reload, mark as auto-refresh
-    }, 3 * 60 * 1000); // 3 minutes
+      fetchListings(false, true); // Prefer cached refresh to reduce 429 risk
+    }, 10 * 60 * 1000); // 10 minutes
     
     return () => {
       console.log('🛑 Clearing listings auto-refresh interval');
@@ -954,6 +956,22 @@ export default function StockXRepricing() {
   // Interval selection UI removed: automated repricing runs on a fixed cadence.
 
   const fetchListings = async (forceReload = false, isAutoRefresh = false) => {
+    // Client-side throttle/cooldown to reduce StockX rate limiting (429) via our API.
+    const nowMs = Date.now();
+    const cooldownUntil = listingsCooldownUntilRef.current || 0;
+    if (nowMs < cooldownUntil) {
+      const remainingSeconds = Math.max(1, Math.ceil((cooldownUntil - nowMs) / 1000));
+      setBulkActionMessage(`⏳ Rate limited. Try again in ${remainingSeconds}s.`);
+      setTimeout(() => setBulkActionMessage(null), 3000);
+      return;
+    }
+
+    // Soft minimum spacing between fetches (unless forceReload).
+    if (!forceReload && listingsLastFetchStartedAtRef.current && nowMs - listingsLastFetchStartedAtRef.current < 20_000) {
+      return;
+    }
+    listingsLastFetchStartedAtRef.current = nowMs;
+
     console.log(`🔄 Fetching listings... (forceReload: ${forceReload}, autoRefresh: ${isAutoRefresh})`);
     console.log('📊 Current state before fetch:', {
       settingsLoaded,
@@ -971,18 +989,14 @@ export default function StockXRepricing() {
     // Don't clear listings here - update them after successful fetch to prevent flicker
     
     try {
-      // Add cache-busting timestamp to ensure fresh data
-      const url = `/api/stockx/listings?t=${Date.now()}&force=${forceReload}`;
+      // Let the server cache briefly to reduce upstream 429 risk.
+      // Force reload bypasses the server cache.
+      const url = `/api/stockx/listings?force=${forceReload ? '1' : '0'}`;
       console.log(`📍 Fetching from: ${url}`);
       
       let response = await fetch(url, {
         method: 'GET',
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0'
-        }
+        cache: 'no-store'
       });
       
       // Check if authentication failed
@@ -993,14 +1007,7 @@ export default function StockXRepricing() {
         await checkAndRefreshToken();
         
         // Retry the request once
-        const retryResponse = await fetch(url, {
-          method: 'GET',
-          headers: {
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
-            'Expires': '0'
-          }
-        });
+        const retryResponse = await fetch(url, { method: 'GET', cache: 'no-store' });
         
         if (retryResponse.status === 401 || retryResponse.status === 403) {
           // Still failing after refresh attempt
@@ -1060,6 +1067,24 @@ export default function StockXRepricing() {
         setAuthError(true);
         setBulkActionMessage('❌ StockX returned an authentication challenge (HTML). Please re-authenticate.');
         setTimeout(() => setBulkActionMessage(null), 10000);
+        return;
+      }
+
+      // Rate-limited: set a cooldown and keep showing cached/current listings.
+      if (response.status === 429 || data?.error === 'Too Many Requests') {
+        const retryAfterHeader = response.headers.get('retry-after');
+        const retryAfterSecondsFromHeader = retryAfterHeader ? parseInt(retryAfterHeader, 10) : NaN;
+        const retryAfterSecondsFromBody = typeof data?.retryAfterSeconds === 'number' ? data.retryAfterSeconds : NaN;
+        const retryAfterSeconds = Number.isFinite(retryAfterSecondsFromHeader)
+          ? retryAfterSecondsFromHeader
+          : Number.isFinite(retryAfterSecondsFromBody)
+            ? retryAfterSecondsFromBody
+            : 30;
+
+        const boundedSeconds = Math.min(120, Math.max(10, retryAfterSeconds));
+        listingsCooldownUntilRef.current = Date.now() + boundedSeconds * 1000;
+        setBulkActionMessage(`⏳ StockX rate-limited (429). Waiting ~${boundedSeconds}s before retrying.`);
+        setTimeout(() => setBulkActionMessage(null), 6000);
         return;
       }
       
@@ -1282,8 +1307,7 @@ export default function StockXRepricing() {
           console.error('❌ Message:', data.message);
           console.error('❌ Details:', data.details);
         }
-        setListings([]);
-        // Show error to user
+        // Keep existing listings on error (avoid blanking the table)
         setBulkActionMessage(`❌ Failed to load listings: ${data.message || data.error || 'Unknown error'}`);
         setTimeout(() => setBulkActionMessage(null), 10000);
       }
@@ -3012,6 +3036,10 @@ export default function StockXRepricing() {
               ? isNeon
                 ? 'bg-yellow-500/20 border border-yellow-500/50 text-yellow-400 backdrop-blur-sm'
                 : 'bg-yellow-50 border border-yellow-300 text-yellow-800'
+              : bulkActionMessage.startsWith('⚡') || bulkActionMessage.startsWith('⏳')
+              ? isNeon
+                ? 'bg-cyan-500/20 border border-cyan-500/50 text-cyan-300 backdrop-blur-sm'
+                : 'bg-blue-50 border border-blue-300 text-blue-800'
               : isNeon
                 ? 'bg-red-500/20 border border-red-500/50 text-red-400 backdrop-blur-sm'
                 : 'bg-red-50 border border-red-300 text-red-800'
@@ -3020,6 +3048,10 @@ export default function StockXRepricing() {
               <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
             ) : bulkActionMessage.startsWith('⚠️') ? (
               <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            ) : bulkActionMessage.startsWith('⚡') ? (
+              <Zap className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            ) : bulkActionMessage.startsWith('⏳') ? (
+              <Clock className="w-5 h-5 flex-shrink-0 mt-0.5" />
             ) : (
               <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
             )}
@@ -3562,18 +3594,14 @@ export default function StockXRepricing() {
                     {[
                       { icon: RefreshCw, label: 'Auto' },
                       { icon: Wrench, label: 'Pricing Rule' },
-                      { icon: Shield, label: 'Min' },
-                      { icon: Shield, label: 'Max' },
+                      { icon: Shield, label: 'Min. Price' },
+                      { icon: Shield, label: 'Max Price' },
                       { icon: AlertTriangle, label: 'Auto Off' },
                       { icon: MoreHorizontal, label: 'Actions' }
                     ].map((col) => (
                       <th key={col.label} className="relative px-6 py-0 h-12 select-none">
-                        <div className={`flex items-center h-full ${
-                          col.label === 'Auto' || col.label === 'Actions' ? 'justify-center' : 'justify-start'
-                        }`}>
-                          <div className={`flex items-center gap-2 ${
-                            col.label === 'Auto' || col.label === 'Actions' ? 'justify-center' : 'justify-start w-full'
-                          }`}>
+                        <div className="flex items-center h-full justify-center">
+                          <div className="flex items-center gap-2 justify-center">
                             <col.icon className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
                             <span className={`text-xs font-bold uppercase tracking-wider ${
                               isNeon ? 'text-gray-300' : 'text-gray-600'

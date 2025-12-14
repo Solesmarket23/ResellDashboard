@@ -7,12 +7,14 @@ export async function GET(request: NextRequest) {
     const accessToken = request.cookies.get('stockx_access_token')?.value;
     const refreshToken = request.cookies.get('stockx_refresh_token')?.value;
     const tokenExpiresAt = request.cookies.get('stockx_token_expires_at')?.value;
+    const cookieMaxAgeSeconds = 2592000; // 30 days (cookie lifetime, not token lifetime)
     
     if (!accessToken) {
       return NextResponse.json({
         isAuthenticated: false,
         message: 'No access token found',
-        hasRefreshToken: !!refreshToken
+        hasRefreshToken: !!refreshToken,
+        cookie: { maxAgeSeconds: cookieMaxAgeSeconds, maxAgeDays: cookieMaxAgeSeconds / 86400 }
       });
     }
     
@@ -25,7 +27,13 @@ export async function GET(request: NextRequest) {
           message: 'Token expired based on stored expiration time',
           needsReauth: false,
           hasRefreshToken: !!refreshToken,
-          tokenExpired: true
+          tokenExpired: true,
+          token: {
+            expiresAtMs: expiresAt,
+            expiresAtIso: new Date(expiresAt).toISOString(),
+            secondsRemaining: Math.max(0, Math.floor((expiresAt - Date.now()) / 1000))
+          },
+          cookie: { maxAgeSeconds: cookieMaxAgeSeconds, maxAgeDays: cookieMaxAgeSeconds / 86400 }
         });
       }
     }
@@ -63,7 +71,18 @@ export async function GET(request: NextRequest) {
           isAuthenticated: true,
           message: 'Authentication valid',
           credentialsSource: credentials.source,
-          userId: userId || 'anonymous'
+          userId: userId || 'anonymous',
+          token: tokenExpiresAt
+            ? (() => {
+                const expiresAt = parseInt(tokenExpiresAt);
+                return {
+                  expiresAtMs: Number.isFinite(expiresAt) ? expiresAt : undefined,
+                  expiresAtIso: Number.isFinite(expiresAt) ? new Date(expiresAt).toISOString() : undefined,
+                  secondsRemaining: Number.isFinite(expiresAt) ? Math.max(0, Math.floor((expiresAt - Date.now()) / 1000)) : undefined
+                };
+              })()
+            : undefined,
+          cookie: { maxAgeSeconds: cookieMaxAgeSeconds, maxAgeDays: cookieMaxAgeSeconds / 86400 }
         });
       } else if (response.status === 401) {
         // Token might be expired
@@ -71,13 +90,15 @@ export async function GET(request: NextRequest) {
           isAuthenticated: false,
           message: 'Token expired or invalid',
           needsReauth: true,
-          hasRefreshToken: !!refreshToken
+          hasRefreshToken: !!refreshToken,
+          cookie: { maxAgeSeconds: cookieMaxAgeSeconds, maxAgeDays: cookieMaxAgeSeconds / 86400 }
         });
       } else {
         return NextResponse.json({
           isAuthenticated: false,
           message: `API error: ${response.status}`,
-          statusCode: response.status
+          statusCode: response.status,
+          cookie: { maxAgeSeconds: cookieMaxAgeSeconds, maxAgeDays: cookieMaxAgeSeconds / 86400 }
         });
       }
     } catch (error) {
@@ -85,7 +106,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         isAuthenticated: false,
         message: 'Failed to verify authentication',
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
+        cookie: { maxAgeSeconds: cookieMaxAgeSeconds, maxAgeDays: cookieMaxAgeSeconds / 86400 }
       });
     }
 
@@ -94,7 +116,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       isAuthenticated: false,
       message: 'Internal error checking authentication',
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: error instanceof Error ? error.message : 'Unknown error',
+      cookie: { maxAgeSeconds: 2592000, maxAgeDays: 2592000 / 86400 }
     });
   }
 }
