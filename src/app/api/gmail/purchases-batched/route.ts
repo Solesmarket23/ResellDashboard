@@ -3,6 +3,11 @@ import { google } from 'googleapis';
 import { cookies } from 'next/headers';
 import { parseGmailApiMessage, orderInfoToDict, OrderInfo } from '../../../../lib/email/orderConfirmationParser';
 import { consolidatePurchasesByOrderNumber } from '../../../../lib/utils/statusPriority';
+import {
+  extractTrackingFromContent,
+  extractStockxTrackOrderUrlFromEmailHtml,
+  resolveTrackingFromTrackOrderUrl,
+} from '@/lib/tracking/stockxTrackingExtraction';
 
 // Batch configuration
 const BATCH_SIZE = 10; // Process 10 emails per batch for frequent UI updates (every ~10 seconds)
@@ -579,26 +584,59 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
     // Use the imported parseGmailApiMessage function (disable debug for performance)
     const orderInfo = parseGmailApiMessage(emailData, false);
 
-    // DISABLED: Tracking extraction - user will manually enter tracking numbers
-    // Using "View Shipped Email" link instead for better accuracy
-    // if (!orderInfo.tracking_number && (orderInfo.shipping_status === 'Shipped' || orderInfo.shipping_status === 'Delivered')) {
-    //   try {
-    //     const fallback = await extractTrackingNumber(orderInfo.order_number, gmail);
-    //     if (fallback) {
-    //       orderInfo.tracking_number = fallback.toUpperCase();
-    //       if (orderInfo.tracking_number.startsWith('1Z')) {
-    //         orderInfo.carrier = 'UPS';
-    //       } else if (/^\d{12}$/.test(orderInfo.tracking_number)) {
-    //         orderInfo.carrier = 'FedEx';
-    //       }
-    //     }
-    //   } catch (e) {
-    //     console.error('TRACKING fallback (batched) failed:', e);
-    //   }
-    // }
-    // Set tracking to empty so UI shows "View Shipped Email" link
-    orderInfo.tracking_number = null;
-    orderInfo.carrier = null;
+    // Tracking extraction (automated):
+    // Many StockX shipped emails don't include a plain tracking number, but do include a "Track your order" link.
+    // We first attempt to extract tracking from the email HTML itself (fast), then follow the StockX link (best-effort).
+    const statusForTracking = (orderInfo.shipping_status || '').toLowerCase();
+    const shouldAttemptTracking =
+      !orderInfo.tracking_number &&
+      (statusForTracking === 'shipped' || statusForTracking === 'delivered' || loweredSubject.includes('shipped') || loweredSubject.includes('delivered'));
+
+    if (shouldAttemptTracking) {
+      try {
+        // Extract email HTML/text
+        let htmlContent = '';
+        let textContent = '';
+        const parts = emailData.payload?.parts || [];
+        if (parts.length > 0) {
+          for (const part of parts) {
+            if (part.mimeType === 'text/html' && part.body?.data) {
+              htmlContent = Buffer.from(part.body.data, 'base64').toString('utf8');
+            }
+            if (part.mimeType === 'text/plain' && part.body?.data) {
+              textContent = Buffer.from(part.body.data, 'base64').toString('utf8');
+            }
+          }
+        } else if (emailData.payload?.body?.data) {
+          // Single-part email; treat as text
+          textContent = Buffer.from(emailData.payload.body.data, 'base64').toString('utf8');
+        }
+
+        // StockX typically does NOT include a plain tracking number in the email anymore.
+        // Prefer the "Track your order" URL path and resolve the tracking number from redirects.
+        let extracted = null as any;
+
+        if (htmlContent) {
+          const trackOrderUrl = extractStockxTrackOrderUrlFromEmailHtml(htmlContent);
+          if (trackOrderUrl) {
+            extracted = await resolveTrackingFromTrackOrderUrl(trackOrderUrl, { timeoutMs: 7000, maxRedirects: 6 });
+          }
+        }
+
+        // Last resort: if StockX ever embeds a tracking param directly in email content, try a content scan.
+        if (!extracted) {
+          const combined = `${htmlContent}\n${textContent}`;
+          extracted = extractTrackingFromContent(combined);
+        }
+
+        if (extracted?.trackingNumber) {
+          orderInfo.tracking_number = extracted.trackingNumber;
+          orderInfo.carrier = extracted.carrier;
+        }
+      } catch (e) {
+        console.error('TRACKING extraction (batched) failed:', e);
+      }
+    }
     // Validate order number to avoid false positives (e.g., "0" or missing)
     const isValidOrderNumber = !!(orderInfo && orderInfo.order_number && orderInfo.order_number !== '0' && (
       /^(\d{8})$/i.test(orderInfo.order_number) || // 8 digits (e.g., 77937890)
@@ -698,7 +736,7 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
       shipping_status: orderInfo.shipping_status || category.status, // snake_case for consolidation
       statusColor: category.statusColor,
       priority: category.priority,
-      tracking: '', // Empty tracking - UI will show "View Shipped Email" link
+      tracking: orderInfo.tracking_number || '', // If found, populate immediately; otherwise empty
       market,
       price,
       originalPrice: `${price} + $0.00`,

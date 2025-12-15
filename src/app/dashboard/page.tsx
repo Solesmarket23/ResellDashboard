@@ -14,7 +14,6 @@ import MobileLayout from '../../components/MobileLayout';
 import Dashboard from '../../components/Dashboard';
 import Purchases from '../../components/Purchases';
 import Deliveries from '../../components/Deliveries';
-import Sales from '../../components/Sales';
 import FailedVerifications from '../../components/FailedVerifications';
 import ProfitCalculator from '../../components/ProfitCalculator';
 import AudioPreview from '../../components/AudioPreview';
@@ -41,6 +40,7 @@ import OnboardingQuestionnaire from '../../components/OnboardingQuestionnaire';
 import AliasInventory from '../../components/AliasInventory';
 import AliasListingCreator from '../../components/AliasListingCreator';
 import AliasOrderManagement from '../../components/AliasOrderManagement';
+import TestStockXOrders from '../test-stockx-orders/page';
 
 function DashboardContent() {
   console.log('🔍 Dashboard component rendering...');
@@ -216,7 +216,9 @@ function DashboardContent() {
       case 'deliveries':
         return <Deliveries />;
       case 'sales':
-        return <Sales />;
+        // Replaced legacy Sales page with the StockX Orders (Test) tooling.
+        // This keeps the existing dashboard nav route (/dashboard?section=sales) but uses the newer UI.
+        return <TestStockXOrders />;
       case 'failed-verifications':
         return <FailedVerifications />;
       case 'profit-calculator':

@@ -543,6 +543,12 @@ export async function GET(request: NextRequest) {
               patch.reservePriceSetAt = nowIso;
             }
 
+            // Persist Market Peek lastPeekTime (so hourly/4h/6h/8h cadence works in cron).
+            const peekLast = r?.peek?.lastPeekTime;
+            if (typeof peekLast === 'string' && peekLast) {
+              patch['pricingStrategy.peekSettings.lastPeekTime'] = peekLast;
+            }
+
             batch.set(docRef, patch, { merge: true });
             writes++;
           }

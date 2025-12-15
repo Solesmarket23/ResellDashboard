@@ -203,6 +203,13 @@ export default function TestStockXOrders() {
   const [selected, setSelected] = useState<{ orderNumber: string; data: any } | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [selectedSalesDay, setSelectedSalesDay] = useState<string | null>(null);
+  const [hoveredSalesPoint, setHoveredSalesPoint] = useState<{
+    x: number;
+    y: number;
+    date: string;
+    sales: number;
+    count: number;
+  } | null>(null);
   const [orderSearchQuery, setOrderSearchQuery] = useState('');
   const detailsSectionRef = useRef<HTMLDivElement | null>(null);
 
@@ -269,38 +276,13 @@ export default function TestStockXOrders() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   type LogLevel = 'info' | 'warn' | 'error';
-  type LogEntry = { ts: string; level: LogLevel; message: string; data?: any };
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const logsContainerRef = useRef<HTMLDivElement | null>(null);
   const appendLog = (level: LogLevel, message: string, data?: any) => {
-    const entry: LogEntry = { ts: new Date().toISOString(), level, message, data };
-    setLogs((prev) => [...prev, entry]);
-    // Scroll the logs panel itself, without moving the whole page.
-    setTimeout(() => {
-      const el = logsContainerRef.current;
-      if (!el) return;
-      el.scrollTop = el.scrollHeight;
-    }, 0);
-  };
-  const clearLogs = () => setLogs([]);
-  const copyLogs = async () => {
-    const text = logs
-      .map((l) => {
-        const base = `[${l.ts}] ${l.level.toUpperCase()}: ${l.message}`;
-        if (l.data === undefined) return base;
-        try {
-          return `${base}\n${JSON.stringify(l.data, null, 2)}`;
-        } catch {
-          return `${base}\n${String(l.data)}`;
-        }
-      })
-      .join('\n\n');
-    try {
-      await navigator.clipboard.writeText(text);
-      appendLog('info', 'Copied logs to clipboard');
-    } catch {
-      appendLog('warn', 'Could not copy logs (clipboard blocked)');
-    }
+    const ts = new Date().toISOString();
+    const payload = data === undefined ? undefined : data;
+    const prefix = `[${ts}] ${message}`;
+    if (level === 'error') console.error(prefix, payload);
+    else if (level === 'warn') console.warn(prefix, payload);
+    else console.log(prefix, payload);
   };
 
   const copySelectedJson = async () => {
@@ -2291,10 +2273,9 @@ export default function TestStockXOrders() {
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold">StockX Orders (Test)</h1>
+            <h1 className="text-2xl font-bold">Sales</h1>
             <p className="text-sm text-gray-400">
-              Explore <code className="text-gray-300">/selling/orders/history</code> +{' '}
-              <code className="text-gray-300">/selling/orders/{'{orderNumber}'}</code> and inspect payout breakdowns.
+              Review StockX order history, inspect payout breakdowns, and export results.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -2305,88 +2286,6 @@ export default function TestStockXOrders() {
               >
                 Authenticate with StockX
               </button>
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="font-semibold">Logs</h2>
-            <div className="flex items-center gap-2">
-              {process.env.NODE_ENV !== 'production' && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const types: NotificationType[] = ['success', 'warning', 'error'];
-                    const type = types[Math.floor(Math.random() * types.length)] || 'success';
-                    showToast(
-                      type,
-                      type === 'success'
-                        ? 'Test toast: success'
-                        : type === 'warning'
-                          ? 'Test toast: warning'
-                          : 'Test toast: error'
-                    );
-                  }}
-                  className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-sm"
-                  title="Dev-only: trigger a sample toast"
-                >
-                  Test toast
-                </button>
-              )}
-              <button
-                onClick={copyLogs}
-                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-sm"
-              >
-                Copy
-              </button>
-              <button
-                onClick={clearLogs}
-                className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-sm"
-              >
-                Clear
-              </button>
-            </div>
-          </div>
-          <div
-            ref={logsContainerRef}
-            className="mt-3 max-h-[220px] overflow-auto rounded-lg border border-white/10 bg-gray-900/50 p-3"
-          >
-            {logs.length === 0 ? (
-              <div className="text-sm text-gray-400">No logs yet. Click “Fetch for time period”.</div>
-            ) : (
-              <div className="space-y-3">
-                {logs.map((l, idx) => (
-                  <div key={`${l.ts}-${idx}`} className="text-xs">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-gray-400">{l.ts}</div>
-                      <div
-                        className={
-                          l.level === 'error'
-                            ? 'text-red-300'
-                            : l.level === 'warn'
-                              ? 'text-yellow-300'
-                              : 'text-cyan-300'
-                        }
-                      >
-                        {l.level.toUpperCase()}
-                      </div>
-                    </div>
-                    <div className="text-gray-200 mt-1">{l.message}</div>
-                    {l.data !== undefined && (
-                      <pre className="mt-2 text-gray-300 whitespace-pre-wrap break-words">
-                        {(() => {
-                          try {
-                            return JSON.stringify(l.data, null, 2);
-                          } catch {
-                            return String(l.data);
-                          }
-                        })()}
-                      </pre>
-                    )}
-                  </div>
-                ))}
-              </div>
             )}
           </div>
         </div>
@@ -3195,9 +3094,9 @@ export default function TestStockXOrders() {
                         </div>
 
                         {selectedPoint ? (
-                          <div className="mb-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+                          <div className="mb-3 rounded-xl border border-gray-600 bg-black/80 backdrop-blur px-4 py-3 shadow-lg shadow-black/30">
                             <div className="flex items-center justify-between gap-3">
-                              <div className="text-sm font-semibold text-gray-200">{fmtMonthDay(selectedPoint.date)}</div>
+                              <div className="text-sm font-semibold text-white">{fmtMonthDay(selectedPoint.date)}</div>
                               <button
                                 type="button"
                                 onClick={() => setSelectedSalesDay(null)}
@@ -3210,15 +3109,15 @@ export default function TestStockXOrders() {
                             <div className="mt-2 grid grid-cols-3 gap-3 text-sm">
                               <div>
                                 <div className="text-xs text-gray-400">Total revenue</div>
-                                <div className="font-semibold text-gray-200">{fmtMoney(selectedPoint.sales, totals.currency)}</div>
+                                <div className="font-semibold text-white">{fmtMoney(selectedPoint.sales, totals.currency)}</div>
                               </div>
                               <div>
                                 <div className="text-xs text-gray-400">Items sold</div>
-                                <div className="font-semibold text-gray-200">{selectedPoint.count}</div>
+                                <div className="font-semibold text-white">{selectedPoint.count}</div>
                               </div>
                               <div>
                                 <div className="text-xs text-gray-400">Profit</div>
-                                <div className="font-semibold text-gray-200">TBD</div>
+                                <div className="font-semibold text-white">TBD</div>
                               </div>
                             </div>
                           </div>
@@ -3303,9 +3202,10 @@ export default function TestStockXOrders() {
                             <g
                               key={`${p.date}-${i}`}
                               onClick={() => setSelectedSalesDay(p.date)}
+                              onMouseEnter={() => setHoveredSalesPoint({ x: p.x, y: p.y, date: p.date, sales: p.sales, count: p.count })}
+                              onMouseLeave={() => setHoveredSalesPoint((prev) => (prev?.date === p.date ? null : prev))}
                               style={{ cursor: 'pointer' }}
                             >
-                              <title>{label}</title>
                               {/* bigger hit target */}
                               <circle cx={p.x} cy={p.y} r="10" fill="transparent" />
                               <circle
@@ -3321,6 +3221,37 @@ export default function TestStockXOrders() {
                             </g>
                           );
                         })}
+
+                        {/* Hover tooltip (matches dashboard graph tooltip styling) */}
+                        {hoveredSalesPoint && (
+                          (() => {
+                            const tipW = 260;
+                            const tipH = 86;
+                            const pad = 10;
+                            const x = Math.max(padL, Math.min(hoveredSalesPoint.x, W - padR));
+                            const rawLeft = x - tipW / 2;
+                            const left = Math.max(pad, Math.min(rawLeft, W - tipW - pad));
+                            const rawTop = hoveredSalesPoint.y - tipH - 14;
+                            const top = Math.max(pad, Math.min(rawTop, H - tipH - pad));
+
+                            const labelLine = `${fmtMonthDay(hoveredSalesPoint.date)} — ${fmtMoney(
+                              hoveredSalesPoint.sales,
+                              totals.currency
+                            )} — ${hoveredSalesPoint.count} items`;
+
+                            return (
+                              <foreignObject x={left} y={top} width={tipW} height={tipH}>
+                                <div
+                                  xmlns="http://www.w3.org/1999/xhtml"
+                                  className="bg-black/95 text-white text-xs px-4 py-3 rounded-lg whitespace-nowrap border border-gray-600 shadow-lg shadow-black/40"
+                                >
+                                  <div className="font-semibold text-white">{labelLine}</div>
+                                  <div className="text-gray-400 text-xs mt-1">Click to select</div>
+                                </div>
+                              </foreignObject>
+                            );
+                          })()
+                        )}
                       </svg>
                       </div>
                     );

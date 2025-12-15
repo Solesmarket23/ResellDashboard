@@ -18,6 +18,10 @@ const Sales = () => {
   const [activeFilter, setActiveFilter] = useState('All Time');
   const { currentTheme } = useTheme();
   const { user, signInWithGoogle } = useAuth();
+  const isSitePasswordUser =
+    !user?.uid && typeof window !== 'undefined' && !!localStorage.getItem('siteUserId');
+  const resolvedUserId =
+    user?.uid || (typeof window !== 'undefined' ? localStorage.getItem('siteUserId') : null);
   
   // Use the enhanced useSales hook for real-time data
   const { 
@@ -87,8 +91,11 @@ const Sales = () => {
 
   // Load linked purchases on mount
   useEffect(() => {
+    // Site-password users rely on Firestore-backed linking (sale.linkedPurchase* / purchase.linkedSaleOrderNumber).
+    // Avoid loading legacy localStorage-based links to prevent confusion.
+    if (isSitePasswordUser) return;
     loadLinkedPurchases();
-  }, []);
+  }, [isSitePasswordUser]);
 
   const getLinkedPurchase = (sale: any) => {
     // For sales with IDs, match by ID; for manual sales, match by product+brand+size
@@ -606,8 +613,15 @@ const Sales = () => {
           cellContent = sale.fees ? `$${parseFloat(sale.fees).toFixed(2)}` : '';
           break;
         case 'profit':
-          const profit = (parseFloat(sale.salePrice || '0') - parseFloat(sale.purchasePrice || '0') - parseFloat(sale.fees || '0'));
-          cellContent = `$${profit.toFixed(2)}`;
+          {
+            const storedProfit = Number(sale.profit);
+            const computedProfit =
+              parseFloat(sale.salePrice || sale.amount || '0') -
+              parseFloat(sale.purchasePrice || '0') -
+              parseFloat(sale.fees || '0');
+            const profitToShow = Number.isFinite(storedProfit) ? storedProfit : computedProfit;
+            cellContent = `$${profitToShow.toFixed(2)}`;
+          }
           break;
         case 'date':
           cellContent = sale.date ? new Date(sale.date).toLocaleDateString() : '';
@@ -1308,10 +1322,10 @@ const Sales = () => {
       </div>
 
       {/* Streamlined StockX Sales Import */}
-      {user ? (
+      {resolvedUserId ? (
         <div className="mb-6">
           <StockXSalesImport 
-            userId={user.uid}
+            userId={resolvedUserId}
             onImportComplete={(success, salesCount) => {
               if (success) {
                 console.log(`✅ Successfully imported ${salesCount} StockX sales - triggering forceRefresh`);
@@ -2035,6 +2049,21 @@ const Sales = () => {
                               -
                             </span>
                           )}
+
+                          {(sale.linkedPurchaseOrderNumber || sale.linkedPurchaseId) && (
+                            <div className="mt-1">
+                              <span
+                                className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold ${
+                                  isNeon
+                                    ? 'bg-white/5 text-gray-200 border border-white/10'
+                                    : 'bg-gray-100 text-gray-700 border border-gray-200'
+                                }`}
+                                title={sale.linkedPurchaseId ? `Linked purchase ID: ${sale.linkedPurchaseId}` : 'Linked purchase'}
+                              >
+                                Linked purchase{sale.linkedPurchaseOrderNumber ? `: ${sale.linkedPurchaseOrderNumber}` : ''}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </td>
                       
@@ -2077,7 +2106,12 @@ const Sales = () => {
                       <td className="px-3 py-4 whitespace-nowrap" style={{ width: `${columnWidths.profit}px` }}>
                         {(() => {
                           const actualProfit = calculateActualProfit(sale);
-                          const estimatedProfit = Number(sale.profit) || 0;
+                          const storedProfit = Number(sale.profit);
+                          const computedProfit =
+                            (Number(sale.salePrice) || Number(sale.amount) || 0) -
+                            (Number(sale.purchasePrice) || 0) -
+                            (Number(sale.fees) || 0);
+                          const estimatedProfit = Number.isFinite(storedProfit) ? storedProfit : computedProfit;
                           const displayProfit = actualProfit !== null ? actualProfit : estimatedProfit;
                           const isActual = actualProfit !== null;
                           
@@ -2132,17 +2166,19 @@ const Sales = () => {
                             </button>
                           )}
                           {/* Link Purchase Button */}
-                          <button 
-                            onClick={() => handleLinkPurchase(sale)}
-                            className={`${
-                              isNeon 
-                                ? 'text-gray-400 hover:text-green-400' 
-                                : 'text-gray-400 hover:text-green-600'
-                            } transition-colors`}
-                            title={getLinkedPurchase(sale) ? "Edit Linked Purchase" : "Link Purchase"}
-                          >
-                            <Link className={`w-4 h-4 ${getLinkedPurchase(sale) ? 'text-green-500' : ''}`} />
-                          </button>
+                          {!isSitePasswordUser && (
+                            <button 
+                              onClick={() => handleLinkPurchase(sale)}
+                              className={`${
+                                isNeon 
+                                  ? 'text-gray-400 hover:text-green-400' 
+                                  : 'text-gray-400 hover:text-green-600'
+                              } transition-colors`}
+                              title={getLinkedPurchase(sale) ? "Edit Linked Purchase" : "Link Purchase"}
+                            >
+                              <Link className={`w-4 h-4 ${getLinkedPurchase(sale) ? 'text-green-500' : ''}`} />
+                            </button>
+                          )}
                           <button 
                             onClick={() => openDeleteModal(sale)}
                             disabled={isDeleting}
@@ -3214,24 +3250,26 @@ const Sales = () => {
       )}
 
       {/* Purchase Link Popup */}
-      <PurchaseLinkPopup
-        isOpen={showPurchasePopup}
-        onClose={() => {
-          setShowPurchasePopup(false);
-          setSelectedSale(null);
-        }}
-        opportunity={selectedSale ? {
-          id: selectedSale.id,
-          productId: selectedSale.id,
-          variantId: selectedSale.id,
-          title: selectedSale.product,
-          size: selectedSale.size,
-          imageUrl: selectedSale.imageUrl,
-          sellingPrice: selectedSale.salePrice || selectedSale.sellingPrice
-        } : null}
-        onSavePurchase={handleSavePurchase}
-        existingPurchase={selectedSale ? getLinkedPurchase(selectedSale)?.purchaseData : null}
-      />
+      {!isSitePasswordUser && (
+        <PurchaseLinkPopup
+          isOpen={showPurchasePopup}
+          onClose={() => {
+            setShowPurchasePopup(false);
+            setSelectedSale(null);
+          }}
+          opportunity={selectedSale ? {
+            id: selectedSale.id,
+            productId: selectedSale.id,
+            variantId: selectedSale.id,
+            title: selectedSale.product,
+            size: selectedSale.size,
+            imageUrl: selectedSale.imageUrl,
+            sellingPrice: selectedSale.salePrice || selectedSale.sellingPrice
+          } : null}
+          onSavePurchase={handleSavePurchase}
+          existingPurchase={selectedSale ? getLinkedPurchase(selectedSale)?.purchaseData : null}
+        />
+      )}
 
       {/* Neon Notification */}
       {notification.isVisible && (

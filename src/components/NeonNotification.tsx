@@ -73,6 +73,13 @@ const NeonNotification: React.FC<NeonNotificationProps> = ({
           icon: 'text-amber-300',
           progress: 'bg-amber-400/80',
         };
+      default:
+        // Safety fallback to prevent runtime crashes if a new type is introduced elsewhere.
+        return {
+          accent: 'bg-slate-500/90',
+          icon: 'text-slate-200',
+          progress: 'bg-slate-400/80',
+        };
     }
   };
 

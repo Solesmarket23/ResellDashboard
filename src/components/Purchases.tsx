@@ -83,6 +83,17 @@ const Purchases = () => {
   const [editingTracking, setEditingTracking] = useState<string | null>(null); // Track which purchase is being edited (by id or orderNumber)
   const [editingTrackingValue, setEditingTrackingValue] = useState<string>(''); // Current value being edited
   const [highlightedPurchase, setHighlightedPurchase] = useState<string | null>(null); // Track which purchase was clicked to view email
+
+  // StockX cookie injection (for Puppeteer) - stored locally in the browser
+  const [showStockxCookieModal, setShowStockxCookieModal] = useState(false);
+  const [stockxCookieJson, setStockxCookieJson] = useState<string>(() => {
+    try {
+      return localStorage.getItem('stockxCookieJson') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [pendingExtractPurchase, setPendingExtractPurchase] = useState<any>(null);
   
   // Edit/Delete Modal State
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -1312,7 +1323,25 @@ const Purchases = () => {
           }
           
           const result = await response.json();
-          console.log(`✅ Gmail purchases saved via API: ${result.saved} saved, ${result.deleted} deleted`);
+          const created = typeof result?.created === 'number' ? result.created : null;
+          const updated = typeof result?.updated === 'number' ? result.updated : null;
+          const deletedDuplicates = typeof result?.deletedDuplicates === 'number' ? result.deletedDuplicates : null;
+          const missingOrderNumberSaved =
+            typeof result?.missingOrderNumberSaved === 'number' ? result.missingOrderNumberSaved : null;
+
+          // Back-compat with older API response shape (saved/deleted)
+          const savedLegacy = typeof result?.saved === 'number' ? result.saved : null;
+          const deletedLegacy = typeof result?.deleted === 'number' ? result.deleted : null;
+
+          if (created !== null || updated !== null) {
+            console.log(
+              `✅ Gmail purchases synced via API: created=${created ?? 0}, updated=${updated ?? 0}, deletedDuplicates=${
+                deletedDuplicates ?? 0
+              }, missingOrderNumberSaved=${missingOrderNumberSaved ?? 0}`
+            );
+          } else {
+            console.log(`✅ Gmail purchases saved via API: ${savedLegacy ?? 0} saved, ${deletedLegacy ?? 0} deleted`);
+          }
           
           // 🔥 CRITICAL: Reload purchases from API to get correct Firebase document IDs
           console.log('🔄 Reloading purchases to get Firebase document IDs...');
@@ -2529,31 +2558,104 @@ const Purchases = () => {
 
     try {
       console.log(`🤖 Extracting tracking for order: ${purchase.orderNumber}`);
+
+      const sanitizeDebugForSharing = (input: any): any => {
+        const redactUrl = (s: string) => {
+          try {
+            const u = new URL(s);
+            u.search = '';
+            u.hash = '';
+            return u.toString();
+          } catch {
+            return s.length > 200 ? `${s.slice(0, 200)}…` : s;
+          }
+        };
+        if (input === null || input === undefined) return input;
+        if (typeof input === 'string') {
+          // Redact anything that looks like a URL
+          if (input.includes('http://') || input.includes('https://')) return redactUrl(input);
+          return input;
+        }
+        if (Array.isArray(input)) return input.map(sanitizeDebugForSharing);
+        if (typeof input === 'object') {
+          const out: any = {};
+          for (const [k, v] of Object.entries(input)) {
+            if (typeof v === 'string' && (k.toLowerCase().includes('token') || k.toLowerCase().includes('cookie'))) {
+              out[k] = '[redacted]';
+              continue;
+            }
+            out[k] = sanitizeDebugForSharing(v);
+          }
+          return out;
+        }
+        return input;
+      };
+
+      // Load StockX cookies (optional) to let Puppeteer run authenticated
+      let stockxCookies: any[] | null = null;
+      try {
+        const raw = localStorage.getItem('stockxCookieJson');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) stockxCookies = parsed;
+        }
+      } catch {
+        // ignore
+      }
       
-      // Use Gmail → StockX → FedEx flow for more accurate tracking extraction
-      const response = await fetch('/api/gmail/extract-tracking-via-gmail', {
+      // Use Gmail shipped email → Track-your-order link → redirects (no Puppeteer)
+      // This matches current StockX behavior (tracking usually only discoverable via the track URL).
+      const response = await fetch('/api/gmail/extract-tracking-debug', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          orderNumber: purchase.orderNumber
+          orderNumber: purchase.orderNumber,
+          verbose: true,
+          allowPuppeteer: true,
+          stockxCookies
         }),
       });
 
       const data = await response.json();
+      console.log('🧪 Tracking debug response:', data);
 
       if (!response.ok) {
         // Provide more helpful error messages
         let errorMessage = data.error || 'Failed to extract tracking number';
         
-        if (data.requiresLogin) {
-          errorMessage = 'StockX requires login. Please log in to StockX in your browser, then try again.';
-        } else if (response.status === 404) {
+        // Always log debug info to console (helps diagnose StockX/Puppeteer edge cases)
+        if (data?.debug) {
+          const sanitized = sanitizeDebugForSharing(data.debug);
+          console.log('🧪 Tracking debug (error) data.debug (sanitized):', sanitized);
+          // Best-effort copy to clipboard so user can paste into support without leaking tokens
+          try {
+            await navigator.clipboard.writeText(JSON.stringify(sanitized, null, 2));
+            setNotification({
+              isVisible: true,
+              message: 'Auto Extract failed. A sanitized debug trace was copied to your clipboard—paste it here so we can fix it.',
+              type: 'info'
+            });
+          } catch {
+            // Clipboard may be blocked; still show a hint
+            setNotification({
+              isVisible: true,
+              message: 'Auto Extract failed. Open DevTools Console and copy the sanitized debug trace logged there (search for "sanitized").',
+              type: 'info'
+            });
+          }
+        }
+
+        if (response.status === 401 && data?.requiresLogin) {
+          // Prompt user to paste StockX cookies so Puppeteer can run authenticated
+          setPendingExtractPurchase(purchase);
+          setShowStockxCookieModal(true);
+          throw new Error('StockX login required. Paste StockX cookies once, then retry Auto Extract.');
+        }
+
+        if (response.status === 404) {
           errorMessage = `Order not found or tracking not available. ${data.error || ''}`;
-        } else if (data.suggestion) {
-          // Include suggestion in error message
-          errorMessage = `${errorMessage}. ${data.suggestion}`;
         }
         
         // Include debug info in development
@@ -4384,6 +4486,31 @@ const Purchases = () => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                       </svg>
                     </a>
+                    {purchase.unitNumber ? (
+                      <div className="mt-1">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold ${
+                          currentTheme.name === 'Neon'
+                            ? 'bg-white/5 text-gray-200 border border-white/10'
+                            : 'bg-gray-100 text-gray-700 border border-gray-200'
+                        }`}>
+                          Unit #{purchase.unitNumber}
+                        </span>
+                      </div>
+                    ) : null}
+                    {purchase.linkedSaleOrderNumber ? (
+                      <div className="mt-1">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold ${
+                            currentTheme.name === 'Neon'
+                              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20'
+                              : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          }`}
+                          title={`Linked StockX sale: ${purchase.linkedSaleOrderNumber}`}
+                        >
+                          Linked sale: {purchase.linkedSaleOrderNumber}
+                        </span>
+                      </div>
+                    ) : null}
                   </td>
                   <td className="px-6 py-3 align-middle">
                     <span className={`inline-flex items-center gap-1.5 text-sm font-medium ${currentTheme.colors.textPrimary}`}>
@@ -4489,6 +4616,25 @@ const Purchases = () => {
                     ) : (purchase.status?.toLowerCase() === 'shipped' || purchase.status?.toLowerCase() === 'delivered') ? (
                       // Shipped/Delivered but no tracking - show primary action button with secondary link
                       <div className="flex items-center gap-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleExtractTracking(purchase);
+                          }}
+                          disabled={extractingTracking.has(purchase.id || purchase.orderNumber)}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
+                            extractingTracking.has(purchase.id || purchase.orderNumber)
+                              ? currentTheme.name === 'Neon'
+                                ? 'bg-white/10 text-gray-400 border border-white/10 cursor-not-allowed'
+                                : 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed'
+                              : currentTheme.name === 'Neon'
+                                ? 'bg-white/5 hover:bg-white/10 text-cyan-300 border border-cyan-500/30 hover:border-cyan-400'
+                                : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 hover:border-blue-300'
+                          }`}
+                          title="Auto-extract tracking via Gmail shipped email → Track your order → FedEx"
+                        >
+                          {extractingTracking.has(purchase.id || purchase.orderNumber) ? 'Extracting…' : 'Auto Extract'}
+                        </button>
                         <button
                           onClick={() => handleStartEditTracking(purchase)}
                           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
@@ -4973,6 +5119,40 @@ const Purchases = () => {
                 </div>
               </div>
 
+              {/* Unit Number (physical label) */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={`block text-sm font-semibold mb-2 ${currentTheme.colors.textPrimary}`}>
+                    Unit #
+                    <span className={`ml-2 text-xs font-normal ${currentTheme.colors.textSecondary}`}>
+                      (1–999)
+                    </span>
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={999}
+                    step={1}
+                    value={editingPurchase.unitNumber ?? ''}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const next = raw === '' ? null : (Number(raw) || null);
+                      setEditingPurchase({
+                        ...editingPurchase,
+                        unitNumber: next
+                      });
+                    }}
+                    placeholder="e.g., 127"
+                    className={`w-full px-4 py-3 rounded-lg border text-sm transition-all duration-200 ${
+                      currentTheme.name === 'Neon'
+                        ? 'bg-gray-900 border-white/20 text-white placeholder-gray-500 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50'
+                        : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50'
+                    } focus:outline-none`}
+                  />
+                </div>
+                <div />
+              </div>
+
               {/* Price & Credits/Discounts */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -5272,7 +5452,11 @@ const Purchases = () => {
                 onClick={async () => {
                   // Save the purchase
                   if (editingPurchase.id) {
-                    await updateDocument('purchases', editingPurchase.id.toString(), {
+                    const siteUserId = localStorage.getItem('siteUserId');
+                    const resolvedUserId = user?.uid || siteUserId;
+                    const isSitePasswordUser = !user && !!siteUserId;
+
+                    const updates = {
                       productName: editingPurchase.product?.name || editingPurchase.productName || '',
                       brand: editingPurchase.product?.brand || editingPurchase.brand || '',
                       market: editingPurchase.market || editingPurchase.product?.brand || '',
@@ -5289,16 +5473,42 @@ const Purchases = () => {
                       carrier: editingPurchase.carrier || '',
                       status: editingPurchase.status || 'Ordered',
                       notes: editingPurchase.notes || '',
+                      unitNumber: editingPurchase.unitNumber ?? null,
                       product: {
                         ...(editingPurchase.product || {}),
                         name: editingPurchase.product?.name || editingPurchase.productName || '',
                         brand: editingPurchase.product?.brand || editingPurchase.brand || '',
                         size: editingPurchase.product?.size || editingPurchase.size || ''
                       }
-                    });
-                    // Refresh purchases
-                    const updatedPurchases = await getDocuments('purchases');
-                    setPurchases(updatedPurchases);
+                    };
+
+                    if (isSitePasswordUser && resolvedUserId) {
+                      const resp = await fetch('/api/purchases/update', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          userId: resolvedUserId,
+                          purchaseId: editingPurchase.id.toString(),
+                          updates
+                        })
+                      });
+                      if (!resp.ok) {
+                        const err = await resp.json().catch(() => ({}));
+                        throw new Error(err.details || err.error || 'Failed to update purchase');
+                      }
+
+                      // Refresh via API for site-password users
+                      const listResp = await fetch(`/api/purchases/list?userId=${encodeURIComponent(resolvedUserId)}`, { cache: 'no-store' });
+                      if (listResp.ok) {
+                        const data = await listResp.json();
+                        setPurchases(data.purchases || []);
+                      }
+                    } else {
+                      await updateDocument('purchases', editingPurchase.id.toString(), updates);
+                      // Refresh purchases
+                      const updatedPurchases = await getDocuments('purchases');
+                      setPurchases(updatedPurchases);
+                    }
                   }
                   setEditModalOpen(false);
                   setEditingPurchase(null);
@@ -5556,6 +5766,157 @@ const Purchases = () => {
           type={notification.type}
           onClose={() => setNotification({ ...notification, isVisible: false })}
         />
+      )}
+
+      {/* StockX Cookie Modal (for Puppeteer authenticated extraction) */}
+      {showStockxCookieModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className={`w-full max-w-2xl rounded-2xl p-6 ${
+            currentTheme.name === 'Neon'
+              ? 'bg-gray-950 border border-cyan-500/30 shadow-2xl shadow-cyan-500/20'
+              : 'bg-white border border-gray-200 shadow-2xl'
+          }`}>
+            <div className="flex items-start justify-between gap-4 mb-4">
+              <div>
+                <h3 className={`text-lg font-bold ${currentTheme.colors.textPrimary}`}>
+                  StockX login required
+                </h3>
+                <p className={`text-sm mt-1 ${currentTheme.colors.textSecondary}`}>
+                  To let Auto Extract click through StockX and reach the FedEx tracking URL, paste your StockX cookies once.
+                  This is stored only in your browser’s localStorage.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowStockxCookieModal(false)}
+                className={`p-2 rounded-lg ${
+                  currentTheme.name === 'Neon' ? 'hover:bg-white/10 text-gray-300' : 'hover:bg-gray-100 text-gray-600'
+                }`}
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className={`text-xs mb-3 ${currentTheme.colors.textSecondary}`}>
+              In Chrome: open StockX in a tab (logged in) → DevTools → Application → Cookies → `https://stockx.com` →
+              select cookies → right click → “Copy” (or “Copy as JSON”).
+            </div>
+
+            <textarea
+              value={stockxCookieJson}
+              onChange={(e) => setStockxCookieJson(e.target.value)}
+              rows={10}
+              className={`w-full rounded-xl p-3 font-mono text-xs border ${
+                currentTheme.name === 'Neon'
+                  ? 'bg-black/40 border-white/10 text-gray-100 focus:border-cyan-500 outline-none'
+                  : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500 outline-none'
+              }`}
+              placeholder='Paste cookie JSON array here (e.g. [{"name":"...","value":"...","domain":".stockx.com",...}])'
+            />
+
+            <div className="flex items-center justify-end gap-2 mt-4">
+              <button
+                onClick={() => {
+                  setShowStockxCookieModal(false);
+                  setPendingExtractPurchase(null);
+                }}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold ${
+                  currentTheme.name === 'Neon'
+                    ? 'bg-white/5 hover:bg-white/10 text-gray-200 border border-white/10'
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-800 border border-gray-200'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    const raw = (stockxCookieJson || '').trim();
+                    if (!raw) throw new Error('Paste cookies first.');
+
+                    const parseTabularCookies = (input: string): any[] => {
+                      // Supports copied rows from Chrome DevTools cookie table (tab-separated).
+                      // Example header: Name\tValue\tDomain\tPath\tExpires/Max-Age\tSize\tHttpOnly\tSecure\tSameSite...
+                      const lines = input
+                        .split(/\r?\n/)
+                        .map((l) => l.trim())
+                        .filter(Boolean);
+                      if (lines.length === 0) return [];
+
+                      const header = lines[0].split('\t').map((s) => s.trim().toLowerCase());
+                      const hasHeader = header.includes('name') && header.includes('value');
+                      const startIdx = hasHeader ? 1 : 0;
+
+                      const idxName = hasHeader ? header.indexOf('name') : 0;
+                      const idxValue = hasHeader ? header.indexOf('value') : 1;
+                      // If no header row, Chrome's copy format still includes domain/path as cols[2]/cols[3]
+                      const idxDomain = hasHeader ? header.indexOf('domain') : 2;
+                      const idxPath = hasHeader ? header.indexOf('path') : 3;
+
+                      const cookies: any[] = [];
+                      for (const line of lines.slice(startIdx)) {
+                        const cols = line.split('\t');
+                        const name = (cols[idxName] || '').trim();
+                        const value = (cols[idxValue] || '').trim();
+                        if (!name) continue;
+                        const domain = (cols[idxDomain] || '').trim() || '.stockx.com';
+                        // Only keep StockX cookies; ignore third-party domains (e.g. sardine.ai)
+                        if (!domain.includes('stockx.com')) continue;
+                        cookies.push({
+                          name,
+                          value,
+                          domain,
+                          path: (cols[idxPath] || '/').trim() || '/',
+                        });
+                      }
+                      return cookies;
+                    };
+
+                    let parsed: any = null;
+                    try {
+                      parsed = JSON.parse(raw);
+                    } catch {
+                      parsed = null;
+                    }
+
+                    let cookiesArray: any[] = [];
+                    if (Array.isArray(parsed)) {
+                      cookiesArray = parsed;
+                    } else {
+                      cookiesArray = parseTabularCookies(raw);
+                    }
+
+                    if (!Array.isArray(cookiesArray) || cookiesArray.length === 0) {
+                      throw new Error('Could not parse cookies. Paste either the JSON array or copied cookie table rows.');
+                    }
+
+                    // Store normalized JSON (so future runs always use JSON format)
+                    localStorage.setItem('stockxCookieJson', JSON.stringify(cookiesArray));
+                    setShowStockxCookieModal(false);
+                    const p = pendingExtractPurchase;
+                    setPendingExtractPurchase(null);
+                    if (p) {
+                      await handleExtractTracking(p);
+                    }
+                  } catch (e: any) {
+                    setNotification({
+                      isVisible: true,
+                      message: `Invalid cookie JSON: ${e?.message || String(e)}`,
+                      type: 'error'
+                    });
+                  }
+                }}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold ${
+                  currentTheme.name === 'Neon'
+                    ? 'bg-cyan-500 hover:bg-cyan-400 text-black'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
+              >
+                Save & Retry Auto Extract
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Add keyframe animations */}

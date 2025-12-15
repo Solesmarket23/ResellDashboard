@@ -5,6 +5,11 @@ export interface StockXSale {
   orderNumber: string;
   orderType: 'STANDARD' | 'FLEX' | 'DIRECT' | 'DFS';
   status: OrderStatus;
+  /**
+   * StockX listing identifier for the specific unit/listing that sold (when provided by the API response).
+   * We use this to prefer exact unit-level purchase linking (purchase.stockxListingId) before falling back to FIFO.
+   */
+  listingId?: string;
   product: StockXProduct;
   variant: StockXVariant;
   pricing: StockXPricing;
@@ -13,7 +18,7 @@ export interface StockXSale {
   createdAt: string;
   updatedAt: string;
   payoutDate?: string;
-  source: 'stockx_api';
+  source: 'stockx_api' | 'stockx_bulk_import_stream' | 'stockx_bulk_import';
   needsPayoutRefresh?: boolean;
 }
 

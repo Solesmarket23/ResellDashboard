@@ -28,7 +28,7 @@ interface IndividualPricingStrategy {
   manualPrice?: number;
   beatBy?: number; // legacy; two-step is now hardcoded to beat by $1
   peekSettings?: {
-    frequency: 'conservative' | 'balanced' | 'aggressive'; // 8h, 6h, 4h
+    frequency: 'hourly' | 'conservative' | 'balanced' | 'aggressive'; // 1h, 8h, 6h, 4h
     lastPeekTime?: string;
     nextScheduledPeek?: string;
     isPeeking?: boolean;
@@ -181,6 +181,11 @@ export default function StockXRepricing() {
   const [refreshProgress, setRefreshProgress] = useState<{ current: number; total: number } | null>(null);
   const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
   const [bulkActionMessage, setBulkActionMessage] = useState<string | null>(null);
+  // Unit assignment (physical inventory label 1–999) → listingId
+  const [unitDraftByListingId, setUnitDraftByListingId] = useState<Record<string, string>>({});
+  const [unitAssignStateByListingId, setUnitAssignStateByListingId] = useState<Record<string, 'idle' | 'saving' | 'saved'>>({});
+  const [unitOptionsByListingId, setUnitOptionsByListingId] = useState<Record<string, Array<{ unitNumber: number; orderNumber: string | null }>>>({});
+  const [unitOptionsLoadingByListingId, setUnitOptionsLoadingByListingId] = useState<Record<string, boolean>>({});
   const [showBulkPricingModal, setShowBulkPricingModal] = useState(false);
   const [previewResults, setPreviewResults] = useState<RepricingResult[]>([]);
   const [isPreviewMinimized, setIsPreviewMinimized] = useState(false);
@@ -2546,6 +2551,90 @@ export default function StockXRepricing() {
     });
   };
 
+  const resolveUserIdForApi = (): string | null => {
+    const siteUserId = typeof window !== 'undefined' ? localStorage.getItem('siteUserId') : null;
+    return authUser?.uid || siteUserId || null;
+  };
+
+  const assignUnitNumberToListing = async (listingId: string, unitNumber: number | null) => {
+    setUnitAssignStateByListingId(prev => ({ ...prev, [listingId]: 'saving' }));
+    try {
+      const userId = resolveUserIdForApi();
+      const resp = await fetch('/api/stockx/listings/assign-unit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: userId || undefined,
+          listingId,
+          unitNumber
+        })
+      });
+
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok || json?.success === false) {
+        throw new Error(json?.details || json?.error || `Assign failed (${resp.status})`);
+      }
+
+      setUnitAssignStateByListingId(prev => ({ ...prev, [listingId]: 'saved' }));
+      setTimeout(() => {
+        setUnitAssignStateByListingId(prev => ({ ...prev, [listingId]: 'idle' }));
+      }, 2000);
+
+      if (unitNumber === null) {
+        setBulkActionMessage('✅ Unit assignment cleared');
+      } else {
+        setBulkActionMessage(`✅ Assigned Unit #${unitNumber} to listing`);
+      }
+      setTimeout(() => setBulkActionMessage(null), 4000);
+    } catch (e: any) {
+      setUnitAssignStateByListingId(prev => ({ ...prev, [listingId]: 'idle' }));
+      setBulkActionMessage(`❌ Unit assign failed: ${e?.message || 'Unknown error'}`);
+      setTimeout(() => setBulkActionMessage(null), 6000);
+    }
+  };
+
+  const fetchAvailableUnitsForListing = async (listing: Listing) => {
+    const styleId = (listing.styleId || '').trim();
+    const size = (listing.size || '').trim();
+    if (!styleId || !size) {
+      setBulkActionMessage('⚠️ This listing is missing styleId or size (can’t find matching units).');
+      setTimeout(() => setBulkActionMessage(null), 4000);
+      return;
+    }
+
+    try {
+      setUnitOptionsLoadingByListingId(prev => ({ ...prev, [listing.listingId]: true }));
+      const userId = resolveUserIdForApi();
+      const qs = new URLSearchParams({
+        userId: userId || '',
+        styleId,
+        size
+      });
+      const resp = await fetch(`/api/purchases/available-units?${qs.toString()}`, { cache: 'no-store' });
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok || json?.success === false) {
+        throw new Error(json?.error || `Failed (${resp.status})`);
+      }
+      const units = Array.isArray(json?.units) ? json.units : [];
+      setUnitOptionsByListingId(prev => ({
+        ...prev,
+        [listing.listingId]: units.map((u: any) => ({
+          unitNumber: Number(u.unitNumber),
+          orderNumber: u.orderNumber || null
+        })).filter((u: any) => Number.isFinite(u.unitNumber))
+      }));
+      if (units.length === 0) {
+        setBulkActionMessage('ℹ️ No available units found (add Unit # on the purchase first).');
+        setTimeout(() => setBulkActionMessage(null), 5000);
+      }
+    } catch (e: any) {
+      setBulkActionMessage(`❌ Failed to load units: ${e?.message || 'Unknown error'}`);
+      setTimeout(() => setBulkActionMessage(null), 6000);
+    } finally {
+      setUnitOptionsLoadingByListingId(prev => ({ ...prev, [listing.listingId]: false }));
+    }
+  };
+
   const handleSort = (column: 'product' | 'size' | 'price' | 'market' | 'status') => {
     if (sortColumn === column) {
       // Toggle direction if clicking the same column
@@ -3736,6 +3825,105 @@ export default function StockXRepricing() {
                               )}
                             </button>
                           </div>
+                          {/* Unit assignment (physical label 1–999) */}
+                          <div className="mt-2 flex items-center justify-center gap-2">
+                            <span className={`text-[11px] font-semibold ${isNeon ? 'text-gray-500' : 'text-gray-500'}`}>
+                              Unit #
+                            </span>
+                            <button
+                              onClick={() => fetchAvailableUnitsForListing(listing)}
+                              disabled={unitOptionsLoadingByListingId[listing.listingId] === true}
+                              className={`px-2 py-1 rounded text-xs font-semibold transition-all whitespace-nowrap ${
+                                isNeon
+                                  ? 'bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10'
+                                  : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-200'
+                              } disabled:opacity-60`}
+                              title="Find unassigned units (by styleId + size)"
+                            >
+                              {unitOptionsLoadingByListingId[listing.listingId] ? 'Finding…' : 'Find'}
+                            </button>
+                            {Array.isArray(unitOptionsByListingId[listing.listingId]) &&
+                            unitOptionsByListingId[listing.listingId]!.length > 0 ? (
+                              <select
+                                value={unitDraftByListingId[listing.listingId] ?? ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setUnitDraftByListingId(prev => ({ ...prev, [listing.listingId]: val }));
+                                }}
+                                className={`text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
+                                  isNeon
+                                    ? 'bg-gray-700 border-cyan-500/50 text-cyan-200 focus:ring-cyan-500/50'
+                                    : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
+                                }`}
+                                title="Pick from available units"
+                              >
+                                <option value="">Pick…</option>
+                                {unitOptionsByListingId[listing.listingId]!.map((u) => (
+                                  <option key={u.unitNumber} value={String(u.unitNumber)}>
+                                    #{u.unitNumber}{u.orderNumber ? ` • ${u.orderNumber}` : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : null}
+                            <input
+                              type="number"
+                              min={1}
+                              max={999}
+                              step={1}
+                              value={unitDraftByListingId[listing.listingId] ?? ''}
+                              onChange={(e) => {
+                                const next = e.target.value;
+                                setUnitDraftByListingId(prev => ({ ...prev, [listing.listingId]: next }));
+                              }}
+                              placeholder="1-999"
+                              className={`w-[84px] text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
+                                isNeon
+                                  ? 'bg-gray-700 border-cyan-500/50 text-cyan-200 placeholder-gray-500 focus:ring-cyan-500/50'
+                                  : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:ring-blue-500'
+                              }`}
+                            />
+                            <button
+                              onClick={() => {
+                                const raw = unitDraftByListingId[listing.listingId];
+                                const n = Number(raw);
+                                if (!Number.isFinite(n)) {
+                                  setBulkActionMessage('⚠️ Enter a Unit # (1–999) first');
+                                  setTimeout(() => setBulkActionMessage(null), 3000);
+                                  return;
+                                }
+                                assignUnitNumberToListing(listing.listingId, n);
+                              }}
+                              disabled={unitAssignStateByListingId[listing.listingId] === 'saving'}
+                              className={`px-2 py-1 rounded text-xs font-semibold transition-all whitespace-nowrap ${
+                                unitAssignStateByListingId[listing.listingId] === 'saving'
+                                  ? isNeon
+                                    ? 'bg-white/10 text-gray-400 border border-white/10'
+                                    : 'bg-gray-100 text-gray-500 border border-gray-200'
+                                  : isNeon
+                                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white'
+                                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                              } disabled:opacity-60`}
+                              title="Assign this listing to the physical unit label"
+                            >
+                              {unitAssignStateByListingId[listing.listingId] === 'saving'
+                                ? 'Saving…'
+                                : unitAssignStateByListingId[listing.listingId] === 'saved'
+                                  ? 'Saved'
+                                  : 'Assign'}
+                            </button>
+                            <button
+                              onClick={() => assignUnitNumberToListing(listing.listingId, null)}
+                              disabled={unitAssignStateByListingId[listing.listingId] === 'saving'}
+                              className={`px-2 py-1 rounded text-xs font-semibold transition-all whitespace-nowrap ${
+                                isNeon
+                                  ? 'bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10'
+                                  : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-200'
+                              } disabled:opacity-60`}
+                              title="Clear unit assignment for this listing"
+                            >
+                              Clear
+                            </button>
+                          </div>
                         </div>
                         {/* Group Leader Indicator */}
                         {listing.inventoryGroupId && inventoryGroups.get(listing.inventoryGroupId)?.listings.length > 1 && (
@@ -3857,6 +4045,7 @@ export default function StockXRepricing() {
                                 : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
                             }`}
                           >
+                            <option value="hourly">1h</option>
                             <option value="conservative">8h</option>
                             <option value="balanced">6h</option>
                             <option value="aggressive">4h</option>

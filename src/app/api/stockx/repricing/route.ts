@@ -21,11 +21,16 @@ interface IndividualPricingStrategy {
     | 'percentage_below'
     | 'manual'
     | 'keep_current'
-    | 'reset_then_beat_lowest';
+    | 'reset_then_beat_lowest'
+    | 'market_peek';
   value?: number;
   manualPrice?: number;
   resetPrice?: number;
   beatBy?: number;
+  peekSettings?: {
+    frequency: 'hourly' | 'aggressive' | 'balanced' | 'conservative'; // 1h, 4h, 6h, 8h
+    lastPeekTime?: string;
+  };
 }
 
 interface ListingToReprice {
@@ -49,6 +54,8 @@ interface ListingToReprice {
   // Duplicate inventory: fixed reserve price for followers (set once and hold)
   reservePrice?: number | null;
   reservePriceSetAt?: string | null;
+  // Market Peek cadence support (persisted in stockxPricingSettings)
+  lastPeekTime?: string | null;
 }
 
 function normalizePercent(value: unknown, fallback: number) {
@@ -80,6 +87,20 @@ function equalNullableNumber(a: unknown, b: unknown): boolean {
   const na = typeof a === 'number' && Number.isFinite(a) ? a : null;
   const nb = typeof b === 'number' && Number.isFinite(b) ? b : null;
   return na === nb;
+}
+
+function marketPeekIntervalMs(freq: string | undefined): number {
+  switch (freq) {
+    case 'hourly':
+      return 60 * 60 * 1000;
+    case 'aggressive':
+      return 4 * 60 * 60 * 1000;
+    case 'balanced':
+      return 6 * 60 * 60 * 1000;
+    case 'conservative':
+    default:
+      return 8 * 60 * 60 * 1000;
+  }
 }
 
 async function pollListingOperationStatus(args: {
@@ -662,6 +683,207 @@ export async function POST(request: NextRequest) {
               }
             }
 
+          } else if (listing.pricingStrategy.type === 'market_peek') {
+            // Market Peek strategy:
+            // - If you're NOT winning, undercut best ask immediately.
+            // - If you ARE winning, and the peek is due, temporarily raise to a high price to reveal the next-lowest,
+            //   then raise to (nextLowestAsk - $1).
+            // - Runs at most once per configured interval (default 6h; user may set hourly).
+
+            const beatBy = 1;
+            const resetPrice = 999;
+
+            const hasAnyAsk = currentStdAsk !== null || currentFlexAsk !== null;
+            const bestAsk = minPositive(currentStdAsk, currentFlexAsk);
+
+            // Winning logic: standard ties count as WIN; flex ties/undercuts beat you.
+            const losingToFlex = currentFlexAsk !== null && currentFlexAsk <= listing.currentPrice;
+            const losingToStd = currentStdAsk !== null && currentStdAsk < listing.currentPrice;
+            const isWinning = hasAnyAsk ? (!losingToFlex && !losingToStd) : false;
+
+            const freq = listing.pricingStrategy.peekSettings?.frequency || 'balanced';
+            const intervalMs = marketPeekIntervalMs(freq);
+            const lastPeekIso =
+              listing.pricingStrategy.peekSettings?.lastPeekTime ||
+              (typeof listing.lastPeekTime === 'string' ? listing.lastPeekTime : null) ||
+              null;
+            const lastPeekMs = lastPeekIso ? Date.parse(lastPeekIso) : Number.NaN;
+            const due = !Number.isFinite(lastPeekMs) || Date.now() - lastPeekMs >= intervalMs;
+
+            if (!bestAsk) {
+              // No market ask available; do nothing.
+              newPrice = listing.currentPrice;
+              skipReason = 'Market peek skipped: no lowest ask available';
+            } else if (!isWinning) {
+              // If you're not winning, behave like competitive mode immediately.
+              newPrice = Math.max(1, bestAsk - beatBy);
+              skipReason = `Market peek: not winning. Undercut best ask ($${bestAsk} → $${newPrice})`;
+            } else if (!due) {
+              newPrice = listing.currentPrice;
+              skipReason = `Market peek not due yet (${freq})`;
+            } else if (dryRun) {
+              // Dry-run: simulate what we'd do, but don't actually do the temporary reset.
+              newPrice = listing.currentPrice;
+              skipReason = `Market peek (dry-run): would raise to $${resetPrice}, then set to (nextLowestAsk - $${beatBy})`;
+            } else {
+              // Perform the peek: temporarily raise, refetch market, then raise to next-lowest - $1.
+              const originalPrice = listing.currentPrice;
+
+              const resetResult = await updateListingPrice(listing.listingId, resetPrice, accessToken, {
+                waitForCompletion: true,
+                timeoutMs: 30_000
+              });
+
+              if (!resetResult.success) {
+                repricingResults.push({
+                  listingId: listing.listingId,
+                  currentPrice: listing.currentPrice,
+                  newPrice: listing.currentPrice,
+                  action: 'failed',
+                  reason: `Market peek reset failed: ${resetResult.error || 'Unknown error'}`,
+                  market: { lowestAsk: currentStdAsk, flexLowestAsk: currentFlexAsk },
+                  peek: {
+                    frequency: freq,
+                    lastPeekTime: new Date().toISOString(),
+                    resetPrice,
+                    beatBy,
+                    resetOperationId: resetResult.operation?.operationId,
+                    resetOperationStatus: resetResult.operationStatus
+                  }
+                } as any);
+                continue;
+              }
+
+              didTemporaryReset = true;
+              comparisonCurrentPrice = resetPrice;
+
+              let competitorLowestAsk: number | null = null;
+              let competitorFlexLowestAsk: number | null = null;
+              let competitorBestAsk: number | null = null;
+              let refreshedMarket: any | null = null;
+
+              try {
+                for (let attempt = 0; attempt < 4; attempt++) {
+                  await new Promise(resolve => setTimeout(resolve, 1500 + attempt * 1000));
+                  refreshedMarket = await getMarketData(listing.productId, listing.variantId, { bustCache: true });
+
+                  competitorLowestAsk = parseStockXMoneyToDollars((refreshedMarket as any).lowestAskAmount);
+                  competitorFlexLowestAsk = parseStockXMoneyToDollars((refreshedMarket as any).flexLowestAskAmount);
+                  competitorBestAsk = minPositive(competitorLowestAsk, competitorFlexLowestAsk);
+                  if (competitorBestAsk !== null) break;
+                }
+
+                if (refreshedMarket) marketData = refreshedMarket;
+
+                if (competitorBestAsk === null) {
+                  const revert = await updateListingPrice(listing.listingId, originalPrice, accessToken, {
+                    waitForCompletion: true,
+                    timeoutMs: 30_000
+                  });
+                  repricingResults.push({
+                    listingId: listing.listingId,
+                    currentPrice: originalPrice,
+                    newPrice: originalPrice,
+                    action: 'failed',
+                    reason: `Market peek failed: no lowest ask available after reset. Revert ${revert.success ? 'succeeded' : 'failed'}.`,
+                    market: { lowestAsk: currentStdAsk, flexLowestAsk: currentFlexAsk },
+                    peek: {
+                      frequency: freq,
+                      lastPeekTime: new Date().toISOString(),
+                      resetPrice,
+                      beatBy,
+                      competitorLowestAsk,
+                      competitorFlexLowestAsk,
+                      resetOperationId: resetResult.operation?.operationId,
+                      resetOperationStatus: resetResult.operationStatus,
+                      revertOperationId: revert.operation?.operationId,
+                      revertOperationStatus: revert.operationStatus
+                    }
+                  } as any);
+                  continue;
+                }
+
+                const target = Math.max(1, competitorBestAsk - beatBy);
+                // Only raise (avoid lowering when already winning).
+                // Respect maxPrice if set.
+                const hasMax = isFiniteNumber(listing.maxPrice);
+                const boundedTarget = hasMax ? Math.min(listing.maxPrice!, target) : target;
+
+                if (boundedTarget <= originalPrice) {
+                  // No raise available; revert back to original price.
+                  const revert = await updateListingPrice(listing.listingId, originalPrice, accessToken, {
+                    waitForCompletion: true,
+                    timeoutMs: 30_000
+                  });
+                  repricingResults.push({
+                    listingId: listing.listingId,
+                    currentPrice: originalPrice,
+                    newPrice: originalPrice,
+                    action: 'no_change',
+                    reason: `Market peek: no higher price available (nextBest=$${competitorBestAsk}, target=$${target})`,
+                    market: { lowestAsk: currentStdAsk, flexLowestAsk: currentFlexAsk },
+                    peek: {
+                      frequency: freq,
+                      lastPeekTime: new Date().toISOString(),
+                      resetPrice,
+                      beatBy,
+                      competitorLowestAsk,
+                      competitorFlexLowestAsk,
+                      computedTarget: target,
+                      computedFinal: originalPrice,
+                      resetOperationId: resetResult.operation?.operationId,
+                      resetOperationStatus: resetResult.operationStatus,
+                      revertOperationId: revert.operation?.operationId,
+                      revertOperationStatus: revert.operationStatus
+                    }
+                  } as any);
+                  continue;
+                }
+
+                // Final update to the raised price
+                newPrice = boundedTarget;
+                skipReason = `Market peek: raise to (nextLowestAsk - $${beatBy}) ($${competitorBestAsk} → $${newPrice})`;
+
+                // Attach metadata so cron can persist lastPeekTime
+                (twoStepMeta as any) = undefined;
+                (listing as any).lastPeekTime = new Date().toISOString();
+                (listing as any).__peekMeta = {
+                  frequency: freq,
+                  lastPeekTime: (listing as any).lastPeekTime,
+                  resetPrice,
+                  beatBy,
+                  competitorLowestAsk,
+                  competitorFlexLowestAsk,
+                  computedTarget: target
+                };
+              } catch (err: any) {
+                const message = err instanceof Error ? err.message : String(err);
+                const revert = await updateListingPrice(listing.listingId, originalPrice, accessToken, {
+                  waitForCompletion: true,
+                  timeoutMs: 30_000
+                });
+                repricingResults.push({
+                  listingId: listing.listingId,
+                  currentPrice: originalPrice,
+                  newPrice: originalPrice,
+                  action: 'failed',
+                  reason: `Market peek failed after reset: ${message}. Revert ${revert.success ? 'succeeded' : 'failed'}.`,
+                  market: { lowestAsk: currentStdAsk, flexLowestAsk: currentFlexAsk },
+                  peek: {
+                    frequency: freq,
+                    lastPeekTime: new Date().toISOString(),
+                    resetPrice,
+                    beatBy,
+                    resetOperationId: resetResult.operation?.operationId,
+                    resetOperationStatus: resetResult.operationStatus,
+                    revertOperationId: revert.operation?.operationId,
+                    revertOperationStatus: revert.operationStatus
+                  }
+                } as any);
+                continue;
+              }
+            }
+
           } else {
           newPrice = calculateIndividualPrice(listing, marketData);
           
@@ -800,7 +1022,8 @@ export async function POST(request: NextRequest) {
               operationId: updateResult.operation?.operationId,
               operationStatus: updateResult.operationStatus,
               market: { lowestAsk: currentStdAsk, flexLowestAsk: currentFlexAsk },
-              twoStep: twoStepMeta
+              twoStep: twoStepMeta,
+              peek: (listing as any).__peekMeta || undefined
             });
             continue;
           }
@@ -816,7 +1039,8 @@ export async function POST(request: NextRequest) {
             operationId: updateResult.operation?.operationId,
             operationStatus: updateResult.operationStatus,
             market: { lowestAsk: currentStdAsk, flexLowestAsk: currentFlexAsk },
-            twoStep: twoStepMeta
+            twoStep: twoStepMeta,
+            peek: (listing as any).__peekMeta || undefined
           });
         } else {
           repricingResults.push({
@@ -828,7 +1052,8 @@ export async function POST(request: NextRequest) {
             profitChange: calculateProfitChange(listing, newPrice),
             competitivePosition: analyzeCompetitivePosition(newPrice, marketData),
             market: { lowestAsk: currentStdAsk, flexLowestAsk: currentFlexAsk },
-            twoStep: twoStepMeta
+            twoStep: twoStepMeta,
+            peek: (listing as any).__peekMeta || undefined
           });
         }
 

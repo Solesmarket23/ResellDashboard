@@ -1,8 +1,114 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { refreshStockXTokens } from '@/lib/stockx/tokenRefresh';
-import { getAdminDocuments, addAdminDocument, updateAdminDocument } from '@/lib/firebase/firebaseAdmin';
+import { getAdminDb, getAdminDocuments, addAdminDocument, updateAdminDocument } from '@/lib/firebase/firebaseAdmin';
 import { COLLECTIONS } from '@/lib/firebase/collections';
 import { StockXSale } from '@/lib/types/stockx';
+
+type PurchaseCandidate = {
+  id: string;
+  userId?: string;
+  orderNumber?: string;
+  size?: string;
+  styleId?: string | null;
+  style_id?: string | null;
+  stockxListingId?: string;
+  totalAmount?: number | string;
+  purchasePrice?: number | string;
+  price?: string;
+  purchaseDate?: string;
+  purchase_date?: string;
+  emailDate?: string;
+  email_date?: string;
+  createdAt?: string;
+  linkedSaleOrderNumber?: string;
+  linkedSaleId?: string;
+  product?: {
+    styleId?: string | null;
+    size?: string;
+  };
+  _dateMs?: number | null;
+};
+
+function normalizeSize(size: unknown): string {
+  return String(size || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toUpperCase();
+}
+
+function parseMoney(val: unknown): number | null {
+  if (typeof val === 'number' && Number.isFinite(val)) return val;
+  if (typeof val !== 'string') return null;
+  const cleaned = val.replace(/[^0-9.\-]/g, '');
+  if (!cleaned) return null;
+  const num = Number(cleaned);
+  return Number.isFinite(num) ? num : null;
+}
+
+function parseDateMs(val: unknown): number | null {
+  if (typeof val !== 'string' || !val) return null;
+  const ms = Date.parse(val);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function getPurchaseStyleId(p: PurchaseCandidate): string | null {
+  return (
+    (typeof p.styleId === 'string' && p.styleId.trim()) ||
+    (typeof p.style_id === 'string' && p.style_id.trim()) ||
+    (typeof p.product?.styleId === 'string' && p.product.styleId.trim()) ||
+    null
+  );
+}
+
+function getPurchaseCost(p: PurchaseCandidate): number | null {
+  const totalAmount =
+    (typeof p.totalAmount === 'number' ? p.totalAmount : parseMoney(p.totalAmount)) ??
+    null;
+  if (typeof totalAmount === 'number' && Number.isFinite(totalAmount) && totalAmount > 0) return totalAmount;
+
+  const purchasePrice =
+    (typeof p.purchasePrice === 'number' ? p.purchasePrice : parseMoney(p.purchasePrice)) ??
+    null;
+  if (typeof purchasePrice === 'number' && Number.isFinite(purchasePrice) && purchasePrice > 0) return purchasePrice;
+
+  const priceFromString = parseMoney(p.price);
+  if (typeof priceFromString === 'number' && Number.isFinite(priceFromString) && priceFromString > 0) return priceFromString;
+
+  return null;
+}
+
+function computeFeeAmount(salePrice: number, totalPayout: number): number {
+  const fee = salePrice - totalPayout;
+  return Number.isFinite(fee) ? Math.max(0, fee) : 0;
+}
+
+function getSaleListingId(order: any): string | null {
+  const candidates: unknown[] = [
+    order?.listingId,
+    order?.listingID,
+    order?.sellerListingId,
+    order?.sellerListingID,
+    order?.saleData?.listingId,
+    order?.saleData?.listingID,
+    order?.saleData?.listing?.id,
+    order?.saleData?.listing?.listingId,
+    order?.saleData?.sellerListingId,
+    order?.saleData?.sellerListingID,
+    // Some payloads may carry ask/bid ids; capture them as a last resort.
+    order?.askId,
+    order?.saleData?.askId
+  ];
+
+  for (const v of candidates) {
+    if (typeof v === 'string' && v.trim()) return v.trim();
+    if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  }
+  return null;
+}
+
+function purchaseKey(styleId: string, size: string): string {
+  return `${styleId}::${normalizeSize(size)}`;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,11 +124,58 @@ export async function POST(request: NextRequest) {
       origin: request.headers.get('Origin')
     });
 
-  // Get access token from cookies
-  const accessToken = request.cookies.get('stockx_access_token')?.value;
-  const refreshToken = request.cookies.get('stockx_refresh_token')?.value;
+  // Prefer cookies (browser), but fall back to Firebase-stored tokens (site-password + ngrok / server-side use).
+  let accessToken = request.cookies.get('stockx_access_token')?.value;
+  let refreshToken = request.cookies.get('stockx_refresh_token')?.value;
+
   // Use CLIENT_ID as the API key for v2 endpoints
   const apiKey = process.env.STOCKX_CLIENT_ID;
+
+  // If cookies are missing, try Firebase (tokens are saved on OAuth callback and via /api/stockx/sync-tokens)
+  if ((!accessToken || !refreshToken) && userId) {
+    try {
+      const adminDb = getAdminDb();
+      const userDoc = await adminDb.collection('users').doc(String(userId)).get();
+      const userData = userDoc.data() as any;
+
+      accessToken = accessToken || userData?.stockxTokens?.access_token;
+      refreshToken = refreshToken || userData?.stockxTokens?.refresh_token;
+
+      const expiresAt = userData?.stockxTokens?.expires_at;
+      const now = Date.now();
+      const isExpired = typeof expiresAt === 'number' && expiresAt > 0 && expiresAt <= now;
+
+      // If token is expired (or we still don't have an access token), refresh using refresh token.
+      if ((!accessToken || isExpired) && refreshToken) {
+        console.log('🔄 bulk-import-stream: Refreshing StockX access token (Firebase fallback)...', {
+          hadAccessToken: !!accessToken,
+          isExpired
+        });
+        const refreshed = await refreshStockXTokens(refreshToken);
+        if (refreshed.success && refreshed.accessToken) {
+          accessToken = refreshed.accessToken;
+          refreshToken = refreshed.refreshToken || refreshToken;
+
+          const nextExpiresAt = now + 3600 * 1000; // default 1h
+          await adminDb.collection('users').doc(String(userId)).set(
+            {
+              stockxTokens: {
+                access_token: accessToken,
+                refresh_token: refreshToken,
+                expires_at: nextExpiresAt,
+                updated_at: new Date().toISOString()
+              }
+            },
+            { merge: true }
+          );
+        }
+      }
+    } catch (e: any) {
+      console.warn('⚠️ bulk-import-stream: failed to load/refresh tokens from Firebase (will rely on cookies):', {
+        error: e?.message || String(e)
+      });
+    }
+  }
 
   console.log('🔐 Authentication check:', {
     hasAccessToken: !!accessToken,
@@ -506,6 +659,7 @@ function processSalesData(orders: any[]): StockXSale[] {
     console.log('🔍 Complete Sale Data:', JSON.stringify({
       // Basic info
       orderNumber: order.orderNumber || order.id,
+      listingId: getSaleListingId(order),
       
       // Full saleData object
       saleData: order.saleData,
@@ -534,6 +688,7 @@ function processSalesData(orders: any[]): StockXSale[] {
       orderNumber: order.orderNumber || order.id,
       orderType,
       status: mapStatus(order.status),
+      listingId: getSaleListingId(order) || undefined,
       product: {
         productId: order.product?.id || order.productId || '',
         productName: order.product?.productName || order.product?.name || order.productName || 'Unknown Product',
@@ -711,12 +866,74 @@ async function saveSalesToStockxCollection(sales: StockXSale[], userId: string, 
 }
 
 async function saveSalesToMainCollection(sales: StockXSale[], userId: string, sendUpdate: Function) {
-  const existingSales = await getAdminDocuments(COLLECTIONS.SALES);
+  // IMPORTANT:
+  // The dashboard Sales UI and /api/sales/* endpoints read from `user_sales`.
+  // This importer previously wrote into `sales`, which caused imported StockX sales to not appear.
+  const MAIN_SALES_COLLECTION = 'user_sales';
+  const existingSales = await getAdminDocuments(MAIN_SALES_COLLECTION as any);
   const userSalesMap = new Map(
     existingSales
       .filter((sale: any) => sale.userId === userId)
       .map((sale: any) => [sale.orderNumber, sale])
   );
+
+  // Load purchases once and build an index for auto-linking (FIFO) by styleId + size.
+  const allPurchasesRaw = (await getAdminDocuments(COLLECTIONS.PURCHASES)) as PurchaseCandidate[];
+  const userPurchases = allPurchasesRaw.filter((p: any) => p?.userId === userId);
+
+  const purchaseIndex = new Map<string, PurchaseCandidate[]>();
+  const purchaseByStockxListingId = new Map<string, PurchaseCandidate>();
+  const usedPurchaseIds = new Set<string>();
+
+  for (const p of userPurchases) {
+    const pid = String((p as any)?.id || '');
+    if (!pid) continue;
+
+    // Skip already-linked purchases (one purchase unit should only be used once)
+    if (p.linkedSaleOrderNumber || p.linkedSaleId) {
+      usedPurchaseIds.add(pid);
+      continue;
+    }
+
+    const styleId = getPurchaseStyleId(p);
+    const size = normalizeSize(p.size ?? p.product?.size);
+    if (!styleId || !size) continue;
+
+    const stockxListingId = typeof (p as any)?.stockxListingId === 'string' ? String((p as any).stockxListingId).trim() : '';
+    if (stockxListingId && !purchaseByStockxListingId.has(stockxListingId)) {
+      purchaseByStockxListingId.set(stockxListingId, { ...p, id: pid });
+    }
+
+    const dateMs =
+      parseDateMs(p.purchaseDate) ??
+      parseDateMs(p.purchase_date) ??
+      parseDateMs(p.emailDate) ??
+      parseDateMs(p.email_date) ??
+      parseDateMs(p.createdAt) ??
+      null;
+    p._dateMs = dateMs;
+
+    const key = purchaseKey(styleId, size);
+    const arr = purchaseIndex.get(key) || [];
+    arr.push({ ...p, id: pid });
+    purchaseIndex.set(key, arr);
+  }
+
+  // Sort FIFO: earliest purchase first; unknown dates go last.
+  // Tie-breaker: if same day, use createdAt timestamp to keep ordering deterministic.
+  for (const [key, arr] of purchaseIndex.entries()) {
+    arr.sort((a, b) => {
+      const aMs = typeof a._dateMs === 'number' ? a._dateMs : Number.POSITIVE_INFINITY;
+      const bMs = typeof b._dateMs === 'number' ? b._dateMs : Number.POSITIVE_INFINITY;
+
+      if (aMs !== bMs) return aMs - bMs;
+
+      const aCreatedMs = parseDateMs(a.createdAt) ?? Number.POSITIVE_INFINITY;
+      const bCreatedMs = parseDateMs(b.createdAt) ?? Number.POSITIVE_INFINITY;
+      return aCreatedMs - bCreatedMs;
+    });
+    purchaseIndex.set(key, arr);
+  }
 
   let savedCount = 0;
   let updatedCount = 0;
@@ -735,6 +952,62 @@ async function saveSalesToMainCollection(sales: StockXSale[], userId: string, se
 
     for (const sale of batch) {
       const existingSale = userSalesMap.get(sale.orderNumber);
+
+      // If this sale already has a linked purchase, preserve it (idempotent imports).
+      const existingLinkedPurchaseId =
+        (existingSale && (existingSale.linkedPurchaseId || existingSale.matchedPurchaseId)) || null;
+
+      // Prefer exact unit-level linking if StockX provides a listingId and the user assigned that listing to a purchase unit.
+      const saleListingId = (sale as any)?.listingId ? String((sale as any).listingId) : '';
+
+      // Auto-link purchase (FIFO) by styleId + size, only if we have a styleId.
+      const saleStyleId = (sale.product.styleId || sale.product.productId || '').toString();
+      const saleSize = normalizeSize(sale.variant.size);
+      const saleCreatedAtMs = parseDateMs(sale.createdAt) ?? parseDateMs(sale.updatedAt) ?? null;
+
+      let linkedPurchase: PurchaseCandidate | null = null;
+      let linkedPurchaseCost: number | null = null;
+
+      if (!existingLinkedPurchaseId && saleListingId) {
+        const candidate = purchaseByStockxListingId.get(saleListingId) || null;
+        const pid = candidate ? String(candidate.id || '') : '';
+        if (candidate && pid && !usedPurchaseIds.has(pid)) {
+          linkedPurchase = candidate;
+          linkedPurchaseCost = getPurchaseCost(candidate);
+          usedPurchaseIds.add(pid);
+        }
+      }
+
+      if (!existingLinkedPurchaseId && !linkedPurchase && saleStyleId && saleSize) {
+        const key = purchaseKey(saleStyleId, saleSize);
+        const candidates = purchaseIndex.get(key) || [];
+
+        // Choose the first un-used purchase whose date is <= sale date (or has unknown date).
+        for (const cand of candidates) {
+          const pid = String(cand.id || '');
+          if (!pid || usedPurchaseIds.has(pid)) continue;
+
+          // If we know both dates, don't allow "purchase after sale".
+          if (
+            typeof saleCreatedAtMs === 'number' &&
+            typeof cand._dateMs === 'number' &&
+            cand._dateMs > saleCreatedAtMs
+          ) {
+            continue;
+          }
+
+          linkedPurchase = cand;
+          linkedPurchaseCost = getPurchaseCost(cand);
+          usedPurchaseIds.add(pid);
+          break;
+        }
+      }
+
+      const feesAmount = computeFeeAmount(sale.pricing.salePrice, sale.pricing.totalPayout);
+      const purchasePrice = existingLinkedPurchaseId
+        ? (Number(existingSale?.purchasePrice) || 0)
+        : (linkedPurchaseCost || 0);
+      const profit = sale.pricing.salePrice - feesAmount - purchasePrice;
       
       const mainSaleData = {
         userId: userId,
@@ -743,20 +1016,28 @@ async function saveSalesToMainCollection(sales: StockXSale[], userId: string, se
         size: sale.variant.size,
         orderNumber: sale.orderNumber,
         salePrice: sale.pricing.salePrice,
-        purchasePrice: 0,
-        fees: sale.pricing.sellerFees,
-        profit: sale.pricing.totalPayout,
+        purchasePrice: Number.isFinite(purchasePrice) ? purchasePrice : 0,
+        fees: feesAmount,
+        payout: sale.pricing.totalPayout,
+        profit: Number.isFinite(profit) ? profit : 0,
         date: sale.createdAt,
         platform: 'stockx',
         market: 'StockX',
         status: sale.status === 'PAYOUT_COMPLETED' ? 'completed' : 'pending',
         imageUrl: sale.product.imageUrl || '',
         source: 'stockx_bulk_import_stream',
+        styleId: saleStyleId || null,
+        listingId: saleListingId || null,
+        linkedPurchaseId: existingLinkedPurchaseId || (linkedPurchase ? String(linkedPurchase.id) : null),
+        linkedPurchaseOrderNumber: existingLinkedPurchaseId
+          ? (existingSale?.linkedPurchaseOrderNumber || null)
+          : (linkedPurchase?.orderNumber ? String(linkedPurchase.orderNumber) : null),
         stockxData: {
           orderType: sale.orderType,
           productId: sale.product.productId,
           variantId: sale.variant.variantId,
           totalPayout: sale.pricing.totalPayout,
+          listingId: saleListingId || null,
           originalStatus: sale.status
         }
       };
@@ -764,7 +1045,7 @@ async function saveSalesToMainCollection(sales: StockXSale[], userId: string, se
       if (existingSale) {
         // Always update existing sales to ensure we have the latest data
         batchPromises.push(
-          updateAdminDocument(COLLECTIONS.SALES, existingSale.id, {
+          updateAdminDocument(MAIN_SALES_COLLECTION as any, existingSale.id, {
             ...mainSaleData,
             updatedAt: new Date().toISOString()
           }).then(() => {
@@ -776,13 +1057,31 @@ async function saveSalesToMainCollection(sales: StockXSale[], userId: string, se
       } else {
         // Add new sale
         batchPromises.push(
-          addAdminDocument(COLLECTIONS.SALES, {
+          addAdminDocument(MAIN_SALES_COLLECTION as any, {
             ...mainSaleData,
             createdAt: new Date().toISOString()
           }).then((docId) => {
             savedCount++;
             batchSavedIds.push(docId);
             console.log(`✨ Added new sale: ${docId} (${mainSaleData.product})`);
+          })
+        );
+      }
+
+      // Persist purchase → sale linkage so we don't reuse the same purchase unit twice.
+      // Best-effort: failures here shouldn't break the import.
+      if (!existingLinkedPurchaseId && linkedPurchase && linkedPurchase.id) {
+        batchPromises.push(
+          updateAdminDocument(COLLECTIONS.PURCHASES, String(linkedPurchase.id), {
+            linkedSaleOrderNumber: sale.orderNumber,
+            linkedSalePlatform: 'stockx',
+            linkedAt: new Date().toISOString()
+          }).catch((e: any) => {
+            console.warn('⚠️ Failed to persist purchase linkage (non-fatal):', {
+              purchaseId: String(linkedPurchase?.id),
+              saleOrderNumber: sale.orderNumber,
+              error: e?.message || String(e)
+            });
           })
         );
       }
