@@ -1604,6 +1604,18 @@ export default function TestStockXOrders() {
     if (useCache) {
       const cached = readCache(cacheKey, 10 * 60 * 1000);
       if (cached?.orders && Array.isArray(cached.orders)) {
+        // Avoid "sticky empty" caches: if the cached result is empty, only trust it for a short time,
+        // otherwise we might hide newly-created sales (especially for "Today") for up to 10 minutes.
+        const cachedAgeMs = Date.now() - Number(cached.ts || 0);
+        const emptyTtlMs = 60 * 1000; // 60s
+        const isEmpty = cached.orders.length === 0;
+        if (isEmpty && cachedAgeMs > emptyTtlMs) {
+          appendLog('info', 'Cache hit was empty; bypassing cache to check for new orders', {
+            cachedAgeSeconds: Math.round(cachedAgeMs / 1000),
+            emptyTtlSeconds: Math.round(emptyTtlMs / 1000),
+            key: cacheKey,
+          });
+        } else {
         setOrders(cached.orders);
         appendLog('info', 'Using cached results (Fetch for time period)', {
           cachedAgeSeconds: Math.round((Date.now() - Number(cached.ts || 0)) / 1000),
@@ -1611,6 +1623,7 @@ export default function TestStockXOrders() {
           debug: cached.debug,
         });
         return;
+        }
       }
     }
 
@@ -1909,6 +1922,18 @@ export default function TestStockXOrders() {
     if (useCache) {
       const cached = readCache(cacheKey, 10 * 60 * 1000);
       if (cached?.orders && Array.isArray(cached.orders)) {
+        // Avoid "sticky empty" caches: if the cached result is empty, only trust it for a short time,
+        // otherwise we might hide newly-created sales (especially for "Today") for up to 10 minutes.
+        const cachedAgeMs = Date.now() - Number(cached.ts || 0);
+        const emptyTtlMs = 60 * 1000; // 60s
+        const isEmpty = cached.orders.length === 0;
+        if (isEmpty && cachedAgeMs > emptyTtlMs) {
+          appendLog('info', 'Cache hit was empty; bypassing cache to check for new orders', {
+            cachedAgeSeconds: Math.round(cachedAgeMs / 1000),
+            emptyTtlSeconds: Math.round(emptyTtlMs / 1000),
+            key: cacheKey,
+          });
+        } else {
         setOrders(cached.orders);
         appendLog('info', 'Using cached results (Fetch ALL)', {
           cachedAgeSeconds: Math.round((Date.now() - Number(cached.ts || 0)) / 1000),
@@ -1916,6 +1941,7 @@ export default function TestStockXOrders() {
           debug: cached.debug,
         });
         return;
+        }
       }
     }
 
