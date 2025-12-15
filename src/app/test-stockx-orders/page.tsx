@@ -163,9 +163,9 @@ export default function TestStockXOrders() {
     return `${y}-${m}-${day}`;
   }, []);
   // IMPORTANT: StockX /selling/orders/history only accepts HistoricalOrderStatus:
-  // [AUTHFAILED, DIDNOTSHIP, CANCELED, COMPLETED, RETURNED]
+  // NOTE: We've also observed payout-complete variants in real data (and we already treat them as "successful").
   const HISTORICAL_ORDER_STATUSES = useMemo(
-    () => ['AUTHFAILED', 'DIDNOTSHIP', 'CANCELED', 'COMPLETED', 'RETURNED'],
+    () => ['AUTHFAILED', 'DIDNOTSHIP', 'CANCELED', 'COMPLETED', 'PAYOUTCOMPLETED', 'PAYOUT_COMPLETED', 'RETURNED'],
     []
   );
 
@@ -1659,7 +1659,12 @@ export default function TestStockXOrders() {
         if (td) qp.set('toDate', td);
         if (st) qp.set('orderStatus', st);
 
-        appendLog('info', 'Requesting history page', { pageNumber, pageSize, orderStatus: st || '(all)' });
+        appendLog('info', 'Requesting history page', {
+          pageNumber,
+          pageSize,
+          orderStatus: st || '(all)',
+          apiFilters: { fromDate: qp.get('fromDate'), toDate: qp.get('toDate') },
+        });
         apiCalls.historyRequests += 1;
         const res = await fetch(`/api/stockx/orders/history?${qp.toString()}`);
         const json = await res.json().catch(() => ({}));
@@ -1678,6 +1683,16 @@ export default function TestStockXOrders() {
             appendLog('warn', 'Auth required for orders history', { status: res.status, body: json });
             showToast('warning', formatFetchErrorToast('Order history', res.status, json));
             return;
+          }
+          // If StockX rejects a status value, treat it as "no rows" and keep going (useful when their enum changes).
+          if (res.status === 400) {
+            appendLog('warn', 'History status rejected by API (skipping)', {
+              orderStatus: st || '(all)',
+              status: res.status,
+              apiFilters: { fromDate: qp.get('fromDate'), toDate: qp.get('toDate') },
+              body: json,
+            });
+            continue;
           }
           showToast('error', formatFetchErrorToast('Order history', res.status, json));
           throw new Error(json?.error || json?.details || `Request failed (${res.status})`);
@@ -1748,8 +1763,9 @@ export default function TestStockXOrders() {
         const qp = new URLSearchParams();
         qp.set('pageNumber', '1');
         qp.set('pageSize', '100');
-        qp.set('includeCatalog', '1');
-        qp.set('includeDetails', '1');
+        // Keep this fast: active endpoint can be slow if we also fetch per-order payout details.
+        qp.set('includeCatalog', '0');
+        qp.set('includeDetails', '0');
         apiCalls.activeRequests += 1;
         const aRes = await fetch(`/api/stockx/orders/active?${qp.toString()}`);
         const aJson = await aRes.json().catch(() => ({}));
@@ -1973,11 +1989,30 @@ export default function TestStockXOrders() {
               showToast('warning', formatFetchErrorToast('Fetch ALL', res.status, json));
               return;
             }
+            // If StockX rejects a status value, treat it as "no rows" and keep going (useful when their enum changes).
+            if (res.status === 400) {
+              appendLog('warn', 'History status rejected by API (skipping)', {
+                orderStatus: st || '(all)',
+                pageNumber: p,
+                apiFilters: { fromDate: qp.get('fromDate'), toDate: qp.get('toDate') },
+                body: json,
+              });
+              break;
+            }
             showToast('error', formatFetchErrorToast('Fetch ALL', res.status, json));
             throw new Error(json?.error || json?.details || `Request failed (${res.status})`);
           }
 
           const pageRows: OrderRow[] = Array.isArray(json?.data) ? json.data : [];
+          if (p === 1 && pageRows.length === 0) {
+            appendLog('info', 'Fetch ALL page response (0 rows)', {
+              orderStatus: st || '(all)',
+              pageNumber: p,
+              apiFilters: { fromDate: qp.get('fromDate'), toDate: qp.get('toDate') },
+              hasNextPage: Boolean(json?.hasNextPage),
+              upstreamCalls: json?.debug?.upstreamCalls || null,
+            });
+          }
           if (pageRows.length > 0) {
             const sampleDates = pageRows.slice(0, 5).map((r) => rowCreatedIso(r));
             const inRange = pageRows.filter((r) => inSelectedDateRange(rowCreatedIso(r) || undefined)).length;
@@ -2033,6 +2068,7 @@ export default function TestStockXOrders() {
           hasNext = Boolean(json?.hasNextPage) && pageRows.length > 0;
           appendLog('info', `Page ${p} fetched`, {
             orderStatus: st || '(all)',
+            apiFilters: { fromDate: qp.get('fromDate'), toDate: qp.get('toDate') },
             added,
             total: all.length,
             hasNextPage: Boolean(json?.hasNextPage),
@@ -2072,8 +2108,9 @@ export default function TestStockXOrders() {
               const qp = new URLSearchParams();
               qp.set('pageNumber', String(p));
               qp.set('pageSize', String(PAGE_SIZE));
-              qp.set('includeCatalog', '1');
-              qp.set('includeDetails', '1');
+          // Keep this fast: active endpoint can be slow if we also fetch per-order payout details.
+          qp.set('includeCatalog', '0');
+          qp.set('includeDetails', '0');
               if (st) qp.set('orderStatus', st);
               apiCalls.activeRequests += 1;
               let aRes: Response;

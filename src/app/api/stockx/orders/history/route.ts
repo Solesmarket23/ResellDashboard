@@ -334,7 +334,12 @@ export async function GET(request: NextRequest) {
     // Add optional filters
     if (fromDate) queryParams.set('fromDate', fromDate);
     if (toDate) queryParams.set('toDate', toDate);
-    if (orderStatus) queryParams.set('orderStatus', orderStatus);
+    // StockX has historically used different param names in different environments/docs.
+    // Send both to be safe; unknown params are ignored server-side.
+    if (orderStatus) {
+      queryParams.set('orderStatus', orderStatus);
+      queryParams.set('status', orderStatus);
+    }
     if (productId) queryParams.set('productId', productId);
     if (variantId) queryParams.set('variantId', variantId);
     if (inventoryTypes) queryParams.set('inventoryTypes', inventoryTypes);
