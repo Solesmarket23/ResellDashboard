@@ -217,8 +217,10 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
 
         const controller = new AbortController();
         controllerRef.current = controller;
-        // Timeout per batch (backend now processes only 10 emails per batch = ~10-15s)
-        const timeoutDuration = 30000; // 30s timeout per batch (generous for 10 emails)
+        // Timeout per batch:
+        // Backend can take 45–90s on early batches (and longer when scanning older ranges),
+        // so don't abort aggressively or we'll stop before reaching older purchases.
+        const timeoutDuration = 180000; // 3 minutes per batch
         const timeoutId = setTimeout(() => {
           console.warn(`⏱️ Timeout after ${timeoutDuration/1000}s for batch ${batchIndex + 1} - will try next query`);
           controller.abort();
@@ -236,11 +238,14 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
           controllerRef.current = null;
           if (fetchError.name === 'AbortError') {
             console.warn(`⏱️ Batch ${batchIndex + 1} timed out after ${timeoutDuration/1000}s`);
-            // Don't throw error - instead complete with what we have
-            // This ensures purchases collected so far are saved
-            console.log(`📦 Completing sync with ${allCollectedPurchases.length} purchases found before timeout`);
-            hasMore = false;
-            break; // Exit the loop and trigger onSyncComplete
+            // Don't hard-stop the entire sync on a single slow batch.
+            // Instead, advance to the next query slice (older range) and keep going.
+            const nextQ = qIndex + 1;
+            console.warn(`↪️ Skipping to next query after timeout (qIndex ${qIndex} → ${nextQ})`);
+            qIndex = nextQ;
+            pageToken = undefined;
+            batchIndex += 1;
+            continue;
           }
           throw fetchError;
         }

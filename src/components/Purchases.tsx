@@ -27,7 +27,8 @@ import ProductSearch from './ProductSearch';
 const Purchases = () => {
   // Temporary feature flag to disable Historical Sync UI (revert)
   const ENABLE_HISTORICAL_SYNC = false;
-  const [sortBy, setSortBy] = useState('Purchase Date');
+  // NOTE: sortBy should always store the internal column key (e.g. "purchaseDate"), not a label.
+  const [sortBy, setSortBy] = useState('purchaseDate');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [searchQuery, setSearchQuery] = useState('');
   const [itemsPerPage, setItemsPerPage] = useState(25);
@@ -301,32 +302,41 @@ const Purchases = () => {
           bValue = parseFloat(b.price.replace('$', '').replace(',', ''));
           break;
         case 'purchaseDate':
-          // Handle various date formats and edge cases
-          const aDate = a.purchaseDate;
-          const bDate = b.purchaseDate;
-          
-          // Handle special cases (TBD, Unknown, N/A, Invalid Date)
-          const specialCases = ['TBD', 'Unknown', 'N/A', 'Invalid Date', ''];
-          const aIsSpecial = !aDate || specialCases.includes(aDate);
-          const bIsSpecial = !bDate || specialCases.includes(bDate);
-          
-          // Parse actual dates
-          const aParsed = aIsSpecial ? null : new Date(aDate).getTime();
-          const bParsed = bIsSpecial ? null : new Date(bDate).getTime();
-          
-          // Check if parsing failed
-          const aInvalid = aParsed === null || isNaN(aParsed);
-          const bInvalid = bParsed === null || isNaN(bParsed);
-          
-          // Put invalid/special dates at the end
+          // Robust sorting across all pages: use a consistent derived timestamp.
+          // We prefer true purchase date, but fall back to email_date / createdAt / syncedAt when needed.
+          // This guarantees *every* row has a sortable date value.
+          const getDateMs = (p: any): number | null => {
+            const candidates: Array<string | undefined> = [
+              p?.purchaseDate,
+              p?.purchase_date,
+              p?.email_date,
+              p?.emailDate,
+              p?.createdAt,
+              p?.syncedAt,
+              typeof p?.dateAdded === 'string' ? p.dateAdded.replace('\n', ' ') : undefined,
+            ];
+            for (const c of candidates) {
+              if (!c) continue;
+              if (c === 'TBD' || c === 'Unknown' || c === 'N/A' || c === 'Invalid Date') continue;
+              const d = new Date(c);
+              if (!isNaN(d.getTime())) return d.getTime();
+            }
+            return null;
+          };
+
+          const aParsed = getDateMs(a);
+          const bParsed = getDateMs(b);
+
+          const aInvalid = aParsed === null;
+          const bInvalid = bParsed === null;
+
+          // Put invalid dates at the end
           if (aInvalid && bInvalid) {
             aValue = 0;
             bValue = 0;
           } else if (aInvalid) {
-            // a is invalid, should go to end
             return direction === 'asc' ? 1 : -1;
           } else if (bInvalid) {
-            // b is invalid, should go to end
             return direction === 'asc' ? -1 : 1;
           } else {
             aValue = aParsed;
@@ -396,6 +406,11 @@ const Purchases = () => {
     }
     handleSort(column);
   };
+
+  // When the user changes sorting, reset to page 1 so the ordering feels consistent.
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [sortBy, sortDirection]);
 
   // Auto-resize column to fit content
   const calculateOptimalWidth = (columnKey: string, headerText: string): number => {
@@ -1084,7 +1099,7 @@ const Purchases = () => {
         originalPrice: purchase.totalAmount ? `$${purchase.totalAmount.toFixed(2)} + $0.00` : (purchase.price || '$0.00'),
         // Preserve purchase date from consolidation (which should have used order confirmation email date)
         // Consolidation happens BEFORE transformation, so purchaseDate should already be correct
-        purchaseDate: purchase.purchaseDate, // Use consolidated purchaseDate directly - don't override
+        purchaseDate: derivePurchaseDateDisplay(purchase),
         purchase_date: purchase.purchase_date || purchase.purchaseDate, // Preserve for consolidation
         email_date: purchase.email_date, // Preserve for consolidation
         email_subject: purchase.email_subject || purchase.subject, // Preserve for consolidation
@@ -1156,12 +1171,11 @@ const Purchases = () => {
     
     const consolidatedPurchases = consolidatePurchasesByOrderNumber(allPurchases);
     
-    // After consolidation, convert any remaining "TBD" to "Unknown"
-    // This means we never found an order confirmation email for this purchase
+    // After consolidation, we try hard to have a real purchaseDate.
+    // If it still ends up TBD, keep TBD (UI will render it as-is).
     consolidatedPurchases.forEach(purchase => {
       if (purchase.purchaseDate === 'TBD') {
-        console.log(`⚠️ No order confirmation found for ${purchase.orderNumber} - setting purchaseDate to "Unknown"`);
-        purchase.purchaseDate = 'Unknown';
+        console.log(`⚠️ No purchase date found for ${purchase.orderNumber} - leaving purchaseDate as "TBD"`);
       }
     });
     
@@ -1805,9 +1819,8 @@ const Purchases = () => {
           market: cleanedPurchase.merchant || cleanedPurchase.market || 'StockX',
           price: cleanedPurchase.totalAmount ? `$${cleanedPurchase.totalAmount.toFixed(2)}` : (cleanedPurchase.price || '$0.00'),
           originalPrice: cleanedPurchase.totalAmount ? `$${cleanedPurchase.totalAmount.toFixed(2)} + $0.00` : (cleanedPurchase.price || '$0.00'),
-          // Use purchaseDate from consolidation if available, otherwise fall back to createdAt
-          // Consolidation should have set purchaseDate from order confirmation email
-          purchaseDate: cleanedPurchase.purchaseDate || cleanedPurchase.purchase_date || cleanedPurchase.createdAt || new Date().toISOString(),
+          // Ensure every row has a stable purchaseDate display value.
+          purchaseDate: derivePurchaseDateDisplay(cleanedPurchase),
           // Preserve consolidation fields
           purchase_date: cleanedPurchase.purchase_date || cleanedPurchase.purchaseDate,
           email_subject: cleanedPurchase.email_subject || cleanedPurchase.emailSubject,
@@ -2346,6 +2359,28 @@ const Purchases = () => {
       console.error(`❌ Error parsing date: ${dateString}`, error);
       return 'Invalid Date';
     }
+  };
+
+  // Ensure every purchase has a usable display date (and make it deterministic).
+  // This fixes the last ~few rows that can end up without a purchaseDate when emails are missing fields.
+  const derivePurchaseDateDisplay = (purchase: any): string => {
+    const candidates: Array<string | undefined> = [
+      purchase?.purchaseDate,
+      purchase?.purchase_date,
+      purchase?.email_date,
+      purchase?.emailDate,
+      purchase?.createdAt,
+      purchase?.syncedAt,
+      typeof purchase?.dateAdded === 'string' ? purchase.dateAdded.replace('\n', ' ') : undefined,
+    ];
+    for (const c of candidates) {
+      const formatted = formatPurchaseDate(c);
+      if (formatted !== 'Invalid Date' && formatted !== 'N/A' && formatted !== 'TBD' && formatted !== 'Unknown') {
+        return formatted;
+      }
+    }
+    // Last resort: return a stable placeholder instead of empty/unknown.
+    return 'TBD';
   };
 
   const deriveStatusColor = (status: string, explicitColor?: string) => {
@@ -5745,7 +5780,6 @@ const Purchases = () => {
               }}
               onSyncComplete={async (totalPurchases) => {
                 console.log(`🎉 Sync complete! Total: ${totalPurchases} purchases`);
-                setShowGmailBatchedSyncModal(false);
                 // Final reload after sync completes
                 console.log('🔄 Final reload after sync complete...');
                 await loadManualPurchasesFromFirebase();

@@ -219,13 +219,36 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
           }
         }
       } else {
-        // No order confirmation found - set to TBD
-        primaryPurchase.purchaseDate = 'TBD';
-        primaryPurchase.purchase_date = '';
+        // No order confirmation found.
+        // Fallback: use the earliest known email_date/createdAt across all emails for this order.
+        // This is not perfect (it's the earliest email we have), but it's far better than "Unknown" for most users.
+        const earliest = orderPurchases.reduce<Date | null>((minDate, p) => {
+          const d = new Date(p.email_date || p.createdAt || 0);
+          if (isNaN(d.getTime())) return minDate;
+          if (!minDate) return d;
+          return d < minDate ? d : minDate;
+        }, null);
+
+        if (earliest) {
+          primaryPurchase.purchaseDate = earliest.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          });
+          primaryPurchase.purchase_date = earliest.toISOString();
+          // Keep email_date as-is (later we may overwrite with most recent for display)
+        } else {
+          primaryPurchase.purchaseDate = 'TBD';
+          primaryPurchase.purchase_date = '';
+        }
         
         // Only log detailed warning for orders with 10+ duplicates
         if (shouldLogDetails) {
-          console.log(`⚠️ No order confirmation found for ${orderNumber} - set to TBD`);
+          console.log(
+            `⚠️ No order confirmation found for ${orderNumber} - purchaseDate fallback: ${
+              earliest ? primaryPurchase.purchaseDate : 'TBD'
+            }`
+          );
         }
       }
       
@@ -246,6 +269,16 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
           // Only update email_date if we didn't find an order confirmation email
           primaryPurchase.email_date = otherPurchase.email_date;
         }
+      }
+
+      // USER REQUEST / SAFETY: Tracking numbers extracted from emails have proven unreliable.
+      // Clear tracking + carrier for shipped/delivered purchases so we don't show (or persist) incorrect data.
+      const finalStatus = (primaryPurchase.status || primaryPurchase.shipping_status || '').toLowerCase();
+      if (finalStatus === 'shipped' || finalStatus === 'delivered') {
+        primaryPurchase.tracking = '';
+        primaryPurchase.carrier = '';
+        // Also clear common alternate fields if present
+        if ('tracking_number' in primaryPurchase) primaryPurchase.tracking_number = '';
       }
       
       // Add metadata about consolidation

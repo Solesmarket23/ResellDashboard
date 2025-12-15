@@ -5,6 +5,70 @@ import { trackingService } from '@/lib/tracking/trackingService';
 // Simple in-memory storage for manual tracking during testing
 const manualTrackingStorage = new Map<string, any[]>();
 
+function firstNonEmptyString(...vals: any[]): string | undefined {
+  for (const v of vals) {
+    if (typeof v === 'string') {
+      const s = v.trim();
+      if (s) return s;
+    }
+  }
+  return undefined;
+}
+
+function pickProductName(purchase: any): string {
+  return (
+    firstNonEmptyString(
+      purchase?.product?.name,
+      purchase?.product?.productName,
+      purchase?.product?.title,
+      purchase?.productName,
+      purchase?.name,
+      purchase?.title,
+      purchase?.itemName
+    ) || 'Unknown Product'
+  );
+}
+
+function pickBrand(purchase: any): string {
+  return (
+    firstNonEmptyString(
+      purchase?.product?.brand,
+      purchase?.productBrand,
+      purchase?.brand,
+      purchase?.product?.manufacturer
+    ) || 'Unknown Brand'
+  );
+}
+
+function pickSize(purchase: any): string {
+  return (
+    firstNonEmptyString(
+      purchase?.product?.size,
+      purchase?.productSize,
+      purchase?.size
+    ) || 'Unknown Size'
+  );
+}
+
+function pickImage(purchase: any): string | null {
+  return (
+    firstNonEmptyString(
+      purchase?.product?.image,
+      purchase?.productImage,
+      purchase?.image,
+      purchase?.product?.img
+    ) || null
+  );
+}
+
+function sortDeliveriesNewestFirst(deliveries: any[]) {
+  return deliveries.sort((a, b) => {
+    const da = new Date(a?.lastUpdate || 0).getTime();
+    const db = new Date(b?.lastUpdate || 0).getTime();
+    return db - da;
+  });
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -154,26 +218,28 @@ export async function GET(request: NextRequest) {
                            purchase.shipment?.tracking ||
                            purchase.shipment?.trackingNumber;
       
-      const liveTracking = liveTrackingData.find(tracking => 
-        tracking.trackingNumber === trackingNumber
-      );
+      const liveTracking = liveTrackingData.find((tracking) => tracking.trackingNumber === trackingNumber);
+      const hasValidLiveTracking = !!(liveTracking && !liveTracking.error);
 
       return {
         id: purchase.id,
         trackingNumber: trackingNumber,
-        carrier: liveTracking?.carrier || purchase.carrier || 'Unknown',
-        productName: purchase.productName || 'Unknown Product',
-        productBrand: purchase.productBrand || 'Unknown Brand',
-        productSize: purchase.productSize || 'Unknown Size',
-        status: liveTracking?.status || purchase.status || 'unknown',
-        estimatedDelivery: liveTracking?.estimatedDelivery || purchase.estimatedDelivery || 'TBD',
-        actualDelivery: liveTracking?.actualDelivery || purchase.actualDelivery,
-        origin: liveTracking?.origin || purchase.origin || 'Unknown',
-        destination: liveTracking?.destination || purchase.destination || 'Unknown',
-        lastUpdate: liveTracking?.lastUpdate || purchase.lastUpdated || new Date().toISOString(),
-        updates: liveTracking?.updates || [],
+        carrier: (hasValidLiveTracking ? liveTracking?.carrier : undefined) || purchase.carrier || 'Unknown',
+        productName: pickProductName(purchase),
+        productBrand: pickBrand(purchase),
+        productSize: pickSize(purchase),
+        status: (hasValidLiveTracking ? liveTracking?.status : undefined) || (purchase.status || 'unknown'),
+        estimatedDelivery: (hasValidLiveTracking ? liveTracking?.estimatedDelivery : undefined) || purchase.estimatedDelivery || 'TBD',
+        actualDelivery: (hasValidLiveTracking ? liveTracking?.actualDelivery : undefined) || purchase.actualDelivery,
+        origin: (hasValidLiveTracking ? liveTracking?.origin : undefined) || purchase.origin || 'Unknown',
+        destination: (hasValidLiveTracking ? liveTracking?.destination : undefined) || purchase.destination || 'Unknown',
+        lastUpdate:
+          (hasValidLiveTracking ? liveTracking?.lastUpdate : undefined) ||
+          firstNonEmptyString(purchase.updatedAt, purchase.lastUpdated, purchase.createdAt, purchase.purchaseDate) ||
+          '1970-01-01T00:00:00.000Z',
+        updates: (hasValidLiveTracking ? liveTracking?.updates : undefined) || [],
         liveTracking: liveTracking,
-        isLiveTrackingEnabled: true,
+        isLiveTrackingEnabled: hasValidLiveTracking,
         // Additional fields
         orderNumber: purchase.orderNumber,
         purchaseDate: purchase.purchaseDate,
@@ -189,7 +255,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      deliveries: deliveriesWithLiveTracking,
+      deliveries: sortDeliveriesNewestFirst(deliveriesWithLiveTracking),
       count: deliveriesWithLiveTracking.length,
       liveTrackingCount,
       errorCount,
@@ -397,11 +463,12 @@ export async function POST(request: NextRequest) {
                            purchase.shipment?.tracking ||
                            purchase.shipment?.trackingNumber;
       
-      const liveTracking = liveTrackingData.find(lt => lt.trackingNumber === trackingValue);
+      const liveTracking = liveTrackingData.find((lt) => lt.trackingNumber === trackingValue);
+      const hasValidLiveTracking = !!(liveTracking && !liveTracking.error);
       
       // Determine delivery status from live tracking or purchase status
       let deliveryStatus = 'shipped';
-      if (liveTracking) {
+      if (hasValidLiveTracking) {
         deliveryStatus = liveTracking.status;
       } else {
         // Map purchase status to delivery status
@@ -449,7 +516,7 @@ export async function POST(request: NextRequest) {
       if (purchase.manualDeliveryDate) {
         console.log(`📦 Using manual delivery date: ${purchase.manualDeliveryDate} for ${trackingValue}`);
         estimatedDelivery = purchase.manualDeliveryDate;
-      } else if (liveTracking?.estimatedDelivery) {
+      } else if (hasValidLiveTracking && liveTracking?.estimatedDelivery) {
         console.log(`📦 Using live tracking estimated delivery: ${liveTracking.estimatedDelivery} for ${trackingValue}`);
         estimatedDelivery = liveTracking.estimatedDelivery;
       } else if (purchase.estimatedDelivery) {
@@ -468,18 +535,23 @@ export async function POST(request: NextRequest) {
         id: purchase.id || purchase.orderNumber,
         trackingNumber: trackingValue,
         carrier: carrier,
-        productName: purchase.product?.name || purchase.productName || 'Unknown Product',
-        productBrand: purchase.product?.brand || purchase.brand || 'Unknown Brand',
-        productSize: purchase.product?.size || purchase.size || 'Unknown Size',
-        productImage: purchase.product?.image || purchase.productImage || purchase.image || null,
+        productName: pickProductName(purchase),
+        productBrand: pickBrand(purchase),
+        productSize: pickSize(purchase),
+        productImage: pickImage(purchase),
         status: deliveryStatus,
         estimatedDelivery: estimatedDelivery,
         actualDelivery: deliveryStatus === 'delivered' ? estimatedDelivery : undefined,
-        origin: liveTracking?.origin || 'Unknown Origin',
+        origin: (hasValidLiveTracking ? liveTracking?.origin : undefined) || 'Unknown Origin',
         destination: liveTracking?.destination || 'Your Address',
-        lastUpdate: liveTracking?.lastUpdate || purchase.updatedAt || purchase.createdAt || new Date().toISOString(),
-        updates: liveTracking?.updates || [{
-          timestamp: purchase.updatedAt || purchase.createdAt || new Date().toISOString(),
+        lastUpdate:
+          (hasValidLiveTracking ? liveTracking?.lastUpdate : undefined) ||
+          firstNonEmptyString(purchase.updatedAt, purchase.createdAt, purchase.purchaseDate) ||
+          '1970-01-01T00:00:00.000Z',
+        updates: (hasValidLiveTracking ? liveTracking?.updates : undefined) || [{
+          timestamp:
+            firstNonEmptyString(purchase.updatedAt, purchase.createdAt, purchase.purchaseDate) ||
+            '1970-01-01T00:00:00.000Z',
           location: deliveryStatus === 'delivered' ? 'Your Address' : 'In Transit',
           status: deliveryStatus === 'delivered' ? 'Delivered' : 
                  deliveryStatus === 'out_for_delivery' ? 'Out for Delivery' :
@@ -489,15 +561,15 @@ export async function POST(request: NextRequest) {
                       deliveryStatus === 'in_transit' ? 'Package in transit' : 'Package shipped'
         }],
         liveTracking: liveTracking,
-        isLiveTrackingEnabled: !!liveTracking && !liveTracking.error,
+        isLiveTrackingEnabled: hasValidLiveTracking,
         // Additional courier information
-        courierEstimatedDelivery: liveTracking?.courierEstimatedDelivery,
-        afterShipEstimatedDelivery: liveTracking?.afterShipEstimatedDelivery,
-        transitTime: liveTracking?.transitTime,
-        deliveryType: liveTracking?.deliveryType,
-        signatureRequired: liveTracking?.signatureRequired,
-        courierTrackingLink: liveTracking?.courierTrackingLink,
-        onTimeStatus: liveTracking?.onTimeStatus
+        courierEstimatedDelivery: hasValidLiveTracking ? liveTracking?.courierEstimatedDelivery : undefined,
+        afterShipEstimatedDelivery: hasValidLiveTracking ? liveTracking?.afterShipEstimatedDelivery : undefined,
+        transitTime: hasValidLiveTracking ? liveTracking?.transitTime : undefined,
+        deliveryType: hasValidLiveTracking ? liveTracking?.deliveryType : undefined,
+        signatureRequired: hasValidLiveTracking ? liveTracking?.signatureRequired : undefined,
+        courierTrackingLink: hasValidLiveTracking ? liveTracking?.courierTrackingLink : undefined,
+        onTimeStatus: hasValidLiveTracking ? liveTracking?.onTimeStatus : undefined
       };
     });
 
@@ -524,7 +596,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      deliveries: uniqueDeliveries,
+      deliveries: sortDeliveriesNewestFirst(uniqueDeliveries),
       count: uniqueDeliveries.length,
       liveTrackingCount: liveTrackingData.filter(lt => !lt.error).length,
       errorCount: liveTrackingData.filter(lt => lt.error).length,

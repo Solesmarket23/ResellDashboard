@@ -61,8 +61,10 @@ export class SlackNotificationService {
     trackingNumber: string;
     status: string;
     estimatedDelivery: string;
+    carrier?: string;
   }): Promise<void> {
     const statusEmoji = this.getStatusEmoji(delivery.status);
+    const trackingLink = this.formatTrackingLink(delivery.trackingNumber, delivery.carrier);
     
     await this.sendMessage({
       text: `${statusEmoji} Delivery Update: ${delivery.productName}`,
@@ -71,11 +73,29 @@ export class SlackNotificationService {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `${statusEmoji} *Delivery Update*\n\n*Product:* ${delivery.productName}\n*Tracking:* \`${delivery.trackingNumber}\`\n*Status:* ${delivery.status}\n*Estimated:* ${delivery.estimatedDelivery}`
+            text: `${statusEmoji} *Delivery Update*\n\n*Product:* ${delivery.productName}\n*Tracking:* ${trackingLink}\n*Status:* ${delivery.status}\n*Estimated:* ${delivery.estimatedDelivery}`
           }
         }
       ]
     });
+  }
+
+  private buildCarrierTrackingUrl(trackingNumber: string, carrier?: string): string {
+    const tn = encodeURIComponent((trackingNumber || '').trim());
+    const c = (carrier || '').toLowerCase();
+    if (c.includes('fedex')) return `https://www.fedex.com/apps/fedextrack/?tracknumbers=${tn}`;
+    if (c.includes('ups')) return `https://www.ups.com/track?loc=en_US&tracknum=${tn}`;
+    if (c.includes('usps')) return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${tn}`;
+    // Fallback: FedEx-style parameter works for your primary use-case
+    return `https://www.fedex.com/apps/fedextrack/?tracknumbers=${tn}`;
+  }
+
+  private formatTrackingLink(trackingNumber: string, carrier?: string): string {
+    const tn = (trackingNumber || '').trim();
+    if (!tn) return '`(missing)`';
+    const url = this.buildCarrierTrackingUrl(tn, carrier);
+    // Slack mrkdwn link: <url|text>
+    return `<${url}|${tn}>`;
   }
 
   /**
@@ -136,12 +156,13 @@ export class SlackNotificationService {
           const profitEmoji = delivery.estimatedProfit > 0 ? '💰' : '⚠️';
           profitText = `\n  Purchase: $${delivery.purchasePrice.toFixed(2)} | Market: $${delivery.marketPrice.toFixed(2)} | ${profitEmoji} Profit: $${delivery.estimatedProfit.toFixed(2)}`;
         }
+        const trackingLink = this.formatTrackingLink(delivery.trackingNumber, delivery.carrier);
         
         blocks.push({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `• *${delivery.productName}* (${delivery.productBrand})\n  Size: ${delivery.productSize} | ${delivery.carrier}: \`${delivery.trackingNumber}\`${profitText}`
+            text: `• *${delivery.productName}* (${delivery.productBrand})\n  Size: ${delivery.productSize} | ${delivery.carrier}: ${trackingLink}${profitText}`
           }
         });
       });
@@ -173,12 +194,13 @@ export class SlackNotificationService {
           const profitEmoji = delivery.estimatedProfit > 0 ? '💰' : '⚠️';
           profitText = `\n  Purchase: $${delivery.purchasePrice.toFixed(2)} | Market: $${delivery.marketPrice.toFixed(2)} | ${profitEmoji} Profit: $${delivery.estimatedProfit.toFixed(2)}`;
         }
+        const trackingLink = this.formatTrackingLink(delivery.trackingNumber, delivery.carrier);
         
         blocks.push({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `• *${delivery.productName}* (${delivery.productBrand})\n  Size: ${delivery.productSize} | ${delivery.carrier}: \`${delivery.trackingNumber}\`${profitText}`
+            text: `• *${delivery.productName}* (${delivery.productBrand})\n  Size: ${delivery.productSize} | ${delivery.carrier}: ${trackingLink}${profitText}`
           }
         });
       });
@@ -224,12 +246,13 @@ export class SlackNotificationService {
           const profitEmoji = delivery.estimatedProfit > 0 ? '💰' : '⚠️';
           profitText = `\n  Purchase: $${delivery.purchasePrice.toFixed(2)} | Market: $${delivery.marketPrice.toFixed(2)} | ${profitEmoji} Profit: $${delivery.estimatedProfit.toFixed(2)}`;
         }
+        const trackingLink = this.formatTrackingLink(delivery.trackingNumber, delivery.carrier);
         
         blocks.push({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `• *${delivery.productName}* (${delivery.productBrand})\n  Size: ${delivery.productSize} | ${delivery.carrier}: \`${delivery.trackingNumber}\` | ETA: ${etaFormatted}${profitText}`
+            text: `• *${delivery.productName}* (${delivery.productBrand})\n  Size: ${delivery.productSize} | ${delivery.carrier}: ${trackingLink} | ETA: ${etaFormatted}${profitText}`
           }
         });
       });

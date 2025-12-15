@@ -78,8 +78,21 @@ const DeliveriesNew: React.FC = () => {
   const { isAuthenticated: upsOAuthConnected, isLoading: upsOAuthLoading, error: upsOAuthError } = useUPSOAuth();
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [carrierFilter, setCarrierFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('deliveriesStatusFilter');
+      if (saved && typeof saved === 'string') return saved;
+    }
+    // Default for first-time users: focus on active shipments
+    return 'shipped';
+  });
+  const [carrierFilter, setCarrierFilter] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('deliveriesCarrierFilter');
+      if (saved && typeof saved === 'string') return saved;
+    }
+    return 'all';
+  });
   const [selectedDelivery, setSelectedDelivery] = useState<DeliveryItem | null>(null);
   const [viewMode, setViewMode] = useState<'split' | 'table'>(() => {
     // Load saved view mode from localStorage
@@ -503,7 +516,12 @@ const DeliveriesNew: React.FC = () => {
                          delivery.trackingNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          delivery.productBrand.toLowerCase().includes(searchTerm.toLowerCase());
     
-    const matchesStatus = statusFilter === 'all' || delivery.status === statusFilter;
+    const matchesStatus =
+      statusFilter === 'all' ||
+      // "Shipped" is used as an "active shipments" view: include common in-progress states plus unknown.
+      (statusFilter === 'shipped'
+        ? delivery.status !== 'delivered'
+        : delivery.status === statusFilter);
     const matchesCarrier = carrierFilter === 'all' || delivery.carrier === carrierFilter;
     
     return matchesSearch && matchesStatus && matchesCarrier;
@@ -516,6 +534,19 @@ const DeliveriesNew: React.FC = () => {
       console.log(`✅ Saved view mode: ${viewMode}`);
     }
   }, [viewMode]);
+
+  // Persist filters so Deliveries opens to what the user last used
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('deliveriesStatusFilter', statusFilter);
+    }
+  }, [statusFilter]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('deliveriesCarrierFilter', carrierFilter);
+    }
+  }, [carrierFilter]);
 
   // Auto-select first delivery if none selected
   useEffect(() => {

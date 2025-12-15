@@ -16,6 +16,40 @@ function decodeHtmlEntities(input: string): string {
     .replace(/&gt;/g, '>');
 }
 
+/**
+ * Very small quoted-printable decoder for email HTML bodies.
+ * Handles:
+ * - soft line breaks: "=\r\n" or "=\n"
+ * - hex escapes: "=3D" -> "=", etc.
+ *
+ * Note: This is "good enough" for StockX transactional HTML, which is typically
+ * ASCII-heavy with lots of =3D sequences.
+ */
+function decodeQuotedPrintable(input: string): string {
+  if (!input) return input;
+  // Soft line breaks
+  let s = input.replace(/=\r?\n/g, '');
+  // Hex escapes
+  s = s.replace(/=([A-Fa-f0-9]{2})/g, (_m, hex) => {
+    const code = parseInt(hex, 16);
+    return Number.isFinite(code) ? String.fromCharCode(code) : _m;
+  });
+  return s;
+}
+
+function normalizeEmailHtml(input: string): string {
+  if (!input) return input;
+  // If it looks quoted-printable, decode it. (Many "Download Original" payloads are.)
+  const looksQuotedPrintable =
+    /Content-Transfer-Encoding:\s*quoted-printable/i.test(input) ||
+    input.includes('=3D') ||
+    /=[A-Fa-f0-9]{2}/.test(input);
+
+  const qp = looksQuotedPrintable ? decodeQuotedPrintable(input) : input;
+  // Decode HTML entities afterwards (helps with &amp; etc.)
+  return decodeHtmlEntities(qp);
+}
+
 export function detectCarrierFromTrackingNumber(trackingNumber: string): SupportedCarrier {
   const t = trackingNumber.trim();
   if (/^1Z[0-9A-Z]{16}$/i.test(t)) return 'UPS';
@@ -81,7 +115,7 @@ export function extractTrackingFromContent(content: string): ExtractedTracking |
 export function extractStockxTrackOrderUrlFromEmailHtml(html: string): string | null {
   if (!html) return null;
 
-  const normalized = decodeHtmlEntities(html);
+  const normalized = normalizeEmailHtml(html);
 
   // Look for an anchor whose text contains "Track your order" / "Track Order"
   const linkPatterns: RegExp[] = [
@@ -105,7 +139,7 @@ export function extractStockxTrackOrderUrlFromEmailHtml(html: string): string | 
   }
 
   if (!href) return null;
-  href = decodeHtmlEntities(href);
+  href = normalizeEmailHtml(href);
 
   // Unwrap common redirect wrapper that contains the actual URL in `r=...`
   if (href.includes('wizrocketmail')) {
@@ -131,6 +165,47 @@ export function extractStockxTrackOrderUrlFromEmailHtml(html: string): string | 
 
   for (const c of candidates) {
     if (c.includes('stockx.com')) return c;
+  }
+
+  return null;
+}
+
+/**
+ * Extracts the StockX buying-page URL from StockX email HTML.
+ * This is more specific than `extractStockxTrackOrderUrlFromEmailHtml`:
+ * - It returns a `https://stockx.com/buying/<id>/...` URL when present
+ * - It can find it even if the CTA text changes ("Track Your Order", "View Order", etc.)
+ */
+export function extractStockxBuyingUrlFromEmailHtml(html: string): string | null {
+  if (!html) return null;
+  const normalized = normalizeEmailHtml(html);
+
+  const direct = normalized.match(/https?:\/\/(?:www\.)?stockx\.com\/buying\/\d{10,25}[^"'<> \n\r]*/i);
+  if (direct?.[0]) return direct[0];
+
+  // Sometimes the buying URL is URL-encoded inside a wrapper param (e.g. r=https%3A%2F%2Fstockx.com%2Fbuying%2F...)
+  const encoded = normalized.match(/https%3A%2F%2F(?:www\.)?stockx\.com%2Fbuying%2F\d{10,25}[^"'<> \n\r]*/i);
+  if (encoded?.[0]) {
+    try {
+      const decoded = decodeURIComponent(encoded[0]);
+      if (decoded.includes('stockx.com/buying/')) return decoded;
+    } catch {
+      // ignore
+    }
+  }
+
+  // Also try to unwrap wizrocketmail hrefs and look for buying URL inside r=...
+  const wizLinks = normalized.match(/https?:\/\/[^"'<>]*wizrocketmail\.net\/r\?[^"'<>]*/gi) || [];
+  for (const link of wizLinks) {
+    const rParam = link.match(/[?&]r=([^&]+)/i);
+    if (!rParam?.[1]) continue;
+    try {
+      const decoded = decodeURIComponent(rParam[1]);
+      const m = decoded.match(/https?:\/\/(?:www\.)?stockx\.com\/buying\/\d{10,25}[^"'<> \n\r]*/i);
+      if (m?.[0]) return m[0];
+    } catch {
+      // ignore
+    }
   }
 
   return null;

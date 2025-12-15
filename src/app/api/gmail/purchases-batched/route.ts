@@ -6,6 +6,7 @@ import { consolidatePurchasesByOrderNumber } from '../../../../lib/utils/statusP
 import {
   extractTrackingFromContent,
   extractStockxTrackOrderUrlFromEmailHtml,
+  extractStockxBuyingUrlFromEmailHtml,
   resolveTrackingFromTrackOrderUrl,
 } from '@/lib/tracking/stockxTrackingExtraction';
 
@@ -227,7 +228,10 @@ export async function GET(request: NextRequest) {
     // This ensures order confirmation emails and delivery emails are fetched together within each date range
     // Use specific queries for purchase confirmation, shipping, and delivery emails
     // Exclude sales-related emails at the Gmail query level for better performance
-    const baseQuery = 'from:noreply@stockx.com (subject:"Order Confirmed" OR subject:"Xpress Order Confirmed" OR subject:"Order Delivered" OR subject:"Order Verified & Shipped" OR subject:"Refund Issued" OR subject:"A Refund Is On The Way") -subject:"Arrived At StockX" -subject:"Shipped To StockX" -subject:"Ship your"';
+    // IMPORTANT: Don't lock to a single sender like noreply@stockx.com; StockX uses multiple sender addresses.
+    // Using from:stockx.com reliably captures any @stockx.com sender while we still restrict by subject keywords.
+    const baseQuery =
+      'from:stockx.com (subject:"Order Confirmed" OR subject:"Xpress Order Confirmed" OR subject:"Order Confirmation" OR subject:"Purchase Confirmed" OR subject:"Order Delivered" OR subject:"Order Verified & Shipped" OR subject:"Order Shipped" OR subject:"Refund Issued" OR subject:"A Refund Is On The Way") -subject:"Arrived At StockX" -subject:"Shipped To StockX" -subject:"Ship your"';
     
     // Replace all queries with date-based queries (most recent first)
     // Split into smaller date ranges to handle large volumes and avoid timeouts
@@ -292,18 +296,24 @@ export async function GET(request: NextRequest) {
     console.log(`📦 BATCH ${batchIndex}: Found ${totalFound} total messages (limited to ${maxResults} max, newest first)`);
 
     if (totalFound === 0) {
+      // IMPORTANT: Don't end the entire sync just because this query slice has 0 messages.
+      // The client will advance to the next query range (older emails) when hasMore=true.
+      const hasMoreQueries = qIndex + 1 < queries.length;
       return NextResponse.json({
         purchases: [],
         progress: {
           batchIndex,
-          totalBatches: 1,
+          totalBatches: hasMoreQueries ? batchIndex + 2 : batchIndex + 1,
           currentBatchSize: 0,
           processedInBatch: 0,
           totalProcessed: 0,
           totalFound: 0,
-          hasMore: false
+          hasMore: hasMoreQueries,
+          nextPageToken: undefined,
+          qIndex,
+          totalQueries: queries.length
         },
-        isComplete: true
+        isComplete: !hasMoreQueries
       });
     }
 
@@ -617,7 +627,9 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
         let extracted = null as any;
 
         if (htmlContent) {
-          const trackOrderUrl = extractStockxTrackOrderUrlFromEmailHtml(htmlContent);
+          const trackOrderUrl =
+            extractStockxBuyingUrlFromEmailHtml(htmlContent) ||
+            extractStockxTrackOrderUrlFromEmailHtml(htmlContent);
           if (trackOrderUrl) {
             extracted = await resolveTrackingFromTrackOrderUrl(trackOrderUrl, { timeoutMs: 7000, maxRedirects: 6 });
           }
@@ -670,17 +682,28 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
     
     // Format purchase date - CRITICAL: Only set for order confirmation emails
     // For delivery/shipped emails, leave it blank - consolidation will fill it in later
-    const isOrderConfirmation = category.status === 'Ordered' && (
-      subjectHeader.toLowerCase().includes('order confirmed') ||
-      subjectHeader.toLowerCase().includes('order confirmation') ||
-      subjectHeader.toLowerCase().includes('xpress order confirmed') ||
-      subjectHeader.toLowerCase().includes('item arrived for verification')
-    );
+    const loweredSubject = subjectHeader.toLowerCase();
+    // Treat as "order confirmation" based on subject alone (categorization can be wrong).
+    const isOrderConfirmation =
+      loweredSubject.includes('order confirmed') ||
+      loweredSubject.includes('order confirmation') ||
+      loweredSubject.includes('xpress order confirmed') ||
+      loweredSubject.includes('purchase confirmed') ||
+      loweredSubject.includes('item arrived for verification');
     
     let purchaseDate: string;
     if (isOrderConfirmation) {
-      // Only set purchase date for order confirmation emails
-      purchaseDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      // Prefer the parser's extracted purchase_date if available; otherwise fall back to the email date.
+      const parsedPurchaseDate = orderInfo.purchase_date ? new Date(orderInfo.purchase_date) : null;
+      if (parsedPurchaseDate && !isNaN(parsedPurchaseDate.getTime())) {
+        purchaseDate = parsedPurchaseDate.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        });
+      } else {
+        purchaseDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      }
       console.log(`📅 ORDER CONFIRMATION EMAIL: ${subjectHeader} - Order: ${orderInfo.order_number} - Purchase Date SET TO: "${purchaseDate}"`);
     } else {
       // For delivery/shipped emails, use a placeholder - consolidation will set the real date

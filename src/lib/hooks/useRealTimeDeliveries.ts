@@ -73,12 +73,14 @@ export function useRealTimeDeliveries({
     try {
       console.log(`🔄 Fetching deliveries for user: ${userId}`);
       
-      // Check if user is using site password auth (localStorage)
+      // Only use the localStorage "site password" flow when the active userId matches siteUserId.
+      // Otherwise, a stale siteUserId from a previous session can cause Deliveries to use the wrong dataset.
       const siteUserId = typeof window !== 'undefined' ? localStorage.getItem('siteUserId') : null;
+      const shouldUseLocalStoragePurchases = !!(siteUserId && siteUserId === userId);
       let url = `/api/deliveries/sync?userId=${encodeURIComponent(userId)}`;
       
       // If site password user, get purchases from localStorage and send to API
-      if (siteUserId && typeof window !== 'undefined') {
+      if (shouldUseLocalStoragePurchases && typeof window !== 'undefined') {
         const storageKey = `purchases_${siteUserId}`;
         const purchasesJson = localStorage.getItem(storageKey);
         
@@ -93,7 +95,7 @@ export function useRealTimeDeliveries({
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                userId: siteUserId,
+                userId,
                 purchases,
                 fromLocalStorage: true
               })
