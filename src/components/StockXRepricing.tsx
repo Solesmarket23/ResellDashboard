@@ -200,7 +200,6 @@ export default function StockXRepricing() {
   const [inventoryGroups, setInventoryGroups] = useState<Map<string, InventoryGroup>>(new Map());
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [copiedStyleIds, setCopiedStyleIds] = useState<Record<string, boolean>>({});
-  const [copiedListingIds, setCopiedListingIds] = useState<Record<string, boolean>>({});
   const [sortColumn, setSortColumn] = useState<'product' | 'size' | 'price' | 'market' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [searchQuery, setSearchQuery] = useState('');
@@ -2539,23 +2538,6 @@ export default function StockXRepricing() {
     });
   };
 
-  const copyListingIdentifiers = (listing: Listing) => {
-    const payload = [
-      `productName: ${listing.productName}`,
-      `styleId: ${listing.styleId || ''}`,
-      `listingId: ${listing.listingId}`,
-      `productId: ${listing.productId}`,
-      `variantId: ${listing.variantId}`,
-      `marketDataUrl: https://api.stockx.com/v2/catalog/products/${listing.productId}/variants/${listing.variantId}/market-data`
-    ].join('\n');
-
-    navigator.clipboard.writeText(payload).then(() => {
-      setCopiedListingIds(prev => ({ ...prev, [listing.listingId]: true }));
-      setTimeout(() => {
-        setCopiedListingIds(prev => ({ ...prev, [listing.listingId]: false }));
-      }, 2000);
-    });
-  };
 
   const PRODUCT_IMAGE_CACHE_KEY = 'stockx_product_image_cache_v1';
   const PRODUCT_IMAGE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -3945,21 +3927,6 @@ export default function StockXRepricing() {
                               </button>
                             )}
 
-                            <button
-                              onClick={() => copyListingIdentifiers(listing)}
-                              className={`p-0.5 rounded transition-all ${
-                                copiedListingIds[listing.listingId]
-                                  ? isNeon ? 'text-green-400' : 'text-green-600'
-                                  : isNeon ? 'text-gray-500 hover:text-cyan-400' : 'text-gray-400 hover:text-gray-600'
-                              }`}
-                              title="Copy listingId + productId + variantId + market-data URL"
-                            >
-                              {copiedListingIds[listing.listingId] ? (
-                                <Check className="w-3 h-3" />
-                              ) : (
-                                <Copy className="w-3 h-3" />
-                              )}
-                            </button>
                           </div>
                           {/* Unit assignment (physical label 1–999) */}
                           <div className="mt-2 flex items-center justify-center gap-2">
