@@ -121,7 +121,13 @@ export async function POST(request: NextRequest) {
               productName: product.productName || product.name || 'Unknown Product',
               category: product.category,
               retailPrice: product.retailPrice,
-              imageUrl: product.imageUrl || product.image
+              imageUrl:
+                (Array.isArray(product.productImages) && product.productImages[0]) ||
+                (Array.isArray(product.product_images) && product.product_images[0]) ||
+                product.imageUrl ||
+                product.image_url ||
+                product.image ||
+                null
             };
             
             successCount++;

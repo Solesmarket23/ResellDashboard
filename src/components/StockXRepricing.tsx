@@ -1268,6 +1268,8 @@ export default function StockXRepricing() {
         
         setListings(finalListings);
         setLastFetchTime(new Date());
+        // If StockX listings payload doesn't include productImages, enrich via catalog endpoint (cached).
+        enrichProductImagesForListings(finalListings);
 
         // Persist listings so the table is not empty after navigation/refresh.
         // Store a minimal payload to reduce localStorage size.
@@ -2554,6 +2556,62 @@ export default function StockXRepricing() {
       }, 2000);
     });
   };
+
+  const PRODUCT_IMAGE_CACHE_KEY = 'stockx_product_image_cache_v1';
+  const PRODUCT_IMAGE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+  const enrichProductImagesForListings = useCallback(async (list: Listing[]) => {
+    try {
+      let cache: Record<string, { imageUrl: string; cachedAt: number }> = {};
+      try {
+        const raw = localStorage.getItem(PRODUCT_IMAGE_CACHE_KEY);
+        if (raw) cache = JSON.parse(raw);
+      } catch {
+        cache = {};
+      }
+
+      const uniqueProductIds = Array.from(new Set(list.map((l) => String(l.productId || '').trim()).filter(Boolean)));
+
+      const missing = uniqueProductIds.filter((pid) => {
+        const c = cache[pid];
+        if (!c?.imageUrl || typeof c.cachedAt !== 'number') return true;
+        return Date.now() - c.cachedAt > PRODUCT_IMAGE_CACHE_TTL_MS;
+      });
+
+      // Bound requests to reduce 429 risk
+      const toFetch = missing.slice(0, 60);
+      if (toFetch.length > 0) {
+        const res = await fetch('/api/stockx/catalog/products', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ productIds: toFetch })
+        });
+        const data = await res.json().catch(() => null);
+        if (res.ok && data?.success && data?.productBrandMap) {
+          for (const pid of Object.keys(data.productBrandMap)) {
+            const img = String(data.productBrandMap[pid]?.imageUrl || '').trim();
+            if (img) cache[pid] = { imageUrl: img, cachedAt: Date.now() };
+          }
+          try {
+            localStorage.setItem(PRODUCT_IMAGE_CACHE_KEY, JSON.stringify(cache));
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      // Apply cache to any listings still missing imageUrl
+      setListings((prev) =>
+        prev.map((l) => {
+          if (l.imageUrl) return l;
+          const c = cache[String(l.productId || '').trim()];
+          return c?.imageUrl ? { ...l, imageUrl: c.imageUrl } : l;
+        })
+      );
+    } catch (e) {
+      console.warn('Failed to enrich product images:', e);
+    }
+  }, []);
 
   const buildStockXProductUrl = (listing: Listing): string | null => {
     // Prefer StockX-provided `urlKey` slug when available (most accurate).
