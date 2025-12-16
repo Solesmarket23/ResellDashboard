@@ -53,7 +53,9 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Make a simple API call to verify the token is still valid
+    // Make a simple API call to verify the token is still valid.
+    // IMPORTANT: treat non-401 upstream failures as "verification failed" (not "logged out"),
+    // otherwise transient 429/5xx issues will make the UI think StockX disconnected.
     try {
       const response = await fetch('https://api.stockx.com/v2/catalog/search?query=test&limit=1', {
         method: 'GET',
@@ -72,6 +74,7 @@ export async function GET(request: NextRequest) {
           message: 'Authentication valid',
           credentialsSource: credentials.source,
           userId: userId || 'anonymous',
+          hasRefreshToken: !!refreshToken,
           token: tokenExpiresAt
             ? (() => {
                 const expiresAt = parseInt(tokenExpiresAt);
@@ -94,19 +97,57 @@ export async function GET(request: NextRequest) {
           cookie: { maxAgeSeconds: cookieMaxAgeSeconds, maxAgeDays: cookieMaxAgeSeconds / 86400 }
         });
       } else {
+        // Upstream returned a non-401 error (common: 429 rate limit, 403 bot protection, 5xx).
+        // The presence of a token cookie means the user is still "connected" from our POV.
+        // We report connected=true but mark verification as failed so the UI can warn.
+        const status = response.status;
+        const isRateLimited = status === 429;
+        const isBlocked = status === 403;
+        const isServerError = status >= 500;
+
         return NextResponse.json({
-          isAuthenticated: false,
-          message: `API error: ${response.status}`,
-          statusCode: response.status,
+          isAuthenticated: true,
+          verified: false,
+          message: isRateLimited
+            ? 'Connected, but StockX verification was rate-limited (429)'
+            : isBlocked
+              ? 'Connected, but StockX verification was blocked (403)'
+              : isServerError
+                ? `Connected, but StockX verification failed (${status})`
+                : `Connected, but StockX verification returned ${status}`,
+          warning: true,
+          upstreamStatusCode: status,
+          needsReauth: false,
+          hasRefreshToken: !!refreshToken,
+          credentialsSource: credentials.source,
+          userId: userId || 'anonymous',
+          token: tokenExpiresAt
+            ? (() => {
+                const expiresAt = parseInt(tokenExpiresAt);
+                return {
+                  expiresAtMs: Number.isFinite(expiresAt) ? expiresAt : undefined,
+                  expiresAtIso: Number.isFinite(expiresAt) ? new Date(expiresAt).toISOString() : undefined,
+                  secondsRemaining: Number.isFinite(expiresAt) ? Math.max(0, Math.floor((expiresAt - Date.now()) / 1000)) : undefined
+                };
+              })()
+            : undefined,
           cookie: { maxAgeSeconds: cookieMaxAgeSeconds, maxAgeDays: cookieMaxAgeSeconds / 86400 }
         });
       }
     } catch (error) {
       console.error('Auth verification error:', error);
       return NextResponse.json({
-        isAuthenticated: false,
-        message: 'Failed to verify authentication',
+        // Network / transient errors verifying with StockX should not flip the UI to "disconnected"
+        // when we still have a token cookie.
+        isAuthenticated: true,
+        verified: false,
+        warning: true,
+        message: 'Connected, but failed to verify StockX authentication (network/transient error)',
         error: error instanceof Error ? error.message : 'Unknown error',
+        needsReauth: false,
+        hasRefreshToken: !!refreshToken,
+        credentialsSource: credentials.source,
+        userId: userId || 'anonymous',
         cookie: { maxAgeSeconds: cookieMaxAgeSeconds, maxAgeDays: cookieMaxAgeSeconds / 86400 }
       });
     }

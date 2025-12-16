@@ -204,16 +204,20 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
     const checkAuth = async () => {
       try {
         // First check if we have cookies
-        const response = await fetch('/api/stockx/auth/status');
+        const response = await fetch('/api/stockx/auth/status', { credentials: 'include' });
         if (response.ok) {
           const data = await response.json();
           setIsAuthenticated(data.isAuthenticated);
         } else {
-          setIsAuthenticated(false);
+          // Treat transient failures as "unknown" rather than forcing disconnect.
+          // Our auth/status route should almost always return 200; this is a safety net.
+          if (response.status === 401 || response.status === 403) {
+            setIsAuthenticated(false);
+          }
         }
       } catch (error) {
         console.error('Auth check error:', error);
-        setIsAuthenticated(false);
+        // Keep previous auth state on transient network failures.
       }
     };
     
@@ -284,7 +288,16 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
           } else if (response.status === 401) {
             console.error('❌ Authentication error - please re-authenticate with StockX');
             sendNotification('StockX Authentication', 'Authentication error - please reconnect to StockX');
-            setIsAuthenticated(false);
+            // Confirm with auth/status before flipping UI to disconnected; upstream may transiently fail.
+            try {
+              const statusRes = await fetch('/api/stockx/auth/status', { credentials: 'include' });
+              const statusData = statusRes.ok ? await statusRes.json() : null;
+              if (statusData && statusData.isAuthenticated === false) {
+                setIsAuthenticated(false);
+              }
+            } catch {
+              // Ignore; don't aggressively disconnect on transient errors.
+            }
           }
         } catch (error) {
           console.error('❌ Error checking prices:', error);

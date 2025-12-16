@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { refreshStockXTokens, setStockXTokenCookies } from '@/lib/stockx/tokenRefresh';
+import { getStockXApiCredentials, getUserIdFromRequest, validateApiCredentials } from '@/lib/utils/userApiKeyHelper';
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,6 +21,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Product ID and Variant ID are required' }, { status: 400 });
     }
 
+    const userId = getUserIdFromRequest(request);
+    const credentials = await getStockXApiCredentials(userId);
+    const validation = validateApiCredentials(credentials);
+    if (!validation.isValid) {
+      return NextResponse.json({ error: 'API credentials not configured', needsApiKeys: true }, { status: 400 });
+    }
+
     // Fetch market data using catalog search
     let searchResponse = await fetch(
       `https://api.stockx.com/v2/catalog/search`,
@@ -27,7 +35,10 @@ export async function GET(request: NextRequest) {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
+          'X-API-Key': credentials.apiKey,
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'FlipFlow/1.0'
         },
         body: JSON.stringify({
           query: {
@@ -59,7 +70,10 @@ export async function GET(request: NextRequest) {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${refreshResult.accessToken}`,
+              'X-API-Key': credentials.apiKey,
               'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'User-Agent': 'FlipFlow/1.0'
             },
             body: JSON.stringify({
               query: {
