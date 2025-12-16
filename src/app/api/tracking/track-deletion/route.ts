@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { addDocumentAdmin } from '../../../../lib/firebase/firebaseServerUtils';
+import { addDocument } from '../../../../lib/firebase/firebaseServerUtils';
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
       status: 'deleted'
     };
     
-    await addDocumentAdmin('tracking_deletions', deletionRecord);
+    await addDocument('tracking_deletions', deletionRecord);
     
     console.log(`✅ Deletion recorded for tracking: ${trackingNumber}`);
     

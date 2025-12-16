@@ -384,6 +384,9 @@ export async function GET(request: NextRequest) {
         productId: productId,
         variantId: variantId,
         productName: listing.productName || listing.product?.productName || listing.product?.title || listing.product?.name || 'Unknown Product',
+        // StockX doesn't provide a full URL, but many catalog objects include a stable `urlKey` slug.
+        // We expose it so the UI can deep-link to StockX for this product (and size).
+        urlKey: listing.product?.urlKey || listing.product?.url_key || listing.urlKey || listing.url_key || null,
         size: listing.size || listing.variant?.size || listing.variant?.variantValue || listing.variantValue || 'Unknown Size',
         currentPrice: parseFloat(listing.amount || listing.price || '0'),
         originalPrice: parseFloat(listing.amount || listing.price || '0'),

@@ -64,6 +64,7 @@ const StockXPriceMonitor: React.FC = () => {
     notifications,
     isAuthenticated,
     unreadAlertCount,
+    refreshMonitoredProducts,
     addMonitoredProduct,
     removeMonitoredProduct,
     updateAllProductThresholds,
@@ -321,7 +322,11 @@ const StockXPriceMonitor: React.FC = () => {
       alerts: []
     };
 
-    addMonitoredProduct(newMonitoredProduct);
+    // Ensure it actually saves (site-password users use the server API via context)
+    Promise.resolve(addMonitoredProduct(newMonitoredProduct)).catch((e) => {
+      console.error('Failed to add monitored product:', e);
+      alert('Failed to add product to monitor. Please try again.');
+    });
     setShowAddForm(false);
     setSearchResults([]);
     setNewProduct({
@@ -580,26 +585,34 @@ const StockXPriceMonitor: React.FC = () => {
         productName: ''
       });
 
-      for (let i = 0; i < allProductsToMonitor.length; i++) {
-        addMonitoredProduct(allProductsToMonitor[i]);
-        setBulkImportProgress({
-          current: i + 1,
-          total: allProductsToMonitor.length,
-          phase: 'Finalizing import...',
-          productName: allProductsToMonitor[i].title
-        });
+      // Bulk upsert via server API (fast + works for site-password users)
+      // This avoids calling addMonitoredProduct 100s of times and accidentally no-op'ing without Firebase user.uid.
+      setBulkImportProgress(prev => ({
+        ...prev,
+        phase: 'Saving monitored products...',
+        productName: ''
+      }));
 
-        // Small delay every 20 products
-        if ((i + 1) % 20 === 0) {
-          await new Promise(resolve => setTimeout(resolve, 50));
-        }
+      const saveRes = await fetch('/api/stockx/price-monitor/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ products: allProductsToMonitor })
+      });
+      if (!saveRes.ok) {
+        const txt = await saveRes.text().catch(() => '');
+        throw new Error(`Failed to save monitored products: ${saveRes.status} ${txt}`);
       }
+      const saveJson = await saveRes.json().catch(() => null);
+      const upsertedCount = Number(saveJson?.upserted) || allProductsToMonitor.length;
+
+      // Refresh UI list
+      await refreshMonitoredProducts();
 
       // Success message
       setBulkImportProgress({
-        current: allProductsToMonitor.length,
-        total: allProductsToMonitor.length,
-        phase: `Successfully added ${allProductsToMonitor.length} items to monitor!`,
+        current: upsertedCount,
+        total: upsertedCount,
+        phase: `Successfully added ${upsertedCount} items to monitor!`,
         productName: ''
       });
 

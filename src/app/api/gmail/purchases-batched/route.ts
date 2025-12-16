@@ -682,7 +682,7 @@ async function parseEmailMessage(emailData: any, config: any, gmail: any) {
     
     // Format purchase date - CRITICAL: Only set for order confirmation emails
     // For delivery/shipped emails, leave it blank - consolidation will fill it in later
-    const loweredSubject = subjectHeader.toLowerCase();
+    // NOTE: loweredSubject is already computed above for filtering/tracking checks.
     // Treat as "order confirmation" based on subject alone (categorization can be wrong).
     const isOrderConfirmation =
       loweredSubject.includes('order confirmed') ||

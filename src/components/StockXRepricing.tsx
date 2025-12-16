@@ -57,6 +57,7 @@ interface Listing {
   productId: string;
   variantId: string;
   productName: string;
+  urlKey?: string | null;
   size: string;
   currentPrice: number;
   originalPrice: number;
@@ -1275,6 +1276,7 @@ export default function StockXRepricing() {
             productId: l.productId,
             variantId: l.variantId,
             productName: l.productName,
+            urlKey: l.urlKey || null,
             size: l.size,
             currentPrice: l.currentPrice,
             originalPrice: l.originalPrice,
@@ -2551,6 +2553,29 @@ export default function StockXRepricing() {
     });
   };
 
+  const buildStockXProductUrl = (listing: Listing): string | null => {
+    // Prefer StockX-provided `urlKey` slug when available (most accurate).
+    const urlKey = (listing.urlKey || '').trim();
+    const base = urlKey
+      ? `https://stockx.com/${encodeURIComponent(urlKey)}`
+      : (() => {
+          const name = (listing.productName || '').trim();
+          if (!name) return null;
+          let slug = name
+            .toLowerCase()
+            .replace(/[^a-z0-9\s-]/g, '')
+            .replace(/\s+/g, '-')
+            .replace(/-+/g, '-');
+          // Common StockX pattern: Jordans are usually "air-jordan-..."
+          if (slug.startsWith('jordan-')) slug = `air-${slug}`;
+          return `https://stockx.com/${slug}`;
+        })();
+
+    if (!base) return null;
+    const size = (listing.size || '').trim();
+    return size ? `${base}?size=${encodeURIComponent(size)}` : base;
+  };
+
   const resolveUserIdForApi = (): string | null => {
     const siteUserId = typeof window !== 'undefined' ? localStorage.getItem('siteUserId') : null;
     return authUser?.uid || siteUserId || null;
@@ -3787,7 +3812,23 @@ export default function StockXRepricing() {
                       <div className="flex items-center justify-center gap-2">
                         <div className="text-center">
                           <div className={`font-medium text-sm ${isNeon ? 'text-white' : 'text-gray-900'}`}>
-                            {listing.productName}
+                            {(() => {
+                              const href = buildStockXProductUrl(listing);
+                              if (!href) return listing.productName;
+                              return (
+                                <a
+                                  href={href}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className={`inline-flex items-center justify-center gap-1 underline underline-offset-2 ${
+                                    isNeon ? 'decoration-cyan-400/60 hover:text-cyan-300' : 'decoration-blue-500/60 hover:text-blue-700'
+                                  }`}
+                                  title="Open on StockX"
+                                >
+                                  <span>{listing.productName}</span>
+                                </a>
+                              );
+                            })()}
                           </div>
                           <div className={`text-xs flex items-center justify-center gap-1 ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
                             <span>Style code: {listing.styleId || 'N/A'}</span>

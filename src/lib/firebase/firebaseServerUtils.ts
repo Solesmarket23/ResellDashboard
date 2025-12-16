@@ -40,6 +40,23 @@ export const getDocumentsServer = async (collectionName: string, options?: {
   }
 };
 
+export const addDocument = async (collectionName: string, data: any) => {
+  if (!db) {
+    throw new Error("Firebase not initialized");
+  }
+  try {
+    console.log(`➕ Server: Adding document to ${collectionName}`);
+    const ref = await db.collection(collectionName).add(data);
+    return ref;
+  } catch (error) {
+    console.error(`❌ Server: Error adding document to ${collectionName}:`, error);
+    throw error;
+  }
+};
+
+// Backwards-compatible alias used by some older routes
+export const addDocumentAdmin = addDocument;
+
 export const updateDocument = async (collectionName: string, id: string, data: any) => {
   if (!db) {
     throw new Error("Firebase not initialized");
