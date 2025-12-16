@@ -3465,30 +3465,7 @@ export default function StockXRepricing() {
         </div>
       )}
 
-      {/* Notification Settings */}
-      <div className={`rounded-lg p-6 ${
-        isNeon ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-200'
-      }`}>
-        <h3 className={`text-lg font-semibold mb-4 ${
-          isNeon ? 'text-cyan-400' : 'text-gray-900'
-        }`}>
-          Notification Settings
-        </h3>
-        <div>
-          <label className={`block text-sm font-medium mb-1 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Notification Email</label>
-          <input
-              type="email"
-              value={notificationEmail}
-              onChange={(e) => setNotificationEmail(e.target.value)}
-              placeholder="your@email.com"
-              className={`w-full p-2 rounded-md border focus:outline-none focus:ring-2 ${
-                isNeon 
-                  ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50 placeholder-gray-500' 
-                  : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 placeholder-gray-400'
-              }`}
-            />
-        </div>
-      </div>
+      {/* Notification Settings (disabled for now) */}
 
       {/* Listings Selection */}
       <div className={`rounded-lg p-6 ${
