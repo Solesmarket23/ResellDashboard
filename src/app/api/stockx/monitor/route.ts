@@ -3,6 +3,11 @@ import { cookies } from 'next/headers';
 import { refreshStockXTokens, setStockXTokenCookies } from '@/lib/stockx/tokenRefresh';
 import { getStockXApiCredentials, getUserIdFromRequest, validateApiCredentials } from '@/lib/utils/userApiKeyHelper';
 
+function pickNumber(val: any): number | null {
+  const n = typeof val === 'string' ? Number(val) : typeof val === 'number' ? val : NaN;
+  return Number.isFinite(n) ? n : null;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const cookieStore = cookies();
@@ -28,150 +33,71 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'API credentials not configured', needsApiKeys: true }, { status: 400 });
     }
 
-    // Fetch market data using catalog search
-    let searchResponse = await fetch(
-      `https://api.stockx.com/v2/catalog/search`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'X-API-Key': credentials.apiKey,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'User-Agent': 'FlipFlow/1.0'
-        },
-        body: JSON.stringify({
-          query: {
-            bool: {
-              must: [
-                {
-                  term: {
-                    "product_id": productId
-                  }
-                }
-              ]
-            }
-          },
-          size: 1
-        })
+    const marketDataUrl = `https://api.stockx.com/v2/catalog/products/market-data?productId=${encodeURIComponent(
+      productId
+    )}&variantId=${encodeURIComponent(variantId)}`;
+    let mdResponse = await fetch(marketDataUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'X-API-Key': credentials.apiKey,
+        'Accept': 'application/json',
+        'User-Agent': 'FlipFlow/1.0'
       }
-    );
+    });
 
     // Handle token refresh if needed
-    if (searchResponse.status === 401 && refreshToken) {
+    if (mdResponse.status === 401 && refreshToken) {
       console.log('🔄 Token expired, attempting refresh...');
       const refreshResult = await refreshStockXTokens(refreshToken);
       
       if (refreshResult.success && refreshResult.accessToken) {
         // Retry with new token
-        searchResponse = await fetch(
-          `https://api.stockx.com/v2/catalog/search`,
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${refreshResult.accessToken}`,
-              'X-API-Key': credentials.apiKey,
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-              'User-Agent': 'FlipFlow/1.0'
-            },
-            body: JSON.stringify({
-              query: {
-                bool: {
-                  must: [
-                    {
-                      term: {
-                        "product_id": productId
-                      }
-                    }
-                  ]
-                }
-              },
-              size: 1
-            })
+        mdResponse = await fetch(marketDataUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${refreshResult.accessToken}`,
+            'X-API-Key': credentials.apiKey,
+            'Accept': 'application/json',
+            'User-Agent': 'FlipFlow/1.0'
           }
-        );
+        });
 
-        if (searchResponse.ok) {
-          const searchData = await searchResponse.json();
-          
-          if (searchData.hits && searchData.hits.hits && searchData.hits.hits.length > 0) {
-            const product = searchData.hits.hits[0]._source;
-            let variantMarketData = null;
-            
-            if (product.market_data && product.market_data.variants) {
-              variantMarketData = product.market_data.variants.find((variant: any) => variant.id === variantId);
-            }
-            
-            const response = NextResponse.json({
-              success: true,
-              data: {
-                productId,
-                variantId,
-                productInfo: product,
-                marketData: variantMarketData,
-                timestamp: Date.now()
-              }
-            });
-
-            // Update tokens
-            setStockXTokenCookies(response, refreshResult.accessToken, refreshResult.refreshToken);
-            return response;
-          }
-        }
+        const response = NextResponse.json({
+          success: mdResponse.ok,
+          data: mdResponse.ok ? await mdResponse.json() : null,
+          status: mdResponse.status,
+          timestamp: Date.now()
+        });
+        // Update tokens (even if market-data failed after refresh, we still want to persist refreshed cookies)
+        setStockXTokenCookies(response, refreshResult.accessToken, refreshResult.refreshToken);
+        return response;
       } else {
         return NextResponse.json({ error: 'Authentication expired' }, { status: 401 });
       }
     }
 
-    if (!searchResponse.ok) {
-      if (searchResponse.status === 401) {
+    if (!mdResponse.ok) {
+      if (mdResponse.status === 401) {
         return NextResponse.json({ error: 'Authentication expired' }, { status: 401 });
       }
-      throw new Error(`Search failed: ${searchResponse.status}`);
+      throw new Error(`Market data failed: ${mdResponse.status}`);
     }
 
-    const searchData = await searchResponse.json();
-    
-    if (!searchData.hits || !searchData.hits.hits || searchData.hits.hits.length === 0) {
-      return NextResponse.json({ error: 'Product not found' }, { status: 404 });
-    }
-
-    const product = searchData.hits.hits[0]._source;
-    
-    // Find the specific variant's market data
-    let variantMarketData = null;
-    if (product.market_data && product.market_data.variants) {
-      variantMarketData = product.market_data.variants.find((variant: any) => variant.id === variantId);
-    }
-    
-    if (!variantMarketData) {
-      return NextResponse.json({ error: 'Variant not found' }, { status: 404 });
-    }
-
-    // Also fetch basic product info
-    const productResponse = await fetch(
-      `https://api.stockx.com/v2/catalog/products/${productId}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-
-    let productInfo = {};
-    if (productResponse.ok) {
-      productInfo = await productResponse.json();
-    }
+    const raw = await mdResponse.json();
+    const variant = Array.isArray((raw as any)?.variants) ? (raw as any).variants[0] : null;
+    const marketData = {
+      lowestAskAmount: pickNumber(variant?.lowestAskAmount ?? (raw as any)?.lowestAskAmount),
+      highestBidAmount: pickNumber(variant?.highestBidAmount ?? (raw as any)?.highestBidAmount),
+      flexLowestAskAmount: pickNumber(variant?.flexLowestAskAmount ?? (raw as any)?.flexLowestAskAmount)
+    };
 
     return NextResponse.json({
       success: true,
       data: {
         productId,
         variantId,
-        productInfo,
-        marketData: variantMarketData,
+        marketData,
         timestamp: Date.now()
       }
     });
@@ -213,43 +139,28 @@ export async function POST(request: NextRequest) {
     let tokenRefreshed = false;
     let newAccessToken = accessToken;
     let newRefreshToken = refreshToken;
+    const marketDataBaseUrl = 'https://api.stockx.com/v2/catalog/products/market-data';
     
     // Process each product (with rate limiting)
     for (const product of products) {
       try {
         const { productId, variantId } = product;
-        
-        // Fetch market data using catalog search
-        let searchResponse = await fetch(
-          `https://api.stockx.com/v2/catalog/search`,
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${newAccessToken}`,
-              'X-API-Key': credentials.apiKey,
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-              'User-Agent': 'FlipFlow/1.0'
-            },
-            body: JSON.stringify({
-              query: {
-                bool: {
-                  must: [
-                    {
-                      term: {
-                        "product_id": productId
-                      }
-                    }
-                  ]
-                }
-              },
-              size: 1
-            })
+
+        const mdUrl = `${marketDataBaseUrl}?productId=${encodeURIComponent(productId)}&variantId=${encodeURIComponent(
+          variantId
+        )}`;
+        let mdResponse = await fetch(mdUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${newAccessToken}`,
+            'X-API-Key': credentials.apiKey,
+            'Accept': 'application/json',
+            'User-Agent': 'FlipFlow/1.0'
           }
-        );
+        });
 
         // Handle token refresh on first 401
-        if (searchResponse.status === 401 && refreshToken && !tokenRefreshed) {
+        if (mdResponse.status === 401 && refreshToken && !tokenRefreshed) {
           console.log('🔄 Token expired during batch, attempting refresh...');
           const refreshResult = await refreshStockXTokens(refreshToken);
           
@@ -259,76 +170,39 @@ export async function POST(request: NextRequest) {
             newRefreshToken = refreshResult.refreshToken || refreshToken;
             
             // Retry with new token
-            searchResponse = await fetch(
-              `https://api.stockx.com/v2/catalog/search`,
-              {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${newAccessToken}`,
-                  'X-API-Key': credentials.apiKey,
-                  'Content-Type': 'application/json',
-                  'Accept': 'application/json',
-                  'User-Agent': 'FlipFlow/1.0'
-                },
-                body: JSON.stringify({
-                  query: {
-                    bool: {
-                      must: [
-                        {
-                          term: {
-                            "product_id": productId
-                          }
-                        }
-                      ]
-                    }
-                  },
-                  size: 1
-                })
+            mdResponse = await fetch(mdUrl, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${newAccessToken}`,
+                'X-API-Key': credentials.apiKey,
+                'Accept': 'application/json',
+                'User-Agent': 'FlipFlow/1.0'
               }
-            );
+            });
           }
         }
 
-        if (searchResponse.ok) {
-          const searchData = await searchResponse.json();
-          
-          if (searchData.hits && searchData.hits.hits && searchData.hits.hits.length > 0) {
-            const product = searchData.hits.hits[0]._source;
-            let variantMarketData = null;
-            
-            if (product.market_data && product.market_data.variants) {
-              variantMarketData = product.market_data.variants.find((variant: any) => variant.id === variantId);
-            }
-            
-            if (variantMarketData) {
-              results.push({
-                productId,
-                variantId,
-                marketData: variantMarketData,
-                timestamp: Date.now(),
-                success: true
-              });
-            } else {
-              results.push({
-                productId,
-                variantId,
-                error: 'Variant not found',
-                success: false
-              });
-            }
-          } else {
-            results.push({
-              productId,
-              variantId,
-              error: 'Product not found',
-              success: false
-            });
-          }
+        if (mdResponse.ok) {
+          const raw = await mdResponse.json();
+          const variant = Array.isArray((raw as any)?.variants) ? (raw as any).variants[0] : null;
+          const marketData = {
+            lowestAskAmount: pickNumber(variant?.lowestAskAmount ?? (raw as any)?.lowestAskAmount),
+            highestBidAmount: pickNumber(variant?.highestBidAmount ?? (raw as any)?.highestBidAmount),
+            flexLowestAskAmount: pickNumber(variant?.flexLowestAskAmount ?? (raw as any)?.flexLowestAskAmount)
+          };
+
+          results.push({
+            productId,
+            variantId,
+            marketData,
+            timestamp: Date.now(),
+            success: true
+          });
         } else {
           results.push({
             productId,
             variantId,
-            error: `API error: ${searchResponse.status}`,
+            error: `API error: ${mdResponse.status}`,
             success: false
           });
         }
