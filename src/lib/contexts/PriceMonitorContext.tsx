@@ -268,12 +268,15 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
             if (data.success && data.results) {
               data.results.forEach((result: any) => {
                 if (result.success && result.marketData) {
-                  const productId = `${result.productId}-${result.variantId}`;
+                  const pid = String(result.productId || '').trim();
+                  const vid = String(result.variantId || '').trim();
+                  if (!pid || !vid) return;
+
                   const newAsk = parseInt(result.marketData.lowestAskAmount);
                   const newBid = parseInt(result.marketData.highestBidAmount);
                   const newFlexAsk = result.marketData.flexLowestAskAmount ? parseInt(result.marketData.flexLowestAskAmount) : undefined;
                   
-                  updateProductPrice(productId, newAsk, newBid, newFlexAsk);
+                  updateProductPrice(pid, vid, newAsk, newBid, newFlexAsk);
                 }
               });
               
@@ -323,9 +326,11 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
     };
   }, [isMonitoring, monitoringInterval]);
 
-  const updateProductPrice = (productId: string, newAsk: number, newBid: number, newFlexAsk?: number) => {
+  // NOTE: do NOT key off Firestore document id (`product.id`) because site-password users
+  // have doc ids like `${userId}__${productId}__${variantId}`. Match on productId+variantId.
+  const updateProductPrice = (productId: string, variantId: string, newAsk: number, newBid: number, newFlexAsk?: number) => {
     setMonitoredProducts(prev => prev.map(product => {
-      if (product.id !== productId) return product;
+      if (product.productId !== productId || product.variantId !== variantId) return product;
 
       const alerts = [...product.alerts];
       const now = Date.now();
@@ -346,7 +351,7 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
             : `${dropPercentage.toFixed(1)}%`;
             
           const alert = {
-            id: `${productId}-${now}`,
+            id: `${productId}-${variantId}-${now}`,
             type: 'ask_drop' as const,
             message: `Ask price dropped ${dropDescription} from $${product.currentAsk} to $${newAsk}`,
             timestamp: now,
@@ -362,7 +367,7 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
       // Check for target ask price hit
       if (product.targetAskPrice && newAsk <= product.targetAskPrice) {
         const alert = {
-          id: `${productId}-target-${now}`,
+          id: `${productId}-${variantId}-target-${now}`,
           type: 'target_hit' as const,
           message: `Target ask price hit! Ask is now $${newAsk} (target: $${product.targetAskPrice})`,
           timestamp: now,
@@ -390,7 +395,7 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
             : `${dropPercentage.toFixed(1)}%`;
             
           const alert = {
-            id: `${productId}-flex-${now}`,
+            id: `${productId}-${variantId}-flex-${now}`,
             type: 'flex_ask_drop' as const,
             message: `Flex ask dropped ${dropDescription} from $${product.currentFlexAsk} to $${newFlexAsk}`,
             timestamp: now,

@@ -202,6 +202,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Products array is required' }, { status: 400 });
     }
 
+    const userId = getUserIdFromRequest(request);
+    const credentials = await getStockXApiCredentials(userId);
+    const validation = validateApiCredentials(credentials);
+    if (!validation.isValid) {
+      return NextResponse.json({ error: 'API credentials not configured', needsApiKeys: true }, { status: 400 });
+    }
+
     const results = [];
     let tokenRefreshed = false;
     let newAccessToken = accessToken;
@@ -219,7 +226,10 @@ export async function POST(request: NextRequest) {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${newAccessToken}`,
+              'X-API-Key': credentials.apiKey,
               'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'User-Agent': 'FlipFlow/1.0'
             },
             body: JSON.stringify({
               query: {
@@ -255,7 +265,10 @@ export async function POST(request: NextRequest) {
                 method: 'POST',
                 headers: {
                   'Authorization': `Bearer ${newAccessToken}`,
+                  'X-API-Key': credentials.apiKey,
                   'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                  'User-Agent': 'FlipFlow/1.0'
                 },
                 body: JSON.stringify({
                   query: {
