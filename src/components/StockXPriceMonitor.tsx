@@ -115,6 +115,26 @@ const StockXPriceMonitor: React.FC = () => {
     return localStorage.getItem('stockx_slack_enabled') === 'true';
   });
 
+  // Load Slack settings from Firestore (so cron can use them too)
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch('/api/stockx/price-monitor/slack-settings', { method: 'GET' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data?.success || !data?.slack) return;
+        setSlackEnabled(Boolean(data.slack.enabled));
+        setSlackWebhookUrl(String(data.slack.webhookUrl || ''));
+        // Keep localStorage in sync as a fallback cache
+        localStorage.setItem('stockx_slack_enabled', String(Boolean(data.slack.enabled)));
+        localStorage.setItem('stockx_slack_webhook', String(data.slack.webhookUrl || ''));
+      } catch {
+        // ignore; localStorage fallback is fine
+      }
+    };
+    load();
+  }, []);
+
   // Mark alerts as read when viewing the page
   useEffect(() => {
     markAlertsAsRead();
@@ -180,10 +200,26 @@ const StockXPriceMonitor: React.FC = () => {
   };
 
   // Save Slack settings
-  const saveSlackSettings = () => {
+  const saveSlackSettings = async () => {
+    // Update local cache immediately (even if server save fails)
     localStorage.setItem('stockx_slack_webhook', slackWebhookUrl);
     localStorage.setItem('stockx_slack_enabled', slackEnabled.toString());
-    setShowSlackSettings(false);
+
+    try {
+      const res = await fetch('/api/stockx/price-monitor/slack-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: slackEnabled, webhookUrl: slackWebhookUrl })
+      });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        console.warn('Failed to save Slack settings:', res.status, txt);
+      }
+    } catch (e) {
+      console.warn('Failed to save Slack settings:', e);
+    } finally {
+      setShowSlackSettings(false);
+    }
   };
 
   // Send Slack notification

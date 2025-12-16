@@ -2,6 +2,9 @@ import type { Config } from "tailwindcss";
 import plugin from "tailwindcss/plugin";
 
 const config: Config = {
+  // Use class-based dark mode so our in-app theme toggle (Light vs Neon) is consistent
+  // and not dependent on the user's OS color scheme.
+  darkMode: 'class',
   content: ["./src/**/*.{js,ts,jsx,tsx,mdx}"],
   theme: {
     extend: {

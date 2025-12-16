@@ -52,6 +52,28 @@ interface MonitoredProduct {
   }>;
 }
 
+type SlackSettings = {
+  enabled: boolean;
+  webhookUrl: string;
+};
+
+async function sendSlackWebhook(webhookUrl: string, payload: any): Promise<void> {
+  if (!webhookUrl) return;
+  // Basic safety: only allow https webhooks
+  if (!/^https:\/\//i.test(webhookUrl)) return;
+
+  const res = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Slack webhook failed: ${res.status} ${text}`.trim());
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     if (process.env.CRON_PAUSED === '1' || process.env.CRON_PAUSED === 'true') {
@@ -133,9 +155,18 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
+        // Load user's Slack settings (so we can notify even when the UI isn't open)
+        const slack: SlackSettings | null =
+          userData?.stockxPriceMonitorSlack && typeof userData.stockxPriceMonitorSlack === 'object'
+            ? {
+                enabled: userData.stockxPriceMonitorSlack.enabled === true,
+                webhookUrl: String(userData.stockxPriceMonitorSlack.webhookUrl || '').trim(),
+              }
+            : null;
+
         // Check if we need to check products (respect rate limits)
         const now = Date.now();
-        const fiveMinutesAgo = now - (5 * 60 * 1000); // 5 minutes
+        const oneHourAgo = now - (60 * 60 * 1000); // 1 hour (matches Vercel cron cadence)
         
         // Batch products that need checking
         const productsToCheck: MonitoredProduct[] = [];
@@ -143,8 +174,8 @@ export async function GET(request: NextRequest) {
         for (const doc of productsSnapshot.docs) {
           const product = doc.data() as MonitoredProduct;
           
-          // Only check if it's been at least 5 minutes since last check
-          if (!product.lastChecked || product.lastChecked < fiveMinutesAgo) {
+          // Only check if it's been at least 1 hour since last check
+          if (!product.lastChecked || product.lastChecked < oneHourAgo) {
             productsToCheck.push({ ...product, id: doc.id });
           }
         }
@@ -283,6 +314,54 @@ export async function GET(request: NextRequest) {
               // Log alerts
               if (alerts.length > 0) {
                 console.log(`🚨 Created ${alerts.length} alerts for ${product.title} (${product.size})`);
+              }
+
+              // Slack notify (best-effort, don't fail the cron run)
+              if (slack?.enabled && slack.webhookUrl && alerts.length > 0) {
+                for (const a of alerts) {
+                  try {
+                    const header =
+                      a.type === 'ask_drop'
+                        ? '🚨 Price Drop Alert'
+                        : a.type === 'flex_ask_drop'
+                          ? '🟣 Flex Price Drop Alert'
+                          : a.type === 'target_hit'
+                            ? '🎯 Target Price Hit'
+                            : a.type === 'flex_target_hit'
+                              ? '🟣🎯 Flex Target Hit'
+                              : '📢 Price Alert';
+
+                    await sendSlackWebhook(slack.webhookUrl, {
+                      blocks: [
+                        {
+                          type: 'header',
+                          text: { type: 'plain_text', text: header, emoji: true },
+                        },
+                        {
+                          type: 'section',
+                          fields: [
+                            { type: 'mrkdwn', text: `*Product:*\n${product.brand} ${product.title}` },
+                            { type: 'mrkdwn', text: `*Size:*\n${product.size}` },
+                            { type: 'mrkdwn', text: `*Old Price:*\n$${a.oldPrice}` },
+                            { type: 'mrkdwn', text: `*New Price:*\n$${a.newPrice}` },
+                            { type: 'mrkdwn', text: `*Change:*\n${Number(a.percentage).toFixed(1)}%` },
+                          ],
+                        },
+                        {
+                          type: 'section',
+                          text: { type: 'mrkdwn', text: String(a.message || '').slice(0, 2900) },
+                        },
+                      ],
+                    });
+                  } catch (err) {
+                    console.warn('⚠️ Slack notify failed (non-fatal)', {
+                      userId,
+                      productId: product.productId,
+                      variantId: product.variantId,
+                      error: err instanceof Error ? err.message : String(err),
+                    });
+                  }
+                }
               }
             }
 

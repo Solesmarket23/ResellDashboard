@@ -642,6 +642,18 @@ const Dashboard = () => {
   const peakDay = chartData.length > 0 ? Math.max(...chartData.map(d => d.value)) : 0;
   const peakDayItem = chartData.find(d => d.value === peakDay)?.items || '';
 
+  // Precompute SVG point geometry once so the line + dots share identical coordinates.
+  const maxProfitValue = Math.max(0, ...chartData.map((d) => d.value));
+  const profitPoints = chartData.map((bar, index) => {
+    const barHeight = maxProfitValue > 0 ? Math.max((bar.value / maxProfitValue) * 100, 8) : 8;
+    const denom = Math.max(1, chartData.length - 1);
+    // If there's only 1 point, center it.
+    const x = chartData.length === 1 ? 50 : (index / denom) * 100;
+    const y = 100 - barHeight;
+    return { x, y, bar, index };
+  });
+  const profitPolylinePoints = profitPoints.map((p) => `${p.x},${p.y}`).join(' ');
+
   // Calculate best flip percentage
   const bestFlipData = displayMetrics.recentSales.length > 0 
     ? displayMetrics.recentSales[0] // Already sorted by profit
@@ -653,16 +665,24 @@ const Dashboard = () => {
 
   // Show loading state
   if (salesLoading || purchasesLoading) {
+    const loadingLines = [
+      salesLoading ? 'Loading sales data…' : null,
+      purchasesLoading ? 'Loading purchases data…' : null,
+    ].filter(Boolean) as string[];
+
     return (
       <div className={`flex-1 ${currentTheme.colors.background} p-8`}>
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className={`${currentTheme.colors.textSecondary}`}>Loading your dashboard...</p>
-            <div className="mt-4 text-sm text-gray-500">
-              {salesLoading && "Loading sales data..."}
-              {purchasesLoading && "Loading purchases data..."}
-            </div>
+        <div
+          className={`rounded-2xl border ${currentTheme.colors.border} ${
+            currentTheme.name === 'Neon' ? 'bg-gray-950/30' : 'bg-white'
+          } min-h-[70vh] flex items-center justify-center`}
+        >
+          <div className="text-center px-6">
+            <div className="animate-spin rounded-full h-14 w-14 border-b-2 border-blue-600 mx-auto mb-6" />
+            <p className={`text-xl font-semibold ${currentTheme.colors.textPrimary}`}>Loading your dashboard…</p>
+            <p className={`mt-2 text-base ${currentTheme.colors.textSecondary}`}>
+              {loadingLines.length ? loadingLines.join(' • ') : 'Loading…'}
+            </p>
           </div>
         </div>
       </div>
@@ -1253,9 +1273,9 @@ const Dashboard = () => {
               })}
             </div>
             
-            {/* Gradient line overlay with clickable dots */}
-            <div className="absolute inset-0 pointer-events-none px-2">
-              <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+            {/* Gradient line overlay + perfectly aligned SVG dots (same coordinates) */}
+            <div className="absolute inset-0 px-2">
+              <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ pointerEvents: 'none' }}>
                 <defs>
                   <linearGradient id="profitGradient" x1="0%" y1="0%" x2="100%" y2="0%">
                     <stop offset="0%" stopColor="#10b981" stopOpacity="0.8" />
@@ -1269,67 +1289,44 @@ const Dashboard = () => {
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  points={chartData.map((bar, index) => {
-                    const maxValue = Math.max(...chartData.map(d => d.value));
-                    const barHeight = maxValue > 0 ? Math.max((bar.value / maxValue) * 100, 8) : 8;
-                    // Account for padding by adjusting x position
-                    const x = (index / (chartData.length - 1)) * 100;
-                    const y = 100 - barHeight;
-                    return `${x},${y}`;
-                  }).join(' ')}
+                  points={profitPolylinePoints}
+                  style={{ pointerEvents: 'none' }}
                 />
-              </svg>
-            </div>
-            
-            {/* Clickable dots on the gradient line */}
-            <div className="absolute inset-0 pointer-events-auto px-2">
-              {chartData.map((bar, index) => {
-                const maxValue = Math.max(...chartData.map(d => d.value));
-                const barHeight = maxValue > 0 ? Math.max((bar.value / maxValue) * 100, 8) : 8;
-                // Account for padding by adjusting x position
-                const x = (index / (chartData.length - 1)) * 100;
-                const y = 100 - barHeight;
-                const isSelected = selectedBar === index;
-                
-                return (
-                  <div
-                    key={`dot-${index}`}
-                    className="absolute group cursor-pointer"
-                    style={{
-                      left: `${x}%`,
-                      top: `${y}%`,
-                      transform: 'translate(-50%, -50%)'
-                    }}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      console.log('Chart dot clicked:', index, bar.items, bar.value);
-                      setSelectedBar(selectedBar === index ? null : index);
-                      showNotification(`Selected: ${bar.items} - $${bar.value} profit`, 'info');
-                    }}
-                  >
-                    {/* Dot */}
-                    <div className={`w-4 h-4 rounded-full border-2 transition-all duration-200 ${
-                      isSelected 
-                        ? 'bg-blue-500 border-blue-300 scale-125 shadow-lg' 
-                        : 'bg-white border-blue-500 hover:bg-blue-100 hover:scale-110'
-                    }`}>
+                {profitPoints.map(({ x, y, bar, index }) => {
+                  const isSelected = selectedBar === index;
+                  return (
+                    <g
+                      key={`dot-${index}`}
+                      style={{ pointerEvents: 'all', cursor: 'pointer' }}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        console.log('Chart dot clicked:', index, bar.items, bar.value);
+                        setSelectedBar(selectedBar === index ? null : index);
+                        showNotification(`Selected: ${bar.items} - $${bar.value} profit`, 'info');
+                      }}
+                    >
+                      {/* Outer ring */}
+                      <circle
+                        cx={x}
+                        cy={y}
+                        r={isSelected ? 3.2 : 2.8}
+                        fill={isSelected ? '#3b82f6' : '#ffffff'}
+                        stroke={isSelected ? '#93c5fd' : '#3b82f6'}
+                        strokeWidth={isSelected ? 1.4 : 1.2}
+                      />
                       {/* Inner dot */}
-                      <div className={`w-2 h-2 rounded-full m-0.5 ${
-                        isSelected ? 'bg-white' : 'bg-blue-500'
-                      }`}></div>
-                    </div>
-                    
-                    {/* Hover tooltip */}
-                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 bg-black/95 text-white text-xs px-3 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-200 whitespace-nowrap z-30 border border-gray-600">
-                      <div className="font-semibold text-white">{bar.items}</div>
-                      <div className="text-gray-300 text-xs">{bar.date}</div>
-                      <div className="text-green-400 font-bold">${bar.value} profit</div>
-                      <div className="text-gray-400 text-xs mt-1">Click to select</div>
-                    </div>
-                  </div>
-                );
-              })}
+                      <circle
+                        cx={x}
+                        cy={y}
+                        r={isSelected ? 1.4 : 1.2}
+                        fill={isSelected ? '#ffffff' : '#3b82f6'}
+                      />
+                      <title>{`${bar.items} • ${bar.date} • $${bar.value} profit`}</title>
+                    </g>
+                  );
+                })}
+              </svg>
             </div>
           </div>
 

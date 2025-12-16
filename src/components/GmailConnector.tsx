@@ -502,9 +502,7 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
           onClick={connectToGmail}
           disabled={isConnecting}
           className={`px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${
-            isNeonTheme 
-              ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white shadow-lg hover:shadow-blue-500/50' 
-              : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md hover:shadow-lg'
+            `${currentTheme.colors.primary} ${currentTheme.colors.primaryHover} text-white shadow-lg`
           }`}
         >
           {isConnecting ? (

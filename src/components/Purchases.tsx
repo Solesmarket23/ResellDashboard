@@ -3381,11 +3381,7 @@ const Purchases = () => {
                 setShowGmailBatchedSyncModal(true);
               }}
               disabled={!gmailConnected}
-              className={`flex items-center space-x-2 ${
-                currentTheme.name === 'Neon' 
-                  ? 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 shadow-lg hover:shadow-indigo-500/25' 
-                  : 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 shadow-lg hover:shadow-indigo-500/25'
-              } disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-medium transition-all duration-200`}
+              className={`flex items-center space-x-2 ${currentTheme.colors.primary} ${currentTheme.colors.primaryHover} disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 shadow-lg`}
               title={
                 !gmailConnected 
                   ? 'Please connect Gmail first' 
@@ -3398,11 +3394,7 @@ const Purchases = () => {
             
             <button
               onClick={() => setShowAddPurchaseModal(true)}
-              className={`flex items-center space-x-2 ${
-                currentTheme.name === 'Neon' 
-                  ? 'bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 shadow-lg hover:shadow-blue-500/25' 
-                  : 'bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 shadow-lg hover:shadow-green-500/25'
-              } text-white px-4 py-2 rounded-lg font-medium transition-all duration-200`}
+              className={`flex items-center space-x-2 ${currentTheme.colors.primary} ${currentTheme.colors.primaryHover} text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 shadow-lg`}
             >
               <Plus className="w-5 h-5" />
               <span>Add Purchase</span>

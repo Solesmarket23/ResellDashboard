@@ -27,10 +27,11 @@ const themes: Record<string, Theme> = {
   Light: {
     name: 'Light',
     colors: {
-      primary: 'bg-gradient-to-r from-purple-500 to-pink-500',
-      primaryHover: 'hover:from-purple-600 hover:to-pink-600',
-      primaryLight: 'bg-purple-50',
-      accent: 'text-purple-600',
+      // Theme #1 primary button color (match the Purchases "Connect" button)
+      primary: 'bg-gradient-to-r from-blue-500 to-purple-500',
+      primaryHover: 'hover:from-blue-600 hover:to-purple-600',
+      primaryLight: 'bg-blue-50',
+      accent: 'text-blue-600',
       background: 'bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50',
       cardBackground: 'bg-white',
       textPrimary: 'text-gray-900',
@@ -81,6 +82,23 @@ export const ThemeProvider = ({ children }: ThemeProviderProps) => {
   const [isLoading, setIsLoading] = useState(true);
   const { user } = useAuth();
 
+  // Keep DOM classes in sync with the selected theme.
+  // Tailwind dark mode is class-based (see tailwind.config.ts), so we toggle `html.dark`.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    // Body theme class (theme-light / theme-neon)
+    document.body.className = document.body.className.replace(/theme-\w+/g, '');
+    document.body.classList.add(currentTheme.colors.bodyClass);
+    // Tailwind dark mode class (for components using `dark:`)
+    document.documentElement.classList.toggle('dark', currentTheme.name === 'Neon');
+    // Hint native widgets (scrollbars/form controls) – optional but helps consistency.
+    try {
+      document.documentElement.style.colorScheme = currentTheme.name === 'Neon' ? 'dark' : 'light';
+    } catch {
+      // ignore
+    }
+  }, [currentTheme]);
+
   // Load user's theme preference from Firebase
   useEffect(() => {
     const loadUserTheme = async () => {
@@ -95,11 +113,6 @@ export const ThemeProvider = ({ children }: ThemeProviderProps) => {
           const savedTheme = await getUserTheme(user.uid);
           if (savedTheme && themes[savedTheme]) {
             setCurrentTheme(themes[savedTheme]);
-            // Update body class to match theme
-            if (typeof document !== 'undefined') {
-              document.body.className = document.body.className.replace(/theme-\w+/g, '');
-              document.body.classList.add(themes[savedTheme].colors.bodyClass);
-            }
           }
         } catch (error) {
           console.error('Error loading user theme:', error);
@@ -114,12 +127,6 @@ export const ThemeProvider = ({ children }: ThemeProviderProps) => {
   const setTheme = async (themeName: string) => {
     if (themes[themeName]) {
       setCurrentTheme(themes[themeName]);
-      
-      // Update body class to match theme
-      if (typeof document !== 'undefined') {
-        document.body.className = document.body.className.replace(/theme-\w+/g, '');
-        document.body.classList.add(themes[themeName].colors.bodyClass);
-      }
 
       // Save to Firebase if user is authenticated
       if (user) {

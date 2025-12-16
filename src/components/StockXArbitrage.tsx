@@ -241,24 +241,16 @@ const StockXArbitrage: React.FC = () => {
         const data = await response.json();
         setIsAuthenticated(data.isAuthenticated);
         
-        // If not authenticated, automatically redirect to login
+        // If not authenticated, show a message. Do NOT auto-redirect.
+        // Auto-redirect causes callback URL mismatch on tunnels (ngrok/trycloudflare) and is a bad UX.
         if (!data.isAuthenticated) {
           // Check if we're not already coming back from an auth attempt
           const urlParams = new URLSearchParams(window.location.search);
           const hasAuthParams = urlParams.has('success') || urlParams.has('error') || urlParams.has('disconnected') || urlParams.has('tokens_cleared');
           
           if (!hasAuthParams) {
-            // Small delay to let the UI render first
-            setTimeout(() => {
-              setErrorMessage('You need to authenticate with StockX to use the arbitrage finder.');
-              setIsAuthError(true);
-              // Optionally auto-redirect after showing the message
-              setTimeout(() => {
-                const currentUrl = window.location.href;
-                const authUrl = `/api/stockx/auth?returnTo=${encodeURIComponent(currentUrl)}`;
-                window.location.href = authUrl;
-              }, 2000); // 2 second delay to show the message
-            }, 500);
+            setErrorMessage('You need to authenticate with StockX to use the arbitrage finder.');
+            setIsAuthError(true);
           }
         }
       } catch (error) {
@@ -390,9 +382,23 @@ const StockXArbitrage: React.FC = () => {
   };
 
   const handleStockXLogin = () => {
-    // Store the current page URL to redirect back after authentication
-    const currentUrl = window.location.href;
-    const authUrl = `/api/stockx/auth?returnTo=${encodeURIComponent(currentUrl)}`;
+    // IMPORTANT:
+    // StockX callback URL is typically locked to production. If you're browsing via a tunnel
+    // (ngrok/trycloudflare), initiating OAuth on the tunnel domain will cause callback/state mismatch.
+    // So: if we're not on the production domain, bounce to production to start OAuth there.
+    const host = window.location.host.toLowerCase();
+    const isProd = host.endsWith('solesmarket.com') || host.endsWith('www.solesmarket.com');
+    if (!isProd) {
+      const prodAuth = `https://www.solesmarket.com/api/stockx/auth?returnTo=${encodeURIComponent(
+        '/dashboard?section=stockx-arbitrage'
+      )}`;
+      window.location.href = prodAuth;
+      return;
+    }
+
+    // Production: redirect back to the same page after authentication.
+    const returnToPath = window.location.pathname + window.location.search + window.location.hash;
+    const authUrl = `/api/stockx/auth?returnTo=${encodeURIComponent(returnToPath)}`;
     window.location.href = authUrl;
   };
 

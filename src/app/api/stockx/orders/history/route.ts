@@ -334,11 +334,9 @@ export async function GET(request: NextRequest) {
     // Add optional filters
     if (fromDate) queryParams.set('fromDate', fromDate);
     if (toDate) queryParams.set('toDate', toDate);
-    // StockX has historically used different param names in different environments/docs.
-    // Send both to be safe; unknown params are ignored server-side.
+    // StockX docs: only `orderStatus` is supported for /selling/orders/history.
     if (orderStatus) {
       queryParams.set('orderStatus', orderStatus);
-      queryParams.set('status', orderStatus);
     }
     if (productId) queryParams.set('productId', productId);
     if (variantId) queryParams.set('variantId', variantId);
@@ -349,17 +347,34 @@ export async function GET(request: NextRequest) {
     const apiUrl = `https://api.stockx.com/v2/selling/orders/history?${queryParams.toString()}`;
     console.log(`📋 Fetching StockX historical orders: ${apiUrl}`);
 
-    // Make API call to StockX
-    const response = await fetchWithBackoff(apiUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'x-api-key': apiKey,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'User-Agent': 'FlipFlow/1.0'
-      }
-    }, 'historyList');
+    // Make API call to StockX (best-effort retry on transient 5xx).
+    let response: Response | null = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      response = await fetchWithBackoff(
+        apiUrl,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'x-api-key': apiKey,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'User-Agent': 'FlipFlow/1.0',
+          },
+        },
+        'historyList'
+      );
+
+      if (!response || response.status < 500 || response.status >= 600) break;
+      // Drain body then backoff before retry.
+      await response.text().catch(() => '');
+      const backoffMs = Math.min(5000, 500 * Math.pow(2, attempt));
+      await sleep(backoffMs);
+    }
+
+    if (!response) {
+      return NextResponse.json({ error: 'Failed to fetch StockX historical orders' }, { status: 502 });
+    }
 
     if (response.status === 401 && refreshToken) {
       // Access token expired, try to refresh

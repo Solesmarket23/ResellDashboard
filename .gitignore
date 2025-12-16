@@ -44,3 +44,6 @@ next-env.d.ts
 /sample-emails/*.eml
 /sample-emails/*.html
 .env.local.bak
+
+# Local scratch/log output (do not commit)
+/.tmp/

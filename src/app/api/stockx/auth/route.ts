@@ -15,6 +15,37 @@ export async function GET(request: NextRequest) {
 
   // Get the current host from the request
   const host = request.headers.get('host') || '';
+
+  // StockX callback URL must match an allowlisted URL in StockX developer settings.
+  // In practice, this is almost always the production domain. Starting OAuth on a tunnel
+  // (ngrok/trycloudflare) sets cookies on the tunnel domain, but the callback happens on production,
+  // causing state/returnTo cookie mismatches.
+  //
+  // Fix: if this request is NOT already on production, redirect the browser to production to start OAuth there.
+  const lowerHost = host.toLowerCase();
+  const isProdHost = lowerHost.endsWith('solesmarket.com');
+  const isTunnelOrLocal =
+    lowerHost.includes('localhost') ||
+    lowerHost.includes('127.0.0.1') ||
+    lowerHost.includes('ngrok-free.app') ||
+    lowerHost.includes('trycloudflare.com');
+  if (!isProdHost && isTunnelOrLocal) {
+    const safeReturn =
+      returnTo && returnTo.startsWith('http')
+        ? (() => {
+            try {
+              const u = new URL(returnTo);
+              return `${u.pathname}${u.search}${u.hash}`;
+            } catch {
+              return '/dashboard';
+            }
+          })()
+        : returnTo || '/dashboard';
+
+    const prodUrl = new URL('https://www.solesmarket.com/api/stockx/auth');
+    prodUrl.searchParams.set('returnTo', safeReturn);
+    return NextResponse.redirect(prodUrl.toString());
+  }
   
   // Build a base URL that matches the *current* request origin (important for ngrok/local dev).
   // If NEXT_PUBLIC_BASE_URL is set for production, we still prefer it unless we're on localhost/ngrok.
@@ -26,7 +57,11 @@ export async function GET(request: NextRequest) {
   const originFromRequest = host ? `${proto}://${host}` : request.nextUrl.origin;
 
   const envBaseUrl = process.env.NEXT_PUBLIC_BASE_URL?.trim();
-  const isLocalOrTunnel = host.includes('localhost') || host.includes('127.0.0.1') || host.includes('ngrok-free.app');
+  const isLocalOrTunnel =
+    lowerHost.includes('localhost') ||
+    lowerHost.includes('127.0.0.1') ||
+    lowerHost.includes('ngrok-free.app') ||
+    lowerHost.includes('trycloudflare.com');
 
   let baseUrl = envBaseUrl && !isLocalOrTunnel ? envBaseUrl : originFromRequest;
   

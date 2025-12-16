@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import NeonNotification, { NotificationType } from '@/components/NeonNotification';
+import { useTheme } from '@/lib/contexts/ThemeContext';
 
 type OrderRow = {
   id?: string;
@@ -142,6 +143,8 @@ function toTitleCaseLabel(input: string) {
 }
 
 export default function TestStockXOrders() {
+  const { currentTheme } = useTheme();
+  const primaryBtn = `${currentTheme.colors.primary} ${currentTheme.colors.primaryHover} text-white`;
   const [loading, setLoading] = useState(false);
   const [allLoading, setAllLoading] = useState(false);
   const [allProgress, setAllProgress] = useState<{ page: number; total: number } | null>(null);
@@ -1307,6 +1310,18 @@ export default function TestStockXOrders() {
   const totals = useMemo(() => {
     const rows = displayedOrders || [];
     const rowsForMetrics = rows.filter((r: any) => getRowStatus(r) !== 'DIDNOTSHIP');
+    // Projection logic: show only when the selected date range matches "This month"
+    // (from first day of current month → selected toDate).
+    const now = new Date();
+    const currentMonthStartYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    const isThisMonthRange =
+      Boolean(fromDate) &&
+      Boolean(toDate) &&
+      fromDate === currentMonthStartYmd &&
+      toDate.slice(0, 7) === currentMonthStartYmd.slice(0, 7);
+    // Full completed days only: if the range ends "today", exclude today's partial day entirely.
+    const isRangeEndingToday = Boolean(toDate) && toDate === todayYmd;
+
     let sale = 0;
     let fees = 0;
     let payout = 0;
@@ -1314,6 +1329,8 @@ export default function TestStockXOrders() {
     let saleCount = 0;
     let payoutCount = 0;
     let feesCount = 0;
+    // For projections: use *all* sales revenue (not just completed) through the last completed day.
+    let saleThroughYesterday = 0;
     const statusCounts: Record<string, number> = {};
     const productRevenue: Record<string, number> = {};
     const productCount: Record<string, number> = {};
@@ -1355,6 +1372,25 @@ export default function TestStockXOrders() {
       const statusRaw = (o.rawData?.status || o.status || o.orderStatus || 'UNKNOWN') as string;
       const status = String(statusRaw || 'UNKNOWN').toUpperCase();
       statusCounts[status] = (statusCounts[status] || 0) + 1;
+      if (s !== null) {
+        // If this month's range ends today, exclude today's revenue (full completed days only).
+        if (isThisMonthRange && isRangeEndingToday) {
+          const ts = getRowCreatedTs(o);
+          if (ts !== null) {
+            const d = new Date(ts);
+            const rowYmd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+              d.getDate()
+            ).padStart(2, '0')}`;
+            if (rowYmd !== todayYmd) {
+              saleThroughYesterday += s;
+            }
+          } else {
+            // If we can't determine a row date, keep it in totals but exclude from projection.
+          }
+        } else {
+          saleThroughYesterday += s;
+        }
+      }
 
       const raw = o.rawData || {};
       const orderKey = String(
@@ -1415,6 +1451,33 @@ export default function TestStockXOrders() {
     const avgSale = saleCount > 0 ? sale / saleCount : 0;
     const avgPayout = payoutCount > 0 ? payout / payoutCount : 0;
 
+    // Projected sales for This Month: (month-to-date sales revenue / completed days elapsed) * days in month.
+    let projectedThisMonthSales: number | null = null;
+    let projectedThisMonthAvgPerDay: number | null = null;
+    let projectedThisMonthDaysElapsed: number | null = null;
+    let projectedThisMonthDaysInMonth: number | null = null;
+    if (isThisMonthRange) {
+      const end = new Date(`${toDate}T00:00:00`);
+      const year = end.getFullYear();
+      const month = end.getMonth();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      // Full completed days only: if the range ends today, use yesterday as the last completed day.
+      const daysElapsed = isRangeEndingToday ? end.getDate() - 1 : end.getDate();
+      if (daysElapsed < 1) {
+        // e.g., it's the 1st and the range ends today -> no completed days yet
+        projectedThisMonthDaysElapsed = 0;
+        projectedThisMonthDaysInMonth = daysInMonth;
+        projectedThisMonthAvgPerDay = null;
+        projectedThisMonthSales = null;
+      } else {
+        projectedThisMonthDaysElapsed = daysElapsed;
+        projectedThisMonthDaysInMonth = daysInMonth;
+        projectedThisMonthAvgPerDay = saleThroughYesterday / daysElapsed;
+        projectedThisMonthSales = projectedThisMonthAvgPerDay * daysInMonth;
+      }
+      projectedThisMonthDaysInMonth = daysInMonth;
+    }
+
     const topProducts = Object.entries(productRevenue)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
@@ -1450,8 +1513,22 @@ export default function TestStockXOrders() {
       (statusCounts['COMPLETED'] || 0) +
       (statusCounts['PAYOUTCOMPLETED'] || 0) +
       (statusCounts['PAYOUT_COMPLETED'] || 0);
-    // "Pending" = everything that isn't completed (DIDNOTSHIP excluded from metrics by design)
-    const pendingCount = Math.max(0, rowsForMetrics.length - completedCount);
+    // "Open" = everything that isn't completed (DIDNOTSHIP excluded from metrics by design)
+    const openCount = Math.max(0, rowsForMetrics.length - completedCount);
+
+    // Active order breakdown: StockX "active" statuses are not always literally "PENDING".
+    // We'll compute counts from active rows only, and bucket them into Pending-like vs Shipped-like.
+    const activeStatusCounts: Record<string, number> = {};
+    for (const o of rowsForMetrics) {
+      if (!isActiveRow(o)) continue;
+      const st = String((o.rawData?.status || o.status || o.orderStatus || 'UNKNOWN')).toUpperCase();
+      activeStatusCounts[st] = (activeStatusCounts[st] || 0) + 1;
+    }
+    const activeTotalCount = Object.values(activeStatusCounts).reduce((a, b) => a + b, 0);
+    const pendingLike = ['PENDING', 'CREATED', 'AUTHENTICATING', 'AUTHENTICATED', 'MATCHED'];
+    const shippedLike = ['SHIPPED', 'RECEIVED'];
+    const activePendingCount = pendingLike.reduce((sum, k) => sum + (activeStatusCounts[k] || 0), 0);
+    const activeShippedCount = shippedLike.reduce((sum, k) => sum + (activeStatusCounts[k] || 0), 0);
 
     const duplicates = Object.entries(idCounts)
       .filter(([, c]) => c > 1 && !['UNKNOWN_ORDER'].includes(String(c)))
@@ -1473,7 +1550,16 @@ export default function TestStockXOrders() {
       payoutCount,
       statusCounts,
       completedCount,
-      pendingCount,
+      openCount,
+      activePendingCount,
+      activeShippedCount,
+      activeTotalCount,
+      activeStatusCounts,
+      projectedThisMonthSales,
+      projectedThisMonthAvgPerDay,
+      projectedThisMonthDaysElapsed,
+      projectedThisMonthDaysInMonth,
+      isThisMonthRange,
       topProducts,
       topProductsByCount,
       topBrands,
@@ -1483,7 +1569,7 @@ export default function TestStockXOrders() {
       duplicateCount: duplicates.length,
       currency: 'USD',
     };
-  }, [displayedOrders]);
+  }, [displayedOrders, fromDate, toDate]);
 
   const salesByDay = useMemo(() => {
     const rows = (displayedOrders || []).filter((r: any) => getRowStatus(r) !== 'DIDNOTSHIP');
@@ -2262,7 +2348,7 @@ export default function TestStockXOrders() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 p-6">
+    <div className={`min-h-screen ${currentTheme.colors.background} ${currentTheme.colors.textPrimary} p-4 sm:p-8`}>
       {notification.isVisible && (
         <NeonNotification
           message={notification.message}
@@ -2282,7 +2368,7 @@ export default function TestStockXOrders() {
             {authRequired && (
               <button
                 onClick={login}
-                className="px-4 py-2 rounded-lg font-semibold bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white"
+                className={`px-4 py-2 rounded-lg font-semibold ${primaryBtn}`}
               >
                 Authenticate with StockX
               </button>
@@ -2611,7 +2697,7 @@ export default function TestStockXOrders() {
               <button
                 onClick={fetchAllHistory}
                 disabled={allLoading || loading}
-                className="flex-1 px-4 py-2 rounded-lg font-semibold bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white disabled:opacity-50"
+                className={`flex-1 px-4 py-2 rounded-lg font-semibold ${primaryBtn} disabled:opacity-50`}
                 title="Fetch all pages for the selected time period (fills table as results arrive)"
               >
                 {allLoading
@@ -2668,8 +2754,14 @@ export default function TestStockXOrders() {
                 </div>
                 <div className="text-gray-300">Completed</div>
                 <div className="text-right font-semibold">{totals.completedCount}</div>
-                <div className="text-gray-300">Pending</div>
-                <div className="text-right font-semibold">{totals.pendingCount}</div>
+                <div className="text-gray-300">Open (not completed)</div>
+                <div className="text-right font-semibold">{totals.openCount}</div>
+                <div className="text-gray-300">Active: Pending</div>
+                <div className="text-right font-semibold">{totals.activePendingCount}</div>
+                <div className="text-gray-300">Active: Shipped</div>
+                <div className="text-right font-semibold">{totals.activeShippedCount}</div>
+                <div className="text-gray-300">Active: Total</div>
+                <div className="text-right font-semibold">{totals.activeTotalCount}</div>
                 <div className="text-gray-300">Duplicates</div>
                 <div className="text-right font-semibold">{totals.duplicateCount}</div>
                 <div className="text-gray-300">Top size</div>
@@ -2696,6 +2788,23 @@ export default function TestStockXOrders() {
                 <div className="text-right font-semibold">{fmtMoney(totals.avgPayout, totals.currency)}</div>
               </div>
 
+              {totals.isThisMonthRange && totals.projectedThisMonthSales !== null ? (
+                <div className="mt-3 rounded-lg border border-white/10 bg-white/5 p-3">
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="text-gray-300">Projected sales (this month)</div>
+                    <div className="text-right font-semibold">
+                      {fmtMoney(totals.projectedThisMonthSales, totals.currency)}
+                    </div>
+                  </div>
+                  <div className="mt-1 text-xs text-gray-400">
+                    Based on{' '}
+                    {fmtMoney(totals.projectedThisMonthAvgPerDay || 0, totals.currency)}/day ×{' '}
+                    {totals.projectedThisMonthDaysInMonth || '—'} days (completed days so far:{' '}
+                    {totals.projectedThisMonthDaysElapsed || '—'})
+                  </div>
+                </div>
+              ) : null}
+
               {totals.duplicates?.length > 0 && (
                 <div className="mt-3">
                   <div className="text-xs text-gray-400 mb-1">Duplicate order IDs (first 10)</div>
@@ -2709,6 +2818,23 @@ export default function TestStockXOrders() {
                   </div>
                 </div>
               )}
+
+              {totals.activeTotalCount > 0 && totals.activeStatusCounts ? (
+                <div className="mt-3">
+                  <div className="text-xs text-gray-400 mb-1">Active status breakdown (top 6)</div>
+                  <div className="space-y-1">
+                    {Object.entries(totals.activeStatusCounts)
+                      .sort((a, b) => b[1] - a[1])
+                      .slice(0, 6)
+                      .map(([st, c]) => (
+                        <div key={st} className="flex items-center justify-between text-xs text-gray-200">
+                          <div className="truncate max-w-[220px]">{st}</div>
+                          <div className="font-semibold">x{c}</div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              ) : null}
 
               {(totals.topProducts?.length > 0 || totals.topBrands?.length > 0) && (
                 <div className="mt-3 grid grid-cols-1 gap-3">
@@ -3012,9 +3138,9 @@ export default function TestStockXOrders() {
             )}
           </div>
 
-          <div className="lg:col-span-2 rounded-xl border border-white/10 bg-white/5 overflow-hidden">
+          <div className="lg:col-span-2 self-start rounded-xl border border-white/10 bg-white/5 overflow-hidden">
             <div className="p-4 border-b border-white/10 flex items-center justify-between">
-              <h2 className="font-semibold">Order History</h2>
+              <h2 className="font-semibold">Sales history</h2>
               <div className="flex items-center gap-3">
                 <div className="text-xs text-gray-400">{displayedOrders.length} rows</div>
                 <button
