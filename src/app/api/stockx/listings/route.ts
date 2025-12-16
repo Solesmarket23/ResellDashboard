@@ -387,6 +387,17 @@ export async function GET(request: NextRequest) {
         // StockX doesn't provide a full URL, but many catalog objects include a stable `urlKey` slug.
         // We expose it so the UI can deep-link to StockX for this product (and size).
         urlKey: listing.product?.urlKey || listing.product?.url_key || listing.urlKey || listing.url_key || null,
+        // StockX catalog objects often include `productImages: string[]` (public URLs). Some payloads use `imageUrl`/`media`.
+        imageUrl:
+          (Array.isArray(listing.product?.productImages) && listing.product.productImages[0]) ||
+          (Array.isArray(listing.product?.product_images) && listing.product.product_images[0]) ||
+          listing.product?.imageUrl ||
+          listing.product?.image_url ||
+          listing.product?.media?.imageUrl ||
+          listing.product?.media?.image_url ||
+          listing.imageUrl ||
+          listing.image_url ||
+          null,
         size: listing.size || listing.variant?.size || listing.variant?.variantValue || listing.variantValue || 'Unknown Size',
         currentPrice: parseFloat(listing.amount || listing.price || '0'),
         originalPrice: parseFloat(listing.amount || listing.price || '0'),

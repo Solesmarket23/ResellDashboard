@@ -58,6 +58,7 @@ interface Listing {
   variantId: string;
   productName: string;
   urlKey?: string | null;
+  imageUrl?: string | null;
   size: string;
   currentPrice: number;
   originalPrice: number;
@@ -1277,6 +1278,7 @@ export default function StockXRepricing() {
             variantId: l.variantId,
             productName: l.productName,
             urlKey: l.urlKey || null,
+            imageUrl: l.imageUrl || null,
             size: l.size,
             currentPrice: l.currentPrice,
             originalPrice: l.originalPrice,
@@ -3812,6 +3814,39 @@ export default function StockXRepricing() {
                       <div className="flex items-center justify-center gap-2">
                         <div className="text-center">
                           <div className={`font-medium text-sm ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+                            {listing.imageUrl ? (
+                              <span className="inline-flex items-center justify-center gap-2">
+                                <img
+                                  src={listing.imageUrl}
+                                  alt={listing.productName}
+                                  className={`w-9 h-9 rounded-md object-cover ${
+                                    isNeon ? 'ring-1 ring-white/10' : 'ring-1 ring-gray-200'
+                                  }`}
+                                  loading="lazy"
+                                  referrerPolicy="no-referrer"
+                                />
+                                <span className="inline-block">
+                                  {(() => {
+                                    const href = buildStockXProductUrl(listing);
+                                    if (!href) return listing.productName;
+                                    return (
+                                      <a
+                                        href={href}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className={`inline-flex items-center justify-center gap-1 underline underline-offset-2 ${
+                                          isNeon ? 'decoration-cyan-400/60 hover:text-cyan-300' : 'decoration-blue-500/60 hover:text-blue-700'
+                                        }`}
+                                        title="Open on StockX"
+                                      >
+                                        <span>{listing.productName}</span>
+                                      </a>
+                                    );
+                                  })()}
+                                </span>
+                              </span>
+                            ) : (
+                              <>
                             {(() => {
                               const href = buildStockXProductUrl(listing);
                               if (!href) return listing.productName;
@@ -3829,6 +3864,8 @@ export default function StockXRepricing() {
                                 </a>
                               );
                             })()}
+                              </>
+                            )}
                           </div>
                           <div className={`text-xs flex items-center justify-center gap-1 ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
                             <span>Style code: {listing.styleId || 'N/A'}</span>
@@ -4033,8 +4070,8 @@ export default function StockXRepricing() {
                         />
                       </div>
                     </td>
-                    <td className="px-6 py-3">
-                      <div className="flex items-center justify-center gap-2">
+                    <td className="px-6 py-3 text-center">
+                      <div className="flex w-full items-center justify-center gap-2">
                         <NeonDropdown
                           value={listing.pricingStrategy?.type || 'keep_current'}
                           onChange={(value) => updateListingStrategy(listing.listingId, value as any)}
