@@ -41,6 +41,7 @@ import AliasInventory from '../../components/AliasInventory';
 import AliasListingCreator from '../../components/AliasListingCreator';
 import AliasOrderManagement from '../../components/AliasOrderManagement';
 import TestStockXOrders from '../test-stockx-orders/page';
+import TestPurchaseLinkingPage from '../test-purchase-linking/page';
 
 function DashboardContent() {
   console.log('🔍 Dashboard component rendering...');
@@ -219,6 +220,8 @@ function DashboardContent() {
         // Replaced legacy Sales page with the StockX Orders (Test) tooling.
         // This keeps the existing dashboard nav route (/dashboard?section=sales) but uses the newer UI.
         return <TestStockXOrders />;
+      case 'sales-2-0':
+        return <TestPurchaseLinkingPage />;
       case 'failed-verifications':
         return <FailedVerifications />;
       case 'profit-calculator':

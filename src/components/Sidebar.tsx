@@ -53,6 +53,7 @@ const navigationItems = [
       { id: 'purchases', label: 'Purchases', icon: ShoppingCart },
       { id: 'deliveries', label: 'Deliveries', icon: Truck },
       { id: 'sales', label: 'Sales', icon: TrendingUp },
+      { id: 'sales-2-0', label: 'Sales 2.0', icon: TrendingUp },
     ]
   },
   {

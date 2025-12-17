@@ -20,6 +20,7 @@ type PurchaseCandidate = {
   emailDate?: string;
   email_date?: string;
   createdAt?: string;
+  actualDelivery?: string;
   linkedSaleOrderNumber?: string;
   linkedSaleId?: string;
   product?: {
@@ -904,14 +905,13 @@ async function saveSalesToMainCollection(sales: StockXSale[], userId: string, se
       purchaseByStockxListingId.set(stockxListingId, { ...p, id: pid });
     }
 
-    const dateMs =
-      parseDateMs(p.purchaseDate) ??
-      parseDateMs(p.purchase_date) ??
-      parseDateMs(p.emailDate) ??
-      parseDateMs(p.email_date) ??
-      parseDateMs(p.createdAt) ??
-      null;
+    // STRICT FIFO: only consider purchases that have an actual delivery timestamp.
+    const dateMs = parseDateMs((p as any).actualDelivery) ?? null;
     p._dateMs = dateMs;
+    if (dateMs === null) {
+      // Not eligible for strict-delivery FIFO matching.
+      continue;
+    }
 
     const key = purchaseKey(styleId, size);
     const arr = purchaseIndex.get(key) || [];

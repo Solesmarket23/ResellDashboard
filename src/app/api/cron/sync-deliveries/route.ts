@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDocumentsServer } from '@/lib/firebase/firebaseServerUtils';
 import { trackingService } from '@/lib/tracking/trackingService';
+import { getAdminDb } from '@/lib/firebase/firebaseAdmin';
 
 export async function GET(request: NextRequest) {
   try {
@@ -92,6 +93,53 @@ export async function GET(request: NextRequest) {
         const liveUpdates = liveTrackingData.filter(lt => !lt.error && lt.estimatedDelivery);
         syncResults.liveTrackingUpdates += liveUpdates.length;
         syncResults.totalDeliveries += purchasesWithTracking.length;
+
+        // Persist actual delivery dates onto purchases (strict FIFO can use this)
+        // NOTE: We only write when actualDelivery is present to avoid noisy updates.
+        const db = getAdminDb();
+        const updatesByTracking = new Map<string, any>();
+        for (const lt of liveTrackingData) {
+          if (!lt || (lt as any).error) continue;
+          const trackingNumber = (lt as any).trackingNumber ? String((lt as any).trackingNumber) : '';
+          if (!trackingNumber) continue;
+          const actualDelivery = (lt as any).actualDelivery ? String((lt as any).actualDelivery) : '';
+          if (!actualDelivery) continue;
+          updatesByTracking.set(trackingNumber, {
+            actualDelivery,
+            // keep estimatedDelivery as well (useful for UI), but strict FIFO will ignore it
+            ...(typeof (lt as any).estimatedDelivery === 'string' && (lt as any).estimatedDelivery.trim()
+              ? { estimatedDelivery: String((lt as any).estimatedDelivery) }
+              : {}),
+            // best-effort: mark status as delivered
+            status: 'delivered',
+            shippingStatus: 'delivered',
+            lastUpdated: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
+        }
+
+        if (updatesByTracking.size > 0) {
+          const batch = db.batch();
+          let writeCount = 0;
+          for (const purchase of purchasesWithTracking) {
+            const trackingValue = purchase.tracking || 
+                                 purchase.trackingNumber || 
+                                 purchase.tracking_number ||
+                                 purchase.shipment?.tracking ||
+                                 purchase.shipment?.trackingNumber;
+            if (!trackingValue) continue;
+            const update = updatesByTracking.get(String(trackingValue));
+            if (!update) continue;
+            const purchaseId = String(purchase.id || '');
+            if (!purchaseId) continue;
+            batch.set(db.collection('purchases').doc(purchaseId), update, { merge: true });
+            writeCount++;
+          }
+          if (writeCount > 0) {
+            await batch.commit();
+            console.log(`📝 CRON: Updated ${writeCount} purchase(s) with actualDelivery for user ${userId}`);
+          }
+        }
 
         console.log(`✅ CRON: Synced ${purchasesWithTracking.length} deliveries for user ${userId} (${liveUpdates.length} with live data)`);
         syncResults.successfulSyncs++;
