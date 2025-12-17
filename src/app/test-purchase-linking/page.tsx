@@ -135,6 +135,12 @@ function getTotalPaid(s: SaleRow | null): number {
   return paid;
 }
 
+function hasKnownTotalPaid(s: SaleRow | null): boolean {
+  if (!s) return false;
+  // Treat 0 / null as "unknown" for UI purposes (you don't pay $0 for inventory)
+  return typeof s.purchasePrice === 'number' && Number.isFinite(s.purchasePrice) && s.purchasePrice > 0;
+}
+
 function getProfitNetPayoutMinusPaid(s: SaleRow | null): number {
   if (!s) return 0;
   return getNetPayout(s) - getTotalPaid(s);
@@ -856,7 +862,8 @@ export default function TestPurchaseLinkingPage() {
                 {filteredSales.slice(0, 50).map((s) => {
                   const netPayout = getNetPayout(s);
                   const totalPaid = getTotalPaid(s);
-                  const profit = netPayout - totalPaid;
+                  const paidKnown = hasKnownTotalPaid(s);
+                  const profit = paidKnown ? (netPayout - totalPaid) : null;
                   return (
                     <tr
                       key={s.id}
@@ -867,9 +874,9 @@ export default function TestPurchaseLinkingPage() {
                       <td className="py-2 pr-3 whitespace-nowrap">{s.size || '—'}</td>
                       <td className="py-2 pr-3 text-right">{currency(s.salePrice)}</td>
                       <td className="py-2 pr-3 text-right">{currency(s.fees)}</td>
-                      <td className="py-2 pr-3 text-right">{currency(totalPaid)}</td>
+                      <td className="py-2 pr-3 text-right">{paidKnown ? currency(totalPaid) : '—'}</td>
                       <td className="py-2 pr-3 text-right" title="Profit = net payout − total paid">
-                        {currency(profit)}
+                        {paidKnown ? currency(profit) : '—'}
                       </td>
                       <td className="py-2 pr-3 whitespace-nowrap">
                         {s.linkedPurchaseOrderNumber || (s.linkedPurchaseId ? 'linked' : '—')}

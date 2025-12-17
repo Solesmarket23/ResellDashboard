@@ -101,6 +101,8 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
       let updateCount = 0;
       let maxSalesFound = 0;
       let savingPhaseStarted = false;
+      let lastSseErrorMessage: string | null = null;
+      let sawAnySse = false;
 
       console.log('🔄 Starting stream reading loop');
 
@@ -119,6 +121,80 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
       }, maxImportTime);
 
       try {
+        const processLine = (rawLine: string) => {
+          const line = rawLine.replace(/\r$/, '');
+          if (!line.startsWith('data:')) return;
+          sawAnySse = true;
+
+          // Support both "data: {...}" and "data:{...}"
+          const jsonText = line.slice('data:'.length).trimStart();
+          if (!jsonText) return;
+
+          try {
+            const data = JSON.parse(jsonText);
+            updateCount++;
+            lastUpdateTime = Date.now();
+
+            console.log(`📊 SSE Update #${updateCount}:`, {
+              type: data.type,
+              phase: data.phase,
+              message: data.message,
+              progress: data.progress,
+              salesFound: data.salesFound,
+              currentPage: data.currentPage,
+              pageResults: data.pageResults,
+              elapsed: Date.now() - streamStartTime
+            });
+
+            if (data.type === 'status' || data.type === 'progress') {
+              const salesCount = data.salesFound || data.totalSales || 0;
+              if (salesCount > maxSalesFound) maxSalesFound = salesCount;
+
+              if (data.phase === 'saving' && !savingPhaseStarted) {
+                savingPhaseStarted = true;
+                console.log(`💾 Saving phase started with ${salesCount} sales`);
+              }
+
+              setProgress({
+                phase: data.phase || 'fetching',
+                message: data.message,
+                percentage: data.progress || 0,
+                salesCount: salesCount,
+                currentPage: data.currentPage,
+                pageResults: data.pageResults
+              });
+
+              if (data.batchComplete) {
+                console.log(`📦 Batch ${data.batchNumber}/${data.totalBatches} complete:`, {
+                  savedInBatch: data.savedInBatch,
+                  totalSaved: data.totalSaved,
+                  progress: data.progress
+                });
+
+                if ((data.batchNumber % 3) === 0 || data.batchNumber === data.totalBatches) {
+                  onImportComplete?.(true, data.totalSaved);
+                }
+              }
+            } else if (data.type === 'warning') {
+              console.warn('⚠️ Import warning:', data.message);
+              setProgress(prev => ({
+                ...prev,
+                message: data.message,
+                percentage: data.progress || prev.percentage
+              }));
+            } else if (data.type === 'error') {
+              lastSseErrorMessage = String(data.message || 'Import failed');
+              console.error('❌ Import error:', lastSseErrorMessage);
+              throw new Error(lastSseErrorMessage);
+            } else if (data.type === 'complete') {
+              console.log('🎉 Import completed successfully:', data);
+              finalResult = data;
+            }
+          } catch (parseError) {
+            console.warn('Failed to parse SSE data:', parseError, 'Raw line:', line);
+          }
+        };
+
         while (true) {
           const currentTime = Date.now();
           const { done, value } = await reader.read();
@@ -127,6 +203,11 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
         
         if (done) {
           console.log('✅ Stream reading completed');
+            // Process any remaining buffered line (common if stream ends without trailing newline)
+            if (buffer.trim().length) {
+              processLine(buffer.trim());
+              buffer = '';
+            }
           break;
         }
 
@@ -135,101 +216,11 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
         buffer = lines.pop() || ''; // Keep incomplete line in buffer
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              updateCount++;
-              lastUpdateTime = currentTime;
-              
-              console.log(`📊 SSE Update #${updateCount}:`, {
-                type: data.type,
-                phase: data.phase,
-                message: data.message,
-                progress: data.progress,
-                salesFound: data.salesFound,
-                currentPage: data.currentPage,
-                pageResults: data.pageResults,
-                elapsed: currentTime - streamStartTime
-              });
-              
-              // Update progress based on the event type
-              if (data.type === 'status' || data.type === 'progress') {
-                const salesCount = data.salesFound || data.totalSales || 0;
-                
-                // Track maximum sales found
-                if (salesCount > maxSalesFound) {
-                  maxSalesFound = salesCount;
-                }
-                
-                // Track when saving phase starts
-                if (data.phase === 'saving' && !savingPhaseStarted) {
-                  savingPhaseStarted = true;
-                  console.log(`💾 Saving phase started with ${salesCount} sales`);
-                }
-                
-                setProgress({
-                  phase: data.phase || 'fetching',
-                  message: data.message,
-                  percentage: data.progress || 0,
-                  salesCount: salesCount,
-                  currentPage: data.currentPage,
-                  pageResults: data.pageResults
-                });
-
-                // If a batch was just saved, trigger the completion callback
-                if (data.batchComplete) {
-                  console.log(`📦 Batch ${data.batchNumber}/${data.totalBatches} complete:`, {
-                    savedInBatch: data.savedInBatch,
-                    totalSaved: data.totalSaved,
-                    progress: data.progress
-                  });
-                  
-                  // Throttle refresh to every 3rd batch to reduce Firestore reads
-                  if ((data.batchNumber % 3) === 0 || data.batchNumber === data.totalBatches) {
-                    onImportComplete?.(true, data.totalSaved);
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                  }
-                }
-                
-                // Auto-complete after extended saving phase with large dataset
-                if (savingPhaseStarted && salesCount > 1000 && data.progress >= 80) {
-                  console.log(`🚀 Auto-completing: ${salesCount} sales, progress ${data.progress}%`);
-                  setTimeout(() => {
-                    if (!finalResult) {
-                      console.log('🎉 Auto-completing large import due to extended saving phase');
-                      finalResult = {
-                        success: true,
-                        totalSales: salesCount,
-                        message: `✅ Successfully imported ${salesCount} StockX sales!`
-                      };
-                      // Break out of the reading loop
-                      reader.cancel();
-                    }
-                  }, 3000); // Wait 3 seconds for normal completion
-                }
-              } else if (data.type === 'warning') {
-                console.warn('⚠️ Import warning:', data.message);
-                // Still update progress to show we're moving forward
-                setProgress(prev => ({
-                  ...prev,
-                  message: data.message,
-                  percentage: data.progress || prev.percentage
-                }));
-              } else if (data.type === 'error') {
-                console.error('❌ Import error:', data.message);
-                throw new Error(data.message);
-              } else if (data.type === 'complete') {
-                console.log('🎉 Import completed successfully:', data);
-                finalResult = data;
-                break;
-              }
-            } catch (parseError) {
-              console.warn('Failed to parse SSE data:', parseError, 'Raw line:', line);
-            }
-          }
+            processLine(line);
+            if (finalResult) break;
         }
 
-        if (finalResult) break;
+          if (finalResult) break;
 
           // Timeout check - warn if no updates for too long
           if (currentTime - lastUpdateTime > 15000) {
@@ -244,6 +235,12 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
       // Handle case where stream ends without final result (but import may have succeeded)
       if (!finalResult) {
         console.warn('⚠️ Stream ended without final result - checking if import succeeded anyway');
+        if (lastSseErrorMessage) {
+          throw new Error(lastSseErrorMessage);
+        }
+        if (!sawAnySse) {
+          throw new Error('Import failed: did not receive any SSE updates (likely auth/cookie/token issue). Please reconnect to StockX and try again.');
+        }
         
         // Use the maximum sales count we tracked during the process
         const salesCount = Math.max(maxSalesFound, progress.salesCount || 0);
