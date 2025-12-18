@@ -130,8 +130,15 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
           const jsonText = line.slice('data:'.length).trimStart();
           if (!jsonText) return;
 
+          let data: any;
           try {
-            const data = JSON.parse(jsonText);
+            data = JSON.parse(jsonText);
+          } catch (parseError) {
+            console.warn('Failed to parse SSE JSON:', parseError, 'Raw line:', line);
+            return;
+          }
+
+          try {
             updateCount++;
             lastUpdateTime = Date.now();
 
@@ -190,8 +197,10 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
               console.log('🎉 Import completed successfully:', data);
               finalResult = data;
             }
-          } catch (parseError) {
-            console.warn('Failed to parse SSE data:', parseError, 'Raw line:', line);
+          } catch (handlerError) {
+            // This catch is only for handler logic; if we threw due to an SSE error, rethrow.
+            if (handlerError instanceof Error) throw handlerError;
+            throw new Error(String(handlerError));
           }
         };
 
@@ -404,6 +413,36 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
             )}
           </button>
         </div>
+
+        {/* Auth helper */}
+        {progress.phase === 'error' &&
+          typeof progress.message === 'string' &&
+          progress.message.toLowerCase().includes('reconnect to stockx') && (
+            <div
+              className={`mb-4 rounded-lg p-4 ${
+                isNeon ? 'bg-red-500/10 border border-red-500/20' : 'bg-red-50 border border-red-200'
+              }`}
+            >
+              <div className={`text-sm font-semibold ${isNeon ? 'text-red-200' : 'text-red-800'}`}>
+                StockX connection needs a refresh
+              </div>
+              <div className={`mt-1 text-sm ${isNeon ? 'text-red-100/90' : 'text-red-700'}`}>
+                Click below to re-authenticate with StockX, then retry the import.
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <a
+                  href="/api/stockx/auth?returnTo=/dashboard?section=sales-2-0"
+                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all duration-200 ${
+                    isNeon
+                      ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-black'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}
+                >
+                  Reconnect to StockX
+                </a>
+              </div>
+            </div>
+          )}
 
         {/* Progress Display */}
         {progress.phase !== 'idle' && (
