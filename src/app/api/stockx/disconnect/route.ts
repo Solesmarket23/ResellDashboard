@@ -37,11 +37,31 @@ export async function POST(request: NextRequest) {
     }
 
     // Clear all StockX-related cookies.
-    // We delete both host-only and domain cookies to cover www/non-www deployments.
-    const cookieNames = ['stockx_access_token', 'stockx_refresh_token', 'stockx_token_expires_at', 'stockx_state', 'stockx_return_to'];
+    // IMPORTANT: StockX cookies are HttpOnly. The only reliable way to clear them is to
+    // overwrite them with an expired Set-Cookie. We do this for BOTH host-only and
+    // domain cookies (covers www/non-www deployments).
+    const cookieNames = [
+      'stockx_access_token',
+      'stockx_refresh_token',
+      'stockx_token_expires_at',
+      'stockx_state',
+      'stockx_return_to'
+    ];
+    const isProd = !host.includes('localhost') && !host.includes('127.0.0.1');
+    const baseDeleteOptions = {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: 'lax' as const,
+      path: '/',
+      expires: new Date(0),
+      maxAge: 0
+    };
+
     for (const name of cookieNames) {
-      response.cookies.delete(name);
-      response.cookies.delete({ name, domain: '.solesmarket.com', path: '/' });
+      // Host-only cookie
+      response.cookies.set({ name, value: '', ...baseDeleteOptions });
+      // Domain cookie (covers solesmarket.com + www.solesmarket.com)
+      response.cookies.set({ name, value: '', ...baseDeleteOptions, domain: '.solesmarket.com' });
     }
 
     console.log('StockX tokens cleared successfully');
