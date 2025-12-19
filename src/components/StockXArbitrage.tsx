@@ -1670,46 +1670,10 @@ const StockXArbitrage: React.FC = () => {
                   if (!confirm('Are you sure you want to disconnect from StockX? You will need to reconnect to use arbitrage features.')) {
                     return;
                   }
-                  
-                  try {
-                    // Get user ID from cookies
-                    const userId = document.cookie
-                      .split('; ')
-                      .find(row => row.startsWith('site-user-id='))
-                      ?.split('=')[1];
-                    
-                    console.log('Disconnecting StockX for user:', userId);
-                    
-                    // Clear tokens from Firebase first
-                    const clearResponse = await fetch('/api/stockx/clear-tokens', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ userId })
-                    });
-                    
-                    const clearResult = await clearResponse.json();
-                    console.log('Clear tokens result:', clearResult);
-                    
-                    // Clear browser cookies
-                    document.cookie = 'stockx_access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; domain=' + window.location.hostname;
-                    document.cookie = 'stockx_refresh_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; domain=' + window.location.hostname;
-                    document.cookie = 'stockx_token_expires_at=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; domain=' + window.location.hostname;
-                    
-                    // Also try without domain
-                    document.cookie = 'stockx_access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-                    document.cookie = 'stockx_refresh_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-                    document.cookie = 'stockx_token_expires_at=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-                    
-                    console.log('✅ Disconnected! Reloading...');
-                    
-                    // Reload page after a short delay
-                    setTimeout(() => {
-                      window.location.reload();
-                    }, 500);
-                  } catch (error) {
-                    console.error('Disconnect error:', error);
-                    alert('Failed to disconnect. Check console for details.');
-                  }
+                  // Important: StockX cookies are HttpOnly, so browser JS cannot reliably clear them.
+                  // Use the server-side disconnect route to clear cookies + Firebase-stored tokens.
+                  const returnTo = window.location.href;
+                  window.location.href = `/api/stockx/disconnect?returnTo=${encodeURIComponent(returnTo)}`;
                 }}
                 className={`px-4 py-2 rounded font-medium transition-all duration-200 ${
                   isNeon
