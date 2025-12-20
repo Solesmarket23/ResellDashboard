@@ -52,6 +52,22 @@ function parseDateMs(val: unknown): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
+function parseYmdStartMs(ymd: unknown): number | null {
+  if (typeof ymd !== 'string') return null;
+  const s = ymd.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const ms = Date.parse(`${s}T00:00:00.000Z`);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function parseYmdEndMs(ymd: unknown): number | null {
+  if (typeof ymd !== 'string') return null;
+  const s = ymd.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const ms = Date.parse(`${s}T23:59:59.999Z`);
+  return Number.isFinite(ms) ? ms : null;
+}
+
 function getPurchaseStyleId(p: PurchaseCandidate): string | null {
   return (
     (typeof p.styleId === 'string' && p.styleId.trim()) ||
@@ -114,12 +130,17 @@ function purchaseKey(styleId: string, size: string): string {
 export async function POST(request: NextRequest) {
   try {
     const startTime = Date.now();
-    const { userId, maxSales = 100 } = await request.json();
+    const { userId, maxSales = 100, fromYmd, toYmd } = await request.json();
+
+    const fromMs = parseYmdStartMs(fromYmd);
+    const toMs = parseYmdEndMs(toYmd);
 
     console.log('🚀 Starting streaming bulk StockX sales import for user:', userId);
     console.log('📋 Request details:', {
       userId,
       maxSales,
+      fromYmd: typeof fromYmd === 'string' ? fromYmd : null,
+      toYmd: typeof toYmd === 'string' ? toYmd : null,
       timestamp: new Date().toISOString(),
       userAgent: request.headers.get('User-Agent'),
       origin: request.headers.get('Origin')
@@ -226,6 +247,15 @@ export async function POST(request: NextRequest) {
           progress: 5
         });
 
+        if (fromMs || toMs) {
+          sendUpdate({
+            type: 'status',
+            phase: 'starting',
+            message: `Import window: ${typeof fromYmd === 'string' ? fromYmd : '…'} → ${typeof toYmd === 'string' ? toYmd : '…'}`,
+            progress: 6
+          });
+        }
+
         let currentAccessToken = accessToken;
         let allSales: StockXSale[] = [];
         let pageNumber = 1;
@@ -255,6 +285,7 @@ export async function POST(request: NextRequest) {
           hasNextPage = true;
           pageNumber = 1;
           currentStatus = statusesToCheck[currentStatusIndex];
+          let stopThisStatusDueToDate = false;
           
           sendUpdate({
             type: 'progress',
@@ -267,7 +298,7 @@ export async function POST(request: NextRequest) {
           });
 
           // Fetch all pages for current status
-          while (hasNextPage && allSales.length < maxSales) {
+          while (hasNextPage && allSales.length < maxSales && !stopThisStatusDueToDate) {
             sendUpdate({
               type: 'progress',
               phase: 'fetching',
@@ -436,7 +467,14 @@ export async function POST(request: NextRequest) {
                   }
                 }
                 
-                const pageSales = processSalesData(data.orders);
+                const pageSalesRaw = processSalesData(data.orders);
+                const pageSales = pageSalesRaw.filter((s) => {
+                  const ms = parseDateMs(s.createdAt) ?? parseDateMs((s as any).updatedAt) ?? null;
+                  if (typeof toMs === 'number' && typeof ms === 'number' && ms > toMs) return false;
+                  if (typeof fromMs === 'number' && typeof ms === 'number' && ms < fromMs) return false;
+                  return true;
+                });
+
                 allSales.push(...pageSales);
                 
                 sendUpdate({
@@ -451,6 +489,37 @@ export async function POST(request: NextRequest) {
                 });
                 
                 hasNextPage = data.hasNextPage && data.orders.length > 0;
+
+                // Early-stop this status if we've passed the window (assumes history is sorted newest → oldest).
+                if (typeof fromMs === 'number') {
+                  const pageOrderMs = (data.orders as any[])
+                    .map((o) => parseDateMs(o?.createdAt) ?? parseDateMs(o?.created) ?? null)
+                    .filter((v) => typeof v === 'number') as number[];
+                  if (pageOrderMs.length > 0) {
+                    const maxMs = Math.max(...pageOrderMs);
+                    const minMs = Math.min(...pageOrderMs);
+                    if (maxMs < fromMs) {
+                      stopThisStatusDueToDate = true;
+                      hasNextPage = false;
+                      sendUpdate({
+                        type: 'status',
+                        phase: 'fetching',
+                        message: `${currentStatus}: reached orders older than ${typeof fromYmd === 'string' ? fromYmd : 'cutoff'} — stopping this status early.`,
+                        progress: Math.min(15 + (currentStatusIndex * 8) + (pageNumber * 0.5), 60)
+                      });
+                    } else if (minMs < fromMs && pageSales.length === 0) {
+                      // Mixed page, but nothing in range; likely near the boundary—stop to avoid unnecessary paging.
+                      stopThisStatusDueToDate = true;
+                      hasNextPage = false;
+                      sendUpdate({
+                        type: 'status',
+                        phase: 'fetching',
+                        message: `${currentStatus}: no sales in range on this page — stopping this status.`,
+                        progress: Math.min(15 + (currentStatusIndex * 8) + (pageNumber * 0.5), 60)
+                      });
+                    }
+                  }
+                }
               } else {
                 sendUpdate({
                   type: 'warning',

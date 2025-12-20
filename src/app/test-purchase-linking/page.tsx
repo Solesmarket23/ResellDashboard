@@ -159,6 +159,11 @@ export default function TestPurchaseLinkingPage() {
   const [simFromYmd, setSimFromYmd] = useState('2025-10-01');
   const [simToYmd, setSimToYmd] = useState(todayYmd);
 
+  const [stockxAuth, setStockxAuth] = useState<{
+    state: 'loading' | 'connected' | 'disconnected' | 'warning';
+    message?: string;
+  }>({ state: 'loading' });
+
   const [notification, setNotification] = useState<{
     isVisible: boolean;
     message: string;
@@ -237,6 +242,34 @@ export default function TestPurchaseLinkingPage() {
     // Fall back to cookie-based detection.
     detectUserIdFromServer();
   }, [detectUserIdFromServer, resolveUserId]);
+
+  const refreshStockxAuthStatus = useCallback(async () => {
+    try {
+      setStockxAuth({ state: 'loading' });
+      const resp = await fetch('/api/stockx/auth/status', { cache: 'no-store', credentials: 'include' });
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        setStockxAuth({ state: 'warning', message: json?.message || `Status check failed (${resp.status})` });
+        return;
+      }
+      if (json?.isAuthenticated === true) {
+        // Some responses can be {isAuthenticated:true, verified:false, warning:true}
+        if (json?.warning || json?.verified === false) {
+          setStockxAuth({ state: 'warning', message: json?.message || 'Connected, but verification failed.' });
+        } else {
+          setStockxAuth({ state: 'connected', message: json?.message || 'Connected' });
+        }
+        return;
+      }
+      setStockxAuth({ state: 'disconnected', message: json?.message || 'Not connected' });
+    } catch (e: any) {
+      setStockxAuth({ state: 'warning', message: e?.message || 'Failed to check StockX connection' });
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshStockxAuthStatus();
+  }, [refreshStockxAuthStatus]);
 
   const [sales, setSales] = useState<SaleRow[]>([]);
   const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
@@ -688,6 +721,71 @@ export default function TestPurchaseLinkingPage() {
               <div className={`mt-1 text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
                 Default range: 2025-10-01 → today.
               </div>
+            </div>
+          </div>
+
+          {/* StockX Connection (so Sales 2.0 can connect without visiting Arbitrage) */}
+          <div className={`mt-4 rounded-xl border p-4 ${
+            isNeon ? 'bg-gray-900/40 border border-white/10' : 'bg-gray-50 border border-gray-200'
+          }`}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold">StockX Connection</div>
+                <div className={`mt-1 text-sm ${
+                  isNeon ? 'text-gray-300' : 'text-gray-700'
+                }`}>
+                  {stockxAuth.state === 'loading'
+                    ? 'Checking…'
+                    : stockxAuth.state === 'connected'
+                      ? '✅ Connected'
+                      : stockxAuth.state === 'warning'
+                        ? `⚠️ ${stockxAuth.message || 'Connected, but verification failed'}`
+                        : `❌ ${stockxAuth.message || 'Not connected'}`
+                  }
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={refreshStockxAuthStatus}
+                  className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                    isNeon ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10' : 'bg-white border border-gray-300 text-gray-900 hover:bg-gray-50'
+                  }`}
+                >
+                  Refresh
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const returnTo = '/dashboard?section=sales-2-0';
+                    window.location.href = `/api/stockx/auth?returnTo=${encodeURIComponent(returnTo)}`;
+                  }}
+                  className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                    isNeon
+                      ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-black'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}
+                >
+                  Connect StockX
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const returnTo = '/dashboard?section=sales-2-0';
+                    window.location.href = `/api/stockx/disconnect?returnTo=${encodeURIComponent(returnTo)}`;
+                  }}
+                  className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                    isNeon
+                      ? 'bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-400 hover:to-pink-400 text-white'
+                      : 'bg-red-600 hover:bg-red-700 text-white'
+                  }`}
+                >
+                  Disconnect
+                </button>
+              </div>
+            </div>
+            <div className={`mt-2 text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+              Tip: If imports fail with “reconnect to StockX”, click <span className="font-semibold">Disconnect</span> then <span className="font-semibold">Connect StockX</span> here.
             </div>
           </div>
 

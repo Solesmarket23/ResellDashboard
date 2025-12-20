@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { RefreshCw, Package, AlertCircle, CheckCircle } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import NeonNotification, { NotificationType } from './NeonNotification';
@@ -7,6 +7,8 @@ interface StockXSalesImportProps {
   userId: string;
   onImportComplete?: (success: boolean, salesCount: number) => void;
 }
+
+type ImportRange = 'all' | '1m' | '3m' | '12m';
 
 interface ImportProgress {
   phase: 'idle' | 'fetching' | 'enriching' | 'saving' | 'complete' | 'error';
@@ -23,6 +25,7 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
   const isNeon = currentTheme.name === 'Neon';
   
   const [isImporting, setIsImporting] = useState(false);
+  const [importRange, setImportRange] = useState<ImportRange>('all');
   const [progress, setProgress] = useState<ImportProgress>({
     phase: 'idle',
     message: '',
@@ -33,6 +36,32 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
     message: string;
     type: NotificationType;
   }>({ isVisible: false, message: '', type: 'success' });
+
+  const rangeLabel = useMemo(() => {
+    switch (importRange) {
+      case '1m':
+        return 'last 1 month';
+      case '3m':
+        return 'last 3 months';
+      case '12m':
+        return 'last 12 months';
+      default:
+        return 'all time';
+    }
+  }, [importRange]);
+
+  const rangeYmd = useMemo(() => {
+    if (importRange === 'all') return {};
+    const now = new Date();
+    const to = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const from = new Date(to);
+    const months = importRange === '1m' ? 1 : importRange === '3m' ? 3 : 12;
+    from.setMonth(from.getMonth() - months);
+    return {
+      fromYmd: from.toISOString().slice(0, 10),
+      toYmd: to.toISOString().slice(0, 10)
+    };
+  }, [importRange]);
 
   const handleImport = async () => {
     if (!userId) {
@@ -51,13 +80,13 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
     setIsImporting(true);
     setProgress({
       phase: 'fetching',
-      message: 'Connecting to StockX and fetching sales...',
+      message: `Connecting to StockX and fetching sales (${rangeLabel})...`,
       percentage: 10
     });
 
     try {
       console.log('📡 Making request to bulk-import-stream endpoint');
-      console.log('📋 Request body:', { userId, maxSales: 100 });
+      console.log('📋 Request body:', { userId, maxSales: 2000, ...rangeYmd });
       
       // Use Server-Sent Events for real-time progress updates
       const response = await fetch('/api/stockx/sales/bulk-import-stream', {
@@ -67,7 +96,8 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
         },
         body: JSON.stringify({
           userId: userId,
-          maxSales: 100 // Temporary: import up to 100 for faster iteration
+          maxSales: 2000,
+          ...rangeYmd
         }),
       });
 
@@ -385,8 +415,29 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
             <p className={`text-sm mt-1 ${
               isNeon ? 'text-gray-400' : 'text-gray-600'
             }`}>
-              Import ALL your StockX sales (up to 2000) and add them to your main sales table
+              Import your StockX sales (up to 2000) and add them to your main sales table
             </p>
+            <div className={`mt-3 flex flex-wrap items-center gap-2 text-xs ${
+              isNeon ? 'text-gray-300' : 'text-gray-700'
+            }`}>
+              <span className={`font-semibold ${isNeon ? 'text-gray-200' : 'text-gray-800'}`}>Import range:</span>
+              <select
+                value={importRange}
+                disabled={isImporting}
+                onChange={(e) => setImportRange(e.target.value as ImportRange)}
+                className={`px-3 py-2 rounded-lg border ${
+                  isNeon
+                    ? 'bg-gray-900 border-cyan-500/30 text-gray-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/40'
+                    : 'bg-white border-gray-300 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/40'
+                } disabled:opacity-60`}
+                title="Limit the import to a recent window to keep it fast"
+              >
+                <option value="1m">Last 1 month</option>
+                <option value="3m">Last 3 months</option>
+                <option value="12m">Last 12 months</option>
+                <option value="all">All time</option>
+              </select>
+            </div>
           </div>
 
           <button
@@ -408,7 +459,7 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
             ) : (
               <>
                 <RefreshCw className="w-5 h-5" />
-                Import StockX Sales
+                Import
               </>
             )}
           </button>
