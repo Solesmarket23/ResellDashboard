@@ -343,8 +343,9 @@ export async function GET(request: NextRequest) {
     if (inventoryTypes) queryParams.set('inventoryTypes', inventoryTypes);
     if (initiatedShipmentDisplayIds) queryParams.set('initiatedShipmentDisplayIds', initiatedShipmentDisplayIds);
 
-    // StockX API endpoint for historical orders
-    const apiUrl = `https://api.stockx.com/v2/selling/orders/history?${queryParams.toString()}`;
+    // OAuth is issued with audience=gateway.stockx.com, and selling endpoints are served from gateway.
+    // Using api.stockx.com can 401 even with a fresh token (audience mismatch).
+    const apiUrl = `https://gateway.stockx.com/v2/selling/orders/history?${queryParams.toString()}`;
     console.log(`📋 Fetching StockX historical orders: ${apiUrl}`);
 
     // Make API call to StockX (best-effort retry on transient 5xx).

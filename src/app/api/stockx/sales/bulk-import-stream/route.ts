@@ -333,7 +333,9 @@ export async function POST(request: NextRequest) {
               orderStatus: currentStatus
             });
 
-            const apiUrl = `https://api.stockx.com/v2/selling/orders/history?${queryParams.toString()}`;
+            // OAuth is issued with audience=gateway.stockx.com, and selling endpoints are served from gateway.
+            // Using api.stockx.com can 401 even with a fresh token (audience mismatch).
+            const apiUrl = `https://gateway.stockx.com/v2/selling/orders/history?${queryParams.toString()}`;
 
           try {
           console.log('🌐 Making StockX API request:', {
