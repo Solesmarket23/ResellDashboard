@@ -16,10 +16,27 @@ export async function POST(request: NextRequest) {
     const userId = getUserIdFromRequest(request);
     console.log('Disconnecting StockX tokens', { userId: userId ? `${String(userId).slice(0, 10)}…` : 'missing' });
 
+    const normalizeReturnTo = (raw: string | null): string => {
+      if (!raw) return `${baseUrl}/dashboard?section=stockx-arbitrage&disconnected=true`;
+      const trimmed = raw.trim();
+
+      // Allow relative paths (common case: "/dashboard?section=...") by prefixing same-origin baseUrl.
+      if (trimmed.startsWith('/')) return `${baseUrl}${trimmed}`;
+
+      // Allow absolute URLs only if they are same-origin (avoid open redirect).
+      try {
+        const u = new URL(trimmed);
+        const sameOrigin = u.origin === baseUrl;
+        if (sameOrigin) return u.toString();
+      } catch {
+        // fall through
+      }
+
+      return `${baseUrl}/dashboard?section=stockx-arbitrage&disconnected=true`;
+    };
+
     // Create response with redirect
-    const response = NextResponse.redirect(
-      returnTo || `${baseUrl}/dashboard?section=stockx-arbitrage&disconnected=true`
-    );
+    const response = NextResponse.redirect(normalizeReturnTo(returnTo));
 
     // Clear Firebase-stored tokens as well (so server-side imports / cron can't keep using stale refresh tokens)
     if (userId) {
