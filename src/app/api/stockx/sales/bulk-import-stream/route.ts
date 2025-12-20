@@ -257,6 +257,7 @@ export async function POST(request: NextRequest) {
         }
 
         let currentAccessToken = accessToken;
+        let currentRefreshToken = refreshToken;
         let allSales: StockXSale[] = [];
         let pageNumber = 1;
         let hasNextPage = true;
@@ -331,7 +332,8 @@ export async function POST(request: NextRequest) {
             headers: {
               'x-api-key': apiKey,
               'Authorization': `Bearer ${currentAccessToken}`,
-              'Accept': 'application/json'
+              'Accept': 'application/json',
+              'User-Agent': 'ResellDashboard/1.0'
             }
           });
 
@@ -344,7 +346,7 @@ export async function POST(request: NextRequest) {
 
           // Handle 401 - Token refresh
           if (response.status === 401) {
-            if (!refreshToken) {
+            if (!currentRefreshToken) {
               console.error('❌ No refresh token available');
               throw new Error('Authentication expired. Please reconnect to StockX.');
             }
@@ -357,18 +359,45 @@ export async function POST(request: NextRequest) {
               progress: Math.min(10 + (pageNumber * 2), 60)
             });
 
-            const refreshResult = await refreshStockXTokens(refreshToken);
+            const refreshResult = await refreshStockXTokens(currentRefreshToken);
             
             if (refreshResult.success && refreshResult.accessToken) {
               console.log('✅ Token refresh successful, retrying request...');
               currentAccessToken = refreshResult.accessToken;
+              currentRefreshToken = refreshResult.refreshToken || currentRefreshToken;
+              // Keep outer variables in sync so later code paths use the rotated refresh token too.
+              refreshToken = currentRefreshToken;
+              accessToken = currentAccessToken;
+
+              // Persist refreshed tokens to Firebase so future imports/cron have the latest tokens.
+              if (userId) {
+                try {
+                  const adminDb = getAdminDb();
+                  const now = Date.now();
+                  const nextExpiresAt = now + 3600 * 1000; // default 1h
+                  await adminDb.collection('users').doc(String(userId)).set(
+                    {
+                      stockxTokens: {
+                        access_token: currentAccessToken,
+                        refresh_token: currentRefreshToken,
+                        expires_at: nextExpiresAt,
+                        updated_at: new Date().toISOString()
+                      }
+                    },
+                    { merge: true }
+                  );
+                } catch (e: any) {
+                  console.warn('⚠️ bulk-import-stream: failed to persist refreshed tokens (non-fatal):', e?.message || String(e));
+                }
+              }
               
               // Retry the request with the new token
               response = await fetch(apiUrl, {
                 headers: {
                   'x-api-key': apiKey,
                   'Authorization': `Bearer ${currentAccessToken}`,
-                  'Accept': 'application/json'
+                  'Accept': 'application/json',
+                  'User-Agent': 'ResellDashboard/1.0'
                 }
               });
               
