@@ -199,6 +199,23 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  async function loadTokensFromFirebase(candidateUserId: string): Promise<{ accessToken?: string; refreshToken?: string } | null> {
+    try {
+      const adminDb = getAdminDb();
+      const userDoc = await adminDb.collection('users').doc(String(candidateUserId)).get();
+      const userData = userDoc.data() as any;
+      const fbAccess = userData?.stockxTokens?.access_token;
+      const fbRefresh = userData?.stockxTokens?.refresh_token;
+      if (typeof fbAccess === 'string' && fbAccess && typeof fbRefresh === 'string' && fbRefresh) {
+        return { accessToken: fbAccess, refreshToken: fbRefresh };
+      }
+      return null;
+    } catch (e: any) {
+      console.warn('⚠️ bulk-import-stream: failed to load tokens from Firebase during retry (non-fatal):', e?.message || String(e));
+      return null;
+    }
+  }
+
   console.log('🔐 Authentication check:', {
     hasAccessToken: !!accessToken,
     accessTokenLength: accessToken?.length || 0,
@@ -408,6 +425,41 @@ export async function POST(request: NextRequest) {
               
               // If still 401 after refresh, authentication has failed
               if (response.status === 401) {
+                // Last-chance recovery: if cookies are stale/rotated, try Firebase-stored tokens for the provided userId.
+                if (userId) {
+                  const fbTokens = await loadTokensFromFirebase(String(userId));
+                  if (fbTokens?.accessToken && fbTokens?.refreshToken) {
+                    console.log('🔁 401 after refresh: trying Firebase-stored tokens for retry...');
+                    currentAccessToken = fbTokens.accessToken;
+                    currentRefreshToken = fbTokens.refreshToken;
+                    accessToken = currentAccessToken;
+                    refreshToken = currentRefreshToken;
+
+                    response = await fetch(apiUrl, {
+                      headers: {
+                        'x-api-key': apiKey,
+                        'Authorization': `Bearer ${currentAccessToken}`,
+                        'Accept': 'application/json',
+                        'User-Agent': 'ResellDashboard/1.0'
+                      }
+                    });
+
+                    console.log('📥 Firebase-token retry response:', {
+                      status: response.status,
+                      statusText: response.statusText
+                    });
+
+                    if (response.ok) {
+                      // continue flow; response will be processed below
+                    } else if (response.status === 401) {
+                      throw new Error('Authentication failed after token refresh (and Firebase token fallback). Please reconnect to StockX.');
+                    } else {
+                      const errorBody = await response.text();
+                      throw new Error(`StockX API Error ${response.status}: ${errorBody || response.statusText}`);
+                    }
+                  }
+                }
+
                 throw new Error('Authentication failed after token refresh. Please reconnect to StockX.');
               }
             } else {
