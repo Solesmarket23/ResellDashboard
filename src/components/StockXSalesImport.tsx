@@ -495,6 +495,56 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
             </div>
           )}
 
+        {/* CAPTCHA / bot-protection helper (PerimeterX) */}
+        {progress.phase === 'error' &&
+          typeof progress.message === 'string' &&
+          (progress.message.toLowerCase().includes('px-cloud') ||
+            progress.message.toLowerCase().includes('perimeterx') ||
+            progress.message.toLowerCase().includes('captcha') ||
+            progress.message.toLowerCase().includes('"appid":"px') ||
+            progress.message.toLowerCase().includes('bot protection')) && (
+            <div
+              className={`mb-4 rounded-lg p-4 ${
+                isNeon ? 'bg-yellow-500/10 border border-yellow-500/20' : 'bg-yellow-50 border border-yellow-200'
+              }`}
+            >
+              <div className={`text-sm font-semibold ${isNeon ? 'text-yellow-200' : 'text-yellow-800'}`}>
+                StockX CAPTCHA / bot protection triggered
+              </div>
+              <div className={`mt-1 text-sm ${isNeon ? 'text-yellow-100/90' : 'text-yellow-800'}`}>
+                StockX temporarily blocked automated requests. Open StockX in this browser and complete any CAPTCHA, then retry in a few minutes.
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <a
+                  href="https://stockx.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all duration-200 ${
+                    isNeon
+                      ? 'bg-gradient-to-r from-amber-400 to-yellow-400 hover:from-amber-300 hover:to-yellow-300 text-black'
+                      : 'bg-yellow-500 hover:bg-yellow-600 text-white'
+                  }`}
+                >
+                  Open StockX
+                </a>
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all duration-200 ${
+                    isNeon
+                      ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
+                      : 'bg-white border border-gray-300 text-gray-900 hover:bg-gray-50'
+                  }`}
+                >
+                  Reload page
+                </button>
+              </div>
+              <div className={`mt-2 text-xs ${isNeon ? 'text-yellow-100/80' : 'text-yellow-700'}`}>
+                Tip: Avoid repeated retries back-to-back; wait a few minutes between attempts to reduce re-blocking.
+              </div>
+            </div>
+          )}
+
         {/* Progress Display */}
         {progress.phase !== 'idle' && (
           <div className="space-y-3">

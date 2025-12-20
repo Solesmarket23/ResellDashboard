@@ -68,6 +68,19 @@ function parseYmdEndMs(ymd: unknown): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
+function isPerimeterXBlock(body: string): boolean {
+  const b = String(body || '').toLowerCase();
+  // StockX uses PerimeterX (PX). When blocked, the body is often JSON that includes px-cloud.net / blockScript.
+  return (
+    b.includes('px-cloud.net') ||
+    b.includes('"appid":"px') ||
+    b.includes('"blockscript"') ||
+    b.includes('/captcha/captcha.js') ||
+    b.includes('"customlogo":"https://stockx-assets') ||
+    b.includes('perimeterx')
+  );
+}
+
 function getPurchaseStyleId(p: PurchaseCandidate): string | null {
   return (
     (typeof p.styleId === 'string' && p.styleId.trim()) ||
@@ -457,6 +470,11 @@ export async function POST(request: NextRequest) {
                       throw new Error('Authentication failed after token refresh (and Firebase token fallback). Please reconnect to StockX.');
                     } else {
                       const errorBody = await response.text();
+                    if (response.status === 403 && isPerimeterXBlock(errorBody)) {
+                      throw new Error(
+                        'StockX bot protection (CAPTCHA) was triggered. Open StockX in your browser, complete any CAPTCHA, then retry the import in a few minutes.'
+                      );
+                    }
                       throw new Error(`StockX API Error ${response.status}: ${errorBody || response.statusText}`);
                     }
                   }
@@ -479,7 +497,33 @@ export async function POST(request: NextRequest) {
               body: errorBody,
               url: apiUrl
             });
-            throw new Error(`StockX API Error ${response.status}: ${errorBody || response.statusText}`);
+
+            // If StockX blocks server requests with PerimeterX, try alternate host as a best-effort fallback.
+            // Some endpoints may behave differently between gateway.stockx.com and api.stockx.com.
+            if (response.status === 403 && isPerimeterXBlock(errorBody)) {
+              const altUrl = apiUrl.replace('https://gateway.stockx.com', 'https://api.stockx.com');
+              console.warn('⚠️ PerimeterX block detected. Retrying via alternate host...', { altUrl });
+              const altRes = await fetch(altUrl, {
+                headers: {
+                  'x-api-key': apiKey,
+                  'Authorization': `Bearer ${currentAccessToken}`,
+                  'Accept': 'application/json',
+                  'User-Agent': 'ResellDashboard/1.0'
+                }
+              });
+
+              if (altRes.ok) {
+                response = altRes;
+              } else {
+                const altBody = await altRes.text().catch(() => '');
+                const snippet = (errorBody || altBody || '').slice(0, 220);
+                throw new Error(
+                  `StockX bot protection (CAPTCHA) was triggered. Please open StockX in your browser, complete any CAPTCHA, then retry in a few minutes. Snippet: ${snippet}`
+                );
+              }
+            } else {
+              throw new Error(`StockX API Error ${response.status}: ${errorBody || response.statusText}`);
+            }
           }
 
           if (response.ok) {
