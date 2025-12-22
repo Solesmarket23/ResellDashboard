@@ -1,6 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getStockXApiCredentials, getUserIdFromRequest, validateApiCredentials } from '@/lib/utils/userApiKeyHelper';
 
+function intOrNull(v: string | undefined): number | null {
+  if (!v) return null;
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function computeVerifyTtlSeconds(upstreamStatus: number): number {
+  // Reduce upstream hammering by caching "verification" results.
+  // - 200: stable → cache longer
+  // - 403/429: likely bot protection/rate limiting → cache longer to cool down
+  // - 5xx: transient → cache briefly
+  if (upstreamStatus === 200) return 20 * 60; // 20 minutes
+  if (upstreamStatus === 403 || upstreamStatus === 429) return 30 * 60; // 30 minutes
+  if (upstreamStatus >= 500) return 2 * 60; // 2 minutes
+  return 10 * 60; // 10 minutes default
+}
+
 export async function GET(request: NextRequest) {
   try {
     // Check for access token in cookies
@@ -53,6 +70,42 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // ---- Verification cache (prevents hammering StockX) ----
+    // Some UIs poll this route frequently. Cache the result so we don't trigger PerimeterX/429s.
+    const cachedAtMs = intOrNull(request.cookies.get('stockx_auth_verified_at')?.value);
+    const cachedTtlS = intOrNull(request.cookies.get('stockx_auth_verified_ttl_s')?.value);
+    const cachedUpstreamStatus = intOrNull(request.cookies.get('stockx_auth_verified_upstream_status')?.value);
+    const cachedOk = request.cookies.get('stockx_auth_verified_ok')?.value === '1';
+    const cachedWarning = request.cookies.get('stockx_auth_verified_warning')?.value === '1';
+    const cachedMessage = request.cookies.get('stockx_auth_verified_message')?.value || '';
+    const nowMs = Date.now();
+    if (cachedAtMs && cachedTtlS && nowMs - cachedAtMs < cachedTtlS * 1000) {
+      return NextResponse.json({
+        isAuthenticated: true,
+        verified: cachedOk ? true : cachedWarning ? false : undefined,
+        warning: cachedWarning || undefined,
+        message: cachedMessage || (cachedOk ? 'Authentication valid (cached)' : 'Connected (cached verification)'),
+        upstreamStatusCode: cachedUpstreamStatus ?? undefined,
+        cached: true,
+        cachedAtMs,
+        cachedTtlSeconds: cachedTtlS,
+        credentialsSource: credentials.source,
+        userId: userId || 'anonymous',
+        hasRefreshToken: !!refreshToken,
+        token: tokenExpiresAt
+          ? (() => {
+              const expiresAt = parseInt(tokenExpiresAt);
+              return {
+                expiresAtMs: Number.isFinite(expiresAt) ? expiresAt : undefined,
+                expiresAtIso: Number.isFinite(expiresAt) ? new Date(expiresAt).toISOString() : undefined,
+                secondsRemaining: Number.isFinite(expiresAt) ? Math.max(0, Math.floor((expiresAt - Date.now()) / 1000)) : undefined
+              };
+            })()
+          : undefined,
+        cookie: { maxAgeSeconds: cookieMaxAgeSeconds, maxAgeDays: cookieMaxAgeSeconds / 86400 }
+      });
+    }
+
     // Make a simple API call to verify the token is still valid.
     // IMPORTANT: treat non-401 upstream failures as "verification failed" (not "logged out"),
     // otherwise transient 429/5xx issues will make the UI think StockX disconnected.
@@ -69,8 +122,17 @@ export async function GET(request: NextRequest) {
       });
 
       if (response.ok) {
-        return NextResponse.json({
+        const ttlS = computeVerifyTtlSeconds(200);
+        const cookieOptions = {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax' as const,
+          path: '/',
+          maxAge: ttlS
+        };
+        const res = NextResponse.json({
           isAuthenticated: true,
+          verified: true,
           message: 'Authentication valid',
           credentialsSource: credentials.source,
           userId: userId || 'anonymous',
@@ -85,8 +147,17 @@ export async function GET(request: NextRequest) {
                 };
               })()
             : undefined,
-          cookie: { maxAgeSeconds: cookieMaxAgeSeconds, maxAgeDays: cookieMaxAgeSeconds / 86400 }
+          cookie: { maxAgeSeconds: cookieMaxAgeSeconds, maxAgeDays: cookieMaxAgeSeconds / 86400 },
+          cached: false,
+          verificationTtlSeconds: ttlS
         });
+        res.cookies.set('stockx_auth_verified_at', String(Date.now()), cookieOptions);
+        res.cookies.set('stockx_auth_verified_ttl_s', String(ttlS), cookieOptions);
+        res.cookies.set('stockx_auth_verified_upstream_status', '200', cookieOptions);
+        res.cookies.set('stockx_auth_verified_ok', '1', cookieOptions);
+        res.cookies.set('stockx_auth_verified_warning', '0', cookieOptions);
+        res.cookies.set('stockx_auth_verified_message', 'Authentication valid (cached)', cookieOptions);
+        return res;
       } else if (response.status === 401) {
         // Token might be expired
         return NextResponse.json({
@@ -104,17 +175,26 @@ export async function GET(request: NextRequest) {
         const isRateLimited = status === 429;
         const isBlocked = status === 403;
         const isServerError = status >= 500;
+        const ttlS = computeVerifyTtlSeconds(status);
+        const cookieOptions = {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax' as const,
+          path: '/',
+          maxAge: ttlS
+        };
+        const message = isRateLimited
+          ? 'Connected, but StockX verification was rate-limited (429)'
+          : isBlocked
+            ? 'Connected, but StockX verification was blocked (403)'
+            : isServerError
+              ? `Connected, but StockX verification failed (${status})`
+              : `Connected, but StockX verification returned ${status}`;
 
-        return NextResponse.json({
+        const res = NextResponse.json({
           isAuthenticated: true,
           verified: false,
-          message: isRateLimited
-            ? 'Connected, but StockX verification was rate-limited (429)'
-            : isBlocked
-              ? 'Connected, but StockX verification was blocked (403)'
-              : isServerError
-                ? `Connected, but StockX verification failed (${status})`
-                : `Connected, but StockX verification returned ${status}`,
+          message,
           warning: true,
           upstreamStatusCode: status,
           needsReauth: false,
@@ -131,12 +211,30 @@ export async function GET(request: NextRequest) {
                 };
               })()
             : undefined,
-          cookie: { maxAgeSeconds: cookieMaxAgeSeconds, maxAgeDays: cookieMaxAgeSeconds / 86400 }
+          cookie: { maxAgeSeconds: cookieMaxAgeSeconds, maxAgeDays: cookieMaxAgeSeconds / 86400 },
+          cached: false,
+          verificationTtlSeconds: ttlS
         });
+        // Cache warning result so frequent polling won't keep hitting StockX while blocked/limited.
+        res.cookies.set('stockx_auth_verified_at', String(Date.now()), cookieOptions);
+        res.cookies.set('stockx_auth_verified_ttl_s', String(ttlS), cookieOptions);
+        res.cookies.set('stockx_auth_verified_upstream_status', String(status), cookieOptions);
+        res.cookies.set('stockx_auth_verified_ok', '0', cookieOptions);
+        res.cookies.set('stockx_auth_verified_warning', '1', cookieOptions);
+        res.cookies.set('stockx_auth_verified_message', message, cookieOptions);
+        return res;
       }
     } catch (error) {
       console.error('Auth verification error:', error);
-      return NextResponse.json({
+      const ttlS = computeVerifyTtlSeconds(500);
+      const cookieOptions = {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax' as const,
+        path: '/',
+        maxAge: ttlS
+      };
+      const res = NextResponse.json({
         // Network / transient errors verifying with StockX should not flip the UI to "disconnected"
         // when we still have a token cookie.
         isAuthenticated: true,
@@ -148,8 +246,18 @@ export async function GET(request: NextRequest) {
         hasRefreshToken: !!refreshToken,
         credentialsSource: credentials.source,
         userId: userId || 'anonymous',
-        cookie: { maxAgeSeconds: cookieMaxAgeSeconds, maxAgeDays: cookieMaxAgeSeconds / 86400 }
+        cookie: { maxAgeSeconds: cookieMaxAgeSeconds, maxAgeDays: cookieMaxAgeSeconds / 86400 },
+        cached: false,
+        verificationTtlSeconds: ttlS
       });
+      // Cache transient failures briefly to avoid tight retry loops from the client.
+      res.cookies.set('stockx_auth_verified_at', String(Date.now()), cookieOptions);
+      res.cookies.set('stockx_auth_verified_ttl_s', String(ttlS), cookieOptions);
+      res.cookies.set('stockx_auth_verified_upstream_status', '0', cookieOptions);
+      res.cookies.set('stockx_auth_verified_ok', '0', cookieOptions);
+      res.cookies.set('stockx_auth_verified_warning', '1', cookieOptions);
+      res.cookies.set('stockx_auth_verified_message', 'Connected, but failed to verify StockX authentication (cached)', cookieOptions);
+      return res;
     }
 
   } catch (error) {
