@@ -287,11 +287,25 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
               ? 'bg-emerald-500/20 ring-2 ring-emerald-500/50' 
               : 'bg-green-100 ring-2 ring-green-300'
           }`}>
-            <CheckCircle className={`w-5 h-5 ${ 
-              isNeonTheme 
-                ? 'text-emerald-400' 
-                : 'text-green-600'
-            }`} />
+            <div className="relative">
+              <img
+                src="/google-g.svg"
+                alt="Google"
+                className="w-5 h-5"
+                loading="lazy"
+                decoding="async"
+              />
+              {/* Small status badge so it's still obvious this is a success state */}
+              <div
+                className={`absolute -right-2 -bottom-2 rounded-full ${
+                  isNeonTheme ? 'bg-emerald-500/90' : 'bg-green-600'
+                }`}
+                style={{ width: 16, height: 16 }}
+                aria-hidden="true"
+              >
+                <CheckCircle className="w-4 h-4 text-white" />
+              </div>
+            </div>
           </div>
           
           {/* Content */}
