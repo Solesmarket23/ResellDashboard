@@ -6,6 +6,19 @@ const ORDER_DETAILS_TTL_MS = 10 * 60 * 1000; // 10m
 const catalogCache = new Map<string, { brand: string | null; productType: string | null; ts: number }>();
 const orderDetailsCache = new Map<string, { data: any | null; ts: number }>();
 
+function isPerimeterXBlock(body: string): boolean {
+  const b = String(body || '').toLowerCase();
+  // StockX commonly uses PerimeterX (PX). When blocked, the body is often JSON/HTML that includes px-cloud.net / blockScript.
+  return (
+    b.includes('px-cloud.net') ||
+    b.includes('"appid":"px') ||
+    b.includes('"blockscript"') ||
+    b.includes('/captcha/captcha.js') ||
+    b.includes('"customlogo":"https://stockx-assets') ||
+    b.includes('perimeterx')
+  );
+}
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   
@@ -474,6 +487,86 @@ export async function GET(request: NextRequest) {
     if (!response.ok) {
       const errorText = await response.text();
       console.error('StockX Historical Orders API Error:', errorText);
+
+      // If the gateway endpoint returns 403, retry once via api.stockx.com as a best-effort fallback.
+      // We've observed that some StockX stacks can return 403 on one host but succeed on the other.
+      if (response.status === 403) {
+        const blockedOnGateway = isPerimeterXBlock(errorText);
+        const altUrl = apiUrl.replace('https://gateway.stockx.com', 'https://api.stockx.com');
+        console.warn('⚠️ StockX 403 on gateway. Retrying via alternate host...', { altUrl, blockedOnGateway });
+        const altRes = await fetchWithBackoff(
+          altUrl,
+          {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'x-api-key': apiKey,
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+              'User-Agent': 'FlipFlow/1.0',
+            },
+          },
+          'historyList',
+          2
+        );
+
+        if (altRes.ok) {
+          const ordersData = await altRes.json();
+          const processedOrdersRaw = processOrdersData(ordersData);
+          const withBrands = await enrichWithCatalogBrand(processedOrdersRaw, accessToken);
+          const processedOrders = await enrichWithOrderDetailsPayout(withBrands, accessToken);
+          return NextResponse.json({
+            success: true,
+            data: processedOrders,
+            count: ordersData.count || processedOrders.length,
+            pageNumber: ordersData.pageNumber || pageNumber,
+            pageSize: ordersData.pageSize || pageSize,
+            hasNextPage: ordersData.hasNextPage || false,
+            debug: {
+              upstreamCalls: {
+                ...upstreamCalls,
+                total: upstreamCalls.historyList + upstreamCalls.catalog + upstreamCalls.orderDetails,
+              },
+              retry: { perimeterXFallback: true, altHost: 'api.stockx.com' },
+            },
+            appliedFilters: {
+              fromDate,
+              toDate,
+              orderStatus,
+              productId,
+              variantId,
+              inventoryTypes,
+              initiatedShipmentDisplayIds,
+            },
+          });
+        } else {
+          const altBody = await altRes.text().catch(() => '');
+          console.warn('⚠️ Alternate host retry failed', { status: altRes.status, statusText: altRes.statusText });
+          const blockedOnAlt = isPerimeterXBlock(altBody);
+          const blocked = blockedOnGateway || blockedOnAlt;
+          return NextResponse.json(
+            {
+              success: false,
+              error: 'Access forbidden',
+              message: blocked
+                ? 'StockX bot protection (CAPTCHA) was triggered. Open StockX in your browser, complete any CAPTCHA, then retry in a few minutes.'
+                : 'StockX returned 403 for the orders history endpoint. Your token may be valid, but this specific endpoint is blocked/permissioned for your account/API key.',
+              blocked: blocked || undefined,
+              statusCode: 403,
+              details: (altBody || errorText || '').slice(0, 500),
+              debug: {
+                retry: {
+                  alternateHostAttempted: true,
+                  gatewayBlocked: blockedOnGateway || undefined,
+                  altBlocked: blockedOnAlt || undefined,
+                  altStatus: altRes.status,
+                },
+              },
+            },
+            { status: 403 }
+          );
+        }
+      }
       
       if (response.status === 401) {
         return NextResponse.json(
@@ -488,13 +581,17 @@ export async function GET(request: NextRequest) {
           { status: 401 }
         );
       } else if (response.status === 403) {
+        const isBlocked = isPerimeterXBlock(errorText);
         return NextResponse.json(
           { 
             success: false,
-            error: 'Access forbidden', 
+            error: 'Access forbidden',
             details: errorText,
-            message: 'You may not have seller permissions or API access',
-            statusCode: 403
+            message: isBlocked
+              ? 'StockX bot protection (CAPTCHA) was triggered. Open StockX in your browser, complete any CAPTCHA, then retry in a few minutes.'
+              : 'You may not have seller permissions or API access',
+            blocked: isBlocked || undefined,
+            statusCode: 403,
           },
           { status: 403 }
         );

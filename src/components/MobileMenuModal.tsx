@@ -40,6 +40,8 @@ interface MobileMenuModalProps {
   onItemClick: (item: string) => void;
 }
 
+const PRICE_MONITOR_DISABLED = process.env.NEXT_PUBLIC_DISABLE_PRICE_MONITOR === 'true';
+
 // Organized menu sections for mobile
 const menuSections = [
   {
@@ -50,6 +52,7 @@ const menuSections = [
       { id: 'deliveries', label: 'Deliveries', icon: Truck },
       { id: 'sales', label: 'Sales', icon: TrendingUp },
       { id: 'sales-2-0', label: 'Sales 2.0', icon: TrendingUp },
+      { id: 'purchase-linking', label: 'Purchase Linking', icon: ArrowLeftRight },
     ]
   },
   {
@@ -61,7 +64,7 @@ const menuSections = [
       { id: 'stockx-arbitrage', label: 'Arbitrage', icon: ArrowLeftRight },
       { id: 'ebay-stockx-arbitrage', label: 'eBay Deals', icon: Target },
       { id: 'stockx-repricing', label: 'Repricing', icon: Activity },
-      { id: 'stockx-price-monitor', label: 'Price Monitor', icon: Monitor },
+      ...(PRICE_MONITOR_DISABLED ? [] : [{ id: 'stockx-price-monitor', label: 'Price Monitor', icon: Monitor }]),
       { id: 'stockx-market-research', label: 'Market Research', icon: Search },
     ]
   },

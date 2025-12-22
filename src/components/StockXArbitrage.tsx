@@ -1574,6 +1574,7 @@ const StockXArbitrage: React.FC = () => {
               .slice(0, 3); // Show latest 3 alerts
             
             if (recentAlerts.length > 0) {
+              const PRICE_MONITOR_DISABLED = process.env.NEXT_PUBLIC_DISABLE_PRICE_MONITOR === 'true';
               return (
                 <div className="mb-6 bg-green-900/20 border border-green-500/30 rounded-lg p-4">
                   <div className="flex items-center gap-2 mb-3">
@@ -1590,14 +1591,16 @@ const StockXArbitrage: React.FC = () => {
                       </div>
                     ))}
                   </div>
-                  <div className="mt-3">
-                    <button
-                      onClick={() => window.location.href = '/dashboard?tab=stockx-price-monitor'}
-                      className="text-sm text-blue-400 hover:text-blue-300 underline"
-                    >
-                      View all monitored products →
-                    </button>
-                  </div>
+                  {!PRICE_MONITOR_DISABLED && (
+                    <div className="mt-3">
+                      <button
+                        onClick={() => (window.location.href = '/dashboard?section=stockx-price-monitor')}
+                        className="text-sm text-blue-400 hover:text-blue-300 underline"
+                      >
+                        View all monitored products →
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             }

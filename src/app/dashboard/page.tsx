@@ -51,6 +51,7 @@ function DashboardContent() {
   const [isClient, setIsClient] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const { currentTheme } = useTheme();
+  const PRICE_MONITOR_DISABLED = process.env.NEXT_PUBLIC_DISABLE_PRICE_MONITOR === 'true';
   const { user, loading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -222,6 +223,8 @@ function DashboardContent() {
         return <TestStockXOrders />;
       case 'sales-2-0':
         return <TestPurchaseLinkingPage />;
+      case 'purchase-linking':
+        return <TestPurchaseLinkingPage />;
       case 'failed-verifications':
         return <FailedVerifications />;
       case 'profit-calculator':
@@ -294,6 +297,22 @@ function DashboardContent() {
       case 'stockx-releases':
         return <StockXReleases />;
       case 'stockx-price-monitor':
+        if (PRICE_MONITOR_DISABLED) {
+          return (
+            <div className={`flex-1 p-4 sm:p-8 ${currentTheme.colors.background}`}>
+              <h1
+                className={`text-2xl sm:text-3xl font-bold ${
+                  isNeon ? 'text-white' : 'text-gray-900'
+                }`}
+              >
+                Price Monitor (Disabled)
+              </h1>
+              <p className={`mt-4 ${isNeon ? 'text-slate-400' : 'text-gray-600'}`}>
+                This feature is temporarily disabled to reduce StockX API traffic.
+              </p>
+            </div>
+          );
+        }
         return <StockXPriceMonitor />;
       case 'stockx-flex-ask-monitor':
         return <StockXFlexAskMonitor />;

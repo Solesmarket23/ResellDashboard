@@ -45,6 +45,8 @@ interface SidebarProps {
   onToggleCollapse?: () => void;
 }
 
+const PRICE_MONITOR_DISABLED = process.env.NEXT_PUBLIC_DISABLE_PRICE_MONITOR === 'true';
+
 const navigationItems = [
   {
     section: 'OVERVIEW',
@@ -54,6 +56,7 @@ const navigationItems = [
       { id: 'deliveries', label: 'Deliveries', icon: Truck },
       { id: 'sales', label: 'Sales', icon: TrendingUp },
       { id: 'sales-2-0', label: 'Sales 2.0', icon: TrendingUp },
+      { id: 'purchase-linking', label: 'Purchase Linking', icon: ArrowLeftRight },
     ]
   },
   {
@@ -85,7 +88,7 @@ const navigationItems = [
       { id: 'stockx-repricing', label: 'Automated Repricing', icon: Activity },
       { id: 'stockx-sales', label: 'My Sales', icon: DollarSign },
       { id: 'stockx-releases', label: 'Release Calendar', icon: Calendar },
-      { id: 'stockx-price-monitor', label: 'Price Monitor', icon: Monitor },
+      ...(PRICE_MONITOR_DISABLED ? [] : [{ id: 'stockx-price-monitor', label: 'Price Monitor', icon: Monitor }]),
       { id: 'stockx-flex-ask-monitor', label: 'Flex Ask Monitor', icon: Bell },
       { id: 'stockx-profit-calc', label: 'Enhanced Profit Calc', icon: Calculator },
       { id: 'stockx-trends', label: 'Market Trends', icon: LineChart },

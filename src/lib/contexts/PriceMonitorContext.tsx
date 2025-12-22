@@ -79,6 +79,9 @@ export const usePriceMonitor = () => {
 
 export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
   const { user } = useAuth();
+  // Temporary kill-switch to stop all Price Monitor polling / StockX traffic.
+  // Set NEXT_PUBLIC_DISABLE_PRICE_MONITOR=true to fully disable monitoring behavior.
+  const PRICE_MONITOR_DISABLED = process.env.NEXT_PUBLIC_DISABLE_PRICE_MONITOR === 'true';
   const [monitoredProducts, setMonitoredProducts] = useState<MonitoredProduct[]>([]);
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [monitoringInterval, setMonitoringInterval] = useState(300000); // 5 minutes default
@@ -191,16 +194,24 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
 
   // Save monitoring state
   useEffect(() => {
+    if (PRICE_MONITOR_DISABLED) return;
     localStorage.setItem('stockx_monitoring_active', isMonitoring.toString());
-  }, [isMonitoring]);
+  }, [isMonitoring, PRICE_MONITOR_DISABLED]);
 
   // Save monitoring interval
   useEffect(() => {
+    if (PRICE_MONITOR_DISABLED) return;
     localStorage.setItem('stockx_monitoring_interval', monitoringInterval.toString());
-  }, [monitoringInterval]);
+  }, [monitoringInterval, PRICE_MONITOR_DISABLED]);
 
   // Check authentication status
   useEffect(() => {
+    if (PRICE_MONITOR_DISABLED) {
+      // Stop any background behavior and avoid auth/status polling.
+      setIsMonitoring(false);
+      setIsAuthenticated(null);
+      return;
+    }
     const checkAuth = async () => {
       try {
         // First check if we have cookies
@@ -225,11 +236,17 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
     // Re-check auth status every minute
     const interval = setInterval(checkAuth, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [PRICE_MONITOR_DISABLED]);
 
   // Monitoring loop
   useEffect(() => {
     let intervalId: NodeJS.Timeout;
+
+    if (PRICE_MONITOR_DISABLED) {
+      // Force-disable if user previously enabled it in localStorage.
+      if (isMonitoring) setIsMonitoring(false);
+      return;
+    }
 
     if (isMonitoring) {
       const checkPrices = async () => {
@@ -324,7 +341,7 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
         console.log('🛑 [Background] Monitoring interval cleared');
       }
     };
-  }, [isMonitoring, monitoringInterval]);
+  }, [isMonitoring, monitoringInterval, PRICE_MONITOR_DISABLED]);
 
   // NOTE: do NOT key off Firestore document id (`product.id`) because site-password users
   // have doc ids like `${userId}__${productId}__${variantId}`. Match on productId+variantId.
@@ -622,8 +639,17 @@ export const PriceMonitorProvider = ({ children }: { children: ReactNode }) => {
     removeMonitoredProduct,
     updateAllProductThresholds,
     updateAllProductThresholdsByAmount,
-    setIsMonitoring,
-    setMonitoringInterval,
+    setIsMonitoring: (monitoring: boolean) => {
+      if (PRICE_MONITOR_DISABLED) {
+        setIsMonitoring(false);
+        return;
+      }
+      setIsMonitoring(monitoring);
+    },
+    setMonitoringInterval: (interval: number) => {
+      if (PRICE_MONITOR_DISABLED) return;
+      setMonitoringInterval(interval);
+    },
     clearNotifications,
     markAlertsAsRead
   };

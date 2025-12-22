@@ -429,6 +429,18 @@ export default function TestStockXOrders() {
     if (status === 429) return `${label}: Too many requests (429). Please wait ~30–60s and retry.`;
     if (status === 504) return `${label}: Timed out (504). Try again (cache helps) or narrow the date range.`;
     if (status === 401 || body?.authRequired) return `${label}: StockX auth required. Click “Authenticate with StockX”.`;
+    if (status === 403) {
+      const details = String(body?.details || '').toLowerCase();
+      if (
+        details.includes('px-cloud.net') ||
+        details.includes('"appid":"px') ||
+        details.includes('"blockscript"') ||
+        details.includes('/captcha/captcha.js') ||
+        details.includes('perimeterx')
+      ) {
+        return `${label}: StockX bot protection (CAPTCHA) triggered (403). Open stockx.com, complete CAPTCHA, wait a few minutes, then retry.`;
+      }
+    }
     const msg = body?.message || body?.error || body?.details;
     return `${label}: ${msg ? String(msg) : status ? `Request failed (${status})` : 'Request failed'}`;
   };
@@ -2057,8 +2069,10 @@ export default function TestStockXOrders() {
           const qp = new URLSearchParams();
           qp.set('pageNumber', String(p));
           qp.set('pageSize', String(PAGE_SIZE));
-          qp.set('includeCatalog', '1');
-          qp.set('includeDetails', '1');
+          // Keep StockX upstream calls minimal to reduce PerimeterX/CAPTCHA risk.
+          // Users can still click into details per-order if needed.
+          qp.set('includeCatalog', '0');
+          qp.set('includeDetails', '0');
           const fd = historyFromDate();
           const td = historyToDate();
           if (fd) qp.set('fromDate', fd);
@@ -2081,6 +2095,12 @@ export default function TestStockXOrders() {
               setError(json?.message || 'StockX authentication required.');
               appendLog('warn', 'Auth required while fetching all pages', { status: res.status, body: json });
               showToast('warning', formatFetchErrorToast('Fetch ALL', res.status, json));
+              return;
+            }
+            if (res.status === 403) {
+              // Surface PX blocks clearly and stop immediately (retries tend to worsen the block).
+              showToast('error', formatFetchErrorToast('Fetch ALL', res.status, json));
+              appendLog('warn', 'Fetch ALL blocked (403)', { status: res.status, body: json });
               return;
             }
             // If StockX rejects a status value, treat it as "no rows" and keep going (useful when their enum changes).

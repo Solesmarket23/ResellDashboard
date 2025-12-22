@@ -10,6 +10,12 @@ function pickNumber(val: any): number | null {
 
 export async function GET(request: NextRequest) {
   try {
+    if (process.env.NEXT_PUBLIC_DISABLE_PRICE_MONITOR === 'true') {
+      return NextResponse.json(
+        { error: 'Price Monitor is temporarily disabled' },
+        { status: 503 }
+      );
+    }
     const cookieStore = cookies();
     let accessToken = cookieStore.get('stockx_access_token')?.value;
     const refreshToken = cookieStore.get('stockx_refresh_token')?.value;
@@ -113,6 +119,12 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    if (process.env.NEXT_PUBLIC_DISABLE_PRICE_MONITOR === 'true') {
+      return NextResponse.json(
+        { error: 'Price Monitor is temporarily disabled' },
+        { status: 503 }
+      );
+    }
     const cookieStore = cookies();
     let accessToken = cookieStore.get('stockx_access_token')?.value;
     const refreshToken = cookieStore.get('stockx_refresh_token')?.value;

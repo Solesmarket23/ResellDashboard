@@ -447,12 +447,26 @@ export async function GET(request: NextRequest) {
           { status: 401 }
         );
       } else if (response.status === 403) {
+        const isPerimeterXBlock = (() => {
+          const b = String(errorDetails || '').toLowerCase();
+          return (
+            b.includes('px-cloud.net') ||
+            b.includes('"appid":"px') ||
+            b.includes('"blockscript"') ||
+            b.includes('/captcha/captcha.js') ||
+            b.includes('"customlogo":"https://stockx-assets') ||
+            b.includes('perimeterx')
+          );
+        })();
         return NextResponse.json(
           { 
             success: false,
             error: 'Access forbidden', 
             details: errorDetails,
-            message: 'You may not have seller permissions or API access',
+            message: isPerimeterXBlock
+              ? 'StockX bot protection (CAPTCHA) was triggered. Open StockX in your browser, complete any CAPTCHA, then retry in a few minutes.'
+              : 'You may not have seller permissions or API access',
+            blocked: isPerimeterXBlock || undefined,
             statusCode: 403
           },
           { status: 403 }
