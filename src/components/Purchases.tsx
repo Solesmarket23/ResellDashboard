@@ -27,6 +27,43 @@ import ProductSearch from './ProductSearch';
 const Purchases = () => {
   // Temporary feature flag to disable Historical Sync UI (revert)
   const ENABLE_HISTORICAL_SYNC = false;
+  
+  // ---- Money helpers (supports credits/discounts without overwriting the original total) ----
+  const parseMoney = (val: unknown): number => {
+    if (typeof val === 'number' && Number.isFinite(val)) return val;
+    if (typeof val !== 'string') return 0;
+    const cleaned = val.replace(/[^0-9.\-]/g, '');
+    if (!cleaned) return 0;
+    const n = Number(cleaned);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const getCreditsAmount = (purchase: any): number => {
+    if (!purchase) return 0;
+    // Support either `credits` or legacy `discounts` (strings or numbers)
+    const raw = purchase.credits ?? purchase.discounts ?? 0;
+    const n = parseMoney(raw);
+    return n > 0 ? n : 0;
+  };
+
+  const getGrossAmount = (purchase: any): number => {
+    if (!purchase) return 0;
+    // Prefer numeric "totalAmount" if present (this is the pre-credit total from Gmail)
+    if (typeof purchase.totalAmount === 'number' && Number.isFinite(purchase.totalAmount)) return purchase.totalAmount;
+    // Fall back to other common numeric fields
+    if (typeof purchase.totalPayment === 'number' && Number.isFinite(purchase.totalPayment)) return purchase.totalPayment;
+    if (typeof purchase.purchasePrice === 'number' && Number.isFinite(purchase.purchasePrice)) return purchase.purchasePrice;
+    // Fall back to strings (e.g. "$200.00", "200.00 + $0.00")
+    return parseMoney(purchase.totalAmount ?? purchase.price ?? purchase.originalPrice ?? 0);
+  };
+
+  const getNetAmount = (purchase: any): number => {
+    const gross = getGrossAmount(purchase);
+    const credits = getCreditsAmount(purchase);
+    return Math.max(0, gross - credits);
+  };
+
+  const formatUsd = (n: number): string => `$${(Number.isFinite(n) ? n : 0).toFixed(2)}`;
   // NOTE: sortBy should always store the internal column key (e.g. "purchaseDate"), not a label.
   const [sortBy, setSortBy] = useState('purchaseDate');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
@@ -449,7 +486,7 @@ const Purchases = () => {
           break;
         case 'total':
         case 'price':
-          cellContent = purchase.totalAmount ? `$${typeof purchase.totalAmount === 'number' ? purchase.totalAmount.toFixed(2) : purchase.totalAmount}` : (purchase.price || '');
+          cellContent = formatUsd(getNetAmount(purchase));
           break;
         case 'purchaseDate':
           // Use the same date formatting logic as gmail-test page
@@ -1095,8 +1132,13 @@ const Purchases = () => {
         tracking: tracking,
         carrier: carrier, // Use re-detected carrier
         market: purchase.merchant || purchase.market || 'StockX',
-        price: purchase.totalAmount ? `$${purchase.totalAmount.toFixed(2)}` : (purchase.price || '$0.00'),
-        originalPrice: purchase.totalAmount ? `$${purchase.totalAmount.toFixed(2)} + $0.00` : (purchase.price || '$0.00'),
+        price: formatUsd(getNetAmount(purchase)),
+        originalPrice: (() => {
+          const gross = getGrossAmount(purchase);
+          const credits = getCreditsAmount(purchase);
+          if (credits > 0) return `${formatUsd(gross)} - ${formatUsd(credits)}`;
+          return formatUsd(gross);
+        })(),
         // Preserve purchase date from consolidation (which should have used order confirmation email date)
         // Consolidation happens BEFORE transformation, so purchaseDate should already be correct
         purchaseDate: derivePurchaseDateDisplay(purchase),
@@ -1601,20 +1643,8 @@ const Purchases = () => {
   const calculateTotals = useCallback((purchaseList: any[]) => {
     const normalizePrice = (p: any): number => {
       if (!p) return 0;
-      // Prefer numeric fields if present
-      if (typeof p.price === 'number' && !isNaN(p.price)) return p.price;
-      if (typeof p.totalPayment === 'number' && !isNaN(p.totalPayment)) return p.totalPayment;
-      if (typeof p.purchasePrice === 'number' && !isNaN(p.purchasePrice)) return p.purchasePrice;
-
-      // Parse common string formats like "$1,234.56" or "1,234.56 + $0.00"
-      const tryStrings: (string | undefined)[] = [p.price, p.originalPrice];
-      for (const s of tryStrings) {
-        if (typeof s === 'string') {
-          const num = parseFloat(s.replace(/[^0-9.\-]+/g, ''));
-          if (!isNaN(num)) return num;
-        }
-      }
-      return 0;
+      // Use net total so credits/discounts reduce the displayed total without overwriting the original amount.
+      return getNetAmount(p);
     };
 
     const total = purchaseList.reduce((sum, purchase) => sum + normalizePrice(purchase), 0);
@@ -1817,8 +1847,13 @@ const Purchases = () => {
           tracking: tracking,
           carrier: carrier, // Will be null if no tracking or invalid, will show "-"
           market: cleanedPurchase.merchant || cleanedPurchase.market || 'StockX',
-          price: cleanedPurchase.totalAmount ? `$${cleanedPurchase.totalAmount.toFixed(2)}` : (cleanedPurchase.price || '$0.00'),
-          originalPrice: cleanedPurchase.totalAmount ? `$${cleanedPurchase.totalAmount.toFixed(2)} + $0.00` : (cleanedPurchase.price || '$0.00'),
+          price: formatUsd(getNetAmount(cleanedPurchase)),
+          originalPrice: (() => {
+            const gross = getGrossAmount(cleanedPurchase);
+            const credits = getCreditsAmount(cleanedPurchase);
+            if (credits > 0) return `${formatUsd(gross)} - ${formatUsd(credits)}`;
+            return formatUsd(gross);
+          })(),
           // Ensure every row has a stable purchaseDate display value.
           purchaseDate: derivePurchaseDateDisplay(cleanedPurchase),
           // Preserve consolidation fields
@@ -4756,12 +4791,13 @@ const Purchases = () => {
                         ? 'bg-gradient-to-r from-green-500/20 to-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                         : 'bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 border border-green-200'
                     }`}>
-                      {purchase.price || purchase.totalAmount ? (
-                        typeof purchase.totalAmount === 'number' 
-                          ? `$${purchase.totalAmount.toFixed(2)}`
-                          : purchase.price
-                      ) : '—'}
+                      {formatUsd(getNetAmount(purchase))}
                     </div>
+                    {getCreditsAmount(purchase) > 0 && (
+                      <div className={`mt-1 text-xs ${currentTheme.colors.textSecondary}`}>
+                        Credit applied: -{formatUsd(getCreditsAmount(purchase))}
+                      </div>
+                    )}
                   </td>
                   <td className="px-6 py-3 align-middle">
                     <span className={`inline-flex items-center gap-1.5 text-sm font-medium ${currentTheme.colors.textPrimary}`}>
@@ -5239,6 +5275,28 @@ const Purchases = () => {
                 </div>
               </div>
 
+              {/* Net total preview (gross - credits) */}
+              <div className={`-mt-2 text-sm ${currentTheme.colors.textSecondary}`}>
+                {(() => {
+                  const gross = getGrossAmount(editingPurchase);
+                  const credits = parseMoney(editingPurchase.credits ?? editingPurchase.discounts ?? 0);
+                  const net = Math.max(0, gross - Math.max(0, credits));
+                  return (
+                    <div className="flex items-center justify-end gap-2">
+                      <span className="font-semibold">Net Paid:</span>
+                      <span className={`${currentTheme.name === 'Neon' ? 'text-emerald-400' : 'text-green-700'} font-bold`}>
+                        {formatUsd(net)}
+                      </span>
+                      {credits > 0 && (
+                        <span className="text-xs">
+                          ({formatUsd(gross)} - {formatUsd(credits)})
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+
               {/* Purchase Date */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -5483,6 +5541,12 @@ const Purchases = () => {
                     const resolvedUserId = user?.uid || siteUserId;
                     const isSitePasswordUser = !user && !!siteUserId;
 
+                    const creditsAmount = (() => {
+                      const raw = editingPurchase.credits ?? editingPurchase.discounts ?? '';
+                      const n = parseMoney(raw);
+                      return n > 0 ? n : 0;
+                    })();
+
                     const updates = {
                       productName: editingPurchase.product?.name || editingPurchase.productName || '',
                       brand: editingPurchase.product?.brand || editingPurchase.brand || '',
@@ -5492,8 +5556,10 @@ const Purchases = () => {
                       style_id: editingPurchase.style_id || '',
                       price: editingPurchase.price || '',
                       totalAmount: editingPurchase.totalAmount || 0,
-                      credits: editingPurchase.credits || '',
-                      discounts: editingPurchase.discounts || '',
+                      // Store credits as a number so it can be applied consistently in calculations.
+                      // We keep both keys for backward compatibility.
+                      credits: creditsAmount || 0,
+                      discounts: creditsAmount || 0,
                       purchaseDate: editingPurchase.purchaseDate || '',
                       orderNumber: editingPurchase.orderNumber || '',
                       tracking: editingPurchase.tracking || '',
