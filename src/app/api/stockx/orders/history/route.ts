@@ -356,9 +356,11 @@ export async function GET(request: NextRequest) {
     if (inventoryTypes) queryParams.set('inventoryTypes', inventoryTypes);
     if (initiatedShipmentDisplayIds) queryParams.set('initiatedShipmentDisplayIds', initiatedShipmentDisplayIds);
 
-    // OAuth is issued with audience=gateway.stockx.com, and selling endpoints are served from gateway.
-    // Using api.stockx.com can 401 even with a fresh token (audience mismatch).
-    const apiUrl = `https://gateway.stockx.com/v2/selling/orders/history?${queryParams.toString()}`;
+    // Prefer api.stockx.com first. We have observed PerimeterX blocks on gateway.stockx.com
+    // while api.stockx.com continues to work for the same endpoint.
+    // If api.stockx.com returns 401 (audience mismatch), we'll fall back to gateway below.
+    const apiUrl = `https://api.stockx.com/v2/selling/orders/history?${queryParams.toString()}`;
+    const gatewayUrl = `https://gateway.stockx.com/v2/selling/orders/history?${queryParams.toString()}`;
     console.log(`📋 Fetching StockX historical orders: ${apiUrl}`);
 
     // Make API call to StockX (best-effort retry on transient 5xx).
@@ -388,6 +390,28 @@ export async function GET(request: NextRequest) {
 
     if (!response) {
       return NextResponse.json({ error: 'Failed to fetch StockX historical orders' }, { status: 502 });
+    }
+
+    // If api.stockx.com 401s, try gateway.stockx.com before we attempt refresh (audience mismatch can happen).
+    if (response.status === 401) {
+      const gatewayRes = await fetchWithBackoff(
+        gatewayUrl,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'x-api-key': apiKey,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'User-Agent': 'FlipFlow/1.0',
+          },
+        },
+        'historyList',
+        2
+      );
+      if (gatewayRes.ok) {
+        response = gatewayRes;
+      }
     }
 
     if (response.status === 401 && refreshToken) {
@@ -422,7 +446,7 @@ export async function GET(request: NextRequest) {
         if (refreshResponse.ok) {
           const tokenData = await refreshResponse.json();
           
-          // Retry the request with new token
+          // Retry the request with new token (prefer api host first)
           const retryResponse = await fetchWithBackoff(apiUrl, {
             method: 'GET',
             headers: {
