@@ -5,7 +5,7 @@ import { useAuth } from '@/lib/contexts/AuthContext';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import NeonNotification, { type NotificationType } from '@/components/NeonNotification';
 import StockXSalesImport from '@/components/StockXSalesImport';
-import { Box, DollarSign, HandCoins, Hash, Link2, Ruler, Settings2, X } from 'lucide-react';
+import { Box, DollarSign, HandCoins, Hash, Link2, Mail, Ruler, Settings2, X } from 'lucide-react';
 
 type SaleRow = {
   id: string;
@@ -1318,12 +1318,52 @@ export default function TestPurchaseLinkingPage() {
                 <tbody className={isNeon ? 'text-gray-200' : 'text-gray-900'}>
                   {fifoRows.slice(0, 50).map((r, idx) => (
                     <tr key={idx} className={isNeon ? 'border-t border-gray-700' : 'border-t border-gray-200'}>
-                      <td className="py-2 pr-4">{r.saleOrderNumber || '—'}</td>
+                      <td className="py-2 pr-4">
+                        <div className="inline-flex items-center gap-2">
+                          <span className="font-mono">{r.saleOrderNumber || '—'}</span>
+                          {r.saleOrderNumber && r.saleOrderNumber !== '—' && (
+                            <a
+                              href={`https://mail.google.com/mail/u/0/#search/${encodeURIComponent(String(r.saleOrderNumber))}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold ${
+                                isNeon
+                                  ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
+                                  : 'bg-white border border-gray-300 text-gray-900 hover:bg-gray-50'
+                              }`}
+                              title="Search this order number in Gmail (new tab)"
+                            >
+                              <Mail className="w-3.5 h-3.5" />
+                              Gmail
+                            </a>
+                          )}
+                        </div>
+                      </td>
                       <td className="py-2 pr-4">{r.saleProduct || '—'}</td>
                       <td className="py-2 pr-4">{r.saleSize || '—'}</td>
                       <td className="py-2 pr-4">{r.status}</td>
                       <td className="py-2 pr-4">{r.method || '—'}</td>
-                      <td className="py-2 pr-4">{r.linkedPurchaseOrderNumber || '—'}</td>
+                      <td className="py-2 pr-4">
+                        <div className="inline-flex items-center gap-2">
+                          <span className="font-mono">{r.linkedPurchaseOrderNumber || '—'}</span>
+                          {r.linkedPurchaseOrderNumber && r.linkedPurchaseOrderNumber !== '—' && (
+                            <a
+                              href={`https://mail.google.com/mail/u/0/#search/${encodeURIComponent(String(r.linkedPurchaseOrderNumber))}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold ${
+                                isNeon
+                                  ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
+                                  : 'bg-white border border-gray-300 text-gray-900 hover:bg-gray-50'
+                              }`}
+                              title="Search this order number in Gmail (new tab)"
+                            >
+                              <Mail className="w-3.5 h-3.5" />
+                              Gmail
+                            </a>
+                          )}
+                        </div>
+                      </td>
                       <td className="py-2 pr-4">{r.purchaseActualDelivery || '—'}</td>
                     </tr>
                   ))}
