@@ -153,6 +153,7 @@ const NeonNotification: React.FC<NeonNotificationProps> = ({
       className={`
         fixed top-6 right-4 z-50
         transform-gpu transition-all ease-out
+        pointer-events-auto
         ${present ? 'translate-x-0 opacity-100' : 'translate-x-6 opacity-0'}
       `}
       style={{ transitionDuration: `${EXIT_MS}ms` }}
@@ -181,7 +182,11 @@ const NeonNotification: React.FC<NeonNotificationProps> = ({
 
           <button
             type="button"
-            onClick={copyMessage}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              void copyMessage();
+            }}
             className="ml-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-gray-200 bg-white/10 hover:bg-white/15 transition-colors border border-white/10"
             aria-label={copied ? 'Copied' : 'Copy notification text'}
             title={copied ? 'Copied' : 'Copy'}
@@ -191,7 +196,10 @@ const NeonNotification: React.FC<NeonNotificationProps> = ({
           </button>
 
           <button
-            onClick={() => {
+            type="button"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
               setPresent(false);
               window.setTimeout(onClose, EXIT_MS);
             }}

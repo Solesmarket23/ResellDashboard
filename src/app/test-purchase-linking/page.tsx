@@ -399,6 +399,7 @@ export default function TestPurchaseLinkingPage() {
   const [fifoLoading, setFifoLoading] = useState(false);
   const [fifoSummary, setFifoSummary] = useState<any | null>(null);
   const [fifoRows, setFifoRows] = useState<any[]>([]);
+  const fifoResultsAnchorId = 'fifo-results-anchor';
   const runFifoDryRun = useCallback(async () => {
     const u = userId.trim();
     if (!u) return;
@@ -419,7 +420,21 @@ export default function TestPurchaseLinkingPage() {
       if (!resp.ok || json?.success === false) throw new Error(json?.error || `Dry run failed (${resp.status})`);
       setFifoSummary(json.summary || null);
       setFifoRows(Array.isArray(json.results) ? json.results : []);
-      showNotice('✅ FIFO dry-run complete.', 'success');
+      const summary = json.summary || null;
+      const scanned = typeof summary?.totalSalesScanned === 'number' ? summary.totalSalesScanned : null;
+      const wouldLink = typeof summary?.wouldLink === 'number' ? summary.wouldLink : null;
+      const noMatch = typeof summary?.noMatch === 'number' ? summary.noMatch : null;
+      const alreadyLinked = typeof summary?.alreadyLinked === 'number' ? summary.alreadyLinked : null;
+      showNotice(
+        `✅ FIFO dry-run complete${scanned !== null ? ` — scanned=${scanned}` : ''}${wouldLink !== null ? ` • wouldLink=${wouldLink}` : ''}${noMatch !== null ? ` • noMatch=${noMatch}` : ''}${alreadyLinked !== null ? ` • alreadyLinked=${alreadyLinked}` : ''}`,
+        'success'
+      );
+
+      // Scroll to results so it's obvious something happened.
+      window.setTimeout(() => {
+        const el = document.getElementById(fifoResultsAnchorId);
+        el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 50);
     } catch (e: any) {
       showNotice(`❌ FIFO dry-run failed: ${e?.message || 'Unknown error'}`, 'error');
     } finally {
@@ -1222,7 +1237,10 @@ export default function TestPurchaseLinkingPage() {
         )}
 
         {fifoRows.length > 0 && (
-          <div className={`rounded-xl border p-6 ${isNeon ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+          <div
+            id="fifo-results-anchor"
+            className={`rounded-xl border p-6 ${isNeon ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}
+          >
             <h2 className="text-lg font-semibold">FIFO dry-run results (sample)</h2>
             <div className={`mt-2 text-sm ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
               Strict mode: FIFO only considers purchases with <span className="font-semibold">actualDelivery</span>.
