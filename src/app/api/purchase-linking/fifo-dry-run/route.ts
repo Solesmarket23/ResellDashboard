@@ -34,10 +34,58 @@ type PurchaseCandidate = {
 };
 
 function normalizeSize(size: unknown): string {
-  return String(size || '')
-    .trim()
+  const raw = String(size || '').trim();
+  if (!raw) return '';
+  const s = raw
+    .toUpperCase()
+    .replace(/[()]/g, ' ')
+    .replace(/[_\-]+/g, ' ')
     .replace(/\s+/g, ' ')
-    .toUpperCase();
+    .trim();
+
+  // Apparel sizing
+  const apparel = new Set(['XXXS', 'XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'XXXXL', 'OS', 'ONE SIZE']);
+  if (apparel.has(s)) return s;
+
+  // Detect gender/grade-school tokens.
+  const isWomens = /\b(W|WMNS|WOMEN|WOMENS)\b/.test(s) || /\d+(?:\.\d+)?W\b/.test(s);
+  const isYouth = /\b(Y|GS|GRADE SCHOOL)\b/.test(s) || /\d+(?:\.\d+)?Y\b/.test(s);
+
+  // Remove common prefix tokens so "US M 10" -> "10"
+  const tokensToDrop = new Set([
+    'US',
+    'U.S.',
+    'M',
+    'MEN',
+    'MENS',
+    'MEN’S',
+    'W',
+    'WMNS',
+    'WOMEN',
+    'WOMENS',
+    'WOMEN’S',
+    'Y',
+    'GS',
+    'GRADE',
+    'SCHOOL',
+  ]);
+
+  const stripped = s
+    .split(' ')
+    .filter((t) => t && !tokensToDrop.has(t))
+    .join(' ')
+    .trim();
+
+  // Extract numeric size (handles "10", "10.5", "10 W", "W 10", "10W", etc.)
+  const m = stripped.match(/(\d+(?:\.\d+)?)(?:\s*(W|Y))?/);
+  if (m) {
+    const num = m[1];
+    const suffix = m[2] || (isWomens ? 'W' : isYouth ? 'Y' : '');
+    return `${num}${suffix}`;
+  }
+
+  // Fallback: normalized token string
+  return stripped || s;
 }
 
 function parseMoney(val: unknown): number | null {
