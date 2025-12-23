@@ -399,6 +399,7 @@ export default function TestPurchaseLinkingPage() {
   const [fifoLoading, setFifoLoading] = useState(false);
   const [fifoSummary, setFifoSummary] = useState<any | null>(null);
   const [fifoRows, setFifoRows] = useState<any[]>([]);
+  const [fifoStrictDelivery, setFifoStrictDelivery] = useState(false);
   const fifoResultsAnchorId = 'fifo-results-anchor';
   const runFifoDryRun = useCallback(async () => {
     const u = userId.trim();
@@ -410,7 +411,9 @@ export default function TestPurchaseLinkingPage() {
       const qs = new URLSearchParams({
         userId: u,
         unlinkedOnly: 'true',
-        limitSales: '200'
+        limitSales: '200',
+        // strictDelivery=1 means only purchases with actualDelivery are eligible.
+        strictDelivery: fifoStrictDelivery ? '1' : '0'
       });
       const resp = await fetch(`/api/purchase-linking/fifo-dry-run?${qs.toString()}`, {
         cache: 'no-store',
@@ -440,7 +443,7 @@ export default function TestPurchaseLinkingPage() {
     } finally {
       setFifoLoading(false);
     }
-  }, [showNotice, userId]);
+  }, [fifoStrictDelivery, showNotice, userId]);
 
   const [linking, setLinking] = useState(false);
   const [allowWrites, setAllowWrites] = useState(false);
@@ -855,6 +858,15 @@ export default function TestPurchaseLinkingPage() {
               >
                 {fifoLoading ? 'Running…' : 'FIFO dry-run'}
               </button>
+              <label className={`ml-2 inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                <input
+                  type="checkbox"
+                  checked={fifoStrictDelivery}
+                  onChange={(e) => setFifoStrictDelivery(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                Strict delivery (requires actualDelivery)
+              </label>
             </div>
           </div>
 

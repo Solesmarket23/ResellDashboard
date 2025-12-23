@@ -13,6 +13,7 @@ type PurchaseCandidate = {
   uid?: string;
   orderNumber?: string;
   size?: string;
+  extracted_size?: string;
   styleId?: string | null;
   style_id?: string | null;
   stockxListingId?: string;
@@ -52,6 +53,20 @@ function parseDateMs(val: unknown): number | null {
   if (typeof val !== 'string' || !val) return null;
   const ms = Date.parse(val);
   return Number.isFinite(ms) ? ms : null;
+}
+
+function getPurchaseFifoDateMs(p: PurchaseCandidate, strictDelivery: boolean): number | null {
+  const deliveryMs = parseDateMs((p as any).actualDelivery);
+  if (deliveryMs !== null) return deliveryMs;
+  if (strictDelivery) return null;
+  return (
+    parseDateMs((p as any).purchaseDate) ??
+    parseDateMs((p as any).purchase_date) ??
+    parseDateMs((p as any).emailDate) ??
+    parseDateMs((p as any).email_date) ??
+    parseDateMs((p as any).createdAt) ??
+    null
+  );
 }
 
 function getPurchaseStyleId(p: PurchaseCandidate): string | null {
@@ -127,6 +142,7 @@ export async function GET(request: NextRequest) {
 
     const limitSales = Math.max(1, Math.min(500, Number(request.nextUrl.searchParams.get('limitSales') || 200)));
     const unlinkedOnly = request.nextUrl.searchParams.get('unlinkedOnly') !== '0';
+    const strictDelivery = request.nextUrl.searchParams.get('strictDelivery') !== '0';
 
     const db = getAdminDb();
 
@@ -214,7 +230,7 @@ export async function GET(request: NextRequest) {
       }
 
       const styleId = getPurchaseStyleId(p);
-      const size = normalizeSize(p.size ?? p.product?.size);
+      const size = normalizeSize((p as any).size ?? (p as any).extracted_size ?? p.product?.size);
       if (!styleId || !size) continue;
 
       const stockxListingId = typeof p.stockxListingId === 'string' ? p.stockxListingId.trim() : '';
@@ -222,11 +238,11 @@ export async function GET(request: NextRequest) {
         purchaseByStockxListingId.set(stockxListingId, p);
       }
 
-      // STRICT FIFO: only consider purchases that have an actual delivery timestamp.
-      const dateMs = parseDateMs((p as any).actualDelivery) ?? null;
+      // FIFO ordering: prefer actualDelivery; optional fallback to purchaseDate/emailDate/createdAt if strictDelivery=0.
+      const dateMs = getPurchaseFifoDateMs(p, strictDelivery) ?? null;
       p._dateMs = dateMs;
       if (dateMs === null) {
-        // Not eligible for strict-delivery FIFO matching.
+        // Not eligible for FIFO matching in this mode.
         continue;
       }
 
@@ -296,9 +312,12 @@ export async function GET(request: NextRequest) {
       if (!linkedPurchase && saleStyleId && saleSize) {
         const key = purchaseKey(saleStyleId, saleSize);
         const candidates = purchaseIndex.get(key) || [];
+        const totalCandidates = candidates.length;
+        let candidatesConsidered = 0;
         for (const cand of candidates) {
           const pid = String(cand.id || '');
           if (!pid || usedPurchaseIds.has(pid)) continue;
+          candidatesConsidered++;
           if (
             typeof saleCreatedAtMs === 'number' &&
             typeof cand._dateMs === 'number' &&
@@ -310,6 +329,16 @@ export async function GET(request: NextRequest) {
           method = 'fifo';
           usedPurchaseIds.add(pid);
           break;
+        }
+        // If no match found, we still fall through and mark no_match below.
+        if (!linkedPurchase && totalCandidates > 0) {
+          // Attach debug metadata for later (UI can choose to show it or not).
+          (sale as any)._fifoDebug = {
+            saleStyleId,
+            saleSize,
+            candidatesTotal: totalCandidates,
+            candidatesConsidered,
+          };
         }
       }
 
@@ -328,12 +357,19 @@ export async function GET(request: NextRequest) {
         });
       } else {
         noMatch++;
+        const dbg = (sale as any)._fifoDebug || null;
         results.push({
           saleOrderNumber,
           saleProduct,
           saleSize: saleSizeRaw,
           status: 'no_match',
-          method: null
+          method: null,
+          reason: !saleStyleId ? 'missing_sale_styleId' : !saleSize ? 'missing_sale_size' : (dbg?.candidatesTotal === 0 ? 'no_purchase_candidates' : 'no_eligible_purchase'),
+          saleStyleId: saleStyleId || null,
+          saleSizeNorm: saleSize || null,
+          candidatesTotal: typeof dbg?.candidatesTotal === 'number' ? dbg.candidatesTotal : 0,
+          candidatesConsidered: typeof dbg?.candidatesConsidered === 'number' ? dbg.candidatesConsidered : 0,
+          strictDelivery,
         });
       }
     }
