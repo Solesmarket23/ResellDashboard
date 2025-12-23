@@ -23,7 +23,9 @@ const NeonNotification: React.FC<NeonNotificationProps> = ({
   const [present, setPresent] = useState(false);
   const [copied, setCopied] = useState(false);
   const [paused, setPaused] = useState(false);
-  const [remainingMs, setRemainingMs] = useState(duration);
+  // Errors need more time (and are the most likely to be copied).
+  const effectiveDuration = type === 'error' ? Math.max(duration, 20_000) : duration;
+  const [remainingMs, setRemainingMs] = useState(effectiveDuration);
   const [progressKey, setProgressKey] = useState(0);
   const timerRef = useRef<number | null>(null);
   const startedAtRef = useRef<number>(0);
@@ -36,7 +38,7 @@ const NeonNotification: React.FC<NeonNotificationProps> = ({
     }
 
     const raf = requestAnimationFrame(() => setPresent(true));
-    setRemainingMs(duration);
+    setRemainingMs(effectiveDuration);
     setPaused(false);
     setProgressKey((k) => k + 1);
     startedAtRef.current = Date.now();
@@ -44,13 +46,13 @@ const NeonNotification: React.FC<NeonNotificationProps> = ({
     timerRef.current = window.setTimeout(() => {
       setPresent(false);
       window.setTimeout(onClose, EXIT_MS);
-    }, duration);
+    }, effectiveDuration);
 
     return () => {
       cancelAnimationFrame(raf);
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [duration, onClose, shouldShow]);
+  }, [EXIT_MS, effectiveDuration, onClose, shouldShow]);
 
   useEffect(() => {
     if (!present || !shouldShow) return;
@@ -167,18 +169,23 @@ const NeonNotification: React.FC<NeonNotificationProps> = ({
         <div className="flex items-start gap-3 px-4 py-3">
           <div className={`mt-0.5 ${tone.icon}`}>{getIcon()}</div>
 
-          <p className="flex-1 text-sm font-medium text-gray-100 leading-5 whitespace-pre-wrap break-words select-text">
+          <p
+            className="flex-1 text-sm font-medium text-gray-100 leading-5 whitespace-pre-wrap break-words select-text cursor-text"
+            title="Tap/click to copy"
+            onClick={copyMessage}
+          >
             {message}
           </p>
 
           <button
             type="button"
             onClick={copyMessage}
-            className="ml-2 text-gray-400 hover:text-gray-200 transition-colors"
+            className="ml-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-gray-200 bg-white/10 hover:bg-white/15 transition-colors border border-white/10"
             aria-label={copied ? 'Copied' : 'Copy notification text'}
             title={copied ? 'Copied' : 'Copy'}
           >
             {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+            <span>{copied ? 'Copied' : 'Copy'}</span>
           </button>
 
           <button

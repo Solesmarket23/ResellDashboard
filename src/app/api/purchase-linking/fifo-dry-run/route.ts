@@ -131,18 +131,20 @@ export async function GET(request: NextRequest) {
     const db = getAdminDb();
 
     // 1) Load sales
-    let salesQuery: FirebaseFirestore.Query = db
+    // IMPORTANT: Avoid Firestore composite-index requirement.
+    // Using where(userId) + where(linkedPurchaseId==null) + orderBy(date) often triggers FAILED_PRECONDITION
+    // unless a composite index is created. Instead, fetch the latest sales for the user and filter in memory.
+    const salesQuery: FirebaseFirestore.Query = db
       .collection('user_sales')
       .where('userId', '==', userId)
       .orderBy('date', 'desc')
       .limit(limitSales);
 
-    if (unlinkedOnly) {
-      salesQuery = salesQuery.where('linkedPurchaseId', '==', null);
-    }
-
     const salesSnap = await salesQuery.get();
     let sales = salesSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+    if (unlinkedOnly) {
+      sales = sales.filter((s: any) => (s?.linkedPurchaseId ?? null) === null);
+    }
 
     // Back-compat fallback: if user_sales has no docs, try legacy stockxSales docs ({saleData: ...})
     // so the dry-run can still demonstrate FIFO logic even before migration.
