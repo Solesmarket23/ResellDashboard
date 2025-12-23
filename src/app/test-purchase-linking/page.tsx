@@ -1309,6 +1309,11 @@ export default function TestPurchaseLinkingPage() {
                     <th className="text-left py-2 pr-4">Sale Order</th>
                     <th className="text-left py-2 pr-4">Product</th>
                     <th className="text-left py-2 pr-4">Size</th>
+                    <th className="text-right py-2 pr-4">Sale Price</th>
+                    <th className="text-right py-2 pr-4">Fees</th>
+                    <th className="text-right py-2 pr-4">Net Payout</th>
+                    <th className="text-right py-2 pr-4">Total Paid</th>
+                    <th className="text-right py-2 pr-4">Profit</th>
                     <th className="text-left py-2 pr-4">Status</th>
                     <th className="text-left py-2 pr-4">Method</th>
                     <th className="text-left py-2 pr-4">Purchase Order</th>
@@ -1318,6 +1323,16 @@ export default function TestPurchaseLinkingPage() {
                 <tbody className={isNeon ? 'text-gray-200' : 'text-gray-900'}>
                   {fifoRows.slice(0, 50).map((r, idx) => (
                     <tr key={idx} className={isNeon ? 'border-t border-gray-700' : 'border-t border-gray-200'}>
+                      {(() => {
+                        const n = (v: any): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+                        const salePrice = n(r.salePrice);
+                        const fees = n(r.saleFees);
+                        const netPayout = n(r.saleNetPayout) ?? (salePrice !== null ? salePrice - (fees ?? 0) : null);
+                        const totalPaid = n(r.purchaseCost);
+                        const profit = n(r.profit) ?? (netPayout !== null && totalPaid !== null ? netPayout - totalPaid : null);
+                        const fmt = (v: number | null) => (v === null ? '—' : currency(v));
+                        return (
+                          <>
                       <td className="py-2 pr-4">
                         <div className="inline-flex items-center gap-2">
                           <span className="font-mono">{r.saleOrderNumber || '—'}</span>
@@ -1341,6 +1356,11 @@ export default function TestPurchaseLinkingPage() {
                       </td>
                       <td className="py-2 pr-4">{r.saleProduct || '—'}</td>
                       <td className="py-2 pr-4">{r.saleSize || '—'}</td>
+                      <td className="py-2 pr-4 text-right">{fmt(salePrice)}</td>
+                      <td className="py-2 pr-4 text-right">{fmt(fees)}</td>
+                      <td className="py-2 pr-4 text-right">{fmt(netPayout)}</td>
+                      <td className="py-2 pr-4 text-right">{fmt(totalPaid)}</td>
+                      <td className="py-2 pr-4 text-right">{fmt(profit)}</td>
                       <td className="py-2 pr-4">{r.status}</td>
                       <td className="py-2 pr-4">{r.method || '—'}</td>
                       <td className="py-2 pr-4">
@@ -1365,6 +1385,9 @@ export default function TestPurchaseLinkingPage() {
                         </div>
                       </td>
                       <td className="py-2 pr-4">{r.purchaseActualDelivery || '—'}</td>
+                          </>
+                        );
+                      })()}
                     </tr>
                   ))}
                 </tbody>

@@ -97,6 +97,17 @@ function parseMoney(val: unknown): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
+function toNumberOrNull(val: unknown): number | null {
+  if (typeof val === 'number' && Number.isFinite(val)) return val;
+  if (typeof val === 'string' && val.trim()) {
+    const n = Number(val);
+    if (Number.isFinite(n)) return n;
+    const money = parseMoney(val);
+    return typeof money === 'number' ? money : null;
+  }
+  return null;
+}
+
 function parseDateMs(val: unknown): number | null {
   if (typeof val !== 'string' || !val) return null;
   const ms = Date.parse(val);
@@ -320,12 +331,29 @@ export async function GET(request: NextRequest) {
 
     for (const sale of sales) {
       const existingLinkedPurchaseId = sale?.linkedPurchaseId || sale?.matchedPurchaseId || null;
+      const saleSalePrice = toNumberOrNull(sale?.salePrice);
+      const saleFees = toNumberOrNull(sale?.fees);
+      const salePayout = toNumberOrNull(sale?.payout);
+      const saleNetPayout =
+        typeof salePayout === 'number'
+          ? salePayout
+          : typeof saleSalePrice === 'number'
+            ? saleSalePrice - (typeof saleFees === 'number' ? saleFees : 0)
+            : null;
+      const salePurchasePrice = toNumberOrNull(sale?.purchasePrice);
+      const saleProfit = toNumberOrNull(sale?.profit);
       if (existingLinkedPurchaseId) {
         alreadyLinked++;
         results.push({
           saleOrderNumber: sale?.orderNumber || null,
           saleProduct: sale?.product || null,
           saleSize: sale?.size || null,
+          salePrice: saleSalePrice,
+          saleFees,
+          salePayout,
+          saleNetPayout,
+          purchaseCost: salePurchasePrice,
+          profit: saleProfit,
           status: 'already_linked',
           linkedPurchaseId: existingLinkedPurchaseId,
           linkedPurchaseOrderNumber: sale?.linkedPurchaseOrderNumber || null,
@@ -392,15 +420,25 @@ export async function GET(request: NextRequest) {
 
       if (linkedPurchase) {
         wouldLink++;
+        const purchaseCost = getPurchaseCost(linkedPurchase);
+        const profit =
+          typeof saleNetPayout === 'number' && typeof purchaseCost === 'number'
+            ? saleNetPayout - purchaseCost
+            : null;
         results.push({
           saleOrderNumber,
           saleProduct,
           saleSize: saleSizeRaw,
+          salePrice: saleSalePrice,
+          saleFees,
+          salePayout,
+          saleNetPayout,
           status: 'would_link',
           method,
           linkedPurchaseId: linkedPurchase.id,
           linkedPurchaseOrderNumber: linkedPurchase.orderNumber || null,
-          purchaseCost: getPurchaseCost(linkedPurchase),
+          purchaseCost,
+          profit,
           purchaseActualDelivery: (linkedPurchase as any)?.actualDelivery || null
         });
       } else {
@@ -410,6 +448,10 @@ export async function GET(request: NextRequest) {
           saleOrderNumber,
           saleProduct,
           saleSize: saleSizeRaw,
+          salePrice: saleSalePrice,
+          saleFees,
+          salePayout,
+          saleNetPayout,
           status: 'no_match',
           method: null,
           reason: !saleStyleId ? 'missing_sale_styleId' : !saleSize ? 'missing_sale_size' : (dbg?.candidatesTotal === 0 ? 'no_purchase_candidates' : 'no_eligible_purchase'),
