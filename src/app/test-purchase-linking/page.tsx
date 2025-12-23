@@ -903,7 +903,7 @@ export default function TestPurchaseLinkingPage() {
                   <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all`}>
                     <div className="flex items-center justify-center h-full gap-2">
                       <Hash className={`w-4 h-4 ${headerIconClass}`} />
-                      <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors`}>Order #</span>
+                      <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors whitespace-nowrap`}>Sale Order #</span>
                     </div>
                   </th>
                   <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all`}>
@@ -1051,7 +1051,7 @@ export default function TestPurchaseLinkingPage() {
                         <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all`}>
                           <div className="flex items-center justify-center h-full gap-2">
                             <Hash className={`w-4 h-4 ${headerIconClass}`} />
-                            <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors`}>Order #</span>
+                            <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors whitespace-nowrap`}>Purchase Order #</span>
                           </div>
                         </th>
                         <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all`}>
