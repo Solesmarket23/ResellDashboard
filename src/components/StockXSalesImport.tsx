@@ -393,6 +393,71 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
     }
   };
 
+  const handleQuickImport = async () => {
+    if (!userId) {
+      setNotification({
+        isVisible: true,
+        message: 'Please sign in to import StockX sales',
+        type: 'error'
+      });
+      return;
+    }
+
+    setIsImporting(true);
+    setProgress({
+      phase: 'fetching',
+      message: 'Quick importing 1 page of COMPLETED orders (non-stream fallback)...',
+      percentage: 10
+    });
+
+    try {
+      const resp = await fetch('/api/stockx/sales/import-once', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, pageNumber: 1, pageSize: 50, orderStatus: 'COMPLETED' })
+      });
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok || json?.success === false) {
+        const msg = json?.message || json?.error || `Quick import failed (${resp.status})`;
+        throw new Error(String(msg));
+      }
+
+      const totalWritten = Number(json?.saved || 0) + Number(json?.updated || 0);
+      setProgress({
+        phase: 'complete',
+        message: `✅ Quick import wrote ${totalWritten} sale(s) to your sales table.`,
+        percentage: 100,
+        salesCount: totalWritten,
+        enrichedCount: totalWritten
+      });
+
+      setNotification({
+        isVisible: true,
+        message: `✅ Quick import complete (${totalWritten} sale(s)).`,
+        type: 'success'
+      });
+
+      onImportComplete?.(true, totalWritten);
+      setTimeout(() => {
+        setProgress({ phase: 'idle', message: '', percentage: 0 });
+      }, 2000);
+    } catch (e: any) {
+      setProgress({
+        phase: 'error',
+        message: `❌ Quick import failed: ${e?.message || 'Unknown error'}`,
+        percentage: 0
+      });
+      setNotification({
+        isVisible: true,
+        message: `Quick import failed: ${e?.message || 'Please try again'}`,
+        type: 'error'
+      });
+      onImportComplete?.(false, 0);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   const getProgressColor = () => {
     if (progress.phase === 'error') return isNeon ? 'from-red-500 to-red-600' : 'bg-red-500';
     if (progress.phase === 'complete') return isNeon ? 'from-green-500 to-green-600' : 'bg-green-500';
@@ -493,6 +558,27 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
               </>
             )}
           </button>
+        </div>
+
+        <div className="mb-4">
+          <button
+            type="button"
+            onClick={handleQuickImport}
+            disabled={isImporting}
+            className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all duration-200 ${
+              isImporting
+                ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                : isNeon
+                  ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
+                  : 'bg-white border border-gray-300 text-gray-900 hover:bg-gray-50'
+            }`}
+            title="Fallback import (no streaming): imports 1 page of COMPLETED orders to validate data + FIFO quickly"
+          >
+            Quick Import (1 page)
+          </button>
+          <div className={`mt-2 text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+            If streaming import fails, use this to write a small sample into your Sales table so Purchase Linking / FIFO can run.
+          </div>
         </div>
 
         {/* Auth helper */}
