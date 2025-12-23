@@ -2069,9 +2069,9 @@ export default function TestStockXOrders() {
           const qp = new URLSearchParams();
           qp.set('pageNumber', String(p));
           qp.set('pageSize', String(PAGE_SIZE));
-          // Keep StockX upstream calls minimal to reduce PerimeterX/CAPTCHA risk.
-          // Users can still click into details per-order if needed.
-          qp.set('includeCatalog', '0');
+          // Fetch ALL runs in a "fast mode": include catalog enrichment (brand/category) but avoid per-order details
+          // (fees/payout/shipment/auth) to prevent hammering StockX. Users can click a row to load details on-demand.
+          qp.set('includeCatalog', '1');
           qp.set('includeDetails', '0');
           const fd = historyFromDate();
           const td = historyToDate();
