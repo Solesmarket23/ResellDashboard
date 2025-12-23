@@ -419,7 +419,14 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
       const json = await resp.json().catch(() => ({}));
       if (!resp.ok || json?.success === false) {
         const msg = json?.message || json?.error || `Quick import failed (${resp.status})`;
-        throw new Error(String(msg));
+        const detail =
+          json?.url || json?.sourceUrl
+            ? ` host=${json.url || json.sourceUrl}`
+            : json?.status
+              ? ` status=${json.status}`
+              : '';
+        const snippet = json?.bodySnippet ? ` snippet=${String(json.bodySnippet).slice(0, 180)}` : '';
+        throw new Error(String(msg) + detail + snippet);
       }
 
       const totalWritten = Number(json?.saved || 0) + Number(json?.updated || 0);

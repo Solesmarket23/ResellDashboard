@@ -105,19 +105,14 @@ export async function POST(request: NextRequest) {
     });
 
     const apiUrl = `https://api.stockx.com/v2/selling/orders/history?${qp.toString()}`;
-    const gatewayUrl = `https://gateway.stockx.com/v2/selling/orders/history?${qp.toString()}`;
 
-    // Prefer api.stockx.com first.
-    let urlToUse = apiUrl;
+    // IMPORTANT:
+    // For many users (including solesmarket.com right now), `gateway.stockx.com` is PerimeterX-blocked while `api.stockx.com` works.
+    // So we DO NOT fall back to gateway here. If api 401s, we refresh once and retry api, then fail with auth error.
+    const urlToUse = apiUrl;
     let attempt = await fetchOrdersOnce({ url: urlToUse, apiKey, accessToken });
 
-    // If api 401s, try gateway (audience mismatch).
-    if (attempt.status === 401) {
-      urlToUse = gatewayUrl;
-      attempt = await fetchOrdersOnce({ url: urlToUse, apiKey, accessToken });
-    }
-
-    // If still 401 and we have refresh token, refresh once and retry current host.
+    // If 401 and we have refresh token, refresh once and retry api.
     if (attempt.status === 401 && refreshToken) {
       const refreshed = await refreshStockXTokens(refreshToken);
       if (refreshed.success && refreshed.accessToken) {
