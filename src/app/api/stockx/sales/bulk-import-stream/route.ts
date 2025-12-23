@@ -163,8 +163,9 @@ export async function POST(request: NextRequest) {
   let accessToken = request.cookies.get('stockx_access_token')?.value;
   let refreshToken = request.cookies.get('stockx_refresh_token')?.value;
 
-  // Use CLIENT_ID as the API key for v2 endpoints
-  const apiKey = process.env.STOCKX_CLIENT_ID;
+  // StockX expects a valid API key in `x-api-key`. In this repo, that is STOCKX_API_KEY.
+  // Some older code used STOCKX_CLIENT_ID, which can cause 401 "Invalid API Key" for many accounts.
+  const apiKey = process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID;
 
   // If cookies are missing, try Firebase (tokens are saved on OAuth callback and via /api/stockx/sync-tokens)
   if ((!accessToken || !refreshToken) && userId) {

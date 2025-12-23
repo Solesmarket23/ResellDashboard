@@ -69,9 +69,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Missing userId' }, { status: 400 });
     }
 
-    const apiKey = process.env.STOCKX_CLIENT_ID;
+    // StockX expects a valid API key in `x-api-key`. In this repo, that is STOCKX_API_KEY.
+    // Some older code used STOCKX_CLIENT_ID, which causes 401 "Invalid API Key" for many accounts.
+    const apiKey = process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID;
     if (!apiKey) {
-      return NextResponse.json({ success: false, error: 'Missing STOCKX_CLIENT_ID' }, { status: 500 });
+      return NextResponse.json({ success: false, error: 'Missing STOCKX_API_KEY' }, { status: 500 });
     }
 
     // Prefer cookies (browser)
