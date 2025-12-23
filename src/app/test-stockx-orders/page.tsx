@@ -1852,13 +1852,14 @@ export default function TestStockXOrders() {
 
       if (includeActive) {
         appendLog('info', 'Fetching active (pending) orders...');
-        // Single-page fetch for active orders (quick mode)
+        // Single-page fetch for active orders.
+        // NOTE: This is especially important when the user selects "today" because most rows may be active
+        // (and not present in history yet). We include details here so columns like carrier/tracking/ship-by/auth populate.
         const qp = new URLSearchParams();
         qp.set('pageNumber', '1');
         qp.set('pageSize', '100');
-        // Keep this fast: active endpoint can be slow if we also fetch per-order payout details.
-        qp.set('includeCatalog', '0');
-        qp.set('includeDetails', '0');
+        qp.set('includeCatalog', '1');
+        qp.set('includeDetails', '1');
         apiCalls.activeRequests += 1;
         const aRes = await fetch(`/api/stockx/orders/active?${qp.toString()}`);
         const aJson = await aRes.json().catch(() => ({}));
