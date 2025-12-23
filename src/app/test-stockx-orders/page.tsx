@@ -3457,187 +3457,187 @@ export default function TestStockXOrders() {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-gray-950/80 backdrop-blur border-b border-white/10">
                   <tr>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300 whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => toggleSort('orderNumber', 'asc')}
-                        className="inline-flex items-center gap-2 hover:text-white"
+                        className="inline-flex items-center gap-2 hover:text-white whitespace-nowrap"
                         title="Sort by order number"
                       >
                         Order #
                         <span className="text-xs text-gray-400">{sortIndicator('orderNumber')}</span>
                       </button>
                     </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300 whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => toggleSort('status', 'asc')}
-                        className="inline-flex items-center gap-2 hover:text-white"
+                        className="inline-flex items-center gap-2 hover:text-white whitespace-nowrap"
                         title="Sort by status"
                       >
                         Status
                         <span className="text-xs text-gray-400">{sortIndicator('status')}</span>
                       </button>
                     </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300 whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => toggleSort('product', 'asc')}
-                        className="inline-flex items-center gap-2 hover:text-white"
+                        className="inline-flex items-center gap-2 hover:text-white whitespace-nowrap"
                         title="Sort by product"
                       >
                         Product
                         <span className="text-xs text-gray-400">{sortIndicator('product')}</span>
                       </button>
                     </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300 whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => toggleSort('styleId', 'asc')}
-                        className="inline-flex items-center gap-2 hover:text-white"
+                        className="inline-flex items-center gap-2 hover:text-white whitespace-nowrap"
                         title="Sort by style ID"
                       >
                         Style ID
                         <span className="text-xs text-gray-400">{sortIndicator('styleId')}</span>
                       </button>
                     </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300 whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => toggleSort('brand', 'asc')}
-                        className="inline-flex items-center gap-2 hover:text-white"
+                        className="inline-flex items-center gap-2 hover:text-white whitespace-nowrap"
                         title="Sort by brand"
                       >
                         Brand
                         <span className="text-xs text-gray-400">{sortIndicator('brand')}</span>
                       </button>
                     </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300 whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => toggleSort('category', 'asc')}
-                        className="inline-flex items-center gap-2 hover:text-white"
+                        className="inline-flex items-center gap-2 hover:text-white whitespace-nowrap"
                         title="Sort by category"
                       >
                         Category
                         <span className="text-xs text-gray-400">{sortIndicator('category')}</span>
                       </button>
                     </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300 whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => toggleSort('size', 'asc')}
-                        className="inline-flex items-center gap-2 hover:text-white"
+                        className="inline-flex items-center gap-2 hover:text-white whitespace-nowrap"
                         title="Sort by size"
                       >
                         Size
                         <span className="text-xs text-gray-400">{sortIndicator('size')}</span>
                       </button>
                     </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300 whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => toggleSort('sale', 'desc')}
-                        className="inline-flex items-center gap-2 hover:text-white"
+                        className="inline-flex items-center gap-2 hover:text-white whitespace-nowrap"
                         title="Sort by sale price"
                       >
                         Sale
                         <span className="text-xs text-gray-400">{sortIndicator('sale')}</span>
                       </button>
                     </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300 whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => toggleSort('fees', 'desc')}
-                        className="inline-flex items-center gap-2 hover:text-white"
+                        className="inline-flex items-center gap-2 hover:text-white whitespace-nowrap"
                         title="Sort by fees"
                       >
                         Fees
                         <span className="text-xs text-gray-400">{sortIndicator('fees')}</span>
                       </button>
                     </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300 whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => toggleSort('payout', 'desc')}
-                        className="inline-flex items-center gap-2 hover:text-white"
+                        className="inline-flex items-center gap-2 hover:text-white whitespace-nowrap"
                         title="Sort by payout"
                       >
                         Payout
                         <span className="text-xs text-gray-400">{sortIndicator('payout')}</span>
                       </button>
                     </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300 whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => toggleSort('authStatus', 'asc')}
-                        className="inline-flex items-center gap-2 hover:text-white"
+                        className="inline-flex items-center gap-2 hover:text-white whitespace-nowrap"
                         title="Sort by authentication status"
                       >
                         Auth
                         <span className="text-xs text-gray-400">{sortIndicator('authStatus')}</span>
                       </button>
                     </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300 whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => toggleSort('failureNotes', 'asc')}
-                        className="inline-flex items-center gap-2 hover:text-white"
+                        className="inline-flex items-center gap-2 hover:text-white whitespace-nowrap"
                         title="Sort by failure notes"
                       >
                         Failure notes
                         <span className="text-xs text-gray-400">{sortIndicator('failureNotes')}</span>
                       </button>
                     </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300 whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => toggleSort('carrier', 'asc')}
-                        className="inline-flex items-center gap-2 hover:text-white"
+                        className="inline-flex items-center gap-2 hover:text-white whitespace-nowrap"
                         title="Sort by carrier"
                       >
                         Carrier
                         <span className="text-xs text-gray-400">{sortIndicator('carrier')}</span>
                       </button>
                     </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300 whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => toggleSort('tracking', 'asc')}
-                        className="inline-flex items-center gap-2 hover:text-white"
+                        className="inline-flex items-center gap-2 hover:text-white whitespace-nowrap"
                         title="Sort by tracking number"
                       >
                         Tracking
                         <span className="text-xs text-gray-400">{sortIndicator('tracking')}</span>
                       </button>
                     </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300 whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => toggleSort('shipBy', 'asc')}
-                        className="inline-flex items-center gap-2 hover:text-white"
+                        className="inline-flex items-center gap-2 hover:text-white whitespace-nowrap"
                         title="Sort by ship-by date"
                       >
                         Ship by
                         <span className="text-xs text-gray-400">{sortIndicator('shipBy')}</span>
                       </button>
                     </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300 whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => toggleSort('inventory', 'asc')}
-                        className="inline-flex items-center gap-2 hover:text-white"
+                        className="inline-flex items-center gap-2 hover:text-white whitespace-nowrap"
                         title="Sort by sale type"
                       >
                         Sale Type
                         <span className="text-xs text-gray-400">{sortIndicator('inventory')}</span>
                       </button>
                     </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-300">
+                    <th className="text-left px-4 py-3 font-semibold text-gray-300 whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => toggleSort('created', 'desc')}
-                        className="inline-flex items-center gap-2 hover:text-white"
+                        className="inline-flex items-center gap-2 hover:text-white whitespace-nowrap"
                         title="Sort by sale date"
                       >
                         Sale Date
