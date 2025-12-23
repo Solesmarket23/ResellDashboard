@@ -117,6 +117,19 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
         throw new Error(`Import failed: ${response.statusText} - ${errorText}`);
       }
 
+      // If the route didn't return an SSE stream, parse the body and surface the real error.
+      const contentType = (response.headers.get('content-type') || '').toLowerCase();
+      if (!contentType.includes('text/event-stream')) {
+        const bodyText = await response.text().catch(() => '');
+        try {
+          const asJson = JSON.parse(bodyText);
+          const msg = asJson?.message || asJson?.error || bodyText || 'Import failed (non-stream response)';
+          throw new Error(String(msg));
+        } catch {
+          throw new Error(bodyText || `Import failed (unexpected content-type: ${contentType || 'unknown'})`);
+        }
+      }
+
       // Set up EventSource-like processing for the response stream
       console.log('🔄 Setting up SSE stream reader');
       const reader = response.body?.getReader();
@@ -281,7 +294,11 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
           throw new Error(lastSseErrorMessage);
         }
         if (!sawAnySse) {
-          throw new Error('Import failed: did not receive any SSE updates (likely auth/cookie/token issue). Please reconnect to StockX and try again.');
+          throw new Error(
+            `Import failed: did not receive any SSE updates (content-type=${contentType || 'unknown'}). ` +
+              `This usually means the stream was buffered/blocked or the server returned an empty stream. ` +
+              `Try a smaller range (Last 1 month), wait a few minutes, then retry.`
+          );
         }
         
         // Use the maximum sales count we tracked during the process

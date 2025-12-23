@@ -265,11 +265,23 @@ export async function POST(request: NextRequest) {
     async start(controller) {
       const encoder = new TextEncoder();
       
+      const sendRaw = (chunk: string) => {
+        try {
+          controller.enqueue(encoder.encode(chunk));
+        } catch (e) {
+          // If the stream is already closed/cancelled, ignore.
+          console.warn('⚠️ SSE enqueue failed (stream likely closed):', (e as any)?.message || String(e));
+        }
+      };
+
       const sendUpdate = (data: any) => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        sendRaw(`data: ${JSON.stringify(data)}\n\n`);
       };
 
       try {
+        // Send an initial comment to encourage proxies/CDNs to flush headers immediately.
+        sendRaw(`: ping\n\n`);
+
         sendUpdate({
           type: 'status',
           phase: 'starting',
@@ -835,9 +847,12 @@ export async function POST(request: NextRequest) {
 
   return new Response(stream, {
     headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      // no-transform helps prevent proxies from buffering/compressing the stream.
+      'Cache-Control': 'no-cache, no-transform',
       'Connection': 'keep-alive',
+      // Helps disable buffering in some reverse proxies.
+      'X-Accel-Buffering': 'no',
     },
   });
   } catch (error) {
