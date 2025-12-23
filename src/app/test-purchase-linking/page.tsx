@@ -1315,6 +1315,7 @@ export default function TestPurchaseLinkingPage() {
                     <th className="text-right py-2 pr-4">Total Paid</th>
                     <th className="text-right py-2 pr-4">Profit</th>
                     <th className="text-left py-2 pr-4">Status</th>
+                    <th className="text-left py-2 pr-4">Reason</th>
                     <th className="text-left py-2 pr-4">Method</th>
                     <th className="text-left py-2 pr-4">Purchase Order</th>
                     <th className="text-left py-2 pr-4">Delivered</th>
@@ -1331,6 +1332,21 @@ export default function TestPurchaseLinkingPage() {
                         const totalPaid = n(r.purchaseCost);
                         const profit = n(r.profit) ?? (netPayout !== null && totalPaid !== null ? netPayout - totalPaid : null);
                         const fmt = (v: number | null) => (v === null ? '—' : currency(v));
+                        const reason = typeof r.reason === 'string' && r.reason ? r.reason : null;
+                        const candidatesTotal = typeof r.candidatesTotal === 'number' ? r.candidatesTotal : null;
+                        const candidatesConsidered = typeof r.candidatesConsidered === 'number' ? r.candidatesConsidered : null;
+                        const saleStyleId = typeof r.saleStyleId === 'string' && r.saleStyleId ? r.saleStyleId : null;
+                        const reasonDetail =
+                          reason === null
+                            ? '—'
+                            : [
+                                reason,
+                                saleStyleId ? `styleId=${saleStyleId}` : null,
+                                candidatesTotal !== null ? `candidates=${candidatesTotal}` : null,
+                                candidatesConsidered !== null ? `considered=${candidatesConsidered}` : null,
+                              ]
+                                .filter(Boolean)
+                                .join(' • ');
                         return (
                           <>
                       <td className="py-2 pr-4">
@@ -1362,6 +1378,14 @@ export default function TestPurchaseLinkingPage() {
                       <td className="py-2 pr-4 text-right">{fmt(totalPaid)}</td>
                       <td className="py-2 pr-4 text-right">{fmt(profit)}</td>
                       <td className="py-2 pr-4">{r.status}</td>
+                      <td className="py-2 pr-4">
+                        <span
+                          className="text-xs text-gray-200/90"
+                          title={reasonDetail !== '—' ? reasonDetail : undefined}
+                        >
+                          {reasonDetail}
+                        </span>
+                      </td>
                       <td className="py-2 pr-4">{r.method || '—'}</td>
                       <td className="py-2 pr-4">
                         <div className="inline-flex items-center gap-2">
