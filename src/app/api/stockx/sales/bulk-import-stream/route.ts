@@ -346,13 +346,15 @@ export async function POST(request: NextRequest) {
               orderStatus: currentStatus
             });
 
-            // OAuth is issued with audience=gateway.stockx.com, and selling endpoints are served from gateway.
-            // Using api.stockx.com can 401 even with a fresh token (audience mismatch).
-            const apiUrl = `https://gateway.stockx.com/v2/selling/orders/history?${queryParams.toString()}`;
+            // StockX sometimes blocks `gateway.stockx.com` with PerimeterX, while `api.stockx.com` can still work.
+            // Prefer api.stockx.com first; if we get a 401 (audience mismatch), fall back to gateway.stockx.com.
+            const apiUrl = `https://api.stockx.com/v2/selling/orders/history?${queryParams.toString()}`;
+            const gatewayUrl = `https://gateway.stockx.com/v2/selling/orders/history?${queryParams.toString()}`;
+            let urlToUse = apiUrl;
 
           try {
           console.log('🌐 Making StockX API request:', {
-            url: apiUrl,
+            url: urlToUse,
             headers: {
               'x-api-key': 'present',
               'Authorization': 'present',
@@ -360,7 +362,7 @@ export async function POST(request: NextRequest) {
             }
           });
 
-          let response = await fetch(apiUrl, {
+          let response = await fetch(urlToUse, {
             headers: {
               'x-api-key': apiKey,
               'Authorization': `Bearer ${currentAccessToken}`,
@@ -368,6 +370,22 @@ export async function POST(request: NextRequest) {
               'User-Agent': 'ResellDashboard/1.0'
             }
           });
+
+          // If api.stockx.com returns 401, try gateway.stockx.com before we attempt refresh (audience mismatch can happen).
+          if (response.status === 401 && urlToUse === apiUrl) {
+            console.warn('⚠️ api.stockx.com returned 401; retrying via gateway.stockx.com (audience mismatch fallback)...');
+            const gwRes = await fetch(gatewayUrl, {
+              headers: {
+                'x-api-key': apiKey,
+                'Authorization': `Bearer ${currentAccessToken}`,
+                'Accept': 'application/json',
+                'User-Agent': 'ResellDashboard/1.0'
+              }
+            });
+            // Use gateway response (even if not ok) so downstream logic can decide whether to refresh / throw.
+            response = gwRes;
+            urlToUse = gatewayUrl;
+          }
 
           // Log response headers
           console.log('📥 StockX API Response Headers:', {
@@ -424,7 +442,7 @@ export async function POST(request: NextRequest) {
               }
               
               // Retry the request with the new token
-              response = await fetch(apiUrl, {
+              response = await fetch(urlToUse, {
                 headers: {
                   'x-api-key': apiKey,
                   'Authorization': `Bearer ${currentAccessToken}`,
@@ -440,6 +458,21 @@ export async function POST(request: NextRequest) {
               
               // If still 401 after refresh, authentication has failed
               if (response.status === 401) {
+                // If we're currently on api.stockx.com, try gateway before failing (audience mismatch).
+                if (urlToUse === apiUrl) {
+                  console.warn('⚠️ Still 401 after refresh on api.stockx.com; trying gateway.stockx.com...');
+                  const gwResAfterRefresh = await fetch(gatewayUrl, {
+                    headers: {
+                      'x-api-key': apiKey,
+                      'Authorization': `Bearer ${currentAccessToken}`,
+                      'Accept': 'application/json',
+                      'User-Agent': 'ResellDashboard/1.0'
+                    }
+                  });
+                  response = gwResAfterRefresh;
+                  urlToUse = gatewayUrl;
+                }
+
                 // Last-chance recovery: if cookies are stale/rotated, try Firebase-stored tokens for the provided userId.
                 if (userId) {
                   const fbTokens = await loadTokensFromFirebase(String(userId));
@@ -450,7 +483,7 @@ export async function POST(request: NextRequest) {
                     accessToken = currentAccessToken;
                     refreshToken = currentRefreshToken;
 
-                    response = await fetch(apiUrl, {
+                    response = await fetch(urlToUse, {
                       headers: {
                         'x-api-key': apiKey,
                         'Authorization': `Bearer ${currentAccessToken}`,
@@ -495,13 +528,12 @@ export async function POST(request: NextRequest) {
               status: response.status,
               statusText: response.statusText,
               body: errorBody,
-              url: apiUrl
+              url: urlToUse
             });
 
             // If StockX blocks server requests with PerimeterX, try alternate host as a best-effort fallback.
-            // Some endpoints may behave differently between gateway.stockx.com and api.stockx.com.
             if (response.status === 403 && isPerimeterXBlock(errorBody)) {
-              const altUrl = apiUrl.replace('https://gateway.stockx.com', 'https://api.stockx.com');
+              const altUrl = urlToUse === gatewayUrl ? apiUrl : gatewayUrl;
               console.warn('⚠️ PerimeterX block detected. Retrying via alternate host...', { altUrl });
               const altRes = await fetch(altUrl, {
                 headers: {
@@ -514,6 +546,7 @@ export async function POST(request: NextRequest) {
 
               if (altRes.ok) {
                 response = altRes;
+                urlToUse = altUrl;
               } else {
                 const altBody = await altRes.text().catch(() => '');
                 const snippet = (errorBody || altBody || '').slice(0, 220);
