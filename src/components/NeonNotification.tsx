@@ -169,13 +169,15 @@ const NeonNotification: React.FC<NeonNotificationProps> = ({
         <div className="flex items-start gap-3 px-4 py-3">
           <div className={`mt-0.5 ${tone.icon}`}>{getIcon()}</div>
 
-          <p
-            className="flex-1 text-sm font-medium text-gray-100 leading-5 whitespace-pre-wrap break-words select-text cursor-text"
-            title="Tap/click to copy"
-            onClick={copyMessage}
-          >
-            {message}
-          </p>
+          <div className="flex-1 min-w-0">
+            <div
+              className="text-sm font-medium text-gray-100 leading-5 whitespace-pre-wrap break-words select-text cursor-text max-h-28 overflow-auto pr-1"
+              title="Tap/click to copy"
+              onClick={copyMessage}
+            >
+              {message}
+            </div>
+          </div>
 
           <button
             type="button"

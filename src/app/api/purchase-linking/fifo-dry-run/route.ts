@@ -134,10 +134,11 @@ export async function GET(request: NextRequest) {
     // IMPORTANT: Avoid Firestore composite-index requirement.
     // Using where(userId) + where(linkedPurchaseId==null) + orderBy(date) often triggers FAILED_PRECONDITION
     // unless a composite index is created. Instead, fetch the latest sales for the user and filter in memory.
+    // NOTE: Even where(userId==...) + orderBy(date) can require a composite index in some Firestore setups.
+    // To make this endpoint work out-of-the-box, do not orderBy in Firestore; sort in-memory instead.
     const salesQuery: FirebaseFirestore.Query = db
       .collection('user_sales')
       .where('userId', '==', userId)
-      .orderBy('date', 'desc')
       .limit(limitSales);
 
     const salesSnap = await salesQuery.get();
@@ -145,6 +146,12 @@ export async function GET(request: NextRequest) {
     if (unlinkedOnly) {
       sales = sales.filter((s: any) => (s?.linkedPurchaseId ?? null) === null);
     }
+    // Sort newest-first for stable UI (best-effort).
+    sales.sort((a: any, b: any) => {
+      const aMs = parseDateMs(a?.date) ?? parseDateMs(a?.createdAt) ?? parseDateMs(a?.updatedAt) ?? 0;
+      const bMs = parseDateMs(b?.date) ?? parseDateMs(b?.createdAt) ?? parseDateMs(b?.updatedAt) ?? 0;
+      return bMs - aMs;
+    });
 
     // Back-compat fallback: if user_sales has no docs, try legacy stockxSales docs ({saleData: ...})
     // so the dry-run can still demonstrate FIFO logic even before migration.
