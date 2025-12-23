@@ -26,6 +26,8 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
   
   const [isImporting, setIsImporting] = useState(false);
   const [importRange, setImportRange] = useState<ImportRange>('all');
+  // PerimeterX tends to trigger on high request volume; this mode drastically reduces calls.
+  const [completedOnly, setCompletedOnly] = useState(true);
   const [progress, setProgress] = useState<ImportProgress>({
     phase: 'idle',
     message: '',
@@ -86,7 +88,7 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
 
     try {
       console.log('📡 Making request to bulk-import-stream endpoint');
-      console.log('📋 Request body:', { userId, maxSales: 2000, ...rangeYmd });
+      console.log('📋 Request body:', { userId, maxSales: 2000, completedOnly, ...rangeYmd });
       
       // Use Server-Sent Events for real-time progress updates
       const response = await fetch('/api/stockx/sales/bulk-import-stream', {
@@ -97,6 +99,7 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
         body: JSON.stringify({
           userId: userId,
           maxSales: 2000,
+          completedOnly,
           ...rangeYmd
         }),
       });
@@ -437,6 +440,16 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
                 <option value="12m">Last 12 months</option>
                 <option value="all">All time</option>
               </select>
+              <label className="inline-flex items-center gap-2 ml-1">
+                <input
+                  type="checkbox"
+                  checked={completedOnly}
+                  disabled={isImporting}
+                  onChange={(e) => setCompletedOnly(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <span className="font-medium">Completed-only</span>
+              </label>
             </div>
           </div>
 

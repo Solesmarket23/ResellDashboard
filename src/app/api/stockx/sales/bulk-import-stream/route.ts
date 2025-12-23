@@ -143,7 +143,7 @@ function purchaseKey(styleId: string, size: string): string {
 export async function POST(request: NextRequest) {
   try {
     const startTime = Date.now();
-    const { userId, maxSales = 100, fromYmd, toYmd } = await request.json();
+    const { userId, maxSales = 100, fromYmd, toYmd, completedOnly } = await request.json();
 
     const fromMs = parseYmdStartMs(fromYmd);
     const toMs = parseYmdEndMs(toYmd);
@@ -300,15 +300,20 @@ export async function POST(request: NextRequest) {
           progress: 10
         });
 
-        // Phase 1: Fetch all sales from ALL statuses with real-time updates
-        const statusesToCheck = ['COMPLETED', 'AUTHENTICATED', 'PAYOUT_PENDING', 'SHIPPED', 'RECEIVED', 'AUTHENTICATING'];
+        // Phase 1: Fetch sales with real-time updates.
+        // PerimeterX often triggers on volume. When `completedOnly` is true, we reduce the request surface area dramatically.
+        const statusesToCheck = completedOnly
+          ? ['COMPLETED']
+          : ['COMPLETED', 'AUTHENTICATED', 'PAYOUT_PENDING', 'SHIPPED', 'RECEIVED', 'AUTHENTICATING'];
         let currentStatusIndex = 0;
         let currentStatus = statusesToCheck[currentStatusIndex];
         
         sendUpdate({
           type: 'status',
           phase: 'fetching',
-          message: `Fetching from all order statuses to get complete history (${statusesToCheck.length} statuses to check)...`,
+          message: completedOnly
+            ? 'Fetching COMPLETED orders only (lower volume to avoid bot protection)...'
+            : `Fetching from all order statuses to get complete history (${statusesToCheck.length} statuses to check)...`,
           progress: 12
         });
 
@@ -330,6 +335,8 @@ export async function POST(request: NextRequest) {
 
           // Fetch all pages for current status
           while (hasNextPage && allSales.length < maxSales && !stopThisStatusDueToDate) {
+            // Gentle throttle to reduce PerimeterX/bot-protection triggers on high-volume imports.
+            await new Promise((r) => setTimeout(r, completedOnly ? 180 : 280));
             sendUpdate({
               type: 'progress',
               phase: 'fetching',
