@@ -145,16 +145,44 @@ function parseMoney(val: unknown): number | null {
 
 function getPurchaseCost(p: PurchaseRow | null): number {
   if (!p) return 0;
+  // Prefer totalPayment when present (purchase price + fees + shipping, etc.)
+  const totalPayment =
+    (typeof (p as any).totalPayment === 'number' ? (p as any).totalPayment : parseMoney((p as any).totalPayment)) ?? null;
+  if (typeof totalPayment === 'number' && Number.isFinite(totalPayment) && totalPayment > 0) return totalPayment;
   const totalAmount =
     (typeof p.totalAmount === 'number' ? p.totalAmount : parseMoney(p.totalAmount)) ?? null;
   if (typeof totalAmount === 'number' && Number.isFinite(totalAmount) && totalAmount > 0) return totalAmount;
 
   const purchasePrice =
     (typeof p.purchasePrice === 'number' ? p.purchasePrice : parseMoney(p.purchasePrice)) ?? null;
-  if (typeof purchasePrice === 'number' && Number.isFinite(purchasePrice) && purchasePrice > 0) return purchasePrice;
+  const base =
+    (typeof purchasePrice === 'number' && Number.isFinite(purchasePrice) && purchasePrice > 0 ? purchasePrice : null) ??
+    (() => {
+      const priceFromString = parseMoney(p.price);
+      return typeof priceFromString === 'number' && Number.isFinite(priceFromString) && priceFromString > 0 ? priceFromString : null;
+    })();
 
-  const priceFromString = parseMoney(p.price);
-  if (typeof priceFromString === 'number' && Number.isFinite(priceFromString) && priceFromString > 0) return priceFromString;
+  if (typeof base !== 'number') return 0;
+
+  const extras = [
+    (p as any).processingFee,
+    (p as any).processing_fee,
+    (p as any).shippingFee,
+    (p as any).shipping_fee,
+    (p as any).shipping,
+    (p as any).tax,
+    (p as any).taxAmount,
+    (p as any).tax_amount,
+    (p as any).fees,
+    (p as any).fee,
+    (p as any).serviceFee,
+    (p as any).service_fee,
+  ]
+    .map((v) => parseMoney(v))
+    .filter((n) => typeof n === 'number' && Number.isFinite(n) && n > 0);
+
+  const extrasSum = extras.reduce((a, b) => a + b, 0);
+  return extrasSum > 0 ? base + extrasSum : base;
 
   return 0;
 }
