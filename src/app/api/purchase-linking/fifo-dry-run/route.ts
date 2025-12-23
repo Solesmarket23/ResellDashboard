@@ -169,6 +169,36 @@ function purchaseKey(styleId: string, size: string): string {
   return `${styleId}::${normalizeSize(size)}`;
 }
 
+function normalizeProductName(name: unknown): string {
+  const raw = String(name || '').trim();
+  if (!raw) return '';
+  return raw
+    .toLowerCase()
+    .replace(/[\u2019']/g, "'")
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getPurchaseProductName(p: PurchaseCandidate): string | null {
+  const candidates: unknown[] = [
+    (p as any)?.product?.name,
+    (p as any)?.product?.productName,
+    (p as any)?.product?.title,
+    (p as any)?.productName,
+    (p as any)?.title,
+  ];
+  for (const v of candidates) {
+    const s = String(v || '').trim();
+    if (s) return s;
+  }
+  return null;
+}
+
+function purchaseNameKey(productName: string, size: string): string {
+  return `${normalizeProductName(productName)}::${normalizeSize(size)}`;
+}
+
 function getEffectiveUserId(request: NextRequest): string | null {
   const header = request.headers.get('x-user-id')?.trim();
   if (header) return header;
@@ -276,6 +306,7 @@ export async function GET(request: NextRequest) {
     }
 
     const purchaseIndex = new Map<string, PurchaseCandidate[]>();
+    const purchaseNameIndex = new Map<string, PurchaseCandidate[]>();
     const purchaseByStockxListingId = new Map<string, PurchaseCandidate>();
     const usedPurchaseIds = new Set<string>();
 
@@ -288,9 +319,8 @@ export async function GET(request: NextRequest) {
         continue;
       }
 
-      const styleId = getPurchaseStyleId(p);
       const size = normalizeSize((p as any).size ?? (p as any).extracted_size ?? p.product?.size);
-      if (!styleId || !size) continue;
+      if (!size) continue;
 
       const stockxListingId = typeof p.stockxListingId === 'string' ? p.stockxListingId.trim() : '';
       if (stockxListingId && !purchaseByStockxListingId.has(stockxListingId)) {
@@ -305,10 +335,23 @@ export async function GET(request: NextRequest) {
         continue;
       }
 
-      const key = purchaseKey(styleId, size);
-      const arr = purchaseIndex.get(key) || [];
-      arr.push(p);
-      purchaseIndex.set(key, arr);
+      const styleId = getPurchaseStyleId(p);
+      if (styleId) {
+        const key = purchaseKey(styleId, size);
+        const arr = purchaseIndex.get(key) || [];
+        arr.push(p);
+        purchaseIndex.set(key, arr);
+      }
+
+      const productName = getPurchaseProductName(p);
+      if (productName) {
+        const nk = purchaseNameKey(productName, size);
+        if (nk && !nk.startsWith('::')) {
+          const arr = purchaseNameIndex.get(nk) || [];
+          arr.push(p);
+          purchaseNameIndex.set(nk, arr);
+        }
+      }
     }
 
     // FIFO sort
@@ -322,6 +365,18 @@ export async function GET(request: NextRequest) {
         return aCreated - bCreated;
       });
       purchaseIndex.set(key, arr);
+    }
+
+    for (const [key, arr] of purchaseNameIndex.entries()) {
+      arr.sort((a, b) => {
+        const aMs = typeof a._dateMs === 'number' ? a._dateMs : Number.POSITIVE_INFINITY;
+        const bMs = typeof b._dateMs === 'number' ? b._dateMs : Number.POSITIVE_INFINITY;
+        if (aMs !== bMs) return aMs - bMs;
+        const aCreated = parseDateMs(a.createdAt) ?? Number.POSITIVE_INFINITY;
+        const bCreated = parseDateMs(b.createdAt) ?? Number.POSITIVE_INFINITY;
+        return aCreated - bCreated;
+      });
+      purchaseNameIndex.set(key, arr);
     }
 
     const results: any[] = [];
@@ -371,7 +426,7 @@ export async function GET(request: NextRequest) {
       const saleListingId = getSaleListingId(sale);
 
       let linkedPurchase: PurchaseCandidate | null = null;
-      let method: 'listingId' | 'fifo' | null = null;
+      let method: 'listingId' | 'fifo' | 'name' | null = null;
 
       // 1) Exact listingId match
       if (saleListingId) {
@@ -418,6 +473,27 @@ export async function GET(request: NextRequest) {
         }
       }
 
+      // 3) Fallback: match by normalized product name + size (helps apparel rows missing styleId)
+      if (!linkedPurchase && saleProduct && saleSize) {
+        const nk = purchaseNameKey(String(saleProduct), saleSize);
+        const candidates = purchaseNameIndex.get(nk) || [];
+        for (const cand of candidates) {
+          const pid = String(cand.id || '');
+          if (!pid || usedPurchaseIds.has(pid)) continue;
+          if (
+            typeof saleCreatedAtMs === 'number' &&
+            typeof cand._dateMs === 'number' &&
+            cand._dateMs > saleCreatedAtMs
+          ) {
+            continue;
+          }
+          linkedPurchase = cand;
+          method = 'name';
+          usedPurchaseIds.add(pid);
+          break;
+        }
+      }
+
       if (linkedPurchase) {
         wouldLink++;
         const purchaseCost = getPurchaseCost(linkedPurchase);
@@ -444,6 +520,8 @@ export async function GET(request: NextRequest) {
       } else {
         noMatch++;
         const dbg = (sale as any)._fifoDebug || null;
+        const nameCandidatesTotal =
+          saleProduct && saleSize ? (purchaseNameIndex.get(purchaseNameKey(String(saleProduct), saleSize)) || []).length : 0;
         results.push({
           saleOrderNumber,
           saleProduct,
@@ -454,11 +532,16 @@ export async function GET(request: NextRequest) {
           saleNetPayout,
           status: 'no_match',
           method: null,
-          reason: !saleStyleId ? 'missing_sale_styleId' : !saleSize ? 'missing_sale_size' : (dbg?.candidatesTotal === 0 ? 'no_purchase_candidates' : 'no_eligible_purchase'),
+          reason: !saleStyleId
+            ? (nameCandidatesTotal > 0 ? 'missing_sale_styleId_but_name_candidates_exist' : 'missing_sale_styleId')
+            : !saleSize
+              ? 'missing_sale_size'
+              : (dbg?.candidatesTotal === 0 ? 'no_purchase_candidates' : 'no_eligible_purchase'),
           saleStyleId: saleStyleId || null,
           saleSizeNorm: saleSize || null,
           candidatesTotal: typeof dbg?.candidatesTotal === 'number' ? dbg.candidatesTotal : 0,
           candidatesConsidered: typeof dbg?.candidatesConsidered === 'number' ? dbg.candidatesConsidered : 0,
+          nameCandidatesTotal,
           strictDelivery,
         });
       }
