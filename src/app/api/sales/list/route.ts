@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAdminDb } from '@/lib/firebase/firebaseAdmin';
 import { FieldPath } from 'firebase-admin/firestore';
 import { cookies } from 'next/headers';
+import { COLLECTIONS } from '@/lib/firebase/collections';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -51,6 +52,60 @@ export async function GET(request: NextRequest) {
     const snapshot = await queryRef.get();
     const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     const nextCursorId = snapshot.docs.length === limit ? snapshot.docs[snapshot.docs.length - 1].id : null;
+
+    // Back-compat fallback:
+    // Some historical imports wrote StockX sales into `stockxSales` (COLLECTIONS.STOCKX_SALES) as `{ saleData: ... }`.
+    // If `user_sales` is empty, return a mapped view so Sales 2.0 / purchase-linking can still function.
+    if (docs.length === 0 && !cursorId) {
+      try {
+        let legacyQuery: FirebaseFirestore.Query = db
+          .collection(COLLECTIONS.STOCKX_SALES)
+          .where('userId', '==', userId)
+          .orderBy(FieldPath.documentId())
+          .limit(limit);
+
+        const legacySnap = await legacyQuery.get();
+        const legacyDocs = legacySnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+
+        const mapped = legacyDocs.map((x: any) => {
+          const sale = x?.saleData || x?.sale || x;
+          return {
+            id: x.id,
+            orderNumber: sale?.orderNumber || x?.stockxOrderId || x?.orderNumber || null,
+            product: sale?.productName || sale?.product?.productName || sale?.product?.title || sale?.product?.name || null,
+            brand: sale?.product?.brand || sale?.brand || null,
+            size: sale?.variant?.variantValue || sale?.size || null,
+            styleId: sale?.product?.styleId || sale?.styleId || null,
+            imageUrl: sale?.product?.imageUrl || sale?.product?.image || null,
+            salePrice: sale?.amount ? Number(sale.amount) || 0 : Number(sale?.salePrice) || 0,
+            fees: Number(sale?.fees) || null,
+            payout: sale?.payout ? Number(sale.payout) || null : (sale?.totalPayout ? Number(sale.totalPayout) || null : null),
+            purchasePrice: Number(sale?.purchasePrice) || null,
+            profit: Number(sale?.profit) || null,
+            linkedPurchaseId: sale?.linkedPurchaseId ?? null,
+            linkedPurchaseOrderNumber: sale?.linkedPurchaseOrderNumber ?? null,
+            date: sale?.date || sale?.createdAt || sale?.updatedAt || null,
+            // preserve listingId when present (useful for matching)
+            listingId: sale?.listingId || sale?.askId || null,
+            _source: 'stockxSales'
+          };
+        });
+
+        const legacyNextCursorId =
+          legacySnap.docs.length === limit ? legacySnap.docs[legacySnap.docs.length - 1].id : null;
+
+        return NextResponse.json({
+          success: true,
+          sales: mapped,
+          nextCursorId: legacyNextCursorId,
+          userId,
+          warning: 'Loaded sales from legacy stockxSales collection (user_sales was empty).'
+        });
+      } catch (e: any) {
+        // If legacy query fails (e.g., missing composite index), fall through to normal response.
+        console.warn('⚠️ /api/sales/list legacy fallback failed:', e?.message || String(e));
+      }
+    }
 
     return NextResponse.json({ success: true, sales: docs, nextCursorId, userId });
   } catch (error: any) {

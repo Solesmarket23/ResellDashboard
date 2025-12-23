@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminDb } from '@/lib/firebase/firebaseAdmin';
+import { COLLECTIONS } from '@/lib/firebase/collections';
+import { FieldPath } from 'firebase-admin/firestore';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -140,7 +142,39 @@ export async function GET(request: NextRequest) {
     }
 
     const salesSnap = await salesQuery.get();
-    const sales = salesSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+    let sales = salesSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+
+    // Back-compat fallback: if user_sales has no docs, try legacy stockxSales docs ({saleData: ...})
+    // so the dry-run can still demonstrate FIFO logic even before migration.
+    if (sales.length === 0) {
+      try {
+        const legacySnap = await db
+          .collection(COLLECTIONS.STOCKX_SALES)
+          .where('userId', '==', userId)
+          .orderBy(FieldPath.documentId())
+          .limit(limitSales)
+          .get();
+
+        const legacyDocs = legacySnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+        sales = legacyDocs.map((x: any) => {
+          const s = x?.saleData || x?.sale || x;
+          return {
+            id: x.id,
+            orderNumber: s?.orderNumber || x?.stockxOrderId || x?.orderNumber || null,
+            product: s?.productName || s?.product?.productName || s?.product?.title || s?.product?.name || null,
+            brand: s?.product?.brand || s?.brand || null,
+            size: s?.variant?.variantValue || s?.size || null,
+            styleId: s?.product?.styleId || s?.styleId || null,
+            date: s?.date || s?.createdAt || s?.updatedAt || null,
+            listingId: s?.listingId || s?.askId || null,
+            linkedPurchaseId: s?.linkedPurchaseId ?? null,
+            linkedPurchaseOrderNumber: s?.linkedPurchaseOrderNumber ?? null
+          };
+        });
+      } catch (e: any) {
+        console.warn('⚠️ fifo-dry-run legacy sales fallback failed:', e?.message || String(e));
+      }
+    }
 
     // 2) Load purchases (userId or uid), then dedupe
     const [pByUserId, pByUid] = await Promise.all([
