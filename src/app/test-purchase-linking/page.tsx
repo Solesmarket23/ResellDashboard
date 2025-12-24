@@ -208,6 +208,26 @@ function currency(n: number | null | undefined): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v);
 }
 
+function formatIsoToLocal(iso: string | null): string {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    // Use browser timezone; include short TZ name (e.g., ET).
+    return new Intl.DateTimeFormat(undefined, {
+      month: 'short',
+      day: '2-digit',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZoneName: 'short'
+    }).format(d);
+  } catch {
+    return iso;
+  }
+}
+
 function getNetPayout(s: SaleRow | null): number {
   if (!s) return 0;
   const payout = typeof s.payout === 'number' && Number.isFinite(s.payout) ? s.payout : null;
@@ -1473,8 +1493,8 @@ export default function TestPurchaseLinkingPage() {
                       </td>
                       <td className="py-2 pr-4">{r.saleProduct || '—'}</td>
                       <td className="py-2 pr-4">{r.saleSize || '—'}</td>
-                      <td className="py-2 pr-4 font-mono text-xs" title={saleCutoffIso || undefined}>
-                        {saleCutoffIso || '—'}
+                      <td className="py-2 pr-4 text-xs whitespace-nowrap" title={saleCutoffIso || undefined}>
+                        {formatIsoToLocal(saleCutoffIso)}
                       </td>
                       <td className="py-2 pr-4 text-right">{fmt(salePrice)}</td>
                       <td className="py-2 pr-4 text-right">{fmt(fees)}</td>
@@ -1512,8 +1532,10 @@ export default function TestPurchaseLinkingPage() {
                           )}
                         </div>
                       </td>
-                      <td className="py-2 pr-4 font-mono text-xs" title={purchaseFifoIso || undefined}>
-                        {purchaseFifoIso ? `${purchaseFifoIso}${purchaseFifoSource ? ` (${purchaseFifoSource})` : ''}` : '—'}
+                      <td className="py-2 pr-4 text-xs whitespace-nowrap" title={purchaseFifoIso || undefined}>
+                        {purchaseFifoIso
+                          ? `${formatIsoToLocal(purchaseFifoIso)}${purchaseFifoSource ? ` (${purchaseFifoSource})` : ''}`
+                          : '—'}
                       </td>
                       <td className="py-2 pr-4">{r.purchaseActualDelivery || '—'}</td>
                           </>
