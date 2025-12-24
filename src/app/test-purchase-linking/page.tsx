@@ -1362,6 +1362,8 @@ export default function TestPurchaseLinkingPage() {
                         const fmt = (v: number | null) => (v === null ? '—' : currency(v));
                         const reason = typeof r.reason === 'string' && r.reason ? r.reason : null;
                         const candidatesTotal = typeof r.candidatesTotal === 'number' ? r.candidatesTotal : null;
+                        const nameCandidatesTotal = typeof (r as any).nameCandidatesTotal === 'number' ? (r as any).nameCandidatesTotal : null;
+                        const sizeCandidatesTotal = typeof (r as any).sizeCandidatesTotal === 'number' ? (r as any).sizeCandidatesTotal : null;
                         const candidatesConsidered = typeof r.candidatesConsidered === 'number' ? r.candidatesConsidered : null;
                         const saleStyleId = typeof r.saleStyleId === 'string' && r.saleStyleId ? r.saleStyleId : null;
                         const reasonDetail =
@@ -1371,6 +1373,8 @@ export default function TestPurchaseLinkingPage() {
                                 reason,
                                 saleStyleId ? `styleId=${saleStyleId}` : null,
                                 candidatesTotal !== null ? `candidates=${candidatesTotal}` : null,
+                                nameCandidatesTotal !== null ? `nameCandidates=${nameCandidatesTotal}` : null,
+                                sizeCandidatesTotal !== null ? `sizeCandidates=${sizeCandidatesTotal}` : null,
                                 candidatesConsidered !== null ? `considered=${candidatesConsidered}` : null,
                               ]
                                 .filter(Boolean)

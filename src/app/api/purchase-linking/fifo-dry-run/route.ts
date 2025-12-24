@@ -218,6 +218,12 @@ function getPurchaseProductName(p: PurchaseCandidate): string | null {
     (p as any)?.product?.title,
     (p as any)?.productName,
     (p as any)?.title,
+    // common alternates from email parsing / manual entries
+    (p as any)?.itemName,
+    (p as any)?.item_name,
+    (p as any)?.product_name,
+    (p as any)?.productTitle,
+    (p as any)?.product_title,
   ];
   for (const v of candidates) {
     const s = String(v || '').trim();
@@ -228,6 +234,43 @@ function getPurchaseProductName(p: PurchaseCandidate): string | null {
 
 function purchaseNameKey(productName: string, size: string): string {
   return `${normalizeProductName(productName)}::${normalizeSize(size)}`;
+}
+
+function tokenizeName(name: string): string[] {
+  const n = normalizeProductName(name);
+  if (!n) return [];
+  const stop = new Set([
+    'the',
+    'and',
+    'x',
+    'mens',
+    "men's",
+    'womens',
+    "women's",
+    'wmns',
+    'us',
+    'size',
+    'black',
+    'white',
+    'grey',
+    'gray',
+    'navy',
+  ]);
+  return n
+    .split(' ')
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .filter((t) => !stop.has(t));
+}
+
+function jaccard(a: string[], b: string[]): number {
+  if (a.length === 0 || b.length === 0) return 0;
+  const sa = new Set(a);
+  const sb = new Set(b);
+  let inter = 0;
+  for (const t of sa) if (sb.has(t)) inter++;
+  const union = sa.size + sb.size - inter;
+  return union > 0 ? inter / union : 0;
 }
 
 function getEffectiveUserId(request: NextRequest): string | null {
@@ -338,6 +381,7 @@ export async function GET(request: NextRequest) {
 
     const purchaseIndex = new Map<string, PurchaseCandidate[]>();
     const purchaseNameIndex = new Map<string, PurchaseCandidate[]>();
+    const purchaseBySize = new Map<string, PurchaseCandidate[]>();
     const purchaseByStockxListingId = new Map<string, PurchaseCandidate>();
     const usedPurchaseIds = new Set<string>();
 
@@ -365,6 +409,11 @@ export async function GET(request: NextRequest) {
         // Not eligible for FIFO matching in this mode.
         continue;
       }
+
+      // Size index (for fuzzy name fallback)
+      const bySizeArr = purchaseBySize.get(size) || [];
+      bySizeArr.push(p);
+      purchaseBySize.set(size, bySizeArr);
 
       const styleId = getPurchaseStyleId(p);
       if (styleId) {
@@ -408,6 +457,18 @@ export async function GET(request: NextRequest) {
         return aCreated - bCreated;
       });
       purchaseNameIndex.set(key, arr);
+    }
+
+    for (const [key, arr] of purchaseBySize.entries()) {
+      arr.sort((a, b) => {
+        const aMs = typeof a._dateMs === 'number' ? a._dateMs : Number.POSITIVE_INFINITY;
+        const bMs = typeof b._dateMs === 'number' ? b._dateMs : Number.POSITIVE_INFINITY;
+        if (aMs !== bMs) return aMs - bMs;
+        const aCreated = parseDateMs(a.createdAt) ?? Number.POSITIVE_INFINITY;
+        const bCreated = parseDateMs(b.createdAt) ?? Number.POSITIVE_INFINITY;
+        return aCreated - bCreated;
+      });
+      purchaseBySize.set(key, arr);
     }
 
     const results: any[] = [];
@@ -504,10 +565,16 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // 3) Fallback: match by normalized product name + size (helps apparel rows missing styleId)
+      // 3) Fallback: match by product name + size.
+      // First try exact normalized name key; if not found, use token similarity within same size bucket.
       if (!linkedPurchase && saleProduct && saleSize) {
         const nk = purchaseNameKey(String(saleProduct), saleSize);
-        const candidates = purchaseNameIndex.get(nk) || [];
+        const exact = purchaseNameIndex.get(nk) || [];
+        const candidates = exact.length > 0 ? exact : (purchaseBySize.get(saleSize) || []);
+
+        const saleTokens = tokenizeName(String(saleProduct));
+        let best: { cand: PurchaseCandidate; score: number } | null = null;
+
         for (const cand of candidates) {
           const pid = String(cand.id || '');
           if (!pid || usedPurchaseIds.has(pid)) continue;
@@ -518,10 +585,27 @@ export async function GET(request: NextRequest) {
           ) {
             continue;
           }
+
+          const candName = getPurchaseProductName(cand);
+          const score = candName ? jaccard(saleTokens, tokenizeName(candName)) : 0;
+          // Accept exact-key matches regardless of score; otherwise require reasonable similarity.
+          const ok = exact.length > 0 ? true : score >= 0.55;
+          if (!ok) continue;
+
+          // Keep FIFO: choose the earliest eligible candidate; but track score for debugging.
           linkedPurchase = cand;
           method = 'name';
+          best = { cand, score };
           usedPurchaseIds.add(pid);
           break;
+        }
+
+        if (!linkedPurchase && exact.length === 0 && (purchaseBySize.get(saleSize) || []).length > 0) {
+          (sale as any)._nameDebug = {
+            attempted: (purchaseBySize.get(saleSize) || []).length,
+            bestScore: best?.score ?? 0,
+            mode: 'fuzzy',
+          };
         }
       }
 
@@ -553,6 +637,7 @@ export async function GET(request: NextRequest) {
         const dbg = (sale as any)._fifoDebug || null;
         const nameCandidatesTotal =
           saleProduct && saleSize ? (purchaseNameIndex.get(purchaseNameKey(String(saleProduct), saleSize)) || []).length : 0;
+        const sizeCandidatesTotal = saleSize ? (purchaseBySize.get(saleSize) || []).length : 0;
         results.push({
           saleOrderNumber,
           saleProduct,
@@ -573,6 +658,7 @@ export async function GET(request: NextRequest) {
           candidatesTotal: typeof dbg?.candidatesTotal === 'number' ? dbg.candidatesTotal : 0,
           candidatesConsidered: typeof dbg?.candidatesConsidered === 'number' ? dbg.candidatesConsidered : 0,
           nameCandidatesTotal,
+          sizeCandidatesTotal,
           strictDelivery,
         });
       }
