@@ -677,6 +677,8 @@ export async function GET(request: NextRequest) {
         noMatch++;
         const dbg = (sale as any)._fifoDebug || null;
         const nameDbg = (sale as any)._nameDebug || null;
+        const fifoCandidatesTotal = typeof dbg?.candidatesTotal === 'number' ? dbg.candidatesTotal : 0;
+        const fifoCandidatesConsidered = typeof dbg?.candidatesConsidered === 'number' ? dbg.candidatesConsidered : 0;
         const nameCandidatesTotal =
           saleProduct && saleSize ? (purchaseNameIndex.get(purchaseNameKey(String(saleProduct), saleSize)) || []).length : 0;
         const sizeCandidatesTotal = saleSize ? (purchaseBySize.get(saleSize) || []).length : 0;
@@ -694,11 +696,11 @@ export async function GET(request: NextRequest) {
             ? (nameCandidatesTotal > 0 ? 'missing_sale_styleId_but_name_candidates_exist' : 'missing_sale_styleId')
             : !saleSize
               ? 'missing_sale_size'
-              : (dbg?.candidatesTotal === 0 ? 'no_purchase_candidates' : 'no_eligible_purchase'),
+              : (fifoCandidatesTotal === 0 ? 'no_purchase_candidates' : 'no_eligible_purchase'),
           saleStyleId: saleStyleId || null,
           saleSizeNorm: saleSize || null,
-          candidatesTotal: typeof dbg?.candidatesTotal === 'number' ? dbg.candidatesTotal : 0,
-          candidatesConsidered: typeof dbg?.candidatesConsidered === 'number' ? dbg.candidatesConsidered : 0,
+          candidatesTotal: fifoCandidatesTotal,
+          candidatesConsidered: fifoCandidatesConsidered,
           nameCandidatesTotal,
           sizeCandidatesTotal,
           bestNameMatchScore: typeof nameDbg?.bestScore === 'number' ? nameDbg.bestScore : null,
