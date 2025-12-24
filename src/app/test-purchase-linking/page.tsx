@@ -1378,6 +1378,7 @@ export default function TestPurchaseLinkingPage() {
                         const sizeCandidatesTotal = typeof (r as any).sizeCandidatesTotal === 'number' ? (r as any).sizeCandidatesTotal : null;
                         const candidatesConsidered = typeof r.candidatesConsidered === 'number' ? r.candidatesConsidered : null;
                         const nameMode = typeof (r as any).nameMatchMode === 'string' ? String((r as any).nameMatchMode) : null;
+                        const nameAttempted = typeof (r as any).nameCandidatesAttempted === 'number' ? (r as any).nameCandidatesAttempted : null;
                         const nameConsidered = typeof (r as any).nameCandidatesConsidered === 'number' ? (r as any).nameCandidatesConsidered : null;
                         const nameSkippedUsed = typeof (r as any).nameCandidatesSkippedUsed === 'number' ? (r as any).nameCandidatesSkippedUsed : null;
                         const nameSkippedAfterSaleDate = typeof (r as any).nameCandidatesSkippedAfterSaleDate === 'number' ? (r as any).nameCandidatesSkippedAfterSaleDate : null;
@@ -1396,6 +1397,7 @@ export default function TestPurchaseLinkingPage() {
                                 sizeCandidatesTotal !== null ? `sizeCandidates=${sizeCandidatesTotal}` : null,
                                 candidatesConsidered !== null ? `considered=${candidatesConsidered}` : null,
                                 nameMode ? `nameMode=${nameMode}` : null,
+                                nameAttempted !== null ? `nameAttempted=${nameAttempted}` : null,
                                 nameConsidered !== null ? `nameConsidered=${nameConsidered}` : null,
                                 nameSkippedUsed !== null ? `nameSkippedUsed=${nameSkippedUsed}` : null,
                                 nameSkippedAfterSaleDate !== null ? `nameSkippedAfterSaleDate=${nameSkippedAfterSaleDate}` : null,

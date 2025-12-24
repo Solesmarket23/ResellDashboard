@@ -693,6 +693,7 @@ export async function GET(request: NextRequest) {
         const sizeCandidatesTotal = saleSize ? (purchaseBySize.get(saleSize) || []).length : 0;
         const bestScore = typeof nameDbg?.bestScore === 'number' ? nameDbg.bestScore : null;
         const bestOverlap = typeof nameDbg?.bestOverlap === 'number' ? nameDbg.bestOverlap : null;
+        const nameAttempted = typeof nameDbg?.attempted === 'number' ? nameDbg.attempted : null;
         const nameConsidered = typeof nameDbg?.considered === 'number' ? nameDbg.considered : null;
         const nameSkippedUsed = typeof nameDbg?.skippedUsed === 'number' ? nameDbg.skippedUsed : null;
         const nameSkippedAfterSaleDate = typeof nameDbg?.skippedAfterSaleDate === 'number' ? nameDbg.skippedAfterSaleDate : null;
@@ -708,15 +709,23 @@ export async function GET(request: NextRequest) {
           status: 'no_match',
           method: null,
           reason: !saleStyleId
-            ? (
-              nameCandidatesTotal > 0
-                ? (nameSkippedAfterSaleDate && nameSkippedAfterSaleDate > 0
-                  ? 'missing_sale_styleId_name_candidate_after_sale_date'
-                  : nameSkippedUsed && nameSkippedUsed > 0
-                    ? 'missing_sale_styleId_name_candidate_already_used'
-                    : 'missing_sale_styleId_but_name_candidates_exist')
-                : 'missing_sale_styleId'
-            )
+            ? (() => {
+              // Prefer explaining why size candidates (or exact name candidates) were ineligible.
+              // Note: nameCandidatesTotal is "exact normalized name key" count; fuzzy may still be attempted via size bucket.
+              const attempted = typeof nameAttempted === 'number' ? nameAttempted : 0;
+              const skippedAfter = typeof nameSkippedAfterSaleDate === 'number' ? nameSkippedAfterSaleDate : 0;
+              const skippedUsed = typeof nameSkippedUsed === 'number' ? nameSkippedUsed : 0;
+
+              if (attempted > 0 && skippedAfter === attempted) return 'missing_sale_styleId_all_size_candidates_after_sale_date';
+              if (attempted > 0 && skippedUsed === attempted) return 'missing_sale_styleId_all_size_candidates_already_used';
+
+              if (nameCandidatesTotal > 0) {
+                if (skippedAfter > 0) return 'missing_sale_styleId_name_candidate_after_sale_date';
+                if (skippedUsed > 0) return 'missing_sale_styleId_name_candidate_already_used';
+                return 'missing_sale_styleId_but_name_candidates_exist';
+              }
+              return 'missing_sale_styleId';
+            })()
             : !saleSize
               ? 'missing_sale_size'
               : (fifoCandidatesTotal === 0 ? 'no_purchase_candidates' : 'no_eligible_purchase'),
@@ -727,6 +736,7 @@ export async function GET(request: NextRequest) {
           nameCandidatesTotal,
           sizeCandidatesTotal,
           nameMatchMode: nameMode,
+          nameCandidatesAttempted: nameAttempted,
           nameCandidatesConsidered: nameConsidered,
           nameCandidatesSkippedUsed: nameSkippedUsed,
           nameCandidatesSkippedAfterSaleDate: nameSkippedAfterSaleDate,
