@@ -263,11 +263,24 @@ export default function TestPurchaseLinkingPage() {
     setNotification({ isVisible: true, message, type: normalizedType });
   }, []);
 
+  const LOCALHOST_DEFAULT_USER_ID = '20115098dd871b0a7863cd1017fa';
+
   const resolveUserId = useCallback((): string => {
     const siteUserId =
       typeof window !== 'undefined'
         ? sanitizeUserId(localStorage.getItem('siteUserId') || localStorage.getItem('site-user-id') || '')
         : '';
+
+    // Dev convenience: when running locally and no auth/cookie/localStorage user is present,
+    // default to the primary test account so FIFO/testing "just works".
+    if (typeof window !== 'undefined') {
+      const host = window.location.hostname;
+      const isLocalhost = host === 'localhost' || host === '127.0.0.1';
+      if (process.env.NODE_ENV === 'development' && isLocalhost && !user?.uid && !siteUserId) {
+        return LOCALHOST_DEFAULT_USER_ID;
+      }
+    }
+
     return sanitizeUserId(user?.uid || siteUserId || '');
   }, [user?.uid]);
 
