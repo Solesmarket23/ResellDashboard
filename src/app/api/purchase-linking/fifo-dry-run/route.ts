@@ -153,10 +153,13 @@ function getPurchaseFifoDate(p: PurchaseCandidate, strictDelivery: boolean): { m
   const purchaseIsDateOnly = isDateOnlyString(purchaseDateIsoRaw) || (typeof purchaseDateRaw === 'string' && !hasTimeComponent(purchaseDateRaw));
 
   if (purchaseHasTime) {
-    const msPurchaseDate = parseDateMs(purchaseDateRaw);
-    if (msPurchaseDate !== null) return { ms: msPurchaseDate, source: 'purchaseDate' };
+    // Prefer purchase_date (the canonical timestamp) over purchaseDate (often a display-only formatted date).
     const msPurchaseDateIso = parseDateMs(purchaseDateIsoRaw);
     if (msPurchaseDateIso !== null) return { ms: msPurchaseDateIso, source: 'purchase_date' };
+    if (hasTimeComponent(purchaseDateRaw)) {
+      const msPurchaseDate = parseDateMs(purchaseDateRaw);
+      if (msPurchaseDate !== null) return { ms: msPurchaseDate, source: 'purchaseDate' };
+    }
   }
 
   // Prefer whichever email timestamp actually includes time-of-day.
