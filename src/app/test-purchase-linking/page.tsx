@@ -1389,6 +1389,8 @@ export default function TestPurchaseLinkingPage() {
                         const bestNameScore = typeof (r as any).bestNameMatchScore === 'number' ? (r as any).bestNameMatchScore : null;
                         const bestNameOverlap = typeof (r as any).bestNameMatchOverlap === 'number' ? (r as any).bestNameMatchOverlap : null;
                         const bestNameCandidateOrder = typeof (r as any).bestNameMatchCandidateOrderNumber === 'string' ? (r as any).bestNameMatchCandidateOrderNumber : null;
+                        const bestNameCandidateName =
+                          typeof (r as any).bestNameMatchCandidateName === 'string' ? String((r as any).bestNameMatchCandidateName) : null;
                         const saleStyleId = typeof r.saleStyleId === 'string' && r.saleStyleId ? r.saleStyleId : null;
                         const reasonDetail =
                           reason === null
@@ -1411,6 +1413,7 @@ export default function TestPurchaseLinkingPage() {
                                 bestNameScore !== null ? `bestNameScore=${bestNameScore.toFixed(2)}` : null,
                                 bestNameOverlap !== null ? `bestNameOverlap=${bestNameOverlap}` : null,
                                 bestNameCandidateOrder ? `bestNameCandidateOrder=${bestNameCandidateOrder}` : null,
+                                bestNameCandidateName ? `bestNameCandidateName=${bestNameCandidateName}` : null,
                               ]
                                 .filter(Boolean)
                                 .join(' • ');
