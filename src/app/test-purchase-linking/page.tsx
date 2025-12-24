@@ -1396,7 +1396,7 @@ export default function TestPurchaseLinkingPage() {
                     <th className="text-left py-2 pr-4">Reason</th>
                     <th className="text-left py-2 pr-4">Method</th>
                     <th className="text-left py-2 pr-4">Purchase Order</th>
-                    <th className="text-left py-2 pr-4 whitespace-nowrap">Purchase FIFO Date (ISO)</th>
+                    <th className="text-left py-2 pr-4 whitespace-nowrap">Purchase Available (Local)</th>
                     <th className="text-left py-2 pr-4">Delivered</th>
                   </tr>
                 </thead>

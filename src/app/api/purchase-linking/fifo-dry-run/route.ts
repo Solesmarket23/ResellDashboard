@@ -142,6 +142,11 @@ function getPurchaseFifoDate(p: PurchaseCandidate, strictDelivery: boolean): { m
     return { ms: null, source: 'none' };
   }
 
+  // In non-strict mode, if we DO have an actual delivery timestamp, treat that as the preferred "inventory available" time.
+  // This matches the real-world FIFO constraint: you can't sell inventory you haven't received yet.
+  const deliveryMs = parseDateMs((p as any).actualDelivery);
+  if (deliveryMs !== null) return { ms: deliveryMs, source: 'actualDelivery' };
+
   // Prefer the most precise timestamps first (include time-of-day).
   const purchaseDateRaw = (p as any).purchaseDate;
   const purchaseDateIsoRaw = (p as any).purchase_date;
@@ -181,8 +186,6 @@ function getPurchaseFifoDate(p: PurchaseCandidate, strictDelivery: boolean): { m
     if (msPurchaseDate !== null) return { ms: msPurchaseDate, source: 'purchaseDate' };
   }
 
-  const deliveryMs = parseDateMs((p as any).actualDelivery);
-  if (deliveryMs !== null) return { ms: deliveryMs, source: 'actualDelivery' };
   const msCreated = parseDateMs((p as any).createdAt);
   if (msCreated !== null) return { ms: msCreated, source: 'createdAt' };
   return { ms: null, source: 'none' };
