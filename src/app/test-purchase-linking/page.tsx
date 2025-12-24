@@ -1377,6 +1377,13 @@ export default function TestPurchaseLinkingPage() {
                         const nameCandidatesTotal = typeof (r as any).nameCandidatesTotal === 'number' ? (r as any).nameCandidatesTotal : null;
                         const sizeCandidatesTotal = typeof (r as any).sizeCandidatesTotal === 'number' ? (r as any).sizeCandidatesTotal : null;
                         const candidatesConsidered = typeof r.candidatesConsidered === 'number' ? r.candidatesConsidered : null;
+                        const nameMode = typeof (r as any).nameMatchMode === 'string' ? String((r as any).nameMatchMode) : null;
+                        const nameConsidered = typeof (r as any).nameCandidatesConsidered === 'number' ? (r as any).nameCandidatesConsidered : null;
+                        const nameSkippedUsed = typeof (r as any).nameCandidatesSkippedUsed === 'number' ? (r as any).nameCandidatesSkippedUsed : null;
+                        const nameSkippedAfterSaleDate = typeof (r as any).nameCandidatesSkippedAfterSaleDate === 'number' ? (r as any).nameCandidatesSkippedAfterSaleDate : null;
+                        const bestNameScore = typeof (r as any).bestNameMatchScore === 'number' ? (r as any).bestNameMatchScore : null;
+                        const bestNameOverlap = typeof (r as any).bestNameMatchOverlap === 'number' ? (r as any).bestNameMatchOverlap : null;
+                        const bestNameCandidateOrder = typeof (r as any).bestNameMatchCandidateOrderNumber === 'string' ? (r as any).bestNameMatchCandidateOrderNumber : null;
                         const saleStyleId = typeof r.saleStyleId === 'string' && r.saleStyleId ? r.saleStyleId : null;
                         const reasonDetail =
                           reason === null
@@ -1388,6 +1395,13 @@ export default function TestPurchaseLinkingPage() {
                                 nameCandidatesTotal !== null ? `nameCandidates=${nameCandidatesTotal}` : null,
                                 sizeCandidatesTotal !== null ? `sizeCandidates=${sizeCandidatesTotal}` : null,
                                 candidatesConsidered !== null ? `considered=${candidatesConsidered}` : null,
+                                nameMode ? `nameMode=${nameMode}` : null,
+                                nameConsidered !== null ? `nameConsidered=${nameConsidered}` : null,
+                                nameSkippedUsed !== null ? `nameSkippedUsed=${nameSkippedUsed}` : null,
+                                nameSkippedAfterSaleDate !== null ? `nameSkippedAfterSaleDate=${nameSkippedAfterSaleDate}` : null,
+                                bestNameScore !== null ? `bestNameScore=${bestNameScore.toFixed(2)}` : null,
+                                bestNameOverlap !== null ? `bestNameOverlap=${bestNameOverlap}` : null,
+                                bestNameCandidateOrder ? `bestNameCandidateOrder=${bestNameCandidateOrder}` : null,
                               ]
                                 .filter(Boolean)
                                 .join(' • ');

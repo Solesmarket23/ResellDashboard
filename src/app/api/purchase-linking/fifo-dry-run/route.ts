@@ -601,15 +601,22 @@ export async function GET(request: NextRequest) {
         const saleTokens = tokenizeName(String(saleProduct));
         let best: { cand: PurchaseCandidate; score: number; overlap: number; j: number; coverage: number } | null = null;
         let considered = 0;
+        let skippedUsed = 0;
+        let skippedAfterSaleDate = 0;
 
         for (const cand of candidates) {
           const pid = String(cand.id || '');
-          if (!pid || usedPurchaseIds.has(pid)) continue;
+          if (!pid) continue;
+          if (usedPurchaseIds.has(pid)) {
+            skippedUsed++;
+            continue;
+          }
           if (
             typeof saleCreatedAtMs === 'number' &&
             typeof cand._dateMs === 'number' &&
             cand._dateMs > saleCreatedAtMs
           ) {
+            skippedAfterSaleDate++;
             continue;
           }
 
@@ -635,17 +642,19 @@ export async function GET(request: NextRequest) {
           break;
         }
 
-        if (!linkedPurchase && exact.length === 0 && (purchaseBySize.get(saleSize) || []).length > 0) {
+        if (!linkedPurchase && candidates.length > 0) {
           (sale as any)._nameDebug = {
-            attempted: (purchaseBySize.get(saleSize) || []).length,
+            mode: exact.length > 0 ? 'exact' : 'fuzzy',
+            attempted: candidates.length,
             considered,
+            skippedUsed,
+            skippedAfterSaleDate,
             bestScore: best?.score ?? 0,
             bestJaccard: best?.j ?? 0,
             bestCoverage: best?.coverage ?? 0,
             bestOverlap: best?.overlap ?? 0,
             bestCandidateOrderNumber: best?.cand?.orderNumber || null,
             bestCandidateName: best ? getPurchaseProductName(best.cand) : null,
-            mode: 'fuzzy',
           };
         }
       }
@@ -682,6 +691,12 @@ export async function GET(request: NextRequest) {
         const nameCandidatesTotal =
           saleProduct && saleSize ? (purchaseNameIndex.get(purchaseNameKey(String(saleProduct), saleSize)) || []).length : 0;
         const sizeCandidatesTotal = saleSize ? (purchaseBySize.get(saleSize) || []).length : 0;
+        const bestScore = typeof nameDbg?.bestScore === 'number' ? nameDbg.bestScore : null;
+        const bestOverlap = typeof nameDbg?.bestOverlap === 'number' ? nameDbg.bestOverlap : null;
+        const nameConsidered = typeof nameDbg?.considered === 'number' ? nameDbg.considered : null;
+        const nameSkippedUsed = typeof nameDbg?.skippedUsed === 'number' ? nameDbg.skippedUsed : null;
+        const nameSkippedAfterSaleDate = typeof nameDbg?.skippedAfterSaleDate === 'number' ? nameDbg.skippedAfterSaleDate : null;
+        const nameMode = typeof nameDbg?.mode === 'string' ? nameDbg.mode : null;
         results.push({
           saleOrderNumber,
           saleProduct,
@@ -693,7 +708,15 @@ export async function GET(request: NextRequest) {
           status: 'no_match',
           method: null,
           reason: !saleStyleId
-            ? (nameCandidatesTotal > 0 ? 'missing_sale_styleId_but_name_candidates_exist' : 'missing_sale_styleId')
+            ? (
+              nameCandidatesTotal > 0
+                ? (nameSkippedAfterSaleDate && nameSkippedAfterSaleDate > 0
+                  ? 'missing_sale_styleId_name_candidate_after_sale_date'
+                  : nameSkippedUsed && nameSkippedUsed > 0
+                    ? 'missing_sale_styleId_name_candidate_already_used'
+                    : 'missing_sale_styleId_but_name_candidates_exist')
+                : 'missing_sale_styleId'
+            )
             : !saleSize
               ? 'missing_sale_size'
               : (fifoCandidatesTotal === 0 ? 'no_purchase_candidates' : 'no_eligible_purchase'),
@@ -703,8 +726,12 @@ export async function GET(request: NextRequest) {
           candidatesConsidered: fifoCandidatesConsidered,
           nameCandidatesTotal,
           sizeCandidatesTotal,
-          bestNameMatchScore: typeof nameDbg?.bestScore === 'number' ? nameDbg.bestScore : null,
-          bestNameMatchOverlap: typeof nameDbg?.bestOverlap === 'number' ? nameDbg.bestOverlap : null,
+          nameMatchMode: nameMode,
+          nameCandidatesConsidered: nameConsidered,
+          nameCandidatesSkippedUsed: nameSkippedUsed,
+          nameCandidatesSkippedAfterSaleDate: nameSkippedAfterSaleDate,
+          bestNameMatchScore: bestScore,
+          bestNameMatchOverlap: bestOverlap,
           bestNameMatchCandidateOrderNumber: nameDbg?.bestCandidateOrderNumber || null,
           bestNameMatchCandidateName: nameDbg?.bestCandidateName || null,
           strictDelivery,
