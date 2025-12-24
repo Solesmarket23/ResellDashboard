@@ -44,9 +44,11 @@ function normalizeSize(size: unknown): string {
     .replace(/\s+/g, ' ')
     .trim();
 
-  // Apparel sizing
+  // Apparel sizing (handle "US M", "US L", etc.)
   const apparel = new Set(['XXXS', 'XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'XXXXL', 'OS', 'ONE SIZE']);
   if (apparel.has(s)) return s;
+  const apparelPrefixed = s.match(/^(?:US|U\.S\.)\s+(XXXS|XXS|XS|S|M|L|XL|XXL|XXXL|XXXXL|OS|ONE SIZE)$/);
+  if (apparelPrefixed) return apparelPrefixed[1];
 
   // Detect gender/grade-school tokens.
   const isWomens = /\b(W|WMNS|WOMEN|WOMENS)\b/.test(s) || /\d+(?:\.\d+)?W\b/.test(s);
@@ -76,6 +78,9 @@ function normalizeSize(size: unknown): string {
     .filter((t) => t && !tokensToDrop.has(t))
     .join(' ')
     .trim();
+
+  // If stripping leaves an apparel size, return it (prevents "US M" -> "" -> wrong bucket)
+  if (apparel.has(stripped)) return stripped;
 
   // Extract numeric size (handles "10", "10.5", "10 W", "W 10", "10W", etc.)
   const m = stripped.match(/(\d+(?:\.\d+)?)(?:\s*(W|Y))?/);
@@ -665,9 +670,8 @@ export async function GET(request: NextRequest) {
           const score = Math.max(j, coverage);
           considered++;
 
-          if (!best || score > best.score) {
-            best = { cand, score, overlap, j, coverage };
-          }
+          // Only track a "best" candidate when we have *some* overlap; otherwise it's misleading noise.
+          if (overlap > 0 && (!best || score > best.score)) best = { cand, score, overlap, j, coverage };
 
           // Accept exact-key matches regardless of score; otherwise require reasonable similarity.
           // NOTE: coverage helps when one side has many extra tokens (common in apparel titles).

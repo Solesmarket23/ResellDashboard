@@ -96,6 +96,8 @@ function normalizeSize(size: unknown): string {
   // Apparel sizing
   const apparel = new Set(['XXXS', 'XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'XXXXL', 'OS', 'ONE SIZE']);
   if (apparel.has(s)) return s;
+  const apparelPrefixed = s.match(/^(?:US|U\.S\.)\s+(XXXS|XXS|XS|S|M|L|XL|XXL|XXXL|XXXXL|OS|ONE SIZE)$/);
+  if (apparelPrefixed) return apparelPrefixed[1];
 
   const isWomens = /\b(W|WMNS|WOMEN|WOMENS)\b/.test(s) || /\d+(?:\.\d+)?W\b/.test(s);
   const isYouth = /\b(Y|GS|GRADE SCHOOL)\b/.test(s) || /\d+(?:\.\d+)?Y\b/.test(s);
@@ -123,6 +125,8 @@ function normalizeSize(size: unknown): string {
     .filter((t) => t && !tokensToDrop.has(t))
     .join(' ')
     .trim();
+
+  if (apparel.has(stripped)) return stripped;
 
   const m = stripped.match(/(\d+(?:\.\d+)?)(?:\s*(W|Y))?/);
   if (m) {
