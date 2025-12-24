@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
     
     if (actualDeliveryDate) {
       updates.actualDelivery = actualDeliveryDate;
+      updates.actualDeliverySource = 'manual';
     }
     
     if (status) {

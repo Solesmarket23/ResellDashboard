@@ -65,6 +65,32 @@ export function getHighestPriorityStatus(statuses: string[]): string {
  */
 export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
   const orderMap = new Map<string, any[]>();
+
+  const toMs = (v: any): number | null => {
+    if (!v) return null;
+    // Firestore Timestamp support (best-effort)
+    if (typeof v === 'object') {
+      if (typeof v.toDate === 'function') {
+        const d = v.toDate();
+        return d instanceof Date && !isNaN(d.getTime()) ? d.getTime() : null;
+      }
+      if (typeof v.seconds === 'number') return v.seconds * 1000;
+    }
+    if (typeof v === 'string') {
+      const ms = Date.parse(v);
+      return Number.isFinite(ms) ? ms : null;
+    }
+    return null;
+  };
+
+  const isoFromMs = (ms: number | null): string | null => {
+    if (typeof ms !== 'number' || !Number.isFinite(ms)) return null;
+    try {
+      return new Date(ms).toISOString();
+    } catch {
+      return null;
+    }
+  };
   
   // Group purchases by order number
   purchases.forEach((purchase) => {
@@ -268,6 +294,28 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
         if (otherDate > primaryDate && !orderConfirmationEmail) {
           // Only update email_date if we didn't find an order confirmation email
           primaryPurchase.email_date = otherPurchase.email_date;
+        }
+      }
+
+      // Delivery date fallback:
+      // If the user doesn't have tracking (or tracking didn't resolve), we can still infer "delivered" timing
+      // from the Gmail "Order Delivered" email for this order. This is a fallback and should NEVER overwrite
+      // a tracking-derived actualDelivery date.
+      const hasActualDelivery = !!String(primaryPurchase.actualDelivery || '').trim();
+      const hasTrackingDerived = String(primaryPurchase.actualDeliverySource || '').toLowerCase() === 'tracking';
+      if (!hasActualDelivery || (!hasTrackingDerived && String(primaryPurchase.actualDeliverySource || '').toLowerCase() === 'email_delivered')) {
+        const deliveredEmail = sortedPurchases.find((p) => {
+          const rawSubject = String(p.email_subject || p.subject || '').toLowerCase();
+          const status = String(p.status || p.shipping_status || '').toLowerCase();
+          return status === 'delivered' || rawSubject.includes('order delivered');
+        });
+        if (deliveredEmail) {
+          const ms = toMs(deliveredEmail.email_date) ?? toMs(deliveredEmail.createdAt) ?? null;
+          const iso = isoFromMs(ms);
+          if (iso && !hasTrackingDerived) {
+            primaryPurchase.actualDelivery = iso;
+            primaryPurchase.actualDeliverySource = 'email_delivered';
+          }
         }
       }
 

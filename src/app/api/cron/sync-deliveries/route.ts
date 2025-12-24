@@ -106,6 +106,7 @@ export async function GET(request: NextRequest) {
           if (!actualDelivery) continue;
           updatesByTracking.set(trackingNumber, {
             actualDelivery,
+            actualDeliverySource: 'tracking',
             // keep estimatedDelivery as well (useful for UI), but strict FIFO will ignore it
             ...(typeof (lt as any).estimatedDelivery === 'string' && (lt as any).estimatedDelivery.trim()
               ? { estimatedDelivery: String((lt as any).estimatedDelivery) }
