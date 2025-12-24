@@ -1382,6 +1382,10 @@ export default function TestPurchaseLinkingPage() {
                         const nameConsidered = typeof (r as any).nameCandidatesConsidered === 'number' ? (r as any).nameCandidatesConsidered : null;
                         const nameSkippedUsed = typeof (r as any).nameCandidatesSkippedUsed === 'number' ? (r as any).nameCandidatesSkippedUsed : null;
                         const nameSkippedAfterSaleDate = typeof (r as any).nameCandidatesSkippedAfterSaleDate === 'number' ? (r as any).nameCandidatesSkippedAfterSaleDate : null;
+                        const nameSkippedAfterSaleDateButUnreliable =
+                          typeof (r as any).nameCandidatesSkippedAfterSaleDateButUnreliable === 'number'
+                            ? (r as any).nameCandidatesSkippedAfterSaleDateButUnreliable
+                            : null;
                         const bestNameScore = typeof (r as any).bestNameMatchScore === 'number' ? (r as any).bestNameMatchScore : null;
                         const bestNameOverlap = typeof (r as any).bestNameMatchOverlap === 'number' ? (r as any).bestNameMatchOverlap : null;
                         const bestNameCandidateOrder = typeof (r as any).bestNameMatchCandidateOrderNumber === 'string' ? (r as any).bestNameMatchCandidateOrderNumber : null;
@@ -1401,6 +1405,9 @@ export default function TestPurchaseLinkingPage() {
                                 nameConsidered !== null ? `nameConsidered=${nameConsidered}` : null,
                                 nameSkippedUsed !== null ? `nameSkippedUsed=${nameSkippedUsed}` : null,
                                 nameSkippedAfterSaleDate !== null ? `nameSkippedAfterSaleDate=${nameSkippedAfterSaleDate}` : null,
+                                nameSkippedAfterSaleDateButUnreliable !== null
+                                  ? `nameSkippedAfterSaleDateButUnreliable=${nameSkippedAfterSaleDateButUnreliable}`
+                                  : null,
                                 bestNameScore !== null ? `bestNameScore=${bestNameScore.toFixed(2)}` : null,
                                 bestNameOverlap !== null ? `bestNameOverlap=${bestNameOverlap}` : null,
                                 bestNameCandidateOrder ? `bestNameCandidateOrder=${bestNameCandidateOrder}` : null,

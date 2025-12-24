@@ -31,6 +31,7 @@ type PurchaseCandidate = {
   product?: { styleId?: string | null; size?: string; name?: string; productName?: string; title?: string; image?: string };
   productImageUrl?: string;
   _dateMs?: number | null;
+  _dateSource?: 'actualDelivery' | 'purchaseDate' | 'purchase_date' | 'emailDate' | 'email_date' | 'createdAt' | 'none';
 };
 
 function normalizeSize(size: unknown): string {
@@ -114,18 +115,21 @@ function parseDateMs(val: unknown): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
-function getPurchaseFifoDateMs(p: PurchaseCandidate, strictDelivery: boolean): number | null {
+function getPurchaseFifoDate(p: PurchaseCandidate, strictDelivery: boolean): { ms: number | null; source: PurchaseCandidate['_dateSource'] } {
   const deliveryMs = parseDateMs((p as any).actualDelivery);
-  if (deliveryMs !== null) return deliveryMs;
-  if (strictDelivery) return null;
-  return (
-    parseDateMs((p as any).purchaseDate) ??
-    parseDateMs((p as any).purchase_date) ??
-    parseDateMs((p as any).emailDate) ??
-    parseDateMs((p as any).email_date) ??
-    parseDateMs((p as any).createdAt) ??
-    null
-  );
+  if (deliveryMs !== null) return { ms: deliveryMs, source: 'actualDelivery' };
+  if (strictDelivery) return { ms: null, source: 'none' };
+  const msPurchaseDate = parseDateMs((p as any).purchaseDate);
+  if (msPurchaseDate !== null) return { ms: msPurchaseDate, source: 'purchaseDate' };
+  const msPurchaseDateIso = parseDateMs((p as any).purchase_date);
+  if (msPurchaseDateIso !== null) return { ms: msPurchaseDateIso, source: 'purchase_date' };
+  const msEmailDate = parseDateMs((p as any).emailDate);
+  if (msEmailDate !== null) return { ms: msEmailDate, source: 'emailDate' };
+  const msEmailDateIso = parseDateMs((p as any).email_date);
+  if (msEmailDateIso !== null) return { ms: msEmailDateIso, source: 'email_date' };
+  const msCreated = parseDateMs((p as any).createdAt);
+  if (msCreated !== null) return { ms: msCreated, source: 'createdAt' };
+  return { ms: null, source: 'none' };
 }
 
 function getPurchaseStyleId(p: PurchaseCandidate): string | null {
@@ -448,8 +452,9 @@ export async function GET(request: NextRequest) {
       }
 
       // FIFO ordering: prefer actualDelivery; optional fallback to purchaseDate/emailDate/createdAt if strictDelivery=0.
-      const dateMs = getPurchaseFifoDateMs(p, strictDelivery) ?? null;
-      p._dateMs = dateMs;
+      const { ms: dateMs, source } = getPurchaseFifoDate(p, strictDelivery);
+      p._dateMs = dateMs ?? null;
+      p._dateSource = source;
       if (dateMs === null) {
         // Not eligible for FIFO matching in this mode.
         continue;
@@ -589,6 +594,8 @@ export async function GET(request: NextRequest) {
           if (
             typeof saleCreatedAtMs === 'number' &&
             typeof cand._dateMs === 'number' &&
+            // Don't exclude based on Firestore createdAt (sync time) — it's not a reliable "purchase happened" timestamp.
+            cand._dateSource !== 'createdAt' &&
             cand._dateMs > saleCreatedAtMs
           ) {
             continue;
@@ -622,6 +629,7 @@ export async function GET(request: NextRequest) {
         let considered = 0;
         let skippedUsed = 0;
         let skippedAfterSaleDate = 0;
+        let skippedAfterSaleDateButUnreliable = 0;
 
         for (const cand of candidates) {
           const pid = String(cand.id || '');
@@ -635,8 +643,13 @@ export async function GET(request: NextRequest) {
             typeof cand._dateMs === 'number' &&
             cand._dateMs > saleCreatedAtMs
           ) {
-            skippedAfterSaleDate++;
-            continue;
+            if (cand._dateSource === 'createdAt') {
+              // Likely sync-time, not real purchase/delivery time — don't block matching.
+              skippedAfterSaleDateButUnreliable++;
+            } else {
+              skippedAfterSaleDate++;
+              continue;
+            }
           }
 
           const candName = getPurchaseProductName(cand);
@@ -668,6 +681,7 @@ export async function GET(request: NextRequest) {
             considered,
             skippedUsed,
             skippedAfterSaleDate,
+            skippedAfterSaleDateButUnreliable,
             bestScore: best?.score ?? 0,
             bestJaccard: best?.j ?? 0,
             bestCoverage: best?.coverage ?? 0,
@@ -716,6 +730,8 @@ export async function GET(request: NextRequest) {
         const nameConsidered = typeof nameDbg?.considered === 'number' ? nameDbg.considered : null;
         const nameSkippedUsed = typeof nameDbg?.skippedUsed === 'number' ? nameDbg.skippedUsed : null;
         const nameSkippedAfterSaleDate = typeof nameDbg?.skippedAfterSaleDate === 'number' ? nameDbg.skippedAfterSaleDate : null;
+        const nameSkippedAfterSaleDateButUnreliable =
+          typeof nameDbg?.skippedAfterSaleDateButUnreliable === 'number' ? nameDbg.skippedAfterSaleDateButUnreliable : null;
         const nameMode = typeof nameDbg?.mode === 'string' ? nameDbg.mode : null;
         results.push({
           saleOrderNumber,
@@ -759,6 +775,7 @@ export async function GET(request: NextRequest) {
           nameCandidatesConsidered: nameConsidered,
           nameCandidatesSkippedUsed: nameSkippedUsed,
           nameCandidatesSkippedAfterSaleDate: nameSkippedAfterSaleDate,
+          nameCandidatesSkippedAfterSaleDateButUnreliable: nameSkippedAfterSaleDateButUnreliable,
           bestNameMatchScore: bestScore,
           bestNameMatchOverlap: bestOverlap,
           bestNameMatchCandidateOrderNumber: nameDbg?.bestCandidateOrderNumber || null,
