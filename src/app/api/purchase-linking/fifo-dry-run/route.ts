@@ -120,6 +120,19 @@ function parseDateMs(val: unknown): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
+function isDateOnlyString(val: unknown): boolean {
+  if (typeof val !== 'string') return false;
+  const s = val.trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(s);
+}
+
+function hasTimeComponent(val: unknown): boolean {
+  if (typeof val !== 'string') return false;
+  const s = val.trim();
+  // ISO datetime ("T") or any explicit hh:mm component.
+  return /T\d{2}:\d{2}/.test(s) || /\b\d{1,2}:\d{2}\b/.test(s);
+}
+
 function getPurchaseFifoDate(p: PurchaseCandidate, strictDelivery: boolean): { ms: number | null; source: PurchaseCandidate['_dateSource'] } {
   // In strict mode, we only consider inventory that has actually arrived.
   // In non-strict mode, prefer "purchase happened" timestamps (order confirmation / email date) over delivery timestamps.
@@ -129,14 +142,36 @@ function getPurchaseFifoDate(p: PurchaseCandidate, strictDelivery: boolean): { m
     return { ms: null, source: 'none' };
   }
 
-  const msPurchaseDate = parseDateMs((p as any).purchaseDate);
-  if (msPurchaseDate !== null) return { ms: msPurchaseDate, source: 'purchaseDate' };
-  const msPurchaseDateIso = parseDateMs((p as any).purchase_date);
-  if (msPurchaseDateIso !== null) return { ms: msPurchaseDateIso, source: 'purchase_date' };
-  const msEmailDate = parseDateMs((p as any).emailDate);
-  if (msEmailDate !== null) return { ms: msEmailDate, source: 'emailDate' };
-  const msEmailDateIso = parseDateMs((p as any).email_date);
+  // Prefer the most precise timestamps first (include time-of-day).
+  const purchaseDateRaw = (p as any).purchaseDate;
+  const purchaseDateIsoRaw = (p as any).purchase_date;
+  const emailDateRaw = (p as any).emailDate;
+  const emailDateIsoRaw = (p as any).email_date;
+
+  // If purchase_date/purchaseDate are date-only (no time), prefer email_date which includes time.
+  const purchaseHasTime = hasTimeComponent(purchaseDateRaw) || hasTimeComponent(purchaseDateIsoRaw);
+  const purchaseIsDateOnly = isDateOnlyString(purchaseDateIsoRaw) || (typeof purchaseDateRaw === 'string' && !hasTimeComponent(purchaseDateRaw));
+
+  if (purchaseHasTime) {
+    const msPurchaseDate = parseDateMs(purchaseDateRaw);
+    if (msPurchaseDate !== null) return { ms: msPurchaseDate, source: 'purchaseDate' };
+    const msPurchaseDateIso = parseDateMs(purchaseDateIsoRaw);
+    if (msPurchaseDateIso !== null) return { ms: msPurchaseDateIso, source: 'purchase_date' };
+  }
+
+  const msEmailDateIso = parseDateMs(emailDateIsoRaw);
   if (msEmailDateIso !== null) return { ms: msEmailDateIso, source: 'email_date' };
+  const msEmailDate = parseDateMs(emailDateRaw);
+  if (msEmailDate !== null) return { ms: msEmailDate, source: 'emailDate' };
+
+  // Fall back to purchase dates even if date-only (they're still useful for day-level FIFO).
+  if (purchaseIsDateOnly || true) {
+    const msPurchaseDateIso = parseDateMs(purchaseDateIsoRaw);
+    if (msPurchaseDateIso !== null) return { ms: msPurchaseDateIso, source: 'purchase_date' };
+    const msPurchaseDate = parseDateMs(purchaseDateRaw);
+    if (msPurchaseDate !== null) return { ms: msPurchaseDate, source: 'purchaseDate' };
+  }
+
   const deliveryMs = parseDateMs((p as any).actualDelivery);
   if (deliveryMs !== null) return { ms: deliveryMs, source: 'actualDelivery' };
   const msCreated = parseDateMs((p as any).createdAt);
