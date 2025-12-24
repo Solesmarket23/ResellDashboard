@@ -520,7 +520,8 @@ export default function TestPurchaseLinkingPage() {
   const [fifoLoading, setFifoLoading] = useState(false);
   const [fifoSummary, setFifoSummary] = useState<any | null>(null);
   const [fifoRows, setFifoRows] = useState<any[]>([]);
-  const [fifoStrictDelivery, setFifoStrictDelivery] = useState(false);
+  // Default ON: most users only sell after delivery, so delivered inventory is the safest FIFO constraint.
+  const [fifoStrictDelivery, setFifoStrictDelivery] = useState(true);
   const fifoResultsAnchorId = 'fifo-results-anchor';
   const runFifoDryRun = useCallback(async () => {
     const u = userId.trim();
