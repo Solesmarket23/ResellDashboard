@@ -16,14 +16,25 @@ function parseMoney(val: unknown): number | null {
 }
 
 function getPurchaseCost(p: any): number | null {
+  // If we already stored netPaid, prefer it.
+  const netPaid =
+    (typeof p?.netPaid === 'number' ? p.netPaid : parseMoney(p?.netPaid)) ?? null;
+  if (typeof netPaid === 'number' && Number.isFinite(netPaid) && netPaid > 0) return netPaid;
+
   // Prefer "totalPayment" when present (purchase price + fees + shipping, etc.)
   const totalPayment =
     (typeof p?.totalPayment === 'number' ? p.totalPayment : parseMoney(p?.totalPayment)) ?? null;
-  if (typeof totalPayment === 'number' && Number.isFinite(totalPayment) && totalPayment > 0) return totalPayment;
+  if (typeof totalPayment === 'number' && Number.isFinite(totalPayment) && totalPayment > 0) {
+    const credits = parseMoney(p?.credits ?? p?.discounts ?? 0) ?? 0;
+    return Math.max(0, totalPayment - Math.max(0, credits));
+  }
 
   const totalAmount =
     (typeof p.totalAmount === 'number' ? p.totalAmount : parseMoney(p.totalAmount)) ?? null;
-  if (typeof totalAmount === 'number' && Number.isFinite(totalAmount) && totalAmount > 0) return totalAmount;
+  if (typeof totalAmount === 'number' && Number.isFinite(totalAmount) && totalAmount > 0) {
+    const credits = parseMoney(p?.credits ?? p?.discounts ?? 0) ?? 0;
+    return Math.max(0, totalAmount - Math.max(0, credits));
+  }
 
   const purchasePrice =
     (typeof p.purchasePrice === 'number' ? p.purchasePrice : parseMoney(p.purchasePrice)) ?? null;
@@ -54,7 +65,9 @@ function getPurchaseCost(p: any): number | null {
     .filter((n: number) => typeof n === 'number' && Number.isFinite(n) && n > 0);
 
   const extrasSum = extras.reduce((a: number, b: number) => a + b, 0);
-  return extrasSum > 0 ? base + extrasSum : base;
+  const gross = extrasSum > 0 ? base + extrasSum : base;
+  const credits = parseMoney(p?.credits ?? p?.discounts ?? 0) ?? 0;
+  return Math.max(0, gross - Math.max(0, credits));
 
   return null;
 }

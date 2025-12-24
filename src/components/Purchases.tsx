@@ -48,16 +48,19 @@ const Purchases = () => {
 
   const getGrossAmount = (purchase: any): number => {
     if (!purchase) return 0;
-    // Prefer numeric "totalAmount" if present (this is the pre-credit total from Gmail)
-    if (typeof purchase.totalAmount === 'number' && Number.isFinite(purchase.totalAmount)) return purchase.totalAmount;
-    // Fall back to other common numeric fields
-    if (typeof purchase.totalPayment === 'number' && Number.isFinite(purchase.totalPayment)) return purchase.totalPayment;
-    if (typeof purchase.purchasePrice === 'number' && Number.isFinite(purchase.purchasePrice)) return purchase.purchasePrice;
+    // Prefer numeric totals when they are meaningful (> 0). Avoid treating 0 as a real value,
+    // because it can accidentally overwrite a purchase with "0" when only credits were edited.
+    if (typeof purchase.totalAmount === 'number' && Number.isFinite(purchase.totalAmount) && purchase.totalAmount > 0) return purchase.totalAmount;
+    if (typeof purchase.totalPayment === 'number' && Number.isFinite(purchase.totalPayment) && purchase.totalPayment > 0) return purchase.totalPayment;
+    if (typeof purchase.purchasePrice === 'number' && Number.isFinite(purchase.purchasePrice) && purchase.purchasePrice > 0) return purchase.purchasePrice;
     // Fall back to strings (e.g. "$200.00", "200.00 + $0.00")
-    return parseMoney(purchase.totalAmount ?? purchase.price ?? purchase.originalPrice ?? 0);
+    const fromStrings = parseMoney(purchase.totalAmount ?? purchase.totalPayment ?? purchase.price ?? purchase.originalPrice ?? 0);
+    return fromStrings > 0 ? fromStrings : 0;
   };
 
   const getNetAmount = (purchase: any): number => {
+    // If we already stored netPaid, prefer it for display.
+    if (typeof purchase?.netPaid === 'number' && Number.isFinite(purchase.netPaid)) return Math.max(0, purchase.netPaid);
     const gross = getGrossAmount(purchase);
     const credits = getCreditsAmount(purchase);
     return Math.max(0, gross - credits);
@@ -5549,19 +5552,27 @@ const Purchases = () => {
                       return n > 0 ? n : 0;
                     })();
 
-                    const updates = {
+                    const grossForNet = getGrossAmount(editingPurchase);
+                    const netPaid = Math.max(0, grossForNet - creditsAmount);
+
+                    const updates: any = {
                       productName: editingPurchase.product?.name || editingPurchase.productName || '',
                       brand: editingPurchase.product?.brand || editingPurchase.brand || '',
                       market: editingPurchase.market || editingPurchase.product?.brand || '',
                       size: editingPurchase.product?.size || editingPurchase.size || '',
                       styleId: editingPurchase.styleId || '',
                       style_id: editingPurchase.style_id || '',
-                      price: editingPurchase.price || '',
-                      totalAmount: editingPurchase.totalAmount || 0,
+                      // Only set gross fields if provided; avoid overwriting existing totals with 0/empty when editing credits.
+                      ...(editingPurchase.price ? { price: editingPurchase.price } : {}),
+                      ...(typeof editingPurchase.totalAmount === 'number' && Number.isFinite(editingPurchase.totalAmount) && editingPurchase.totalAmount > 0
+                        ? { totalAmount: editingPurchase.totalAmount }
+                        : {}),
                       // Store credits as a number so it can be applied consistently in calculations.
                       // We keep both keys for backward compatibility.
                       credits: creditsAmount || 0,
                       discounts: creditsAmount || 0,
+                      // Persist net paid (gross - credits) for fast downstream use (FIFO, profit, etc.)
+                      netPaid,
                       purchaseDate: editingPurchase.purchaseDate || '',
                       orderNumber: editingPurchase.orderNumber || '',
                       tracking: editingPurchase.tracking || '',
