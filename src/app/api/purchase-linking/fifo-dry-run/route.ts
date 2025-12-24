@@ -159,10 +159,16 @@ function getPurchaseFifoDate(p: PurchaseCandidate, strictDelivery: boolean): { m
     if (msPurchaseDateIso !== null) return { ms: msPurchaseDateIso, source: 'purchase_date' };
   }
 
-  const msEmailDateIso = parseDateMs(emailDateIsoRaw);
-  if (msEmailDateIso !== null) return { ms: msEmailDateIso, source: 'email_date' };
-  const msEmailDate = parseDateMs(emailDateRaw);
-  if (msEmailDate !== null) return { ms: msEmailDate, source: 'emailDate' };
+  // Prefer whichever email timestamp actually includes time-of-day.
+  const msEmailRaw = parseDateMs(emailDateRaw);
+  const msEmailIso = parseDateMs(emailDateIsoRaw);
+  const emailRawHasTime = hasTimeComponent(emailDateRaw);
+  const emailIsoHasTime = hasTimeComponent(emailDateIsoRaw);
+
+  if (emailIsoHasTime && msEmailIso !== null) return { ms: msEmailIso, source: 'email_date' };
+  if (emailRawHasTime && msEmailRaw !== null) return { ms: msEmailRaw, source: 'emailDate' };
+  if (msEmailIso !== null) return { ms: msEmailIso, source: 'email_date' };
+  if (msEmailRaw !== null) return { ms: msEmailRaw, source: 'emailDate' };
 
   // Fall back to purchase dates even if date-only (they're still useful for day-level FIFO).
   if (purchaseIsDateOnly || true) {
