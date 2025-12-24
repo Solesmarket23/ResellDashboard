@@ -2404,14 +2404,15 @@ const Purchases = () => {
   // Ensure every purchase has a usable display date (and make it deterministic).
   // This fixes the last ~few rows that can end up without a purchaseDate when emails are missing fields.
   const derivePurchaseDateDisplay = (purchase: any): string => {
+    // IMPORTANT:
+    // Do NOT fall back to syncedAt/createdAt/dateAdded for display.
+    // Those timestamps often reflect when *we imported/saved* the record (today),
+    // which is misleading when the true order confirmation date is missing.
     const candidates: Array<string | undefined> = [
       purchase?.purchaseDate,
       purchase?.purchase_date,
       purchase?.email_date,
       purchase?.emailDate,
-      purchase?.createdAt,
-      purchase?.syncedAt,
-      typeof purchase?.dateAdded === 'string' ? purchase.dateAdded.replace('\n', ' ') : undefined,
     ];
     for (const c of candidates) {
       const formatted = formatPurchaseDate(c);
