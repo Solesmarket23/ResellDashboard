@@ -94,6 +94,8 @@ const Purchases = () => {
   const [gmailConnected, setGmailConnected] = useState(false);
   const [purchases, setPurchases] = useState<any[]>([]);
   const [manualPurchases, setManualPurchases] = useState<any[]>([]);
+  // Raw count (unfiltered) so the UI doesn't disappear when search/filter yields zero results.
+  const rawPurchaseCount = purchases.length + manualPurchases.length;
   const [loading, setLoading] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState({ found: 0, stage: 'Connecting...' });
   const [loadingTimeouts, setLoadingTimeouts] = useState<NodeJS.Timeout[]>([]);
@@ -3313,7 +3315,7 @@ const Purchases = () => {
             )}
 
             {/* Column Customization Button */}
-            {totalCount > 0 && (
+            {rawPurchaseCount > 0 && (
               <div className="relative">
                 <button
                   onClick={() => setShowColumnCustomizer(!showColumnCustomizer)}
@@ -3436,7 +3438,7 @@ const Purchases = () => {
             </button>
 
             {/* Column Customization Button - Moved here */}
-            {totalCount > 0 && (
+            {rawPurchaseCount > 0 && (
               <div className="relative">
                 <button
                   onClick={() => setShowColumnCustomizer(!showColumnCustomizer)}
@@ -3537,7 +3539,7 @@ const Purchases = () => {
                 <div className={`absolute right-0 mt-2 w-56 ${currentTheme.name === 'Neon' ? 'bg-gray-900' : 'bg-white'} ${currentTheme.colors.border} border rounded-lg shadow-xl z-50`}>
                   <div className="py-2">
                     {/* Export options - Only show when there are purchases */}
-                    {totalCount > 0 && (
+                    {rawPurchaseCount > 0 && (
                       <>
                         <button
                           onClick={() => {
@@ -3625,7 +3627,7 @@ const Purchases = () => {
               <span>Settings</span>
             </button> */}
             
-            {gmailConnected && totalCount > 0 && (
+            {gmailConnected && rawPurchaseCount > 0 && (
               <StatusUpdater 
                 purchases={[...purchases, ...manualPurchases]}
                 onStatusUpdate={handleStatusUpdate}
@@ -3636,8 +3638,8 @@ const Purchases = () => {
         </div>
       </div>
 
-      {/* Search Bar - Only show when there are purchases */}
-      {totalCount > 0 && (
+      {/* Search Bar - Keep visible as long as there are any purchases OR a search is active */}
+      {(rawPurchaseCount > 0 || searchQuery.trim().length > 0) && (
         <div className="mb-6">
           <div className="relative">
             <input
@@ -3690,8 +3692,8 @@ const Purchases = () => {
         </div>
       )}
 
-      {/* Smart Filters - Only show when there are purchases */}
-      {totalCount > 0 && (
+      {/* Smart Filters - Keep visible when the user has any purchases */}
+      {rawPurchaseCount > 0 && (
         <div className="mb-6">
           {/* Compact Filter Bar */}
           <div className={`flex items-center gap-3 p-4 rounded-lg ${
