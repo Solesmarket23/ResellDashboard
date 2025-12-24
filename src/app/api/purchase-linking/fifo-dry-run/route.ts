@@ -116,9 +116,14 @@ function parseDateMs(val: unknown): number | null {
 }
 
 function getPurchaseFifoDate(p: PurchaseCandidate, strictDelivery: boolean): { ms: number | null; source: PurchaseCandidate['_dateSource'] } {
-  const deliveryMs = parseDateMs((p as any).actualDelivery);
-  if (deliveryMs !== null) return { ms: deliveryMs, source: 'actualDelivery' };
-  if (strictDelivery) return { ms: null, source: 'none' };
+  // In strict mode, we only consider inventory that has actually arrived.
+  // In non-strict mode, prefer "purchase happened" timestamps (order confirmation / email date) over delivery timestamps.
+  if (strictDelivery) {
+    const deliveryMs = parseDateMs((p as any).actualDelivery);
+    if (deliveryMs !== null) return { ms: deliveryMs, source: 'actualDelivery' };
+    return { ms: null, source: 'none' };
+  }
+
   const msPurchaseDate = parseDateMs((p as any).purchaseDate);
   if (msPurchaseDate !== null) return { ms: msPurchaseDate, source: 'purchaseDate' };
   const msPurchaseDateIso = parseDateMs((p as any).purchase_date);
@@ -127,6 +132,8 @@ function getPurchaseFifoDate(p: PurchaseCandidate, strictDelivery: boolean): { m
   if (msEmailDate !== null) return { ms: msEmailDate, source: 'emailDate' };
   const msEmailDateIso = parseDateMs((p as any).email_date);
   if (msEmailDateIso !== null) return { ms: msEmailDateIso, source: 'email_date' };
+  const deliveryMs = parseDateMs((p as any).actualDelivery);
+  if (deliveryMs !== null) return { ms: deliveryMs, source: 'actualDelivery' };
   const msCreated = parseDateMs((p as any).createdAt);
   if (msCreated !== null) return { ms: msCreated, source: 'createdAt' };
   return { ms: null, source: 'none' };
