@@ -209,6 +209,25 @@ function getSaleListingId(sale: any): string | null {
   return null;
 }
 
+function getSaleCutoffMs(sale: any): number | null {
+  // We need a "sale happened by" timestamp to enforce purchase-before-sale eligibility.
+  // StockX "createdAt" on seller objects can sometimes reflect ask/listing creation rather than the final sale lifecycle.
+  // To avoid false negatives, prefer payout/settlement timestamps when present; otherwise use the latest available timestamp.
+  const candidates: unknown[] = [
+    sale?.payoutDate,
+    sale?.payoutDetails?.date,
+    sale?.stockxData?.payoutDate,
+    sale?.date,
+    sale?.updatedAt,
+    sale?.createdAt
+  ];
+  const msList = candidates
+    .map((v) => parseDateMs(v))
+    .filter((ms): ms is number => typeof ms === 'number' && Number.isFinite(ms));
+  if (msList.length === 0) return null;
+  return Math.max(...msList);
+}
+
 function purchaseKey(styleId: string, size: string): string {
   return `${styleId}::${normalizeSize(size)}`;
 }
@@ -540,7 +559,7 @@ export async function GET(request: NextRequest) {
       const saleSizeRaw = sale?.size || '';
       const saleSize = normalizeSize(saleSizeRaw);
       const saleStyleId = (sale?.styleId || '').toString().trim();
-      const saleCreatedAtMs = parseDateMs(sale?.date) ?? parseDateMs(sale?.createdAt) ?? parseDateMs(sale?.updatedAt) ?? null;
+      const saleCreatedAtMs = getSaleCutoffMs(sale);
       const saleListingId = getSaleListingId(sale);
 
       let linkedPurchase: PurchaseCandidate | null = null;
