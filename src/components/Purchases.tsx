@@ -88,6 +88,48 @@ const Purchases = () => {
     market: [],
     size: []
   });
+
+  // ---- Status normalization (prevents duplicate filters like "Shipped" vs "shipped") ----
+  const normalizeStatusKey = useCallback((raw: unknown): string => {
+    const s = String(raw ?? '').trim();
+    if (!s) return '';
+    const lower = s.toLowerCase().replace(/\s+/g, ' ');
+    // Canonicalize common variants
+    if (lower === 'cancelled') return 'canceled';
+    if (lower === 'canceled') return 'canceled';
+    if (lower === 'order canceled/refunded') return 'refunded';
+    if (lower === 'refund issued') return 'refunded';
+    if (lower === 'refunded') return 'refunded';
+    if (lower === 'partially refunded') return 'partially refunded';
+    if (lower === 'delivered') return 'delivered';
+    if (lower === 'shipped') return 'shipped';
+    if (lower === 'ordered' || lower === 'order placed') return 'ordered';
+    return lower;
+  }, []);
+
+  const statusLabelFromKey = useCallback(
+    (key: string): string => {
+      const k = normalizeStatusKey(key);
+      if (!k) return '';
+      const map: Record<string, string> = {
+        ordered: 'Ordered',
+        shipped: 'Shipped',
+        delivered: 'Delivered',
+        canceled: 'Canceled',
+        refunded: 'Refunded',
+        'partially refunded': 'Partially Refunded',
+        delayed: 'Delayed',
+        verified: 'Verified',
+      };
+      if (map[k]) return map[k];
+      // Generic Title Case fallback
+      return k
+        .split(' ')
+        .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+        .join(' ');
+    },
+    [normalizeStatusKey]
+  );
   const [showFilters, setShowFilters] = useState(false);
   const [sizeSearchQuery, setSizeSearchQuery] = useState('');
   const [showScanModal, setShowScanModal] = useState(false);
@@ -637,8 +679,8 @@ const Purchases = () => {
     // Apply smart filters
     if (activeFilters.status.length > 0) {
       uniquePurchases = uniquePurchases.filter(purchase => {
-        const status = (purchase.status || '').toLowerCase();
-        return activeFilters.status.some(filterStatus => status.includes(filterStatus.toLowerCase()));
+        const statusKey = normalizeStatusKey(purchase.status || purchase.shipping_status || '');
+        return !!statusKey && activeFilters.status.includes(statusKey);
       });
     }
     
@@ -756,14 +798,22 @@ const Purchases = () => {
   // Get unique values for filters
   const getUniqueStatuses = useMemo(() => {
     const allPurchases = [...purchases, ...manualPurchases];
-    const statuses = new Set<string>();
+    const statusMap = new Map<string, string>(); // key -> label
     allPurchases.forEach(purchase => {
-      if (purchase.status) {
-        statuses.add(purchase.status);
-      }
+      const key = normalizeStatusKey(purchase.status || purchase.shipping_status || '');
+      if (!key) return;
+      if (!statusMap.has(key)) statusMap.set(key, statusLabelFromKey(key));
     });
-    return Array.from(statuses).sort();
-  }, [purchases, manualPurchases]);
+    const entries = Array.from(statusMap.entries()).map(([key, label]) => ({ key, label }));
+    // Sort by status priority (highest first), then label for stability.
+    entries.sort((a, b) => {
+      const pa = getStatusPriority(statusLabelFromKey(a.key) || 'Ordered');
+      const pb = getStatusPriority(statusLabelFromKey(b.key) || 'Ordered');
+      if (pb !== pa) return pb - pa;
+      return a.label.localeCompare(b.label);
+    });
+    return entries;
+  }, [purchases, manualPurchases, normalizeStatusKey, statusLabelFromKey]);
 
   const getUniqueCarriers = useMemo(() => {
     const allPurchases = [...purchases, ...manualPurchases];
@@ -801,12 +851,12 @@ const Purchases = () => {
   }, [purchases, manualPurchases]);
 
   // Filter handlers
-  const toggleStatusFilter = (status: string) => {
+  const toggleStatusFilter = (statusKey: string) => {
     setActiveFilters(prev => ({
       ...prev,
-      status: prev.status.includes(status)
-        ? prev.status.filter(s => s !== status)
-        : [...prev.status, status]
+      status: prev.status.includes(statusKey)
+        ? prev.status.filter(s => s !== statusKey)
+        : [...prev.status, statusKey]
     }));
     setCurrentPage(1);
   };
@@ -3699,17 +3749,17 @@ const Purchases = () => {
               <>
                 <div className={`h-6 w-px ${currentTheme.name === 'Neon' ? 'bg-white/10' : 'bg-gray-300'}`} />
                 <div className="flex flex-wrap items-center gap-2 flex-1">
-                  {activeFilters.status.map(status => (
+                  {activeFilters.status.map((statusKey) => (
                     <button
-                      key={status}
-                      onClick={() => toggleStatusFilter(status)}
+                      key={statusKey}
+                      onClick={() => toggleStatusFilter(statusKey)}
                       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200 ${
                         currentTheme.name === 'Neon'
                           ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 border border-blue-500/50'
                           : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
                       }`}
                     >
-                      <span>{status}</span>
+                      <span>{statusLabelFromKey(statusKey)}</span>
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                       </svg>
@@ -3793,9 +3843,9 @@ const Purchases = () => {
                     Status
                   </h3>
                   <div className="space-y-2.5">
-                    {getUniqueStatuses.map(status => (
-                      <label key={status} className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer group transition-all duration-200 ${
-                        activeFilters.status.includes(status)
+                    {getUniqueStatuses.map(({ key, label }) => (
+                      <label key={key} className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer group transition-all duration-200 ${
+                        activeFilters.status.includes(key)
                           ? currentTheme.name === 'Neon'
                             ? 'bg-cyan-500/10 border border-cyan-500/30'
                             : 'bg-blue-50 border border-blue-200'
@@ -3806,8 +3856,8 @@ const Purchases = () => {
                         <div className="relative flex items-center justify-center">
                           <input
                             type="checkbox"
-                            checked={activeFilters.status.includes(status)}
-                            onChange={() => toggleStatusFilter(status)}
+                            checked={activeFilters.status.includes(key)}
+                            onChange={() => toggleStatusFilter(key)}
                             className={`w-4 h-4 rounded cursor-pointer transition-all duration-200 ${
                               currentTheme.name === 'Neon' 
                                 ? 'bg-gray-800 border-2 border-gray-600 checked:bg-cyan-500 checked:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50 focus:ring-offset-0' 
@@ -3816,11 +3866,11 @@ const Purchases = () => {
                           />
                         </div>
                         <span className={`text-sm font-medium transition-all ${
-                          activeFilters.status.includes(status)
+                          activeFilters.status.includes(key)
                             ? currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-700'
                             : currentTheme.colors.textSecondary
                         }`}>
-                          {status}
+                          {label}
                         </span>
                       </label>
                     ))}
