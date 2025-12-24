@@ -2408,11 +2408,15 @@ const Purchases = () => {
     // Do NOT fall back to syncedAt/createdAt/dateAdded for display.
     // Those timestamps often reflect when *we imported/saved* the record (today),
     // which is misleading when the true order confirmation date is missing.
+    // Prefer raw timestamps over pre-formatted display strings.
+    // `purchaseDate` is sometimes formatted on the server (often UTC) which can show the "wrong" day
+    // for US time zones. `purchase_date` / `email_date` should include timezone and will format
+    // correctly in the browser's locale/timezone.
     const candidates: Array<string | undefined> = [
-      purchase?.purchaseDate,
       purchase?.purchase_date,
       purchase?.email_date,
       purchase?.emailDate,
+      purchase?.purchaseDate,
     ];
     for (const c of candidates) {
       const formatted = formatPurchaseDate(c);
