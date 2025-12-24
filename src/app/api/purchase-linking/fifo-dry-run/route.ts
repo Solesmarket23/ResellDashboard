@@ -225,23 +225,23 @@ function getSaleListingId(sale: any): string | null {
   return null;
 }
 
-function getSaleCutoffMs(sale: any): number | null {
-  // We need a "sale happened by" timestamp to enforce purchase-before-sale eligibility.
-  // StockX "createdAt" on seller objects can sometimes reflect ask/listing creation rather than the final sale lifecycle.
-  // To avoid false negatives, prefer payout/settlement timestamps when present; otherwise use the latest available timestamp.
-  const candidates: unknown[] = [
-    sale?.payoutDate,
-    sale?.payoutDetails?.date,
-    sale?.stockxData?.payoutDate,
-    sale?.date,
-    sale?.updatedAt,
-    sale?.createdAt
+function getSaleEventMs(sale: any): { ms: number | null; source: string | null } {
+  // IMPORTANT:
+  // Firestore doc fields like createdAt/updatedAt on `user_sales` are often "sync time" (when we imported),
+  // not the true time the sale occurred. Using those makes almost every sale look like it happened "today".
+  //
+  // For FIFO eligibility, we want the best available *sale occurred at* timestamp.
+  const ordered: Array<{ source: string; value: unknown }> = [
+    { source: 'date', value: sale?.date }, // our canonical sale timestamp field (StockX order createdAt/updatedAt)
+    { source: 'payoutDate', value: sale?.payoutDate },
+    { source: 'payoutDetails.date', value: sale?.payoutDetails?.date },
+    { source: 'stockxData.payoutDate', value: sale?.stockxData?.payoutDate },
   ];
-  const msList = candidates
-    .map((v) => parseDateMs(v))
-    .filter((ms): ms is number => typeof ms === 'number' && Number.isFinite(ms));
-  if (msList.length === 0) return null;
-  return Math.max(...msList);
+  for (const c of ordered) {
+    const ms = parseDateMs(c.value);
+    if (ms !== null) return { ms, source: c.source };
+  }
+  return { ms: null, source: null };
 }
 
 function msToIso(ms: number | null): string | null {
@@ -585,8 +585,10 @@ export async function GET(request: NextRequest) {
       const saleSizeRaw = sale?.size || '';
       const saleSize = normalizeSize(saleSizeRaw);
       const saleStyleId = (sale?.styleId || '').toString().trim();
-      const saleCreatedAtMs = getSaleCutoffMs(sale);
+      const saleEvent = getSaleEventMs(sale);
+      const saleCreatedAtMs = saleEvent.ms;
       const saleCutoffIso = msToIso(saleCreatedAtMs);
+      const saleCutoffSource = saleEvent.source;
       const saleListingId = getSaleListingId(sale);
 
       let linkedPurchase: PurchaseCandidate | null = null;
@@ -730,6 +732,7 @@ export async function GET(request: NextRequest) {
           saleProduct,
           saleSize: saleSizeRaw,
           saleCutoffIso,
+          saleCutoffSource,
           salePrice: saleSalePrice,
           saleFees,
           salePayout,
@@ -767,6 +770,7 @@ export async function GET(request: NextRequest) {
           saleProduct,
           saleSize: saleSizeRaw,
           saleCutoffIso,
+          saleCutoffSource,
           salePrice: saleSalePrice,
           saleFees,
           salePayout,

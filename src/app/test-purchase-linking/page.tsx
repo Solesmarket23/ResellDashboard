@@ -1386,7 +1386,7 @@ export default function TestPurchaseLinkingPage() {
                     <th className="text-left py-2 pr-4">Sale Order</th>
                     <th className="text-left py-2 pr-4">Product</th>
                     <th className="text-left py-2 pr-4">Size</th>
-                    <th className="text-left py-2 pr-4 whitespace-nowrap">Sale Date (ISO)</th>
+                    <th className="text-left py-2 pr-4 whitespace-nowrap">Sale Date (Local)</th>
                     <th className="text-right py-2 pr-4">Sale Price</th>
                     <th className="text-right py-2 pr-4">Fees</th>
                     <th className="text-right py-2 pr-4">Net Payout</th>
@@ -1413,6 +1413,7 @@ export default function TestPurchaseLinkingPage() {
                         const fmt = (v: number | null) => (v === null ? '—' : currency(v));
                         const reason = typeof r.reason === 'string' && r.reason ? r.reason : null;
                         const saleCutoffIso = typeof (r as any).saleCutoffIso === 'string' ? String((r as any).saleCutoffIso) : null;
+                        const saleCutoffSource = typeof (r as any).saleCutoffSource === 'string' ? String((r as any).saleCutoffSource) : null;
                         const purchaseFifoIso = typeof (r as any).purchaseFifoIso === 'string' ? String((r as any).purchaseFifoIso) : null;
                         const purchaseFifoSource =
                           typeof (r as any).purchaseFifoSource === 'string' ? String((r as any).purchaseFifoSource) : null;
@@ -1493,7 +1494,10 @@ export default function TestPurchaseLinkingPage() {
                       </td>
                       <td className="py-2 pr-4">{r.saleProduct || '—'}</td>
                       <td className="py-2 pr-4">{r.saleSize || '—'}</td>
-                      <td className="py-2 pr-4 text-xs whitespace-nowrap" title={saleCutoffIso || undefined}>
+                      <td
+                        className="py-2 pr-4 text-xs whitespace-nowrap"
+                        title={saleCutoffIso ? `${saleCutoffIso}${saleCutoffSource ? ` (${saleCutoffSource})` : ''}` : undefined}
+                      >
                         {formatIsoToLocal(saleCutoffIso)}
                       </td>
                       <td className="py-2 pr-4 text-right">{fmt(salePrice)}</td>
