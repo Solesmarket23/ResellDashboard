@@ -95,16 +95,6 @@ export function extractTrackingFromContent(content: string): ExtractedTracking |
     return { trackingNumber: usps[1], carrier: 'USPS', source: 'usps-9xx' };
   }
 
-  // 4) Common StockX FedEx: a 12-digit number often starting with 8/9; but avoid obvious dates/years.
-  // Note: USPS starts with 9 but is 20-22 digits; a 12-digit starting with 9 can be FedEx-like.
-  const any12 = content.match(/\b([0-9]{12})\b/);
-  if (any12?.[1]) {
-    const candidate = any12[1];
-    if (!candidate.startsWith('20') && !candidate.startsWith('19')) {
-      return { trackingNumber: candidate, carrier: 'FedEx', source: 'numeric-12' };
-    }
-  }
-
   return null;
 }
 

@@ -271,13 +271,25 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
         }
       }
 
-      // USER REQUEST / SAFETY: Tracking numbers extracted from emails have proven unreliable.
-      // Clear tracking + carrier for shipped/delivered purchases so we don't show (or persist) incorrect data.
-      const finalStatus = (primaryPurchase.status || primaryPurchase.shipping_status || '').toLowerCase();
-      if (finalStatus === 'shipped' || finalStatus === 'delivered') {
+      // Tracking:
+      // Preserve tracking when present. Only clear obviously-bad values.
+      // Rationale: Some StockX shipped emails include real carrier tracking (e.g. FedEx tracknumbers=...).
+      const currentTracking = String(primaryPurchase.tracking || primaryPurchase.tracking_number || '').trim();
+      const currentCarrier = String(primaryPurchase.carrier || '').trim().toLowerCase();
+      const looksLikeTracking =
+        /^1Z[0-9A-Z]{16}$/i.test(currentTracking) || // UPS
+        /^9[0-9]{19,21}$/.test(currentTracking) || // USPS
+        /^[0-9]{10,22}$/.test(currentTracking); // FedEx-ish numeric
+
+      const isObviouslyBad =
+        !currentTracking ||
+        currentTracking.toLowerCase() === 'no tracking' ||
+        currentCarrier.includes('stockx') ||
+        !looksLikeTracking;
+
+      if (isObviouslyBad) {
         primaryPurchase.tracking = '';
         primaryPurchase.carrier = '';
-        // Also clear common alternate fields if present
         if ('tracking_number' in primaryPurchase) primaryPurchase.tracking_number = '';
       }
       
