@@ -1366,6 +1366,7 @@ export default function TestPurchaseLinkingPage() {
                     <th className="text-left py-2 pr-4">Sale Order</th>
                     <th className="text-left py-2 pr-4">Product</th>
                     <th className="text-left py-2 pr-4">Size</th>
+                    <th className="text-left py-2 pr-4 whitespace-nowrap">Sale Date (ISO)</th>
                     <th className="text-right py-2 pr-4">Sale Price</th>
                     <th className="text-right py-2 pr-4">Fees</th>
                     <th className="text-right py-2 pr-4">Net Payout</th>
@@ -1375,6 +1376,7 @@ export default function TestPurchaseLinkingPage() {
                     <th className="text-left py-2 pr-4">Reason</th>
                     <th className="text-left py-2 pr-4">Method</th>
                     <th className="text-left py-2 pr-4">Purchase Order</th>
+                    <th className="text-left py-2 pr-4 whitespace-nowrap">Purchase FIFO Date (ISO)</th>
                     <th className="text-left py-2 pr-4">Delivered</th>
                   </tr>
                 </thead>
@@ -1390,6 +1392,10 @@ export default function TestPurchaseLinkingPage() {
                         const profit = n(r.profit) ?? (netPayout !== null && totalPaid !== null ? netPayout - totalPaid : null);
                         const fmt = (v: number | null) => (v === null ? '—' : currency(v));
                         const reason = typeof r.reason === 'string' && r.reason ? r.reason : null;
+                        const saleCutoffIso = typeof (r as any).saleCutoffIso === 'string' ? String((r as any).saleCutoffIso) : null;
+                        const purchaseFifoIso = typeof (r as any).purchaseFifoIso === 'string' ? String((r as any).purchaseFifoIso) : null;
+                        const purchaseFifoSource =
+                          typeof (r as any).purchaseFifoSource === 'string' ? String((r as any).purchaseFifoSource) : null;
                         const candidatesTotal = typeof r.candidatesTotal === 'number' ? r.candidatesTotal : null;
                         const nameCandidatesTotal = typeof (r as any).nameCandidatesTotal === 'number' ? (r as any).nameCandidatesTotal : null;
                         const sizeCandidatesTotal = typeof (r as any).sizeCandidatesTotal === 'number' ? (r as any).sizeCandidatesTotal : null;
@@ -1408,6 +1414,12 @@ export default function TestPurchaseLinkingPage() {
                         const bestNameCandidateOrder = typeof (r as any).bestNameMatchCandidateOrderNumber === 'string' ? (r as any).bestNameMatchCandidateOrderNumber : null;
                         const bestNameCandidateName =
                           typeof (r as any).bestNameMatchCandidateName === 'string' ? String((r as any).bestNameMatchCandidateName) : null;
+                        const bestNameCandidateFifoIso =
+                          typeof (r as any).bestNameMatchCandidateFifoIso === 'string' ? String((r as any).bestNameMatchCandidateFifoIso) : null;
+                        const bestNameCandidateFifoSource =
+                          typeof (r as any).bestNameMatchCandidateFifoSource === 'string'
+                            ? String((r as any).bestNameMatchCandidateFifoSource)
+                            : null;
                         const saleStyleId = typeof r.saleStyleId === 'string' && r.saleStyleId ? r.saleStyleId : null;
                         const reasonDetail =
                           reason === null
@@ -1431,6 +1443,8 @@ export default function TestPurchaseLinkingPage() {
                                 bestNameOverlap !== null ? `bestNameOverlap=${bestNameOverlap}` : null,
                                 bestNameCandidateOrder ? `bestNameCandidateOrder=${bestNameCandidateOrder}` : null,
                                 bestNameCandidateName ? `bestNameCandidateName=${bestNameCandidateName}` : null,
+                                bestNameCandidateFifoIso ? `bestNameCandidateFifoIso=${bestNameCandidateFifoIso}` : null,
+                                bestNameCandidateFifoSource ? `bestNameCandidateFifoSource=${bestNameCandidateFifoSource}` : null,
                               ]
                                 .filter(Boolean)
                                 .join(' • ');
@@ -1459,6 +1473,9 @@ export default function TestPurchaseLinkingPage() {
                       </td>
                       <td className="py-2 pr-4">{r.saleProduct || '—'}</td>
                       <td className="py-2 pr-4">{r.saleSize || '—'}</td>
+                      <td className="py-2 pr-4 font-mono text-xs" title={saleCutoffIso || undefined}>
+                        {saleCutoffIso || '—'}
+                      </td>
                       <td className="py-2 pr-4 text-right">{fmt(salePrice)}</td>
                       <td className="py-2 pr-4 text-right">{fmt(fees)}</td>
                       <td className="py-2 pr-4 text-right">{fmt(netPayout)}</td>
@@ -1494,6 +1511,9 @@ export default function TestPurchaseLinkingPage() {
                             </a>
                           )}
                         </div>
+                      </td>
+                      <td className="py-2 pr-4 font-mono text-xs" title={purchaseFifoIso || undefined}>
+                        {purchaseFifoIso ? `${purchaseFifoIso}${purchaseFifoSource ? ` (${purchaseFifoSource})` : ''}` : '—'}
                       </td>
                       <td className="py-2 pr-4">{r.purchaseActualDelivery || '—'}</td>
                           </>

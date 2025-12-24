@@ -244,6 +244,15 @@ function getSaleCutoffMs(sale: any): number | null {
   return Math.max(...msList);
 }
 
+function msToIso(ms: number | null): string | null {
+  if (typeof ms !== 'number' || !Number.isFinite(ms)) return null;
+  try {
+    return new Date(ms).toISOString();
+  } catch {
+    return null;
+  }
+}
+
 function purchaseKey(styleId: string, size: string): string {
   return `${styleId}::${normalizeSize(size)}`;
 }
@@ -577,6 +586,7 @@ export async function GET(request: NextRequest) {
       const saleSize = normalizeSize(saleSizeRaw);
       const saleStyleId = (sale?.styleId || '').toString().trim();
       const saleCreatedAtMs = getSaleCutoffMs(sale);
+      const saleCutoffIso = msToIso(saleCreatedAtMs);
       const saleListingId = getSaleListingId(sale);
 
       let linkedPurchase: PurchaseCandidate | null = null;
@@ -699,6 +709,8 @@ export async function GET(request: NextRequest) {
             bestOverlap: best?.overlap ?? 0,
             bestCandidateOrderNumber: best?.cand?.orderNumber || null,
             bestCandidateName: best ? getPurchaseProductName(best.cand) : null,
+            bestCandidateFifoIso: best ? msToIso(typeof best.cand._dateMs === 'number' ? best.cand._dateMs : null) : null,
+            bestCandidateFifoSource: best ? (best.cand as any)._dateSource || null : null,
           };
         }
       }
@@ -706,6 +718,9 @@ export async function GET(request: NextRequest) {
       if (linkedPurchase) {
         wouldLink++;
         const purchaseCost = getPurchaseCost(linkedPurchase);
+        const purchaseFifoMs = typeof linkedPurchase._dateMs === 'number' ? linkedPurchase._dateMs : null;
+        const purchaseFifoIso = msToIso(purchaseFifoMs);
+        const purchaseFifoSource = (linkedPurchase as any)._dateSource || null;
         const profit =
           typeof saleNetPayout === 'number' && typeof purchaseCost === 'number'
             ? saleNetPayout - purchaseCost
@@ -714,6 +729,7 @@ export async function GET(request: NextRequest) {
           saleOrderNumber,
           saleProduct,
           saleSize: saleSizeRaw,
+          saleCutoffIso,
           salePrice: saleSalePrice,
           saleFees,
           salePayout,
@@ -722,6 +738,8 @@ export async function GET(request: NextRequest) {
           method,
           linkedPurchaseId: linkedPurchase.id,
           linkedPurchaseOrderNumber: linkedPurchase.orderNumber || null,
+          purchaseFifoIso,
+          purchaseFifoSource,
           purchaseCost,
           profit,
           purchaseActualDelivery: (linkedPurchase as any)?.actualDelivery || null
@@ -748,6 +766,7 @@ export async function GET(request: NextRequest) {
           saleOrderNumber,
           saleProduct,
           saleSize: saleSizeRaw,
+          saleCutoffIso,
           salePrice: saleSalePrice,
           saleFees,
           salePayout,
@@ -791,6 +810,8 @@ export async function GET(request: NextRequest) {
           bestNameMatchOverlap: bestOverlap,
           bestNameMatchCandidateOrderNumber: nameDbg?.bestCandidateOrderNumber || null,
           bestNameMatchCandidateName: nameDbg?.bestCandidateName || null,
+          bestNameMatchCandidateFifoIso: nameDbg?.bestCandidateFifoIso || null,
+          bestNameMatchCandidateFifoSource: nameDbg?.bestCandidateFifoSource || null,
           strictDelivery,
         });
       }
