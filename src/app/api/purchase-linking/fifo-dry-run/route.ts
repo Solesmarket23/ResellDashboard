@@ -286,6 +286,19 @@ function jaccard(a: string[], b: string[]): number {
   return union > 0 ? inter / union : 0;
 }
 
+function tokenOverlapScore(a: string[], b: string[]): { jaccard: number; coverage: number; overlap: number } {
+  if (a.length === 0 || b.length === 0) return { jaccard: 0, coverage: 0, overlap: 0 };
+  const sa = new Set(a);
+  const sb = new Set(b);
+  let inter = 0;
+  for (const t of sa) if (sb.has(t)) inter++;
+  const union = sa.size + sb.size - inter;
+  const j = union > 0 ? inter / union : 0;
+  const denom = Math.min(sa.size, sb.size);
+  const coverage = denom > 0 ? inter / denom : 0;
+  return { jaccard: j, coverage, overlap: inter };
+}
+
 function getEffectiveUserId(request: NextRequest): string | null {
   const header = request.headers.get('x-user-id')?.trim();
   if (header) return header;
@@ -586,7 +599,8 @@ export async function GET(request: NextRequest) {
         const candidates = exact.length > 0 ? exact : (purchaseBySize.get(saleSize) || []);
 
         const saleTokens = tokenizeName(String(saleProduct));
-        let best: { cand: PurchaseCandidate; score: number } | null = null;
+        let best: { cand: PurchaseCandidate; score: number; overlap: number; j: number; coverage: number } | null = null;
+        let considered = 0;
 
         for (const cand of candidates) {
           const pid = String(cand.id || '');
@@ -600,15 +614,23 @@ export async function GET(request: NextRequest) {
           }
 
           const candName = getPurchaseProductName(cand);
-          const score = candName ? jaccard(saleTokens, tokenizeName(candName)) : 0;
+          const candTokens = candName ? tokenizeName(candName) : [];
+          const { jaccard: j, coverage, overlap } = tokenOverlapScore(saleTokens, candTokens);
+          const score = Math.max(j, coverage);
+          considered++;
+
+          if (!best || score > best.score) {
+            best = { cand, score, overlap, j, coverage };
+          }
+
           // Accept exact-key matches regardless of score; otherwise require reasonable similarity.
-          const ok = exact.length > 0 ? true : score >= 0.55;
+          // NOTE: coverage helps when one side has many extra tokens (common in apparel titles).
+          const ok = exact.length > 0 ? true : (score >= 0.6 && overlap >= 2);
           if (!ok) continue;
 
           // Keep FIFO: choose the earliest eligible candidate; but track score for debugging.
           linkedPurchase = cand;
           method = 'name';
-          best = { cand, score };
           usedPurchaseIds.add(pid);
           break;
         }
@@ -616,7 +638,13 @@ export async function GET(request: NextRequest) {
         if (!linkedPurchase && exact.length === 0 && (purchaseBySize.get(saleSize) || []).length > 0) {
           (sale as any)._nameDebug = {
             attempted: (purchaseBySize.get(saleSize) || []).length,
+            considered,
             bestScore: best?.score ?? 0,
+            bestJaccard: best?.j ?? 0,
+            bestCoverage: best?.coverage ?? 0,
+            bestOverlap: best?.overlap ?? 0,
+            bestCandidateOrderNumber: best?.cand?.orderNumber || null,
+            bestCandidateName: best ? getPurchaseProductName(best.cand) : null,
             mode: 'fuzzy',
           };
         }
@@ -648,6 +676,7 @@ export async function GET(request: NextRequest) {
       } else {
         noMatch++;
         const dbg = (sale as any)._fifoDebug || null;
+        const nameDbg = (sale as any)._nameDebug || null;
         const nameCandidatesTotal =
           saleProduct && saleSize ? (purchaseNameIndex.get(purchaseNameKey(String(saleProduct), saleSize)) || []).length : 0;
         const sizeCandidatesTotal = saleSize ? (purchaseBySize.get(saleSize) || []).length : 0;
@@ -672,6 +701,10 @@ export async function GET(request: NextRequest) {
           candidatesConsidered: typeof dbg?.candidatesConsidered === 'number' ? dbg.candidatesConsidered : 0,
           nameCandidatesTotal,
           sizeCandidatesTotal,
+          bestNameMatchScore: typeof nameDbg?.bestScore === 'number' ? nameDbg.bestScore : null,
+          bestNameMatchOverlap: typeof nameDbg?.bestOverlap === 'number' ? nameDbg.bestOverlap : null,
+          bestNameMatchCandidateOrderNumber: nameDbg?.bestCandidateOrderNumber || null,
+          bestNameMatchCandidateName: nameDbg?.bestCandidateName || null,
           strictDelivery,
         });
       }
