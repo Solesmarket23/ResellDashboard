@@ -146,6 +146,52 @@ const Purchases = () => {
   const [carrierDropdownOpen, setCarrierDropdownOpen] = useState(false);
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [marketDropdownOpen, setMarketDropdownOpen] = useState(false);
+  const [carrierDropdownDirection, setCarrierDropdownDirection] = useState<'up' | 'down'>('down');
+  const [statusDropdownDirection, setStatusDropdownDirection] = useState<'up' | 'down'>('down');
+
+  const editModalBodyRef = useRef<HTMLDivElement | null>(null);
+  const carrierDropdownButtonRef = useRef<HTMLButtonElement | null>(null);
+  const statusDropdownButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  const ensureDropdownVisibleAndSetDirection = useCallback(
+    (buttonEl: HTMLButtonElement | null, setDirection: (d: 'up' | 'down') => void, estimatedMenuHeightPx = 240) => {
+      if (!buttonEl) return;
+      const container = editModalBodyRef.current;
+
+      // If we have the modal body container, use it to compute visible bounds and scroll.
+      if (container) {
+        const btnRect = buttonEl.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const padding = 8;
+
+        // Scroll container so the button is fully visible.
+        if (btnRect.bottom > containerRect.bottom - padding) {
+          container.scrollTop += btnRect.bottom - (containerRect.bottom - padding);
+        } else if (btnRect.top < containerRect.top + padding) {
+          container.scrollTop -= (containerRect.top + padding) - btnRect.top;
+        }
+
+        // Decide whether to open up or down based on available space within the visible modal area.
+        const btnRect2 = buttonEl.getBoundingClientRect(); // recalc after potential scroll
+        const containerRect2 = container.getBoundingClientRect();
+        const spaceBelow = containerRect2.bottom - btnRect2.bottom - padding;
+        const spaceAbove = btnRect2.top - containerRect2.top - padding;
+        const shouldOpenUp = spaceBelow < estimatedMenuHeightPx && spaceAbove > spaceBelow;
+        setDirection(shouldOpenUp ? 'up' : 'down');
+        return;
+      }
+
+      // Fallback: viewport-only heuristics
+      const rect = buttonEl.getBoundingClientRect();
+      const padding = 8;
+      const spaceBelow = window.innerHeight - rect.bottom - padding;
+      const spaceAbove = rect.top - padding;
+      const shouldOpenUp = spaceBelow < estimatedMenuHeightPx && spaceAbove > spaceBelow;
+      setDirection(shouldOpenUp ? 'up' : 'down');
+      buttonEl.scrollIntoView({ block: 'nearest' });
+    },
+    []
+  );
   
   // Column Customization State
   const [showColumnCustomizer, setShowColumnCustomizer] = useState(false);
@@ -5018,7 +5064,7 @@ const Purchases = () => {
             </div>
 
             {/* Body */}
-            <div className="px-6 py-6 space-y-5 max-h-[70vh] overflow-y-auto">
+            <div ref={editModalBodyRef} className="px-6 py-6 space-y-5 max-h-[70vh] overflow-y-auto">
               {/* Product Image & Name */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -5322,7 +5368,16 @@ const Purchases = () => {
                 <div className="relative">
                   <button
                     type="button"
-                    onClick={() => setCarrierDropdownOpen(!carrierDropdownOpen)}
+                    ref={carrierDropdownButtonRef}
+                    onClick={() => {
+                      const nextOpen = !carrierDropdownOpen;
+                      if (nextOpen) {
+                        // Close other dropdown to avoid stacking issues
+                        setStatusDropdownOpen(false);
+                        ensureDropdownVisibleAndSetDirection(carrierDropdownButtonRef.current, setCarrierDropdownDirection, 220);
+                      }
+                      setCarrierDropdownOpen(nextOpen);
+                    }}
                     className={`w-full px-4 py-3 rounded-lg border text-sm text-left transition-all duration-200 flex items-center justify-between ${
                       currentTheme.name === 'Neon'
                         ? 'bg-gray-900 border-white/20 text-white focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50'
@@ -5337,11 +5392,11 @@ const Purchases = () => {
                     </svg>
                   </button>
                   {carrierDropdownOpen && (
-                    <div className={`absolute z-10 w-full mt-2 rounded-lg border shadow-xl ${
+                    <div className={`absolute z-10 w-full rounded-lg border shadow-xl max-h-60 overflow-auto ${
                       currentTheme.name === 'Neon'
                         ? 'bg-gray-900 border-white/20'
                         : 'bg-white border-gray-200'
-                    }`}>
+                    } ${carrierDropdownDirection === 'up' ? 'bottom-full mb-2' : 'top-full mt-2'}`}>
                       {['UPS', 'FedEx', 'USPS', 'DHL', 'Other'].map((carrier) => (
                         <button
                           key={carrier}
@@ -5376,7 +5431,15 @@ const Purchases = () => {
                 <div className="relative">
                   <button
                     type="button"
-                    onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
+                    ref={statusDropdownButtonRef}
+                    onClick={() => {
+                      const nextOpen = !statusDropdownOpen;
+                      if (nextOpen) {
+                        setCarrierDropdownOpen(false);
+                        ensureDropdownVisibleAndSetDirection(statusDropdownButtonRef.current, setStatusDropdownDirection, 260);
+                      }
+                      setStatusDropdownOpen(nextOpen);
+                    }}
                     className={`w-full px-4 py-3 rounded-lg border text-sm text-left transition-all duration-200 flex items-center justify-between ${
                       currentTheme.name === 'Neon'
                         ? 'bg-gray-900 border-white/20 text-white focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/50'
@@ -5389,12 +5452,12 @@ const Purchases = () => {
                     </svg>
                   </button>
                   {statusDropdownOpen && (
-                    <div className={`absolute z-10 w-full mt-2 rounded-lg border shadow-xl ${
+                    <div className={`absolute z-10 w-full rounded-lg border shadow-xl max-h-60 overflow-auto ${
                       currentTheme.name === 'Neon'
                         ? 'bg-gray-900 border-white/20'
                         : 'bg-white border-gray-200'
-                    }`}>
-                      {['Ordered', 'Shipped', 'Delivered', 'Cancelled', 'Refunded'].map((status) => (
+                    } ${statusDropdownDirection === 'up' ? 'bottom-full mb-2' : 'top-full mt-2'}`}>
+                      {['Ordered', 'Shipped', 'Delivered', 'Canceled', 'Refunded'].map((status) => (
                         <button
                           key={status}
                           type="button"
