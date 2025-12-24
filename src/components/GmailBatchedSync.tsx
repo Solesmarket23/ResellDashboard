@@ -18,8 +18,8 @@ interface BatchProgress {
 }
 
 interface GmailBatchedSyncProps {
-  onPurchasesUpdate?: (purchases: any[]) => void;
-  onSyncComplete?: (totalPurchases: number) => void;
+  onPurchasesUpdate?: (purchases: any[]) => void | Promise<void>;
+  onSyncComplete?: (totalPurchases: number) => void | Promise<void>;
   onClose?: () => void;
   className?: string;
   autoStart?: boolean;
@@ -41,6 +41,8 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [currentBatch, setCurrentBatch] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
+  const [isFinalizing, setIsFinalizing] = useState(false);
+  const [isStopped, setIsStopped] = useState(false);
   const [isForceCompleting, setIsForceCompleting] = useState(false);
   const [cumulativeEmailsProcessed, setCumulativeEmailsProcessed] = useState(0);
   const [cumulativeEmailsFound, setCumulativeEmailsFound] = useState(0);
@@ -151,6 +153,8 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
     setAllPurchases([]);
     setCurrentBatch(0);
     setIsComplete(false);
+    setIsFinalizing(false);
+    setIsStopped(false);
     isCancelledRef.current = false;
     
     // Reset cumulative totals and timer
@@ -309,7 +313,11 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
           console.log(`📊 Total purchases so far: ${allCollectedPurchases.length}`);
           
           // Update parent immediately after adding purchases from this batch
-          onPurchasesUpdate?.(allCollectedPurchases);
+          // IMPORTANT: onPurchasesUpdate may be async (saving to Firebase + reloading).
+          // Await it so the UI doesn't claim "complete" while work is still in-flight.
+          if (onPurchasesUpdate) {
+            await onPurchasesUpdate(allCollectedPurchases);
+          }
         }
 
         // Check if we should continue (also check email limit)
@@ -395,11 +403,35 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
       }
     }
 
-    // Sync complete
-    if (!isCancelledRef.current) {
-      setIsComplete(true);
+    // Sync ended (complete / stopped / failed)
+    const wasCancelled = isCancelledRef.current;
+    const hadError = !!error;
+
+    // If user stopped/cancelled, reflect that explicitly.
+    if (wasCancelled) {
+      setIsStopped(true);
       setIsLoading(false);
-      onSyncComplete?.(allCollectedPurchases.length);
+      setIsFinalizing(false);
+      return;
+    }
+
+    // If error happened, don't claim "complete".
+    if (hadError) {
+      setIsLoading(false);
+      setIsFinalizing(false);
+      return;
+    }
+
+    // Natural completion: finalize (e.g. parent may do a final save/reload)
+    setIsFinalizing(true);
+    try {
+      if (onSyncComplete) {
+        await onSyncComplete(allCollectedPurchases.length);
+      }
+      setIsComplete(true);
+    } finally {
+      setIsFinalizing(false);
+      setIsLoading(false);
     }
     
     console.log(`🎉 Gmail sync complete!`);
@@ -425,6 +457,8 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
 
   const getStatusText = () => {
     if (error) return 'Sync failed';
+    if (isStopped) return 'Sync stopped';
+    if (isFinalizing) return 'Finalizing sync...';
     if (isComplete) return 'Sync complete!';
     if (!isLoading) return 'Ready to sync';
     if (!progress) return 'Initializing...';
@@ -513,7 +547,7 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
             </div>
           </div>
           
-          {!isLoading && (
+          {!isLoading && !isFinalizing && (
             <button
               onClick={startBatchedSync}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm ${currentTheme.colors.primary} text-white hover:opacity-90 transition-opacity`}
