@@ -627,6 +627,93 @@ export default function TestPurchaseLinkingPage() {
     return { count, netPayout, totalPaid, profit };
   }, [fifoRowsForProfit]);
 
+  const fifoMetrics = useMemo(() => {
+    const n = (v: any): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+    const ms = (v: any): number | null => {
+      if (typeof v !== 'string' || !v) return null;
+      const t = Date.parse(v);
+      return Number.isFinite(t) ? t : null;
+    };
+    const safeDiv = (a: number, b: number): number | null => (b === 0 ? null : a / b);
+
+    // Consider all FIFO rows for the selected period that represent a match (linked or would-link),
+    // and have the $ fields we need for meaningful metrics.
+    let count = 0;
+    let netPayoutSum = 0;
+    let paidSum = 0;
+    let profitSum = 0;
+    let roiSum = 0;
+    let roiCount = 0;
+    let marginSum = 0;
+    let marginCount = 0;
+    let daysSum = 0;
+    let daysCount = 0;
+
+    let profitable = 0;
+    let unprofitable = 0;
+
+    for (const r of fifoRowsForProfit) {
+      const netPayout = n(r?.saleNetPayout);
+      const paid = n(r?.purchaseCost);
+      const profit = n(r?.profit) ?? (netPayout !== null && paid !== null ? netPayout - paid : null);
+      if (netPayout === null || paid === null || profit === null) continue;
+
+      count += 1;
+      netPayoutSum += netPayout;
+      paidSum += paid;
+      profitSum += profit;
+
+      if (profit >= 0) profitable += 1;
+      else unprofitable += 1;
+
+      const roi = safeDiv(profit, paid);
+      if (roi !== null) {
+        roiSum += roi;
+        roiCount += 1;
+      }
+
+      const margin = safeDiv(profit, netPayout);
+      if (margin !== null) {
+        marginSum += margin;
+        marginCount += 1;
+      }
+
+      const saleMs = ms((r as any)?.saleCutoffIso);
+      const purchaseMs = ms((r as any)?.purchaseFifoIso);
+      if (saleMs !== null && purchaseMs !== null) {
+        const days = (saleMs - purchaseMs) / (1000 * 60 * 60 * 24);
+        if (Number.isFinite(days)) {
+          daysSum += days;
+          daysCount += 1;
+        }
+      }
+    }
+
+    const avgProfit = safeDiv(profitSum, count);
+    const avgNetPayout = safeDiv(netPayoutSum, count);
+    const avgPaid = safeDiv(paidSum, count);
+    const overallRoi = safeDiv(profitSum, paidSum); // ROI based on totals
+    const avgRoi = roiCount ? roiSum / roiCount : null; // average of per-row ROI
+    const avgMargin = marginCount ? marginSum / marginCount : null; // profit/net payout
+    const avgDays = daysCount ? daysSum / daysCount : null;
+
+    return {
+      count,
+      netPayoutSum,
+      paidSum,
+      profitSum,
+      profitable,
+      unprofitable,
+      avgProfit,
+      avgNetPayout,
+      avgPaid,
+      overallRoi,
+      avgRoi,
+      avgMargin,
+      avgDays,
+    };
+  }, [fifoRowsForProfit]);
+
   const exportFifoCsv = useCallback(() => {
     if (typeof window === 'undefined') return;
     const monthLabel = typeof fifoSelectedMonth === 'number' ? monthOptions[fifoSelectedMonth]?.label || String(fifoSelectedMonth + 1) : 'All';
@@ -1912,6 +1999,47 @@ export default function TestPurchaseLinkingPage() {
                 </div>
               )}
             </div>
+            </div>
+
+            <div
+              className={`rounded-lg border p-3 text-sm ${
+                isNeon ? 'bg-gray-900/40 border-gray-700 text-gray-200' : 'bg-gray-50 border-gray-200 text-gray-900'
+              }`}
+            >
+              <div className="flex flex-wrap gap-x-5 gap-y-1">
+                <span className="font-semibold">Avg Profit: {fifoMetrics.avgProfit === null ? '—' : currency(fifoMetrics.avgProfit)}</span>
+                <span>
+                  Avg ROI: <span className="font-semibold">{fifoMetrics.avgRoi === null ? '—' : `${(fifoMetrics.avgRoi * 100).toFixed(1)}%`}</span>
+                </span>
+                <span>
+                  ROI (Totals):{' '}
+                  <span className="font-semibold">{fifoMetrics.overallRoi === null ? '—' : `${(fifoMetrics.overallRoi * 100).toFixed(1)}%`}</span>
+                </span>
+                <span>
+                  Avg Margin: <span className="font-semibold">{fifoMetrics.avgMargin === null ? '—' : `${(fifoMetrics.avgMargin * 100).toFixed(1)}%`}</span>
+                </span>
+                <span>
+                  Avg Net Payout: <span className="font-semibold">{fifoMetrics.avgNetPayout === null ? '—' : currency(fifoMetrics.avgNetPayout)}</span>
+                </span>
+                <span>
+                  Avg Total Paid: <span className="font-semibold">{fifoMetrics.avgPaid === null ? '—' : currency(fifoMetrics.avgPaid)}</span>
+                </span>
+                <span>
+                  Avg Days Held:{' '}
+                  <span className="font-semibold">
+                    {fifoMetrics.avgDays === null ? '—' : `${fifoMetrics.avgDays.toFixed(1)}d`}
+                  </span>
+                </span>
+                <span>
+                  Win rate:{' '}
+                  <span className="font-semibold">
+                    {fifoMetrics.count === 0 ? '—' : `${((fifoMetrics.profitable / fifoMetrics.count) * 100).toFixed(1)}%`}
+                  </span>
+                </span>
+              </div>
+              <div className={`mt-1 text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                ROI = Profit ÷ Total Paid. Margin = Profit ÷ Net Payout. Days held = Sale time − Purchase available time.
+              </div>
             </div>
 
             <div className="mt-4 overflow-x-auto">
