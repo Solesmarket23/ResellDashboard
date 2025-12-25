@@ -1422,7 +1422,23 @@ export default function TestPurchaseLinkingPage() {
                         <td className="py-2 pr-3 text-right">{fees === null ? '—' : currency(fees)}</td>
                         <td className="py-2 pr-3 text-right">{paidKnown ? currency(totalPaid) : '—'}</td>
                         <td className="py-2 pr-3 text-right" title={paidKnown ? 'Profit = net payout − total paid' : ''}>
-                          {paidKnown ? currency(profit) : '—'}
+                          {paidKnown ? (
+                            <span
+                              className={`inline-flex items-center justify-center rounded-xl border px-4 py-2 font-semibold ${
+                                (profit ?? 0) >= 0
+                                  ? isNeon
+                                    ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-200'
+                                    : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                                  : isNeon
+                                    ? 'bg-red-500/20 border-red-500/30 text-red-200'
+                                    : 'bg-red-50 border-red-200 text-red-800'
+                              }`}
+                            >
+                              {currency(profit)}
+                            </span>
+                          ) : (
+                            '—'
+                          )}
                         </td>
                         <td className="py-2 pr-3 whitespace-nowrap">{linkedLabel}</td>
                         <td className="py-2 pr-3">
@@ -1573,7 +1589,23 @@ export default function TestPurchaseLinkingPage() {
                         <td className="py-2 pr-3 text-right">{currency(s.fees)}</td>
                         <td className="py-2 pr-3 text-right">{paidKnown ? currency(totalPaid) : '—'}</td>
                         <td className="py-2 pr-3 text-right" title="Profit = net payout − total paid">
-                          {paidKnown ? currency(profit) : '—'}
+                          {paidKnown ? (
+                            <span
+                              className={`inline-flex items-center justify-center rounded-xl border px-4 py-2 font-semibold ${
+                                (profit ?? 0) >= 0
+                                  ? isNeon
+                                    ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-200'
+                                    : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                                  : isNeon
+                                    ? 'bg-red-500/20 border-red-500/30 text-red-200'
+                                    : 'bg-red-50 border-red-200 text-red-800'
+                              }`}
+                            >
+                              {currency(profit)}
+                            </span>
+                          ) : (
+                            '—'
+                          )}
                         </td>
                         <td className="py-2 pr-3 whitespace-nowrap">
                           {s.linkedPurchaseOrderNumber || (s.linkedPurchaseId ? 'linked' : '—')}
