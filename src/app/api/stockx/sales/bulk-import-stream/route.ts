@@ -737,6 +737,149 @@ export async function POST(request: NextRequest) {
         }
       }
 
+        // IMPORTANT: StockX "history" endpoint does NOT include many in-flight statuses that users still count as sales
+        // in the StockX UI for a month (e.g. SHIPPED / RECEIVED / AUTHENTICATING / AUTHENTICATED / PAYOUTPENDING).
+        // Those typically live under the "active" endpoint. If we don't merge active orders, month counts can be way off.
+        if (!completedOnly && allSales.length < maxSales) {
+          sendUpdate({
+            type: 'status',
+            phase: 'fetching',
+            message: `Fetching active selling orders (in-flight statuses) to avoid missing month totals...`,
+            progress: 62
+          });
+
+          const activePageSize = 100;
+          let activePageNumber = 1;
+          let activeFetched = 0;
+          let stopActive = false;
+
+          while (!stopActive && allSales.length < maxSales) {
+            // Gentle throttle (active endpoint can also trigger bot protection).
+            await new Promise((r) => setTimeout(r, 250));
+
+            sendUpdate({
+              type: 'progress',
+              phase: 'fetching',
+              message: `Active orders - Page ${activePageNumber}...`,
+              currentPage: activePageNumber,
+              progress: Math.min(62 + activePageNumber * 0.6, 69)
+            });
+
+            const qp = new URLSearchParams({
+              pageNumber: String(activePageNumber),
+              pageSize: String(activePageSize)
+            });
+
+            const urlToUse = `https://api.stockx.com/v2/selling/orders/active?${qp.toString()}`;
+
+            try {
+              let response = await fetch(urlToUse, {
+                headers: {
+                  'x-api-key': apiKey,
+                  Authorization: `Bearer ${currentAccessToken}`,
+                  Accept: 'application/json',
+                  'User-Agent': 'ResellDashboard/1.0'
+                }
+              });
+
+              if (response.status === 401 && currentRefreshToken) {
+                const refreshResult = await refreshStockXTokens(currentRefreshToken);
+                if (refreshResult.success && refreshResult.accessToken) {
+                  currentAccessToken = refreshResult.accessToken;
+                  currentRefreshToken = refreshResult.refreshToken || currentRefreshToken;
+                  refreshToken = currentRefreshToken;
+                  accessToken = currentAccessToken;
+
+                  response = await fetch(urlToUse, {
+                    headers: {
+                      'x-api-key': apiKey,
+                      Authorization: `Bearer ${currentAccessToken}`,
+                      Accept: 'application/json',
+                      'User-Agent': 'ResellDashboard/1.0'
+                    }
+                  });
+                }
+              }
+
+              const text = await response.text().catch(() => '');
+
+              if (!response.ok) {
+                if (response.status === 403 && isPerimeterXBlock(text)) {
+                  sendUpdate({
+                    type: 'warning',
+                    phase: 'fetching',
+                    message: 'StockX bot protection triggered while fetching active orders. Continuing with history-only results.',
+                    progress: 69
+                  });
+                  break;
+                }
+
+                sendUpdate({
+                  type: 'warning',
+                  phase: 'fetching',
+                  message: `Active orders request failed (status ${response.status}). Continuing with history-only results.`,
+                  progress: 69
+                });
+                break;
+              }
+
+              let json: any = null;
+              try {
+                json = JSON.parse(text || '{}');
+              } catch {
+                sendUpdate({
+                  type: 'warning',
+                  phase: 'fetching',
+                  message: 'Failed to parse active orders JSON. Continuing with history-only results.',
+                  progress: 69
+                });
+                break;
+              }
+
+              const orders: any[] = Array.isArray(json?.orders) ? json.orders : Array.isArray(json?.data?.orders) ? json.data.orders : [];
+              if (!orders || orders.length === 0) break;
+
+              activeFetched += orders.length;
+              const mapped = processSalesData(orders);
+
+              // Apply optional date window filter (fromMs/toMs) before adding.
+              const filtered = mapped.filter((s) => {
+                const ms = parseDateMs(s.createdAt) ?? parseDateMs((s as any).updatedAt) ?? null;
+                if (typeof fromMs === 'number' && Number.isFinite(fromMs) && typeof ms === 'number' && ms < fromMs) return false;
+                if (typeof toMs === 'number' && Number.isFinite(toMs) && typeof ms === 'number' && ms > toMs) return false;
+                return true;
+              });
+
+              for (const s of filtered) {
+                if (allSales.length >= maxSales) break;
+                allSales.push(s);
+              }
+
+              // Stop when page isn't full.
+              if (orders.length < activePageSize) break;
+              activePageNumber += 1;
+
+              // Safety cap.
+              if (activePageNumber > 50) break;
+            } catch (e: any) {
+              sendUpdate({
+                type: 'warning',
+                phase: 'fetching',
+                message: `Active orders fetch error: ${e?.message || String(e)}. Continuing with history-only results.`,
+                progress: 69
+              });
+              break;
+            }
+          }
+
+          sendUpdate({
+            type: 'status',
+            phase: 'fetching',
+            message: `Active orders fetch complete. Added ${activeFetched} raw active orders (pre-dedupe).`,
+            progress: 69
+          });
+        }
+
         // Remove duplicates by orderNumber since we might get same sales across different statuses
         const uniqueSalesMap = new Map();
         for (const sale of allSales) {
