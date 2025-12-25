@@ -447,7 +447,9 @@ export async function GET(request: NextRequest) {
     // To make this endpoint work out-of-the-box, do not orderBy in Firestore; sort in-memory instead.
     let sales: any[] = [];
     let salesRead = 0;
+    let legacySalesRead = 0;
     let hasMoreSales = false;
+    let hasMoreLegacySales = false;
 
     if (hasSaleWindow) {
       // Scan through sales in pages and filter to the requested window in-memory.
@@ -480,6 +482,83 @@ export async function GET(request: NextRequest) {
         if (snap.docs.length < pageSize) break;
       }
       hasMoreSales = salesRead >= scanLimit;
+
+      // ALSO scan legacy stockxSales when a time window is requested.
+      // Many older imports wrote sales into stockxSales; user_sales may only contain a subset.
+      // We merge+dedupe by orderNumber to avoid double counting.
+      try {
+        let legacyLastDoc: FirebaseFirestore.DocumentSnapshot | null = null;
+        const legacyPageSize = 1000;
+        const legacyMatches: any[] = [];
+        while (legacySalesRead < scanLimit) {
+          let q: FirebaseFirestore.Query = db
+            .collection(COLLECTIONS.STOCKX_SALES)
+            .where('userId', '==', userId)
+            .orderBy(FieldPath.documentId())
+            .limit(Math.min(legacyPageSize, scanLimit - legacySalesRead));
+          if (legacyLastDoc) q = q.startAfter(legacyLastDoc);
+          const snap = await q.get();
+          if (snap.empty) break;
+          legacySalesRead += snap.docs.length;
+          legacyLastDoc = snap.docs[snap.docs.length - 1];
+
+          const legacyDocs = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+          const mapped = legacyDocs.map((x: any) => {
+            const s = x?.saleData || x?.sale || x;
+            return {
+              id: x.id,
+              orderNumber: s?.orderNumber || x?.stockxOrderId || x?.orderNumber || null,
+              product: s?.productName || s?.product?.productName || s?.product?.title || s?.product?.name || null,
+              brand: s?.product?.brand || s?.brand || null,
+              size: s?.variant?.variantValue || s?.size || null,
+              styleId: s?.product?.styleId || s?.styleId || null,
+              imageUrl: s?.product?.imageUrl || s?.product?.image || null,
+              salePrice: s?.amount ? Number(s.amount) || 0 : Number(s?.salePrice) || 0,
+              fees: Number(s?.fees) || null,
+              payout: s?.payout ? Number(s.payout) || null : (s?.totalPayout ? Number(s.totalPayout) || null : null),
+              purchasePrice: Number(s?.purchasePrice) || null,
+              profit: Number(s?.profit) || null,
+              linkedPurchaseId: s?.linkedPurchaseId ?? null,
+              linkedPurchaseOrderNumber: s?.linkedPurchaseOrderNumber ?? null,
+              date: s?.date || s?.createdAt || s?.updatedAt || null,
+              listingId: s?.listingId || s?.askId || null,
+              _source: 'stockxSales'
+            };
+          });
+
+          let filtered = mapped;
+          if (unlinkedOnly) filtered = filtered.filter((s: any) => (s?.linkedPurchaseId ?? null) === null);
+
+          for (const s of filtered) {
+            const ev = getSaleEventMs(s);
+            const ms = ev.ms;
+            if (typeof ms !== 'number') continue;
+            if (ms >= (saleStartMs as number) && ms < (saleEndMs as number)) legacyMatches.push(s);
+          }
+
+          if (snap.docs.length < legacyPageSize) break;
+        }
+        hasMoreLegacySales = legacySalesRead >= scanLimit;
+
+        if (legacyMatches.length > 0) {
+          const byOrder = new Map<string, any>();
+          for (const s of sales) {
+            const k = String(s?.orderNumber || '').trim();
+            if (!k) continue;
+            byOrder.set(k, s);
+          }
+          for (const s of legacyMatches) {
+            const k = String(s?.orderNumber || '').trim();
+            if (!k) continue;
+            if (!byOrder.has(k)) {
+              byOrder.set(k, s);
+            }
+          }
+          sales = Array.from(byOrder.values());
+        }
+      } catch (e: any) {
+        console.warn('⚠️ fifo-dry-run legacy sales scan failed (non-fatal):', e?.message || String(e));
+      }
 
       // Safety: cap how many we actually process downstream in this run.
       if (sales.length > limitSales) {
@@ -939,7 +1018,9 @@ export async function GET(request: NextRequest) {
         alreadyLinked,
         // Debug: how many sale docs we had to read to find those sales in-window.
         salesRead,
-        salesCapped: hasMoreSales
+        legacySalesRead,
+        salesCapped: hasMoreSales,
+        legacySalesCapped: hasMoreLegacySales
       },
       results
     });
