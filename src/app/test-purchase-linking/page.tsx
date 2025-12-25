@@ -1533,7 +1533,7 @@ export default function TestPurchaseLinkingPage() {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto px-6 pb-6">
             <table className="min-w-full text-sm">
               <thead
                 className={`${
@@ -1700,7 +1700,7 @@ export default function TestPurchaseLinkingPage() {
                 />
               </div>
             </div>
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto px-6 pb-6">
               <table className="min-w-full text-sm">
                 <thead
                   className={`${
