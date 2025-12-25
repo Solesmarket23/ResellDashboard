@@ -607,13 +607,26 @@ export default function TestPurchaseLinkingPage() {
     setFifoSummary(null);
     setFifoRows([]);
     try {
+      // If a month/year is selected, pass a local-time window to the API so it scans *only* that period.
+      const saleWindow =
+        fifoSelectedYear !== null && typeof fifoSelectedMonth === 'number'
+          ? {
+              startMs: new Date(fifoSelectedYear, fifoSelectedMonth, 1, 0, 0, 0, 0).getTime(),
+              endMs: new Date(fifoSelectedYear, fifoSelectedMonth + 1, 1, 0, 0, 0, 0).getTime(),
+            }
+          : null;
+
       const qs = new URLSearchParams({
         userId: u,
         unlinkedOnly: 'true',
-        limitSales: '200',
+        limitSales: '5000',
         // strictDelivery=1 means only purchases with actualDelivery are eligible.
         strictDelivery: fifoStrictDelivery ? '1' : '0'
       });
+      if (saleWindow) {
+        qs.set('saleStartMs', String(saleWindow.startMs));
+        qs.set('saleEndMs', String(saleWindow.endMs));
+      }
       const resp = await fetch(`/api/purchase-linking/fifo-dry-run?${qs.toString()}`, {
         cache: 'no-store',
         headers: { 'x-user-id': u }
@@ -1089,6 +1102,11 @@ export default function TestPurchaseLinkingPage() {
               <div className={`mt-1 text-sm ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                 scanned={fifoSummary.totalSalesScanned} • wouldLink={fifoSummary.wouldLink} • noMatch={fifoSummary.noMatch} • alreadyLinked={fifoSummary.alreadyLinked}
               </div>
+              {fifoSelectedYear !== null && typeof fifoSelectedMonth === 'number' && (
+                <div className={`mt-1 text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                  Filtered to {monthOptions[fifoSelectedMonth]?.label} {fifoSelectedYear} (local time).
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1561,7 +1579,7 @@ export default function TestPurchaseLinkingPage() {
                   </tr>
                 </thead>
                 <tbody className={isNeon ? 'text-gray-200' : 'text-gray-900'}>
-                  {fifoRows.slice(0, 50).map((r, idx) => (
+                  {fifoRows.map((r, idx) => (
                     <tr key={idx} className={isNeon ? 'border-t border-gray-700' : 'border-t border-gray-200'}>
                       {(() => {
                         const n = (v: any): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);

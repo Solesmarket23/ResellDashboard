@@ -420,9 +420,19 @@ export async function GET(request: NextRequest) {
     // If no cookie/header user is present, we still allow (some flows rely on query param),
     // but this endpoint only returns that userId's data. If you want stricter auth, we can tighten this later.
 
-    const limitSales = Math.max(1, Math.min(500, Number(request.nextUrl.searchParams.get('limitSales') || 200)));
+    const limitSales = Math.max(1, Math.min(5000, Number(request.nextUrl.searchParams.get('limitSales') || 200)));
     const unlinkedOnly = request.nextUrl.searchParams.get('unlinkedOnly') !== '0';
     const strictDelivery = request.nextUrl.searchParams.get('strictDelivery') !== '0';
+    const saleStartMsRaw = request.nextUrl.searchParams.get('saleStartMs');
+    const saleEndMsRaw = request.nextUrl.searchParams.get('saleEndMs');
+    const saleStartMs = saleStartMsRaw ? Number(saleStartMsRaw) : null;
+    const saleEndMs = saleEndMsRaw ? Number(saleEndMsRaw) : null;
+    const hasSaleWindow =
+      typeof saleStartMs === 'number' &&
+      Number.isFinite(saleStartMs) &&
+      typeof saleEndMs === 'number' &&
+      Number.isFinite(saleEndMs) &&
+      saleEndMs > saleStartMs;
 
     const db = getAdminDb();
 
@@ -441,6 +451,16 @@ export async function GET(request: NextRequest) {
     let sales = salesSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
     if (unlinkedOnly) {
       sales = sales.filter((s: any) => (s?.linkedPurchaseId ?? null) === null);
+    }
+
+    // Optional: filter sales to a specific local-time window passed from client.
+    if (hasSaleWindow) {
+      sales = sales.filter((s: any) => {
+        const ev = getSaleEventMs(s);
+        const ms = ev.ms;
+        if (typeof ms !== 'number') return false;
+        return ms >= (saleStartMs as number) && ms < (saleEndMs as number);
+      });
     }
     // Sort newest-first for stable UI (best-effort).
     sales.sort((a: any, b: any) => {
@@ -874,6 +894,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       userId,
+      filters: hasSaleWindow ? { saleStartMs, saleEndMs } : null,
       summary: {
         totalSalesScanned: sales.length,
         wouldLink,
