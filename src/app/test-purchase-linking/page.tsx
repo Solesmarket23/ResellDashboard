@@ -1257,29 +1257,33 @@ export default function TestPurchaseLinkingPage() {
           )}
         </div>
 
-        {/* Sales-led table */}
+        {/* Sales-style table (but rows are FIFO dry-run results) */}
         <div
           id={fifoResultsAnchorId}
-          className={`rounded-xl border p-6 ${isNeon ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}
+          className={`rounded-xl overflow-hidden ${
+            isNeon
+              ? 'bg-gradient-to-br from-gray-900/50 to-gray-900/30 border border-white/10 shadow-2xl'
+              : 'bg-white border border-gray-200 shadow-lg'
+          }`}
         >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold">FIFO dry-run results</h2>
-              <div className={`mt-1 text-sm ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-                This replaces the old Sales table on Sales 2.0. Run FIFO to populate results.
+          <div className="p-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Sales</h2>
+              <div className={`text-sm ${isNeon ? 'text-gray-300' : 'text-gray-600'}`}>
+                {Math.min(50, fifoRows.length)} loaded
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowRawSalesTable((v) => !v)}
-                className={`h-9 rounded-md px-3 text-xs font-semibold ${
-                  isNeon ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10' : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
+            <div className="mt-3">
+              <input
+                value={saleSearch}
+                onChange={(e) => setSaleSearch(e.target.value)}
+                className={`w-full px-3 py-2 rounded-md border ${
+                  isNeon ? 'bg-gray-900 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'
                 }`}
-                title="Show/hide the raw sales table (debug)"
-              >
-                {showRawSalesTable ? 'Hide raw sales table' : 'Show raw sales table'}
-              </button>
+                placeholder="Search sales (order #, product, size, style)…"
+              />
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={exportFifoCsv}
@@ -1287,195 +1291,164 @@ export default function TestPurchaseLinkingPage() {
                 className={`h-9 rounded-md px-3 text-xs font-semibold disabled:opacity-60 ${
                   isNeon ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10' : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
                 }`}
-                title="Download the current FIFO results as a CSV"
               >
-                Export CSV
+                Export FIFO CSV
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowRawSalesTable((v) => !v)}
+                className={`h-9 rounded-md px-3 text-xs font-semibold ${
+                  isNeon ? 'bg-white/5 hover:bg-white/10 text-white border border-white/10' : 'bg-white text-gray-900 border border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                {showRawSalesTable ? 'Hide raw sales' : 'Show raw sales'}
               </button>
             </div>
           </div>
 
-          <div className="mt-4 flex flex-col gap-3">
-            {fifoSummary && (
-              <div className={`text-sm ${isNeon ? 'text-gray-200' : 'text-gray-900'}`}>
-                scanned={fifoSummary?.scanned ?? '—'} • wouldLink={fifoSummary?.wouldLink ?? '—'} • noMatch={fifoSummary?.noMatch ?? '—'} •
-                alreadyLinked={fifoSummary?.alreadyLinked ?? '—'}
-              </div>
-            )}
-
-            <div
-              className={`rounded-lg border p-3 text-sm ${
-                isNeon ? 'bg-gray-900/40 border-gray-700 text-gray-200' : 'bg-gray-50 border-gray-200 text-gray-900'
-              }`}
-            >
-              <div className="flex flex-wrap gap-x-4 gap-y-1">
-                <span className="font-semibold">Included: {fifoProfitTotals.count}</span>
-                <span>
-                  Net Payout: <span className="font-semibold">{currency(fifoProfitTotals.netPayout)}</span>
-                </span>
-                <span>
-                  Total Paid: <span className="font-semibold">{currency(fifoProfitTotals.totalPaid)}</span>
-                </span>
-                <span>
-                  Profit: <span className="font-semibold">{currency(fifoProfitTotals.profit)}</span>
-                </span>
-              </div>
-              <div className={`mt-1 text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-                Totals are based on the FIFO dry-run rows for the selected month/year (local sale date).
-              </div>
-            </div>
-
-            {fifoRows.length === 0 ? (
-              <div
-                className={`rounded-lg border p-4 text-sm ${
-                  isNeon ? 'bg-gray-900/40 border-gray-700 text-gray-200' : 'bg-gray-50 border-gray-200 text-gray-900'
-                }`}
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead
+                className={`${
+                  isNeon
+                    ? 'bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 border-b border-white/20 backdrop-blur-sm'
+                    : 'bg-gradient-to-r from-gray-50 via-gray-100 to-gray-50 border-b border-gray-300'
+                } sticky top-0 z-10`}
               >
-                No FIFO results yet. Click <span className="font-semibold">FIFO Dry Run</span> above to generate the table.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead
-                    className={`${
-                      isNeon
-                        ? 'bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 border-b border-white/20 backdrop-blur-sm'
-                        : 'bg-gradient-to-r from-gray-50 via-gray-100 to-gray-50 border-b border-gray-300'
-                    } sticky top-0 z-10`}
-                  >
-                    <tr className="h-12">
-                      <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all`}>
-                        <div className="flex items-center justify-center h-full gap-2">
-                          <Hash className={`w-4 h-4 ${headerIconClass}`} />
-                          <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors whitespace-nowrap`}>
-                            Sale Order #
-                          </span>
-                        </div>
-                      </th>
-                      <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all`}>
-                        <div className="flex items-center justify-center h-full gap-2">
-                          <Box className={`w-4 h-4 ${headerIconClass}`} />
-                          <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors`}>Product</span>
-                        </div>
-                      </th>
-                      <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all`}>
-                        <div className="flex items-center justify-center h-full gap-2">
-                          <Ruler className={`w-4 h-4 ${headerIconClass}`} />
-                          <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors`}>Size</span>
-                        </div>
-                      </th>
-                      <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all text-right`}>
-                        <div className="flex items-center justify-center h-full gap-2">
-                          <DollarSign className={`w-4 h-4 ${headerIconClass}`} />
-                          <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors`}>Sale</span>
-                        </div>
-                      </th>
-                      <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all text-right`}>
-                        <div className="flex items-center justify-center h-full gap-2">
-                          <HandCoins className={`w-4 h-4 ${headerIconClass}`} />
-                          <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors`}>Fees</span>
-                        </div>
-                      </th>
-                      <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all text-right`}>
-                        <div className="flex items-center justify-center h-full gap-2">
-                          <DollarSign className={`w-4 h-4 ${headerIconClass}`} />
-                          <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors`}>Total Paid</span>
-                        </div>
-                      </th>
-                      <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all text-right`}>
-                        <div className="flex items-center justify-center h-full gap-2">
-                          <DollarSign className={`w-4 h-4 ${headerIconClass}`} />
-                          <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors`}>Profit</span>
-                        </div>
-                      </th>
-                      <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all`}>
-                        <div className="flex items-center justify-center h-full gap-2">
-                          <Link2 className={`w-4 h-4 ${headerIconClass}`} />
-                          <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors`}>Linked</span>
-                        </div>
-                      </th>
-                      <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all`}>
-                        <div className="flex items-center justify-center h-full gap-2">
-                          <Settings2 className={`w-4 h-4 ${headerIconClass}`} />
-                          <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors`}>Details</span>
-                        </div>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className={isNeon ? 'text-gray-200' : 'text-gray-900'}>
-                    {fifoRows.map((r, idx) => {
-                      const n = (v: any): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
-                      const salePrice = n(r.salePrice);
-                      const fees = n(r.saleFees);
-                      const netPayout = n(r.saleNetPayout) ?? (salePrice !== null ? salePrice - (fees ?? 0) : null);
-                      const totalPaid = n(r.purchaseCost);
-                      const profit = n(r.profit) ?? (netPayout !== null && totalPaid !== null ? netPayout - totalPaid : null);
-                      const saleOrder = String(r.saleOrderNumber || '');
-                      const purchaseOrder = String(r.linkedPurchaseOrderNumber || '');
-                      const gmailSaleQuery = saleOrder ? `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(saleOrder)}` : '';
-                      const gmailPurchaseQuery = purchaseOrder ? `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(purchaseOrder)}` : '';
-                      const reason = typeof r.reason === 'string' && r.reason ? r.reason : '';
-                      const saleCutoffIso = typeof (r as any).saleCutoffIso === 'string' ? String((r as any).saleCutoffIso) : null;
-                      const purchaseFifoIso = typeof (r as any).purchaseFifoIso === 'string' ? String((r as any).purchaseFifoIso) : null;
+                <tr className="h-12">
+                  <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all`}>
+                    <div className="flex items-center justify-center h-full gap-2">
+                      <Hash className={`w-4 h-4 ${headerIconClass}`} />
+                      <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors whitespace-nowrap`}>
+                        Sale Order #
+                      </span>
+                    </div>
+                  </th>
+                  <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all`}>
+                    <div className="flex items-center justify-center h-full gap-2">
+                      <Box className={`w-4 h-4 ${headerIconClass}`} />
+                      <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors`}>Product</span>
+                    </div>
+                  </th>
+                  <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all`}>
+                    <div className="flex items-center justify-center h-full gap-2">
+                      <Ruler className={`w-4 h-4 ${headerIconClass}`} />
+                      <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors`}>Size</span>
+                    </div>
+                  </th>
+                  <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all text-right`}>
+                    <div className="flex items-center justify-center h-full gap-2">
+                      <DollarSign className={`w-4 h-4 ${headerIconClass}`} />
+                      <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors`}>Sale</span>
+                    </div>
+                  </th>
+                  <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all text-right`}>
+                    <div className="flex items-center justify-center h-full gap-2">
+                      <HandCoins className={`w-4 h-4 ${headerIconClass}`} />
+                      <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors`}>Fees</span>
+                    </div>
+                  </th>
+                  <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all text-right`}>
+                    <div className="flex items-center justify-center h-full gap-2">
+                      <DollarSign className={`w-4 h-4 ${headerIconClass}`} />
+                      <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors`}>Total Paid</span>
+                    </div>
+                  </th>
+                  <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all text-right`}>
+                    <div className="flex items-center justify-center h-full gap-2">
+                      <DollarSign className={`w-4 h-4 ${headerIconClass}`} />
+                      <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors`}>Profit</span>
+                    </div>
+                  </th>
+                  <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all`}>
+                    <div className="flex items-center justify-center h-full gap-2">
+                      <Link2 className={`w-4 h-4 ${headerIconClass}`} />
+                      <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors`}>Linked</span>
+                    </div>
+                  </th>
+                  <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all`}>
+                    <div className="flex items-center justify-center h-full gap-2">
+                      <Settings2 className={`w-4 h-4 ${headerIconClass}`} />
+                      <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors`}>Actions</span>
+                    </div>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className={isNeon ? 'text-gray-200' : 'text-gray-900'}>
+                {fifoRows
+                  .filter((r: any) => {
+                    const q = saleSearch.trim().toLowerCase();
+                    if (!q) return true;
+                    const fields = [
+                      r?.saleOrderNumber,
+                      r?.saleProduct,
+                      r?.saleSize,
+                      r?.saleStyleId,
+                      r?.linkedPurchaseOrderNumber,
+                      r?.linkedPurchaseStyleId,
+                      r?.method,
+                      r?.reason
+                    ]
+                      .map((x: any) => String(x || '').toLowerCase())
+                      .filter(Boolean);
+                    return fields.some((f: string) => f.includes(q));
+                  })
+                  .slice(0, 50)
+                  .map((r: any, idx: number) => {
+                    const n = (v: any): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+                    const salePrice = n(r.salePrice);
+                    const fees = n(r.saleFees);
+                    const netPayout = n(r.saleNetPayout) ?? (salePrice !== null ? salePrice - (fees ?? 0) : null);
+                    const totalPaid = n(r.purchaseCost);
+                    const profit = n(r.profit) ?? (netPayout !== null && totalPaid !== null ? netPayout - totalPaid : null);
+                    const paidKnown = totalPaid !== null;
+                    const saleOrder = String(r.saleOrderNumber || '');
+                    const purchaseOrder = String(r.linkedPurchaseOrderNumber || '');
+                    const linkedLabel = purchaseOrder || (r.linkedPurchaseId ? 'linked' : '—');
+                    const details = [
+                      String(r.status || ''),
+                      String(r.method || ''),
+                      String(r.reason || '')
+                    ]
+                      .filter(Boolean)
+                      .join(' • ');
 
-                      const linkedLabel = purchaseOrder || (r.linkedPurchaseId ? 'linked' : '—');
-                      const details = [
-                        String(r.status || ''),
-                        String(r.method || ''),
-                        reason,
-                        saleCutoffIso ? `sale=${saleCutoffIso}` : '',
-                        purchaseFifoIso ? `purchase=${purchaseFifoIso}` : ''
-                      ]
-                        .filter(Boolean)
-                        .join(' • ');
-
-                      return (
-                        <tr key={idx} className={`${isNeon ? 'border-t border-gray-700' : 'border-t border-gray-200'}`}>
-                          <td className="py-2 pr-3 whitespace-nowrap">
-                            <span className="font-mono">{saleOrder || '—'}</span>
-                            {gmailSaleQuery ? (
-                              <a
-                                href={gmailSaleQuery}
-                                target="_blank"
-                                rel="noreferrer"
-                                className={`ml-2 inline-flex items-center ${isNeon ? 'text-cyan-300 hover:text-cyan-200' : 'text-blue-700 hover:text-blue-800'}`}
-                                title="Search this Sale Order # in Gmail"
-                              >
-                                <Mail className="w-4 h-4" />
-                              </a>
-                            ) : null}
-                          </td>
-                          <td className="py-2 pr-3 max-w-[280px] truncate">{String(r.saleProduct || '—')}</td>
-                          <td className="py-2 pr-3 whitespace-nowrap">{String(r.saleSize || '—')}</td>
-                          <td className="py-2 pr-3 text-right">{salePrice === null ? '—' : currency(salePrice)}</td>
-                          <td className="py-2 pr-3 text-right">{fees === null ? '—' : currency(fees)}</td>
-                          <td className="py-2 pr-3 text-right">{totalPaid === null ? '—' : currency(totalPaid)}</td>
-                          <td className="py-2 pr-3 text-right" title="Profit = net payout − total paid">
-                            {profit === null ? '—' : currency(profit)}
-                          </td>
-                          <td className="py-2 pr-3 whitespace-nowrap">
-                            <span className="font-mono">{linkedLabel}</span>
-                            {gmailPurchaseQuery ? (
-                              <a
-                                href={gmailPurchaseQuery}
-                                target="_blank"
-                                rel="noreferrer"
-                                className={`ml-2 inline-flex items-center ${isNeon ? 'text-cyan-300 hover:text-cyan-200' : 'text-blue-700 hover:text-blue-800'}`}
-                                title="Search this Purchase Order # in Gmail"
-                              >
-                                <Mail className="w-4 h-4" />
-                              </a>
-                            ) : null}
-                          </td>
-                          <td className="py-2 pr-3 max-w-[420px] truncate" title={details}>
-                            {details || '—'}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                    return (
+                      <tr key={`${saleOrder || idx}`} className={`${isNeon ? 'border-t border-gray-700' : 'border-t border-gray-200'}`}>
+                        <td className="py-2 pr-3 whitespace-nowrap">{saleOrder || '—'}</td>
+                        <td className="py-2 pr-3 max-w-[280px] truncate">{String(r.saleProduct || '—')}</td>
+                        <td className="py-2 pr-3 whitespace-nowrap">{String(r.saleSize || '—')}</td>
+                        <td className="py-2 pr-3 text-right">{salePrice === null ? '—' : currency(salePrice)}</td>
+                        <td className="py-2 pr-3 text-right">{fees === null ? '—' : currency(fees)}</td>
+                        <td className="py-2 pr-3 text-right">{paidKnown ? currency(totalPaid) : '—'}</td>
+                        <td className="py-2 pr-3 text-right" title={paidKnown ? 'Profit = net payout − total paid' : ''}>
+                          {paidKnown ? currency(profit) : '—'}
+                        </td>
+                        <td className="py-2 pr-3 whitespace-nowrap">{linkedLabel}</td>
+                        <td className="py-2 pr-3">
+                          <button
+                            type="button"
+                            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
+                              isNeon
+                                ? 'bg-gray-900 border border-white/20 text-cyan-400 hover:bg-gray-700 hover:border-cyan-500/50'
+                                : 'bg-white border border-gray-300 text-blue-700 hover:bg-blue-50'
+                            }`}
+                            title={details || 'FIFO details'}
+                            onClick={() => {
+                              const txt = `Sale ${saleOrder} → Purchase ${purchaseOrder || '(none)'}\\n${details}`;
+                              navigator.clipboard?.writeText(txt).catch(() => {});
+                              showNotice('📋 Copied FIFO details to clipboard.', 'success');
+                            }}
+                          >
+                            <Link2 className="w-4 h-4" />
+                            Copy match
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
           </div>
         </div>
 
