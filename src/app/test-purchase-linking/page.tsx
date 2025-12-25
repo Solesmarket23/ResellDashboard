@@ -1161,6 +1161,27 @@ export default function TestPurchaseLinkingPage() {
                   Filtered to {monthOptions[fifoSelectedMonth]?.label} {fifoSelectedYear} (local time).
                 </div>
               )}
+              {fifoStrictDelivery &&
+                typeof fifoSummary?.wouldLink === 'number' &&
+                typeof fifoSummary?.noMatch === 'number' &&
+                fifoSummary.wouldLink === 0 &&
+                fifoSummary.noMatch > 0 && (
+                  <div
+                    className={`mt-3 rounded-md border p-3 text-xs ${
+                      isNeon
+                        ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-200'
+                        : 'bg-yellow-50 border-yellow-200 text-yellow-900'
+                    }`}
+                  >
+                    <div className="font-semibold">Strict delivery is ON.</div>
+                    <div className="mt-1">
+                      Your purchases are only eligible if they have <span className="font-semibold">actualDelivery</span>. Right now, it looks like most purchases don’t have that field yet, so everything becomes <span className="font-semibold">no_match</span> and month profit totals show $0.
+                    </div>
+                    <div className="mt-1">
+                      Fix: toggle <span className="font-semibold">Strict delivery</span> OFF and re-run, or backfill delivery dates via tracking / Delivered-email fallback.
+                    </div>
+                  </div>
+                )}
             </div>
           )}
         </div>
@@ -1551,6 +1572,11 @@ export default function TestPurchaseLinkingPage() {
               <div className={`mt-1 text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
                 Totals are based on the FIFO dry-run rows for the selected month/year (local sale date).
               </div>
+              {fifoProfitTotals.count === 0 && fifoRows.length > 0 && (
+                <div className={`mt-2 text-xs ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                  If this seems wrong, check the FIFO summary above—often it’s because Strict delivery is ON and purchases are missing <span className="font-semibold">actualDelivery</span>.
+                </div>
+              )}
             </div>
 
             <div className="mt-4 overflow-x-auto">
