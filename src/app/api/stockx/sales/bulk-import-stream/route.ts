@@ -334,9 +334,12 @@ export async function POST(request: NextRequest) {
 
         // Phase 1: Fetch sales with real-time updates.
         // PerimeterX often triggers on volume. When `completedOnly` is true, we reduce the request surface area dramatically.
+        // IMPORTANT: StockX selling/orders/history only accepts a limited set of orderStatus values.
+        // If we send unsupported statuses (e.g. AUTHENTICATED/SHIPPED), StockX returns 400:
+        // "orderStatus must be one of [AUTHFAILED,DIDNOTSHIP,CANCELED,COMPLETED,RETURNED]"
         const statusesToCheck = completedOnly
           ? ['COMPLETED']
-          : ['COMPLETED', 'AUTHENTICATED', 'PAYOUT_PENDING', 'SHIPPED', 'RECEIVED', 'AUTHENTICATING'];
+          : ['COMPLETED', 'RETURNED', 'CANCELED', 'DIDNOTSHIP', 'AUTHFAILED'];
         let currentStatusIndex = 0;
         let currentStatus = statusesToCheck[currentStatusIndex];
         
@@ -345,7 +348,7 @@ export async function POST(request: NextRequest) {
           phase: 'fetching',
           message: completedOnly
             ? 'Fetching COMPLETED orders only (lower volume to avoid bot protection)...'
-            : `Fetching from all order statuses to get complete history (${statusesToCheck.length} statuses to check)...`,
+            : `Fetching across StockX order statuses (${statusesToCheck.length} statuses to check)...`,
           progress: 12
         });
 
@@ -787,9 +790,8 @@ export async function POST(request: NextRequest) {
         await saveSalesToMainCollection(allSales, userId, sendUpdate);
 
         const breakdown = {
-          completed: allSales.filter(s => s.status === 'PAYOUT_COMPLETED').length,
-          authenticated: allSales.filter(s => s.status === 'AUTHENTICATED').length,
-          other: allSales.filter(s => !['PAYOUT_COMPLETED', 'AUTHENTICATED'].includes(s.status)).length
+          completed: allSales.filter(s => s.status === 'PAYOUT_COMPLETED' || s.status === 'COMPLETED').length,
+          other: allSales.filter(s => !['PAYOUT_COMPLETED', 'COMPLETED'].includes(s.status)).length
         };
 
         // Send completion message multiple times to ensure delivery
@@ -1267,7 +1269,7 @@ async function saveSalesToMainCollection(sales: StockXSale[], userId: string, se
         date: sale.createdAt,
         platform: 'stockx',
         market: 'StockX',
-        status: sale.status === 'PAYOUT_COMPLETED' ? 'completed' : 'pending',
+        status: sale.status === 'PAYOUT_COMPLETED' || sale.status === 'COMPLETED' ? 'completed' : 'pending',
         imageUrl: sale.product.imageUrl || '',
         source: 'stockx_bulk_import_stream',
         styleId: saleStyleId || null,
