@@ -561,6 +561,8 @@ export default function TestPurchaseLinkingPage() {
   const [fifoUnlinkedOnly, setFifoUnlinkedOnly] = useState(false);
   const [showRawSalesTable, setShowRawSalesTable] = useState(false);
   const fifoResultsAnchorId = 'fifo-results-anchor';
+  const [fifoTablePage, setFifoTablePage] = useState(1);
+  const [fifoRowsPerPage, setFifoRowsPerPage] = useState<number | 'all'>(50);
 
   const monthOptions = useMemo(
     () => [
@@ -744,6 +746,47 @@ export default function TestPurchaseLinkingPage() {
     downloadCsv(filename, rows);
     showNotice(`✅ Exported CSV (${rows.length} row${rows.length === 1 ? '' : 's'}).`, 'success');
   }, [fifoRows, fifoSelectedMonth, fifoSelectedYear, monthOptions, showNotice]);
+
+  const filteredFifoRows = useMemo(() => {
+    const q = saleSearch.trim().toLowerCase();
+    if (!q) return fifoRows;
+    return fifoRows.filter((r: any) => {
+      const fields = [
+        r?.saleOrderNumber,
+        r?.saleProduct,
+        r?.saleSize,
+        r?.saleStyleId,
+        r?.linkedPurchaseOrderNumber,
+        r?.linkedPurchaseStyleId,
+        r?.method,
+        r?.reason,
+        r?.status
+      ]
+        .map((x: any) => String(x || '').toLowerCase())
+        .filter(Boolean);
+      return fields.some((f: string) => f.includes(q));
+    });
+  }, [fifoRows, saleSearch]);
+
+  // Reset to page 1 when filters/results/page-size change.
+  useEffect(() => {
+    setFifoTablePage(1);
+  }, [saleSearch, fifoRows, fifoRowsPerPage]);
+
+  const fifoPagination = useMemo(() => {
+    const total = filteredFifoRows.length;
+    const perPage = fifoRowsPerPage === 'all' ? total : fifoRowsPerPage;
+    const pages = perPage > 0 ? Math.max(1, Math.ceil(total / perPage)) : 1;
+    const page = Math.min(Math.max(1, fifoTablePage), pages);
+    const start = (page - 1) * perPage;
+    const end = fifoRowsPerPage === 'all' ? total : Math.min(total, start + perPage);
+    return { total, perPage, pages, page, start, end };
+  }, [filteredFifoRows.length, fifoRowsPerPage, fifoTablePage]);
+
+  const visibleFifoRows = useMemo(() => {
+    if (fifoRowsPerPage === 'all') return filteredFifoRows;
+    return filteredFifoRows.slice(fifoPagination.start, fifoPagination.end);
+  }, [filteredFifoRows, fifoPagination.end, fifoPagination.start, fifoRowsPerPage]);
   const runFifoDryRun = useCallback(async () => {
     const u = userId.trim();
     if (!u) return;
@@ -1357,7 +1400,7 @@ export default function TestPurchaseLinkingPage() {
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">Sales</h2>
               <div className={`text-sm ${isNeon ? 'text-gray-300' : 'text-gray-600'}`}>
-                {Math.min(50, fifoRows.length)} loaded
+                Showing {fifoPagination.total === 0 ? 0 : fifoPagination.start + 1}–{fifoPagination.end} of {fifoPagination.total}
               </div>
             </div>
             <div className="mt-3">
@@ -1381,6 +1424,52 @@ export default function TestPurchaseLinkingPage() {
               >
                 Export FIFO CSV
               </button>
+              <div className="flex items-center gap-2">
+                <label className={`text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Rows</label>
+                <select
+                  value={fifoRowsPerPage}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setFifoRowsPerPage(v === 'all' ? 'all' : Number(v));
+                  }}
+                  className={`h-9 rounded-md px-2 text-sm border ${
+                    isNeon ? 'bg-gray-900 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'
+                  }`}
+                >
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value="all">All</option>
+                </select>
+              </div>
+              {fifoRowsPerPage !== 'all' && fifoPagination.pages > 1 && (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFifoTablePage((p) => Math.max(1, p - 1))}
+                    disabled={fifoPagination.page <= 1}
+                    className={`h-9 rounded-md px-3 text-xs font-semibold disabled:opacity-60 ${
+                      isNeon ? 'bg-white/5 hover:bg-white/10 text-white border border-white/10' : 'bg-white text-gray-900 border border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    Prev
+                  </button>
+                  <div className={`text-xs ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                    Page {fifoPagination.page} / {fifoPagination.pages}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFifoTablePage((p) => Math.min(fifoPagination.pages, p + 1))}
+                    disabled={fifoPagination.page >= fifoPagination.pages}
+                    className={`h-9 rounded-md px-3 text-xs font-semibold disabled:opacity-60 ${
+                      isNeon ? 'bg-white/5 hover:bg-white/10 text-white border border-white/10' : 'bg-white text-gray-900 border border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
               <button
                 type="button"
                 onClick={() => setShowRawSalesTable((v) => !v)}
@@ -1462,26 +1551,7 @@ export default function TestPurchaseLinkingPage() {
                 </tr>
               </thead>
               <tbody className={isNeon ? 'text-gray-200' : 'text-gray-900'}>
-                {fifoRows
-                  .filter((r: any) => {
-                    const q = saleSearch.trim().toLowerCase();
-                    if (!q) return true;
-                    const fields = [
-                      r?.saleOrderNumber,
-                      r?.saleProduct,
-                      r?.saleSize,
-                      r?.saleStyleId,
-                      r?.linkedPurchaseOrderNumber,
-                      r?.linkedPurchaseStyleId,
-                      r?.method,
-                      r?.reason
-                    ]
-                      .map((x: any) => String(x || '').toLowerCase())
-                      .filter(Boolean);
-                    return fields.some((f: string) => f.includes(q));
-                  })
-                  .slice(0, 50)
-                  .map((r: any, idx: number) => {
+                {visibleFifoRows.map((r: any, idx: number) => {
                     const n = (v: any): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
                     const salePrice = n(r.salePrice);
                     const fees = n(r.saleFees);
