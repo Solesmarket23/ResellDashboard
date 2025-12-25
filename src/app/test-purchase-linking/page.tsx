@@ -617,6 +617,7 @@ export default function TestPurchaseLinkingPage() {
         userId: u,
         unlinkedOnly: 'true',
         limitSales: '5000',
+        scanLimit: '20000',
         // strictDelivery=1 means only purchases with actualDelivery are eligible.
         strictDelivery: fifoStrictDelivery ? '1' : '0'
       });

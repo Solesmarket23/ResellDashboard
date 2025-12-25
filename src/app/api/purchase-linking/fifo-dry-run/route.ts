@@ -421,6 +421,9 @@ export async function GET(request: NextRequest) {
     // but this endpoint only returns that userId's data. If you want stricter auth, we can tighten this later.
 
     const limitSales = Math.max(1, Math.min(5000, Number(request.nextUrl.searchParams.get('limitSales') || 200)));
+    // When filtering by a time window, we may need to scan more than `limitSales` documents
+    // because the first N documents in documentId order may not fall within the window.
+    const scanLimit = Math.max(1, Math.min(20000, Number(request.nextUrl.searchParams.get('scanLimit') || 5000)));
     const unlinkedOnly = request.nextUrl.searchParams.get('unlinkedOnly') !== '0';
     const strictDelivery = request.nextUrl.searchParams.get('strictDelivery') !== '0';
     const saleStartMsRaw = request.nextUrl.searchParams.get('saleStartMs');
@@ -442,25 +445,59 @@ export async function GET(request: NextRequest) {
     // unless a composite index is created. Instead, fetch the latest sales for the user and filter in memory.
     // NOTE: Even where(userId==...) + orderBy(date) can require a composite index in some Firestore setups.
     // To make this endpoint work out-of-the-box, do not orderBy in Firestore; sort in-memory instead.
-    const salesQuery: FirebaseFirestore.Query = db
-      .collection('user_sales')
-      .where('userId', '==', userId)
-      .limit(limitSales);
+    let sales: any[] = [];
+    let salesRead = 0;
+    let hasMoreSales = false;
 
-    const salesSnap = await salesQuery.get();
-    let sales = salesSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-    if (unlinkedOnly) {
-      sales = sales.filter((s: any) => (s?.linkedPurchaseId ?? null) === null);
-    }
-
-    // Optional: filter sales to a specific local-time window passed from client.
     if (hasSaleWindow) {
-      sales = sales.filter((s: any) => {
-        const ev = getSaleEventMs(s);
-        const ms = ev.ms;
-        if (typeof ms !== 'number') return false;
-        return ms >= (saleStartMs as number) && ms < (saleEndMs as number);
-      });
+      // Scan through sales in pages and filter to the requested window in-memory.
+      // This avoids requiring Firestore composite indexes on (userId, date).
+      let lastDoc: FirebaseFirestore.DocumentSnapshot | null = null;
+      const pageSize = 1000;
+      while (salesRead < scanLimit) {
+        let q: FirebaseFirestore.Query = db
+          .collection('user_sales')
+          .where('userId', '==', userId)
+          .orderBy(FieldPath.documentId())
+          .limit(Math.min(pageSize, scanLimit - salesRead));
+        if (lastDoc) q = q.startAfter(lastDoc);
+        const snap = await q.get();
+        if (snap.empty) break;
+        salesRead += snap.docs.length;
+        lastDoc = snap.docs[snap.docs.length - 1];
+
+        let batch = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+        if (unlinkedOnly) batch = batch.filter((s: any) => (s?.linkedPurchaseId ?? null) === null);
+
+        // Filter to time window
+        for (const s of batch) {
+          const ev = getSaleEventMs(s);
+          const ms = ev.ms;
+          if (typeof ms !== 'number') continue;
+          if (ms >= (saleStartMs as number) && ms < (saleEndMs as number)) sales.push(s);
+        }
+
+        if (snap.docs.length < pageSize) break;
+      }
+      hasMoreSales = salesRead >= scanLimit;
+
+      // Safety: cap how many we actually process downstream in this run.
+      if (sales.length > limitSales) {
+        sales = sales.slice(0, limitSales);
+        hasMoreSales = true;
+      }
+    } else {
+      const salesQuery: FirebaseFirestore.Query = db
+        .collection('user_sales')
+        .where('userId', '==', userId)
+        .limit(limitSales);
+
+      const salesSnap = await salesQuery.get();
+      salesRead = salesSnap.docs.length;
+      sales = salesSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+      if (unlinkedOnly) {
+        sales = sales.filter((s: any) => (s?.linkedPurchaseId ?? null) === null);
+      }
     }
     // Sort newest-first for stable UI (best-effort).
     sales.sort((a: any, b: any) => {
@@ -899,7 +936,10 @@ export async function GET(request: NextRequest) {
         totalSalesScanned: sales.length,
         wouldLink,
         noMatch,
-        alreadyLinked
+        alreadyLinked,
+        // Debug: how many sale docs we had to read to find those sales in-window.
+        salesRead,
+        salesCapped: hasMoreSales
       },
       results
     });
