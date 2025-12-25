@@ -1480,6 +1480,46 @@ export default function TestPurchaseLinkingPage() {
                 {showRawSalesTable ? 'Hide raw sales' : 'Show raw sales'}
               </button>
             </div>
+
+            {/* FIFO averages / metrics (for matched rows in selected month/year) */}
+            <div
+              className={`mt-4 rounded-lg border p-3 text-sm ${
+                isNeon ? 'bg-gray-900/40 border-gray-700 text-gray-200' : 'bg-gray-50 border-gray-200 text-gray-900'
+              }`}
+            >
+              <div className="flex flex-wrap gap-x-5 gap-y-1">
+                <span className="font-semibold">Avg Profit: {fifoMetrics.avgProfit === null ? '—' : currency(fifoMetrics.avgProfit)}</span>
+                <span>
+                  Avg ROI: <span className="font-semibold">{fifoMetrics.avgRoi === null ? '—' : `${(fifoMetrics.avgRoi * 100).toFixed(1)}%`}</span>
+                </span>
+                <span>
+                  ROI (Totals):{' '}
+                  <span className="font-semibold">{fifoMetrics.overallRoi === null ? '—' : `${(fifoMetrics.overallRoi * 100).toFixed(1)}%`}</span>
+                </span>
+                <span>
+                  Avg Margin: <span className="font-semibold">{fifoMetrics.avgMargin === null ? '—' : `${(fifoMetrics.avgMargin * 100).toFixed(1)}%`}</span>
+                </span>
+                <span>
+                  Avg Net Payout: <span className="font-semibold">{fifoMetrics.avgNetPayout === null ? '—' : currency(fifoMetrics.avgNetPayout)}</span>
+                </span>
+                <span>
+                  Avg Total Paid: <span className="font-semibold">{fifoMetrics.avgPaid === null ? '—' : currency(fifoMetrics.avgPaid)}</span>
+                </span>
+                <span>
+                  Avg Days Held:{' '}
+                  <span className="font-semibold">{fifoMetrics.avgDays === null ? '—' : `${fifoMetrics.avgDays.toFixed(1)}d`}</span>
+                </span>
+                <span>
+                  Win rate:{' '}
+                  <span className="font-semibold">
+                    {fifoMetrics.count === 0 ? '—' : `${((fifoMetrics.profitable / fifoMetrics.count) * 100).toFixed(1)}%`}
+                  </span>
+                </span>
+              </div>
+              <div className={`mt-1 text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                ROI = Profit ÷ Total Paid. Margin = Profit ÷ Net Payout. Days held = Sale time − Purchase available time.
+              </div>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -2071,46 +2111,7 @@ export default function TestPurchaseLinkingPage() {
             </div>
             </div>
 
-            <div
-              className={`rounded-lg border p-3 text-sm ${
-                isNeon ? 'bg-gray-900/40 border-gray-700 text-gray-200' : 'bg-gray-50 border-gray-200 text-gray-900'
-              }`}
-            >
-              <div className="flex flex-wrap gap-x-5 gap-y-1">
-                <span className="font-semibold">Avg Profit: {fifoMetrics.avgProfit === null ? '—' : currency(fifoMetrics.avgProfit)}</span>
-                <span>
-                  Avg ROI: <span className="font-semibold">{fifoMetrics.avgRoi === null ? '—' : `${(fifoMetrics.avgRoi * 100).toFixed(1)}%`}</span>
-                </span>
-                <span>
-                  ROI (Totals):{' '}
-                  <span className="font-semibold">{fifoMetrics.overallRoi === null ? '—' : `${(fifoMetrics.overallRoi * 100).toFixed(1)}%`}</span>
-                </span>
-                <span>
-                  Avg Margin: <span className="font-semibold">{fifoMetrics.avgMargin === null ? '—' : `${(fifoMetrics.avgMargin * 100).toFixed(1)}%`}</span>
-                </span>
-                <span>
-                  Avg Net Payout: <span className="font-semibold">{fifoMetrics.avgNetPayout === null ? '—' : currency(fifoMetrics.avgNetPayout)}</span>
-                </span>
-                <span>
-                  Avg Total Paid: <span className="font-semibold">{fifoMetrics.avgPaid === null ? '—' : currency(fifoMetrics.avgPaid)}</span>
-                </span>
-                <span>
-                  Avg Days Held:{' '}
-                  <span className="font-semibold">
-                    {fifoMetrics.avgDays === null ? '—' : `${fifoMetrics.avgDays.toFixed(1)}d`}
-                  </span>
-                </span>
-                <span>
-                  Win rate:{' '}
-                  <span className="font-semibold">
-                    {fifoMetrics.count === 0 ? '—' : `${((fifoMetrics.profitable / fifoMetrics.count) * 100).toFixed(1)}%`}
-                  </span>
-                </span>
-              </div>
-              <div className={`mt-1 text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-                ROI = Profit ÷ Total Paid. Margin = Profit ÷ Net Payout. Days held = Sale time − Purchase available time.
-              </div>
-            </div>
+            {/* (moved above into the main Sales table header area) */}
 
             <div className="mt-4 overflow-x-auto">
               <table className="min-w-full text-sm">
