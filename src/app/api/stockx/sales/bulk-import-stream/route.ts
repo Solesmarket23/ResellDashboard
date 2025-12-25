@@ -4,6 +4,25 @@ import { getAdminDb, getAdminDocuments, addAdminDocument, updateAdminDocument } 
 import { COLLECTIONS } from '@/lib/firebase/collections';
 import { StockXSale } from '@/lib/types/stockx';
 
+function stripUndefinedDeep<T>(value: T): T {
+  // Firestore rejects `undefined` anywhere in a document (even nested).
+  // This helper removes undefined keys recursively.
+  if (Array.isArray(value)) {
+    return value
+      .filter((v) => v !== undefined)
+      .map((v) => stripUndefinedDeep(v)) as any;
+  }
+  if (value && typeof value === 'object') {
+    const out: any = {};
+    for (const [k, v] of Object.entries(value as any)) {
+      if (v === undefined) continue;
+      out[k] = stripUndefinedDeep(v);
+    }
+    return out;
+  }
+  return value;
+}
+
 type PurchaseCandidate = {
   id: string;
   userId?: string;
@@ -919,7 +938,7 @@ function processSalesData(orders: any[]): StockXSale[] {
         productId: order.product?.id || order.productId || '',
         productName: order.product?.productName || order.product?.name || order.productName || 'Unknown Product',
         brand: order.product?.brand || order.brand || order.brandName || extractBrandFromName(order.product?.productName || order.product?.name || ''),
-        styleId: order.product?.sku || order.sku || order.styleId,
+        styleId: order.product?.sku || order.sku || order.styleId || null,
         retailPrice: order.product?.retailPrice,
         imageUrl: order.product?.imageUrl || order.imageUrl,
         category: order.product?.category,
@@ -1063,7 +1082,7 @@ async function saveSalesToStockxCollection(sales: StockXSale[], userId: string, 
       if (existingSale.saleData.status !== sale.status || 
           existingSale.saleData.pricing.totalPayout !== sale.pricing.totalPayout) {
         await updateAdminDocument(COLLECTIONS.STOCKX_SALES, existingSale.id, {
-          saleData: sale,
+          saleData: stripUndefinedDeep(sale),
           updatedAt: new Date().toISOString()
         });
         updatedCount++;
@@ -1072,7 +1091,7 @@ async function saveSalesToStockxCollection(sales: StockXSale[], userId: string, 
       await addAdminDocument(COLLECTIONS.STOCKX_SALES, {
         userId: userId,
         stockxOrderId: sale.orderNumber,
-        saleData: sale,
+        saleData: stripUndefinedDeep(sale),
         createdAt: new Date().toISOString(),
         source: 'stockx_bulk_import_stream'
       });
