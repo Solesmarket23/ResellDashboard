@@ -1601,7 +1601,7 @@ export default function TestPurchaseLinkingPage() {
                   </th>
                 </tr>
               </thead>
-              <tbody className={isNeon ? 'text-gray-200' : 'text-gray-900'}>
+              <tbody className={`${isNeon ? 'text-gray-200 divide-y divide-white/5' : 'text-gray-900 divide-y divide-gray-200'}`}>
                 {visibleFifoRows.map((r: any, idx: number) => {
                     const n = (v: any): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
                     const salePrice = n(r.salePrice);
@@ -1622,7 +1622,7 @@ export default function TestPurchaseLinkingPage() {
                       .join(' • ');
 
                     return (
-                      <tr key={`${saleOrder || idx}`} className={`${isNeon ? 'border-t border-gray-700' : 'border-t border-gray-200'}`}>
+                      <tr key={`${saleOrder || idx}`} className="group">
                         <td className="py-2 pr-3 whitespace-nowrap">{saleOrder || '—'}</td>
                         <td className="py-2 pr-3 max-w-[280px] truncate">{String(r.saleProduct || '—')}</td>
                         <td className="py-2 pr-3 whitespace-nowrap">{String(r.saleSize || '—')}</td>
@@ -1782,14 +1782,14 @@ export default function TestPurchaseLinkingPage() {
                     </th>
                   </tr>
                 </thead>
-                <tbody className={isNeon ? 'text-gray-200' : 'text-gray-900'}>
+                <tbody className={`${isNeon ? 'text-gray-200 divide-y divide-white/5' : 'text-gray-900 divide-y divide-gray-200'}`}>
                   {filteredSales.slice(0, 50).map((s) => {
                     const netPayout = getNetPayout(s);
                     const totalPaid = getTotalPaid(s);
                     const paidKnown = hasKnownTotalPaid(s);
                     const profit = paidKnown ? netPayout - totalPaid : null;
                     return (
-                      <tr key={s.id} className={`${isNeon ? 'border-t border-gray-700' : 'border-t border-gray-200'}`}>
+                      <tr key={s.id} className="group">
                         <td className="py-2 pr-3 whitespace-nowrap">{(s.orderNumber || s.id).slice(0, 18)}</td>
                         <td className="py-2 pr-3 max-w-[280px] truncate">{s.product || '—'}</td>
                         <td className="py-2 pr-3 whitespace-nowrap">{s.size || '—'}</td>
@@ -1932,7 +1932,7 @@ export default function TestPurchaseLinkingPage() {
                         </th>
                       </tr>
                     </thead>
-                    <tbody className={isNeon ? 'text-gray-200' : 'text-gray-900'}>
+                    <tbody className={`${isNeon ? 'text-gray-200 divide-y divide-white/5' : 'text-gray-900 divide-y divide-gray-200'}`}>
                       {purchases.slice(0, 100).map((p) => {
                         const isSel = p.id === selectedPurchaseId;
                         const cost = getPurchaseCost(p);
@@ -1942,9 +1942,7 @@ export default function TestPurchaseLinkingPage() {
                         return (
                           <tr
                             key={p.id}
-                            className={`${isNeon ? 'border-t border-gray-700' : 'border-t border-gray-200'} ${
-                              isSel ? (isNeon ? 'bg-cyan-500/10' : 'bg-blue-50') : ''
-                            } cursor-pointer`}
+                            className={`${isSel ? (isNeon ? 'bg-cyan-500/10' : 'bg-blue-50') : ''} cursor-pointer`}
                             onClick={() => setSelectedPurchaseId(p.id)}
                           >
                             <td className="py-2 pr-3 whitespace-nowrap">{(p.orderNumber || p.id).slice(0, 18)}</td>
@@ -2147,9 +2145,9 @@ export default function TestPurchaseLinkingPage() {
                     <th className="text-left py-2 pr-4">Delivered</th>
                   </tr>
                 </thead>
-                <tbody className={isNeon ? 'text-gray-200' : 'text-gray-900'}>
+                <tbody className={`${isNeon ? 'text-gray-200 divide-y divide-white/5' : 'text-gray-900 divide-y divide-gray-200'}`}>
                   {fifoRows.map((r, idx) => (
-                    <tr key={idx} className={isNeon ? 'border-t border-gray-700' : 'border-t border-gray-200'}>
+                    <tr key={idx} className="group">
                       {(() => {
                         const n = (v: any): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
                         const salePrice = n(r.salePrice);
