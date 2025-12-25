@@ -235,6 +235,33 @@ function getLocalYearMonth(iso: string | null): { year: number; month: number } 
   return { year: d.getFullYear(), month: d.getMonth() }; // local tz
 }
 
+function toCsvCell(value: unknown): string {
+  const s = value === null || value === undefined ? '' : String(value);
+  // Escape quotes by doubling them. Wrap in quotes if it contains comma, quote, or newline.
+  const needsQuotes = /[",\n\r]/.test(s);
+  const escaped = s.replace(/"/g, '""');
+  return needsQuotes ? `"${escaped}"` : escaped;
+}
+
+function downloadCsv(filename: string, rows: Array<Record<string, unknown>>) {
+  const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+  const lines: string[] = [];
+  lines.push(headers.map(toCsvCell).join(','));
+  for (const r of rows) {
+    lines.push(headers.map((h) => toCsvCell((r as any)[h])).join(','));
+  }
+  const csv = lines.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function getNetPayout(s: SaleRow | null): number {
   if (!s) return 0;
   const payout = typeof s.payout === 'number' && Number.isFinite(s.payout) ? s.payout : null;
@@ -597,6 +624,37 @@ export default function TestPurchaseLinkingPage() {
     }
     return { count, netPayout, totalPaid, profit };
   }, [fifoRowsForProfit]);
+
+  const exportFifoCsv = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const monthLabel = typeof fifoSelectedMonth === 'number' ? monthOptions[fifoSelectedMonth]?.label || String(fifoSelectedMonth + 1) : 'All';
+    const filename = `fifo-results-${fifoSelectedYear}-${monthLabel}.csv`.replace(/\s+/g, '-');
+
+    const rows = fifoRows.map((r: any) => ({
+      saleOrderNumber: r.saleOrderNumber ?? '',
+      saleProduct: r.saleProduct ?? '',
+      saleSize: r.saleSize ?? '',
+      saleStyleId: r.saleStyleId ?? '',
+      saleDateIso: r.saleCutoffIso ?? '',
+      saleDateLocal: formatIsoToLocal(typeof r.saleCutoffIso === 'string' ? r.saleCutoffIso : null),
+      salePrice: r.salePrice ?? '',
+      saleFees: r.saleFees ?? '',
+      saleNetPayout: r.saleNetPayout ?? '',
+      purchaseOrderNumber: r.linkedPurchaseOrderNumber ?? '',
+      purchaseStyleId: r.linkedPurchaseStyleId ?? '',
+      purchaseAvailableIso: r.purchaseFifoIso ?? '',
+      purchaseAvailableSource: r.purchaseFifoSource ?? '',
+      purchaseActualDelivery: r.purchaseActualDelivery ?? '',
+      purchaseCost: r.purchaseCost ?? '',
+      profit: r.profit ?? '',
+      status: r.status ?? '',
+      method: r.method ?? '',
+      reason: r.reason ?? ''
+    }));
+
+    downloadCsv(filename, rows);
+    showNotice(`✅ Exported CSV (${rows.length} row${rows.length === 1 ? '' : 's'}).`, 'success');
+  }, [fifoRows, fifoSelectedMonth, fifoSelectedYear, monthOptions, showNotice]);
   const runFifoDryRun = useCallback(async () => {
     const u = userId.trim();
     if (!u) return;
@@ -1555,11 +1613,29 @@ export default function TestPurchaseLinkingPage() {
               Strict mode: FIFO only considers purchases with <span className="font-semibold">actualDelivery</span>.
             </div>
 
-            <div
-              className={`mt-4 rounded-lg border p-3 text-sm ${
-                isNeon ? 'bg-gray-900/40 border-gray-700 text-gray-200' : 'bg-gray-50 border-gray-200 text-gray-900'
-              }`}
-            >
+            <div className="mt-4 flex flex-col gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className={`text-sm font-semibold ${isNeon ? 'text-gray-200' : 'text-gray-900'}`}>Month totals</div>
+                <button
+                  type="button"
+                  onClick={exportFifoCsv}
+                  disabled={fifoRows.length === 0}
+                  className={`h-9 rounded-md px-3 text-xs font-semibold disabled:opacity-60 ${
+                    isNeon
+                      ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
+                      : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
+                  }`}
+                  title="Download the current FIFO results as a CSV"
+                >
+                  Export CSV
+                </button>
+              </div>
+
+              <div
+                className={`rounded-lg border p-3 text-sm ${
+                  isNeon ? 'bg-gray-900/40 border-gray-700 text-gray-200' : 'bg-gray-50 border-gray-200 text-gray-900'
+                }`}
+              >
               <div className="flex flex-wrap gap-x-4 gap-y-1">
                 <span className="font-semibold">
                   Included: {fifoProfitTotals.count}
@@ -1582,6 +1658,7 @@ export default function TestPurchaseLinkingPage() {
                   If this seems wrong, check the FIFO summary above—often it’s because Strict delivery is ON and purchases are missing <span className="font-semibold">actualDelivery</span>.
                 </div>
               )}
+            </div>
             </div>
 
             <div className="mt-4 overflow-x-auto">
