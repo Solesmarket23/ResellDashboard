@@ -558,6 +558,7 @@ export default function TestPurchaseLinkingPage() {
   const [fifoRows, setFifoRows] = useState<any[]>([]);
   // Default ON: most users only sell after delivery, so delivered inventory is the safest FIFO constraint.
   const [fifoStrictDelivery, setFifoStrictDelivery] = useState(true);
+  const [fifoUnlinkedOnly, setFifoUnlinkedOnly] = useState(false);
   const fifoResultsAnchorId = 'fifo-results-anchor';
 
   const monthOptions = useMemo(
@@ -673,7 +674,8 @@ export default function TestPurchaseLinkingPage() {
 
       const qs = new URLSearchParams({
         userId: u,
-        unlinkedOnly: 'true',
+        // For month profit totals, you typically want *all* sales (linked + unlinked).
+        unlinkedOnly: fifoUnlinkedOnly ? 'true' : '0',
         limitSales: '5000',
         scanLimit: '20000',
         // strictDelivery=1 means only purchases with actualDelivery are eligible.
@@ -711,7 +713,7 @@ export default function TestPurchaseLinkingPage() {
     } finally {
       setFifoLoading(false);
     }
-  }, [fifoStrictDelivery, showNotice, userId]);
+  }, [fifoSelectedMonth, fifoSelectedYear, fifoStrictDelivery, fifoUnlinkedOnly, showNotice, userId]);
 
   const [linking, setLinking] = useState(false);
   const [allowWrites, setAllowWrites] = useState(false);
@@ -1135,6 +1137,15 @@ export default function TestPurchaseLinkingPage() {
                     className="h-4 w-4"
                   />
                   Strict delivery (requires actualDelivery)
+                </label>
+                <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <input
+                    type="checkbox"
+                    checked={fifoUnlinkedOnly}
+                    onChange={(e) => setFifoUnlinkedOnly(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Unlinked only
                 </label>
               </div>
 
