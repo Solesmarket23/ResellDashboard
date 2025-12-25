@@ -770,6 +770,7 @@ export async function GET(request: NextRequest) {
         const purchaseFifoMs = typeof linkedPurchase._dateMs === 'number' ? linkedPurchase._dateMs : null;
         const purchaseFifoIso = msToIso(purchaseFifoMs);
         const purchaseFifoSource = (linkedPurchase as any)._dateSource || null;
+        const purchaseStyleId = getPurchaseStyleId(linkedPurchase);
         const profit =
           typeof saleNetPayout === 'number' && typeof purchaseCost === 'number'
             ? saleNetPayout - purchaseCost
@@ -780,6 +781,7 @@ export async function GET(request: NextRequest) {
           saleSize: saleSizeRaw,
           saleCutoffIso,
           saleCutoffSource,
+          saleStyleId: saleStyleId || null,
           salePrice: saleSalePrice,
           saleFees,
           salePayout,
@@ -788,6 +790,7 @@ export async function GET(request: NextRequest) {
           method,
           linkedPurchaseId: linkedPurchase.id,
           linkedPurchaseOrderNumber: linkedPurchase.orderNumber || null,
+          linkedPurchaseStyleId: purchaseStyleId,
           purchaseFifoIso,
           purchaseFifoSource,
           purchaseCost,

@@ -1387,6 +1387,7 @@ export default function TestPurchaseLinkingPage() {
                     <th className="text-left py-2 pr-4">Sale Order</th>
                     <th className="text-left py-2 pr-4">Product</th>
                     <th className="text-left py-2 pr-4">Size</th>
+                    <th className="text-left py-2 pr-4 whitespace-nowrap">Sale StyleId</th>
                     <th className="text-left py-2 pr-4 whitespace-nowrap">Sale Date (Local)</th>
                     <th className="text-right py-2 pr-4">Sale Price</th>
                     <th className="text-right py-2 pr-4">Fees</th>
@@ -1397,6 +1398,7 @@ export default function TestPurchaseLinkingPage() {
                     <th className="text-left py-2 pr-4">Reason</th>
                     <th className="text-left py-2 pr-4">Method</th>
                     <th className="text-left py-2 pr-4">Purchase Order</th>
+                    <th className="text-left py-2 pr-4 whitespace-nowrap">Purchase StyleId</th>
                     <th className="text-left py-2 pr-4 whitespace-nowrap">Purchase Available (Local)</th>
                     <th className="text-left py-2 pr-4">Delivered</th>
                   </tr>
@@ -1443,6 +1445,10 @@ export default function TestPurchaseLinkingPage() {
                             ? String((r as any).bestNameMatchCandidateFifoSource)
                             : null;
                         const saleStyleId = typeof r.saleStyleId === 'string' && r.saleStyleId ? r.saleStyleId : null;
+                        const purchaseStyleId =
+                          typeof (r as any).linkedPurchaseStyleId === 'string' && (r as any).linkedPurchaseStyleId
+                            ? String((r as any).linkedPurchaseStyleId)
+                            : null;
                         const reasonDetail =
                           reason === null
                             ? '—'
@@ -1495,6 +1501,9 @@ export default function TestPurchaseLinkingPage() {
                       </td>
                       <td className="py-2 pr-4">{r.saleProduct || '—'}</td>
                       <td className="py-2 pr-4">{r.saleSize || '—'}</td>
+                      <td className="py-2 pr-4 font-mono text-xs" title={saleStyleId || undefined}>
+                        {saleStyleId || '—'}
+                      </td>
                       <td
                         className="py-2 pr-4 text-xs whitespace-nowrap"
                         title={saleCutoffIso ? `${saleCutoffIso}${saleCutoffSource ? ` (${saleCutoffSource})` : ''}` : undefined}
@@ -1536,6 +1545,9 @@ export default function TestPurchaseLinkingPage() {
                             </a>
                           )}
                         </div>
+                      </td>
+                      <td className="py-2 pr-4 font-mono text-xs" title={purchaseStyleId || undefined}>
+                        {purchaseStyleId || '—'}
                       </td>
                       <td className="py-2 pr-4 text-xs whitespace-nowrap" title={purchaseFifoIso || undefined}>
                         {purchaseFifoIso
