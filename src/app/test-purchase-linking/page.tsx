@@ -1322,7 +1322,11 @@ export default function TestPurchaseLinkingPage() {
             </table>
           </div>
           {filteredSales.length > 50 && (
-            <div className={`mt-1 text-xs ${isNeon ? 'text-gray-400' : 'text-gray-500'}`}>Showing first 50 matches</div>
+            <div className={`mt-1 text-xs ${isNeon ? 'text-gray-400' : 'text-gray-500'}`}>
+              {filteredSales.length > 50
+                ? `Showing first 50 of ${filteredSales.length} matches`
+                : `Showing ${filteredSales.length} match${filteredSales.length === 1 ? '' : 'es'}`}
+            </div>
           )}
         </div>
 
