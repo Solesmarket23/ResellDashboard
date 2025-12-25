@@ -450,7 +450,9 @@ export default function TestPurchaseLinkingPage() {
     }
     setLoadingSales(true);
     try {
-      const qs = new URLSearchParams({ userId: u, limit: '400' });
+      // The sales list endpoint is paginated and has a server-side max limit.
+      // Bump this so "Loaded N sales" isn't confusingly stuck at 50 for most users.
+      const qs = new URLSearchParams({ userId: u, limit: '1000' });
       const resp = await fetch(`/api/sales/list?${qs.toString()}`, { cache: 'no-store' });
       const json = await resp.json().catch(() => ({}));
       if (!resp.ok || json?.success === false) {
@@ -476,7 +478,7 @@ export default function TestPurchaseLinkingPage() {
           }))
         : [];
       setSales(rows);
-      showNotice(`✅ Loaded ${rows.length} sale(s).`, 'success');
+      showNotice(`✅ Loaded ${rows.length} sale(s)${json?.nextCursorId ? ' (more available)' : ''}.`, 'success');
     } catch (e: any) {
       showNotice(`❌ Failed to load sales: ${e?.message || 'Unknown error'}`, 'error');
     } finally {
