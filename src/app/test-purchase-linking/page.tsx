@@ -1488,28 +1488,39 @@ export default function TestPurchaseLinkingPage() {
               }`}
             >
               <div className="flex flex-wrap gap-x-5 gap-y-1">
-                <span className="font-semibold">Avg Profit: {fifoMetrics.avgProfit === null ? '—' : currency(fifoMetrics.avgProfit)}</span>
-                <span>
-                  Avg ROI: <span className="font-semibold">{fifoMetrics.avgRoi === null ? '—' : `${(fifoMetrics.avgRoi * 100).toFixed(1)}%`}</span>
+                <span
+                  className="font-semibold"
+                  title="Average profit per matched FIFO row (only rows with net payout + total paid). Profit = Net Payout − Total Paid."
+                >
+                  Avg Profit: {fifoMetrics.avgProfit === null ? '—' : currency(fifoMetrics.avgProfit)}
                 </span>
-                <span>
+                <span title="Average ROI across matched rows, where ROI = Profit ÷ Total Paid (computed per-row then averaged).">
+                  Avg ROI:{' '}
+                  <span className="font-semibold">{fifoMetrics.avgRoi === null ? '—' : `${(fifoMetrics.avgRoi * 100).toFixed(1)}%`}</span>
+                </span>
+                <span title="ROI using totals (more stable): Total Profit ÷ Total Paid, across matched rows.">
                   ROI (Totals):{' '}
                   <span className="font-semibold">{fifoMetrics.overallRoi === null ? '—' : `${(fifoMetrics.overallRoi * 100).toFixed(1)}%`}</span>
                 </span>
-                <span>
-                  Avg Margin: <span className="font-semibold">{fifoMetrics.avgMargin === null ? '—' : `${(fifoMetrics.avgMargin * 100).toFixed(1)}%`}</span>
+                <span title="Average margin across matched rows, where Margin = Profit ÷ Net Payout (computed per-row then averaged).">
+                  Avg Margin:{' '}
+                  <span className="font-semibold">{fifoMetrics.avgMargin === null ? '—' : `${(fifoMetrics.avgMargin * 100).toFixed(1)}%`}</span>
                 </span>
-                <span>
-                  Avg Net Payout: <span className="font-semibold">{fifoMetrics.avgNetPayout === null ? '—' : currency(fifoMetrics.avgNetPayout)}</span>
+                <span title="Average net payout per matched row (sale proceeds after platform fees).">
+                  Avg Net Payout:{' '}
+                  <span className="font-semibold">{fifoMetrics.avgNetPayout === null ? '—' : currency(fifoMetrics.avgNetPayout)}</span>
                 </span>
-                <span>
-                  Avg Total Paid: <span className="font-semibold">{fifoMetrics.avgPaid === null ? '—' : currency(fifoMetrics.avgPaid)}</span>
+                <span title="Average total paid per matched row (what you paid for inventory, net of credits).">
+                  Avg Total Paid:{' '}
+                  <span className="font-semibold">{fifoMetrics.avgPaid === null ? '—' : currency(fifoMetrics.avgPaid)}</span>
                 </span>
-                <span>
+                <span title="Average holding time in days: Sale timestamp − Purchase available timestamp.">
                   Avg Days Held:{' '}
                   <span className="font-semibold">{fifoMetrics.avgDays === null ? '—' : `${fifoMetrics.avgDays.toFixed(1)}d`}</span>
                 </span>
-                <span>
+                <span
+                  title="Percent of matched rows that are profitable (Profit ≥ 0). This is not a 'match rate'—it’s a profitability rate."
+                >
                   Win rate:{' '}
                   <span className="font-semibold">
                     {fifoMetrics.count === 0 ? '—' : `${((fifoMetrics.profitable / fifoMetrics.count) * 100).toFixed(1)}%`}
@@ -1517,7 +1528,7 @@ export default function TestPurchaseLinkingPage() {
                 </span>
               </div>
               <div className={`mt-1 text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-                ROI = Profit ÷ Total Paid. Margin = Profit ÷ Net Payout. Days held = Sale time − Purchase available time.
+                Hover a metric to see how it’s calculated.
               </div>
             </div>
           </div>
