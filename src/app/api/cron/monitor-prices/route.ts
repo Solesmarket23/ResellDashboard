@@ -84,6 +84,14 @@ export async function GET(request: NextRequest) {
         timestamp: new Date().toISOString()
       });
     }
+    if (process.env.CRON_MONITOR_PRICES_DISABLED === '1' || process.env.CRON_MONITOR_PRICES_DISABLED === 'true') {
+      return NextResponse.json({
+        success: true,
+        paused: true,
+        message: 'monitor-prices disabled via CRON_MONITOR_PRICES_DISABLED',
+        timestamp: new Date().toISOString()
+      });
+    }
 
     // Verify this is a legitimate cron request
     if (!verifyCronRequest(request)) {
@@ -101,21 +109,67 @@ export async function GET(request: NextRequest) {
     }
 
     console.log('🔄 Cron job started: monitor-prices');
-    
-    // Get all users with monitoring enabled
-    const usersSnapshot = await adminDb.collection('users').get();
-    const activeUsers: string[] = [];
-    
-    for (const userDoc of usersSnapshot.docs) {
-      const userData = userDoc.data();
-      // Check if user has monitoring enabled (we'll check their monitored products)
-      const monitoringEnabled = userData.stockxMonitoringActive !== false;
-      if (monitoringEnabled) {
-        activeUsers.push(userDoc.id);
+
+    // IMPORTANT:
+    // The previous implementation read *all* users and then queried monitored_products per-user.
+    // That can explode Firestore reads and easily blow through Spark quotas, which can also block other cron jobs (like repricing).
+    //
+    // New approach: only read monitored_products that actually need checking, then group by userId.
+    // This makes reads proportional to "work needed" instead of "total users".
+    const now = Date.now();
+    const oneHourAgo = now - 60 * 60 * 1000;
+
+    const productsNeedingCheck: Array<{ id: string; data: MonitoredProduct }> = [];
+    try {
+      const [oldSnap, missingSnap] = await Promise.all([
+        adminDb.collection('monitored_products').where('lastChecked', '<', oneHourAgo).get(),
+        adminDb.collection('monitored_products').where('lastChecked', '==', null).get()
+      ]);
+      for (const d of oldSnap.docs) {
+        productsNeedingCheck.push({ id: d.id, data: { ...(d.data() as any), id: d.id } as MonitoredProduct });
+      }
+      for (const d of missingSnap.docs) {
+        productsNeedingCheck.push({ id: d.id, data: { ...(d.data() as any), id: d.id } as MonitoredProduct });
+      }
+    } catch (e) {
+      // If the collection doesn't support these queries yet (field missing or index issues), fall back to old behavior.
+      console.warn('⚠️ monitor-prices: optimized query failed; falling back to legacy scan.', e);
+      const usersSnapshot = await adminDb.collection('users').get();
+      const activeUsers: string[] = [];
+      for (const userDoc of usersSnapshot.docs) {
+        const userData = userDoc.data();
+        const monitoringEnabled = userData.stockxMonitoringActive !== false;
+        if (monitoringEnabled) activeUsers.push(userDoc.id);
+      }
+      for (const userId of activeUsers) {
+        const productsSnapshot = await adminDb.collection('monitored_products').where('userId', '==', userId).get();
+        for (const doc of productsSnapshot.docs) {
+          const product = doc.data() as MonitoredProduct;
+          if (!product.lastChecked || product.lastChecked < oneHourAgo) {
+            productsNeedingCheck.push({ id: doc.id, data: { ...product, id: doc.id } });
+          }
+        }
       }
     }
 
-    console.log(`📊 Found ${activeUsers.length} active users to check`);
+    // Dedupe by doc id (because a null lastChecked also satisfies '< oneHourAgo' in some datasets)
+    const byId = new Map<string, MonitoredProduct>();
+    for (const p of productsNeedingCheck) {
+      if (!p?.id) continue;
+      byId.set(p.id, p.data);
+    }
+
+    const byUserId = new Map<string, MonitoredProduct[]>();
+    for (const p of byId.values()) {
+      const uid = String((p as any).userId || '').trim();
+      if (!uid) continue;
+      const arr = byUserId.get(uid) || [];
+      arr.push(p);
+      byUserId.set(uid, arr);
+    }
+
+    const activeUsers = Array.from(byUserId.keys());
+    console.log(`📊 Found ${activeUsers.length} user(s) with monitored products needing checks (${byId.size} product docs)`);
 
     let totalProductsChecked = 0;
     let totalAlertsCreated = 0;
@@ -124,17 +178,9 @@ export async function GET(request: NextRequest) {
     // Process each user's monitored products
     for (const userId of activeUsers) {
       try {
-        // Get user's monitored products
-        const productsSnapshot = await adminDb
-          .collection('monitored_products')
-          .where('userId', '==', userId)
-          .get();
-
-        if (productsSnapshot.empty) {
-          continue;
-        }
-
-        console.log(`👤 Processing ${productsSnapshot.size} products for user ${userId}`);
+        const productsToCheck = byUserId.get(userId) || [];
+        if (productsToCheck.length === 0) continue;
+        console.log(`👤 Processing ${productsToCheck.length} product(s) for user ${userId}`);
 
         // Get user's API credentials
         const credentials = await getStockXApiCredentials(userId);
@@ -145,9 +191,13 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
-        // Get user's access token
+        // Get user's access token and settings
         const userDoc = await adminDb.collection('users').doc(userId).get();
-        const userData = userDoc.data();
+        const userData = userDoc.data() || {};
+        // Respect per-user monitoring toggle
+        if (userData.stockxMonitoringActive === false) {
+          continue;
+        }
         const stockxTokens = userData?.stockxTokens;
         
         if (!stockxTokens?.access_token) {
@@ -164,28 +214,7 @@ export async function GET(request: NextRequest) {
               }
             : null;
 
-        // Check if we need to check products (respect rate limits)
-        const now = Date.now();
-        const oneHourAgo = now - (60 * 60 * 1000); // 1 hour (matches Vercel cron cadence)
-        
-        // Batch products that need checking
-        const productsToCheck: MonitoredProduct[] = [];
-        
-        for (const doc of productsSnapshot.docs) {
-          const product = doc.data() as MonitoredProduct;
-          
-          // Only check if it's been at least 1 hour since last check
-          if (!product.lastChecked || product.lastChecked < oneHourAgo) {
-            productsToCheck.push({ ...product, id: doc.id });
-          }
-        }
-
-        if (productsToCheck.length === 0) {
-          console.log(`⏭️ No products need checking for user ${userId}`);
-          continue;
-        }
-
-        console.log(`🔍 Checking ${productsToCheck.length} products for user ${userId}`);
+        console.log(`🔍 Checking ${productsToCheck.length} product(s) for user ${userId}`);
 
         // Process products in batches of 10 to avoid rate limits
         const batchSize = 10;
