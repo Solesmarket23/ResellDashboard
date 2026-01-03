@@ -362,6 +362,108 @@ export async function GET(request: NextRequest) {
 
         console.log(`⚙️ Loaded ${savedSettings.size} saved listing settings`);
 
+        // Load reusable templates keyed by (productId + variantId) so newly-created listings can inherit
+        // the same min/max/strategy after a unit sells and a new listingId is generated.
+        const templatesSnapshot = await adminDb
+          .collection('stockxPricingTemplates')
+          .where('userId', '==', userId)
+          .get();
+        const templateByKey = new Map<string, any>();
+        templatesSnapshot.forEach(doc => {
+          const d = doc.data() || {};
+          const pid = d.productId ? String(d.productId) : '';
+          const vid = d.variantId ? String(d.variantId) : '';
+          if (!pid || !vid) return;
+          templateByKey.set(`${pid}__${vid}`, { id: doc.id, ...d });
+        });
+        console.log(`🧩 Loaded ${templateByKey.size} pricing template(s)`);
+
+        // Backfill templates and apply templates to new listings (no per-listing settings yet)
+        try {
+          const nowIso = new Date().toISOString();
+          const batch = adminDb.batch();
+          let writes = 0;
+
+          for (const listing of listings) {
+            const listingId = listing?.listingId ? String(listing.listingId) : '';
+            const pid = listing?.product?.productId ? String(listing.product.productId) : '';
+            const vid = listing?.variant?.variantId ? String(listing.variant.variantId) : '';
+            if (!listingId || !pid || !vid) continue;
+
+            const key = `${pid}__${vid}`;
+            const settings = savedSettings.get(listingId);
+
+            // 1) If the user has configured this listing, ensure a template exists for future relists.
+            if (settings && !templateByKey.has(key)) {
+              const templateDocId = `${userId}__${pid}__${vid}`;
+              const templateRef = adminDb.collection('stockxPricingTemplates').doc(templateDocId);
+              const templatePayload: any = {
+                userId,
+                productId: pid,
+                variantId: vid,
+                enabled: Object.prototype.hasOwnProperty.call(settings, 'enabled') ? settings.enabled !== false : true,
+                pricingStrategy: settings.pricingStrategy,
+                minPrice: settings.minPrice,
+                maxPrice: settings.maxPrice,
+                autoDeactivate: settings.autoDeactivate,
+                sourceListingId: listingId,
+                updatedAt: nowIso,
+                createdAt: FieldValue.serverTimestamp(),
+              };
+              Object.keys(templatePayload).forEach((k) => {
+                if (templatePayload[k] === undefined) delete templatePayload[k];
+              });
+              batch.set(templateRef, templatePayload, { merge: true });
+              templateByKey.set(key, { id: templateDocId, ...templatePayload });
+              writes++;
+              continue;
+            }
+
+            // 2) If there's no per-listing settings yet, but a template exists, auto-attach it.
+            if (!settings) {
+              const tpl = templateByKey.get(key);
+              if (!tpl) continue;
+              if (Object.prototype.hasOwnProperty.call(tpl, 'enabled') && tpl.enabled === false) continue;
+
+              const settingsDocId = `${userId}__${listingId}`;
+              const settingsRef = adminDb.collection('stockxPricingSettings').doc(settingsDocId);
+              const settingsPayload: any = {
+                userId,
+                listingId,
+                productId: pid,
+                variantId: vid,
+                enabled: true,
+                pricingStrategy: tpl.pricingStrategy,
+                minPrice: tpl.minPrice,
+                maxPrice: tpl.maxPrice,
+                autoDeactivate: tpl.autoDeactivate,
+                // initialize repricer gates
+                lastSeenLowestAsk: null,
+                lastSeenFlexLowestAsk: null,
+                reservePrice: null,
+                reservePriceSetAt: null,
+                createdAt: nowIso,
+                updatedAt: nowIso,
+                autoAppliedFromTemplate: true,
+                templateId: tpl.id || null,
+              };
+              Object.keys(settingsPayload).forEach((k) => {
+                if (settingsPayload[k] === undefined) delete settingsPayload[k];
+              });
+              batch.set(settingsRef, settingsPayload, { merge: true });
+              savedSettings.set(listingId, { id: settingsDocId, ...settingsPayload });
+              writes++;
+            }
+          }
+
+          if (writes > 0) {
+            await batch.commit();
+            console.log(`🧩 Template sync: wrote ${writes} doc(s) (templates + auto-applied settings)`);
+          }
+        } catch (e) {
+          console.warn('⚠️ Template sync failed (non-fatal):', e);
+        }
+
         // Prepare repricing items, filtering by pricing strategy
         const itemsToReprice = listings
           .filter((listing: any) => {

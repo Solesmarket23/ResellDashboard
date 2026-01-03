@@ -50,6 +50,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => null);
     const listingId = body?.listingId ? String(body.listingId).trim() : '';
     const settings = body?.settings || null;
+    const productId = body?.productId ? String(body.productId).trim() : '';
+    const variantId = body?.variantId ? String(body.variantId).trim() : '';
 
     const userId = body?.userId ? String(body.userId).trim() : getEffectiveUserId(request);
     if (!userId) {
@@ -101,6 +103,37 @@ export async function POST(request: NextRequest) {
     } else {
       const created = await adminDb.collection('stockxPricingSettings').add({ ...payload, createdAt: nowIso });
       id = created.id;
+    }
+
+    // If we know productId + variantId, also store a reusable template so future listings
+    // (new listingId for the same product/size) inherit the last saved min/max/strategy.
+    if (productId && variantId) {
+      const templateDocId = `${userId}__${productId}__${variantId}`;
+      const templatePayload: any = {
+        userId,
+        productId,
+        variantId,
+        // copy only the knobs users expect to persist across relisting
+        enabled: Object.prototype.hasOwnProperty.call(normalizedSettings, 'enabled') ? normalizedSettings.enabled !== false : true,
+        pricingStrategy: normalizedSettings.pricingStrategy,
+        minPrice: normalizedSettings.minPrice,
+        maxPrice: normalizedSettings.maxPrice,
+        autoDeactivate: normalizedSettings.autoDeactivate,
+        sourceListingId: listingId,
+        updatedAt: nowIso,
+      };
+      // Remove undefined fields (Firestore rejects undefined)
+      Object.keys(templatePayload).forEach((k) => {
+        if (templatePayload[k] === undefined) delete templatePayload[k];
+      });
+
+      await adminDb.collection('stockxPricingTemplates').doc(templateDocId).set(
+        {
+          ...templatePayload,
+          createdAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
     }
 
     return NextResponse.json({ success: true, id, userId, listingId });

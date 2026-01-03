@@ -793,11 +793,20 @@ export default function StockXRepricing() {
       
       console.log('📦 Final setting data to save:', settingData);
 
+      const listingMeta = (() => {
+        try {
+          const l = listings.find(x => x.listingId === listingId);
+          return l ? { productId: l.productId, variantId: l.variantId } : { productId: undefined, variantId: undefined };
+        } catch {
+          return { productId: undefined, variantId: undefined };
+        }
+      })();
+
       // Save via server route (Firebase Admin) for consistent behavior across auth modes
       const resp = await fetch('/api/stockx/pricing-settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-user-id': effectiveUserId },
-        body: JSON.stringify({ userId: effectiveUserId, listingId, settings: settingData })
+        body: JSON.stringify({ userId: effectiveUserId, listingId, productId: listingMeta.productId, variantId: listingMeta.variantId, settings: settingData })
       });
       const out = await resp.json().catch(() => null);
       if (!resp.ok || !out?.success) {
