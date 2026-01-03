@@ -1534,7 +1534,7 @@ export default function TestPurchaseLinkingPage() {
           </div>
 
           <div className="overflow-x-auto px-6 pb-6">
-            <table className="min-w-full text-sm">
+            <table className="w-full text-sm" style={{ tableLayout: 'fixed' }}>
               <thead
                 className={`${
                   isNeon
@@ -1542,7 +1542,7 @@ export default function TestPurchaseLinkingPage() {
                     : 'bg-gradient-to-r from-gray-50 via-gray-100 to-gray-50 border-b border-gray-300'
                 } sticky top-0 z-10`}
               >
-                <tr className="h-12">
+                <tr className={`h-12 ${isNeon ? 'divide-x divide-white/5' : 'divide-x divide-gray-200'}`}>
                   <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all`}>
                     <div className="flex items-center justify-center h-full gap-2">
                       <Hash className={`w-4 h-4 ${headerIconClass}`} />
