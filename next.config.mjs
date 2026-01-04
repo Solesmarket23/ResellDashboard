@@ -4,7 +4,11 @@ const nextConfig = {
   // it can corrupt the dev server's on-demand assets (leading to an unstyled page because
   // /_next/static/* returns 404/500). For local-only isolated builds, set NEXT_DIST_DIR
   // (see package.json script `build:isolated`).
-  distDir: process.env.NEXT_DIST_DIR || '.next',
+  // To make localhost resilient, use a separate distDir in development so `next build`
+  // (or `next start`) can't clobber the dev server's assets.
+  distDir:
+    process.env.NEXT_DIST_DIR ||
+    (process.env.NODE_ENV === 'development' ? '.next-dev' : '.next'),
   // Allow building despite ESLint errors for mobile app
   eslint: {
     ignoreDuringBuilds: true,
