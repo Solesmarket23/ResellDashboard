@@ -82,6 +82,7 @@ const menuSections = [
       { id: 'failed-verifications', label: 'Failed Verifications', icon: AlertTriangle },
       { id: 'market-alerts', label: 'Market Alerts', icon: Bell },
       { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+      { id: 'cashflow', label: 'Cash Flow', icon: DollarSign },
     ]
   },
   {

@@ -40,6 +40,7 @@ import OnboardingQuestionnaire from '../../components/OnboardingQuestionnaire';
 import AliasInventory from '../../components/AliasInventory';
 import AliasListingCreator from '../../components/AliasListingCreator';
 import AliasOrderManagement from '../../components/AliasOrderManagement';
+import Cashflow from '../../components/Cashflow';
 import TestStockXOrders from '../test-stockx-orders/page';
 import TestPurchaseLinkingPage from '../test-purchase-linking/page';
 
@@ -225,6 +226,8 @@ function DashboardContent() {
         return <TestPurchaseLinkingPage />;
       case 'purchase-linking':
         return <TestPurchaseLinkingPage />;
+      case 'cashflow':
+        return <Cashflow />;
       case 'failed-verifications':
         return <FailedVerifications />;
       case 'profit-calculator':

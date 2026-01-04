@@ -63,6 +63,7 @@ const navigationItems = [
     section: 'ANALYTICS',
     items: [
       { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+      { id: 'cashflow', label: 'Cash Flow', icon: DollarSign },
       { id: 'trends', label: 'Trends', icon: TrendingUp },
       { id: 'tracking', label: 'Tracking', icon: Target },
       { id: 'performance', label: 'Performance', icon: Package },
