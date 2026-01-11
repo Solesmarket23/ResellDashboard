@@ -33,6 +33,7 @@ const ScanPackageModal = ({ isOpen, onClose, onScanComplete }: ScanPackageModalP
   const [cameraStatus, setCameraStatus] = useState<'ready' | 'active' | 'error' | 'permission-denied'>('ready');
   const [errorMessage, setErrorMessage] = useState('');
   const [searchResults, setSearchResults] = useState<any>(null);
+  const [lastScannedCode, setLastScannedCode] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState([
     'QuaggaJS Scanner Ready',
     'Optimized for shipping barcodes',
@@ -330,6 +331,7 @@ const ScanPackageModal = ({ isOpen, onClose, onScanComplete }: ScanPackageModalP
 
   const handleScannedCode = (scannedCode: string) => {
     console.log('🔍 Processing scanned code:', scannedCode);
+    setLastScannedCode(scannedCode);
     
     // Find matching purchase
     const foundPurchase = mockPurchases.find(p => 
@@ -338,7 +340,7 @@ const ScanPackageModal = ({ isOpen, onClose, onScanComplete }: ScanPackageModalP
     );
     
     if (foundPurchase) {
-      setSearchResults(foundPurchase);
+      setSearchResults({ purchase: foundPurchase });
       setDebugInfo([
         `✅ Match found!`,
         `Tracking: ${scannedCode}`,
@@ -346,7 +348,7 @@ const ScanPackageModal = ({ isOpen, onClose, onScanComplete }: ScanPackageModalP
         `Status: ${foundPurchase.status}`
       ]);
     } else {
-      setSearchResults(null);
+      setSearchResults({ purchase: null });
       setDebugInfo([
         `📦 Scanned: ${scannedCode}`,
         `⚠️ No matching purchase found`,
@@ -367,17 +369,45 @@ const ScanPackageModal = ({ isOpen, onClose, onScanComplete }: ScanPackageModalP
     }
   };
 
-  const handleMarkAsReceived = () => {
-    triggerHapticFeedback();
-    setDebugInfo([
-      '✅ Package marked as received!',
-      'Status updated successfully',
-      'Inventory has been updated'
-    ]);
-    
-    setTimeout(() => {
-      onClose();
-    }, 1500);
+  const handleMarkAsReceived = async () => {
+    const trackingNumber = (lastScannedCode || manualInput || '').trim();
+    if (!trackingNumber) {
+      setDebugInfo(['⚠️ No tracking number found', 'Scan or enter a tracking number first']);
+      return;
+    }
+
+    // Client-side only: resolve user id the same way other UI does (Firebase user or site password).
+    // For iOS we’ll send x-user-id header directly.
+    const userId =
+      (typeof window !== 'undefined' && (localStorage.getItem('userId') || localStorage.getItem('siteUserId'))) || '';
+
+    if (!userId) {
+      setDebugInfo(['❌ Missing userId', 'Please sign in (or pass site password) and try again']);
+      return;
+    }
+
+    try {
+      setDebugInfo(['⏳ Marking as received...', `Tracking: ${trackingNumber}`]);
+
+      const res = await fetch(`/api/purchases/mark-received`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+        body: JSON.stringify({ trackingNumber, receivedMethod: 'scan' })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Request failed (${res.status})`);
+      }
+
+      triggerHapticFeedback();
+      setDebugInfo(['✅ Marked as physically received', `Purchase: ${data.purchaseId}`]);
+
+      setTimeout(() => onClose(), 900);
+    } catch (e: any) {
+      console.error('❌ mark-received failed:', e);
+      setDebugInfo(['❌ Failed to mark received', e?.message || 'Unknown error']);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {

@@ -48,3 +48,4 @@ next-env.d.ts
 
 # Local scratch/log output (do not commit)
 /.tmp/
+devserver.log
