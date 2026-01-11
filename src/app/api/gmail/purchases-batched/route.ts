@@ -11,8 +11,10 @@ import {
 } from '@/lib/tracking/stockxTrackingExtraction';
 
 // Batch configuration
-const BATCH_SIZE = 10; // Process 10 emails per batch for frequent UI updates (every ~10 seconds)
-const MAX_BATCHES_PER_REQUEST = 1; // Max 1 batch per API call (10 emails total) - for real-time updates
+// NOTE: The client requests chunks via `?limit=...`. We cap maxResults to BATCH_SIZE to avoid
+// extremely large requests that can time out on Gmail API / per-email parsing.
+const BATCH_SIZE = 50; // Process up to 50 emails per API call (matches UI "chunk" size)
+const MAX_BATCHES_PER_REQUEST = 1; // Max 1 batch per API call (BATCH_SIZE emails total)
 const MAX_TOTAL_EMAILS = 20000; // Maximum total emails to process (20,000 for ~2 years of history)
 const TIMEOUT_PER_EMAIL = 10000; // 10 seconds per email (increased to handle slow emails)
 const PARALLEL_EMAILS = 4; // Process 4 emails in parallel for faster processing
