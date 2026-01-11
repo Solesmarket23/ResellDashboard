@@ -50,6 +50,10 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
   const [elapsedTime, setElapsedTime] = useState(0);
   const isCancelledRef = useRef(false);
   const controllerRef = useRef<AbortController | null>(null);
+  // Saving purchases (Firestore writes) can be slow. Don't block Gmail batch processing on it.
+  // We "single-flight" the save and coalesce intermediate updates.
+  const updateInFlightRef = useRef<Promise<void> | null>(null);
+  const updateQueuedRef = useRef(false);
   
   // Draggable state - start at bottom-right corner
   const [position, setPosition] = useState(() => {
@@ -76,6 +80,34 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
       }
     };
   }, []);
+
+  const triggerNonBlockingUpdate = async (allCollectedPurchases: any[]) => {
+    if (!onPurchasesUpdate) return;
+
+    // If a save is already running, queue one more run with the latest data.
+    if (updateInFlightRef.current) {
+      updateQueuedRef.current = true;
+      return;
+    }
+
+    updateInFlightRef.current = (async () => {
+      try {
+        await onPurchasesUpdate(allCollectedPurchases);
+      } finally {
+        updateInFlightRef.current = null;
+      }
+    })();
+
+    try {
+      await updateInFlightRef.current;
+    } finally {
+      // If something queued while we were saving, run once more with the latest snapshot.
+      if (updateQueuedRef.current && !isCancelledRef.current) {
+        updateQueuedRef.current = false;
+        void triggerNonBlockingUpdate(allCollectedPurchases);
+      }
+    }
+  };
 
   // Timer effect - update elapsed time every second while loading
   useEffect(() => {
@@ -312,12 +344,9 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
           }
           console.log(`📊 Total purchases so far: ${allCollectedPurchases.length}`);
           
-          // Update parent immediately after adding purchases from this batch
-          // IMPORTANT: onPurchasesUpdate may be async (saving to Firebase + reloading).
-          // Await it so the UI doesn't claim "complete" while work is still in-flight.
-          if (onPurchasesUpdate) {
-            await onPurchasesUpdate(allCollectedPurchases);
-          }
+          // Trigger parent update without blocking the next Gmail chunk.
+          // We'll wait for any in-flight update during finalization at the end.
+          void triggerNonBlockingUpdate(allCollectedPurchases);
         }
 
         // Check if we should continue (also check email limit)
@@ -425,6 +454,14 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
     // Natural completion: finalize (e.g. parent may do a final save/reload)
     setIsFinalizing(true);
     try {
+      // Ensure any in-flight purchase save is done before we declare completion.
+      if (updateInFlightRef.current) {
+        try {
+          await updateInFlightRef.current;
+        } catch {
+          // If saving fails, don't crash completion; error UI is handled elsewhere.
+        }
+      }
       if (onSyncComplete) {
         await onSyncComplete(allCollectedPurchases.length);
       }
