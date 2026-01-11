@@ -291,6 +291,157 @@ function getSaleEventMs(sale: any): { ms: number | null; source: string | null }
   return { ms: null, source: null };
 }
 
+function getSaleStyleId(sale: any): string | null {
+  const candidates: unknown[] = [
+    sale?.styleId,
+    sale?.style_id,
+    sale?.product?.styleId,
+    sale?.product?.style_id,
+    sale?.product?.sku,
+    sale?.product?.productId,
+    sale?.stockxData?.productId,
+    sale?.saleData?.product?.styleId,
+    sale?.saleData?.product?.sku,
+    sale?.saleData?.product?.productId,
+  ];
+  for (const v of candidates) {
+    const s = String(v || '').trim();
+    if (s) return s;
+  }
+  return null;
+}
+
+function getSaleSizeRaw(sale: any): string | null {
+  const candidates: unknown[] = [
+    sale?.size,
+    sale?.variant?.size,
+    sale?.variant?.variantValue,
+    sale?.variant?.variant_value,
+    sale?.saleData?.variant?.size,
+    sale?.saleData?.variant?.variantValue,
+    sale?.saleData?.variant?.variant_value,
+    sale?.product?.size,
+  ];
+  for (const v of candidates) {
+    const s = String(v || '').trim();
+    if (s) return s;
+  }
+  return null;
+}
+
+function getSaleProductName(sale: any): string | null {
+  const candidates: unknown[] = [
+    sale?.product,
+    sale?.productName,
+    sale?.title,
+    sale?.product?.productName,
+    sale?.product?.name,
+    sale?.product?.title,
+    sale?.saleData?.productName,
+    sale?.saleData?.product?.productName,
+    sale?.saleData?.product?.name,
+    sale?.saleData?.product?.title,
+  ];
+  for (const v of candidates) {
+    const s = String(v || '').trim();
+    if (s) return s;
+  }
+  return null;
+}
+
+function getSaleBrand(sale: any): string | null {
+  const candidates: unknown[] = [
+    sale?.brand,
+    sale?.product?.brand,
+    sale?.saleData?.brand,
+    sale?.saleData?.product?.brand,
+  ];
+  for (const v of candidates) {
+    const s = String(v || '').trim();
+    if (s) return s;
+  }
+  return null;
+}
+
+function getSalePricing(sale: any): { salePrice: number | null; totalPayout: number | null; fees: number | null } {
+  const salePrice =
+    toNumberOrNull(sale?.salePrice) ??
+    toNumberOrNull(sale?.amount) ??
+    toNumberOrNull(sale?.pricing?.salePrice) ??
+    toNumberOrNull(sale?.saleData?.salePrice) ??
+    toNumberOrNull(sale?.saleData?.amount) ??
+    toNumberOrNull(sale?.saleData?.pricing?.salePrice) ??
+    null;
+
+  const totalPayout =
+    toNumberOrNull(sale?.payout) ??
+    toNumberOrNull(sale?.totalPayout) ??
+    toNumberOrNull(sale?.pricing?.totalPayout) ??
+    toNumberOrNull(sale?.payoutDetails?.totalPayout) ??
+    toNumberOrNull(sale?.saleData?.payout) ??
+    toNumberOrNull(sale?.saleData?.totalPayout) ??
+    toNumberOrNull(sale?.saleData?.pricing?.totalPayout) ??
+    null;
+
+  const explicitFees =
+    toNumberOrNull(sale?.fees) ??
+    toNumberOrNull(sale?.totalFees) ??
+    toNumberOrNull(sale?.pricing?.fees) ??
+    toNumberOrNull(sale?.saleData?.fees) ??
+    toNumberOrNull(sale?.saleData?.pricing?.fees) ??
+    null;
+
+  const computedFees =
+    explicitFees !== null
+      ? explicitFees
+      : (salePrice !== null && totalPayout !== null ? Math.max(0, salePrice - totalPayout) : null);
+
+  return { salePrice, totalPayout, fees: computedFees };
+}
+
+function normalizeSaleForFifo(raw: any, source: 'user_sales' | 'stockxSales'): any {
+  const base = raw?.saleData || raw?.sale || raw;
+  const orderNumber = (base?.orderNumber || raw?.stockxOrderId || raw?.orderNumber || raw?.id || null);
+  const product = getSaleProductName(base);
+  const brand = getSaleBrand(base);
+  const size = getSaleSizeRaw(base);
+  const styleId = getSaleStyleId(base);
+  const imageUrl = base?.imageUrl || base?.product?.imageUrl || base?.product?.image || null;
+  const { salePrice, totalPayout, fees } = getSalePricing(base);
+  const date =
+    base?.date ||
+    base?.createdAt ||
+    base?.updatedAt ||
+    base?.payoutDate ||
+    base?.payoutDetails?.date ||
+    raw?.date ||
+    raw?.createdAt ||
+    raw?.updatedAt ||
+    null;
+
+  const listingId = base?.listingId || base?.askId || base?.stockxData?.listingId || raw?.listingId || null;
+
+  return {
+    id: raw?.id,
+    orderNumber: orderNumber ? String(orderNumber) : null,
+    product,
+    brand,
+    size,
+    styleId,
+    imageUrl,
+    salePrice,
+    fees,
+    payout: totalPayout,
+    purchasePrice: toNumberOrNull(base?.purchasePrice) ?? null,
+    profit: toNumberOrNull(base?.profit) ?? null,
+    linkedPurchaseId: base?.linkedPurchaseId ?? raw?.linkedPurchaseId ?? null,
+    linkedPurchaseOrderNumber: base?.linkedPurchaseOrderNumber ?? raw?.linkedPurchaseOrderNumber ?? null,
+    date,
+    listingId,
+    _source: source,
+  };
+}
+
 function msToIso(ms: number | null): string | null {
   if (typeof ms !== 'number' || !Number.isFinite(ms)) return null;
   try {
@@ -468,7 +619,7 @@ export async function GET(request: NextRequest) {
         salesRead += snap.docs.length;
         lastDoc = snap.docs[snap.docs.length - 1];
 
-        let batch = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+        let batch = snap.docs.map((d) => normalizeSaleForFifo({ id: d.id, ...(d.data() as any) }, 'user_sales'));
         if (unlinkedOnly) batch = batch.filter((s: any) => (s?.linkedPurchaseId ?? null) === null);
 
         // Filter to time window
@@ -503,28 +654,7 @@ export async function GET(request: NextRequest) {
           legacyLastDoc = snap.docs[snap.docs.length - 1];
 
           const legacyDocs = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-          const mapped = legacyDocs.map((x: any) => {
-            const s = x?.saleData || x?.sale || x;
-            return {
-              id: x.id,
-              orderNumber: s?.orderNumber || x?.stockxOrderId || x?.orderNumber || null,
-              product: s?.productName || s?.product?.productName || s?.product?.title || s?.product?.name || null,
-              brand: s?.product?.brand || s?.brand || null,
-              size: s?.variant?.variantValue || s?.size || null,
-              styleId: s?.product?.styleId || s?.styleId || null,
-              imageUrl: s?.product?.imageUrl || s?.product?.image || null,
-              salePrice: s?.amount ? Number(s.amount) || 0 : Number(s?.salePrice) || 0,
-              fees: Number(s?.fees) || null,
-              payout: s?.payout ? Number(s.payout) || null : (s?.totalPayout ? Number(s.totalPayout) || null : null),
-              purchasePrice: Number(s?.purchasePrice) || null,
-              profit: Number(s?.profit) || null,
-              linkedPurchaseId: s?.linkedPurchaseId ?? null,
-              linkedPurchaseOrderNumber: s?.linkedPurchaseOrderNumber ?? null,
-              date: s?.date || s?.createdAt || s?.updatedAt || null,
-              listingId: s?.listingId || s?.askId || null,
-              _source: 'stockxSales'
-            };
-          });
+          const mapped = legacyDocs.map((x: any) => normalizeSaleForFifo(x, 'stockxSales'));
 
           let filtered = mapped;
           if (unlinkedOnly) filtered = filtered.filter((s: any) => (s?.linkedPurchaseId ?? null) === null);
@@ -573,7 +703,7 @@ export async function GET(request: NextRequest) {
 
       const salesSnap = await salesQuery.get();
       salesRead = salesSnap.docs.length;
-      sales = salesSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+      sales = salesSnap.docs.map((d) => normalizeSaleForFifo({ id: d.id, ...(d.data() as any) }, 'user_sales'));
       if (unlinkedOnly) {
         sales = sales.filter((s: any) => (s?.linkedPurchaseId ?? null) === null);
       }
