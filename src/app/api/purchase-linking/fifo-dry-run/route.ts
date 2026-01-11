@@ -56,6 +56,8 @@ function normalizeSize(size: unknown): string {
 
   // Remove common prefix tokens so "US M 10" -> "10"
   const tokensToDrop = new Set([
+    'SIZE',
+    'SZ',
     'US',
     'U.S.',
     'M',
@@ -768,17 +770,31 @@ export async function GET(request: NextRequest) {
     const purchaseByStockxListingId = new Map<string, PurchaseCandidate>();
     const usedPurchaseIds = new Set<string>();
 
+    // Debug counters so we can quickly explain "wouldLink=0".
+    let purchasesTotal = 0;
+    let purchasesLinkedSkipped = 0;
+    let purchasesNoSizeSkipped = 0;
+    let purchasesNoDateSkipped = 0;
+    let purchasesEligible = 0;
+    let purchasesIndexedByStyleId = 0;
+    let purchasesIndexedByName = 0;
+
     for (const p of purchases) {
+      purchasesTotal++;
       const pid = String(p.id || '');
       if (!pid) continue;
 
       if (p.linkedSaleOrderNumber || p.linkedSaleId) {
         usedPurchaseIds.add(pid);
+        purchasesLinkedSkipped++;
         continue;
       }
 
       const size = normalizeSize((p as any).size ?? (p as any).extracted_size ?? p.product?.size);
-      if (!size) continue;
+      if (!size) {
+        purchasesNoSizeSkipped++;
+        continue;
+      }
 
       const stockxListingId = typeof p.stockxListingId === 'string' ? p.stockxListingId.trim() : '';
       if (stockxListingId && !purchaseByStockxListingId.has(stockxListingId)) {
@@ -791,8 +807,10 @@ export async function GET(request: NextRequest) {
       p._dateSource = source;
       if (dateMs === null) {
         // Not eligible for FIFO matching in this mode.
+        purchasesNoDateSkipped++;
         continue;
       }
+      purchasesEligible++;
 
       // Size index (for fuzzy name fallback)
       const bySizeArr = purchaseBySize.get(size) || [];
@@ -805,6 +823,7 @@ export async function GET(request: NextRequest) {
         const arr = purchaseIndex.get(key) || [];
         arr.push(p);
         purchaseIndex.set(key, arr);
+        purchasesIndexedByStyleId++;
       }
 
       const productName = getPurchaseProductName(p);
@@ -814,6 +833,7 @@ export async function GET(request: NextRequest) {
           const arr = purchaseNameIndex.get(nk) || [];
           arr.push(p);
           purchaseNameIndex.set(nk, arr);
+          purchasesIndexedByName++;
         }
       }
     }
@@ -1146,6 +1166,15 @@ export async function GET(request: NextRequest) {
         wouldLink,
         noMatch,
         alreadyLinked,
+        purchasesDebug: {
+          total: purchasesTotal,
+          eligible: purchasesEligible,
+          skippedLinked: purchasesLinkedSkipped,
+          skippedNoSize: purchasesNoSizeSkipped,
+          skippedNoDate: purchasesNoDateSkipped,
+          indexedByStyleId: purchasesIndexedByStyleId,
+          indexedByName: purchasesIndexedByName,
+        },
         // Debug: how many sale docs we had to read to find those sales in-window.
         salesRead,
         legacySalesRead,
