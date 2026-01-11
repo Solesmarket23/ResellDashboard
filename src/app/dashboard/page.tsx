@@ -1,54 +1,60 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useEffect, useMemo, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { Menu } from 'lucide-react';
 import { useTheme } from '../../lib/contexts/ThemeContext';
 import { useAuth } from '../../lib/contexts/AuthContext';
 import { isMobilePlatform } from '../../lib/utils/platformDetection';
 
-// Force dynamic rendering
-export const dynamic = 'force-dynamic';
 import Sidebar from '../../components/Sidebar';
 import MobileLayout from '../../components/MobileLayout';
-import Dashboard from '../../components/Dashboard';
-import Purchases from '../../components/Purchases';
-import Deliveries from '../../components/Deliveries';
-import FailedVerifications from '../../components/FailedVerifications';
-import ProfitCalculator from '../../components/ProfitCalculator';
-import AudioPreview from '../../components/AudioPreview';
-import MarketAlerts from '../../components/MarketAlerts';
-import Plans from '../../components/Plans';
-// import Profile from '../../components/Profile';
-// import ProfileTest from '../../components/ProfileTest';
-import FAQ from '../../components/FAQ';
-import FeatureRequests from '../../components/FeatureRequests';
-import StockXOrderManagement from '../../components/StockXOrderManagement';
-import StockXMarketResearch from '../../components/StockXMarketResearch';
-import StockXInventory from '../../components/StockXInventory';
-import StockXArbitrage from '../../components/StockXArbitrage';
-import EbayStockXArbitrage from '../../components/EbayStockXArbitrage';
-import StockXRepricing from '../../components/StockXRepricing';
-import StockXReleases from '../../components/StockXReleases';
-import StockXPriceMonitor from '../../components/StockXPriceMonitor';
-import StockXFlexAskMonitor from '../../components/StockXFlexAskMonitor';
-import StockXProfitCalc from '../../components/StockXProfitCalc';
-import StockXTrends from '../../components/StockXTrends';
-import StockXAlerts from '../../components/StockXAlerts';
-import StockXListingCreator from '../../components/StockXListingCreator';
-import OnboardingQuestionnaire from '../../components/OnboardingQuestionnaire';
-import AliasInventory from '../../components/AliasInventory';
-import AliasListingCreator from '../../components/AliasListingCreator';
-import AliasOrderManagement from '../../components/AliasOrderManagement';
-import Cashflow from '../../components/Cashflow';
-import TestStockXOrders from '../test-stockx-orders/page';
-import TestPurchaseLinkingPage from '../test-purchase-linking/page';
+
+function SectionFallback() {
+  return (
+    <div className="flex-1 p-6">
+      <div className="text-sm text-gray-500">Loading…</div>
+    </div>
+  );
+}
+
+// Lazy-load heavy dashboard sections to keep /dashboard initial JS small.
+// Most of these sections are interactive/client-only, so `ssr: false` is OK.
+const Dashboard = dynamic(() => import('../../components/Dashboard'), { ssr: false, loading: SectionFallback });
+const Purchases = dynamic(() => import('../../components/Purchases'), { ssr: false, loading: SectionFallback });
+const Deliveries = dynamic(() => import('../../components/Deliveries'), { ssr: false, loading: SectionFallback });
+const FailedVerifications = dynamic(() => import('../../components/FailedVerifications'), { ssr: false, loading: SectionFallback });
+const ProfitCalculator = dynamic(() => import('../../components/ProfitCalculator'), { ssr: false, loading: SectionFallback });
+const AudioPreview = dynamic(() => import('../../components/AudioPreview'), { ssr: false, loading: SectionFallback });
+const MarketAlerts = dynamic(() => import('../../components/MarketAlerts'), { ssr: false, loading: SectionFallback });
+const Plans = dynamic(() => import('../../components/Plans'), { ssr: false, loading: SectionFallback });
+const FAQ = dynamic(() => import('../../components/FAQ'), { ssr: false, loading: SectionFallback });
+const FeatureRequests = dynamic(() => import('../../components/FeatureRequests'), { ssr: false, loading: SectionFallback });
+const StockXOrderManagement = dynamic(() => import('../../components/StockXOrderManagement'), { ssr: false, loading: SectionFallback });
+const StockXMarketResearch = dynamic(() => import('../../components/StockXMarketResearch'), { ssr: false, loading: SectionFallback });
+const StockXInventory = dynamic(() => import('../../components/StockXInventory'), { ssr: false, loading: SectionFallback });
+const StockXArbitrage = dynamic(() => import('../../components/StockXArbitrage'), { ssr: false, loading: SectionFallback });
+const EbayStockXArbitrage = dynamic(() => import('../../components/EbayStockXArbitrage'), { ssr: false, loading: SectionFallback });
+const StockXRepricing = dynamic(() => import('../../components/StockXRepricing'), { ssr: false, loading: SectionFallback });
+const StockXReleases = dynamic(() => import('../../components/StockXReleases'), { ssr: false, loading: SectionFallback });
+const StockXPriceMonitor = dynamic(() => import('../../components/StockXPriceMonitor'), { ssr: false, loading: SectionFallback });
+const StockXFlexAskMonitor = dynamic(() => import('../../components/StockXFlexAskMonitor'), { ssr: false, loading: SectionFallback });
+const StockXProfitCalc = dynamic(() => import('../../components/StockXProfitCalc'), { ssr: false, loading: SectionFallback });
+const StockXTrends = dynamic(() => import('../../components/StockXTrends'), { ssr: false, loading: SectionFallback });
+const StockXAlerts = dynamic(() => import('../../components/StockXAlerts'), { ssr: false, loading: SectionFallback });
+const StockXListingCreator = dynamic(() => import('../../components/StockXListingCreator'), { ssr: false, loading: SectionFallback });
+const OnboardingQuestionnaire = dynamic(() => import('../../components/OnboardingQuestionnaire'), { ssr: false, loading: SectionFallback });
+const AliasInventory = dynamic(() => import('../../components/AliasInventory'), { ssr: false, loading: SectionFallback });
+const AliasListingCreator = dynamic(() => import('../../components/AliasListingCreator'), { ssr: false, loading: SectionFallback });
+const AliasOrderManagement = dynamic(() => import('../../components/AliasOrderManagement'), { ssr: false, loading: SectionFallback });
+const Cashflow = dynamic(() => import('../../components/Cashflow'), { ssr: false, loading: SectionFallback });
+const TestStockXOrders = dynamic(() => import('../test-stockx-orders/page'), { ssr: false, loading: SectionFallback });
+const TestPurchaseLinkingPage = dynamic(() => import('../test-purchase-linking/page'), { ssr: false, loading: SectionFallback });
 
 function DashboardContent() {
-  console.log('🔍 Dashboard component rendering...');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [currentSection, setCurrentSection] = useState('dashboard');
   const [isClient, setIsClient] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const { currentTheme } = useTheme();
@@ -56,6 +62,11 @@ function DashboardContent() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  const currentSection = useMemo(() => {
+    const raw = searchParams.get('section');
+    return (raw && raw.trim() ? raw : 'dashboard').toLowerCase();
+  }, [searchParams]);
   
   // Dynamic theme detection for consistent background
   const isNeon = currentTheme.name === 'Neon';
@@ -65,17 +76,8 @@ function DashboardContent() {
     setIsMobile(isMobilePlatform());
   }, []);
   
-  // Remove early return to allow proper auth state checking in useEffect
-
-  // Ensure we're on the client side before accessing window
+  // Ensure we're on the client side before accessing window/localStorage
   useEffect(() => {
-    console.log('🔍 Dashboard useEffect running...');
-    try {
-      console.log('🔍 Dashboard window object:', typeof window);
-      console.log('🔍 Dashboard current URL:', window.location.href);
-    } catch (error) {
-      console.error('🔍 Dashboard useEffect error:', error);
-    }
     setIsClient(true);
     
     // Check authentication - site password is sufficient for dashboard access
@@ -84,99 +86,22 @@ function DashboardContent() {
       const siteUserId = localStorage.getItem('siteUserId');
       if (!siteUserId) {
         // For now, allow dashboard access without site password for testing
-        console.log('🔐 No site password auth, but allowing dashboard access for testing');
         // window.location.href = '/password-protect';
         // return;
       } else {
         // User has site password authentication, allow dashboard access
-        console.log('🔐 Site password auth found, allowing dashboard access');
         // No redirect needed - user can access dashboard with site password
         // The dashboard will render even without Firebase user
       }
     }
-    
-    // URL parameter detection is now handled by useSearchParams hook
   }, [user, loading, router]);
-
-  // Test if useEffect works at all
-  useEffect(() => {
-    console.log('🔍 Dashboard simple useEffect running...');
-  }, []);
-
-  // Use useSearchParams to detect section parameter immediately
-  useEffect(() => {
-    console.log('🔍 Dashboard useSearchParams useEffect running...');
-    const section = searchParams.get('section');
-    console.log('🔍 Dashboard useSearchParams - Section from URL:', section);
-    console.log('🔍 Dashboard useSearchParams - All params:', Object.fromEntries(searchParams.entries()));
-    
-    if (section && section !== '') {
-      console.log('🔍 Dashboard useSearchParams - Found section in URL:', section);
-      console.log('🔍 Dashboard useSearchParams - Setting current section to:', section);
-      setCurrentSection(section);
-    } else {
-      console.log('🔍 Dashboard useSearchParams - No section in URL, defaulting to dashboard');
-      setCurrentSection('dashboard');
-    }
-  }, [searchParams]);
-
-  // Monitor URL changes
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const handleUrlChange = () => {
-        console.log('🔍 Dashboard URL changed to:', window.location.href);
-      };
-      
-      window.addEventListener('popstate', handleUrlChange);
-      window.addEventListener('pushstate', handleUrlChange);
-      window.addEventListener('replacestate', handleUrlChange);
-      
-      return () => {
-        window.removeEventListener('popstate', handleUrlChange);
-        window.removeEventListener('pushstate', handleUrlChange);
-        window.removeEventListener('replacestate', handleUrlChange);
-      };
-    }
-  }, []);
-
-  // Debug current section changes
-  useEffect(() => {
-    if (isClient) {
-      console.log('🔍 Dashboard currentSection changed to:', currentSection);
-    }
-  }, [currentSection, isClient]);
-
-  // Handle browser back/forward buttons
-  useEffect(() => {
-    if (!isClient) return;
-
-    const handlePopState = () => {
-      if (typeof window !== 'undefined') {
-        const urlParams = new URLSearchParams(window.location.search);
-        const section = urlParams.get('section') || 'dashboard';
-        setCurrentSection(section);
-      }
-    };
-
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [isClient]);
 
   const handleItemClick = (item: string) => {
     // Convert section name to URL-friendly format (e.g., "Market Research" -> "market-research")
     const urlSection = item.toLowerCase().replace(/\s+/g, '-');
-    console.log('🔍 Dashboard: Navigating to section:', urlSection);
-    
-    // Update URL only if we're on the client
-    if (typeof window !== 'undefined') {
-      const newUrl = new URL(window.location.href);
-      newUrl.searchParams.set('section', urlSection);
-      console.log('🔍 Dashboard: Updating URL to:', newUrl.toString());
-      window.history.pushState({}, '', newUrl.toString());
-    }
-    
-    // Update state
-    setCurrentSection(urlSection);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('section', urlSection);
+    router.push(`/dashboard?${params.toString()}`);
   };
 
   const toggleSidebar = () => {
@@ -388,13 +313,10 @@ function DashboardContent() {
 
   // If not loading and no user, check if we have site password auth
   if (!user) {
-    console.log('🔍 Dashboard: No Firebase user found, checking site password auth...');
     const siteUserId = localStorage.getItem('siteUserId');
-    console.log('🔍 Dashboard: siteUserId from localStorage:', siteUserId);
     
     // If we have site password auth, allow dashboard access
     if (siteUserId) {
-      console.log('🔍 Dashboard: Site password auth found, allowing dashboard access');
       // Continue to render dashboard - the useEffect will handle the rest
     } else {
       // No authentication at all, show redirecting message

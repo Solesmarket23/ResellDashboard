@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 
 export interface ExportablePurchase {
@@ -85,9 +84,18 @@ export const exportToExcel = (purchases: ExportablePurchase[], filename: string 
     'Type': purchase.type || 'Unknown'
   }));
 
-  // Create workbook and worksheet
-  const workbook = XLSX.utils.book_new();
-  const worksheet = XLSX.utils.json_to_sheet(excelData);
+  // Lazy-load XLSX only when needed to keep the default client bundle smaller.
+  // (xlsx is large and previously got pulled into any page that imported exportUtils.)
+  const loadXlsx = async () => {
+    const mod: any = await import('xlsx');
+    return mod?.default ?? mod;
+  };
+
+  const run = async () => {
+    const XLSX = await loadXlsx();
+    // Create workbook and worksheet
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.json_to_sheet(excelData);
 
   // Set column widths
   const columnWidths = [
@@ -107,13 +115,17 @@ export const exportToExcel = (purchases: ExportablePurchase[], filename: string 
   ];
   worksheet['!cols'] = columnWidths;
 
-  // Add worksheet to workbook
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Purchases');
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Purchases');
 
-  // Generate and download file
-  const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-  const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  saveAs(blob, `${filename}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    // Generate and download file
+    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(blob, `${filename}_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  // Fire-and-forget; callers can optionally await in the future.
+  void run();
 };
 
 export const exportToJSON = (purchases: ExportablePurchase[], filename: string = 'purchases') => {

@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Calendar, ExternalLink, Plus, Sparkles, Trash2, X, ChevronDown, ChevronLeft, ChevronRight, Loader2, Wifi, WifiOff, AlertCircle, RefreshCw, Package, DollarSign, Link, Upload } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
 import { saveUserSale } from '../lib/firebase/userDataUtils';
@@ -191,8 +190,11 @@ const Sales = () => {
     try {
       setUploading(true);
       setUploadProgress({ processed: 0, total: 0, errors: 0 });
+      // Lazy-load XLSX only when uploading/exporting to keep initial bundle smaller.
+      const xlsxMod: any = await import('xlsx');
+      const XLSX = xlsxMod?.default ?? xlsxMod;
       const nameLower = file.name.toLowerCase();
-      let wb: XLSX.WorkBook;
+      let wb: any;
       if (nameLower.endsWith('.csv')) {
         const text = await file.text();
         // Ensure Windows-1252/Latin1 CSVs parse by converting to UTF-8 string first
