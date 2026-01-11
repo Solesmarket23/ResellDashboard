@@ -1424,17 +1424,29 @@ export class OrderConfirmationParser {
    * Extract purchase date from StockX email
    */
   private extractStockXPurchaseDate(htmlContent: string, textContent: string, orderInfo: OrderInfo): void {
-    // Purchase date patterns - look for date near order confirmation
+    // Purchase date patterns - StockX emails vary a lot.
+    // We support:
+    // - "Dec 29, 2025"
+    // - "12/29/25" or "12/29/2025"
     const purchaseDatePatterns = [
-      /Order Confirmed[^0-9]*(\w+ \d+, \d{4})/i,
-      /Purchase Date[^0-9]*(\w+ \d+, \d{4})/i,
-      /Order Date[^0-9]*(\w+ \d+, \d{4})/i
+      // Long month name formats
+      /Order Confirmed[^0-9]*(\w+ \d{1,2}, \d{4})/i,
+      /Purchase Date[^0-9]*(\w+ \d{1,2}, \d{4})/i,
+      /Order Date[^0-9]*(\w+ \d{1,2}, \d{4})/i,
+      /Purchased on[^0-9]*(\w+ \d{1,2}, \d{4})/i,
+
+      // Numeric formats (common in some templates)
+      /Order Confirmed[^0-9]*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
+      /Purchase Date[^0-9]*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
+      /Order Date[^0-9]*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
+      /Purchased on[^0-9]*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
     ];
     
+    const hay = `${htmlContent}\n${textContent || ''}`;
     for (const pattern of purchaseDatePatterns) {
-      const match = htmlContent.match(pattern);
-      if (match) {
-        orderInfo.purchase_date = match[1].trim();
+      const match = hay.match(pattern);
+      if (match?.[1]) {
+        orderInfo.purchase_date = String(match[1]).trim();
         break;
       }
     }

@@ -150,17 +150,21 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
         // - "Order Confirmed:", "Xpress Order Confirmed:", "Order Confirmation:"
         // - "Item Arrived For Verification" (StockX sends this when order is placed)
         // - Emoji variations like "👍 Order Confirmed:"
-        const subjectMatch = subject.includes('order-confirmed') ||
-                            subject.includes('order-confirmation') ||
-                            subject.includes('xpress-order-confirmed') ||
-                            subject.includes('item-arrived-for-verification') ||
-                            rawSubject.includes('order confirmed') ||
-                            rawSubject.includes('order confirmation') ||
-                            rawSubject.includes('xpress order confirmed') ||
-                            rawSubject.includes('item arrived for verification') ||
-                            rawSubject.includes('purchase confirmed') ||
-                            rawSubject.includes('👍 order') ||
-                            rawSubject.includes('👍order');
+        // IMPORTANT: do NOT treat "Order Shipped" / "Verified & Shipped" / "Delivered" emails as confirmations.
+        const looksShippedOrDelivered =
+          rawSubject.includes('shipped') || rawSubject.includes('verified') || rawSubject.includes('delivered');
+
+        const subjectMatch =
+          !looksShippedOrDelivered &&
+          (subject.includes('order-confirmed') ||
+            subject.includes('order-confirmation') ||
+            subject.includes('xpress-order-confirmed') ||
+            subject.includes('item-arrived-for-verification') ||
+            rawSubject.includes('order confirmed') ||
+            rawSubject.includes('order confirmation') ||
+            rawSubject.includes('xpress order confirmed') ||
+            rawSubject.includes('item arrived for verification') ||
+            rawSubject.includes('purchase confirmed'));
         
         // PRIORITY 2: Check status - must be "ordered" or "order placed" (not "shipped" or "delivered")
         // But only if subject doesn't already match (to avoid false positives)
@@ -200,6 +204,7 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
               const formattedDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
               // ALWAYS overwrite purchaseDate with order confirmation date
               primaryPurchase.purchaseDate = formattedDate;
+              primaryPurchase.purchaseDateSource = 'order_confirmation_email';
               // Store the original email_date string, or convert to ISO if it's a Date object
               primaryPurchase.purchase_date = typeof orderConfirmationEmail.email_date === 'string' 
                 ? orderConfirmationEmail.email_date 
@@ -223,6 +228,7 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
         // Priority 2: Fallback to existing purchaseDate from order confirmation email
         if (!purchaseDateSet && orderConfirmationEmail.purchaseDate) {
           primaryPurchase.purchaseDate = orderConfirmationEmail.purchaseDate;
+          primaryPurchase.purchaseDateSource = 'order_confirmation_email';
           primaryPurchase.purchase_date = orderConfirmationEmail.purchase_date || orderConfirmationEmail.email_date || orderConfirmationEmail.createdAt;
           purchaseDateSet = true;
         }
@@ -234,6 +240,7 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
             if (!isNaN(emailDate.getTime())) {
               const formattedDate = emailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
               primaryPurchase.purchaseDate = formattedDate;
+              primaryPurchase.purchaseDateSource = 'order_confirmation_email';
               primaryPurchase.purchase_date = orderConfirmationEmail.createdAt;
               primaryPurchase.email_date = orderConfirmationEmail.createdAt;
               purchaseDateSet = true;
@@ -246,33 +253,16 @@ export function consolidatePurchasesByOrderNumber(purchases: any[]): any[] {
         }
       } else {
         // No order confirmation found.
-        // Fallback: use the earliest known email_date/createdAt across all emails for this order.
-        // This is not perfect (it's the earliest email we have), but it's far better than "Unknown" for most users.
-        const earliest = orderPurchases.reduce<Date | null>((minDate, p) => {
-          const d = new Date(p.email_date || p.createdAt || 0);
-          if (isNaN(d.getTime())) return minDate;
-          if (!minDate) return d;
-          return d < minDate ? d : minDate;
-        }, null);
-
-        if (earliest) {
-          primaryPurchase.purchaseDate = earliest.toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-          });
-          primaryPurchase.purchase_date = earliest.toISOString();
-          // Keep email_date as-is (later we may overwrite with most recent for display)
-        } else {
-          primaryPurchase.purchaseDate = 'TBD';
-          primaryPurchase.purchase_date = '';
-        }
+        // IMPORTANT: do not guess using shipped/delivered email dates — that's misleading.
+        primaryPurchase.purchaseDate = 'TBD';
+        primaryPurchase.purchaseDateSource = 'unknown';
+        primaryPurchase.purchase_date = '';
         
         // Only log detailed warning for orders with 10+ duplicates
         if (shouldLogDetails) {
           console.log(
             `⚠️ No order confirmation found for ${orderNumber} - purchaseDate fallback: ${
-              earliest ? primaryPurchase.purchaseDate : 'TBD'
+              primaryPurchase.purchaseDate
             }`
           );
         }

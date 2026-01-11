@@ -2500,6 +2500,12 @@ const Purchases = () => {
   // Ensure every purchase has a usable display date (and make it deterministic).
   // This fixes the last ~few rows that can end up without a purchaseDate when emails are missing fields.
   const derivePurchaseDateDisplay = (purchase: any): string => {
+    // If consolidation couldn't find an actual order confirmation email, do NOT display
+    // shipped/delivered email timestamps as "purchase date".
+    if (purchase?.purchaseDateSource && purchase.purchaseDateSource !== 'order_confirmation_email') {
+      return 'TBD';
+    }
+
     // IMPORTANT:
     // Do NOT fall back to syncedAt/createdAt/dateAdded for display.
     // Those timestamps often reflect when *we imported/saved* the record (today),
@@ -2509,10 +2515,10 @@ const Purchases = () => {
     // for US time zones. `purchase_date` / `email_date` should include timezone and will format
     // correctly in the browser's locale/timezone.
     const candidates: Array<string | undefined> = [
+      purchase?.purchaseDate,
       purchase?.purchase_date,
       purchase?.email_date,
       purchase?.emailDate,
-      purchase?.purchaseDate,
     ];
     for (const c of candidates) {
       const formatted = formatPurchaseDate(c);
