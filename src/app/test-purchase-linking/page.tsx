@@ -1490,6 +1490,12 @@ export default function TestPurchaseLinkingPage() {
               <div className="flex flex-wrap gap-x-5 gap-y-1">
                 <span
                   className="font-semibold"
+                  title="Total profit across matched FIFO rows for the selected period. Profit = sum(Net Payout − Total Paid)."
+                >
+                  Total Profit: {fifoMetrics.count === 0 ? '—' : currency(fifoMetrics.profitSum)}
+                </span>
+                <span
+                  className="font-semibold"
                   title="Average profit per matched FIFO row (only rows with net payout + total paid). Profit = Net Payout − Total Paid."
                 >
                   Avg Profit: {fifoMetrics.avgProfit === null ? '—' : currency(fifoMetrics.avgProfit)}
