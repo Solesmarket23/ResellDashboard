@@ -16,12 +16,48 @@ function getEffectiveUserId(request: NextRequest): string | null {
   return request.headers.get('x-user-id')?.trim() || getSiteUserIdFromCookie(request);
 }
 
+function getBearerToken(request: NextRequest): string | null {
+  const raw = request.headers.get('authorization') || request.headers.get('Authorization') || '';
+  const m = raw.match(/^Bearer\s+(.+)$/i);
+  const token = (m?.[1] || '').trim();
+  return token ? token : null;
+}
+
+async function resolveAuthedUserId(request: NextRequest): Promise<string | null> {
+  // Preferred for native apps: Firebase ID token
+  const bearer = getBearerToken(request);
+  if (bearer) {
+    const { getAdminAuth } = await import('@/lib/firebase/admin');
+    const adminAuth = getAdminAuth();
+    if (!adminAuth) return null;
+    const decoded = await adminAuth.verifyIdToken(bearer);
+    const uid = (decoded?.uid || '').trim();
+    return uid || null;
+  }
+
+  // Web fallback: site-password cookie.
+  const cookieUserId = getSiteUserIdFromCookie(request);
+  if (cookieUserId) return cookieUserId;
+
+  // Dev fallback: allow header-based userId when running locally (legacy behavior).
+  const headerUserId = request.headers.get('x-user-id')?.trim() || '';
+  if (process.env.NODE_ENV === 'development' && headerUserId) return headerUserId;
+
+  return null;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId')?.trim() || getEffectiveUserId(request);
+    const authedUserId = await resolveAuthedUserId(request);
+    const userIdParam = searchParams.get('userId')?.trim() || '';
+    const userId = userIdParam || authedUserId;
     if (!userId) {
       return NextResponse.json({ success: false, error: 'Missing userId' }, { status: 400 });
+    }
+    // If a caller passes userId explicitly, it must match the authenticated identity (when present).
+    if (userIdParam && authedUserId && userIdParam !== authedUserId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized (user mismatch)' }, { status: 403 });
     }
 
     const { getAdminDb } = await import('@/lib/firebase/admin');
@@ -53,9 +89,14 @@ export async function POST(request: NextRequest) {
     const productId = body?.productId ? String(body.productId).trim() : '';
     const variantId = body?.variantId ? String(body.variantId).trim() : '';
 
-    const userId = body?.userId ? String(body.userId).trim() : getEffectiveUserId(request);
+    const authedUserId = await resolveAuthedUserId(request);
+    const bodyUserId = body?.userId ? String(body.userId).trim() : '';
+    const userId = bodyUserId || authedUserId;
     if (!userId) {
       return NextResponse.json({ success: false, error: 'Missing userId' }, { status: 400 });
+    }
+    if (bodyUserId && authedUserId && bodyUserId !== authedUserId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized (user mismatch)' }, { status: 403 });
     }
     if (!listingId) {
       return NextResponse.json({ success: false, error: 'Missing listingId' }, { status: 400 });

@@ -1,9 +1,11 @@
 // Firebase Admin SDK for server-side operations
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getAuth, type Auth } from 'firebase-admin/auth';
 
 let adminApp;
 let adminDb;
+let adminAuth: Auth | null = null;
 
 // Lazy initialization function - only runs when actually needed
 function initializeAdmin() {
@@ -34,6 +36,8 @@ function initializeAdmin() {
     });
     
     adminDb = getFirestore(adminApp);
+    // Lazily initialize Auth too (used for verifying Firebase ID tokens from native clients).
+    adminAuth = getAuth(adminApp);
     console.log('✅ Firebase Admin SDK initialized successfully');
     return adminDb;
   } catch (error) {
@@ -45,6 +49,13 @@ function initializeAdmin() {
 // Export getAdminDb function for lazy initialization
 export const getAdminDb = () => {
   return initializeAdmin();
+};
+
+export const getAdminAuth = (): Auth | null => {
+  if (adminAuth) return adminAuth;
+  // Ensure adminApp is initialized (and adminAuth set).
+  initializeAdmin();
+  return adminAuth;
 };
 
 // Export adminApp and adminDb (adminDb will be null until getAdminDb() is called)
