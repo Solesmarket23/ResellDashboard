@@ -377,45 +377,47 @@ const Profile = () => {
           )}
 
           {activeTab === 'security' && (
-            <div className="grid lg:grid-cols-2 gap-8">
-              <div className="space-y-6">
-                <div className="bg-white p-6 rounded-lg border border-gray-200">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Password & Security</h3>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="font-medium text-gray-900">Two-Factor Authentication</h4>
-                        <p className="text-sm text-gray-600">Add an extra layer of security</p>
+            <div className="space-y-8">
+              <div className="grid lg:grid-cols-2 gap-8">
+                <div className="space-y-6">
+                  <div className="bg-white p-6 rounded-lg border border-gray-200">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Password & Security</h3>
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="font-medium text-gray-900">Two-Factor Authentication</h4>
+                          <p className="text-sm text-gray-600">Add an extra layer of security</p>
+                        </div>
+                        <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                          Enable
+                        </button>
                       </div>
-                      <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                        Enable
-                      </button>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="font-medium text-gray-900">Login Alerts</h4>
-                        <p className="text-sm text-gray-600">Get notified of new logins</p>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="font-medium text-gray-900">Login Alerts</h4>
+                          <p className="text-sm text-gray-600">Get notified of new logins</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={security.loginAlerts}
+                            onChange={(e) => handleSecurityChange('loginAlerts', e.target.checked)}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        </label>
                       </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={security.loginAlerts}
-                          onChange={(e) => handleSecurityChange('loginAlerts', e.target.checked)}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                      </label>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* StockX API Configuration - Full Width */}
-            <div className="mt-8">
-              <div className="bg-white p-6 rounded-lg border border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">StockX API Configuration</h3>
-                <p className="text-gray-600">StockX API management temporarily disabled for debugging.</p>
+              {/* StockX API Configuration - Full Width */}
+              <div>
+                <div className="bg-white p-6 rounded-lg border border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">StockX API Configuration</h3>
+                  <p className="text-gray-600">StockX API management temporarily disabled for debugging.</p>
+                </div>
               </div>
             </div>
           )}
