@@ -46,8 +46,9 @@ export async function POST(request: NextRequest) {
     const callbackScheme = safeCallbackScheme(body?.callbackScheme);
     const returnTo = typeof body?.returnTo === 'string' ? body.returnTo : '';
 
-    // IMPORTANT: StockX redirect_uri must be allowlisted. We always use production.
-    const redirectUri = 'https://www.solesmarket.com/api/stockx/native-auth/callback';
+    // IMPORTANT: StockX redirect_uri must be allowlisted. The StockX developer portal only allows one callback,
+    // so we reuse the existing web callback and branch server-side based on state stored in Firestore.
+    const redirectUri = 'https://www.solesmarket.com/api/stockx/callback';
 
     // State: store server-side (NOT cookie) so the native app doesn't depend on browser cookies.
     const state = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
