@@ -1895,6 +1895,8 @@ export default function StockXRepricing() {
 
     // Immediate mode: changing a pricing rule should run right away (persist + reprice).
     // We pass the strategy explicitly so we don't race React state updates.
+    // Exception: selecting Manual or Two-step should NOT auto-save/run; user must click Save.
+    if (type === 'manual' || type === 'reset_then_beat_lowest') return;
     void savePricingRuleChange(effectiveListingId, newStrategy);
   };
 
