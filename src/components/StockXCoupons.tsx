@@ -656,6 +656,13 @@ export default function StockXCoupons() {
     });
   }, [coupons, sortMode, showHidden]);
 
+  const pageCounts = useMemo(() => {
+    const total = displayCoupons.length;
+    const expired = displayCoupons.filter((c) => c.status === 'expired').length;
+    const active = total - expired; // "active" = not expired
+    return { total, active, expired };
+  }, [displayCoupons]);
+
   const ViewToggle = (
     <div className={`inline-flex items-center rounded-lg border overflow-hidden ${
       isNeon ? 'border-white/15 bg-white/5' : 'border-gray-200 bg-white'
@@ -1089,6 +1096,23 @@ export default function StockXCoupons() {
               <div className="flex items-center gap-2">
                 <span className={`text-xs font-semibold ${currentTheme.colors.textSecondary}`}>Sort by</span>
                 {SortDropdown}
+                <div className="ml-2 flex flex-wrap items-center gap-2">
+                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${
+                    isNeon ? 'bg-white/5 border-white/15 text-white/80' : 'bg-gray-50 border-gray-200 text-gray-700'
+                  }`}>
+                    Total: {pageCounts.total}
+                  </span>
+                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${
+                    isNeon ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-200' : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  }`}>
+                    Active: {pageCounts.active}
+                  </span>
+                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${
+                    isNeon ? 'bg-red-500/10 border-red-500/25 text-red-200' : 'bg-red-50 border-red-200 text-red-800'
+                  }`}>
+                    Expired: {pageCounts.expired}
+                  </span>
+                </div>
               </div>
               <div className="flex items-center gap-3">
                 {ViewToggle}
