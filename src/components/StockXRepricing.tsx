@@ -451,6 +451,55 @@ export default function StockXRepricing() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Persist imageUrls back into the listings cache once they become available.
+  // Without this, a user can refresh and see blank thumbnails until async enrichment completes again.
+  const lastListingsImageCacheWriteAtRef = useRef(0);
+  useEffect(() => {
+    try {
+      if (!Array.isArray(listings) || listings.length === 0) return;
+
+      const now = Date.now();
+      if (now - lastListingsImageCacheWriteAtRef.current < 2000) return; // throttle writes
+
+      const imageByListingId: Record<string, string> = {};
+      for (const l of listings as any[]) {
+        const id = String(l?.listingId || '').trim();
+        const img = typeof l?.imageUrl === 'string' ? l.imageUrl.trim() : '';
+        if (id && img) imageByListingId[id] = img;
+      }
+      if (Object.keys(imageByListingId).length === 0) return;
+
+      const raw = localStorage.getItem(LISTINGS_CACHE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      const cachedListings = Array.isArray(parsed?.listings) ? parsed.listings : null;
+      if (!cachedListings) return;
+
+      let changed = false;
+      const nextListings = cachedListings.map((l: any) => {
+        const id = String(l?.listingId || '').trim();
+        const img = imageByListingId[id];
+        if (!img) return l;
+        const prevImg = typeof l?.imageUrl === 'string' ? l.imageUrl.trim() : '';
+        if (prevImg === img) return l;
+        changed = true;
+        return { ...l, imageUrl: img };
+      });
+
+      if (!changed) return;
+      localStorage.setItem(
+        LISTINGS_CACHE_KEY,
+        JSON.stringify({
+          cachedAt: typeof parsed?.cachedAt === 'number' ? parsed.cachedAt : Date.now(),
+          listings: nextListings
+        })
+      );
+      lastListingsImageCacheWriteAtRef.current = now;
+    } catch {
+      // ignore cache write issues
+    }
+  }, [listings]);
+
   // Load pricing settings (works with Firebase auth OR site-user-id cookie)
   useEffect(() => {
     const effectiveUserId = authUser?.uid || getSiteUserId();
@@ -2114,18 +2163,34 @@ export default function StockXRepricing() {
       console.error('❌ Listing not found:', listingId);
       return;
     }
+
+    // Prefer the draft input value if present (user may click Apply before state commits the numeric value).
+    const draft = strategyValueDraftByListingId[listingId];
+    const manualPriceToApply = (() => {
+      if (typeof draft === 'string') {
+        const trimmed = draft.trim();
+        if (trimmed === '') return null;
+        const n = Number(trimmed);
+        if (Number.isFinite(n) && n > 0) return n;
+      }
+      const mp = listing.pricingStrategy?.manualPrice;
+      if (typeof mp === 'number' && Number.isFinite(mp) && mp > 0) return mp;
+      return null;
+    })();
     
     console.log('🎯 Applying manual price for listing:', {
       listingId,
       currentPrice: listing.currentPrice,
       manualPrice: listing.pricingStrategy?.manualPrice,
+      draftManualPrice: draft,
+      manualPriceToApply,
       minPrice: listing.minPrice,
       maxPrice: listing.maxPrice,
       pricingStrategy: listing.pricingStrategy
     });
     
     // Validate manual price is set
-    if (!listing.pricingStrategy?.manualPrice || listing.pricingStrategy.manualPrice <= 0) {
+    if (!manualPriceToApply) {
       setBulkActionMessage('⚠️ Please enter a valid manual price first');
       setTimeout(() => setBulkActionMessage(null), 5000);
       return;
@@ -2145,8 +2210,8 @@ export default function StockXRepricing() {
     }
     
     // Validate manual price is within range
-    if (listing.pricingStrategy.manualPrice < listing.minPrice || listing.pricingStrategy.manualPrice > listing.maxPrice) {
-      setBulkActionMessage(`⚠️ Manual price ($${listing.pricingStrategy.manualPrice}) must be between Min ($${listing.minPrice}) and Max ($${listing.maxPrice})`);
+    if (manualPriceToApply < listing.minPrice || manualPriceToApply > listing.maxPrice) {
+      setBulkActionMessage(`⚠️ Manual price ($${manualPriceToApply}) must be between Min ($${listing.minPrice}) and Max ($${listing.maxPrice})`);
       setTimeout(() => setBulkActionMessage(null), 5000);
       return;
     }
@@ -2163,7 +2228,7 @@ export default function StockXRepricing() {
         },
         body: JSON.stringify({
           listingId: listing.listingId,
-          amount: listing.pricingStrategy.manualPrice
+          amount: manualPriceToApply
         })
       });
 
