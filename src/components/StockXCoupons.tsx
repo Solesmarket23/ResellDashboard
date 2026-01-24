@@ -121,14 +121,8 @@ export default function StockXCoupons() {
   const [manualAmount, setManualAmount] = useState('');
   const [manualBenefit, setManualBenefit] = useState<CouponBenefit>('amount_off');
   const [debug, setDebug] = useState<CouponDebug>({});
-  const [showHidden, setShowHidden] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    try {
-      return localStorage.getItem('stockxCoupons_showHidden') === 'true';
-    } catch {
-      return false;
-    }
-  });
+  // Archived coupons: hidden=true on the server. Default to NOT showing archived to avoid confusion.
+  const [showHidden, setShowHidden] = useState<boolean>(false);
   const seenCodesRef = useRef<Set<string>>(new Set());
   const [enteringCodes, setEnteringCodes] = useState<Record<string, true>>({});
   const enteringClearTimerRef = useRef<number | null>(null);
@@ -342,6 +336,25 @@ export default function StockXCoupons() {
       // ignore
     }
   }, [showHidden]);
+
+  // Hydrate preference once (but if there are no archived coupons, keep the UI in normal mode).
+  const didHydrateShowHiddenRef = useRef(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (didHydrateShowHiddenRef.current) return;
+    didHydrateShowHiddenRef.current = true;
+    try {
+      const v = localStorage.getItem('stockxCoupons_showHidden') === 'true';
+      setShowHidden(v);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const hiddenCount = useMemo(() => coupons.filter((c) => c.hidden).length, [coupons]);
+  useEffect(() => {
+    if (showHidden && hiddenCount === 0) setShowHidden(false);
+  }, [hiddenCount, showHidden]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -869,10 +882,10 @@ export default function StockXCoupons() {
               className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
                 isNeon ? 'bg-white/10 hover:bg-white/20 border border-white/20' : 'bg-white hover:bg-gray-50 border border-gray-300'
               } ${currentTheme.colors.textPrimary}`}
-              title={showHidden ? 'Hide hidden coupons' : 'Show hidden coupons'}
+              title={showHidden ? 'Hide archived coupons' : 'Show archived coupons'}
             >
               {showHidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              {showHidden ? 'Hide hidden' : 'Show hidden'}
+              {showHidden ? 'Hide archived' : 'Show archived'}
             </button>
             <button
               onClick={() => fetchCoupons('manual')}
@@ -895,12 +908,12 @@ export default function StockXCoupons() {
           </div>
         )}
 
-        {showHidden && (
+        {showHidden && hiddenCount > 0 && (
           <>
             <div className={`mt-4 rounded-lg border p-3 text-sm ${
               isNeon ? 'border-white/15 bg-white/5 text-white/80' : 'border-gray-200 bg-gray-50 text-gray-700'
             }`}>
-              You’re viewing <span className="font-semibold">hidden</span> coupons. Click <span className="font-semibold">Restore</span> to make a coupon show up in the normal list.
+              Showing <span className="font-semibold">archived</span> coupons. Click <span className="font-semibold">Restore</span> to show a coupon in the normal list.
             </div>
 
             {/* Move sort control here for hidden view (left-aligned above first coupon) */}
