@@ -147,6 +147,15 @@ export default function StockXCoupons() {
     []
   );
 
+  const statusOptions = useMemo<NeonDropdownOption[]>(
+    () => [
+      { value: 'available', label: 'Available' },
+      { value: 'used_on_bid', label: 'Used' },
+      { value: 'expired', label: 'Expired' },
+    ],
+    []
+  );
+
   const SortDropdown = (
     <NeonDropdown
       value={sortMode}
@@ -1058,13 +1067,13 @@ export default function StockXCoupons() {
                   <table className="min-w-[980px] w-full text-sm">
                     <thead className={`${isNeon ? 'bg-white/5' : 'bg-gray-50'} text-xs uppercase tracking-wide`}>
                       <tr className={`${isNeon ? 'text-gray-300' : 'text-gray-600'}`}>
-                        <th className="px-4 py-3 text-left">Code</th>
-                        <th className="px-4 py-3 text-left">Benefit</th>
-                        <th className="px-4 py-3 text-left">Sent</th>
-                        <th className="px-4 py-3 text-left">Expires</th>
-                        <th className="px-4 py-3 text-left">Days</th>
-                        <th className="px-4 py-3 text-left">Status</th>
-                        <th className="px-4 py-3 text-left">Actions</th>
+                        <th className="px-4 py-3 text-left w-[420px]">Code</th>
+                        <th className="px-4 py-3 text-left w-[170px]">Discount</th>
+                        <th className="px-4 py-3 text-left w-[200px]">Sent</th>
+                        <th className="px-4 py-3 text-left w-[200px]">Expires</th>
+                        <th className="px-4 py-3 text-left w-[90px]">Days left</th>
+                        <th className="px-4 py-3 text-left w-[190px]">Status</th>
+                        <th className="px-4 py-3 text-left w-[160px]">Actions</th>
                       </tr>
                     </thead>
                     <tbody className={`${isNeon ? 'divide-y divide-white/10' : 'divide-y divide-gray-100'}`}>
@@ -1107,19 +1116,19 @@ export default function StockXCoupons() {
                             </td>
                             <td className="px-4 py-3">
                               {c.benefit === 'free_shipping' ? (
-                                <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${
+                                <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold whitespace-nowrap ${
                                   isNeon ? `bg-cyan-500/10 border-cyan-500/30 text-cyan-200 ${daysLeftGlow}` : 'bg-cyan-50 border-cyan-200 text-cyan-800'
                                 }`}>
                                   Free shipping
                                 </span>
                               ) : c.benefit === 'half_off_shipping' ? (
-                                <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${
+                                <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold whitespace-nowrap ${
                                   isNeon ? `bg-cyan-500/10 border-cyan-500/30 text-cyan-200 ${daysLeftGlow}` : 'bg-cyan-50 border-cyan-200 text-cyan-800'
                                 }`}>
                                   Half off shipping
                                 </span>
                               ) : typeof c.amount === 'number' && Number.isFinite(c.amount) ? (
-                                <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${
+                                <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold whitespace-nowrap ${
                                   isNeon ? `bg-violet-500/10 border-violet-500/30 text-violet-200 ${daysLeftGlow}` : 'bg-violet-50 border-violet-200 text-violet-800'
                                 }`}>
                                   <span className="font-semibold">${c.amount}</span> off
@@ -1134,40 +1143,17 @@ export default function StockXCoupons() {
                               {c.daysLeft}d
                             </td>
                             <td className="px-4 py-3">
-                              <div className="flex flex-wrap gap-2">
-                                <button
-                                  onClick={() => setStatus(c.code, 'available')}
-                                  disabled={isSaving}
-                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors disabled:opacity-50 ${
-                                    c.status === 'available'
-                                      ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-200'
-                                      : 'bg-white/5 border-white/15 text-white/80 hover:bg-white/10'
-                                  }`}
-                                >
-                                  Available
-                                </button>
-                                <button
-                                  onClick={() => setStatus(c.code, 'used_on_bid')}
-                                  disabled={isSaving}
-                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors disabled:opacity-50 ${
-                                    c.status === 'used_on_bid'
-                                      ? 'bg-blue-500/20 border-blue-500/40 text-blue-200'
-                                      : 'bg-white/5 border-white/15 text-white/80 hover:bg-white/10'
-                                  }`}
-                                >
-                                  Used
-                                </button>
-                                <button
-                                  onClick={() => setStatus(c.code, 'expired')}
-                                  disabled={isSaving}
-                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors disabled:opacity-50 ${
-                                    c.status === 'expired'
-                                      ? 'bg-red-500/20 border-red-500/40 text-red-200'
-                                      : 'bg-white/5 border-white/15 text-white/80 hover:bg-white/10'
-                                  }`}
-                                >
-                                  Expired
-                                </button>
+                              <div className={isSaving ? 'pointer-events-none opacity-60' : ''}>
+                                <NeonDropdown
+                                  value={c.status}
+                                  onChange={(v) => {
+                                    if (v === c.status) return;
+                                    void setStatus(c.code, v as CouponStatus);
+                                  }}
+                                  options={statusOptions}
+                                  isNeon={isNeon}
+                                  className="w-[170px] max-w-full"
+                                />
                               </div>
                             </td>
                             <td className="px-4 py-3">
