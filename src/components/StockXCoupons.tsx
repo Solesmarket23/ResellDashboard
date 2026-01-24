@@ -176,6 +176,16 @@ export default function StockXCoupons() {
 
       // Persist successful results for instant load after a hard refresh.
       persistCache(nextCoupons, nextDebug);
+
+      // Toast on manual refresh so user gets immediate feedback.
+      if (reason === 'manual') {
+        const count = typeof data?.count === 'number' ? data.count : nextCoupons.length;
+        setNotification({
+          isVisible: true,
+          message: `Found ${count} coupon${count === 1 ? '' : 's'}`,
+          type: 'success'
+        });
+      }
     } catch (e: any) {
       if (e?.name === 'AbortError') {
         setError('Refresh timed out. Gmail can be slow—try again.');
