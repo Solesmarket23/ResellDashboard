@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Copy, Check, ExternalLink, RefreshCw, Tag, CheckCircle2, AlertTriangle, Clock, Trash2, Eye, EyeOff, Plus } from 'lucide-react';
+import { Copy, Check, ExternalLink, RefreshCw, Tag, CheckCircle2, AlertTriangle, Clock, Trash2, Eye, EyeOff, Plus, ChevronDown } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
 import GmailConnector from './GmailConnector';
@@ -728,19 +728,26 @@ export default function StockXCoupons() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <select
-              value={sortMode}
-              onChange={(e) => setSortMode(e.target.value as SortMode)}
-              className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium border whitespace-nowrap transition-colors ${
-                isNeon
-                  ? 'bg-white/10 hover:bg-white/15 border-white/20 text-white/90'
-                  : 'bg-white hover:bg-gray-50 border-gray-300 text-gray-900'
-              }`}
-              title="Sort coupons"
-            >
-              <option value="expiring_available">Available expiring soon</option>
-              <option value="sent_newest">Newest first</option>
-            </select>
+            <div className="relative">
+              <select
+                value={sortMode}
+                onChange={(e) => setSortMode(e.target.value as SortMode)}
+                className={`appearance-none px-3 sm:px-4 pr-9 py-2 rounded-lg text-sm font-medium border whitespace-nowrap transition-colors ${
+                  isNeon
+                    ? 'bg-white/10 hover:bg-white/15 border-white/20 text-white/90'
+                    : 'bg-white hover:bg-gray-50 border-gray-300 text-gray-900'
+                }`}
+                title="Sort coupons"
+              >
+                <option value="expiring_available">Available expiring soon</option>
+                <option value="sent_newest">Newest first</option>
+              </select>
+              <ChevronDown
+                className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 ${
+                  isNeon ? 'text-white/70' : 'text-gray-500'
+                }`}
+              />
+            </div>
             <button
               onClick={() => setAddManualOpen(true)}
               disabled={loading}
