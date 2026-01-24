@@ -1,10 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Copy, Check, ExternalLink, RefreshCw, Tag, CheckCircle2, AlertTriangle, Clock, Trash2, Eye, EyeOff, Plus, ChevronDown } from 'lucide-react';
+import { Copy, Check, ExternalLink, RefreshCw, Tag, CheckCircle2, AlertTriangle, Clock, Trash2, Eye, EyeOff, Plus } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
 import GmailConnector from './GmailConnector';
+import NeonDropdown, { type NeonDropdownOption } from './NeonDropdown';
 import NeonNotification, { type NotificationType } from './NeonNotification';
 
 type CouponStatus = 'available' | 'used_on_bid' | 'expired';
@@ -35,16 +36,24 @@ type CouponDebug = {
   debug?: any;
 };
 
+function ordinalDay(n: number): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  const mod10 = n % 10;
+  if (mod10 === 1) return `${n}st`;
+  if (mod10 === 2) return `${n}nd`;
+  if (mod10 === 3) return `${n}rd`;
+  return `${n}th`;
+}
+
 function formatCouponDateTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  // Example: "Jan 26, 3:01 PM" (no year; coupons are short-lived)
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(d);
+  const month = new Intl.DateTimeFormat('en-US', { month: 'long' }).format(d);
+  const day = ordinalDay(d.getDate());
+  const time = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(d);
+  // Example: "January 24th, 3:01 PM" (no year; coupons are short-lived)
+  return `${month} ${day}, ${time}`;
 }
 
 function statusPill(status: CouponStatus) {
@@ -123,6 +132,24 @@ export default function StockXCoupons() {
   const enteringClearTimerRef = useRef<number | null>(null);
 
   const isNeon = currentTheme?.name === 'Neon';
+
+  const sortOptions = useMemo<NeonDropdownOption[]>(
+    () => [
+      { value: 'expiring_available', label: 'Available expiring soon' },
+      { value: 'sent_newest', label: 'Newest first' },
+    ],
+    []
+  );
+
+  const SortDropdown = (
+    <NeonDropdown
+      value={sortMode}
+      onChange={(v) => setSortMode(v as SortMode)}
+      options={sortOptions}
+      isNeon={isNeon}
+      className="w-[220px] max-w-full"
+    />
+  );
 
   const userId = useMemo(() => {
     if (user?.uid) return user.uid;
@@ -790,28 +817,7 @@ export default function StockXCoupons() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {!showHidden && (
-              <div className="relative">
-                <select
-                  value={sortMode}
-                  onChange={(e) => setSortMode(e.target.value as SortMode)}
-                  className={`appearance-none px-3 sm:px-4 pr-9 py-2 rounded-lg text-sm font-medium border whitespace-nowrap transition-colors ${
-                    isNeon
-                      ? 'bg-white/10 hover:bg-white/15 border-white/20 text-white/90'
-                      : 'bg-white hover:bg-gray-50 border-gray-300 text-gray-900'
-                  }`}
-                  title="Sort coupons"
-                >
-                  <option value="expiring_available">Available expiring soon</option>
-                  <option value="sent_newest">Newest first</option>
-                </select>
-                <ChevronDown
-                  className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 ${
-                    isNeon ? 'text-white/70' : 'text-gray-500'
-                  }`}
-                />
-              </div>
-            )}
+            {!showHidden && SortDropdown}
             <button
               onClick={() => setAddManualOpen(true)}
               disabled={loading}
@@ -880,26 +886,7 @@ export default function StockXCoupons() {
 
             {/* Move sort control here for hidden view (left-aligned above first coupon) */}
             <div className="mt-3 flex items-center justify-start">
-              <div className="relative">
-                <select
-                  value={sortMode}
-                  onChange={(e) => setSortMode(e.target.value as SortMode)}
-                  className={`appearance-none px-3 sm:px-4 pr-9 py-2 rounded-lg text-sm font-medium border whitespace-nowrap transition-colors ${
-                    isNeon
-                      ? 'bg-white/10 hover:bg-white/15 border-white/20 text-white/90'
-                      : 'bg-white hover:bg-gray-50 border-gray-300 text-gray-900'
-                  }`}
-                  title="Sort coupons"
-                >
-                  <option value="expiring_available">Available expiring soon</option>
-                  <option value="sent_newest">Newest first</option>
-                </select>
-                <ChevronDown
-                  className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 ${
-                    isNeon ? 'text-white/70' : 'text-gray-500'
-                  }`}
-                />
-              </div>
+              {SortDropdown}
             </div>
           </>
         )}
