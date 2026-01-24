@@ -986,11 +986,15 @@ export default function StockXCoupons() {
           </div>
         ) : (
           <div className="mt-6">
-            {loading ? (
-              <div className={`mb-3 text-xs ${currentTheme.colors.textSecondary}`}>
-                Refreshing in background…
-              </div>
-            ) : null}
+            {/* Keep layout stable to avoid "flicker" when loading toggles */}
+            <div
+              className={`mb-3 text-xs ${currentTheme.colors.textSecondary} transition-opacity ${
+                loading ? 'opacity-100' : 'opacity-0'
+              }`}
+              aria-live="polite"
+            >
+              Refreshing…
+            </div>
 
             <div className="grid grid-cols-1 gap-3">
             {displayCoupons.map((c) => {
