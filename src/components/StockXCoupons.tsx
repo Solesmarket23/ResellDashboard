@@ -828,7 +828,7 @@ export default function StockXCoupons() {
           <div>
             <h1 className={`text-2xl font-bold ${currentTheme.colors.textPrimary}`}>StockX Coupons</h1>
             <p className={`mt-1 text-sm ${currentTheme.colors.textSecondary}`}>
-              Finds StockX coupon emails in Gmail and tracks code status. Coupons are assumed valid for <span className="font-semibold">14 days</span> from email sent time.
+              Finds StockX coupon emails in Gmail and tracks code status.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -875,7 +875,6 @@ export default function StockXCoupons() {
               {showHidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               {showHidden ? 'Hide archived' : 'Show archived'}
             </button>
-            {!showHidden && SortDropdown}
             <button
               onClick={() => fetchCoupons('manual')}
               disabled={!gmailConnected || loading}
@@ -894,6 +893,13 @@ export default function StockXCoupons() {
         {error && (
           <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
             {error}
+          </div>
+        )}
+
+        {/* Sort control sits above the list (left-aligned) */}
+        {!showHidden && (
+          <div className="mt-4 flex items-center justify-start">
+            {SortDropdown}
           </div>
         )}
 
