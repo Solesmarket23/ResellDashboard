@@ -330,8 +330,7 @@ export default function StockXCoupons() {
 
   useEffect(() => {
     if (!gmailConnected) return;
-    // Auto-fetch on load so the page isn't empty.
-    void fetchCoupons('auto');
+    // Do not auto-fetch on load. User explicitly clicks Refresh to fetch from Gmail.
   }, [gmailConnected, fetchCoupons]);
 
   // Persist preference so it survives refreshes.
