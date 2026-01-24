@@ -849,7 +849,6 @@ export default function StockXCoupons() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {!showHidden && SortDropdown}
             <button
               onClick={() => setAddManualOpen(true)}
               disabled={loading}
@@ -887,6 +886,7 @@ export default function StockXCoupons() {
               {showHidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               {showHidden ? 'Hide archived' : 'Show archived'}
             </button>
+            {!showHidden && SortDropdown}
             <button
               onClick={() => fetchCoupons('manual')}
               disabled={!gmailConnected || loading}
