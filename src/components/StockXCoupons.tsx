@@ -35,6 +35,18 @@ type CouponDebug = {
   debug?: any;
 };
 
+function formatCouponDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  // Example: "Jan 26, 3:01 PM" (no year; coupons are short-lived)
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(d);
+}
+
 function statusPill(status: CouponStatus) {
   switch (status) {
     case 'available':
@@ -986,11 +998,11 @@ export default function StockXCoupons() {
                         ) : null}
                         <span className="inline-flex items-center gap-1">
                           <Clock className="w-3.5 h-3.5" />
-                          Sent: {new Date(c.sentAt).toLocaleString()}
+                          Sent: {formatCouponDateTime(c.sentAt)}
                         </span>
                         <span className="inline-flex items-center gap-1">
                           <Clock className="w-3.5 h-3.5" />
-                          Expires: {new Date(c.expiresAt).toLocaleString()}
+                          Expires: {formatCouponDateTime(c.expiresAt)}
                         </span>
                         <span className={`inline-flex items-center gap-1 font-semibold ${daysLeftColor}`}>
                           {c.daysLeft} day{c.daysLeft === 1 ? '' : 's'} left
