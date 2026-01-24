@@ -1099,6 +1099,15 @@ export default function StockXCoupons() {
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2">
                                 <span className="font-mono font-semibold">{c.code}</span>
+                                <button
+                                  onClick={() => copyCode(c.code)}
+                                  className={`h-8 w-8 p-0 inline-flex items-center justify-center rounded-md transition-colors ${
+                                    isNeon ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'
+                                  } ${isCopied ? (isNeon ? 'ring-1 ring-emerald-400/50 bg-emerald-500/15' : 'ring-1 ring-emerald-500/40 bg-emerald-50') : ''}`}
+                                  title={isCopied ? 'Copied' : 'Copy code'}
+                                >
+                                  {isCopied ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                                </button>
                                 {isManual ? (
                                   <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs bg-cyan-500/10 text-cyan-200 border-cyan-500/25">
                                     Manual
@@ -1114,7 +1123,7 @@ export default function StockXCoupons() {
                                 {isManual ? 'Manual coupon' : c.subject}
                               </div>
                             </td>
-                            <td className="px-4 py-3">
+                            <td className="px-4 py-3 whitespace-nowrap">
                               {c.benefit === 'free_shipping' ? (
                                 <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold whitespace-nowrap ${
                                   isNeon ? `bg-cyan-500/10 border-cyan-500/30 text-cyan-200 ${daysLeftGlow}` : 'bg-cyan-50 border-cyan-200 text-cyan-800'
@@ -1158,15 +1167,6 @@ export default function StockXCoupons() {
                             </td>
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2">
-                                <button
-                                  onClick={() => copyCode(c.code)}
-                                  className={`h-8 w-8 p-0 inline-flex items-center justify-center rounded-md transition-colors ${
-                                    isNeon ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'
-                                  } ${isCopied ? (isNeon ? 'ring-1 ring-emerald-400/50 bg-emerald-500/15' : 'ring-1 ring-emerald-500/40 bg-emerald-50') : ''}`}
-                                  title={isCopied ? 'Copied' : 'Copy code'}
-                                >
-                                  {isCopied ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
-                                </button>
                                 {!isManual ? (
                                   <button
                                     onClick={() => openInGmail(c.emailId)}
