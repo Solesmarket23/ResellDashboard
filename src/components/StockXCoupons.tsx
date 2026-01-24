@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Copy, Check, ExternalLink, RefreshCw, Tag, CheckCircle2, AlertTriangle, Clock, Trash2, Eye, EyeOff, Plus } from 'lucide-react';
+import { Copy, Check, ExternalLink, RefreshCw, Tag, CheckCircle2, AlertTriangle, Clock, Trash2, Eye, EyeOff, Plus, LayoutList, Table2 } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
 import GmailConnector from './GmailConnector';
@@ -12,6 +12,7 @@ type CouponStatus = 'available' | 'used_on_bid' | 'expired';
 type CouponSource = 'gmail' | 'manual';
 type SortMode = 'expiring_available' | 'sent_newest';
 type CouponBenefit = 'amount_off' | 'free_shipping' | 'half_off_shipping';
+type ViewMode = 'list' | 'table';
 
 type Coupon = {
   code: string;
@@ -109,6 +110,15 @@ export default function StockXCoupons() {
     }
   });
   const [copied, setCopied] = useState<{ code: string; nonce: number } | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (typeof window === 'undefined') return 'list';
+    try {
+      const v = localStorage.getItem('stockxCoupons_viewMode');
+      return v === 'table' ? 'table' : 'list';
+    } catch {
+      return 'list';
+    }
+  });
   const copiedTimerRef = useRef<number | null>(null);
   const fetchInFlightRef = useRef(false);
   const fetchAbortRef = useRef<AbortController | null>(null);
@@ -336,6 +346,15 @@ export default function StockXCoupons() {
       // ignore
     }
   }, [showHidden]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem('stockxCoupons_viewMode', viewMode);
+    } catch {
+      // ignore
+    }
+  }, [viewMode]);
 
   const hiddenCount = useMemo(() => coupons.filter((c) => c.hidden).length, [coupons]);
 
@@ -592,6 +611,39 @@ export default function StockXCoupons() {
       return a.code.localeCompare(b.code);
     });
   }, [coupons, sortMode, showHidden]);
+
+  const ViewToggle = (
+    <div className={`inline-flex items-center rounded-lg border overflow-hidden ${
+      isNeon ? 'border-white/15 bg-white/5' : 'border-gray-200 bg-white'
+    }`}>
+      <button
+        type="button"
+        onClick={() => setViewMode('list')}
+        className={`px-3 py-2 text-sm font-semibold inline-flex items-center gap-2 transition-colors ${
+          viewMode === 'list'
+            ? (isNeon ? 'bg-cyan-500/15 text-cyan-200' : 'bg-blue-50 text-blue-900')
+            : (isNeon ? 'text-white/80 hover:bg-white/10' : 'text-gray-700 hover:bg-gray-50')
+        }`}
+        title="List view"
+      >
+        <LayoutList className="w-4 h-4" />
+        List
+      </button>
+      <button
+        type="button"
+        onClick={() => setViewMode('table')}
+        className={`px-3 py-2 text-sm font-semibold inline-flex items-center gap-2 transition-colors ${
+          viewMode === 'table'
+            ? (isNeon ? 'bg-cyan-500/15 text-cyan-200' : 'bg-blue-50 text-blue-900')
+            : (isNeon ? 'text-white/80 hover:bg-white/10' : 'text-gray-700 hover:bg-gray-50')
+        }`}
+        title="Table view"
+      >
+        <Table2 className="w-4 h-4" />
+        Table
+      </button>
+    </div>
+  );
 
   const hiddenAvailableCount = useMemo(
     () => coupons.filter((c) => c.hidden && c.status === 'available').length,
@@ -898,8 +950,13 @@ export default function StockXCoupons() {
 
         {/* Sort control sits above the list (left-aligned) */}
         {!showHidden && (
-          <div className="mt-4 flex items-center justify-start">
-            {SortDropdown}
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              {SortDropdown}
+            </div>
+            <div className="flex items-center gap-3">
+              {ViewToggle}
+            </div>
           </div>
         )}
 
@@ -912,8 +969,13 @@ export default function StockXCoupons() {
             </div>
 
             {/* Move sort control here for hidden view (left-aligned above first coupon) */}
-            <div className="mt-3 flex items-center justify-start">
-              {SortDropdown}
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                {SortDropdown}
+              </div>
+              <div className="flex items-center gap-3">
+                {ViewToggle}
+              </div>
             </div>
           </>
         )}
@@ -944,6 +1006,15 @@ export default function StockXCoupons() {
           </div>
         ) : coupons.length === 0 && loading ? (
           <div className={`mt-6 text-sm ${currentTheme.colors.textSecondary}`}>Loading coupons…</div>
+        ) : !showHidden && coupons.length > 0 && displayCoupons.length === 0 ? (
+          <div className={`mt-6 text-sm ${currentTheme.colors.textSecondary}`}>
+            No coupons in the main list.
+            {hiddenCount > 0 ? (
+              <div className="mt-2">
+                You have <span className="font-semibold">{hiddenCount}</span> archived coupon{hiddenCount === 1 ? '' : 's'}. Click <span className="font-semibold">Show archived</span> to view them.
+              </div>
+            ) : null}
+          </div>
         ) : coupons.length === 0 ? (
           <div className={`mt-6 text-sm ${currentTheme.colors.textSecondary}`}>
             No StockX coupon emails found.
@@ -991,8 +1062,183 @@ export default function StockXCoupons() {
               Refreshing…
             </div>
 
-            <div className="grid grid-cols-1 gap-3">
-            {displayCoupons.map((c) => {
+            {viewMode === 'table' ? (
+              <div className={`rounded-xl border overflow-hidden ${
+                isNeon ? 'border-white/15 bg-white/5' : 'border-gray-200 bg-white'
+              }`}>
+                <div className="overflow-x-auto">
+                  <table className="min-w-[980px] w-full text-sm">
+                    <thead className={`${isNeon ? 'bg-white/5' : 'bg-gray-50'} text-xs uppercase tracking-wide`}>
+                      <tr className={`${isNeon ? 'text-gray-300' : 'text-gray-600'}`}>
+                        <th className="px-4 py-3 text-left">Code</th>
+                        <th className="px-4 py-3 text-left">Benefit</th>
+                        <th className="px-4 py-3 text-left">Sent</th>
+                        <th className="px-4 py-3 text-left">Expires</th>
+                        <th className="px-4 py-3 text-left">Days</th>
+                        <th className="px-4 py-3 text-left">Status</th>
+                        <th className="px-4 py-3 text-left">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className={`${isNeon ? 'divide-y divide-white/10' : 'divide-y divide-gray-100'}`}>
+                      {displayCoupons.map((c) => {
+                        const daysLeftColor =
+                          c.daysLeft <= 0 ? 'text-red-300' : c.daysLeft <= 2 ? 'text-amber-300' : 'text-emerald-300';
+                        const daysLeftGlow =
+                          c.daysLeft <= 0
+                            ? 'animate-pulse-glow-red-soft'
+                            : c.daysLeft <= 2
+                              ? 'animate-pulse-glow-yellow-soft'
+                              : 'animate-pulse-glow-green-soft';
+                        const isSaving = savingCode === c.code;
+                        const isCopied = copied?.code === c.code;
+                        const isManual = c.source === 'manual';
+                        return (
+                          <tr
+                            key={c.code}
+                            className={`${isNeon ? 'text-white/85' : 'text-gray-900'} ${
+                              enteringCodes[c.code] ? 'will-change-transform [animation:coupon-enter_260ms_ease-out]' : ''
+                            }`}
+                          >
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-semibold">{c.code}</span>
+                                {isManual ? (
+                                  <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs bg-cyan-500/10 text-cyan-200 border-cyan-500/25">
+                                    Manual
+                                  </span>
+                                ) : null}
+                                {showHidden && c.hidden ? (
+                                  <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs bg-gray-500/15 text-gray-200 border-gray-500/30">
+                                    Archived
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className={`mt-1 text-xs ${currentTheme.colors.textSecondary} truncate max-w-[420px]`}>
+                                {isManual ? 'Manual coupon' : c.subject}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              {c.benefit === 'free_shipping' ? (
+                                <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${
+                                  isNeon ? `bg-cyan-500/10 border-cyan-500/30 text-cyan-200 ${daysLeftGlow}` : 'bg-cyan-50 border-cyan-200 text-cyan-800'
+                                }`}>
+                                  Free shipping
+                                </span>
+                              ) : c.benefit === 'half_off_shipping' ? (
+                                <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${
+                                  isNeon ? `bg-cyan-500/10 border-cyan-500/30 text-cyan-200 ${daysLeftGlow}` : 'bg-cyan-50 border-cyan-200 text-cyan-800'
+                                }`}>
+                                  Half off shipping
+                                </span>
+                              ) : typeof c.amount === 'number' && Number.isFinite(c.amount) ? (
+                                <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${
+                                  isNeon ? `bg-violet-500/10 border-violet-500/30 text-violet-200 ${daysLeftGlow}` : 'bg-violet-50 border-violet-200 text-violet-800'
+                                }`}>
+                                  <span className="font-semibold">${c.amount}</span> off
+                                </span>
+                              ) : (
+                                <span className={`${currentTheme.colors.textSecondary}`}>—</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">{formatCouponDateTime(c.sentAt)}</td>
+                            <td className="px-4 py-3 whitespace-nowrap">{formatCouponDateTime(c.expiresAt)}</td>
+                            <td className={`px-4 py-3 whitespace-nowrap font-semibold ${daysLeftColor} ${isNeon ? daysLeftGlow : ''}`}>
+                              {c.daysLeft}d
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  onClick={() => setStatus(c.code, 'available')}
+                                  disabled={isSaving}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors disabled:opacity-50 ${
+                                    c.status === 'available'
+                                      ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-200'
+                                      : 'bg-white/5 border-white/15 text-white/80 hover:bg-white/10'
+                                  }`}
+                                >
+                                  Available
+                                </button>
+                                <button
+                                  onClick={() => setStatus(c.code, 'used_on_bid')}
+                                  disabled={isSaving}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors disabled:opacity-50 ${
+                                    c.status === 'used_on_bid'
+                                      ? 'bg-blue-500/20 border-blue-500/40 text-blue-200'
+                                      : 'bg-white/5 border-white/15 text-white/80 hover:bg-white/10'
+                                  }`}
+                                >
+                                  Used
+                                </button>
+                                <button
+                                  onClick={() => setStatus(c.code, 'expired')}
+                                  disabled={isSaving}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors disabled:opacity-50 ${
+                                    c.status === 'expired'
+                                      ? 'bg-red-500/20 border-red-500/40 text-red-200'
+                                      : 'bg-white/5 border-white/15 text-white/80 hover:bg-white/10'
+                                  }`}
+                                >
+                                  Expired
+                                </button>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => copyCode(c.code)}
+                                  className={`h-8 w-8 p-0 inline-flex items-center justify-center rounded-md transition-colors ${
+                                    isNeon ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'
+                                  } ${isCopied ? (isNeon ? 'ring-1 ring-emerald-400/50 bg-emerald-500/15' : 'ring-1 ring-emerald-500/40 bg-emerald-50') : ''}`}
+                                  title={isCopied ? 'Copied' : 'Copy code'}
+                                >
+                                  {isCopied ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                                </button>
+                                {!isManual ? (
+                                  <button
+                                    onClick={() => openInGmail(c.emailId)}
+                                    className={`h-8 w-8 p-0 inline-flex items-center justify-center rounded-md transition-colors ${
+                                      isNeon ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'
+                                    }`}
+                                    title="Open email"
+                                  >
+                                    <ExternalLink className="w-4 h-4" />
+                                  </button>
+                                ) : null}
+                                {showHidden && c.hidden ? (
+                                  <button
+                                    onClick={() => restoreCoupon(c.code)}
+                                    disabled={isSaving}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors disabled:opacity-50 ${
+                                      isNeon ? 'bg-white/5 border-white/15 text-white/80 hover:bg-white/10' : 'bg-white border-gray-200 text-gray-800 hover:bg-gray-50'
+                                    }`}
+                                    title="Restore"
+                                  >
+                                    Restore
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => removeCoupon(c.code)}
+                                    disabled={isSaving}
+                                    className={`h-8 w-8 p-0 inline-flex items-center justify-center rounded-md transition-colors disabled:opacity-50 ${
+                                      isNeon ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'
+                                    }`}
+                                    title="Archive"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3">
+              {displayCoupons.map((c) => {
               const daysLeftColor =
                 c.daysLeft <= 0 ? 'text-red-300' : c.daysLeft <= 2 ? 'text-amber-300' : 'text-emerald-300';
               const daysLeftGlow =
@@ -1168,7 +1414,8 @@ export default function StockXCoupons() {
                 </div>
               );
             })}
-            </div>
+              </div>
+            )}
           </div>
         )}
       </div>
