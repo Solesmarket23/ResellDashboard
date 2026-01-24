@@ -265,11 +265,11 @@ export default function StockXCoupons() {
 
       // Toast on manual refresh so user gets immediate feedback.
       if (reason === 'manual') {
-        const count = typeof data?.count === 'number' ? data.count : nextCoupons.length;
+        const count = newCodes.length;
         setNotification({
           isVisible: true,
-          message: `Found ${count} coupon${count === 1 ? '' : 's'}`,
-          type: 'success'
+          message: count === 0 ? 'No new coupons found' : `Found ${count} new coupon${count === 1 ? '' : 's'}`,
+          type: count === 0 ? 'success' : 'success'
         });
       }
     } catch (e: any) {
@@ -337,24 +337,7 @@ export default function StockXCoupons() {
     }
   }, [showHidden]);
 
-  // Hydrate preference once (but if there are no archived coupons, keep the UI in normal mode).
-  const didHydrateShowHiddenRef = useRef(false);
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (didHydrateShowHiddenRef.current) return;
-    didHydrateShowHiddenRef.current = true;
-    try {
-      const v = localStorage.getItem('stockxCoupons_showHidden') === 'true';
-      setShowHidden(v);
-    } catch {
-      // ignore
-    }
-  }, []);
-
   const hiddenCount = useMemo(() => coupons.filter((c) => c.hidden).length, [coupons]);
-  useEffect(() => {
-    if (showHidden && hiddenCount === 0) setShowHidden(false);
-  }, [hiddenCount, showHidden]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -876,7 +859,13 @@ export default function StockXCoupons() {
               Clear all
             </button>
             <button
-              onClick={() => setShowHidden((v) => !v)}
+              onClick={() => {
+                if (!showHidden && hiddenCount === 0) {
+                  setNotification({ isVisible: true, message: 'No archived coupons', type: 'success' });
+                  return;
+                }
+                setShowHidden((v) => !v);
+              }}
               disabled={!gmailConnected || loading}
               className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
                 isNeon ? 'bg-white/10 hover:bg-white/20 border border-white/20' : 'bg-white hover:bg-gray-50 border border-gray-300'
