@@ -111,6 +111,8 @@ export default function StockXCoupons() {
   const [copied, setCopied] = useState<{ code: string; nonce: number } | null>(null);
   const copiedTimerRef = useRef<number | null>(null);
   const fetchInFlightRef = useRef(false);
+  const fetchAbortRef = useRef<AbortController | null>(null);
+  const fetchSeqRef = useRef(0);
   const timeoutCooldownUntilRef = useRef(0);
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const [addManualOpen, setAddManualOpen] = useState(false);
@@ -205,8 +207,18 @@ export default function StockXCoupons() {
 
   const fetchCoupons = useCallback(async (reason: 'auto' | 'manual' = 'manual') => {
     if (!userId) return;
-    if (fetchInFlightRef.current) return;
+    // If an auto fetch is in-flight and user clicks Refresh, cancel and restart so UI doesn't feel stuck.
+    if (fetchInFlightRef.current) {
+      if (reason !== 'manual') return;
+      try {
+        fetchAbortRef.current?.abort();
+      } catch {
+        // ignore
+      }
+      fetchInFlightRef.current = false;
+    }
     if (reason === 'auto' && Date.now() < timeoutCooldownUntilRef.current) return;
+    const seq = ++fetchSeqRef.current;
     fetchInFlightRef.current = true;
     setLoading(true);
     setError(null);
@@ -214,6 +226,7 @@ export default function StockXCoupons() {
     try {
       // Prevent the UI from getting stuck in "Refreshing..." if the request hangs.
       const controller = new AbortController();
+      fetchAbortRef.current = controller;
       timeoutId = window.setTimeout(() => controller.abort(), 20000); // 20s
       const res = await fetch(
         // Always fetch hidden too; we filter client-side.
@@ -266,18 +279,25 @@ export default function StockXCoupons() {
         });
       }
     } catch (e: any) {
+      // If this request was superseded by a newer one, ignore errors to avoid flicker.
+      if (fetchSeqRef.current !== seq) return;
       if (e?.name === 'AbortError') {
         setError('Refresh timed out. Gmail can be slow—try again.');
+        setNotification({ isVisible: true, message: 'Refresh timed out — try again', type: 'error' });
         // Prevent auto re-fetch loops right after a timeout.
         timeoutCooldownUntilRef.current = Date.now() + 15000; // 15s
       } else {
         setError(e?.message || 'Failed to load coupons');
+        setNotification({ isVisible: true, message: e?.message || 'Failed to load coupons', type: 'error' });
       }
       // Keep current list; just show error.
     } finally {
       if (timeoutId) window.clearTimeout(timeoutId);
-      setLoading(false);
-      fetchInFlightRef.current = false;
+      if (fetchSeqRef.current === seq) {
+        setLoading(false);
+        fetchInFlightRef.current = false;
+        fetchAbortRef.current = null;
+      }
     }
   }, [persistCache, userId]);
 
