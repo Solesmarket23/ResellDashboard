@@ -118,6 +118,9 @@ export default function StockXCoupons() {
       return false;
     }
   });
+  const seenCodesRef = useRef<Set<string>>(new Set());
+  const [enteringCodes, setEnteringCodes] = useState<Record<string, true>>({});
+  const enteringClearTimerRef = useRef<number | null>(null);
 
   const isNeon = currentTheme?.name === 'Neon';
 
@@ -165,6 +168,7 @@ export default function StockXCoupons() {
       const parsed = JSON.parse(raw) as { savedAt: string; coupons: Coupon[]; debug?: CouponDebug };
       if (Array.isArray(parsed?.coupons) && parsed.coupons.length) {
         setCoupons(parsed.coupons);
+        seenCodesRef.current = new Set(parsed.coupons.map((c) => c.code));
         if (parsed.debug) setDebug(parsed.debug);
       }
     } catch {
@@ -204,6 +208,21 @@ export default function StockXCoupons() {
       }
       const nextCoupons = (data.coupons || []) as Coupon[];
       const nextDebug = { query: data.query, queryAttempts: data.queryAttempts, debug: data.debug } as CouponDebug;
+
+      // Animate in any newly discovered coupon codes.
+      const prevSeen = new Set(seenCodesRef.current);
+      const newCodes = nextCoupons.map((c) => c.code).filter((code) => !prevSeen.has(code));
+      if (newCodes.length > 0) {
+        setEnteringCodes((prev) => {
+          const next = { ...prev };
+          for (const code of newCodes) next[code] = true;
+          return next;
+        });
+        if (enteringClearTimerRef.current) window.clearTimeout(enteringClearTimerRef.current);
+        enteringClearTimerRef.current = window.setTimeout(() => setEnteringCodes({}), 450);
+      }
+      seenCodesRef.current = new Set(nextCoupons.map((c) => c.code));
+
       setCoupons(nextCoupons);
       setDebug(nextDebug);
 
@@ -968,7 +987,7 @@ export default function StockXCoupons() {
                   key={c.code}
                   className={`rounded-xl border p-4 ${
                     isNeon ? 'bg-white/5 border-white/15' : `${currentTheme.colors.border} border`
-                  }`}
+                  } ${enteringCodes[c.code] ? 'will-change-transform [animation:coupon-enter_260ms_ease-out]' : ''}`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
