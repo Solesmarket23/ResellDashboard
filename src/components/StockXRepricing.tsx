@@ -110,6 +110,8 @@ interface RepricingResult {
   reason: string;
   profitChange: number;
   competitivePosition: string;
+  market?: { lowestAsk: number | null; flexLowestAsk: number | null };
+  twoStep?: any;
 }
 
 export default function StockXRepricing() {
@@ -198,6 +200,8 @@ export default function StockXRepricing() {
   const [copiedStyleIds, setCopiedStyleIds] = useState<Record<string, boolean>>({});
   // Draft text for per-row strategy value inputs (manual price / percentage) so users can clear/edit without snapping.
   const [strategyValueDraftByListingId, setStrategyValueDraftByListingId] = useState<Record<string, string>>({});
+  // Mirror the draft in a ref so clicks (Apply) can read the latest value even if React state hasn't flushed yet.
+  const strategyValueDraftRefByListingId = useRef<Record<string, string>>({});
   const [imagePreview, setImagePreview] = useState<{
     isOpen: boolean;
     imageUrl: string;
@@ -1928,7 +1932,27 @@ export default function StockXRepricing() {
 
       const data = await response.json().catch(() => null);
       if (response.ok && data?.success) {
-        setResults(Array.isArray(data.results) ? data.results : []);
+        const nextResults: RepricingResult[] = Array.isArray(data.results) ? data.results : [];
+        setResults(nextResults);
+
+        // Immediately reflect the market snapshot used by the repricer so the UI doesn't look "wrong"
+        // (Two-step can discover a different next-lowest ask than what the table had cached).
+        if (nextResults.length > 0) {
+          const byId = new Map<string, RepricingResult>(nextResults.map((r) => [r.listingId, r]));
+          setListings((prev) =>
+            prev.map((l) => {
+              const r = byId.get(l.listingId);
+              if (!r) return l;
+              const m = r.market;
+              if (!m) return l;
+              return {
+                ...l,
+                lowestAsk: typeof m.lowestAsk === 'number' ? m.lowestAsk : l.lowestAsk,
+                flexLowestAsk: typeof m.flexLowestAsk === 'number' ? m.flexLowestAsk : l.flexLowestAsk,
+              };
+            })
+          );
+        }
         setBulkActionMessage(opts?.reason ? `⚡ ${opts.reason}` : '⚡ Repriced immediately.');
         setTimeout(() => setBulkActionMessage(null), 5000);
         await fetchListings(true);
@@ -2164,8 +2188,8 @@ export default function StockXRepricing() {
       return;
     }
 
-    // Prefer the draft input value if present (user may click Apply before state commits the numeric value).
-    const draft = strategyValueDraftByListingId[listingId];
+    // Prefer the draft input value if present (user may click Apply before React state commits).
+    const draft = strategyValueDraftRefByListingId.current[listingId] ?? strategyValueDraftByListingId[listingId];
     const manualPriceToApply = (() => {
       if (typeof draft === 'string') {
         const trimmed = draft.trim();
@@ -4340,6 +4364,7 @@ export default function StockXRepricing() {
                             })()}
                             onChange={(e) => {
                               const next = e.target.value;
+                              strategyValueDraftRefByListingId.current[listing.listingId] = next;
                               setStrategyValueDraftByListingId(prev => ({ ...prev, [listing.listingId]: next }));
                               // Only commit when the value is a real number; allow empty while editing.
                               if (next.trim() === '') return;
@@ -4358,6 +4383,7 @@ export default function StockXRepricing() {
                                   delete next[listing.listingId];
                                   return next;
                                 });
+                                delete strategyValueDraftRefByListingId.current[listing.listingId];
                                 return;
                               }
                               const value = parseFloat(draft);
@@ -4367,10 +4393,13 @@ export default function StockXRepricing() {
                                   delete next[listing.listingId];
                                   return next;
                                 });
+                                delete strategyValueDraftRefByListingId.current[listing.listingId];
                                 return;
                               }
                               // Snap draft to normalized value string.
-                              setStrategyValueDraftByListingId(prev => ({ ...prev, [listing.listingId]: String(value) }));
+                              const normalized = String(value);
+                              strategyValueDraftRefByListingId.current[listing.listingId] = normalized;
+                              setStrategyValueDraftByListingId(prev => ({ ...prev, [listing.listingId]: normalized }));
                             }}
                             className={`w-[70px] text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
                               isNeon 
