@@ -9,6 +9,7 @@ import { addDocument, getDocuments, updateDocument, deleteField } from '@/lib/fi
 import { auth } from '@/lib/firebase/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useStockXAuth } from '@/lib/hooks/useStockXAuth';
+import ImagePreviewModal from './ImagePreviewModal';
 
 interface RepricingStrategy {
   type: 'competitive' | 'margin_based' | 'velocity_based' | 'hybrid';
@@ -197,6 +198,19 @@ export default function StockXRepricing() {
   const [copiedStyleIds, setCopiedStyleIds] = useState<Record<string, boolean>>({});
   // Draft text for per-row strategy value inputs (manual price / percentage) so users can clear/edit without snapping.
   const [strategyValueDraftByListingId, setStrategyValueDraftByListingId] = useState<Record<string, string>>({});
+  const [imagePreview, setImagePreview] = useState<{
+    isOpen: boolean;
+    imageUrl: string;
+    productName: string;
+    productBrand: string;
+    productSize: string;
+  }>({
+    isOpen: false,
+    imageUrl: '',
+    productName: '',
+    productBrand: '',
+    productSize: ''
+  });
   const [sortColumn, setSortColumn] = useState<'product' | 'size' | 'price' | 'market' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [searchQuery, setSearchQuery] = useState('');
@@ -2550,6 +2564,22 @@ export default function StockXRepricing() {
     });
   };
 
+  const openImagePreview = (listing: Listing) => {
+    const img = (listing.imageUrl || '').trim();
+    if (!img) return;
+    setImagePreview({
+      isOpen: true,
+      imageUrl: img,
+      productName: listing.productName || 'Product image',
+      productBrand: listing.brand || '',
+      productSize: listing.size || ''
+    });
+  };
+
+  const closeImagePreview = () => {
+    setImagePreview(prev => ({ ...prev, isOpen: false }));
+  };
+
 
   const PRODUCT_IMAGE_CACHE_KEY = 'stockx_product_image_cache_v1';
   const PRODUCT_IMAGE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -2647,39 +2677,74 @@ export default function StockXRepricing() {
         return cleaned;
       };
 
-      const buildPurchaseKey = (l: Listing): string | null => {
+      const normalizeProductName = (name: unknown): string => {
+        const raw = String(name || '').trim().toLowerCase();
+        if (!raw) return '';
+        return raw
+          .replace(/&/g, 'and')
+          .replace(/[^a-z0-9]+/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      };
+
+      const buildStyleKey = (l: Listing): string | null => {
         const styleId = String(l.styleId || '').trim();
         const size = normalizeSize(l.size);
         if (!styleId || !size) return null;
-        return `${styleId}__${size}`;
+        return `style:${styleId}__${size}`;
       };
 
-      const wantedKeys = Array.from(
-        new Set(
+      const buildNameKey = (l: Listing): string | null => {
+        const name = normalizeProductName(l.productName);
+        const size = normalizeSize(l.size);
+        if (!name || !size) return null;
+        return `name:${name}__${size}`;
+      };
+
+      // Build request payload (unique by normalized (styleId, name, size)).
+      const wantedTriples = Array.from(
+        new Map(
           list
             .filter((l) => !l.imageUrl)
-            .map((l) => buildPurchaseKey(l))
-            .filter(Boolean) as string[]
-        )
+            .map((l) => {
+              const size = normalizeSize(l.size);
+              const styleId = String(l.styleId || '').trim();
+              const productName = normalizeProductName(l.productName);
+              const key = `${styleId}__${productName}__${size}`;
+              return [key, { styleId, productName, size }];
+            })
+            .filter(([, v]) => Boolean(v.size) && (Boolean(v.styleId) || Boolean(v.productName)))
+        ).values()
       );
 
-      const needsLookup = wantedKeys.filter((k) => {
-        const c = purchaseCache[k];
-        if (!c?.imageUrl || typeof c.cachedAt !== 'number') return true;
-        return Date.now() - c.cachedAt > PURCHASE_IMAGE_CACHE_TTL_MS;
+      // Check local cache for either style or name keys.
+      const needsLookup = wantedTriples.filter((t) => {
+        const dummyListing = { styleId: t.styleId, productName: t.productName, size: t.size } as Listing;
+        const styleKey = buildStyleKey(dummyListing);
+        const nameKey = buildNameKey(dummyListing);
+        const keysToCheck = [styleKey, nameKey].filter(Boolean) as string[];
+        if (keysToCheck.length === 0) return false;
+        // If any key is cached and fresh, we can skip lookup.
+        for (const k of keysToCheck) {
+          const c = purchaseCache[k];
+          if (!c?.imageUrl || typeof c.cachedAt !== 'number') continue;
+          if (Date.now() - c.cachedAt <= PURCHASE_IMAGE_CACHE_TTL_MS) return false;
+        }
+        return true;
       });
 
       const toLookup = needsLookup.slice(0, 80);
       if (toLookup.length > 0) {
-        const payloadKeys = toLookup.map((k) => {
-          const [styleId, size] = k.split('__');
-          return { styleId, size };
-        });
-
         const res = await fetch('/api/purchases/image-map', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keys: payloadKeys })
+          body: JSON.stringify({
+            keys: toLookup.map((k) => ({
+              styleId: k.styleId || '',
+              productName: k.productName || '',
+              size: k.size || ''
+            }))
+          })
         });
         const data = await res.json().catch(() => null);
         if (res.ok && data?.success && data?.images) {
@@ -2700,10 +2765,12 @@ export default function StockXRepricing() {
       setListings((prev) =>
         prev.map((l) => {
           if (l.imageUrl) return l;
-          const k = buildPurchaseKey(l);
-          if (!k) return l;
-          const c = purchaseCache[k];
-          return c?.imageUrl ? { ...l, imageUrl: c.imageUrl } : l;
+          const styleKey = buildStyleKey(l);
+          const nameKey = buildNameKey(l);
+          const cStyle = styleKey ? purchaseCache[styleKey] : undefined;
+          if (cStyle?.imageUrl) return { ...l, imageUrl: cStyle.imageUrl };
+          const cName = nameKey ? purchaseCache[nameKey] : undefined;
+          return cName?.imageUrl ? { ...l, imageUrl: cName.imageUrl } : l;
         })
       );
     } catch (e) {
@@ -3140,6 +3207,15 @@ export default function StockXRepricing() {
 
   return (
     <div className={`min-h-screen p-6 space-y-6 pb-32 ${isNeon ? 'bg-gray-900 text-white' : 'bg-gray-50'}`}>
+      {/* Image Preview Modal (same UX as Purchases) */}
+      <ImagePreviewModal
+        isOpen={imagePreview.isOpen}
+        onClose={closeImagePreview}
+        imageUrl={imagePreview.imageUrl}
+        productName={imagePreview.productName}
+        productBrand={imagePreview.productBrand}
+        productSize={imagePreview.productSize}
+      />
       <div className="flex items-center justify-between mb-8">
         <div>
           <div className="flex items-center gap-3">
@@ -3850,6 +3926,7 @@ export default function StockXRepricing() {
                             }`}
                             loading="lazy"
                             referrerPolicy="no-referrer"
+                            onClick={() => openImagePreview(listing)}
                             onError={(e) => {
                               // If StockX image URL is missing/expired, avoid a broken-image icon.
                               // Fall back to the placeholder by clearing the URL in local state.
@@ -3862,6 +3939,7 @@ export default function StockXRepricing() {
                                 )
                               );
                             }}
+                            title="Click to preview image"
                           />
                         ) : (
                           <div

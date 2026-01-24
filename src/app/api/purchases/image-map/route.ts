@@ -48,6 +48,16 @@ function normalizeSize(size: unknown): string {
   return cleaned;
 }
 
+function normalizeProductName(name: unknown): string {
+  const raw = String(name || '').trim().toLowerCase();
+  if (!raw) return '';
+  return raw
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function getStyleId(p: any): string | null {
   const val =
     p?.styleId ||
@@ -57,6 +67,13 @@ function getStyleId(p: any): string | null {
     null;
   if (typeof val !== 'string') return null;
   const trimmed = val.trim();
+  return trimmed ? trimmed : null;
+}
+
+function getProductName(p: any): string | null {
+  const v = p?.product?.name || p?.productName || p?.product?.productName || p?.name || null;
+  if (typeof v !== 'string') return null;
+  const trimmed = v.trim();
   return trimmed ? trimmed : null;
 }
 
@@ -78,7 +95,12 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 /**
- * Returns a mapping of (styleId,size) => imageUrl from the user's purchases.
+ * Returns a mapping of purchase match keys => imageUrl from the user's purchases.
+ *
+ * Keys are one of:
+ * - `style:<STYLEID>__<SIZE>`
+ * - `name:<NORMALIZED_PRODUCT_NAME>__<SIZE>`
+ *
  * Used as a fallback when StockX listing payload/catalog doesn't provide a product image.
  */
 export async function POST(request: NextRequest) {
@@ -103,10 +125,15 @@ export async function POST(request: NextRequest) {
 
     const wanted = new Set<string>();
     for (const k of keys) {
-      const styleId = typeof k?.styleId === 'string' ? k.styleId.trim() : '';
       const size = normalizeSize(k?.size);
-      if (!styleId || !size) continue;
-      wanted.add(`${styleId}__${size}`);
+      if (!size) continue;
+
+      const styleId = typeof k?.styleId === 'string' ? k.styleId.trim() : '';
+      if (styleId) wanted.add(`style:${styleId}__${size}`);
+
+      const productNameRaw = typeof k?.productName === 'string' ? k.productName : '';
+      const productName = normalizeProductName(productNameRaw);
+      if (productName) wanted.add(`name:${productName}__${size}`);
     }
 
     if (wanted.size === 0) {
@@ -122,16 +149,23 @@ export async function POST(request: NextRequest) {
     // Prefer newest purchases (roughly) by iterating in whatever order; if we want strict newest,
     // we would need an indexed orderBy. For fallback images, "first match wins" is fine.
     for (const p of purchases) {
-      const styleId = getStyleId(p);
-      if (!styleId) continue;
-      const size = normalizeSize(p?.size || p?.product?.size);
-      if (!size) continue;
-      const key = `${styleId}__${size}`;
-      if (!wanted.has(key)) continue;
-      if (images[key]) continue;
       const img = pickPurchaseImageUrl(p);
       if (!img) continue;
-      images[key] = img;
+      const size = normalizeSize(p?.size || p?.product?.size);
+      if (!size) continue;
+
+      const styleId = getStyleId(p);
+      if (styleId) {
+        const k = `style:${styleId}__${size}`;
+        if (wanted.has(k) && !images[k]) images[k] = img;
+      }
+
+      const nameRaw = getProductName(p);
+      const normName = normalizeProductName(nameRaw);
+      if (normName) {
+        const k = `name:${normName}__${size}`;
+        if (wanted.has(k) && !images[k]) images[k] = img;
+      }
     }
 
     return NextResponse.json({ success: true, images });
