@@ -62,6 +62,24 @@ export default function StockXCoupons() {
   const { currentTheme } = useTheme();
   const { user } = useAuth();
 
+  const getSiteUserIdFromCookie = useCallback((): string => {
+    if (typeof window === 'undefined') return '';
+    try {
+      const parts = document.cookie.split(';').map((c) => c.trim());
+      // Match common cookie keys used elsewhere in the app
+      const hit =
+        parts.find((c) => c.startsWith('site-user-id=')) ||
+        parts.find((c) => c.startsWith('siteUserId=')) ||
+        parts.find((c) => c.startsWith('userId=')) ||
+        null;
+      if (!hit) return '';
+      const v = decodeURIComponent(hit.split('=')[1] || '').trim();
+      return v;
+    } catch {
+      return '';
+    }
+  }, []);
+
   const [gmailConnected, setGmailConnected] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -106,8 +124,11 @@ export default function StockXCoupons() {
   const userId = useMemo(() => {
     if (user?.uid) return user.uid;
     if (typeof window === 'undefined') return '';
+    // Prefer cookie (available immediately on first paint), then fall back to localStorage.
+    const cookieId = getSiteUserIdFromCookie();
+    if (cookieId) return cookieId;
     return (localStorage.getItem('siteUserId') || '').trim();
-  }, [user?.uid]);
+  }, [getSiteUserIdFromCookie, user?.uid]);
 
   const cacheKey = useMemo(() => {
     if (!userId) return '';
