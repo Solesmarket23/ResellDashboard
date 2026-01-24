@@ -78,6 +78,34 @@ body.theme-light {
   }
 }
 
+/* Softer variants (for small pills/badges) */
+@keyframes pulse-glow-green-soft {
+  0%, 100% {
+    filter: drop-shadow(0 0 10px rgba(74, 222, 128, 0.55));
+  }
+  50% {
+    filter: drop-shadow(0 0 18px rgba(74, 222, 128, 0.75));
+  }
+}
+
+@keyframes pulse-glow-red-soft {
+  0%, 100% {
+    filter: drop-shadow(0 0 10px rgba(248, 113, 113, 0.55));
+  }
+  50% {
+    filter: drop-shadow(0 0 18px rgba(248, 113, 113, 0.75));
+  }
+}
+
+@keyframes pulse-glow-yellow-soft {
+  0%, 100% {
+    filter: drop-shadow(0 0 10px rgba(250, 204, 21, 0.55));
+  }
+  50% {
+    filter: drop-shadow(0 0 18px rgba(250, 204, 21, 0.75));
+  }
+}
+
 /* Coupon list: animate new entries in */
 @keyframes coupon-enter {
   from {
@@ -104,6 +132,18 @@ body.theme-light {
 
 .animate-pulse-glow-yellow {
   animation: pulse-glow-yellow 2s ease-in-out infinite;
+}
+
+.animate-pulse-glow-green-soft {
+  animation: pulse-glow-green-soft 2s ease-in-out infinite;
+}
+
+.animate-pulse-glow-red-soft {
+  animation: pulse-glow-red-soft 2s ease-in-out infinite;
+}
+
+.animate-pulse-glow-yellow-soft {
+  animation: pulse-glow-yellow-soft 2s ease-in-out infinite;
 }
 
 /* Neon Card Styles */

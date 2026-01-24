@@ -986,10 +986,10 @@ export default function StockXCoupons() {
                 c.daysLeft <= 0 ? 'text-red-300' : c.daysLeft <= 2 ? 'text-amber-300' : 'text-emerald-300';
               const daysLeftGlow =
                 c.daysLeft <= 0
-                  ? 'animate-pulse-glow-red'
+                  ? 'animate-pulse-glow-red-soft'
                   : c.daysLeft <= 2
-                    ? 'animate-pulse-glow-yellow'
-                    : 'animate-pulse-glow-green';
+                    ? 'animate-pulse-glow-yellow-soft'
+                    : 'animate-pulse-glow-green-soft';
               const Icon = c.status === 'available' ? Tag : c.status === 'used_on_bid' ? CheckCircle2 : AlertTriangle;
               const isSaving = savingCode === c.code;
               const isCopied = copied?.code === c.code;
@@ -1064,8 +1064,8 @@ export default function StockXCoupons() {
                           <span
                             className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${
                               isNeon
-                                ? `bg-emerald-500/10 border-emerald-500/30 text-emerald-200 ${daysLeftGlow}`
-                                : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                                ? `bg-violet-500/10 border-violet-500/30 text-violet-200 ${daysLeftGlow}`
+                                : 'bg-violet-50 border-violet-200 text-violet-800'
                             }`}
                           >
                             <span className="font-semibold">${c.amount}</span> off
