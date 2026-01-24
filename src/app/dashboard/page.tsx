@@ -44,6 +44,7 @@ const StockXProfitCalc = dynamic(() => import('../../components/StockXProfitCalc
 const StockXTrends = dynamic(() => import('../../components/StockXTrends'), { ssr: false, loading: SectionFallback });
 const StockXAlerts = dynamic(() => import('../../components/StockXAlerts'), { ssr: false, loading: SectionFallback });
 const StockXListingCreator = dynamic(() => import('../../components/StockXListingCreator'), { ssr: false, loading: SectionFallback });
+const StockXCoupons = dynamic(() => import('../../components/StockXCoupons'), { ssr: false, loading: SectionFallback });
 const OnboardingQuestionnaire = dynamic(() => import('../../components/OnboardingQuestionnaire'), { ssr: false, loading: SectionFallback });
 const AliasInventory = dynamic(() => import('../../components/AliasInventory'), { ssr: false, loading: SectionFallback });
 const AliasListingCreator = dynamic(() => import('../../components/AliasListingCreator'), { ssr: false, loading: SectionFallback });
@@ -250,6 +251,8 @@ function DashboardContent() {
         return <StockXTrends />;
       case 'stockx-alerts':
         return <StockXAlerts />;
+      case 'stockx-coupons':
+        return <StockXCoupons />;
       case 'stockx-listings':
         return <StockXListingCreator />;
       case 'onboarding-questionnaire':

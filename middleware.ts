@@ -1,9 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-// Simple password protection
-const SITE_PASSWORD = process.env.SITE_PASSWORD || 'solesmarket2024';
-
 // Routes that should remain public (for affiliate links to work)
 const PUBLIC_ROUTES = [
   '/go/',

@@ -137,6 +137,8 @@ const Purchases = () => {
   const [showRemoteScanModal, setShowRemoteScanModal] = useState(false);
   const [showPackageScanModal, setShowPackageScanModal] = useState(false);
   const [gmailConnected, setGmailConnected] = useState(false);
+  // Demo mode: render local mock purchases (useful for UI testing/demos without touching real data)
+  const [mockDataEnabled, setMockDataEnabled] = useState(false);
   const [purchases, setPurchases] = useState<any[]>([]);
   const [manualPurchases, setManualPurchases] = useState<any[]>([]);
   // Raw count (unfiltered) so the UI doesn't disappear when search/filter yields zero results.
@@ -326,6 +328,8 @@ const Purchases = () => {
 
   // Handle live purchase updates from background sync
   const handleBackgroundPurchasesUpdate = (newPurchases: any[]) => {
+    // In mock mode, ignore background sync updates so we don't mix real + mock data.
+    if (mockDataEnabled) return;
     // Check if purchases were cleared - if so, ignore background updates
     const siteUserId = localStorage.getItem('siteUserId');
     const userId = user?.uid || siteUserId;
@@ -1010,6 +1014,18 @@ const Purchases = () => {
     console.log('  - Firebase Project ID set:', !!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID);
     console.log('  - Firebase Auth Domain set:', !!process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN);
     
+    // Restore mock mode preference
+    try {
+      const pref = localStorage.getItem('purchases_mock_data');
+      if (pref === 'true') {
+        setMockDataEnabled(true);
+        loadMockData();
+        return;
+      }
+    } catch {
+      // ignore
+    }
+
     // Only load purchases if user is available AND component is visible
     // This prevents loading on initial dashboard render
     const siteUserId = localStorage.getItem('siteUserId');
@@ -1670,7 +1686,7 @@ const Purchases = () => {
   const loadMockData = () => {
     const mockPurchases = [
       {
-        id: 1,
+        id: 'mock-1',
         product: {
           name: "Travis Scott Cactus Jack x Spider Days Before Rode...",
           brand: "Travis Scott",
@@ -1692,7 +1708,7 @@ const Purchases = () => {
         verifiedColor: "green"
       },
       {
-        id: 2,
+        id: 'mock-2',
         product: {
           name: "Denim Tears Cotton Wreath Hoodie Black Monochro...",
           brand: "Denim Tears",
@@ -1714,7 +1730,7 @@ const Purchases = () => {
         verifiedColor: "orange"
       },
       {
-        id: 3,
+        id: 'mock-3',
         product: {
           name: "Denim Tears The Cotton Wreath Sweatshirt Black",
           brand: "Denim Tears",
@@ -1736,8 +1752,10 @@ const Purchases = () => {
         verifiedColor: "orange"
       }
     ];
+    setManualPurchases([]);
     setPurchases(mockPurchases);
     calculateTotals(mockPurchases);
+    setLoading(false);
   };
 
   // Memoized calculateTotals to avoid recalculating on every render
@@ -3453,6 +3471,43 @@ const Purchases = () => {
             >
               <RefreshCw className="w-5 h-5" />
               <span>Sync Gmail</span>
+            </button>
+
+            {/* Mock Data Toggle (for demos / UI testing) */}
+            <button
+              onClick={() => {
+                setMockDataEnabled((prev) => {
+                  const next = !prev;
+                  try {
+                    localStorage.setItem('purchases_mock_data', next ? 'true' : 'false');
+                  } catch {
+                    // ignore
+                  }
+
+                  if (next) {
+                    loadMockData();
+                  } else {
+                    // Exit mock mode: reload real purchases.
+                    setPurchases([]);
+                    setManualPurchases([]);
+                    void loadManualPurchasesFromFirebase();
+                  }
+                  return next;
+                });
+              }}
+              className={`flex items-center space-x-2 ${
+                mockDataEnabled
+                  ? currentTheme.name === 'Neon'
+                    ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30'
+                    : 'bg-amber-600 hover:bg-amber-700 text-white'
+                  : currentTheme.name === 'Neon'
+                    ? 'bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/40 shadow-lg'
+                    : 'bg-white hover:bg-gray-50 border border-gray-300 hover:border-gray-400 shadow-lg'
+              } ${currentTheme.colors.textPrimary} px-4 py-2 rounded-lg font-medium transition-all duration-200`}
+              title={mockDataEnabled ? 'Using mock purchases data' : 'Load demo purchases data'}
+            >
+              <Wrench className="w-5 h-5" />
+              <span>{mockDataEnabled ? 'Mock Data: ON' : 'Mock Data'}</span>
             </button>
             
             <button

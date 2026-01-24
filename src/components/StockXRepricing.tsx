@@ -281,6 +281,13 @@ export default function StockXRepricing() {
   const pricingRuleOptions = useMemo<NeonDropdownOption[]>(
     () => [
       {
+        value: 'reset_then_beat_lowest',
+        label: '⚡ Two-step: reset then beat lowest',
+        description: 'Temporarily sets $999 to reveal real asks, then undercuts by $1.',
+        group: 'Advanced',
+        badge: 'Recommended',
+      },
+      {
         value: 'keep_current',
         label: 'Keep Current',
         description: 'No automated price changes (manual only).',
@@ -309,13 +316,6 @@ export default function StockXRepricing() {
         label: 'Below %',
         description: 'Sets price to (best ask × (1 − %)).',
         group: 'Competitive',
-      },
-      {
-        value: 'reset_then_beat_lowest',
-        label: '⚡ Two-step: reset then beat lowest',
-        description: 'Temporarily sets $999 to reveal real asks, then undercuts by $1.',
-        group: 'Advanced',
-        badge: 'Recommended',
       },
       {
         value: 'market_peek',
@@ -1720,21 +1720,76 @@ export default function StockXRepricing() {
       ...prev,
       [listingId]: newStrategy
     }));
-    
+
     // Update UI immediately for preview
-    setListings(prev => prev.map(l => 
-      l.listingId === listingId 
+    setListings(prev => prev.map(l =>
+      l.listingId === listingId
         ? { ...l, pricingStrategy: newStrategy }
         : l
     ));
+
+    // Immediate mode: changing a pricing rule should run right away (persist + reprice).
+    // We pass the strategy explicitly so we don't race React state updates.
+    void savePricingRuleChange(listingId, newStrategy);
   };
 
-  // Save the pending pricing rule change (and any pending min/max bound edits)
-  const savePricingRuleChange = async (listingId: string) => {
+  const runImmediateReprice = async (listingsToReprice: Listing[], opts?: { reason?: string }) => {
+    if (listingsToReprice.length === 0) return;
+
+    // Filter out follower listings - only reprice leaders (or standalone listings)
+    const leadersToReprice = listingsToReprice.filter(listing => {
+      if (!listing.inventoryGroupId) return true;
+      const group = inventoryGroups.get(listing.inventoryGroupId);
+      if (!group || group.listings.length <= 1) return true;
+      return listing.isGroupLeader;
+    });
+
+    if (leadersToReprice.length === 0) return;
+
+    try {
+      setLoading(true);
+      const response = await fetch('/api/stockx/repricing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          listings: leadersToReprice.map(l => ({
+            ...l,
+            // Estimate cost basis if not provided (matches executeRepricing behavior)
+            costBasis: l.costBasis || l.retailPrice || l.originalPrice * 0.7
+          })),
+          strategy,
+          dryRun: false,
+          useIndividualStrategies: true,
+          allowTwoStep: true,
+          inventoryGroups: Array.from(inventoryGroups.values())
+        })
+      });
+
+      const data = await response.json().catch(() => null);
+      if (response.ok && data?.success) {
+        setResults(Array.isArray(data.results) ? data.results : []);
+        setBulkActionMessage(opts?.reason ? `⚡ ${opts.reason}` : '⚡ Repriced immediately.');
+        setTimeout(() => setBulkActionMessage(null), 5000);
+        await fetchListings(true);
+      } else {
+        setBulkActionMessage(`❌ Immediate repricing failed: ${data?.error || data?.message || 'Unknown error'}`);
+        setTimeout(() => setBulkActionMessage(null), 7000);
+      }
+    } catch (error) {
+      console.error('Immediate repricing error:', error);
+      setBulkActionMessage('❌ Immediate repricing failed. Check console logs.');
+      setTimeout(() => setBulkActionMessage(null), 7000);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Save the pending pricing rule change (and any pending min/max bound edits) and run immediately
+  const savePricingRuleChange = async (listingId: string, overrideStrategy?: IndividualPricingStrategy) => {
     console.log('💾 Save button clicked for listing:', listingId);
     
     const listing = listings.find(l => l.listingId === listingId);
-    const pendingStrategy = pendingStrategyChanges[listingId];
+    const pendingStrategy = overrideStrategy ?? pendingStrategyChanges[listingId];
     const hasPendingBounds = pendingBoundChanges[listingId] === true;
     const strategyToSave = pendingStrategy || listing?.pricingStrategy || { type: 'keep_current' as const };
     
@@ -1803,8 +1858,9 @@ export default function StockXRepricing() {
       });
       }
 
-      // If user saved the Two-step strategy, run it immediately (LIVE) for this listing/group leader.
-      if (pendingStrategy?.type === 'reset_then_beat_lowest') {
+      // Immediate mode: any saved rule/bounds change should run right away.
+      // Two-step stays guarded by the existing confirm when no bounds are set.
+      if (strategyToSave?.type === 'reset_then_beat_lowest') {
         const hasAnyBounds =
           (!!listing.minPrice && listing.minPrice > 0) || (!!listing.maxPrice && listing.maxPrice > 0);
         if (!hasAnyBounds) {
@@ -1814,12 +1870,7 @@ export default function StockXRepricing() {
           if (!ok) {
             setBulkActionMessage('✅ Two-step saved. (Not executed: missing Min/Max and you cancelled.)');
             setTimeout(() => setBulkActionMessage(null), 5000);
-          } else {
-            setBulkActionMessage('⚡ Two-step saved. Running now...');
-          }
-          // If user cancelled, skip execution but continue to clear pending changes below.
-          if (!ok) {
-            // Remove from pending changes
+            // Remove from pending changes and exit early
             setPendingStrategyChanges(prev => {
               const newPending = { ...prev };
               delete newPending[listingId];
@@ -1833,55 +1884,10 @@ export default function StockXRepricing() {
             setRowSaveState(prev => ({ ...prev, [listingId]: 'idle' }));
             return;
           }
-        } else {
-          setBulkActionMessage('⚡ Two-step saved. Running now...');
-        }
-
-        // Only run leaders (followers will be synced by the server when inventoryGroups are provided)
-        const leadersToReprice = listingsToUpdate.filter(l => {
-          if (!l.inventoryGroupId) return true;
-          const group = inventoryGroups.get(l.inventoryGroupId);
-          if (!group || group.listings.length <= 1) return true;
-          return l.isGroupLeader;
-        });
-
-        setLoading(true);
-        try {
-          const response = await fetch('/api/stockx/repricing', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              listings: leadersToReprice.map(l => ({
-                ...l,
-                pricingStrategy: pendingStrategy,
-                // Estimate cost basis if not provided (matches executeRepricing behavior)
-                costBasis: l.costBasis || l.retailPrice || l.originalPrice * 0.7
-              })),
-              strategy,
-              dryRun: false,
-              useIndividualStrategies: true,
-              allowTwoStep: true,
-              inventoryGroups: Array.from(inventoryGroups.values())
-            })
-          });
-
-          const data = await response.json().catch(() => null);
-          if (response.ok && data?.success) {
-            setResults(Array.isArray(data.results) ? data.results : []);
-            setBulkActionMessage('✅ Two-step executed successfully.');
-            // Refresh listings to show new prices
-            await fetchListings(true);
-          } else {
-            setBulkActionMessage(`❌ Two-step execution failed: ${data?.error || data?.message || 'Unknown error'}`);
-          }
-        } catch (error) {
-          console.error('Two-step execution error:', error);
-          setBulkActionMessage('❌ Two-step execution failed. Check console logs.');
-        } finally {
-          setLoading(false);
-          setTimeout(() => setBulkActionMessage(null), 7000);
         }
       }
+
+      await runImmediateReprice(listingsToUpdate, { reason: 'Saved — repricing now' });
       
       // Show success message
       const strategyLabel = strategyToSave.type === 'beat_lowest' ? 'Beat Lowest by $1' :
@@ -1893,11 +1899,8 @@ export default function StockXRepricing() {
                            hasPendingBounds ? 'Bounds updated' :
                            'Keep Current';
       
-      // Avoid overwriting the "running now" message for two-step
-      if (pendingStrategy?.type !== 'reset_then_beat_lowest') {
-        setBulkActionMessage(`✅ Pricing rule saved: ${strategyLabel} (Min: $${listing.minPrice}, Max: $${listing.maxPrice})`);
-        setTimeout(() => setBulkActionMessage(null), 5000);
-      }
+      setBulkActionMessage(`✅ Pricing rule saved: ${strategyLabel} (Min: $${listing.minPrice}, Max: $${listing.maxPrice})`);
+      setTimeout(() => setBulkActionMessage(null), 5000);
       
       // Remove from pending changes
       setPendingStrategyChanges(prev => {
@@ -3712,31 +3715,6 @@ export default function StockXRepricing() {
                       className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
                         isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'
                       }`}
-                      onClick={() => handleSort('size')}
-                    >
-                      <div className="flex items-center justify-start h-full">
-                        <div className="flex items-center gap-2 justify-start w-full">
-                          <Target className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
-                          <span className={`text-xs font-bold uppercase tracking-wider ${
-                            isNeon ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
-                          } transition-colors`}>
-                            Size
-                          </span>
-                          {sortColumn === 'size' ? (
-                            sortDirection === 'asc'
-                              ? <ChevronUp className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
-                              : <ChevronDown className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
-                          ) : (
-                            <ChevronsUpDown className={`w-4 h-4 ${isNeon ? 'text-gray-500 group-hover:text-cyan-400' : 'text-gray-400 group-hover:text-blue-700'} transition-colors`} />
-                          )}
-                        </div>
-                      </div>
-                    </th>
-
-                    <th
-                      className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
-                        isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'
-                      }`}
                       onClick={() => handleSort('price')}
                     >
                       <div className="flex items-center justify-start h-full">
@@ -3836,43 +3814,28 @@ export default function StockXRepricing() {
                         className={`rounded ${isNeon ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-300'} cursor-pointer`}
                       />
                     </td>
-                    <td className="px-6 py-3 text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <div className="text-center">
-                          <div className={`font-medium text-sm ${isNeon ? 'text-white' : 'text-gray-900'}`}>
-                            {listing.imageUrl ? (
-                              <span className="inline-flex items-center justify-center gap-2">
-                                <img
-                                  src={listing.imageUrl}
-                                  alt={listing.productName}
-                                  className={`w-9 h-9 rounded-md object-cover ${
-                                    isNeon ? 'ring-1 ring-white/10' : 'ring-1 ring-gray-200'
-                                  }`}
-                                  loading="lazy"
-                                  referrerPolicy="no-referrer"
-                                />
-                                <span className="inline-block">
-                                  {(() => {
-                                    const href = buildStockXProductUrl(listing);
-                                    if (!href) return listing.productName;
-                                    return (
-                                      <a
-                                        href={href}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className={`inline-flex items-center justify-center gap-1 underline underline-offset-2 ${
-                                          isNeon ? 'decoration-cyan-400/60 hover:text-cyan-300' : 'decoration-blue-500/60 hover:text-blue-700'
-                                        }`}
-                                        title="Open on StockX"
-                                      >
-                                        <span>{listing.productName}</span>
-                                      </a>
-                                    );
-                                  })()}
-                                </span>
-                              </span>
-                            ) : (
-                              <>
+                    <td className="px-6 py-3">
+                      <div className="flex items-start gap-3">
+                        {listing.imageUrl ? (
+                          <img
+                            src={listing.imageUrl}
+                            alt={listing.productName}
+                            className={`w-12 h-12 rounded-lg object-cover flex-shrink-0 ${
+                              isNeon ? 'ring-1 ring-white/10' : 'ring-1 ring-gray-200'
+                            }`}
+                            loading="lazy"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <div
+                            className={`w-12 h-12 rounded-lg flex-shrink-0 ${
+                              isNeon ? 'bg-white/5 ring-1 ring-white/10' : 'bg-gray-100 ring-1 ring-gray-200'
+                            }`}
+                            title="No image available"
+                          />
+                        )}
+                        <div className="min-w-0">
+                          <div className={`font-medium text-sm ${isNeon ? 'text-white' : 'text-gray-900'} truncate`}>
                             {(() => {
                               const href = buildStockXProductUrl(listing);
                               if (!href) return listing.productName;
@@ -3881,19 +3844,28 @@ export default function StockXRepricing() {
                                   href={href}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className={`inline-flex items-center justify-center gap-1 underline underline-offset-2 ${
+                                  className={`inline-flex items-center gap-1 underline underline-offset-2 ${
                                     isNeon ? 'decoration-cyan-400/60 hover:text-cyan-300' : 'decoration-blue-500/60 hover:text-blue-700'
                                   }`}
                                   title="Open on StockX"
                                 >
-                                  <span>{listing.productName}</span>
+                                  <span className="truncate">{listing.productName}</span>
                                 </a>
                               );
                             })()}
-                              </>
-                            )}
                           </div>
-                          <div className={`text-xs flex items-center justify-center gap-1 ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                          <div className="mt-1">
+                            <span
+                              className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
+                                isNeon
+                                  ? 'bg-white/5 text-gray-200 border border-white/10'
+                                  : 'bg-gray-100 text-gray-700 border border-gray-200'
+                              }`}
+                            >
+                              {listing.size}
+                            </span>
+                          </div>
+                          <div className={`text-xs flex items-center gap-1 mt-1 ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
                             <span>Style code: {listing.styleId || 'N/A'}</span>
                             {listing.styleId && listing.styleId !== 'N/A' && (
                               <button
@@ -4042,17 +4014,6 @@ export default function StockXRepricing() {
                           </div>
                         )}
                       </div>
-                    </td>
-                    <td className="px-6 py-3 text-center">
-                      <span
-                        className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold ${
-                          isNeon
-                            ? 'bg-white/5 text-gray-300 border border-white/10'
-                            : 'bg-gray-100 text-gray-700 border border-gray-200'
-                        }`}
-                      >
-                        {listing.size}
-                      </span>
                     </td>
                     <td className={`px-6 py-3 font-medium text-sm text-center tabular-nums ${isNeon ? 'text-cyan-400' : 'text-gray-900'}`}>
                       ${listing.currentPrice}
@@ -4211,10 +4172,11 @@ export default function StockXRepricing() {
                           // Update UI while typing; persist on blur.
                           updateMinPrice(listing.listingId, Math.round(parseFloat(e.target.value) || 0), { persist: false });
                         }}
-                        onBlur={(e) => {
-                          console.log(`💾 Min price onBlur for ${listing.listingId}: ${e.target.value} - Saving to Firebase`);
+                        onBlur={async (e) => {
+                          console.log(`💾 Min price onBlur for ${listing.listingId}: ${e.target.value} - Saving + repricing now`);
                           const minPrice = Math.round(parseFloat(e.target.value) || 0);
                           updateMinPrice(listing.listingId, minPrice, { persist: false });
+                          await savePricingRuleChange(listing.listingId);
                         }}
                           className={`w-24 text-xs pl-5 pr-2 py-1 rounded border focus:outline-none focus:ring-2 tabular-nums ${
                           isNeon 
@@ -4244,10 +4206,11 @@ export default function StockXRepricing() {
                           // Update UI while typing; persist on blur.
                           updateMaxPrice(listing.listingId, Math.round(parseFloat(e.target.value) || 0), { persist: false });
                         }}
-                        onBlur={(e) => {
-                          console.log(`💾 Max price onBlur for ${listing.listingId}: ${e.target.value} - Saving to Firebase`);
+                        onBlur={async (e) => {
+                          console.log(`💾 Max price onBlur for ${listing.listingId}: ${e.target.value} - Saving + repricing now`);
                           const maxPrice = Math.round(parseFloat(e.target.value) || 0);
                           updateMaxPrice(listing.listingId, maxPrice, { persist: false });
+                          await savePricingRuleChange(listing.listingId);
                         }}
                           className={`w-24 text-xs pl-5 pr-2 py-1 rounded border focus:outline-none focus:ring-2 tabular-nums ${
                           isNeon 

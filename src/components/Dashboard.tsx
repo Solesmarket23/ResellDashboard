@@ -7,7 +7,7 @@ import { useAuth } from '../lib/contexts/AuthContext';
 import { saveUserDashboardSettings, getUserDashboardSettings, clearAllUserData } from '../lib/firebase/userDataUtils';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase/firebase';
-import { formatShortDate } from '../lib/utils/dateUtils';
+import { formatShortDate, parseLocalDate } from '../lib/utils/dateUtils';
 import { getDocuments } from '../lib/firebase/firebaseUtils';
 import { useSales } from '../lib/hooks/useSales';
 import { formatOrderNumberForDisplay } from '../lib/utils/orderNumberUtils';
@@ -644,15 +644,40 @@ const Dashboard = () => {
 
   // Precompute SVG point geometry once so the line + dots share identical coordinates.
   const maxProfitValue = Math.max(0, ...chartData.map((d) => d.value));
+  // Add padding so the first/last dots and line caps never get clipped by the SVG viewBox.
+  // Note: SVG circles use viewBox units for radius, which scale with width; keep padding conservative.
+  const xPaddingPct = 6; // percent of the 0–100 viewBox
   const profitPoints = chartData.map((bar, index) => {
     const barHeight = maxProfitValue > 0 ? Math.max((bar.value / maxProfitValue) * 100, 8) : 8;
     const denom = Math.max(1, chartData.length - 1);
     // If there's only 1 point, center it.
-    const x = chartData.length === 1 ? 50 : (index / denom) * 100;
+    const x =
+      chartData.length === 1
+        ? 50
+        : xPaddingPct + (index / denom) * (100 - 2 * xPaddingPct);
     const y = 100 - barHeight;
     return { x, y, bar, index };
   });
   const profitPolylinePoints = profitPoints.map((p) => `${p.x},${p.y}`).join(' ');
+
+  const formatChartDate = (date: string) => {
+    try {
+      // Prefer stable local parsing for YYYY-MM-DD strings.
+      const d = parseLocalDate(date);
+      return {
+        top: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        bottom: d.toLocaleDateString('en-US', { year: 'numeric' })
+      };
+    } catch {
+      // Fallback: preserve prior behavior.
+      const full = formatShortDate(date);
+      const parts = full.split(',').map((s) => s.trim());
+      if (parts.length >= 2) {
+        return { top: parts.slice(0, -1).join(', '), bottom: parts[parts.length - 1] };
+      }
+      return { top: full, bottom: '' };
+    }
+  };
 
   // Calculate best flip percentage
   const bestFlipData = displayMetrics.recentSales.length > 0 
@@ -1263,10 +1288,20 @@ const Dashboard = () => {
                     </div>
                     
                     {/* Date label */}
-                    <div className={`text-xs ${currentTheme.colors.textSecondary} mt-2 text-center truncate w-full ${
+                    <div className={`mt-2 w-full text-center ${
                       isSelected ? 'font-bold text-blue-400' : ''
                     }`}>
-                      {formatShortDate(bar.date)}
+                      {(() => {
+                        const d = formatChartDate(bar.date);
+                        return (
+                          <div className={`leading-tight ${currentTheme.colors.textSecondary}`}>
+                            <div className="text-[10px] sm:text-xs">{d.top}</div>
+                            {d.bottom ? (
+                              <div className="text-[10px] sm:text-xs opacity-70">{d.bottom}</div>
+                            ) : null}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 );
@@ -1290,6 +1325,7 @@ const Dashboard = () => {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   points={profitPolylinePoints}
+                  vectorEffect="non-scaling-stroke"
                   style={{ pointerEvents: 'none' }}
                 />
                 {profitPoints.map(({ x, y, bar, index }) => {
@@ -1310,17 +1346,20 @@ const Dashboard = () => {
                       <circle
                         cx={x}
                         cy={y}
-                        r={isSelected ? 3.2 : 2.8}
+                        // Radius is in viewBox units (scales with width). Keep small so it doesn't explode on wide screens.
+                        r={isSelected ? 1.7 : 1.5}
                         fill={isSelected ? '#3b82f6' : '#ffffff'}
                         stroke={isSelected ? '#93c5fd' : '#3b82f6'}
                         strokeWidth={isSelected ? 1.4 : 1.2}
+                        vectorEffect="non-scaling-stroke"
                       />
                       {/* Inner dot */}
                       <circle
                         cx={x}
                         cy={y}
-                        r={isSelected ? 1.4 : 1.2}
+                        r={isSelected ? 0.75 : 0.65}
                         fill={isSelected ? '#ffffff' : '#3b82f6'}
+                        vectorEffect="non-scaling-stroke"
                       />
                       <title>{`${bar.items} • ${bar.date} • $${bar.value} profit`}</title>
                     </g>

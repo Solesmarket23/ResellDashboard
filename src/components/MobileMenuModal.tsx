@@ -22,6 +22,7 @@ import {
   Bell,
   Activity,
   DollarSign,
+  Tag,
   Truck,
   User,
   Plus,
@@ -64,6 +65,7 @@ const menuSections = [
       { id: 'stockx-arbitrage', label: 'Arbitrage', icon: ArrowLeftRight },
       { id: 'ebay-stockx-arbitrage', label: 'eBay Deals', icon: Target },
       { id: 'stockx-repricing', label: 'Repricing', icon: Activity },
+      { id: 'stockx-coupons', label: 'Coupons', icon: Tag },
       ...(PRICE_MONITOR_DISABLED ? [] : [{ id: 'stockx-price-monitor', label: 'Price Monitor', icon: Monitor }]),
       { id: 'stockx-market-research', label: 'Market Research', icon: Search },
     ]

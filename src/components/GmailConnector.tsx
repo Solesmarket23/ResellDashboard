@@ -7,9 +7,11 @@ import { useAuth } from '../lib/contexts/AuthContext';
 
 interface GmailConnectorProps {
   onConnectionChange?: (connected: boolean) => void;
+  connectedDescription?: string;
+  connectDescription?: string;
 }
 
-const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) => {
+const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange, connectedDescription, connectDescription }) => {
   const { currentTheme } = useTheme();
   const { user } = useAuth();
   const [isConnected, setIsConnected] = useState(false);
@@ -327,7 +329,7 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
                 ? 'text-emerald-400/80' 
                 : 'text-green-700'
             }`}>
-              Purchase emails will be automatically imported
+              {connectedDescription || 'Purchase emails will be automatically imported'}
             </div>
             {daysRemaining !== null && (
               <div className={`text-xs mt-1.5 flex items-center gap-1.5 ${
@@ -508,7 +510,7 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange }) =
               ? 'text-blue-400/80' 
               : 'text-blue-700'
           }`}>
-            Import purchase emails automatically from StockX, GOAT, and more
+          {connectDescription || 'Import purchase emails automatically from StockX, GOAT, and more'}
           </div>
         </div>
         

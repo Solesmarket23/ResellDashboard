@@ -5,14 +5,20 @@ export async function POST(request: NextRequest) {
   try {
     const { password } = await request.json();
     
-    // Get password from environment variable or use default
-    const sitePassword = process.env.SITE_PASSWORD || 'solesmarket2024';
+    // Get password from environment variable (do not hardcode secrets in the repo)
+    const sitePassword = process.env.SITE_PASSWORD;
+    if (!sitePassword) {
+      return NextResponse.json(
+        { error: 'SITE_PASSWORD is not configured on the server' },
+        { status: 500 }
+      );
+    }
     
     if (password === sitePassword) {
       // Generate a unique user ID based on the site password
       // This ensures the same "user" across all password-protected sessions
       const userId = createHash('sha256')
-        .update(`solesmarket-user-${process.env.SITE_PASSWORD || 'default'}`)
+        .update(`solesmarket-user-${sitePassword}`)
         .digest('hex')
         .substring(0, 28); // Firebase UIDs are typically 28 chars
       

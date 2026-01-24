@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { CheckCircle, XCircle, AlertCircle, X, Copy, Check } from 'lucide-react';
+import { CheckCircle, XCircle, AlertCircle, X } from 'lucide-react';
 
 export type NotificationType = 'success' | 'error' | 'warning';
 
@@ -179,21 +179,6 @@ const NeonNotification: React.FC<NeonNotificationProps> = ({
               {message}
             </div>
           </div>
-
-          <button
-            type="button"
-            onPointerDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              void copyMessage();
-            }}
-            className="ml-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-gray-200 bg-white/10 hover:bg-white/15 transition-colors border border-white/10"
-            aria-label={copied ? 'Copied' : 'Copy notification text'}
-            title={copied ? 'Copied' : 'Copy'}
-          >
-            {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-            <span>{copied ? 'Copied' : 'Copy'}</span>
-          </button>
 
           <button
             type="button"
