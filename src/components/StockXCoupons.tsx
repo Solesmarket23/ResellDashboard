@@ -964,6 +964,12 @@ export default function StockXCoupons() {
             {displayCoupons.map((c) => {
               const daysLeftColor =
                 c.daysLeft <= 0 ? 'text-red-300' : c.daysLeft <= 2 ? 'text-amber-300' : 'text-emerald-300';
+              const daysLeftGlow =
+                c.daysLeft <= 0
+                  ? 'animate-pulse-glow-red'
+                  : c.daysLeft <= 2
+                    ? 'animate-pulse-glow-yellow'
+                    : 'animate-pulse-glow-green';
               const Icon = c.status === 'available' ? Tag : c.status === 'used_on_bid' ? CheckCircle2 : AlertTriangle;
               const isSaving = savingCode === c.code;
               const isCopied = copied?.code === c.code;
@@ -1015,11 +1021,33 @@ export default function StockXCoupons() {
 
                       <div className={`mt-2 flex flex-wrap items-center gap-3 text-xs ${currentTheme.colors.textSecondary}`}>
                         {c.benefit === 'free_shipping' ? (
-                          <span className="inline-flex items-center gap-1 font-semibold text-cyan-200">Free shipping</span>
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${
+                              isNeon
+                                ? `bg-cyan-500/10 border-cyan-500/30 text-cyan-200 ${daysLeftGlow}`
+                                : 'bg-cyan-50 border-cyan-200 text-cyan-800'
+                            }`}
+                          >
+                            Free shipping
+                          </span>
                         ) : c.benefit === 'half_off_shipping' ? (
-                          <span className="inline-flex items-center gap-1 font-semibold text-cyan-200">Half off shipping</span>
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${
+                              isNeon
+                                ? `bg-cyan-500/10 border-cyan-500/30 text-cyan-200 ${daysLeftGlow}`
+                                : 'bg-cyan-50 border-cyan-200 text-cyan-800'
+                            }`}
+                          >
+                            Half off shipping
+                          </span>
                         ) : typeof c.amount === 'number' && Number.isFinite(c.amount) ? (
-                          <span className="inline-flex items-center gap-1">
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${
+                              isNeon
+                                ? `bg-emerald-500/10 border-emerald-500/30 text-emerald-200 ${daysLeftGlow}`
+                                : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                            }`}
+                          >
                             <span className="font-semibold">${c.amount}</span> off
                           </span>
                         ) : null}
@@ -1031,7 +1059,7 @@ export default function StockXCoupons() {
                           <Clock className="w-3.5 h-3.5" />
                           Expires: {formatCouponDateTime(c.expiresAt)}
                         </span>
-                        <span className={`inline-flex items-center gap-1 font-semibold ${daysLeftColor}`}>
+                        <span className={`inline-flex items-center gap-1 font-semibold ${daysLeftColor} ${isNeon ? daysLeftGlow : ''}`}>
                           {c.daysLeft} day{c.daysLeft === 1 ? '' : 's'} left
                         </span>
                       </div>
