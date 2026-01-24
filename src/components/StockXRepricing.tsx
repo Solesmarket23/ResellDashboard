@@ -2350,33 +2350,6 @@ export default function StockXRepricing() {
     setPendingBoundChanges(prev => ({ ...prev, [leaderId]: true }));
   };
 
-  // Persist bounds (min/max) without executing repricing.
-  // Used when user edits bounds directly; repricing should only run when they change the pricing rule.
-  const saveBoundsOnly = async (listingId: string) => {
-    const listing = listings.find(l => l.listingId === listingId);
-    if (!listing) return;
-
-    try {
-      setRowSaveState(prev => ({ ...prev, [listingId]: 'saving' }));
-      await saveSettingToFirebase(listingId, {
-        pricingStrategy: listing.pricingStrategy || { type: 'keep_current' },
-        minPrice: listing.minPrice,
-        maxPrice: listing.maxPrice,
-        autoDeactivate: listing.autoDeactivate
-      });
-      setRowSaveState(prev => ({ ...prev, [listingId]: 'saved' }));
-      setTimeout(() => setRowSaveState(prev => ({ ...prev, [listingId]: 'idle' })), 1200);
-      setPendingBoundChanges(prev => {
-        const next = { ...prev };
-        delete next[listingId];
-        return next;
-      });
-    } catch (e) {
-      console.error('Failed to save bounds:', e);
-      setRowSaveState(prev => ({ ...prev, [listingId]: 'idle' }));
-    }
-  };
-
   const updateAutoDeactivate = (listingId: string, autoDeactivate: boolean) => {
     const listing = listings.find(l => l.listingId === listingId);
     if (!listing) return;
@@ -4292,9 +4265,17 @@ export default function StockXRepricing() {
                           isNeon={isNeon}
                           className="w-[260px] max-w-full"
                         />
-                        {(pendingStrategyChanges[listing.listingId] || pendingBoundChanges[listing.listingId]) && (
+                        {(() => {
+                          const group = listing.inventoryGroupId ? inventoryGroups.get(listing.inventoryGroupId) : null;
+                          const effectiveId =
+                            group && group.listings.length > 1
+                              ? (group.leaderId || listing.groupLeaderId || listing.listingId)
+                              : listing.listingId;
+                          const hasPending = !!pendingStrategyChanges[effectiveId] || !!pendingBoundChanges[effectiveId];
+                          if (!hasPending) return null;
+                          return (
                           <button
-                            onClick={() => savePricingRuleChange(listing.listingId)}
+                            onClick={() => savePricingRuleChange(effectiveId)}
                             className={`px-2 py-1 rounded text-xs font-semibold transition-all whitespace-nowrap flex items-center gap-1 ${
                               isNeon
                                 ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white'
@@ -4302,12 +4283,12 @@ export default function StockXRepricing() {
                             }`}
                             title="Save pricing rule"
                           >
-                            {rowSaveState[listing.listingId] === 'saving' ? (
+                            {rowSaveState[effectiveId] === 'saving' ? (
                               <>
                                 <Loader className="w-3 h-3 animate-spin" />
                                 Saving…
                               </>
-                            ) : rowSaveState[listing.listingId] === 'saved' ? (
+                            ) : rowSaveState[effectiveId] === 'saved' ? (
                               <>
                                 <Check className="w-3 h-3" />
                                 Saved
@@ -4319,7 +4300,8 @@ export default function StockXRepricing() {
                               </>
                             )}
                           </button>
-                        )}
+                          );
+                        })()}
                         {listing.pricingStrategy?.type === 'market_peek' ? (
                           <select
                             value={listing.pricingStrategy?.peekSettings?.frequency || 'balanced'}
@@ -4447,17 +4429,10 @@ export default function StockXRepricing() {
                           // Update UI while typing; persist on blur.
                           updateMinPrice(listing.listingId, Math.round(parseFloat(e.target.value) || 0), { persist: false });
                         }}
-                        onBlur={async (e) => {
-                          console.log(`💾 Min price onBlur for ${listing.listingId}: ${e.target.value} - Saving bounds now`);
+                        onBlur={(e) => {
+                          console.log(`💾 Min price onBlur for ${listing.listingId}: ${e.target.value} - Pending (click Save to persist)`);
                           const minPrice = Math.round(parseFloat(e.target.value) || 0);
                           updateMinPrice(listing.listingId, minPrice, { persist: false });
-                          const group = listing.inventoryGroupId ? inventoryGroups.get(listing.inventoryGroupId) : null;
-                          const effectiveId =
-                            group && group.listings.length > 1
-                              ? (group.leaderId || listing.groupLeaderId || listing.listingId)
-                              : listing.listingId;
-                          // Save bounds only. Repricing should *not* run on bound edits.
-                          await saveBoundsOnly(effectiveId);
                         }}
                           className={`w-24 text-xs pl-5 pr-2 py-1 rounded border focus:outline-none focus:ring-2 tabular-nums ${
                           isNeon 
@@ -4487,17 +4462,10 @@ export default function StockXRepricing() {
                           // Update UI while typing; persist on blur.
                           updateMaxPrice(listing.listingId, Math.round(parseFloat(e.target.value) || 0), { persist: false });
                         }}
-                        onBlur={async (e) => {
-                          console.log(`💾 Max price onBlur for ${listing.listingId}: ${e.target.value} - Saving bounds now`);
+                        onBlur={(e) => {
+                          console.log(`💾 Max price onBlur for ${listing.listingId}: ${e.target.value} - Pending (click Save to persist)`);
                           const maxPrice = Math.round(parseFloat(e.target.value) || 0);
                           updateMaxPrice(listing.listingId, maxPrice, { persist: false });
-                          const group = listing.inventoryGroupId ? inventoryGroups.get(listing.inventoryGroupId) : null;
-                          const effectiveId =
-                            group && group.listings.length > 1
-                              ? (group.leaderId || listing.groupLeaderId || listing.listingId)
-                              : listing.listingId;
-                          // Save bounds only. Repricing should *not* run on bound edits.
-                          await saveBoundsOnly(effectiveId);
                         }}
                           className={`w-24 text-xs pl-5 pr-2 py-1 rounded border focus:outline-none focus:ring-2 tabular-nums ${
                           isNeon 
