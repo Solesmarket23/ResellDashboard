@@ -99,8 +99,9 @@ export default function StockXCoupons() {
 
   const cacheKey = useMemo(() => {
     if (!userId) return '';
-    return `stockxCoupons_cache_${userId}_${showHidden ? 'withHidden' : 'visibleOnly'}`;
-  }, [userId, showHidden]);
+    // Cache the full set (including hidden). Visibility is controlled client-side by showHidden.
+    return `stockxCoupons_cache_${userId}_all`;
+  }, [userId]);
 
   const persistCache = useCallback(
     (nextCoupons: Coupon[], nextDebug?: CouponDebug) => {
@@ -151,7 +152,8 @@ export default function StockXCoupons() {
       const controller = new AbortController();
       timeoutId = window.setTimeout(() => controller.abort(), 20000); // 20s
       const res = await fetch(
-        `/api/gmail/stockx-coupons?userId=${encodeURIComponent(userId)}&limit=75&debug=1&includeHidden=${showHidden ? '1' : '0'}`,
+        // Always fetch hidden too; we filter client-side.
+        `/api/gmail/stockx-coupons?userId=${encodeURIComponent(userId)}&limit=75&debug=1&includeHidden=1`,
         {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
@@ -188,11 +190,12 @@ export default function StockXCoupons() {
       setLoading(false);
       fetchInFlightRef.current = false;
     }
-  }, [persistCache, userId, showHidden]);
+  }, [persistCache, userId]);
 
   useEffect(() => {
     if (!gmailConnected) return;
-    // Intentionally do not auto-fetch on load; only fetch when user clicks Refresh.
+    // Auto-fetch on load so the page isn't empty.
+    void fetchCoupons('auto');
   }, [gmailConnected, fetchCoupons]);
 
   // Persist preference so it survives refreshes.
@@ -252,7 +255,7 @@ export default function StockXCoupons() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.success) throw new Error(data?.error || `Remove failed (${res.status})`);
       setCoupons((prev) => {
-        const next = prev.filter((c) => c.code !== code);
+        const next = prev.map((c) => (c.code === code ? { ...c, hidden: true } : c));
         persistCache(next);
         return next;
       });
@@ -299,8 +302,10 @@ export default function StockXCoupons() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.success) throw new Error(data?.error || `Clear failed (${res.status})`);
-      setCoupons([]);
-      persistCache([]);
+      // Mark as hidden (don't drop from state) so "Show hidden" can reveal instantly.
+      const next = coupons.map((c) => ({ ...c, hidden: true }));
+      setCoupons(next);
+      persistCache(next);
       setNotification({ isVisible: true, message: 'Cleared coupons', type: 'success' });
     } catch (e: any) {
       setError(e?.message || 'Failed to clear coupons');
@@ -423,7 +428,7 @@ export default function StockXCoupons() {
   };
 
   const displayCoupons = useMemo(() => {
-    const list = [...coupons];
+    const list = showHidden ? [...coupons] : coupons.filter((c) => !c.hidden);
     const statusRank = (s: CouponStatus) => (s === 'available' ? 0 : s === 'used_on_bid' ? 1 : 2);
     const toMs = (iso: string) => {
       const ms = Date.parse(iso);
@@ -455,7 +460,7 @@ export default function StockXCoupons() {
       if (sb !== sa) return sb - sa;
       return a.code.localeCompare(b.code);
     });
-  }, [coupons, sortMode]);
+  }, [coupons, sortMode, showHidden]);
 
   return (
     <div className={`flex-1 ${currentTheme.colors.background} p-4 sm:p-8`}>
