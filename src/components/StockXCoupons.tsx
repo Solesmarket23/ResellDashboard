@@ -738,26 +738,28 @@ export default function StockXCoupons() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <div className="relative">
-              <select
-                value={sortMode}
-                onChange={(e) => setSortMode(e.target.value as SortMode)}
-                className={`appearance-none px-3 sm:px-4 pr-9 py-2 rounded-lg text-sm font-medium border whitespace-nowrap transition-colors ${
-                  isNeon
-                    ? 'bg-white/10 hover:bg-white/15 border-white/20 text-white/90'
-                    : 'bg-white hover:bg-gray-50 border-gray-300 text-gray-900'
-                }`}
-                title="Sort coupons"
-              >
-                <option value="expiring_available">Available expiring soon</option>
-                <option value="sent_newest">Newest first</option>
-              </select>
-              <ChevronDown
-                className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 ${
-                  isNeon ? 'text-white/70' : 'text-gray-500'
-                }`}
-              />
-            </div>
+            {!showHidden && (
+              <div className="relative">
+                <select
+                  value={sortMode}
+                  onChange={(e) => setSortMode(e.target.value as SortMode)}
+                  className={`appearance-none px-3 sm:px-4 pr-9 py-2 rounded-lg text-sm font-medium border whitespace-nowrap transition-colors ${
+                    isNeon
+                      ? 'bg-white/10 hover:bg-white/15 border-white/20 text-white/90'
+                      : 'bg-white hover:bg-gray-50 border-gray-300 text-gray-900'
+                  }`}
+                  title="Sort coupons"
+                >
+                  <option value="expiring_available">Available expiring soon</option>
+                  <option value="sent_newest">Newest first</option>
+                </select>
+                <ChevronDown
+                  className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 ${
+                    isNeon ? 'text-white/70' : 'text-gray-500'
+                  }`}
+                />
+              </div>
+            )}
             <button
               onClick={() => setAddManualOpen(true)}
               disabled={loading}
@@ -817,11 +819,37 @@ export default function StockXCoupons() {
         )}
 
         {showHidden && (
-          <div className={`mt-4 rounded-lg border p-3 text-sm ${
-            isNeon ? 'border-white/15 bg-white/5 text-white/80' : 'border-gray-200 bg-gray-50 text-gray-700'
-          }`}>
-            You’re viewing <span className="font-semibold">hidden</span> coupons. Click <span className="font-semibold">Restore</span> to make a coupon show up in the normal list.
-          </div>
+          <>
+            <div className={`mt-4 rounded-lg border p-3 text-sm ${
+              isNeon ? 'border-white/15 bg-white/5 text-white/80' : 'border-gray-200 bg-gray-50 text-gray-700'
+            }`}>
+              You’re viewing <span className="font-semibold">hidden</span> coupons. Click <span className="font-semibold">Restore</span> to make a coupon show up in the normal list.
+            </div>
+
+            {/* Move sort control here for hidden view (left-aligned above first coupon) */}
+            <div className="mt-3 flex items-center justify-start">
+              <div className="relative">
+                <select
+                  value={sortMode}
+                  onChange={(e) => setSortMode(e.target.value as SortMode)}
+                  className={`appearance-none px-3 sm:px-4 pr-9 py-2 rounded-lg text-sm font-medium border whitespace-nowrap transition-colors ${
+                    isNeon
+                      ? 'bg-white/10 hover:bg-white/15 border-white/20 text-white/90'
+                      : 'bg-white hover:bg-gray-50 border-gray-300 text-gray-900'
+                  }`}
+                  title="Sort coupons"
+                >
+                  <option value="expiring_available">Available expiring soon</option>
+                  <option value="sent_newest">Newest first</option>
+                </select>
+                <ChevronDown
+                  className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 ${
+                    isNeon ? 'text-white/70' : 'text-gray-500'
+                  }`}
+                />
+              </div>
+            </div>
+          </>
         )}
 
         {!showHidden && hiddenAvailableCount > 0 && (
