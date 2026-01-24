@@ -948,34 +948,12 @@ export default function StockXCoupons() {
           </div>
         )}
 
-        {/* Sort control sits above the list (left-aligned) */}
-        {!showHidden && (
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              {SortDropdown}
-            </div>
-            <div className="flex items-center gap-3">
-              {ViewToggle}
-            </div>
-          </div>
-        )}
-
         {showHidden && hiddenCount > 0 && (
           <>
             <div className={`mt-4 rounded-lg border p-3 text-sm ${
               isNeon ? 'border-white/15 bg-white/5 text-white/80' : 'border-gray-200 bg-gray-50 text-gray-700'
             }`}>
               Showing <span className="font-semibold">archived</span> coupons. Click <span className="font-semibold">Restore</span> to show a coupon in the normal list.
-            </div>
-
-            {/* Move sort control here for hidden view (left-aligned above first coupon) */}
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                {SortDropdown}
-              </div>
-              <div className="flex items-center gap-3">
-                {ViewToggle}
-              </div>
             </div>
           </>
         )}
@@ -1052,6 +1030,16 @@ export default function StockXCoupons() {
           </div>
         ) : (
           <div className="mt-6">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-semibold ${currentTheme.colors.textSecondary}`}>Sort by</span>
+                {SortDropdown}
+              </div>
+              <div className="flex items-center gap-3">
+                {ViewToggle}
+              </div>
+            </div>
+
             {/* Keep layout stable to avoid "flicker" when loading toggles */}
             <div
               className={`mb-3 text-xs ${currentTheme.colors.textSecondary} transition-opacity ${
