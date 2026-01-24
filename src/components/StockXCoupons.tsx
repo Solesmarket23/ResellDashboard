@@ -29,6 +29,7 @@ type Coupon = {
   source: CouponSource;
   amount?: number | null;
   benefit?: CouponBenefit | null;
+  isDemo?: boolean; // client-only demo entry (not persisted)
 };
 
 type CouponDebug = {
@@ -186,11 +187,12 @@ export default function StockXCoupons() {
       if (typeof window === 'undefined') return;
       if (!cacheKey) return;
       try {
+        const persistable = (nextCoupons || []).filter((c) => !c?.isDemo);
         localStorage.setItem(
           cacheKey,
           JSON.stringify({
             savedAt: new Date().toISOString(),
-            coupons: nextCoupons,
+            coupons: persistable,
             debug: nextDebug ?? debug
           })
         );
@@ -313,6 +315,39 @@ export default function StockXCoupons() {
       }
     }
   }, [persistCache, userId]);
+
+  const addDemoCoupon = useCallback(() => {
+    const now = Date.now();
+    const code = `DEMO-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+    const sentAt = new Date(now).toISOString();
+    const expiresAt = new Date(now + 14 * 24 * 60 * 60 * 1000).toISOString();
+    const benefitRoll = Math.random();
+    const benefit: CouponBenefit = benefitRoll < 0.34 ? 'free_shipping' : benefitRoll < 0.67 ? 'half_off_shipping' : 'amount_off';
+    const amount = benefit === 'amount_off' ? 10 : null;
+
+    const demo: Coupon = {
+      code,
+      emailId: `demo:${code}`,
+      threadId: undefined,
+      subject: 'Demo coupon (for animation preview)',
+      from: 'Demo',
+      sentAt,
+      expiresAt,
+      daysLeft: 14,
+      status: 'available',
+      statusSource: 'computed',
+      hidden: false,
+      source: 'manual',
+      amount,
+      benefit,
+      isDemo: true,
+    };
+
+    setCoupons((prev) => [demo, ...prev.filter((c) => c.code !== demo.code)]);
+    setEnteringCodes((prev) => ({ ...prev, [demo.code]: true }));
+    if (enteringClearTimerRef.current) window.clearTimeout(enteringClearTimerRef.current);
+    enteringClearTimerRef.current = window.setTimeout(() => setEnteringCodes({}), 450);
+  }, []);
 
   const restoreHiddenAvailable = useCallback(async () => {
     if (!userId) return;
@@ -947,6 +982,17 @@ export default function StockXCoupons() {
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               Refresh
+            </button>
+            <button
+              onClick={addDemoCoupon}
+              className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-all duration-200 ${
+                isNeon
+                  ? 'bg-white/10 hover:bg-white/20 border border-white/20'
+                  : 'bg-white hover:bg-gray-50 border border-gray-300'
+              } ${currentTheme.colors.textPrimary}`}
+              title="Insert a demo coupon to preview the new-entry animation"
+            >
+              Test animation
             </button>
           </div>
         </div>
