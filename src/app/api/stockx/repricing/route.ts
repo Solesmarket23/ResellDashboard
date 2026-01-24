@@ -406,6 +406,14 @@ export async function POST(request: NextRequest) {
             allowTwoStep === true &&
             dryRun === false
           ) {
+            // If current price violates user safety bounds, never skip.
+            // Users may change Min/Max while market is unchanged; we must still clamp to the new bounds.
+            const hasMinBound = isFiniteNumber(listing.minPrice);
+            const hasMaxBound = isFiniteNumber(listing.maxPrice);
+            const violatesBounds =
+              (hasMinBound && listing.currentPrice < listing.minPrice!) ||
+              (hasMaxBound && listing.currentPrice > listing.maxPrice!);
+
             // If flex is <= your price, you are NOT winning (flex wins).
             const losingToFlex = currentFlexAsk !== null && currentFlexAsk <= listing.currentPrice;
             // If standard is < your price, you are NOT winning.
@@ -417,7 +425,7 @@ export async function POST(request: NextRequest) {
               equalNullableNumber(listing.lastSeenLowestAsk, currentStdAsk) &&
               equalNullableNumber(listing.lastSeenFlexLowestAsk, currentFlexAsk);
 
-            if (unchanged && isWinning) {
+            if (unchanged && isWinning && !violatesBounds) {
               console.log(
                 `⏭️ Two-step skip (market unchanged + already winning): ${listing.listingId} ` +
                   `(price=$${listing.currentPrice}, lowestAsk=${currentStdAsk ?? 'null'}, flexLowestAsk=${currentFlexAsk ?? 'null'}, ` +
