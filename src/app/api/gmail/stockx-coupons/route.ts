@@ -656,6 +656,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, action: 'hide_all', count: codes.length, updatedAt: nowIso });
     }
 
+    // Bulk set hidden (restore/hide many at once)
+    if (action === 'set_hidden_bulk') {
+      if (codes.length === 0) {
+        return NextResponse.json({ success: false, error: 'codes[] is required for set_hidden_bulk' }, { status: 400 });
+      }
+      const hidden = body?.hidden;
+      if (typeof hidden !== 'boolean') {
+        return NextResponse.json({ success: false, error: 'hidden (boolean) is required for set_hidden_bulk' }, { status: 400 });
+      }
+
+      const batch = db.batch();
+      for (const code of codes) {
+        const docId = docIdForCoupon(userId, code);
+        const ref = db.collection('user_stockx_coupon_status').doc(docId);
+        batch.set(ref, { userId, code, hidden: !!hidden, updatedAt: nowIso }, { merge: true });
+      }
+      await batch.commit();
+      return NextResponse.json({ success: true, action: 'set_hidden_bulk', hidden: !!hidden, count: codes.length, updatedAt: nowIso });
+    }
+
     // Single code update
     const code = normalizeCouponCode(body?.code || '');
     const status = String(body?.status || '').trim() as CouponStatus;
