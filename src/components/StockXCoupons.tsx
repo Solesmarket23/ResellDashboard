@@ -873,16 +873,14 @@ export default function StockXCoupons() {
                       </div>
 
                       <div className={`mt-2 flex flex-wrap items-center gap-3 text-xs ${currentTheme.colors.textSecondary}`}>
-                        {c.source === 'manual' ? (
-                          c.benefit === 'free_shipping' ? (
-                            <span className="inline-flex items-center gap-1 font-semibold text-cyan-200">Free shipping</span>
-                          ) : c.benefit === 'half_off_shipping' ? (
-                            <span className="inline-flex items-center gap-1 font-semibold text-cyan-200">Half off shipping</span>
-                          ) : typeof c.amount === 'number' && Number.isFinite(c.amount) ? (
-                            <span className="inline-flex items-center gap-1">
-                              <span className="font-semibold">${c.amount}</span> off
-                            </span>
-                          ) : null
+                        {c.benefit === 'free_shipping' ? (
+                          <span className="inline-flex items-center gap-1 font-semibold text-cyan-200">Free shipping</span>
+                        ) : c.benefit === 'half_off_shipping' ? (
+                          <span className="inline-flex items-center gap-1 font-semibold text-cyan-200">Half off shipping</span>
+                        ) : typeof c.amount === 'number' && Number.isFinite(c.amount) ? (
+                          <span className="inline-flex items-center gap-1">
+                            <span className="font-semibold">${c.amount}</span> off
+                          </span>
                         ) : null}
                         <span className="inline-flex items-center gap-1">
                           <Clock className="w-3.5 h-3.5" />

@@ -214,6 +214,40 @@ function extractLikelyCouponCodes(text: string): string[] {
   return out.slice(0, 5);
 }
 
+function extractCouponBenefit(plain: string): { benefit: CouponBenefit | null; amount: number | null } {
+  const t = String(plain || '');
+  const lower = t.toLowerCase();
+
+  // Shipping-related benefits (match common StockX wording)
+  if (lower.includes('free shipping')) {
+    return { benefit: 'free_shipping', amount: null };
+  }
+  if (
+    lower.includes('half off shipping') ||
+    /\b50%\s*off\s*shipping\b/i.test(t) ||
+    /\b50%\s*shipping\b/i.test(t)
+  ) {
+    return { benefit: 'half_off_shipping', amount: null };
+  }
+
+  // Amount-off benefits
+  const amountPatterns: RegExp[] = [
+    /\$\s*([0-9]{1,4}(?:\.[0-9]{1,2})?)\s*(?:off|credit)\b/i,
+    /\b([0-9]{1,4}(?:\.[0-9]{1,2})?)\s*(?:dollars?)\s*(?:off|credit)\b/i,
+    /\b(?:bid\s*credit|credit)\s*[:\-]?\s*\$\s*([0-9]{1,4}(?:\.[0-9]{1,2})?)\b/i,
+  ];
+  for (const re of amountPatterns) {
+    const m = t.match(re);
+    if (!m) continue;
+    const n = Number(m[1]);
+    if (Number.isFinite(n) && n > 0) {
+      return { benefit: 'amount_off', amount: n };
+    }
+  }
+
+  return { benefit: null, amount: null };
+}
+
 function computeDaysLeft(sentAtMs: number): { expiresAtMs: number; daysLeft: number } {
   const fourteenDaysMs = 14 * 24 * 60 * 60 * 1000;
   const expiresAtMs = sentAtMs + fourteenDaysMs;
@@ -419,6 +453,7 @@ export async function GET(request: NextRequest) {
       const uniqueCodes = Array.from(new Set(codes.map((c) => c.toUpperCase())));
       dbg.codesExtracted += uniqueCodes.length;
 
+      const extractedBenefit = extractCouponBenefit(plain);
       const { expiresAtMs, daysLeft } = computeDaysLeft(sentAtMs);
       const computedExpired = daysLeft <= 0;
 
@@ -443,7 +478,8 @@ export async function GET(request: NextRequest) {
           statusSource: computedExpired ? 'computed' : (stored?.status ? 'user' : 'computed')
           ,hidden: !!stored?.hidden,
           source: 'gmail',
-          amount: null
+          amount: extractedBenefit.amount,
+          benefit: extractedBenefit.benefit
         });
       }
     }

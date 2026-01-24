@@ -124,9 +124,14 @@ export async function POST(request: NextRequest) {
               imageUrl:
                 (Array.isArray(product.productImages) && product.productImages[0]) ||
                 (Array.isArray(product.product_images) && product.product_images[0]) ||
+                product.media?.imageUrl ||
+                product.media?.image_url ||
                 product.imageUrl ||
                 product.image_url ||
                 product.image ||
+                (Array.isArray(product.media) &&
+                  (product.media.find((m: any) => m?.type === 'image' && m?.url)?.url ||
+                    product.media.find((m: any) => typeof m?.url === 'string')?.url)) ||
                 null
             };
             

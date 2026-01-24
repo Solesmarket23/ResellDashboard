@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useAuth } from '@/lib/contexts/AuthContext';
-import { DollarSign, TrendingDown, Target, Zap, RefreshCw, AlertTriangle, CheckCircle, Loader, Package, Copy, Check, ChevronUp, ChevronDown, ChevronsUpDown, Clock, Save, X, Wrench, Shield, MoreHorizontal } from 'lucide-react';
+import { DollarSign, TrendingDown, Target, Zap, RefreshCw, AlertTriangle, CheckCircle, Loader, Package, Copy, Check, ChevronUp, ChevronDown, ChevronsUpDown, Clock, Save, X, Wrench, Shield, MoreHorizontal, Footprints } from 'lucide-react';
 import NeonDropdown, { type NeonDropdownOption } from './NeonDropdown';
 import { addDocument, getDocuments, updateDocument, deleteField } from '@/lib/firebase/firebaseUtils';
 import { auth } from '@/lib/firebase/firebase';
@@ -183,11 +183,6 @@ export default function StockXRepricing() {
   const [refreshProgress, setRefreshProgress] = useState<{ current: number; total: number } | null>(null);
   const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
   const [bulkActionMessage, setBulkActionMessage] = useState<string | null>(null);
-  // Unit assignment (physical inventory label 1–999) → listingId
-  const [unitDraftByListingId, setUnitDraftByListingId] = useState<Record<string, string>>({});
-  const [unitAssignStateByListingId, setUnitAssignStateByListingId] = useState<Record<string, 'idle' | 'saving' | 'saved'>>({});
-  const [unitOptionsByListingId, setUnitOptionsByListingId] = useState<Record<string, Array<{ unitNumber: number; orderNumber: string | null }>>>({});
-  const [unitOptionsLoadingByListingId, setUnitOptionsLoadingByListingId] = useState<Record<string, boolean>>({});
   const [showBulkPricingModal, setShowBulkPricingModal] = useState(false);
   const [previewResults, setPreviewResults] = useState<RepricingResult[]>([]);
   const [isPreviewMinimized, setIsPreviewMinimized] = useState(false);
@@ -200,6 +195,8 @@ export default function StockXRepricing() {
   const [inventoryGroups, setInventoryGroups] = useState<Map<string, InventoryGroup>>(new Map());
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [copiedStyleIds, setCopiedStyleIds] = useState<Record<string, boolean>>({});
+  // Draft text for per-row strategy value inputs (manual price / percentage) so users can clear/edit without snapping.
+  const [strategyValueDraftByListingId, setStrategyValueDraftByListingId] = useState<Record<string, string>>({});
   const [sortColumn, setSortColumn] = useState<'product' | 'size' | 'price' | 'market' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [searchQuery, setSearchQuery] = useState('');
@@ -1700,7 +1697,9 @@ export default function StockXRepricing() {
     } else if (type === 'percentage_below') {
       newStrategy.value = listing.pricingStrategy?.value || 5;
     } else if (type === 'manual') {
-      newStrategy.manualPrice = listing.pricingStrategy?.manualPrice || listing.currentPrice;
+      const mp = listing.pricingStrategy?.manualPrice;
+      newStrategy.manualPrice =
+        typeof mp === 'number' && Number.isFinite(mp) ? mp : listing.currentPrice;
     } else if (type === 'reset_then_beat_lowest') {
       // Hardcoded two-step: reset $999 then beat by $1
     } else if (type === 'market_peek') {
@@ -2418,7 +2417,8 @@ export default function StockXRepricing() {
           }
             
           case 'manual':
-            newPrice = listing.pricingStrategy.manualPrice || listing.currentPrice;
+            const mp = listing.pricingStrategy.manualPrice;
+            newPrice = typeof mp === 'number' && Number.isFinite(mp) ? mp : listing.currentPrice;
             reason = 'Manual price';
             break;
             
@@ -2553,6 +2553,8 @@ export default function StockXRepricing() {
 
   const PRODUCT_IMAGE_CACHE_KEY = 'stockx_product_image_cache_v1';
   const PRODUCT_IMAGE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+  const PURCHASE_IMAGE_CACHE_KEY = 'stockx_purchase_image_cache_v1';
+  const PURCHASE_IMAGE_CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 
   const enrichProductImagesForListings = useCallback(async (list: Listing[]) => {
     try {
@@ -2602,6 +2604,108 @@ export default function StockXRepricing() {
           return c?.imageUrl ? { ...l, imageUrl: c.imageUrl } : l;
         })
       );
+
+      // Fallback #2: try to pull images from Purchases (matched by styleId + size).
+      // This is best-effort and cached locally to avoid repeated reads.
+      let purchaseCache: Record<string, { imageUrl: string; cachedAt: number }> = {};
+      try {
+        const raw = localStorage.getItem(PURCHASE_IMAGE_CACHE_KEY);
+        if (raw) purchaseCache = JSON.parse(raw);
+      } catch {
+        purchaseCache = {};
+      }
+
+      const normalizeSize = (size: unknown): string => {
+        const raw = String(size || '').trim().replace(/\s+/g, ' ').toUpperCase();
+        if (!raw) return '';
+        const tokens = raw.replace(/[:]/g, ' ').split(' ').filter(Boolean);
+        const ignore = new Set([
+          'SIZE',
+          'US',
+          'U.S.',
+          'USA',
+          'MENS',
+          "MEN'S",
+          'MEN',
+          'WOMENS',
+          "WOMEN'S",
+          'WOMEN',
+          'KIDS',
+          'KID',
+          'YOUTH'
+        ]);
+        const cleanedTokens = tokens.filter((t) => !ignore.has(t));
+        const cleaned = cleanedTokens.join(' ').trim();
+        if (!cleaned) return '';
+        const apparel = new Set(['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL']);
+        for (const t of cleanedTokens) if (apparel.has(t)) return t;
+        const numericToken = cleanedTokens.find((t) => /^\d+(\.\d+)?$/.test(t));
+        if (numericToken) {
+          const hasW = cleanedTokens[0] === 'W';
+          return hasW ? `W ${numericToken}` : numericToken;
+        }
+        return cleaned;
+      };
+
+      const buildPurchaseKey = (l: Listing): string | null => {
+        const styleId = String(l.styleId || '').trim();
+        const size = normalizeSize(l.size);
+        if (!styleId || !size) return null;
+        return `${styleId}__${size}`;
+      };
+
+      const wantedKeys = Array.from(
+        new Set(
+          list
+            .filter((l) => !l.imageUrl)
+            .map((l) => buildPurchaseKey(l))
+            .filter(Boolean) as string[]
+        )
+      );
+
+      const needsLookup = wantedKeys.filter((k) => {
+        const c = purchaseCache[k];
+        if (!c?.imageUrl || typeof c.cachedAt !== 'number') return true;
+        return Date.now() - c.cachedAt > PURCHASE_IMAGE_CACHE_TTL_MS;
+      });
+
+      const toLookup = needsLookup.slice(0, 80);
+      if (toLookup.length > 0) {
+        const payloadKeys = toLookup.map((k) => {
+          const [styleId, size] = k.split('__');
+          return { styleId, size };
+        });
+
+        const res = await fetch('/api/purchases/image-map', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keys: payloadKeys })
+        });
+        const data = await res.json().catch(() => null);
+        if (res.ok && data?.success && data?.images) {
+          const images = data.images as Record<string, string>;
+          for (const k of Object.keys(images)) {
+            const img = String(images[k] || '').trim();
+            if (!img) continue;
+            purchaseCache[k] = { imageUrl: img, cachedAt: Date.now() };
+          }
+          try {
+            localStorage.setItem(PURCHASE_IMAGE_CACHE_KEY, JSON.stringify(purchaseCache));
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      setListings((prev) =>
+        prev.map((l) => {
+          if (l.imageUrl) return l;
+          const k = buildPurchaseKey(l);
+          if (!k) return l;
+          const c = purchaseCache[k];
+          return c?.imageUrl ? { ...l, imageUrl: c.imageUrl } : l;
+        })
+      );
     } catch (e) {
       console.warn('Failed to enrich product images:', e);
     }
@@ -2628,90 +2732,6 @@ export default function StockXRepricing() {
     if (!base) return null;
     const size = (listing.size || '').trim();
     return size ? `${base}?size=${encodeURIComponent(size)}` : base;
-  };
-
-  const resolveUserIdForApi = (): string | null => {
-    const siteUserId = typeof window !== 'undefined' ? localStorage.getItem('siteUserId') : null;
-    return authUser?.uid || siteUserId || null;
-  };
-
-  const assignUnitNumberToListing = async (listingId: string, unitNumber: number | null) => {
-    setUnitAssignStateByListingId(prev => ({ ...prev, [listingId]: 'saving' }));
-    try {
-      const userId = resolveUserIdForApi();
-      const resp = await fetch('/api/stockx/listings/assign-unit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: userId || undefined,
-          listingId,
-          unitNumber
-        })
-      });
-
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok || json?.success === false) {
-        throw new Error(json?.details || json?.error || `Assign failed (${resp.status})`);
-      }
-
-      setUnitAssignStateByListingId(prev => ({ ...prev, [listingId]: 'saved' }));
-      setTimeout(() => {
-        setUnitAssignStateByListingId(prev => ({ ...prev, [listingId]: 'idle' }));
-      }, 2000);
-
-      if (unitNumber === null) {
-        setBulkActionMessage('✅ Unit assignment cleared');
-      } else {
-        setBulkActionMessage(`✅ Assigned Unit #${unitNumber} to listing`);
-      }
-      setTimeout(() => setBulkActionMessage(null), 4000);
-    } catch (e: any) {
-      setUnitAssignStateByListingId(prev => ({ ...prev, [listingId]: 'idle' }));
-      setBulkActionMessage(`❌ Unit assign failed: ${e?.message || 'Unknown error'}`);
-      setTimeout(() => setBulkActionMessage(null), 6000);
-    }
-  };
-
-  const fetchAvailableUnitsForListing = async (listing: Listing) => {
-    const styleId = (listing.styleId || '').trim();
-    const size = (listing.size || '').trim();
-    if (!styleId || !size) {
-      setBulkActionMessage('⚠️ This listing is missing styleId or size (can’t find matching units).');
-      setTimeout(() => setBulkActionMessage(null), 4000);
-      return;
-    }
-
-    try {
-      setUnitOptionsLoadingByListingId(prev => ({ ...prev, [listing.listingId]: true }));
-      const userId = resolveUserIdForApi();
-      const qs = new URLSearchParams({
-        userId: userId || '',
-        styleId,
-        size
-      });
-      const resp = await fetch(`/api/purchases/available-units?${qs.toString()}`, { cache: 'no-store' });
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok || json?.success === false) {
-        throw new Error(json?.error || `Failed (${resp.status})`);
-      }
-      const units = Array.isArray(json?.units) ? json.units : [];
-      setUnitOptionsByListingId(prev => ({
-        ...prev,
-        [listing.listingId]: units.map((u: any) => ({
-          unitNumber: Number(u.unitNumber),
-          orderNumber: u.orderNumber || null
-        })).filter((u: any) => Number.isFinite(u.unitNumber))
-      }));
-      if (units.length === 0) {
-        setBulkActionMessage('ℹ️ No available units found (add Unit # on the purchase first).');
-        setTimeout(() => setBulkActionMessage(null), 5000);
-      }
-    } catch (e: any) {
-      setBulkActionMessage(`❌ Failed to load units: ${e?.message || 'Unknown error'}`);
-      setTimeout(() => setBulkActionMessage(null), 6000);
-    } finally {
-      setUnitOptionsLoadingByListingId(prev => ({ ...prev, [listing.listingId]: false }));
-    }
   };
 
   const handleSort = (column: 'product' | 'size' | 'price' | 'market' | 'status') => {
@@ -2982,16 +3002,21 @@ export default function StockXRepricing() {
 
     console.log(`🎯 Repricing ${listingsToReprice.length} items (${selectedListings.length - listingsToReprice.length} followers will be synced automatically)`);
 
-    // Validate that all listings to reprice have min/max prices
-    const invalidListings = listingsToReprice.filter(listing => !listing.minPrice || !listing.maxPrice);
-    if (invalidListings.length > 0) {
-      alert(`Please set min and max prices for all selected listings. ${invalidListings.length} listing(s) are missing price limits.`);
+    // Validate that all listings to reprice have a Min price.
+    // Max is optional (acts as a ceiling when provided).
+    const missingMinListings = listingsToReprice.filter(listing => !listing.minPrice || listing.minPrice <= 0);
+    if (missingMinListings.length > 0) {
+      alert(`Please set a Min price for all selected listings. ${missingMinListings.length} listing(s) are missing Min.`);
       return;
     }
 
-    // Validate min < max for all listings
-    const invalidPriceRanges = listingsToReprice.filter(listing => 
-      listing.minPrice && listing.maxPrice && listing.minPrice >= listing.maxPrice
+    // Validate min < max only when max is provided
+    const invalidPriceRanges = listingsToReprice.filter(listing =>
+      typeof listing.minPrice === 'number' &&
+      listing.minPrice > 0 &&
+      typeof listing.maxPrice === 'number' &&
+      listing.maxPrice > 0 &&
+      listing.minPrice >= listing.maxPrice
     );
     if (invalidPriceRanges.length > 0) {
       alert(`Please ensure min price is less than max price for all listings. ${invalidPriceRanges.length} listing(s) have invalid price ranges.`);
@@ -3825,14 +3850,28 @@ export default function StockXRepricing() {
                             }`}
                             loading="lazy"
                             referrerPolicy="no-referrer"
+                            onError={(e) => {
+                              // If StockX image URL is missing/expired, avoid a broken-image icon.
+                              // Fall back to the placeholder by clearing the URL in local state.
+                              try {
+                                (e.currentTarget as HTMLImageElement).src = '';
+                              } catch {}
+                              setListings(prev =>
+                                prev.map(l =>
+                                  l.listingId === listing.listingId ? { ...l, imageUrl: null } : l
+                                )
+                              );
+                            }}
                           />
                         ) : (
                           <div
-                            className={`w-12 h-12 rounded-lg flex-shrink-0 ${
-                              isNeon ? 'bg-white/5 ring-1 ring-white/10' : 'bg-gray-100 ring-1 ring-gray-200'
+                            className={`w-12 h-12 rounded-lg flex-shrink-0 flex items-center justify-center ${
+                              isNeon ? 'bg-white/5 ring-1 ring-white/10 text-gray-500' : 'bg-gray-100 ring-1 ring-gray-200 text-gray-400'
                             }`}
                             title="No image available"
-                          />
+                          >
+                            <Footprints className="w-5 h-5 opacity-80" />
+                          </div>
                         )}
                         <div className="min-w-0">
                           <div className={`font-medium text-sm ${isNeon ? 'text-white' : 'text-gray-900'} truncate`}>
@@ -3885,105 +3924,6 @@ export default function StockXRepricing() {
                               </button>
                             )}
 
-                          </div>
-                          {/* Unit assignment (physical label 1–999) */}
-                          <div className="mt-2 flex items-center justify-center gap-2">
-                            <span className={`text-[11px] font-semibold ${isNeon ? 'text-gray-500' : 'text-gray-500'}`}>
-                              Unit #
-                            </span>
-                            <button
-                              onClick={() => fetchAvailableUnitsForListing(listing)}
-                              disabled={unitOptionsLoadingByListingId[listing.listingId] === true}
-                              className={`px-2 py-1 rounded text-xs font-semibold transition-all whitespace-nowrap ${
-                                isNeon
-                                  ? 'bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10'
-                                  : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-200'
-                              } disabled:opacity-60`}
-                              title="Find unassigned units (by styleId + size)"
-                            >
-                              {unitOptionsLoadingByListingId[listing.listingId] ? 'Finding…' : 'Find'}
-                            </button>
-                            {Array.isArray(unitOptionsByListingId[listing.listingId]) &&
-                            unitOptionsByListingId[listing.listingId]!.length > 0 ? (
-                              <select
-                                value={unitDraftByListingId[listing.listingId] ?? ''}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setUnitDraftByListingId(prev => ({ ...prev, [listing.listingId]: val }));
-                                }}
-                                className={`text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
-                                  isNeon
-                                    ? 'bg-gray-700 border-cyan-500/50 text-cyan-200 focus:ring-cyan-500/50'
-                                    : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
-                                }`}
-                                title="Pick from available units"
-                              >
-                                <option value="">Pick…</option>
-                                {unitOptionsByListingId[listing.listingId]!.map((u) => (
-                                  <option key={u.unitNumber} value={String(u.unitNumber)}>
-                                    #{u.unitNumber}{u.orderNumber ? ` • ${u.orderNumber}` : ''}
-                                  </option>
-                                ))}
-                              </select>
-                            ) : null}
-                            <input
-                              type="number"
-                              min={1}
-                              max={999}
-                              step={1}
-                              value={unitDraftByListingId[listing.listingId] ?? ''}
-                              onChange={(e) => {
-                                const next = e.target.value;
-                                setUnitDraftByListingId(prev => ({ ...prev, [listing.listingId]: next }));
-                              }}
-                              placeholder="1-999"
-                              className={`w-[84px] text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
-                                isNeon
-                                  ? 'bg-gray-700 border-cyan-500/50 text-cyan-200 placeholder-gray-500 focus:ring-cyan-500/50'
-                                  : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:ring-blue-500'
-                              }`}
-                            />
-                            <button
-                              onClick={() => {
-                                const raw = unitDraftByListingId[listing.listingId];
-                                const n = Number(raw);
-                                if (!Number.isFinite(n)) {
-                                  setBulkActionMessage('⚠️ Enter a Unit # (1–999) first');
-                                  setTimeout(() => setBulkActionMessage(null), 3000);
-                                  return;
-                                }
-                                assignUnitNumberToListing(listing.listingId, n);
-                              }}
-                              disabled={unitAssignStateByListingId[listing.listingId] === 'saving'}
-                              className={`px-2 py-1 rounded text-xs font-semibold transition-all whitespace-nowrap ${
-                                unitAssignStateByListingId[listing.listingId] === 'saving'
-                                  ? isNeon
-                                    ? 'bg-white/10 text-gray-400 border border-white/10'
-                                    : 'bg-gray-100 text-gray-500 border border-gray-200'
-                                  : isNeon
-                                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white'
-                                    : 'bg-blue-600 text-white hover:bg-blue-700'
-                              } disabled:opacity-60`}
-                              title="Assign this listing to the physical unit label"
-                            >
-                              {unitAssignStateByListingId[listing.listingId] === 'saving'
-                                ? 'Saving…'
-                                : unitAssignStateByListingId[listing.listingId] === 'saved'
-                                  ? 'Saved'
-                                  : 'Assign'}
-                            </button>
-                            <button
-                              onClick={() => assignUnitNumberToListing(listing.listingId, null)}
-                              disabled={unitAssignStateByListingId[listing.listingId] === 'saving'}
-                              className={`px-2 py-1 rounded text-xs font-semibold transition-all whitespace-nowrap ${
-                                isNeon
-                                  ? 'bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10'
-                                  : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-200'
-                              } disabled:opacity-60`}
-                              title="Clear unit assignment for this listing"
-                            >
-                              Clear
-                            </button>
                           </div>
                         </div>
                         {/* Group Leader Indicator */}
@@ -4115,18 +4055,53 @@ export default function StockXRepricing() {
                           <input
                             type="number"
                             min="1"
-                            value={
-                              listing.pricingStrategy?.type === 'manual' 
-                                ? listing.pricingStrategy?.manualPrice || listing.currentPrice
-                                : listing.pricingStrategy?.value || 1
-                            }
-                            onChange={(e) => {
-                              const value = parseFloat(e.target.value);
+                            value={(() => {
+                              const draft = strategyValueDraftByListingId[listing.listingId];
+                              if (draft !== undefined) return draft;
+
                               if (listing.pricingStrategy?.type === 'manual') {
-                                updateManualPrice(listing.listingId, value);
-                              } else {
-                                updateStrategyValue(listing.listingId, value);
+                                const mp = listing.pricingStrategy?.manualPrice;
+                                const base = Number.isFinite(mp as any) ? (mp as number) : listing.currentPrice;
+                                return String(base);
                               }
+
+                              const v = listing.pricingStrategy?.value;
+                              const base = Number.isFinite(v as any) ? (v as number) : 1;
+                              return String(base);
+                            })()}
+                            onChange={(e) => {
+                              const next = e.target.value;
+                              setStrategyValueDraftByListingId(prev => ({ ...prev, [listing.listingId]: next }));
+                              // Only commit when the value is a real number; allow empty while editing.
+                              if (next.trim() === '') return;
+                              const value = parseFloat(next);
+                              if (!Number.isFinite(value)) return;
+                              if (listing.pricingStrategy?.type === 'manual') updateManualPrice(listing.listingId, value);
+                              else updateStrategyValue(listing.listingId, value);
+                            }}
+                            onBlur={() => {
+                              const draft = strategyValueDraftByListingId[listing.listingId];
+                              if (draft === undefined) return;
+                              // If user leaves it blank, revert to the last committed value.
+                              if (draft.trim() === '') {
+                                setStrategyValueDraftByListingId(prev => {
+                                  const next = { ...prev };
+                                  delete next[listing.listingId];
+                                  return next;
+                                });
+                                return;
+                              }
+                              const value = parseFloat(draft);
+                              if (!Number.isFinite(value)) {
+                                setStrategyValueDraftByListingId(prev => {
+                                  const next = { ...prev };
+                                  delete next[listing.listingId];
+                                  return next;
+                                });
+                                return;
+                              }
+                              // Snap draft to normalized value string.
+                              setStrategyValueDraftByListingId(prev => ({ ...prev, [listing.listingId]: String(value) }));
                             }}
                             className={`w-[70px] text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 ${
                               isNeon 

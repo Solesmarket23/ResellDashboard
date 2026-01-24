@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { DollarSign, TrendingUp, Package, ShoppingCart, BarChart3, Calculator, Calendar, X, Palette, Trash2, RotateCcw, RefreshCw, Wifi, WifiOff, AlertCircle, Settings, GripVertical, CheckCircle } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
@@ -54,6 +54,8 @@ const Dashboard = () => {
   });
   const [selectedBar, setSelectedBar] = useState<number | null>(null);
   const [mockDataEnabled, setMockDataEnabled] = useState(false);
+  const profitChartOverlayRef = useRef<HTMLDivElement | null>(null);
+  const [profitChartAspectRatio, setProfitChartAspectRatio] = useState(1);
   
   // Other data state (purchases, etc.)
   const [userPurchases, setUserPurchases] = useState<any[]>([]);
@@ -230,6 +232,24 @@ const Dashboard = () => {
       });
     }
   }, [sales, userPurchases, salesLoading, purchasesLoading, salesMetrics]);
+
+  // Track the rendered chart aspect ratio so SVG dots can stay visually circular even when the SVG is stretched.
+  useEffect(() => {
+    const el = profitChartOverlayRef.current;
+    if (!el) return;
+
+    const update = () => {
+      const rect = el.getBoundingClientRect();
+      const ratio = rect.height > 0 ? rect.width / rect.height : 1;
+      setProfitChartAspectRatio(Number.isFinite(ratio) && ratio > 0 ? ratio : 1);
+    };
+
+    update();
+
+    const ro = new ResizeObserver(() => update());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
 
 
@@ -647,15 +667,31 @@ const Dashboard = () => {
   // Add padding so the first/last dots and line caps never get clipped by the SVG viewBox.
   // Note: SVG circles use viewBox units for radius, which scale with width; keep padding conservative.
   const xPaddingPct = 6; // percent of the 0–100 viewBox
+  const yPaddingPct = 6; // percent of the 0–100 viewBox
+  const minBarHeightPct = 8; // keep tiny values visible/clickable
+  const yUsablePct = 100 - 2 * yPaddingPct;
+
+  const getBarHeightPct = (value: number) => {
+    if (maxProfitValue <= 0) return minBarHeightPct;
+    const raw = (value / maxProfitValue) * yUsablePct;
+    return Math.min(yUsablePct, Math.max(raw, minBarHeightPct));
+  };
+
+  const formatYAxisValue = (value: number) => {
+    const abs = Math.abs(value);
+    if (abs >= 1000000) return `$${(value / 1000000).toFixed(1)}m`;
+    if (abs >= 1000) return `$${(value / 1000).toFixed(1)}k`;
+    return `$${Math.round(value).toLocaleString()}`;
+  };
   const profitPoints = chartData.map((bar, index) => {
-    const barHeight = maxProfitValue > 0 ? Math.max((bar.value / maxProfitValue) * 100, 8) : 8;
+    const barHeight = getBarHeightPct(bar.value);
     const denom = Math.max(1, chartData.length - 1);
     // If there's only 1 point, center it.
     const x =
       chartData.length === 1
         ? 50
         : xPaddingPct + (index / denom) * (100 - 2 * xPaddingPct);
-    const y = 100 - barHeight;
+    const y = 100 - yPaddingPct - barHeight;
     return { x, y, bar, index };
   });
   const profitPolylinePoints = profitPoints.map((p) => `${p.x},${p.y}`).join(' ');
@@ -1221,19 +1257,34 @@ const Dashboard = () => {
             </div>
             
             {/* Background Grid */}
-            <div className="absolute inset-0 opacity-20">
+            <div className="absolute inset-y-0 left-12 right-0 opacity-20">
               <div className="h-full flex flex-col justify-between">
                 {[0, 25, 50, 75, 100].map((percent) => (
                   <div key={percent} className="border-t border-gray-300 dark:border-gray-600"></div>
                 ))}
               </div>
             </div>
+
+            {/* Y Axis */}
+            <div className="absolute inset-y-0 left-0 w-12 flex flex-col justify-between pr-2">
+              {[1, 0.75, 0.5, 0.25, 0].map((t) => {
+                const v = Math.round(maxProfitValue * t);
+                return (
+                  <div
+                    key={t}
+                    className={`text-[10px] sm:text-xs tabular-nums ${currentTheme.colors.textSecondary} text-right`}
+                  >
+                    {formatYAxisValue(v)}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="absolute inset-y-0 left-12 border-l border-gray-300/40 dark:border-gray-600/40" />
             
             {/* Chart Container */}
-            <div className="relative h-full flex items-end justify-between space-x-1 px-2">
+            <div className="relative h-full flex items-end justify-between space-x-1 pl-12 pr-2">
               {chartData.map((bar, index) => {
-                const maxValue = Math.max(...chartData.map(d => d.value));
-                const barHeight = maxValue > 0 ? Math.max((bar.value / maxValue) * 100, 8) : 8;
+                const barHeight = getBarHeightPct(bar.value);
                 const isHighProfit = bar.value > 300;
                 const isMediumProfit = bar.value > 100 && bar.value <= 300;
                 const isSelected = selectedBar === index;
@@ -1259,7 +1310,6 @@ const Dashboard = () => {
                           e.stopPropagation();
                           console.log('Chart bar clicked:', index, bar.items);
                           setSelectedBar(selectedBar === index ? null : index);
-                          showNotification(`Selected: ${bar.items} - $${bar.value} profit`, 'info');
                         }}
                       >
                         {/* Animated shimmer effect */}
@@ -1309,7 +1359,7 @@ const Dashboard = () => {
             </div>
             
             {/* Gradient line overlay + perfectly aligned SVG dots (same coordinates) */}
-            <div className="absolute inset-0 px-2">
+            <div ref={profitChartOverlayRef} className="absolute inset-0 pl-12 pr-2">
               <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ pointerEvents: 'none' }}>
                 <defs>
                   <linearGradient id="profitGradient" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -1330,6 +1380,13 @@ const Dashboard = () => {
                 />
                 {profitPoints.map(({ x, y, bar, index }) => {
                   const isSelected = selectedBar === index;
+                  // With preserveAspectRatio="none", the SVG is stretched non-uniformly (x != y).
+                  // Compensate by pre-distorting y radii so dots render as true circles on screen.
+                  const ar = profitChartAspectRatio || 1;
+                  const outerRx = isSelected ? 1.7 : 1.5;
+                  const outerRy = outerRx * ar;
+                  const innerRx = isSelected ? 0.75 : 0.65;
+                  const innerRy = innerRx * ar;
                   return (
                     <g
                       key={`dot-${index}`}
@@ -1339,25 +1396,25 @@ const Dashboard = () => {
                         e.stopPropagation();
                         console.log('Chart dot clicked:', index, bar.items, bar.value);
                         setSelectedBar(selectedBar === index ? null : index);
-                        showNotification(`Selected: ${bar.items} - $${bar.value} profit`, 'info');
                       }}
                     >
                       {/* Outer ring */}
-                      <circle
+                      <ellipse
                         cx={x}
                         cy={y}
-                        // Radius is in viewBox units (scales with width). Keep small so it doesn't explode on wide screens.
-                        r={isSelected ? 1.7 : 1.5}
+                        rx={outerRx}
+                        ry={outerRy}
                         fill={isSelected ? '#3b82f6' : '#ffffff'}
                         stroke={isSelected ? '#93c5fd' : '#3b82f6'}
                         strokeWidth={isSelected ? 1.4 : 1.2}
                         vectorEffect="non-scaling-stroke"
                       />
                       {/* Inner dot */}
-                      <circle
+                      <ellipse
                         cx={x}
                         cy={y}
-                        r={isSelected ? 0.75 : 0.65}
+                        rx={innerRx}
+                        ry={innerRy}
                         fill={isSelected ? '#ffffff' : '#3b82f6'}
                         vectorEffect="non-scaling-stroke"
                       />
