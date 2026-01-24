@@ -107,12 +107,13 @@ export default function NeonDropdown({ value, onChange, options, className = '',
 
     compute();
     window.addEventListener('resize', compute);
-    // capture scroll events from scrollable parents too
+    // If the user scrolls the page while the menu is open, close the menu.
+    // This avoids the menu "chasing" the trigger while scrolling, which feels janky on mobile/trackpads.
     const handleScroll = (e: Event) => {
-      // Ignore scroll events coming from inside the dropdown itself (menu is scrollable).
       const target = e.target as Node | null;
+      // Allow scrolling inside the dropdown menu itself
       if (target && menuRef.current && menuRef.current.contains(target)) return;
-      compute();
+      setIsOpen(false);
     };
     window.addEventListener('scroll', handleScroll, true);
     return () => {
