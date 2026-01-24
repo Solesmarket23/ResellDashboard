@@ -51,7 +51,7 @@ export default function NeonDropdown({ value, onChange, options, className = '',
   }, [flatOptions]);
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
+    const handlePointerDownOutside = (event: Event) => {
       const t = event.target as Node;
       const inButton = dropdownRef.current && dropdownRef.current.contains(t);
       const inMenu = menuRef.current && menuRef.current.contains(t);
@@ -60,8 +60,9 @@ export default function NeonDropdown({ value, onChange, options, className = '',
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    // Use pointer events to avoid double-firing on mobile (touch -> emulated mouse events).
+    document.addEventListener('pointerdown', handlePointerDownOutside);
+    return () => document.removeEventListener('pointerdown', handlePointerDownOutside);
   }, []);
 
   // Position the menu in a portal so it isn't clipped by overflow containers (tables/cards).
@@ -83,7 +84,10 @@ export default function NeonDropdown({ value, onChange, options, className = '',
         Math.max(padding, window.innerWidth - menuWidth - padding)
       );
       const top = rect.bottom + 4;
-      setMenuPos({ left, top, width: menuWidth });
+      setMenuPos((prev) => {
+        if (prev && prev.left === left && prev.top === top && prev.width === menuWidth) return prev;
+        return { left, top, width: menuWidth };
+      });
 
       // After the menu renders, if it's clipped by viewport bottom, flip it above.
       requestAnimationFrame(() => {
@@ -93,7 +97,10 @@ export default function NeonDropdown({ value, onChange, options, className = '',
         const overflowBottom = mRect.bottom > window.innerHeight - padding;
         if (overflowBottom) {
           const aboveTop = Math.max(padding, rect.top - mRect.height - 4);
-          setMenuPos({ left, top: aboveTop, width: menuWidth });
+          setMenuPos((prev) => {
+            if (prev && prev.left === left && prev.top === aboveTop && prev.width === menuWidth) return prev;
+            return { left, top: aboveTop, width: menuWidth };
+          });
         }
       });
     };
@@ -101,10 +108,16 @@ export default function NeonDropdown({ value, onChange, options, className = '',
     compute();
     window.addEventListener('resize', compute);
     // capture scroll events from scrollable parents too
-    window.addEventListener('scroll', compute, true);
+    const handleScroll = (e: Event) => {
+      // Ignore scroll events coming from inside the dropdown itself (menu is scrollable).
+      const target = e.target as Node | null;
+      if (target && menuRef.current && menuRef.current.contains(target)) return;
+      compute();
+    };
+    window.addEventListener('scroll', handleScroll, true);
     return () => {
       window.removeEventListener('resize', compute);
-      window.removeEventListener('scroll', compute, true);
+      window.removeEventListener('scroll', handleScroll, true);
     };
   }, [isOpen]);
 

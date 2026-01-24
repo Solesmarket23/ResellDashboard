@@ -1285,15 +1285,106 @@ export default function StockXRepricing() {
           });
         }
         
-        setListings(finalListings);
+        // Hydrate images immediately from local caches so thumbnails don't flash blank on reload.
+        // The StockX listings payload often lacks imageUrl; enrichment can take several seconds.
+        const hydratedListings = (() => {
+          try {
+            // 1) Listing cache (fastest + most accurate for this user/session)
+            let listingImageById: Record<string, string> = {};
+            try {
+              const raw = localStorage.getItem(LISTINGS_CACHE_KEY);
+              if (raw) {
+                const parsed = JSON.parse(raw);
+                const cachedAt = typeof parsed?.cachedAt === 'number' ? parsed.cachedAt : 0;
+                // If cache is recent-ish, trust its imageUrls.
+                if (cachedAt && Date.now() - cachedAt < 30 * 24 * 60 * 60 * 1000) {
+                  const arr = Array.isArray(parsed?.listings) ? parsed.listings : [];
+                  for (const l of arr) {
+                    if (l?.listingId && typeof l?.imageUrl === 'string' && l.imageUrl.trim()) {
+                      listingImageById[String(l.listingId)] = String(l.imageUrl).trim();
+                    }
+                  }
+                }
+              }
+            } catch {}
+
+            // 2) Product catalog image cache (keyed by productId)
+            let productImageByProductId: Record<string, string> = {};
+            try {
+              const raw = localStorage.getItem('stockx_product_image_cache_v1');
+              if (raw) {
+                const parsed = JSON.parse(raw) as Record<string, { imageUrl?: string; cachedAt?: number }>;
+                for (const k of Object.keys(parsed || {})) {
+                  const v = (parsed as any)[k];
+                  if (!v?.imageUrl || typeof v.imageUrl !== 'string') continue;
+                  if (typeof v.cachedAt === 'number' && Date.now() - v.cachedAt > 7 * 24 * 60 * 60 * 1000) continue;
+                  productImageByProductId[k] = v.imageUrl.trim();
+                }
+              }
+            } catch {}
+
+            // 3) Purchase image cache (keyed by style/name + size)
+            let purchaseCache: Record<string, { imageUrl: string; cachedAt: number }> = {};
+            try {
+              const raw = localStorage.getItem('stockx_purchase_image_cache_v1');
+              if (raw) purchaseCache = JSON.parse(raw);
+            } catch {
+              purchaseCache = {};
+            }
+            const normalizeSizeQuick = (size: unknown): string =>
+              String(size || '')
+                .trim()
+                .replace(/\s+/g, ' ')
+                .toUpperCase()
+                .replace(/^US\s+/, '');
+            const normalizeNameQuick = (name: unknown): string =>
+              String(name || '')
+                .trim()
+                .toLowerCase()
+                .replace(/&/g, 'and')
+                .replace(/[^a-z0-9]+/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            const pickPurchase = (l: any): string | null => {
+              const size = normalizeSizeQuick(l?.size);
+              if (!size) return null;
+              const styleId = String(l?.styleId || '').trim();
+              const name = normalizeNameQuick(l?.productName);
+              const keys: string[] = [];
+              if (styleId) keys.push(`style:${styleId}__${size}`);
+              if (name) keys.push(`name:${name}__${size}`);
+              for (const k of keys) {
+                const v = purchaseCache[k];
+                if (!v?.imageUrl) continue;
+                if (typeof v.cachedAt === 'number' && Date.now() - v.cachedAt > 14 * 24 * 60 * 60 * 1000) continue;
+                return v.imageUrl;
+              }
+              return null;
+            };
+
+            return finalListings.map((l: any) => {
+              if (l?.imageUrl) return l;
+              const fromListing = listingImageById[String(l.listingId)];
+              if (fromListing) return { ...l, imageUrl: fromListing };
+              const fromProduct = l?.productId ? productImageByProductId[String(l.productId).trim()] : null;
+              if (fromProduct) return { ...l, imageUrl: fromProduct };
+              const fromPurchase = pickPurchase(l);
+              return fromPurchase ? { ...l, imageUrl: fromPurchase } : l;
+            });
+          } catch {
+            return finalListings;
+          }
+        })();
+
+        setListings(hydratedListings);
         setLastFetchTime(new Date());
         // If StockX listings payload doesn't include productImages, enrich via catalog endpoint (cached).
-        enrichProductImagesForListings(finalListings);
+        enrichProductImagesForListings(hydratedListings);
 
         // Persist listings so the table is not empty after navigation/refresh.
         // Store a minimal payload to reduce localStorage size.
         try {
-          const minimal = finalListings.map((l: any) => ({
+          const minimal = hydratedListings.map((l: any) => ({
             listingId: l.listingId,
             productId: l.productId,
             variantId: l.variantId,
