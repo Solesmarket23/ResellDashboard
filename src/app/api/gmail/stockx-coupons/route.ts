@@ -235,6 +235,10 @@ function extractCouponBenefit(plain: string): { benefit: CouponBenefit | null; a
     /\$\s*([0-9]{1,4}(?:\.[0-9]{1,2})?)\s*(?:off|credit)\b/i,
     /\b([0-9]{1,4}(?:\.[0-9]{1,2})?)\s*(?:dollars?)\s*(?:off|credit)\b/i,
     /\b(?:bid\s*credit|credit)\s*[:\-]?\s*\$\s*([0-9]{1,4}(?:\.[0-9]{1,2})?)\b/i,
+    // Common StockX wording variants
+    /\b(?:bid\s*credit|credit)\s*[:\-]?\s*([0-9]{1,4}(?:\.[0-9]{1,2})?)\s*(?:usd|dollars?)?\b/i,
+    /\bget\s*\$?\s*([0-9]{1,4}(?:\.[0-9]{1,2})?)\s*(?:off|credit)\b/i,
+    /\bsave\s*\$?\s*([0-9]{1,4}(?:\.[0-9]{1,2})?)\b/i,
   ];
   for (const re of amountPatterns) {
     const m = t.match(re);
@@ -245,6 +249,17 @@ function extractCouponBenefit(plain: string): { benefit: CouponBenefit | null; a
     }
   }
 
+  return { benefit: null, amount: null };
+}
+
+function inferCouponBenefitFromCode(code: string): { benefit: CouponBenefit | null; amount: number | null } {
+  const c = String(code || '').trim().toUpperCase();
+  // StockX bid credit codes commonly start with "B10-", "B20-", etc.
+  const m = c.match(/^B(\d{1,3})\-/);
+  if (m) {
+    const n = Number(m[1]);
+    if (Number.isFinite(n) && n > 0) return { benefit: 'amount_off', amount: n };
+  }
   return { benefit: null, amount: null };
 }
 
@@ -465,6 +480,8 @@ export async function GET(request: NextRequest) {
         // once it's past expiry we display it as expired.
         const status: CouponStatus = computedExpired ? 'expired' : (stored?.status || computedStatus);
 
+        const inferred = extractedBenefit.benefit || extractedBenefit.amount != null ? extractedBenefit : inferCouponBenefitFromCode(key);
+
         coupons.push({
           code: key,
           emailId: msg.id,
@@ -478,8 +495,8 @@ export async function GET(request: NextRequest) {
           statusSource: computedExpired ? 'computed' : (stored?.status ? 'user' : 'computed')
           ,hidden: !!stored?.hidden,
           source: 'gmail',
-          amount: extractedBenefit.amount,
-          benefit: extractedBenefit.benefit
+          amount: inferred.amount,
+          benefit: inferred.benefit
         });
       }
     }
