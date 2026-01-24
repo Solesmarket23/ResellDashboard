@@ -40,8 +40,8 @@ type ManualCouponDoc = {
 };
 
 // Gmail-extracted StockX coupon codes (strict, avoids false positives from email content).
-// Common format: B10-XXXXXX, B20-XXXXXX, etc.
-const GMAIL_COUPON_CODE_RE = /^B\d{1,3}-[A-Z0-9]{6}$/;
+// For StockX "Has Your Back" bid credit emails this is consistently `B10-` + 6 chars.
+const GMAIL_COUPON_CODE_RE = /^B10-[A-Z0-9]{6}$/;
 function normalizeCouponCode(code: string): string {
   return String(code || '').trim().toUpperCase();
 }
@@ -143,7 +143,7 @@ function stripHtml(input: string): string {
 function extractLikelyCouponCodes(text: string): string[] {
   const t = text.toUpperCase();
 
-  // StockX coupon codes are typically `B{amount}-` + 6 chars (e.g. B10-ZVVG7N / B20-123456).
+  // StockX coupon codes in this flow are `B10-` + 6 chars (e.g. B10-ZVVG7N / B10-123456).
   // This avoids false positives from hyphenated words in subject lines like "DOUBLE-KNIT".
   const isValidCouponCodeLocal = (code: string) => isValidGmailCouponCode(code);
 
@@ -152,9 +152,9 @@ function extractLikelyCouponCodes(text: string): string[] {
   // - "Coupon Code: B10-ZVVG7N"
   const strong: string[] = [];
   const strongPatterns: RegExp[] = [
-    /\bUSE\s+CODE\s+(B\d{1,3}-[A-Z0-9]{6})\b/g,
-    /\bCOUPON\s+CODE\s*:\s*(B\d{1,3}-[A-Z0-9]{6})\b/g,
-    /\bPROMO\s+CODE\s*:\s*(B\d{1,3}-[A-Z0-9]{6})\b/g
+    /\bUSE\s+CODE\s+(B10-[A-Z0-9]{6})\b/g,
+    /\bCOUPON\s+CODE\s*:\s*(B10-[A-Z0-9]{6})\b/g,
+    /\bPROMO\s+CODE\s*:\s*(B10-[A-Z0-9]{6})\b/g
   ];
   for (const re of strongPatterns) {
     let m: RegExpExecArray | null;
@@ -165,7 +165,7 @@ function extractLikelyCouponCodes(text: string): string[] {
 
   // Heuristic 1: look for "CODE" nearby and capture the next token-ish string
   const nearCode: string[] = [];
-  const nearCodeRe = /\b(?:USE\s+CODE|PROMO\s+CODE|COUPON\s+CODE|CODE)\b[^A-Z0-9]{0,20}(B\d{1,3}-[A-Z0-9]{6})\b/g;
+  const nearCodeRe = /\b(?:USE\s+CODE|PROMO\s+CODE|COUPON\s+CODE|CODE)\b[^A-Z0-9]{0,20}(B10-[A-Z0-9]{6})\b/g;
   let m: RegExpExecArray | null;
   while ((m = nearCodeRe.exec(t))) {
     nearCode.push(m[1]);
@@ -373,16 +373,30 @@ export async function GET(request: NextRequest) {
 
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
-    // Keep Gmail search broad enough to catch new coupon templates, while constraining time to keep scans fast.
-    // Note: `newer_than:` is usually reliable and keeps scanning bounded.
+    // Gmail search: keep it close to the original “known-good” subject-based approach,
+    // but add a few template variants + constrain time so refresh is fast.
+    //
+    // Note: Gmail indexing can vary; we still hard-filter by From header in code below.
     const fromGroup = 'from:(noreply@stockx.com OR stockx.com OR tmail.stockx.com OR em.tmail.stockx.com)';
-    const signalGroup = '("StockX Has Your Back" OR "Has Your Back" OR "Use code" OR "Coupon Code" OR "Promo Code" OR "bid credit")';
-    const queries: string[] = [
-      `${fromGroup} newer_than:180d ${signalGroup}`,
-      // Fallback: sometimes the “from:” index is weird; rely on text signals and hard-filter by From header in code.
-      `newer_than:180d ${signalGroup}`
+    const phrases = [
+      '"StockX Has Your Back"',
+      '"Has Your Back"',
+      '"Use code"',
+      '"Coupon Code"',
+      '"Promo Code"',
+      '"Bid Credit"',
+      '"bid credit"'
     ];
-    const fallbackQuery = `"StockX Has Your Back" OR "Use code" OR "Coupon Code" OR "Promo Code" OR "bid credit"`;
+    const signalGroup = `(${phrases.join(' OR ')})`;
+    const queries: string[] = [
+      // Prefer from+subject matching (most reliable when it works)
+      ...['"StockX Has Your Back"', '"Has Your Back"', '"Bid Credit"', '"Use code"'].map((p) => `${fromGroup} newer_than:180d subject:${p}`),
+      // Looser: allow the phrase anywhere but still constrain sender + time
+      `${fromGroup} newer_than:180d ${signalGroup}`,
+      // Fallback: if Gmail's from-indexing is odd, rely on phrase + time and hard-filter by From header below
+      `newer_than:180d ${signalGroup}`,
+    ];
+    const fallbackQuery = `"StockX Has Your Back" OR "Has Your Back" OR "Bid Credit" OR "Use code" OR "Coupon Code" OR "Promo Code"`;
 
     const statusMap = await loadStatusMap(userId);
     const manualDocs = await loadManualCoupons(userId);
