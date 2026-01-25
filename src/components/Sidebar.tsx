@@ -239,20 +239,23 @@ const Sidebar = ({ activeItem, onItemClick, isOpen, onClose, isCollapsed = false
             <div className="mb-3">
               <button
                 onClick={onToggleCollapse}
-                className={`w-full flex items-center ${isCollapsed ? 'px-2 py-3 justify-center' : 'px-3 py-2'} text-sm font-medium rounded-lg transition-colors ${currentTheme.colors.textSecondary} hover:bg-white/5 hover:text-white`}
+                // Keep layout stable between collapsed/expanded to avoid the brief “label jump” some browsers show.
+                // Fixed height + consistent padding prevents vertical reflow during the width transition.
+                className={`w-full h-12 flex items-center ${isCollapsed ? 'justify-center' : ''} px-3 text-sm font-medium rounded-lg transition-colors ${currentTheme.colors.textSecondary} hover:bg-white/5 hover:text-white leading-none`}
                 // Only use `title` when collapsed (tooltip needed). When expanded, the visible text is enough and
                 // some browsers briefly flash the tooltip on click ("Hide Menu"), which feels like flicker.
                 title={isCollapsed ? 'Show menu' : undefined}
                 aria-label={isCollapsed ? 'Show menu' : 'Hide menu'}
               >
-                {isCollapsed ? (
-                  <ChevronRight className="w-5 h-5" />
-                ) : (
-                  <>
-                    <ChevronLeft className="w-4 h-4 mr-2" />
-                    Hide Menu
-                  </>
-                )}
+                <span className={`inline-flex items-center ${isCollapsed ? '' : 'justify-start'}`}>
+                  {isCollapsed ? (
+                    <ChevronRight className="w-5 h-5" />
+                  ) : (
+                    <ChevronLeft className="w-5 h-5" />
+                  )}
+                  {/* Avoid swapping visible wording between states (prevents “Hide menu” flicker). */}
+                  <span className={isCollapsed ? 'sr-only' : 'ml-2'}>Menu</span>
+                </span>
               </button>
             </div>
           )}
