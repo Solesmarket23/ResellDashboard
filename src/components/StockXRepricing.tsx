@@ -222,6 +222,14 @@ export default function StockXRepricing() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Track images that failed to load so we can avoid re-hydrating a broken StockX CDN URL forever.
+  const [brokenImageByListingId, setBrokenImageByListingId] = useState<Record<string, true>>({});
+  const brokenImageByListingIdRef = useRef<Record<string, true>>({});
+  const brokenProductIdRef = useRef<Record<string, true>>({});
+  useEffect(() => {
+    brokenImageByListingIdRef.current = brokenImageByListingId;
+  }, [brokenImageByListingId]);
+
   // iOS Safari can "diagonal scroll" (horizontal + vertical) inside nested scroll containers.
   // Lock touch gestures in the listings table to either horizontal (scroll the table) OR vertical (scroll the page),
   // based on the initial dominant direction.
@@ -2919,7 +2927,17 @@ export default function StockXRepricing() {
         cache = {};
       }
 
-      const uniqueProductIds = Array.from(new Set(list.map((l) => String(l.productId || '').trim()).filter(Boolean)));
+      const isBrokenListing = (l: Listing) => Boolean(brokenImageByListingIdRef.current[String((l as any)?.listingId || '').trim()]);
+      const isBrokenProduct = (pid: string) => Boolean(brokenProductIdRef.current[pid]);
+
+      const uniqueProductIds = Array.from(
+        new Set(
+          list
+            .filter((l) => !l.imageUrl || isBrokenListing(l))
+            .map((l) => String(l.productId || '').trim())
+            .filter(Boolean)
+        )
+      );
 
       const missing = uniqueProductIds.filter((pid) => {
         const c = cache[pid];
@@ -2939,7 +2957,11 @@ export default function StockXRepricing() {
         if (res.ok && data?.success && data?.productBrandMap) {
           for (const pid of Object.keys(data.productBrandMap)) {
             const img = String(data.productBrandMap[pid]?.imageUrl || '').trim();
-            if (img) cache[pid] = { imageUrl: img, cachedAt: Date.now() };
+            if (img) {
+              cache[pid] = { imageUrl: img, cachedAt: Date.now() };
+              // If we fetched a fresh image, clear any "broken product" marker.
+              delete brokenProductIdRef.current[String(pid).trim()];
+            }
           }
           try {
             localStorage.setItem(PRODUCT_IMAGE_CACHE_KEY, JSON.stringify(cache));
@@ -2952,9 +2974,29 @@ export default function StockXRepricing() {
       // Apply cache to any listings still missing imageUrl
       setListings((prev) =>
         prev.map((l) => {
-          if (l.imageUrl) return l;
-          const c = cache[String(l.productId || '').trim()];
-          return c?.imageUrl ? { ...l, imageUrl: c.imageUrl } : l;
+          const listingId = String((l as any)?.listingId || '').trim();
+          const pid = String(l.productId || '').trim();
+          const brokenListing = Boolean(brokenImageByListingIdRef.current[listingId]);
+
+          // If the current image is healthy, keep it.
+          if (l.imageUrl && !brokenListing) return l;
+
+          // Avoid re-applying a known-broken product image URL.
+          if (pid && isBrokenProduct(pid)) return l;
+
+          const c = pid ? cache[pid] : undefined;
+          if (!c?.imageUrl) return l;
+
+          // If we successfully applied a new URL, clear the broken marker for this listing.
+          if (brokenListing) {
+            setBrokenImageByListingId((prevBroken) => {
+              if (!prevBroken[listingId]) return prevBroken;
+              const next = { ...prevBroken };
+              delete next[listingId];
+              return next;
+            });
+          }
+          return { ...l, imageUrl: c.imageUrl };
         })
       );
 
@@ -3089,19 +3131,81 @@ export default function StockXRepricing() {
 
       setListings((prev) =>
         prev.map((l) => {
-          if (l.imageUrl) return l;
+          const listingId = String((l as any)?.listingId || '').trim();
+          const brokenListing = Boolean(brokenImageByListingIdRef.current[listingId]);
+          if (l.imageUrl && !brokenListing) return l;
           const styleKey = buildStyleKey(l);
           const nameKey = buildNameKey(l);
           const cStyle = styleKey ? purchaseCache[styleKey] : undefined;
-          if (cStyle?.imageUrl) return { ...l, imageUrl: cStyle.imageUrl };
+          if (cStyle?.imageUrl) {
+            if (brokenListing) {
+              setBrokenImageByListingId((prevBroken) => {
+                if (!prevBroken[listingId]) return prevBroken;
+                const next = { ...prevBroken };
+                delete next[listingId];
+                return next;
+              });
+            }
+            return { ...l, imageUrl: cStyle.imageUrl };
+          }
           const cName = nameKey ? purchaseCache[nameKey] : undefined;
-          return cName?.imageUrl ? { ...l, imageUrl: cName.imageUrl } : l;
+          if (cName?.imageUrl) {
+            if (brokenListing) {
+              setBrokenImageByListingId((prevBroken) => {
+                if (!prevBroken[listingId]) return prevBroken;
+                const next = { ...prevBroken };
+                delete next[listingId];
+                return next;
+              });
+            }
+            return { ...l, imageUrl: cName.imageUrl };
+          }
+          return l;
         })
       );
     } catch (e) {
       console.warn('Failed to enrich product images:', e);
     }
   }, []);
+
+  const resetImageCaches = useCallback(() => {
+    try {
+      localStorage.removeItem(PRODUCT_IMAGE_CACHE_KEY);
+      localStorage.removeItem(PURCHASE_IMAGE_CACHE_KEY);
+    } catch {}
+
+    // Also clear imageUrl hydration from the listings cache so we don't keep resurrecting a broken URL.
+    try {
+      const raw = localStorage.getItem(LISTINGS_CACHE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const cachedListings = Array.isArray(parsed?.listings) ? parsed.listings : null;
+        if (cachedListings) {
+          const nextListings = cachedListings.map((l: any) => {
+            if (!l) return l;
+            const { imageUrl, ...rest } = l;
+            return rest;
+          });
+          localStorage.setItem(
+            LISTINGS_CACHE_KEY,
+            JSON.stringify({ cachedAt: typeof parsed?.cachedAt === 'number' ? parsed.cachedAt : Date.now(), listings: nextListings })
+          );
+        }
+      }
+    } catch {}
+
+    setBrokenImageByListingId({});
+    brokenProductIdRef.current = {};
+
+    // Re-run enrichment for everything missing/broken.
+    try {
+      const snapshot = listings as any as Listing[];
+      const needs = snapshot.filter((l) => !l.imageUrl || brokenImageByListingIdRef.current[String((l as any)?.listingId || '').trim()]);
+      enrichProductImagesForListings(needs.length > 0 ? needs : snapshot);
+    } catch {
+      enrichProductImagesForListings(listings as any as Listing[]);
+    }
+  }, [enrichProductImagesForListings, listings]);
 
   const buildStockXProductUrl = (listing: Listing): string | null => {
     // Prefer StockX-provided `urlKey` slug when available (most accurate).
@@ -3584,6 +3688,19 @@ export default function StockXRepricing() {
                 Refresh Listings
               </>
             )}
+          </button>
+          <button
+            onClick={resetImageCaches}
+            disabled={loading}
+            className={`flex items-center space-x-2 ${
+              isNeon
+                ? 'bg-white/5 hover:bg-white/10 border border-white/10'
+                : 'bg-white hover:bg-gray-50 border border-gray-200'
+            } disabled:opacity-50 ${isNeon ? 'text-white/90' : 'text-gray-900'} px-5 py-3 rounded-lg font-medium transition-all duration-200`}
+            title="Clear image caches and re-try image enrichment"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>Reset images</span>
           </button>
         </div>
       </div>
@@ -4250,7 +4367,7 @@ export default function StockXRepricing() {
                     </td>
                     <td className="px-6 py-3">
                       <div className="flex items-start gap-3">
-                        {listing.imageUrl ? (
+                        {listing.imageUrl && !brokenImageByListingId[listing.listingId] ? (
                           <img
                             src={listing.imageUrl}
                             alt={listing.productName}
@@ -4261,16 +4378,52 @@ export default function StockXRepricing() {
                             referrerPolicy="no-referrer"
                             onClick={() => openImagePreview(listing)}
                             onError={(e) => {
-                              // If StockX image URL is missing/expired, avoid a broken-image icon.
-                              // Fall back to the placeholder by clearing the URL in local state.
+                              // If a StockX CDN URL is missing/expired/blocked, mark it broken and immediately
+                              // try falling back to catalog cache + purchases cache.
+                              const listingId = String(listing.listingId || '').trim();
+                              const pid = String((listing as any)?.productId || '').trim();
+                              if (listingId) {
+                                setBrokenImageByListingId((prev) => (prev[listingId] ? prev : { ...prev, [listingId]: true }));
+                                // Clear imageUrl in state so fallbacks can re-apply a different image.
+                                setListings((prev) => prev.map((l) => (l.listingId === listing.listingId ? { ...l, imageUrl: null } : l)));
+                              }
+                              if (pid) {
+                                brokenProductIdRef.current[pid] = true;
+                                try {
+                                  const raw = localStorage.getItem(PRODUCT_IMAGE_CACHE_KEY);
+                                  if (raw) {
+                                    const parsed = JSON.parse(raw);
+                                    if (parsed && typeof parsed === 'object' && parsed[pid]) {
+                                      delete parsed[pid];
+                                      localStorage.setItem(PRODUCT_IMAGE_CACHE_KEY, JSON.stringify(parsed));
+                                    }
+                                  }
+                                } catch {}
+                              }
+                              // Also scrub the per-listing cache so refresh doesn't resurrect the same broken URL.
                               try {
-                                (e.currentTarget as HTMLImageElement).src = '';
+                                const raw = localStorage.getItem(LISTINGS_CACHE_KEY);
+                                if (raw) {
+                                  const parsed = JSON.parse(raw);
+                                  const arr = Array.isArray(parsed?.listings) ? parsed.listings : null;
+                                  if (arr) {
+                                    const nextArr = arr.map((l: any) =>
+                                      l?.listingId === listing.listingId ? { ...l, imageUrl: null } : l
+                                    );
+                                    localStorage.setItem(
+                                      LISTINGS_CACHE_KEY,
+                                      JSON.stringify({ cachedAt: typeof parsed?.cachedAt === 'number' ? parsed.cachedAt : Date.now(), listings: nextArr })
+                                    );
+                                  }
+                                }
                               } catch {}
-                              setListings(prev =>
-                                prev.map(l =>
-                                  l.listingId === listing.listingId ? { ...l, imageUrl: null } : l
-                                )
-                              );
+
+                              // Trigger enrichment just for this listing to pick up purchases fallback quickly.
+                              setTimeout(() => {
+                                try {
+                                  enrichProductImagesForListings([{ ...(listing as any), imageUrl: null } as Listing]);
+                                } catch {}
+                              }, 0);
                             }}
                             title="Click to preview image"
                           />
