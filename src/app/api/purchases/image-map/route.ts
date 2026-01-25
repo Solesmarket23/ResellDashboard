@@ -60,6 +60,19 @@ function normalizeProductName(name: unknown): string {
     .trim();
 }
 
+function normalizeStyleId(styleId: unknown): string {
+  const raw = String(styleId || '').trim().toUpperCase();
+  if (!raw) return '';
+  // Remove punctuation/spaces so "IO7684-921" and "IO7684921" match.
+  return raw.replace(/[^A-Z0-9]+/g, '');
+}
+
+function nameTokens(nameNorm: string): string[] {
+  if (!nameNorm) return [];
+  const stop = new Set(['the', 'and', 'with', 'for', 'of', 'a', 'an', 'to', 'in']);
+  return nameNorm.split(' ').filter((t) => t && !stop.has(t));
+}
+
 function getStyleId(p: any): string | null {
   const val =
     p?.styleId ||
@@ -133,16 +146,36 @@ export async function POST(request: NextRequest) {
     }
 
     const wanted = new Set<string>();
+    const wantedStyleNormKeyToRequestedKeys = new Map<string, string[]>(); // key: "<STYLE_NORM>__<SIZE>"
+    const wantedNameBySize: Record<string, Array<{ requestedKey: string; nameNorm: string; tokens: string[] }>> = {};
     for (const k of keys) {
       const size = normalizeSize(k?.size);
       if (!size) continue;
 
       const styleId = typeof k?.styleId === 'string' ? k.styleId.trim() : '';
-      if (styleId) wanted.add(`style:${styleId}__${size}`);
+      if (styleId) {
+        const reqKey = `style:${styleId}__${size}`;
+        wanted.add(reqKey);
+        const n = normalizeStyleId(styleId);
+        if (n) {
+          const normKey = `${n}__${size}`;
+          const arr = wantedStyleNormKeyToRequestedKeys.get(normKey) || [];
+          arr.push(reqKey);
+          wantedStyleNormKeyToRequestedKeys.set(normKey, arr);
+        }
+      }
 
       const productNameRaw = typeof k?.productName === 'string' ? k.productName : '';
       const productName = normalizeProductName(productNameRaw);
-      if (productName) wanted.add(`name:${productName}__${size}`);
+      if (productName) {
+        const reqKey = `name:${productName}__${size}`;
+        wanted.add(reqKey);
+        (wantedNameBySize[size] ||= []).push({
+          requestedKey: reqKey,
+          nameNorm: productName,
+          tokens: nameTokens(productName),
+        });
+      }
     }
 
     if (wanted.size === 0) {
@@ -173,7 +206,20 @@ export async function POST(request: NextRequest) {
       const styleId = getStyleId(p);
       if (styleId) {
         const k = `style:${styleId}__${size}`;
+        // Exact key match (fast path)
         if (wanted.has(k) && !images[k]) images[k] = img;
+
+        // Normalized styleId match (handles punctuation differences)
+        const norm = normalizeStyleId(styleId);
+        if (norm) {
+          const normKey = `${norm}__${size}`;
+          const reqKeys = wantedStyleNormKeyToRequestedKeys.get(normKey);
+          if (reqKeys) {
+            for (const rk of reqKeys) {
+              if (!images[rk]) images[rk] = img;
+            }
+          }
+        }
       }
 
       const nameRaw = getProductName(p);
@@ -181,6 +227,27 @@ export async function POST(request: NextRequest) {
       if (normName) {
         const k = `name:${normName}__${size}`;
         if (wanted.has(k) && !images[k]) images[k] = img;
+
+        // Fuzzy name match (size-gated), for slight wording differences.
+        const candidates = wantedNameBySize[size];
+        if (candidates && candidates.length > 0) {
+          const pTokens = nameTokens(normName);
+          for (const c of candidates) {
+            if (images[c.requestedKey]) continue;
+            // quick check: substring either direction
+            if (normName.includes(c.nameNorm) || c.nameNorm.includes(normName)) {
+              images[c.requestedKey] = img;
+              continue;
+            }
+            // token overlap heuristic (>= 3 shared tokens)
+            if (pTokens.length >= 3 && c.tokens.length >= 3) {
+              const set = new Set(pTokens);
+              let shared = 0;
+              for (const t of c.tokens) if (set.has(t)) shared++;
+              if (shared >= 3) images[c.requestedKey] = img;
+            }
+          }
+        }
       }
     }
 
