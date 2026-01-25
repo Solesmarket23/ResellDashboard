@@ -181,7 +181,12 @@ export const useSales = () => {
   };
 
   // Load sales data from Firebase
-  const loadSalesData = async (showLoading = true, skipCache = false) => {
+  // Note: full pagination can be expensive (Firestore reads). Only do it on initial load / explicit refresh.
+  const loadSalesData = async (
+    showLoading = true,
+    skipCache = false,
+    opts?: { prefetchAllPages?: boolean }
+  ) => {
     const userId = getUserId();
     if (!userId) {
       console.log('🔄 useSales: No user found, skipping sales load');
@@ -252,6 +257,15 @@ export const useSales = () => {
         if (showLoading) setLoading(false);
       }
 
+      const prefetchAllPages = opts?.prefetchAllPages ?? showLoading;
+      if (!prefetchAllPages) {
+        // Cache the first page so repeated background refreshes don't hammer Firestore.
+        const { dataCache, CacheKeys, CacheTTL } = await import('@/lib/utils/dataCache');
+        dataCache.set(CacheKeys.sales(userId), aggregatedSales, CacheTTL.VERY_LONG);
+        console.log('📦 useSales: Cached sales (first page only)');
+        return;
+      }
+
       // Background prefetch remaining pages (load all pages)
       let page = 1;
       console.log(`🔄 useSales: Starting background loading. Page size: ${pageSize}, Initial cursor: ${cursorId}`);
@@ -302,7 +316,8 @@ export const useSales = () => {
       
       // Cache the final aggregated sales data
       const { dataCache, CacheKeys, CacheTTL } = await import('@/lib/utils/dataCache');
-      dataCache.set(CacheKeys.sales(userId), aggregatedSales, CacheTTL.MEDIUM);
+      // Sales don’t change second-to-second; keep a longer cache to avoid expensive full reloads.
+      dataCache.set(CacheKeys.sales(userId), aggregatedSales, CacheTTL.VERY_LONG);
       console.log('📦 useSales: Cached sales data');
       
     } catch (err) {
@@ -413,7 +428,7 @@ export const useSales = () => {
   const forceRefresh = async () => {
     console.log('🔄 useSales: Force refresh requested');
     console.log('🔄 useSales: Current sales count before refresh:', sales.length);
-    await loadSalesData(true);
+    await loadSalesData(true, true, { prefetchAllPages: true });
     console.log('🔄 useSales: Force refresh completed');
   };
 
@@ -438,14 +453,15 @@ export const useSales = () => {
         clearInterval(refreshIntervalRef.current);
       }
 
-      // Set up new interval for auto-refresh every 5 minutes (reduced frequency to save Firebase reads)
+      // Set up new interval for auto-refresh.
+      // IMPORTANT: keep this lightweight (first page only) to avoid huge Firestore read spikes.
       refreshIntervalRef.current = setInterval(() => {
         // Only refresh if document is visible (user is actively using the app)
         if (!document.hidden && mountedRef.current) {
-          console.log('🔄 useSales: Auto-refresh triggered (5min interval)');
-          loadSalesData(false);
+          console.log('🔄 useSales: Auto-refresh triggered (lightweight)');
+          loadSalesData(false, false, { prefetchAllPages: false });
         }
-      }, 5 * 60 * 1000); // 5 minutes (300 seconds)
+      }, 15 * 60 * 1000); // 15 minutes
     };
 
     setupAutoRefresh();
