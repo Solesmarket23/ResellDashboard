@@ -2289,7 +2289,7 @@ export default function StockXRepricing() {
             'Two-step will run LIVE now.\n\nWarning: you have no Min/Max safety bounds set for this listing.\n\nRun anyway?'
           );
           if (!ok) {
-            showToast('Two-step saved (not executed — missing Min/Max and you cancelled).', 'success');
+            showToast('Saved • Two-step • No bounds (not executed)', 'success');
             // Remove from pending changes and exit early
             setPendingStrategyChanges(prev => {
               const newPending = { ...prev };
@@ -2301,35 +2301,39 @@ export default function StockXRepricing() {
               delete next[listingId];
               return next;
             });
-            setRowSaveState(prev => ({ ...prev, [listingId]: 'idle' }));
+            delete boundDraftRefByListingId.current[listingId];
+            setRowSaveState(prev => ({ ...prev, [listingId]: 'saved' }));
+            setTimeout(() => {
+              setRowSaveState(prev => ({ ...prev, [listingId]: 'idle' }));
+            }, 1200);
             return;
           }
         }
       }
 
-      const repricedOk = await runImmediateReprice(listingsToUpdateWithBounds, {
-        reason: 'Saved — repricing now',
-        suppressToast: true
-      });
+      // Start repricing in the background (can take ~10–15s on StockX).
+      // We intentionally do NOT await, so the row doesn't sit in "Saving…" for the duration.
+      void runImmediateReprice(listingsToUpdateWithBounds, { reason: 'Saved', suppressToast: true });
       
       // Show success message
       const strategyLabel = strategyToSave.type === 'beat_lowest' ? 'Beat Lowest by $1' :
                            strategyToSave.type === 'match_lowest' ? 'Match Lowest' :
                            strategyToSave.type === 'market_peek' ? 'Market Peek' :
-                           strategyToSave.type === 'reset_then_beat_lowest' ? 'Two-step: reset then beat lowest' :
+                           strategyToSave.type === 'reset_then_beat_lowest' ? 'Two-step' :
                            strategyToSave.type === 'percentage_below' ? `Below ${(strategyToSave as any).value}%` :
                            strategyToSave.type === 'manual' ? 'Manual' :
                            hasPendingBounds ? 'Bounds updated' :
                            'Keep Current';
 
       const boundsLabel =
-        (effectiveMin ? `Min $${effectiveMin}` : 'Min —') +
-        (effectiveMax ? ` • Max $${effectiveMax}` : '');
-      if (repricedOk) {
-        showToast(`Pricing saved: ${strategyLabel} • ${boundsLabel}`, 'success');
-      } else {
-        showToast(`Pricing saved, but repricing failed: ${strategyLabel} • ${boundsLabel}`, 'warning');
-      }
+        effectiveMin && effectiveMax
+          ? `$${effectiveMin}–$${effectiveMax}`
+          : effectiveMin
+            ? `Min $${effectiveMin}`
+            : effectiveMax
+              ? `Max $${effectiveMax}`
+              : 'No bounds';
+      showToast(`Saved • ${strategyLabel} • ${boundsLabel}`, 'success');
       
       // Remove from pending changes
       setPendingStrategyChanges(prev => {
