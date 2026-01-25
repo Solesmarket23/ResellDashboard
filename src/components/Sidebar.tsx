@@ -65,7 +65,6 @@ const navigationItems = [
     items: [
       { id: 'analytics', label: 'Analytics', icon: BarChart3 },
       { id: 'cashflow', label: 'Cash Flow', icon: DollarSign },
-      { id: 'trends', label: 'Trends', icon: TrendingUp },
       { id: 'performance', label: 'Performance', icon: Package },
     ]
   },
