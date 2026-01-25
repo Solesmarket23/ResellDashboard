@@ -4087,8 +4087,8 @@ export default function StockXRepricing() {
                     </th>
 
                     {[
-                      { icon: RefreshCw, label: 'Auto' },
                       { icon: Wrench, label: 'Pricing Rule' },
+                      { icon: RefreshCw, label: 'Auto' },
                       { icon: Shield, label: 'Min. Price' },
                       { icon: Shield, label: 'Max Price' },
                       { icon: AlertTriangle, label: 'Auto Off' },
@@ -4269,22 +4269,6 @@ export default function StockXRepricing() {
                       </div>
                     </td>
                     <td className="px-6 py-3 text-center">
-                      <div className="flex items-center justify-center">
-                        <input
-                          type="checkbox"
-                          checked={listing.repricingEnabled === true}
-                          onChange={(e) => updateRepricingEnabled(listing.listingId, e.target.checked)}
-                          className={`w-4 h-4 ${isNeon ? 'text-cyan-500 accent-cyan-500' : 'text-blue-600'} cursor-pointer`}
-                          title={
-                            listing.repricingEnabled === true
-                              ? 'Auto-reprice ON (cron will consider this listing)'
-                              : 'Auto-reprice OFF (cron will skip this listing)'
-                          }
-                          aria-label="Auto-reprice toggle"
-                        />
-                      </div>
-                    </td>
-                    <td className="px-6 py-3 text-center">
                       <div className="flex w-full items-center justify-center gap-2">
                         <NeonDropdown
                           value={listing.pricingStrategy?.type || 'keep_current'}
@@ -4443,6 +4427,22 @@ export default function StockXRepricing() {
                         ) : (
                           <div className="w-[70px]"></div>
                         )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-3 text-center">
+                      <div className="flex items-center justify-center">
+                        <input
+                          type="checkbox"
+                          checked={listing.repricingEnabled === true}
+                          onChange={(e) => updateRepricingEnabled(listing.listingId, e.target.checked)}
+                          className={`w-4 h-4 ${isNeon ? 'text-cyan-500 accent-cyan-500' : 'text-blue-600'} cursor-pointer`}
+                          title={
+                            listing.repricingEnabled === true
+                              ? 'Auto-reprice ON (cron will consider this listing)'
+                              : 'Auto-reprice OFF (cron will skip this listing)'
+                          }
+                          aria-label="Auto-reprice toggle"
+                        />
                       </div>
                     </td>
                     <td className="px-6 py-3">
