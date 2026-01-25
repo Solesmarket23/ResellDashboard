@@ -230,6 +230,9 @@ export default function StockXRepricing() {
     brokenImageByListingIdRef.current = brokenImageByListingId;
   }, [brokenImageByListingId]);
 
+  const [purchaseImageDebug, setPurchaseImageDebug] = useState<any | null>(null);
+  const [showPurchaseImageDebug, setShowPurchaseImageDebug] = useState(false);
+
   // iOS Safari can "diagonal scroll" (horizontal + vertical) inside nested scroll containers.
   // Lock touch gestures in the listings table to either horizontal (scroll the table) OR vertical (scroll the page),
   // based on the initial dominant direction.
@@ -3135,11 +3138,14 @@ export default function StockXRepricing() {
           }
           if (data?.debug) {
             console.log('🖼️ purchases/image-map debug:', data.debug);
+            setPurchaseImageDebug({ ...data.debug, _fetchedAt: new Date().toISOString() });
           } else {
             console.log('🖼️ purchases/image-map returned', Object.keys(images).length, 'images');
+            setPurchaseImageDebug({ wantedKeys: toLookup.length, foundKeys: Object.keys(images).length, _fetchedAt: new Date().toISOString() });
           }
         } else if (!res.ok) {
           console.warn('⚠️ Purchases image-map failed:', data?.error || `HTTP ${res.status}`);
+          setPurchaseImageDebug({ error: data?.error || `HTTP ${res.status}`, _fetchedAt: new Date().toISOString() });
         }
         }
       }
@@ -3186,6 +3192,7 @@ export default function StockXRepricing() {
   const resetImageCaches = useCallback(async () => {
     setBulkActionMessage('🧼 Resetting images…');
     setTimeout(() => setBulkActionMessage(null), 5000);
+    setShowPurchaseImageDebug(true);
 
     try {
       localStorage.removeItem(PRODUCT_IMAGE_CACHE_KEY);
@@ -3751,8 +3758,66 @@ export default function StockXRepricing() {
             <RefreshCw className="w-4 h-4" />
             <span>Reset images</span>
           </button>
+          <button
+            onClick={() => setShowPurchaseImageDebug((v) => !v)}
+            className={`flex items-center space-x-2 px-5 py-3 rounded-lg font-medium transition-all duration-200 ${
+              isNeon ? 'bg-white/5 hover:bg-white/10 border border-white/10 text-white/90' : 'bg-white hover:bg-gray-50 border border-gray-200 text-gray-900'
+            }`}
+            title="Show last purchases image-map debug"
+          >
+            <Wrench className="w-4 h-4" />
+            <span>Image debug</span>
+          </button>
         </div>
       </div>
+
+      {showPurchaseImageDebug && (
+        <div className={`rounded-xl border p-4 ${
+          isNeon ? 'bg-black/20 border-white/10' : 'bg-white border-gray-200'
+        }`}>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className={`text-sm font-semibold ${isNeon ? 'text-white' : 'text-gray-900'}`}>Image fallback debug</div>
+              <div className={`text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                Last call to <span className="font-mono">/api/purchases/image-map</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={async () => {
+                  try {
+                    if (!purchaseImageDebug) return;
+                    await navigator.clipboard.writeText(JSON.stringify(purchaseImageDebug, null, 2));
+                    setBulkActionMessage('📋 Copied image debug');
+                    setTimeout(() => setBulkActionMessage(null), 4000);
+                  } catch {
+                    setBulkActionMessage('❌ Failed to copy debug');
+                    setTimeout(() => setBulkActionMessage(null), 4000);
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${
+                  isNeon ? 'bg-white/5 border-white/10 hover:bg-white/10 text-white/80' : 'bg-gray-50 border-gray-200 hover:bg-gray-100 text-gray-800'
+                }`}
+              >
+                Copy
+              </button>
+              <button
+                onClick={() => setShowPurchaseImageDebug(false)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${
+                  isNeon ? 'bg-white/5 border-white/10 hover:bg-white/10 text-white/80' : 'bg-gray-50 border-gray-200 hover:bg-gray-100 text-gray-800'
+                }`}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+          <pre className={`mt-3 max-h-64 overflow-auto rounded-lg p-3 text-xs whitespace-pre-wrap ${
+            isNeon ? 'bg-black/30 border border-white/10 text-gray-200' : 'bg-gray-50 border border-gray-200 text-gray-800'
+          }`}>
+            {purchaseImageDebug ? JSON.stringify(purchaseImageDebug, null, 2) : 'No debug captured yet. Click “Reset images” to run the fallback.'}
+          </pre>
+        </div>
+      )}
 
       {/* Auto-Repricing Interval Settings */}
       <div className={`rounded-xl border ${
