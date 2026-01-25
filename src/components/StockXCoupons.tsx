@@ -152,8 +152,8 @@ export default function StockXCoupons() {
 
   const sortOptions = useMemo<NeonDropdownOption[]>(
     () => [
-      { value: 'sent_newest', label: 'Newest first' },
       { value: 'expiring_available', label: 'Available expiring soon' },
+      { value: 'sent_newest', label: 'Newest first' },
       { value: 'expired_only', label: 'Expired' },
     ],
     []
