@@ -86,6 +86,11 @@ function pickPurchaseImageUrl(p: any): string | null {
     p?.product?.imageUrl ||
     p?.product?.image ||
     p?.product?.image_url ||
+    p?.product?.thumbnail ||
+    p?.product?.thumbnailUrl ||
+    p?.product?.thumb ||
+    (Array.isArray(p?.product?.images) ? p.product.images[0] : null) ||
+    (Array.isArray(p?.images) ? p.images[0] : null) ||
     null;
   if (typeof v !== 'string') return null;
   const trimmed = v.trim();
@@ -183,6 +188,40 @@ export async function POST(request: NextRequest) {
       const wantedArr = Array.from(wanted);
       const foundKeys = Object.keys(images);
       const missingKeys = wantedArr.filter((k) => !images[k]);
+
+      // Try to explain missing keys: find a matching purchase (style/name+size) that simply has no image fields.
+      const missingExplainers = missingKeys.slice(0, 20).map((key) => {
+        const isStyle = key.startsWith('style:');
+        const payload = key.replace(/^style:|^name:/, '');
+        const [left, size] = payload.split('__');
+        const target = (left || '').trim();
+        const targetSize = (size || '').trim();
+
+        const match = purchases.find((p: any) => {
+          const pSize = normalizeSize(p?.size || p?.product?.size);
+          if (!pSize || pSize !== targetSize) return false;
+          if (isStyle) {
+            const sid = getStyleId(p);
+            return sid ? sid.trim() === target : false;
+          }
+          const nm = normalizeProductName(getProductName(p));
+          return nm ? nm === target : false;
+        });
+
+        const img = match ? pickPurchaseImageUrl(match) : null;
+        return {
+          key,
+          matchedPurchase: Boolean(match),
+          matchedPurchaseHasImage: Boolean(img),
+          matchedPurchaseId: match?.id || null,
+          matchedPurchaseOrderNumber: match?.orderNumber || match?.order_id || null,
+          matchedPurchaseImageCandidate: img,
+          matchedPurchaseProductName: match ? getProductName(match) : null,
+          matchedPurchaseSize: match ? normalizeSize(match?.size || match?.product?.size) : null,
+          matchedPurchaseStyleId: match ? getStyleId(match) : null,
+        };
+      });
+
       return NextResponse.json({
         success: true,
         images,
@@ -190,6 +229,7 @@ export async function POST(request: NextRequest) {
           wantedKeys: wantedArr.length,
           foundKeys: foundKeys.length,
           missingKeys: missingKeys.slice(0, 50),
+          missingExplainers,
           purchasesScanned: purchases.length,
           purchasesFromUserIdQuery: snapUserId.size,
           purchasesFromUidQuery: snapUid.size,
