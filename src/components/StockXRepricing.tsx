@@ -4464,13 +4464,13 @@ export default function StockXRepricing() {
                     <th
                       className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
                         isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'
-                      }`}
+                      } whitespace-nowrap`}
                       onClick={() => handleSort('product')}
                     >
                       <div className="flex items-center justify-center h-full">
                         <div className="flex items-center gap-2 justify-center w-full">
                           <Package className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
-                          <span className={`text-xs font-bold uppercase tracking-wider ${
+                          <span className={`text-xs font-bold uppercase tracking-wider whitespace-nowrap ${
                             isNeon ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
                           } transition-colors`}>
                             Product
@@ -4489,13 +4489,13 @@ export default function StockXRepricing() {
                     <th
                       className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
                         isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'
-                      }`}
+                      } whitespace-nowrap`}
                       onClick={() => handleSort('price')}
                     >
                       <div className="flex items-center justify-start h-full">
                         <div className="flex items-center gap-2 justify-start w-full">
                           <DollarSign className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
-                          <span className={`text-xs font-bold uppercase tracking-wider ${
+                          <span className={`text-xs font-bold uppercase tracking-wider whitespace-nowrap ${
                             isNeon ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
                           } transition-colors`}>
                             My Price
@@ -4514,13 +4514,13 @@ export default function StockXRepricing() {
                     <th
                       className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
                         isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'
-                      }`}
+                      } whitespace-nowrap`}
                       onClick={() => handleSort('market')}
                     >
                       <div className="flex items-center justify-start h-full">
                         <div className="flex items-center gap-2 justify-start w-full">
                           <TrendingDown className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
-                          <span className={`text-xs font-bold uppercase tracking-wider ${
+                          <span className={`text-xs font-bold uppercase tracking-wider whitespace-nowrap ${
                             isNeon ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
                           } transition-colors`}>
                             Market
@@ -4544,11 +4544,11 @@ export default function StockXRepricing() {
                       { icon: AlertTriangle, label: 'Auto Off' },
                       { icon: MoreHorizontal, label: 'Actions' }
                     ].map((col) => (
-                      <th key={col.label} className="relative px-6 py-0 h-12 select-none">
+                      <th key={col.label} className="relative px-6 py-0 h-12 select-none whitespace-nowrap">
                         <div className="flex items-center h-full justify-center">
                           <div className="flex items-center gap-2 justify-center">
                             <col.icon className={`w-4 h-4 ${isNeon ? 'text-cyan-400' : 'text-blue-600'}`} />
-                            <span className={`text-xs font-bold uppercase tracking-wider ${
+                            <span className={`text-xs font-bold uppercase tracking-wider whitespace-nowrap ${
                               isNeon ? 'text-gray-300' : 'text-gray-600'
                             }`}>
                               {col.label}
