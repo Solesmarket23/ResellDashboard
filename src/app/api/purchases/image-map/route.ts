@@ -41,7 +41,9 @@ function normalizeSize(size: unknown): string {
 
   const numericToken = cleanedTokens.find((t) => /^\d+(\.\d+)?$/.test(t));
   if (numericToken) {
-    const hasW = cleanedTokens[0] === 'W';
+    // Shoe sizes often appear as "US M 8.5" (Mens marker) or "US W 8.5".
+    // If we have a numeric size, prefer it over treating "M" as apparel.
+    const hasW = cleanedTokens.includes('W');
     return hasW ? `W ${numericToken}` : numericToken;
   }
 

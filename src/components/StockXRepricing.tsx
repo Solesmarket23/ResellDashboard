@@ -1452,12 +1452,37 @@ export default function StockXRepricing() {
             } catch {
               purchaseCache = {};
             }
-            const normalizeSizeQuick = (size: unknown): string =>
-              String(size || '')
-                .trim()
-                .replace(/\s+/g, ' ')
-                .toUpperCase()
-                .replace(/^US\s+/, '');
+            const normalizeSizeQuick = (size: unknown): string => {
+              const raw = String(size || '').trim().replace(/\s+/g, ' ').toUpperCase();
+              if (!raw) return '';
+              const tokens = raw.replace(/[:]/g, ' ').split(' ').filter(Boolean);
+              const ignore = new Set([
+                'SIZE',
+                'US',
+                'U.S.',
+                'USA',
+                'MENS',
+                "MEN'S",
+                'MEN',
+                'WOMENS',
+                "WOMEN'S",
+                'WOMEN',
+                'KIDS',
+                'KID',
+                'YOUTH',
+              ]);
+              const cleanedTokens = tokens.filter((t) => !ignore.has(t));
+              const cleaned = cleanedTokens.join(' ').trim();
+              if (!cleaned) return '';
+              const numericToken = cleanedTokens.find((t) => /^\d+(\.\d+)?$/.test(t));
+              if (numericToken) {
+                const hasW = cleanedTokens.includes('W');
+                return hasW ? `W ${numericToken}` : numericToken;
+              }
+              const apparel = new Set(['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL']);
+              for (const t of cleanedTokens) if (apparel.has(t)) return t;
+              return cleaned;
+            };
             const normalizeNameQuick = (name: unknown): string =>
               String(name || '')
                 .trim()
@@ -2956,13 +2981,15 @@ export default function StockXRepricing() {
         const cleanedTokens = tokens.filter((t) => !ignore.has(t));
         const cleaned = cleanedTokens.join(' ').trim();
         if (!cleaned) return '';
-        const apparel = new Set(['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL']);
-        for (const t of cleanedTokens) if (apparel.has(t)) return t;
         const numericToken = cleanedTokens.find((t) => /^\d+(\.\d+)?$/.test(t));
         if (numericToken) {
-          const hasW = cleanedTokens[0] === 'W';
+          // Shoe sizes often appear as "US M 8.5" (Mens marker) or "US W 8.5".
+          // If we have a numeric size, prefer it over treating "M" as apparel.
+          const hasW = cleanedTokens.includes('W');
           return hasW ? `W ${numericToken}` : numericToken;
         }
+        const apparel = new Set(['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL']);
+        for (const t of cleanedTokens) if (apparel.has(t)) return t;
         return cleaned;
       };
 
