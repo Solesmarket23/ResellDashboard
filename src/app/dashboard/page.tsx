@@ -28,6 +28,7 @@ const FailedVerifications = dynamic(() => import('../../components/FailedVerific
 const ProfitCalculator = dynamic(() => import('../../components/ProfitCalculator'), { ssr: false, loading: SectionFallback });
 const AudioPreview = dynamic(() => import('../../components/AudioPreview'), { ssr: false, loading: SectionFallback });
 const MarketAlerts = dynamic(() => import('../../components/MarketAlerts'), { ssr: false, loading: SectionFallback });
+const Insights = dynamic(() => import('../../components/Insights'), { ssr: false, loading: SectionFallback });
 const Plans = dynamic(() => import('../../components/Plans'), { ssr: false, loading: SectionFallback });
 const FAQ = dynamic(() => import('../../components/FAQ'), { ssr: false, loading: SectionFallback });
 const FeatureRequests = dynamic(() => import('../../components/FeatureRequests'), { ssr: false, loading: SectionFallback });
@@ -176,6 +177,8 @@ function DashboardContent() {
         return <Cashflow />;
       case 'failed-verifications':
         return <FailedVerifications />;
+      case 'insights':
+        return <Insights />;
       case 'profit-calculator':
         return <ProfitCalculator />;
       case 'profile':
