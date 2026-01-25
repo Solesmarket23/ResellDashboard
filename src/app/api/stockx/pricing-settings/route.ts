@@ -51,6 +51,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const authedUserId = await resolveAuthedUserId(request);
     const userIdParam = searchParams.get('userId')?.trim() || '';
+    const includeTemplates = searchParams.get('includeTemplates') === '1';
     const userId = userIdParam || authedUserId;
     if (!userId) {
       return NextResponse.json({ success: false, error: 'Missing userId' }, { status: 400 });
@@ -72,6 +73,16 @@ export async function GET(request: NextRequest) {
       .get();
 
     const settings = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    if (includeTemplates) {
+      const templatesSnap = await adminDb
+        .collection('stockxPricingTemplates')
+        .where('userId', '==', userId)
+        .get();
+      const templates = templatesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      return NextResponse.json({ success: true, userId, settings, templates });
+    }
+
     return NextResponse.json({ success: true, userId, settings });
   } catch (e) {
     return NextResponse.json(

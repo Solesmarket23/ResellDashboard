@@ -89,6 +89,8 @@ interface Listing {
   inventoryGroupId?: string; // productId + variantId
   isGroupLeader?: boolean;
   groupLeaderId?: string;
+  // UI-only: indicates the row is inheriting settings from a template (not explicitly saved for this listingId yet)
+  templateApplied?: boolean;
 }
 
 interface InventoryGroup {
@@ -192,7 +194,10 @@ export default function StockXRepricing() {
   const [showPreviewResults, setShowPreviewResults] = useState(false);
   const [savedSettings, setSavedSettings] = useState<Record<string, any>>({});
   const savedSettingsRef = useRef<Record<string, any>>({});
+  const [pricingTemplates, setPricingTemplates] = useState<Record<string, any>>({});
+  const pricingTemplatesRef = useRef<Record<string, any>>({});
   const [savingSettings, setSavingSettings] = useState(false);
+  const autoSavedTemplateListingIdsRef = useRef<Record<string, true>>({});
   const [activePeeks, setActivePeeks] = useState<Record<string, boolean>>({});
   const [peekScheduler, setPeekScheduler] = useState<NodeJS.Timeout | null>(null);
   const [inventoryGroups, setInventoryGroups] = useState<Map<string, InventoryGroup>>(new Map());
@@ -322,7 +327,7 @@ export default function StockXRepricing() {
     }
   }, []);
 
-  const applySavedSettingsToListings = useCallback((input: Listing[], settingsMap: Record<string, any>) => {
+  const applySavedSettingsToListings = useCallback((input: Listing[], settingsMap: Record<string, any>, templatesMap?: Record<string, any>) => {
     if (!Array.isArray(input) || input.length === 0) return input;
     const hasAny = settingsMap && Object.keys(settingsMap).length > 0;
     return input.map(listing => {
@@ -334,11 +339,27 @@ export default function StockXRepricing() {
           pricingStrategy: saved.pricingStrategy || listing.pricingStrategy,
           minPrice: Object.prototype.hasOwnProperty.call(saved, 'minPrice') ? saved.minPrice : listing.minPrice,
           maxPrice: Object.prototype.hasOwnProperty.call(saved, 'maxPrice') ? saved.maxPrice : listing.maxPrice,
-          autoDeactivate: Object.prototype.hasOwnProperty.call(saved, 'autoDeactivate') ? saved.autoDeactivate : listing.autoDeactivate
+          autoDeactivate: Object.prototype.hasOwnProperty.call(saved, 'autoDeactivate') ? saved.autoDeactivate : listing.autoDeactivate,
+          templateApplied: false
+        };
+      }
+
+      // If we don't have an explicit listingId setting, try applying a template (productId+variantId).
+      const tmplKey = `${String(listing.productId || '').trim()}__${String(listing.variantId || '').trim()}`;
+      const tmpl = tmplKey && templatesMap ? templatesMap[tmplKey] : undefined;
+      if (tmpl) {
+        return {
+          ...listing,
+          repricingEnabled: Object.prototype.hasOwnProperty.call(tmpl, 'enabled') ? tmpl.enabled !== false : true,
+          pricingStrategy: tmpl.pricingStrategy || listing.pricingStrategy,
+          minPrice: Object.prototype.hasOwnProperty.call(tmpl, 'minPrice') ? tmpl.minPrice : listing.minPrice,
+          maxPrice: Object.prototype.hasOwnProperty.call(tmpl, 'maxPrice') ? tmpl.maxPrice : listing.maxPrice,
+          autoDeactivate: Object.prototype.hasOwnProperty.call(tmpl, 'autoDeactivate') ? tmpl.autoDeactivate : listing.autoDeactivate,
+          templateApplied: true
         };
       }
       // No settings doc = not opted-in = OFF by default
-      return { ...listing, repricingEnabled: false };
+      return { ...listing, repricingEnabled: false, templateApplied: false };
     });
   }, []);
 
@@ -666,11 +687,71 @@ export default function StockXRepricing() {
     savedSettingsRef.current = savedSettings;
   }, [savedSettings]);
 
+  useEffect(() => {
+    pricingTemplatesRef.current = pricingTemplates;
+  }, [pricingTemplates]);
+
   // If saved settings change (e.g. user clicks Save), re-apply them to the current listings in-memory
   // so the UI stays consistent even if a background refresh comes in.
   useEffect(() => {
-    setListings(prev => applySavedSettingsToListings(prev, savedSettingsRef.current));
-  }, [applySavedSettingsToListings, savedSettings]);
+    setListings(prev => applySavedSettingsToListings(prev, savedSettingsRef.current, pricingTemplatesRef.current));
+  }, [applySavedSettingsToListings, savedSettings, pricingTemplates]);
+
+  // Auto-save template-applied settings for new listings so future auto-repricing runs pick them up
+  // (cron reads per-listing settings docs).
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    if (savingSettings) return;
+    if (!Array.isArray(listings) || listings.length === 0) return;
+    const templatesMap = pricingTemplatesRef.current || {};
+    if (Object.keys(templatesMap).length === 0) return;
+
+    const currentSaved = savedSettingsRef.current || {};
+    const toSave = listings.filter((l) => {
+      if (!l?.templateApplied) return false;
+      if (!l?.listingId) return false;
+      // Only persist settings for active listings
+      if (l.status && String(l.status).toUpperCase() !== 'ACTIVE') return false;
+      if (currentSaved[l.listingId]) return false;
+      if (autoSavedTemplateListingIdsRef.current[l.listingId]) return false;
+      return true;
+    });
+
+    if (toSave.length === 0) return;
+
+    // Mark immediately to avoid loops while we save.
+    for (const l of toSave) autoSavedTemplateListingIdsRef.current[l.listingId] = true;
+
+    const run = async () => {
+      try {
+        // Only show a lightweight toast (no repricing).
+        setBulkActionMessage(`🧩 Applied saved defaults to ${toSave.length} new listing${toSave.length === 1 ? '' : 's'}`);
+        setTimeout(() => setBulkActionMessage(null), 5000);
+
+        // Save sequentially (avoid hammering Firestore / rate limits).
+        for (const l of toSave) {
+          // eslint-disable-next-line no-await-in-loop
+          await saveSettingToFirebase(
+            l.listingId,
+            {
+              enabled: l.repricingEnabled !== false,
+              pricingStrategy: l.pricingStrategy || { type: 'keep_current' },
+              minPrice: l.minPrice,
+              maxPrice: l.maxPrice,
+              autoDeactivate: l.autoDeactivate
+            },
+            { productId: l.productId, variantId: l.variantId },
+            { silent: true }
+          );
+        }
+      } catch (e) {
+        console.warn('Auto-save template settings failed:', e);
+      }
+    };
+
+    void run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listings, savingSettings, settingsLoaded, pricingTemplates]);
 
   const saveAutoRepricingEnabled = async (enabled: boolean) => {
     // Try to get user ID from Firebase auth first, then fall back to site user ID from cookies
@@ -753,10 +834,12 @@ export default function StockXRepricing() {
     try {
       console.log('🔄 Loading saved settings for user:', userId);
       // Prefer server-side fetch (works even without Firebase authUser via site-user-id cookie)
-      const res = await fetch(`/api/stockx/pricing-settings?userId=${encodeURIComponent(userId)}`);
+      const res = await fetch(`/api/stockx/pricing-settings?userId=${encodeURIComponent(userId)}&includeTemplates=1`);
       const json = await res.json().catch(() => null);
       const userSettings = Array.isArray(json?.settings) ? json.settings : [];
+      const templatesArr = Array.isArray(json?.templates) ? json.templates : [];
       console.log(`📊 Found ${userSettings.length} saved settings in Firebase`);
+      console.log(`🧩 Found ${templatesArr.length} pricing templates in Firebase`);
       
       // Convert to a map for easier lookup
       const settingsMap: Record<string, any> = {};
@@ -778,13 +861,26 @@ export default function StockXRepricing() {
         savedSettingsRef.current = settingsMap;
         return settingsMap;
       });
+
+      const templatesMap: Record<string, any> = {};
+      for (const t of templatesArr) {
+        const productId = String(t?.productId || '').trim();
+        const variantId = String(t?.variantId || '').trim();
+        if (!productId || !variantId) continue;
+        templatesMap[`${productId}__${variantId}`] = t;
+      }
+      setPricingTemplates(() => {
+        pricingTemplatesRef.current = templatesMap;
+        return templatesMap;
+      });
+
       setSettingsLoaded(true);
       console.log('✅ Settings loaded into state.');
 
       // Apply immediately to whatever listings we already have (cached or freshly fetched),
       // so a page refresh a few seconds after Save still shows the saved values.
       setListings(prev => {
-        const next = applySavedSettingsToListings(prev, settingsMap);
+        const next = applySavedSettingsToListings(prev, settingsMap, templatesMap);
         // Also refresh the local cache so the next refresh stays consistent.
         try {
           const minimal = next.map((l: any) => ({
@@ -824,7 +920,12 @@ export default function StockXRepricing() {
     }
   };
 
-  const saveSettingToFirebase = async (listingId: string, settings: any) => {
+  const saveSettingToFirebase = async (
+    listingId: string,
+    settings: any,
+    metaOverride?: { productId?: string; variantId?: string },
+    opts?: { silent?: boolean }
+  ) => {
     if (savingSettings) return;
 
     // Support site-password sessions (no Firebase authUser) by using site-user-id cookie.
@@ -845,18 +946,20 @@ export default function StockXRepricing() {
       return;
     }
     
-    console.log(`💾 Starting save for ${listingId}:`, {
-      settings,
-      minPrice: settings.minPrice,
-      maxPrice: settings.maxPrice,
-      hasMinPrice: 'minPrice' in settings,
-      hasMaxPrice: 'maxPrice' in settings
-    });
+    if (!opts?.silent) {
+      console.log(`💾 Starting save for ${listingId}:`, {
+        settings,
+        minPrice: settings.minPrice,
+        maxPrice: settings.maxPrice,
+        hasMinPrice: 'minPrice' in settings,
+        hasMaxPrice: 'maxPrice' in settings
+      });
+    }
     
     setSavingSettings(true);
     try {
       const existingSetting = savedSettings[listingId];
-      console.log(`📄 Existing setting for ${listingId}:`, existingSetting);
+      if (!opts?.silent) console.log(`📄 Existing setting for ${listingId}:`, existingSetting);
       
       // Ensure we have a valid pricing strategy and clean it
       let pricingStrategy = settings.pricingStrategy || { type: 'keep_current' };
@@ -946,6 +1049,9 @@ export default function StockXRepricing() {
       console.log('📦 Final setting data to save:', settingData);
 
       const listingMeta = (() => {
+        if (metaOverride?.productId && metaOverride?.variantId) {
+          return { productId: metaOverride.productId, variantId: metaOverride.variantId };
+        }
         try {
           const l = listings.find(x => x.listingId === listingId);
           return l ? { productId: l.productId, variantId: l.variantId } : { productId: undefined, variantId: undefined };
@@ -979,7 +1085,7 @@ export default function StockXRepricing() {
         return next;
       });
       setSettingsLoaded(true);
-      console.log('🎉 Settings saved successfully to Firebase');
+      if (!opts?.silent) console.log('🎉 Settings saved successfully to Firebase');
     } catch (error) {
       console.error('❌ Error saving settings:', error);
     } finally {
@@ -1384,47 +1490,11 @@ export default function StockXRepricing() {
         // Process inventory groups
         const groupedListings = processInventoryGroups(enrichedListings);
         
-        // Apply saved settings to the grouped listings
-        // IMPORTANT: use the ref to avoid stale closures when this runs right after a Save.
+        // Apply settings + templates after grouping.
+        // IMPORTANT: use refs to avoid stale closures when this runs right after a Save.
         const currentSaved = savedSettingsRef.current || {};
-        let finalListings = groupedListings;
-        if (Object.keys(currentSaved).length > 0) {
-          console.log('🔧 Applying saved settings after grouping...');
-          console.log('📊 Settings loaded:', settingsLoaded);
-          console.log('📊 Number of saved settings:', Object.keys(currentSaved).length);
-          
-          finalListings = groupedListings.map(listing => {
-            const saved = currentSaved[listing.listingId];
-            if (saved) {
-              console.log(`✅ Restoring settings for ${listing.listingId}:`, {
-                savedMinPrice: saved.minPrice,
-                savedMaxPrice: saved.maxPrice,
-                hasMinPrice: saved.hasOwnProperty('minPrice'),
-                hasMaxPrice: saved.hasOwnProperty('maxPrice'),
-                currentMinPrice: listing.minPrice,
-                currentMaxPrice: listing.maxPrice
-              });
-              return {
-                ...listing,
-                repricingEnabled: saved.hasOwnProperty('enabled') ? saved.enabled !== false : true,
-                pricingStrategy: saved.pricingStrategy || listing.pricingStrategy,
-                minPrice: saved.hasOwnProperty('minPrice') ? saved.minPrice : listing.minPrice,
-                maxPrice: saved.hasOwnProperty('maxPrice') ? saved.maxPrice : listing.maxPrice,
-                autoDeactivate: saved.hasOwnProperty('autoDeactivate') ? saved.autoDeactivate : listing.autoDeactivate
-              };
-            } else {
-              console.log(`⚠️ No saved settings found for ${listing.listingId}`);
-            }
-            // No settings doc = not opted-in = OFF by default
-            return { ...listing, repricingEnabled: false };
-          });
-        } else {
-          console.log('⚠️ Settings not applied:', {
-            hasUser: !!authUser,
-            settingsLoaded,
-            savedSettingsCount: Object.keys(currentSaved).length
-          });
-        }
+        const currentTemplates = pricingTemplatesRef.current || {};
+        const finalListings = applySavedSettingsToListings(groupedListings, currentSaved, currentTemplates);
         
         // Hydrate images immediately from local caches so thumbnails don't flash blank on reload.
         // The StockX listings payload often lacks imageUrl; enrichment can take several seconds.
@@ -4630,6 +4700,18 @@ export default function StockXRepricing() {
                               >
                                 <Link2 className="w-3.5 h-3.5" />
                                 Synced
+                              </span>
+                            )}
+                            {listing.templateApplied && (
+                              <span
+                                className={`inline-flex items-center px-2.5 py-1 rounded-full border text-[11px] font-semibold leading-none whitespace-nowrap ${
+                                  isNeon
+                                    ? 'bg-cyan-500/10 text-cyan-200 border-cyan-400/15'
+                                    : 'bg-cyan-50 text-cyan-800 border-cyan-200'
+                                }`}
+                                title="Defaults auto-applied from your last saved settings for this product/size"
+                              >
+                                Defaults
                               </span>
                             )}
                             <span className={`text-xs ${isNeon ? 'text-gray-500' : 'text-gray-500'}`}>
