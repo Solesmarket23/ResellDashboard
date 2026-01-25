@@ -10,6 +10,7 @@ export const revalidate = 0;
 type TaskStatus = 'open' | 'done';
 type TaskPriority = 'low' | 'med' | 'high';
 type TaskCategory = 'stockx' | 'shipping' | 'expenses' | 'repricing' | 'admin' | 'other';
+type TaskRecurrence = 'once' | 'daily' | 'weekly';
 
 type Task = {
   id: string;
@@ -19,6 +20,7 @@ type Task = {
   priority: TaskPriority;
   category: TaskCategory;
   dueDate?: string; // YYYY-MM-DD
+  recurrence?: TaskRecurrence; // defaults to 'once'
   relatedSection?: string; // /dashboard?section=...
   createdAtMs: number;
   updatedAtMs: number;
@@ -53,6 +55,35 @@ function normalizeDueDate(raw: any): string | undefined {
   return s;
 }
 
+function normalizeRecurrence(raw: any): TaskRecurrence {
+  if (raw === 'daily' || raw === 'weekly' || raw === 'once') return raw;
+  return 'once';
+}
+
+function todayKey(): string {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function addDays(yyyyMmDd: string, deltaDays: number): string {
+  const [y, m, d] = yyyyMmDd.split('-').map((x) => parseInt(x, 10));
+  const dt = new Date(y, (m || 1) - 1, d || 1);
+  dt.setDate(dt.getDate() + deltaDays);
+  const yyyy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, '0');
+  const dd = String(dt.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function nextDueDateForRecurrence(currentDue: string, recurrence: TaskRecurrence): string {
+  if (recurrence === 'daily') return addDays(currentDue, 1);
+  if (recurrence === 'weekly') return addDays(currentDue, 7);
+  return currentDue;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const userId = resolveUserId(request);
@@ -75,6 +106,7 @@ export async function GET(request: NextRequest) {
           priority: (data.priority === 'high' || data.priority === 'med' ? data.priority : 'low') as TaskPriority,
           category: (typeof data.category === 'string' ? data.category : 'other') as TaskCategory,
           dueDate: typeof data.dueDate === 'string' ? data.dueDate : undefined,
+          recurrence: (data.recurrence === 'daily' || data.recurrence === 'weekly' ? data.recurrence : 'once') as TaskRecurrence,
           relatedSection: typeof data.relatedSection === 'string' ? data.relatedSection : undefined,
           createdAtMs: typeof data.createdAtMs === 'number' ? data.createdAtMs : 0,
           updatedAtMs: typeof data.updatedAtMs === 'number' ? data.updatedAtMs : 0,
@@ -114,7 +146,8 @@ export async function POST(request: NextRequest) {
         body?.priority === 'high' || body?.priority === 'med' || body?.priority === 'low' ? body.priority : 'med';
       const category: TaskCategory =
         typeof body?.category === 'string' ? (body.category as TaskCategory) : 'other';
-      const dueDate = normalizeDueDate(body?.dueDate);
+      const recurrence = normalizeRecurrence(body?.recurrence);
+      const dueDate = normalizeDueDate(body?.dueDate) || (recurrence === 'once' ? undefined : todayKey());
       const relatedSection = typeof body?.relatedSection === 'string' ? body.relatedSection.trim() : undefined;
       const notes = typeof body?.notes === 'string' ? body.notes.trim() : undefined;
 
@@ -126,6 +159,7 @@ export async function POST(request: NextRequest) {
           priority,
           category,
           dueDate: dueDate || null,
+          recurrence,
           relatedSection: relatedSection || null,
           createdAtMs: now,
           updatedAtMs: now,
@@ -156,7 +190,8 @@ export async function POST(request: NextRequest) {
         const priority: TaskPriority =
           raw?.priority === 'high' || raw?.priority === 'med' || raw?.priority === 'low' ? raw.priority : 'med';
         const category: TaskCategory = typeof raw?.category === 'string' ? (raw.category as TaskCategory) : 'other';
-        const dueDate = normalizeDueDate(raw?.dueDate);
+        const recurrence = normalizeRecurrence(raw?.recurrence);
+        const dueDate = normalizeDueDate(raw?.dueDate) || (recurrence === 'once' ? undefined : todayKey());
         const relatedSection = typeof raw?.relatedSection === 'string' ? raw.relatedSection.trim() : undefined;
         const notes = typeof raw?.notes === 'string' ? raw.notes.trim() : undefined;
 
@@ -169,6 +204,7 @@ export async function POST(request: NextRequest) {
             priority,
             category,
             dueDate: dueDate || null,
+            recurrence,
             relatedSection: relatedSection || null,
             createdAtMs: now,
             updatedAtMs: now,
@@ -188,15 +224,56 @@ export async function POST(request: NextRequest) {
       const status = body?.status === 'done' ? 'done' : 'open';
       if (!id) return NextResponse.json({ success: false, error: 'id is required' }, { status: 400 });
       const now = Date.now();
-      await tasksCol(userId).doc(id).set(
-        {
-          status,
-          updatedAtMs: now,
-          completedAtMs: status === 'done' ? now : null,
-          _serverUpdatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
+      const db = getAdminDb();
+      const col = tasksCol(userId);
+      const ref = col.doc(id);
+
+      await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        const data = snap.exists ? (snap.data() as any) : null;
+
+        tx.set(
+          ref,
+          {
+            status,
+            updatedAtMs: now,
+            completedAtMs: status === 'done' ? now : null,
+            _serverUpdatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        // If a recurring task is marked done, create the next occurrence automatically.
+        if (status === 'done' && data) {
+          const recurrence: TaskRecurrence = normalizeRecurrence(data.recurrence);
+          if (recurrence !== 'once') {
+            const currentDue = normalizeDueDate(data.dueDate) || todayKey();
+            const nextDue = nextDueDateForRecurrence(currentDue, recurrence);
+            const nextId =
+              (globalThis.crypto as any)?.randomUUID?.() || `${now}-${Math.random().toString(16).slice(2)}`;
+
+            tx.set(
+              col.doc(nextId),
+              {
+                title: String(data.title || '').trim(),
+                notes: typeof data.notes === 'string' ? data.notes : null,
+                status: 'open',
+                priority: data.priority === 'high' || data.priority === 'med' || data.priority === 'low' ? data.priority : 'med',
+                category: typeof data.category === 'string' ? data.category : 'other',
+                dueDate: nextDue,
+                recurrence,
+                relatedSection: typeof data.relatedSection === 'string' ? data.relatedSection : null,
+                createdAtMs: now,
+                updatedAtMs: now,
+                completedAtMs: null,
+                _serverUpdatedAt: FieldValue.serverTimestamp(),
+                _recurrenceSourceTaskId: id,
+              },
+              { merge: true }
+            );
+          }
+        }
+      });
       return NextResponse.json({ success: true });
     }
 
@@ -209,6 +286,7 @@ export async function POST(request: NextRequest) {
       if (typeof body?.notes === 'string') patch.notes = body.notes.trim() || null;
       if (body?.priority === 'high' || body?.priority === 'med' || body?.priority === 'low') patch.priority = body.priority;
       if (typeof body?.category === 'string') patch.category = body.category;
+      if (typeof body?.recurrence !== 'undefined') patch.recurrence = normalizeRecurrence(body.recurrence);
       const dueDate = normalizeDueDate(body?.dueDate);
       if (body?.dueDate === null || body?.dueDate === '') patch.dueDate = null;
       else if (dueDate) patch.dueDate = dueDate;

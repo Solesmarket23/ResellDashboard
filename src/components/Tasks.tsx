@@ -13,6 +13,7 @@ import {
   Tag,
   CalendarDays,
   ArrowRight,
+  Repeat,
 } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
@@ -21,6 +22,7 @@ import NeonNotification from './NeonNotification';
 type TaskStatus = 'open' | 'done';
 type TaskPriority = 'low' | 'med' | 'high';
 type TaskCategory = 'stockx' | 'shipping' | 'expenses' | 'repricing' | 'admin' | 'other';
+type TaskRecurrence = 'once' | 'daily' | 'weekly';
 
 type Task = {
   id: string;
@@ -30,6 +32,7 @@ type Task = {
   priority: TaskPriority;
   category: TaskCategory;
   dueDate?: string; // YYYY-MM-DD
+  recurrence?: TaskRecurrence; // defaults to 'once'
   relatedSection?: string;
   createdAtMs: number;
   updatedAtMs: number;
@@ -137,6 +140,7 @@ export default function Tasks() {
   const [newPriority, setNewPriority] = useState<TaskPriority>('med');
   const [newDue, setNewDue] = useState<string>('');
   const [newLink, setNewLink] = useState<string>('stockx-repricing');
+  const [newRecurrence, setNewRecurrence] = useState<TaskRecurrence>('once');
 
   const resolveUserId = () => {
     const siteUserId = (typeof window !== 'undefined' ? window.localStorage.getItem('siteUserId') : '') || '';
@@ -230,6 +234,7 @@ export default function Tasks() {
     category: TaskCategory;
     priority: TaskPriority;
     dueDate?: string;
+    recurrence?: TaskRecurrence;
     relatedSection?: string;
     notes?: string;
   }) => {
@@ -246,6 +251,7 @@ export default function Tasks() {
       showToast('Task added', 'success');
       setNewTitle('');
       setNewDue('');
+      setNewRecurrence('once');
       await fetchTasks();
     } catch (e: any) {
       console.error('Create task error:', e);
@@ -265,6 +271,7 @@ export default function Tasks() {
           tasks: TEMPLATES.map((t) => ({
             ...t,
             dueDate: t.priority === 'high' ? todayKey() : undefined,
+            recurrence: 'once',
           })),
         }),
       });
@@ -291,6 +298,10 @@ export default function Tasks() {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) throw new Error(data?.error || 'Failed to update task');
+      if (next === 'done') {
+        // For recurring tasks, the API will create the next occurrence. Refresh so it shows up immediately.
+        void fetchTasks();
+      }
     } catch (e: any) {
       console.error('Toggle task error:', e);
       showToast(e?.message || 'Failed to update task', 'error');
@@ -479,6 +490,7 @@ export default function Tasks() {
                       category: newCategory,
                       priority: newPriority,
                       dueDate: newDue || undefined,
+                      recurrence: newRecurrence,
                       relatedSection: newLink || undefined,
                     });
                   }
@@ -523,6 +535,19 @@ export default function Tasks() {
               />
             </div>
 
+            <div className="lg:col-span-2">
+              <select
+                value={newRecurrence}
+                onChange={(e) => setNewRecurrence(e.target.value as TaskRecurrence)}
+                className={`${cls.input} px-3 py-3`}
+                title="Recurrence"
+              >
+                <option value="once">One-time</option>
+                <option value="daily">Recurring: daily</option>
+                <option value="weekly">Recurring: weekly</option>
+              </select>
+            </div>
+
             <div className="lg:col-span-1">
               <button
                 onClick={() => {
@@ -533,6 +558,7 @@ export default function Tasks() {
                     category: newCategory,
                     priority: newPriority,
                     dueDate: newDue || undefined,
+                    recurrence: newRecurrence,
                     relatedSection: newLink || undefined,
                   });
                 }}
@@ -608,6 +634,7 @@ export default function Tasks() {
                 const isDone = t.status === 'done';
                 const overdue = !isDone && t.dueDate && t.dueDate < today;
                 const dueToday = !isDone && t.dueDate === today;
+                const recurrence: TaskRecurrence = (t.recurrence === 'daily' || t.recurrence === 'weekly') ? t.recurrence : 'once';
                 return (
                   <div key={t.id} className={`px-5 py-4 flex items-start gap-4 ${isDone ? (isNeon ? 'opacity-60' : 'opacity-70') : ''}`}>
                     <button
@@ -651,6 +678,13 @@ export default function Tasks() {
                           >
                             <CalendarDays className="w-3 h-3" />
                             {formatDueLabel(t.dueDate)}
+                          </span>
+                        )}
+
+                        {recurrence !== 'once' && (
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold border ${isNeon ? 'text-cyan-300 border-cyan-500/30 bg-cyan-500/10' : 'text-blue-700 border-blue-200 bg-blue-50'}`}>
+                            <Repeat className="w-3 h-3" />
+                            {recurrence === 'daily' ? 'Daily' : 'Weekly'}
                           </span>
                         )}
                       </div>
