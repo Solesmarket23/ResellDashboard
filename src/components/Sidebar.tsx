@@ -81,21 +81,14 @@ const navigationItems = [
   {
     section: 'STOCKX INTEGRATION',
     items: [
-      { id: 'stockx-order-management', label: 'Order Management', icon: Package },
-      { id: 'stockx-market-research', label: 'Market Research', icon: Search },
-      { id: 'stockx-inventory', label: 'Inventory Manager', icon: Archive },
       { id: 'stockx-arbitrage', label: 'StockX Arbitrage', icon: ArrowLeftRight },
       { id: 'ebay-stockx-arbitrage', label: 'eBay → StockX Deals', icon: Target },
       { id: 'stockx-listings', label: 'Create Listing', icon: Package },
       { id: 'stockx-repricing', label: 'Automated Repricing', icon: Activity },
       { id: 'stockx-sales', label: 'My Sales', icon: DollarSign },
       { id: 'stockx-coupons', label: 'Coupons', icon: Tag },
-      { id: 'stockx-releases', label: 'Release Calendar', icon: Calendar },
       ...(PRICE_MONITOR_DISABLED ? [] : [{ id: 'stockx-price-monitor', label: 'Price Monitor', icon: Monitor }]),
       { id: 'stockx-flex-ask-monitor', label: 'Flex Ask Monitor', icon: Bell },
-      { id: 'stockx-profit-calc', label: 'Enhanced Profit Calc', icon: Calculator },
-      { id: 'stockx-trends', label: 'Market Trends', icon: LineChart },
-      { id: 'stockx-alerts', label: 'Alert System', icon: Bell },
     ]
   },
   {

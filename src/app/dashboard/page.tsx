@@ -31,18 +31,11 @@ const MarketAlerts = dynamic(() => import('../../components/MarketAlerts'), { ss
 const Plans = dynamic(() => import('../../components/Plans'), { ssr: false, loading: SectionFallback });
 const FAQ = dynamic(() => import('../../components/FAQ'), { ssr: false, loading: SectionFallback });
 const FeatureRequests = dynamic(() => import('../../components/FeatureRequests'), { ssr: false, loading: SectionFallback });
-const StockXOrderManagement = dynamic(() => import('../../components/StockXOrderManagement'), { ssr: false, loading: SectionFallback });
-const StockXMarketResearch = dynamic(() => import('../../components/StockXMarketResearch'), { ssr: false, loading: SectionFallback });
-const StockXInventory = dynamic(() => import('../../components/StockXInventory'), { ssr: false, loading: SectionFallback });
 const StockXArbitrage = dynamic(() => import('../../components/StockXArbitrage'), { ssr: false, loading: SectionFallback });
 const EbayStockXArbitrage = dynamic(() => import('../../components/EbayStockXArbitrage'), { ssr: false, loading: SectionFallback });
 const StockXRepricing = dynamic(() => import('../../components/StockXRepricing'), { ssr: false, loading: SectionFallback });
-const StockXReleases = dynamic(() => import('../../components/StockXReleases'), { ssr: false, loading: SectionFallback });
 const StockXPriceMonitor = dynamic(() => import('../../components/StockXPriceMonitor'), { ssr: false, loading: SectionFallback });
 const StockXFlexAskMonitor = dynamic(() => import('../../components/StockXFlexAskMonitor'), { ssr: false, loading: SectionFallback });
-const StockXProfitCalc = dynamic(() => import('../../components/StockXProfitCalc'), { ssr: false, loading: SectionFallback });
-const StockXTrends = dynamic(() => import('../../components/StockXTrends'), { ssr: false, loading: SectionFallback });
-const StockXAlerts = dynamic(() => import('../../components/StockXAlerts'), { ssr: false, loading: SectionFallback });
 const StockXListingCreator = dynamic(() => import('../../components/StockXListingCreator'), { ssr: false, loading: SectionFallback });
 const StockXCoupons = dynamic(() => import('../../components/StockXCoupons'), { ssr: false, loading: SectionFallback });
 const OnboardingQuestionnaire = dynamic(() => import('../../components/OnboardingQuestionnaire'), { ssr: false, loading: SectionFallback });
@@ -69,6 +62,21 @@ function DashboardContent() {
     const raw = searchParams.get('section');
     return (raw && raw.trim() ? raw : 'dashboard').toLowerCase();
   }, [searchParams]);
+
+  // Remove/disable certain legacy StockX sections
+  const REMOVED_SECTIONS = useMemo(
+    () =>
+      new Set([
+        'stockx-releases',
+        'stockx-profit-calc',
+        'stockx-trends',
+        'stockx-alerts',
+        'stockx-inventory',
+        'stockx-market-research',
+        'stockx-order-management',
+      ]),
+    []
+  );
   
   // Dynamic theme detection for consistent background
   const isNeon = currentTheme.name === 'Neon';
@@ -97,6 +105,15 @@ function DashboardContent() {
       }
     }
   }, [user, loading, router]);
+
+  // If a user hits a removed section URL directly, bounce them back to Dashboard.
+  useEffect(() => {
+    if (!isClient) return;
+    if (!REMOVED_SECTIONS.has(currentSection)) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('section', 'dashboard');
+    router.replace(`/dashboard?${params.toString()}`);
+  }, [REMOVED_SECTIONS, currentSection, isClient, router, searchParams]);
 
   const handleItemClick = (item: string) => {
     // Convert section name to URL-friendly format (e.g., "Market Research" -> "market-research")
@@ -214,20 +231,12 @@ function DashboardContent() {
         return <FeatureRequests />;
       case 'faq':
         return <FAQ />;
-      case 'stockx-order-management':
-        return <StockXOrderManagement />;
-      case 'stockx-market-research':
-        return <StockXMarketResearch />;
-      case 'stockx-inventory':
-        return <StockXInventory />;
       case 'stockx-arbitrage':
         return <StockXArbitrage />;
       case 'ebay-stockx-arbitrage':
         return <EbayStockXArbitrage />;
       case 'stockx-repricing':
         return <StockXRepricing />;
-      case 'stockx-releases':
-        return <StockXReleases />;
       case 'stockx-price-monitor':
         if (PRICE_MONITOR_DISABLED) {
           return (
@@ -248,12 +257,6 @@ function DashboardContent() {
         return <StockXPriceMonitor />;
       case 'stockx-flex-ask-monitor':
         return <StockXFlexAskMonitor />;
-      case 'stockx-profit-calc':
-        return <StockXProfitCalc />;
-      case 'stockx-trends':
-        return <StockXTrends />;
-      case 'stockx-alerts':
-        return <StockXAlerts />;
       case 'stockx-coupons':
         return <StockXCoupons />;
       case 'stockx-listings':
