@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   Lightbulb,
   MessageSquare,
+  ListTodo,
   CreditCard,
   HelpCircle,
   Zap,
@@ -71,6 +72,7 @@ const navigationItems = [
   {
     section: 'TOOLS',
     items: [
+      { id: 'tasks', label: 'Tasks', icon: ListTodo },
       { id: 'failed-verifications', label: 'Failed Verifications', icon: AlertTriangle },
       { id: 'insights', label: 'Insights', icon: Lightbulb },
       { id: 'reviews', label: 'Reviews', icon: MessageSquare },

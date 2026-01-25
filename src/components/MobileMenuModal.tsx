@@ -13,6 +13,7 @@ import {
   AlertTriangle,
   Lightbulb,
   MessageSquare,
+  ListTodo,
   Search,
   Archive,
   ArrowLeftRight,
@@ -78,6 +79,7 @@ const menuSections = [
   {
     title: 'TOOLS',
     items: [
+      { id: 'tasks', label: 'Tasks', icon: ListTodo },
       { id: 'failed-verifications', label: 'Failed Verifications', icon: AlertTriangle },
       { id: 'insights', label: 'Insights', icon: Lightbulb },
       { id: 'market-alerts', label: 'Market Alerts', icon: Bell },
