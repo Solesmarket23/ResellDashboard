@@ -106,6 +106,25 @@ body.theme-light {
   }
 }
 
+/* Extra-soft variants (for benefit pills like "$10 off") */
+@keyframes pulse-glow-cyan-xsoft {
+  0%, 100% {
+    filter: drop-shadow(0 0 6px rgba(34, 211, 238, 0.22));
+  }
+  50% {
+    filter: drop-shadow(0 0 10px rgba(34, 211, 238, 0.35));
+  }
+}
+
+@keyframes pulse-glow-violet-xsoft {
+  0%, 100% {
+    filter: drop-shadow(0 0 6px rgba(139, 92, 246, 0.22));
+  }
+  50% {
+    filter: drop-shadow(0 0 10px rgba(139, 92, 246, 0.35));
+  }
+}
+
 /* Coupon list: animate new entries in */
 @keyframes coupon-enter {
   from {
@@ -144,6 +163,14 @@ body.theme-light {
 
 .animate-pulse-glow-yellow-soft {
   animation: pulse-glow-yellow-soft 2s ease-in-out infinite;
+}
+
+.animate-pulse-glow-cyan-xsoft {
+  animation: pulse-glow-cyan-xsoft 2.25s ease-in-out infinite;
+}
+
+.animate-pulse-glow-violet-xsoft {
+  animation: pulse-glow-violet-xsoft 2.25s ease-in-out infinite;
 }
 
 /* Neon Card Styles */

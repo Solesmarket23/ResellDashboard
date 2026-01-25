@@ -1228,6 +1228,14 @@ export default function StockXCoupons() {
                             : c.daysLeft <= 2
                               ? 'animate-pulse-glow-yellow-soft'
                               : 'animate-pulse-glow-green-soft';
+                        const benefitGlow =
+                          !isNeon
+                            ? ''
+                            : c.benefit === 'amount_off'
+                              ? 'animate-pulse-glow-violet-xsoft'
+                              : (c.benefit === 'free_shipping' || c.benefit === 'half_off_shipping')
+                                ? 'animate-pulse-glow-cyan-xsoft'
+                                : '';
                         const isSaving = savingCode === c.code;
                         const isCopied = copied?.code === c.code;
                         const isManual = c.source === 'manual';
@@ -1270,19 +1278,19 @@ export default function StockXCoupons() {
                             <td className="px-4 py-3 whitespace-nowrap">
                               {c.benefit === 'free_shipping' ? (
                                 <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold whitespace-nowrap ${
-                                  isNeon ? `bg-cyan-500/10 border-cyan-500/30 text-cyan-200 ${daysLeftGlow}` : 'bg-cyan-50 border-cyan-200 text-cyan-800'
+                                  isNeon ? `bg-cyan-500/10 border-cyan-500/30 text-cyan-200 ${benefitGlow}` : 'bg-cyan-50 border-cyan-200 text-cyan-800'
                                 }`}>
                                   Free shipping
                                 </span>
                               ) : c.benefit === 'half_off_shipping' ? (
                                 <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold whitespace-nowrap ${
-                                  isNeon ? `bg-cyan-500/10 border-cyan-500/30 text-cyan-200 ${daysLeftGlow}` : 'bg-cyan-50 border-cyan-200 text-cyan-800'
+                                  isNeon ? `bg-cyan-500/10 border-cyan-500/30 text-cyan-200 ${benefitGlow}` : 'bg-cyan-50 border-cyan-200 text-cyan-800'
                                 }`}>
                                   Half off shipping
                                 </span>
                               ) : typeof c.amount === 'number' && Number.isFinite(c.amount) ? (
                                 <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold whitespace-nowrap ${
-                                  isNeon ? `bg-violet-500/10 border-violet-500/30 text-violet-200 ${daysLeftGlow}` : 'bg-violet-50 border-violet-200 text-violet-800'
+                                  isNeon ? `bg-violet-500/10 border-violet-500/30 text-violet-200 ${benefitGlow}` : 'bg-violet-50 border-violet-200 text-violet-800'
                                 }`}>
                                   <span className="font-semibold">${c.amount}</span> off
                                 </span>
@@ -1365,6 +1373,14 @@ export default function StockXCoupons() {
                   : c.daysLeft <= 2
                     ? 'animate-pulse-glow-yellow-soft'
                     : 'animate-pulse-glow-green-soft';
+              const benefitGlow =
+                !isNeon
+                  ? ''
+                  : c.benefit === 'amount_off'
+                    ? 'animate-pulse-glow-violet-xsoft'
+                    : (c.benefit === 'free_shipping' || c.benefit === 'half_off_shipping')
+                      ? 'animate-pulse-glow-cyan-xsoft'
+                      : '';
               const Icon = c.status === 'available' ? Tag : c.status === 'used_on_bid' ? CheckCircle2 : AlertTriangle;
               const isSaving = savingCode === c.code;
               const isCopied = copied?.code === c.code;
@@ -1421,7 +1437,7 @@ export default function StockXCoupons() {
                           <span
                             className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${
                               isNeon
-                                ? `bg-cyan-500/10 border-cyan-500/30 text-cyan-200 ${daysLeftGlow}`
+                                ? `bg-cyan-500/10 border-cyan-500/30 text-cyan-200 ${benefitGlow}`
                                 : 'bg-cyan-50 border-cyan-200 text-cyan-800'
                             }`}
                           >
@@ -1431,7 +1447,7 @@ export default function StockXCoupons() {
                           <span
                             className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${
                               isNeon
-                                ? `bg-cyan-500/10 border-cyan-500/30 text-cyan-200 ${daysLeftGlow}`
+                                ? `bg-cyan-500/10 border-cyan-500/30 text-cyan-200 ${benefitGlow}`
                                 : 'bg-cyan-50 border-cyan-200 text-cyan-800'
                             }`}
                           >
@@ -1441,7 +1457,7 @@ export default function StockXCoupons() {
                           <span
                             className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${
                               isNeon
-                                ? `bg-violet-500/10 border-violet-500/30 text-violet-200 ${daysLeftGlow}`
+                                ? `bg-violet-500/10 border-violet-500/30 text-violet-200 ${benefitGlow}`
                                 : 'bg-violet-50 border-violet-200 text-violet-800'
                             }`}
                           >
