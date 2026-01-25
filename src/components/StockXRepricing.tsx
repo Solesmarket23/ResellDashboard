@@ -4590,7 +4590,7 @@ export default function StockXRepricing() {
                       />
                     </td>
                     <td className="px-6 py-3">
-                      <div className="flex items-start gap-3">
+                      <div className="flex items-center gap-3">
                         {listing.imageUrl && !brokenImageByListingId[listing.listingId] ? (
                           <img
                             src={listing.imageUrl}
