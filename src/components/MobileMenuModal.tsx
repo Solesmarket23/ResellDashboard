@@ -82,6 +82,7 @@ const menuSections = [
       { id: 'insights', label: 'Insights', icon: Lightbulb },
       { id: 'market-alerts', label: 'Market Alerts', icon: Bell },
       { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+      { id: 'performance', label: 'Performance', icon: Activity },
       { id: 'cashflow', label: 'Cash Flow', icon: DollarSign },
     ]
   },
