@@ -251,7 +251,10 @@ const Sidebar = ({ activeItem, onItemClick, isOpen, onClose, isCollapsed = false
               <button
                 onClick={onToggleCollapse}
                 className={`w-full flex items-center ${isCollapsed ? 'px-2 py-3 justify-center' : 'px-3 py-2'} text-sm font-medium rounded-lg transition-colors ${currentTheme.colors.textSecondary} hover:bg-white/5 hover:text-white`}
-                title={isCollapsed ? 'Show Menu' : 'Hide Menu'}
+                // Only use `title` when collapsed (tooltip needed). When expanded, the visible text is enough and
+                // some browsers briefly flash the tooltip on click ("Hide Menu"), which feels like flicker.
+                title={isCollapsed ? 'Show menu' : undefined}
+                aria-label={isCollapsed ? 'Show menu' : 'Hide menu'}
               >
                 {isCollapsed ? (
                   <ChevronRight className="w-5 h-5" />
