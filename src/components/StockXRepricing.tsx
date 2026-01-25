@@ -202,6 +202,9 @@ export default function StockXRepricing() {
   const [strategyValueDraftByListingId, setStrategyValueDraftByListingId] = useState<Record<string, string>>({});
   // Mirror the draft in a ref so clicks (Apply) can read the latest value even if React state hasn't flushed yet.
   const strategyValueDraftRefByListingId = useRef<Record<string, string>>({});
+  // Drafts for min/max bounds so mobile Safari "tap Save" doesn't race state updates (blur -> click).
+  // Keyed by the effective listing id (group leader when synced).
+  const boundDraftRefByListingId = useRef<Record<string, { min?: string; max?: string }>>({});
   const [imagePreview, setImagePreview] = useState<{
     isOpen: boolean;
     imageUrl: string;
@@ -1988,10 +1991,25 @@ export default function StockXRepricing() {
       console.error('❌ Cannot save: missing listing');
       return;
     }
+
+    // IMPORTANT: On mobile Safari, tapping Save while a number input is focused can run
+    // "blur -> click" before React state flushes. Read the latest bound drafts from a ref.
+    const draft = boundDraftRefByListingId.current[listingId];
+    const parseBound = (raw?: string): number | undefined => {
+      if (raw == null) return undefined;
+      const t = String(raw).trim();
+      if (!t) return undefined;
+      const n = Math.round(Number.parseFloat(t));
+      return Number.isFinite(n) && n > 0 ? n : undefined;
+    };
+    const draftMin = parseBound(draft?.min);
+    const draftMax = parseBound(draft?.max);
+    const effectiveMin = draftMin ?? listing.minPrice;
+    const effectiveMax = draftMax ?? listing.maxPrice;
     
     // For manual pricing, we require at least a Min bound as a safety rail.
     if (strategyToSave.type === 'manual') {
-      if (!listing.minPrice || listing.minPrice <= 0) {
+      if (!effectiveMin || effectiveMin <= 0) {
         setBulkActionMessage('⚠️ Please enter a Min price before saving manual pricing');
         setTimeout(() => setBulkActionMessage(null), 5000);
         return;
@@ -1999,8 +2017,8 @@ export default function StockXRepricing() {
     }
     
     // For all strategies: if min/max are provided, validate they make sense
-    if (listing.minPrice && listing.maxPrice) {
-      if (listing.minPrice >= listing.maxPrice) {
+    if (effectiveMin && effectiveMax) {
+      if (effectiveMin >= effectiveMax) {
         setBulkActionMessage('⚠️ Min price must be less than Max price');
         setTimeout(() => setBulkActionMessage(null), 5000);
         return;
@@ -2011,8 +2029,8 @@ export default function StockXRepricing() {
     if (
       strategyToSave.type !== 'manual' &&
       strategyToSave.type !== 'keep_current' &&
-      (!listing.minPrice || listing.minPrice <= 0) &&
-      (!listing.maxPrice || listing.maxPrice <= 0)
+      (!effectiveMin || effectiveMin <= 0) &&
+      (!effectiveMax || effectiveMax <= 0)
     ) {
       console.warn(`⚠️ Saving ${strategyToSave.type} without any safety bounds for listing ${listingId}`);
     }
@@ -2022,6 +2040,20 @@ export default function StockXRepricing() {
     const listingsToUpdate = (group && group.listings.length > 1 && listing.isGroupLeader) 
       ? group.listings 
       : [listing];
+
+    // Ensure we persist the latest bound drafts (even if state was stale at click-time).
+    const listingsToUpdateWithBounds = listingsToUpdate.map((l) => ({
+      ...l,
+      minPrice: effectiveMin,
+      maxPrice: effectiveMax,
+    }));
+    setListings((prev) =>
+      prev.map((l) => {
+        const shouldUpdate = listingsToUpdate.some((ul) => ul.listingId === l.listingId);
+        if (!shouldUpdate) return l;
+        return { ...l, minPrice: effectiveMin, maxPrice: effectiveMax };
+      })
+    );
     
     // Update all listings in the group (if leader)
     if (listingsToUpdate.length > 1) {
@@ -2036,7 +2068,7 @@ export default function StockXRepricing() {
     // Save to Firebase for all updated listings
     try {
       setRowSaveState(prev => ({ ...prev, [listingId]: 'saving' }));
-      for (const l of listingsToUpdate) {
+      for (const l of listingsToUpdateWithBounds) {
         await saveSettingToFirebase(l.listingId, {
           pricingStrategy: strategyToSave,
           minPrice: l.minPrice,
@@ -2074,7 +2106,7 @@ export default function StockXRepricing() {
         }
       }
 
-      await runImmediateReprice(listingsToUpdate, { reason: 'Saved — repricing now' });
+      await runImmediateReprice(listingsToUpdateWithBounds, { reason: 'Saved — repricing now' });
       
       // Show success message
       const strategyLabel = strategyToSave.type === 'beat_lowest' ? 'Beat Lowest by $1' :
@@ -2086,7 +2118,7 @@ export default function StockXRepricing() {
                            hasPendingBounds ? 'Bounds updated' :
                            'Keep Current';
       
-      setBulkActionMessage(`✅ Pricing rule saved: ${strategyLabel} (Min: $${listing.minPrice}, Max: $${listing.maxPrice})`);
+      setBulkActionMessage(`✅ Pricing rule saved: ${strategyLabel} (Min: $${effectiveMin ?? ''}, Max: $${effectiveMax ?? ''})`);
       setTimeout(() => setBulkActionMessage(null), 5000);
       
       // Remove from pending changes
@@ -2100,6 +2132,8 @@ export default function StockXRepricing() {
         delete next[listingId];
         return next;
       });
+      // Clear drafts for this row now that we've persisted.
+      delete boundDraftRefByListingId.current[listingId];
 
       setRowSaveState(prev => ({ ...prev, [listingId]: 'saved' }));
       setTimeout(() => {
@@ -4426,11 +4460,20 @@ export default function StockXRepricing() {
                           value={listing.minPrice && listing.minPrice > 0 ? listing.minPrice : ''}
                         onChange={(e) => {
                           console.log(`📝 Min price onChange for ${listing.listingId}: ${e.target.value}`);
+                          // Mirror the raw draft so Save can read the latest value even if state hasn't flushed (mobile Safari).
+                          const listingForLeader = listings.find(l => l.listingId === listing.listingId);
+                          const group = listingForLeader?.inventoryGroupId ? inventoryGroups.get(listingForLeader.inventoryGroupId) : null;
+                          const leaderId = (group && group.listings.length > 1) ? (group.leaderId || listingForLeader?.groupLeaderId || listing.listingId) : listing.listingId;
+                          boundDraftRefByListingId.current[leaderId] = { ...(boundDraftRefByListingId.current[leaderId] || {}), min: e.target.value };
                           // Update UI while typing; persist on blur.
                           updateMinPrice(listing.listingId, Math.round(parseFloat(e.target.value) || 0), { persist: false });
                         }}
                         onBlur={(e) => {
                           console.log(`💾 Min price onBlur for ${listing.listingId}: ${e.target.value} - Pending (click Save to persist)`);
+                          const listingForLeader = listings.find(l => l.listingId === listing.listingId);
+                          const group = listingForLeader?.inventoryGroupId ? inventoryGroups.get(listingForLeader.inventoryGroupId) : null;
+                          const leaderId = (group && group.listings.length > 1) ? (group.leaderId || listingForLeader?.groupLeaderId || listing.listingId) : listing.listingId;
+                          boundDraftRefByListingId.current[leaderId] = { ...(boundDraftRefByListingId.current[leaderId] || {}), min: e.target.value };
                           const minPrice = Math.round(parseFloat(e.target.value) || 0);
                           updateMinPrice(listing.listingId, minPrice, { persist: false });
                         }}
@@ -4459,11 +4502,20 @@ export default function StockXRepricing() {
                           value={listing.maxPrice && listing.maxPrice > 0 ? listing.maxPrice : ''}
                         onChange={(e) => {
                           console.log(`📝 Max price onChange for ${listing.listingId}: ${e.target.value}`);
+                          // Mirror the raw draft so Save can read the latest value even if state hasn't flushed (mobile Safari).
+                          const listingForLeader = listings.find(l => l.listingId === listing.listingId);
+                          const group = listingForLeader?.inventoryGroupId ? inventoryGroups.get(listingForLeader.inventoryGroupId) : null;
+                          const leaderId = (group && group.listings.length > 1) ? (group.leaderId || listingForLeader?.groupLeaderId || listing.listingId) : listing.listingId;
+                          boundDraftRefByListingId.current[leaderId] = { ...(boundDraftRefByListingId.current[leaderId] || {}), max: e.target.value };
                           // Update UI while typing; persist on blur.
                           updateMaxPrice(listing.listingId, Math.round(parseFloat(e.target.value) || 0), { persist: false });
                         }}
                         onBlur={(e) => {
                           console.log(`💾 Max price onBlur for ${listing.listingId}: ${e.target.value} - Pending (click Save to persist)`);
+                          const listingForLeader = listings.find(l => l.listingId === listing.listingId);
+                          const group = listingForLeader?.inventoryGroupId ? inventoryGroups.get(listingForLeader.inventoryGroupId) : null;
+                          const leaderId = (group && group.listings.length > 1) ? (group.leaderId || listingForLeader?.groupLeaderId || listing.listingId) : listing.listingId;
+                          boundDraftRefByListingId.current[leaderId] = { ...(boundDraftRefByListingId.current[leaderId] || {}), max: e.target.value };
                           const maxPrice = Math.round(parseFloat(e.target.value) || 0);
                           updateMaxPrice(listing.listingId, maxPrice, { persist: false });
                         }}
