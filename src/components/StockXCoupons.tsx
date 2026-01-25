@@ -492,8 +492,11 @@ export default function StockXCoupons() {
           return next;
         }
       );
+      const label = status === 'available' ? 'Available' : status === 'used_on_bid' ? 'Used' : 'Expired';
+      setNotification({ isVisible: true, message: `${code} marked ${label}`, type: 'success' });
     } catch (e: any) {
       setError(e?.message || 'Failed to update status');
+      setNotification({ isVisible: true, message: e?.message || 'Failed to update status', type: 'error' });
     } finally {
       setSavingCode(null);
     }
