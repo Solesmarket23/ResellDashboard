@@ -3719,60 +3719,6 @@ const Purchases = () => {
         </div>
       </div>
 
-      {/* Search Bar - Keep visible as long as there are any purchases OR a search is active */}
-      {(rawPurchaseCount > 0 || searchQuery.trim().length > 0) && (
-        <div className="mb-6">
-          <div className="relative">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by product, order number, tracking, size, brand, style ID, or status..."
-              className={`w-full px-4 py-3 pl-12 rounded-lg ${
-                currentTheme.name === 'Neon'
-                  ? 'bg-gray-900 border border-white/20 text-gray-300 placeholder-gray-500 focus:border-cyan-500'
-                  : 'bg-white border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-indigo-500'
-              } focus:outline-none focus:ring-2 focus:ring-opacity-50 ${
-                currentTheme.name === 'Neon' ? 'focus:ring-cyan-500' : 'focus:ring-indigo-500'
-              } transition-all`}
-            />
-          <svg
-            className={`absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 ${
-              currentTheme.name === 'Neon' ? 'text-gray-500' : 'text-gray-400'
-            }`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-            />
-          </svg>
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className={`absolute right-4 top-1/2 transform -translate-y-1/2 ${
-                currentTheme.name === 'Neon' ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'
-              } transition-colors`}
-              title="Clear search"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          )}
-        </div>
-          {searchQuery && (
-            <p className={`mt-2 text-sm ${currentTheme.name === 'Neon' ? 'text-gray-400' : 'text-gray-600'}`}>
-              Showing {sortedPurchases.length} result{sortedPurchases.length !== 1 ? 's' : ''} for "{searchQuery}"
-            </p>
-          )}
-        </div>
-      )}
-
       {/* Smart Filters - Keep visible when the user has any purchases */}
       {rawPurchaseCount > 0 && (
         <div className="mb-6">
@@ -4080,6 +4026,60 @@ const Purchases = () => {
                 </div>
               </div>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Search Bar - Directly above the table (between Filters and Table) */}
+      {(rawPurchaseCount > 0 || searchQuery.trim().length > 0) && (
+        <div className="mb-6">
+          <div className="relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by product, order number, tracking, size, brand, style ID, or status..."
+              className={`w-full px-4 py-3 pl-12 rounded-lg ${
+                currentTheme.name === 'Neon'
+                  ? 'bg-gray-900 border border-white/20 text-gray-300 placeholder-gray-500 focus:border-cyan-500'
+                  : 'bg-white border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-indigo-500'
+              } focus:outline-none focus:ring-2 focus:ring-opacity-50 ${
+                currentTheme.name === 'Neon' ? 'focus:ring-cyan-500' : 'focus:ring-indigo-500'
+              } transition-all`}
+            />
+            <svg
+              className={`absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 ${
+                currentTheme.name === 'Neon' ? 'text-gray-500' : 'text-gray-400'
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className={`absolute right-4 top-1/2 transform -translate-y-1/2 ${
+                  currentTheme.name === 'Neon' ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'
+                } transition-colors`}
+                title="Clear search"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+          {searchQuery && (
+            <p className={`mt-2 text-sm ${currentTheme.name === 'Neon' ? 'text-gray-400' : 'text-gray-600'}`}>
+              Showing {sortedPurchases.length} result{sortedPurchases.length !== 1 ? 's' : ''} for "{searchQuery}"
+            </p>
           )}
         </div>
       )}
