@@ -13,6 +13,7 @@ import {
   Lightbulb,
   MessageSquare,
   ListTodo,
+  Wallet,
   CreditCard,
   HelpCircle,
   Zap,
@@ -66,6 +67,7 @@ const navigationItems = [
     items: [
       { id: 'analytics', label: 'Analytics', icon: BarChart3 },
       { id: 'cashflow', label: 'Cash Flow', icon: DollarSign },
+      { id: 'expenses', label: 'Expenses', icon: Wallet },
       { id: 'performance', label: 'Performance', icon: Package },
     ]
   },

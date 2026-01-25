@@ -47,6 +47,7 @@ const Cashflow = dynamic(() => import('../../components/Cashflow'), { ssr: false
 const Analytics = dynamic(() => import('../../components/Analytics'), { ssr: false, loading: SectionFallback });
 const Performance = dynamic(() => import('../../components/Performance'), { ssr: false, loading: SectionFallback });
 const Tasks = dynamic(() => import('../../components/Tasks'), { ssr: false, loading: SectionFallback });
+const Expenses = dynamic(() => import('../../components/Expenses'), { ssr: false, loading: SectionFallback });
 const TestStockXOrders = dynamic(() => import('../test-stockx-orders/page'), { ssr: false, loading: SectionFallback });
 const TestPurchaseLinkingPage = dynamic(() => import('../test-purchase-linking/page'), { ssr: false, loading: SectionFallback });
 
@@ -185,6 +186,8 @@ function DashboardContent() {
         return <Performance />;
       case 'tasks':
         return <Tasks />;
+      case 'expenses':
+        return <Expenses />;
       case 'failed-verifications':
         return <FailedVerifications />;
       case 'insights':
