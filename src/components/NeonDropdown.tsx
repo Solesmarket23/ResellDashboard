@@ -176,7 +176,7 @@ export default function NeonDropdown({ value, onChange, options, className = '',
         aria-controls={`${optionIdBase}-listbox`}
         className={`flex items-center justify-between w-full min-w-[105px] text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 whitespace-nowrap ${
           isNeon 
-            ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50 hover:border-cyan-400' 
+            ? 'bg-gray-800/70 border-cyan-500/30 text-cyan-300 focus:ring-cyan-500/30 hover:border-cyan-400/40' 
             : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 hover:border-blue-400'
         } ${className}`}
         title={selectedOption?.label || 'Select…'}
