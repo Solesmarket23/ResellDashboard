@@ -136,6 +136,8 @@ export default function StockXCoupons() {
   const fetchSeqRef = useRef(0);
   const timeoutCooldownUntilRef = useRef(0);
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deleteTargetCode, setDeleteTargetCode] = useState<string>('');
   const [addManualOpen, setAddManualOpen] = useState(false);
   const [manualCode, setManualCode] = useState('');
   const [manualExpiresDate, setManualExpiresDate] = useState('');
@@ -673,15 +675,21 @@ export default function StockXCoupons() {
 
   // Escape key should close open modals
   useEffect(() => {
-    if (!addManualOpen && !confirmClearOpen) return;
+    if (!addManualOpen && !confirmClearOpen && !confirmDeleteOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (addManualOpen) setAddManualOpen(false);
       if (confirmClearOpen) setConfirmClearOpen(false);
+      if (confirmDeleteOpen) setConfirmDeleteOpen(false);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [addManualOpen, confirmClearOpen]);
+  }, [addManualOpen, confirmClearOpen, confirmDeleteOpen]);
+
+  const requestDeleteCoupon = useCallback((code: string) => {
+    setDeleteTargetCode(code);
+    setConfirmDeleteOpen(true);
+  }, []);
 
   const openInGmail = (emailId: string) => {
     // Gmail deep link works for most users (requires being logged in).
@@ -989,6 +997,56 @@ export default function StockXCoupons() {
                 }`}
               >
                 Yes, clear all
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* In-app confirm modal for Delete */}
+      {confirmDeleteOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setConfirmDeleteOpen(false)}
+          />
+          <div
+            className={`relative w-full max-w-md rounded-2xl border p-5 shadow-2xl ${
+              isNeon
+                ? 'bg-gray-950/80 border-white/15'
+                : `${currentTheme.colors.cardBackground} ${currentTheme.colors.border} border`
+            }`}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-coupon-title"
+          >
+            <h3 id="delete-coupon-title" className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>
+              Delete coupon?
+            </h3>
+            <p className={`mt-2 text-sm ${currentTheme.colors.textSecondary}`}>
+              Are you sure you want to delete <span className="font-semibold">{deleteTargetCode || 'this coupon'}</span>? This will archive it (you can restore it later).
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmDeleteOpen(false)}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  isNeon ? 'bg-white/10 hover:bg-white/20 border border-white/15' : 'bg-gray-100 hover:bg-gray-200'
+                } ${currentTheme.colors.textPrimary}`}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const code = deleteTargetCode;
+                  setConfirmDeleteOpen(false);
+                  setDeleteTargetCode('');
+                  if (code) void removeCoupon(code);
+                }}
+                className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
+                  isNeon ? 'bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-200' : 'bg-red-600 hover:bg-red-700 text-white'
+                }`}
+              >
+                Yes, delete
               </button>
             </div>
           </div>
@@ -1369,7 +1427,7 @@ export default function StockXCoupons() {
                                   </button>
                                 ) : (
                                   <button
-                                    onClick={() => removeCoupon(c.code)}
+                                    onClick={() => requestDeleteCoupon(c.code)}
                                     disabled={isSaving}
                                     className={`h-8 w-8 p-0 inline-flex items-center justify-center rounded-md transition-colors disabled:opacity-50 ${
                                       isNeon ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'
@@ -1517,7 +1575,7 @@ export default function StockXCoupons() {
                         </button>
                       ) : null}
                       <button
-                        onClick={() => removeCoupon(c.code)}
+                        onClick={() => requestDeleteCoupon(c.code)}
                         disabled={isSaving}
                         className={`p-2 rounded-lg transition-colors disabled:opacity-50 ${
                           isNeon ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'
