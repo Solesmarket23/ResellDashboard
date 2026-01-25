@@ -120,6 +120,14 @@ export default function StockXCoupons() {
       return 'list';
     }
   });
+  const [hideSubject, setHideSubject] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return localStorage.getItem('stockxCoupons_hideSubject') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const copiedTimerRef = useRef<number | null>(null);
   const fetchInFlightRef = useRef(false);
   const fetchAbortRef = useRef<AbortController | null>(null);
@@ -400,7 +408,58 @@ export default function StockXCoupons() {
     }
   }, [viewMode]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem('stockxCoupons_hideSubject', hideSubject ? 'true' : 'false');
+    } catch {
+      // ignore
+    }
+  }, [hideSubject]);
+
   const hiddenCount = useMemo(() => coupons.filter((c) => c.hidden).length, [coupons]);
+
+  // Load preference from Firebase (so it persists across devices)
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const res = await fetch(`/api/user-settings/stockx-coupons?userId=${encodeURIComponent(userId)}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data?.success) return;
+        if (cancelled) return;
+        if (typeof data.hideSubject === 'boolean') setHideSubject(data.hideSubject);
+      } catch {
+        // ignore
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  const toggleHideSubject = useCallback(async () => {
+    if (!userId) return;
+    const next = !hideSubject;
+    setHideSubject(next);
+    try {
+      const res = await fetch(`/api/user-settings/stockx-coupons?userId=${encodeURIComponent(userId)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hideSubject: next }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Save failed (${res.status})`);
+      }
+    } catch (e: any) {
+      // Revert on error (keep UI honest)
+      setHideSubject((prev) => !prev);
+      setNotification({ isVisible: true, message: e?.message || 'Failed to save preference', type: 'error' });
+    }
+  }, [hideSubject, userId]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -991,6 +1050,19 @@ export default function StockXCoupons() {
               Refresh
             </button>
             <button
+              onClick={() => void toggleHideSubject()}
+              disabled={!userId}
+              className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+                isNeon
+                  ? 'bg-white/10 hover:bg-white/20 border border-white/20'
+                  : 'bg-white hover:bg-gray-50 border border-gray-300'
+              } ${currentTheme.colors.textPrimary}`}
+              title={hideSubject ? 'Show email subject' : 'Hide email subject'}
+            >
+              {hideSubject ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+              {hideSubject ? 'Show subject' : 'Hide subject'}
+            </button>
+            <button
               onClick={addDemoCoupon}
               className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-all duration-200 ${
                 isNeon
@@ -1189,9 +1261,11 @@ export default function StockXCoupons() {
                                   </span>
                                 ) : null}
                               </div>
-                              <div className={`mt-1 text-xs ${currentTheme.colors.textSecondary} truncate max-w-[420px]`}>
-                                {isManual ? 'Manual coupon' : c.subject}
-                              </div>
+                              {!hideSubject ? (
+                                <div className={`mt-1 text-xs ${currentTheme.colors.textSecondary} truncate max-w-[420px]`}>
+                                  {isManual ? 'Manual coupon' : c.subject}
+                                </div>
+                              ) : null}
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap">
                               {c.benefit === 'free_shipping' ? (
@@ -1336,9 +1410,11 @@ export default function StockXCoupons() {
                         ) : null}
                       </div>
 
-                      <div className={`mt-1 text-xs ${currentTheme.colors.textSecondary} truncate`}>
-                        {isManual ? 'Manual coupon' : c.subject}
-                      </div>
+                      {!hideSubject ? (
+                        <div className={`mt-1 text-xs ${currentTheme.colors.textSecondary} truncate`}>
+                          {isManual ? 'Manual coupon' : c.subject}
+                        </div>
+                      ) : null}
 
                       <div className={`mt-2 flex flex-wrap items-center gap-3 text-xs ${currentTheme.colors.textSecondary}`}>
                         {c.benefit === 'free_shipping' ? (
