@@ -5,6 +5,7 @@ import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { DollarSign, TrendingDown, Target, Zap, RefreshCw, AlertTriangle, CheckCircle, Loader, Package, Copy, Check, ChevronUp, ChevronDown, ChevronsUpDown, Clock, Save, X, Wrench, Shield, MoreHorizontal, Footprints, Crown, Link2 } from 'lucide-react';
 import NeonDropdown, { type NeonDropdownOption } from './NeonDropdown';
+import NeonNotification, { type NotificationType } from './NeonNotification';
 import { addDocument, getDocuments, updateDocument, deleteField } from '@/lib/firebase/firebaseUtils';
 import { auth } from '@/lib/firebase/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -168,6 +169,15 @@ export default function StockXRepricing() {
   const [results, setResults] = useState<RepricingResult[]>([]);
   const [dryRun, setDryRun] = useState(true);
   const [notificationEmail, setNotificationEmail] = useState('');
+  const [toast, setToast] = useState<{ isVisible: boolean; message: string; type: NotificationType }>({
+    isVisible: false,
+    message: '',
+    type: 'success',
+  });
+
+  const showToast = useCallback((message: string, type: NotificationType = 'success') => {
+    setToast({ isVisible: true, message, type });
+  }, []);
   const [authenticated, setAuthenticated] = useState(true); // Assume authenticated initially
   const [authError, setAuthError] = useState(false);
   const [captchaDetected, setCaptchaDetected] = useState(false);
@@ -2083,7 +2093,10 @@ export default function StockXRepricing() {
     void savePricingRuleChange(effectiveListingId, newStrategy);
   };
 
-  const runImmediateReprice = async (listingsToReprice: Listing[], opts?: { reason?: string }) => {
+  const runImmediateReprice = async (
+    listingsToReprice: Listing[],
+    opts?: { reason?: string; suppressToast?: boolean }
+  ): Promise<boolean> => {
     if (listingsToReprice.length === 0) return;
 
     // Filter out follower listings - only reprice leaders (or standalone listings)
@@ -2094,7 +2107,7 @@ export default function StockXRepricing() {
       return listing.isGroupLeader;
     });
 
-    if (leadersToReprice.length === 0) return;
+    if (leadersToReprice.length === 0) return true;
 
     try {
       setLoading(true);
@@ -2138,17 +2151,26 @@ export default function StockXRepricing() {
             })
           );
         }
-        setBulkActionMessage(opts?.reason ? `⚡ ${opts.reason}` : '⚡ Repriced immediately.');
-        setTimeout(() => setBulkActionMessage(null), 5000);
+        if (!opts?.suppressToast) {
+          setBulkActionMessage(opts?.reason ? `⚡ ${opts.reason}` : '⚡ Repriced immediately.');
+          setTimeout(() => setBulkActionMessage(null), 5000);
+        }
         await fetchListings(true);
+        return true;
       } else {
-        setBulkActionMessage(`❌ Immediate repricing failed: ${data?.error || data?.message || 'Unknown error'}`);
-        setTimeout(() => setBulkActionMessage(null), 7000);
+        if (!opts?.suppressToast) {
+          setBulkActionMessage(`❌ Immediate repricing failed: ${data?.error || data?.message || 'Unknown error'}`);
+          setTimeout(() => setBulkActionMessage(null), 7000);
+        }
+        return false;
       }
     } catch (error) {
       console.error('Immediate repricing error:', error);
-      setBulkActionMessage('❌ Immediate repricing failed. Check console logs.');
-      setTimeout(() => setBulkActionMessage(null), 7000);
+      if (!opts?.suppressToast) {
+        setBulkActionMessage('❌ Immediate repricing failed. Check console logs.');
+        setTimeout(() => setBulkActionMessage(null), 7000);
+      }
+      return false;
     } finally {
       setLoading(false);
     }
@@ -2267,8 +2289,7 @@ export default function StockXRepricing() {
             'Two-step will run LIVE now.\n\nWarning: you have no Min/Max safety bounds set for this listing.\n\nRun anyway?'
           );
           if (!ok) {
-            setBulkActionMessage('✅ Two-step saved. (Not executed: missing Min/Max and you cancelled.)');
-            setTimeout(() => setBulkActionMessage(null), 5000);
+            showToast('Two-step saved (not executed — missing Min/Max and you cancelled).', 'success');
             // Remove from pending changes and exit early
             setPendingStrategyChanges(prev => {
               const newPending = { ...prev };
@@ -2286,7 +2307,10 @@ export default function StockXRepricing() {
         }
       }
 
-      await runImmediateReprice(listingsToUpdateWithBounds, { reason: 'Saved — repricing now' });
+      const repricedOk = await runImmediateReprice(listingsToUpdateWithBounds, {
+        reason: 'Saved — repricing now',
+        suppressToast: true
+      });
       
       // Show success message
       const strategyLabel = strategyToSave.type === 'beat_lowest' ? 'Beat Lowest by $1' :
@@ -2297,9 +2321,15 @@ export default function StockXRepricing() {
                            strategyToSave.type === 'manual' ? 'Manual' :
                            hasPendingBounds ? 'Bounds updated' :
                            'Keep Current';
-      
-      setBulkActionMessage(`✅ Pricing rule saved: ${strategyLabel} (Min: $${effectiveMin ?? ''}, Max: $${effectiveMax ?? ''})`);
-      setTimeout(() => setBulkActionMessage(null), 5000);
+
+      const boundsLabel =
+        (effectiveMin ? `Min $${effectiveMin}` : 'Min —') +
+        (effectiveMax ? ` • Max $${effectiveMax}` : '');
+      if (repricedOk) {
+        showToast(`Pricing saved: ${strategyLabel} • ${boundsLabel}`, 'success');
+      } else {
+        showToast(`Pricing saved, but repricing failed: ${strategyLabel} • ${boundsLabel}`, 'warning');
+      }
       
       // Remove from pending changes
       setPendingStrategyChanges(prev => {
@@ -2321,8 +2351,7 @@ export default function StockXRepricing() {
       }, 1500);
     } catch (error) {
       console.error('Error saving pricing rule:', error);
-      setBulkActionMessage('❌ Failed to save pricing rule. Please try again.');
-      setTimeout(() => setBulkActionMessage(null), 5000);
+      showToast('Failed to save pricing rule. Please try again.', 'error');
       setRowSaveState(prev => ({ ...prev, [listingId]: 'idle' }));
     }
   };
@@ -3762,6 +3791,13 @@ export default function StockXRepricing() {
 
   return (
     <div className={`min-h-screen p-6 space-y-6 pb-32 ${isNeon ? 'bg-gray-900 text-white' : 'bg-gray-50'}`}>
+      {toast.isVisible && (
+        <NeonNotification
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast((p) => ({ ...p, isVisible: false }))}
+        />
+      )}
       {/* Image Preview Modal (same UX as Purchases) */}
       <ImagePreviewModal
         isOpen={imagePreview.isOpen}
