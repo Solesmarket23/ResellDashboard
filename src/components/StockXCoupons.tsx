@@ -10,7 +10,7 @@ import NeonNotification, { type NotificationType } from './NeonNotification';
 
 type CouponStatus = 'available' | 'used_on_bid' | 'expired';
 type CouponSource = 'gmail' | 'manual';
-type SortMode = 'expiring_available' | 'sent_newest';
+type SortMode = 'expiring_available' | 'sent_newest' | 'expired_only';
 type CouponBenefit = 'amount_off' | 'free_shipping' | 'half_off_shipping';
 type ViewMode = 'list' | 'table';
 
@@ -105,7 +105,7 @@ export default function StockXCoupons() {
     if (typeof window === 'undefined') return 'expiring_available';
     try {
       const v = localStorage.getItem('stockxCoupons_sortMode');
-      return (v === 'sent_newest' || v === 'expiring_available') ? (v as SortMode) : 'expiring_available';
+      return (v === 'sent_newest' || v === 'expiring_available' || v === 'expired_only') ? (v as SortMode) : 'expiring_available';
     } catch {
       return 'expiring_available';
     }
@@ -152,6 +152,7 @@ export default function StockXCoupons() {
     () => [
       { value: 'sent_newest', label: 'Newest first' },
       { value: 'expiring_available', label: 'Available expiring soon' },
+      { value: 'expired_only', label: 'Expired' },
     ],
     []
   );
@@ -681,12 +682,16 @@ export default function StockXCoupons() {
   };
 
   const displayCoupons = useMemo(() => {
-    const list = showHidden ? [...coupons] : coupons.filter((c) => !c.hidden);
+    let list = showHidden ? [...coupons] : coupons.filter((c) => !c.hidden);
     const statusRank = (s: CouponStatus) => (s === 'available' ? 0 : s === 'used_on_bid' ? 1 : 2);
     const toMs = (iso: string) => {
       const ms = Date.parse(iso);
       return Number.isFinite(ms) ? ms : 0;
     };
+
+    if (sortMode === 'expired_only') {
+      list = list.filter((c) => c.status === 'expired');
+    }
 
     if (sortMode === 'sent_newest') {
       return list.sort((a, b) => {
