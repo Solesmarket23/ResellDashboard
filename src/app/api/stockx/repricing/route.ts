@@ -103,6 +103,75 @@ function marketPeekIntervalMs(freq: string | undefined): number {
   }
 }
 
+// Prevent overlapping Two-step runs (cron + manual save, multiple tabs, etc.).
+// Two-step is multi-step (set $999 -> refetch -> set final). Overlaps can interleave and leave the listing at $999.
+const TWO_STEP_LOCK_TTL_MS = 2 * 60 * 1000; // 2 minutes
+type TwoStepLock = { acquired: boolean; runId: string; lockedUntilMs: number };
+
+async function acquireTwoStepLock(listingId: string, holder?: string | null): Promise<TwoStepLock> {
+  const runId = (globalThis as any).crypto?.randomUUID ? (globalThis as any).crypto.randomUUID() : `${Date.now()}_${Math.random()}`;
+  try {
+    const { getAdminDb } = await import('@/lib/firebase/admin');
+    const adminDb = getAdminDb();
+    if (!adminDb) {
+      console.warn('⚠️ Two-step lock disabled: Firebase Admin not initialized');
+      return { acquired: true, runId, lockedUntilMs: Date.now() + TWO_STEP_LOCK_TTL_MS };
+    }
+
+    const ref = adminDb.collection('stockxTwoStepLocks').doc(String(listingId).trim());
+    const now = Date.now();
+    const lockedUntilMs = now + TWO_STEP_LOCK_TTL_MS;
+    const nowIso = new Date(now).toISOString();
+
+    const acquired = await adminDb.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const cur = snap.exists ? (snap.data() as any) : null;
+      const curUntil =
+        typeof cur?.lockedUntilMs === 'number' && Number.isFinite(cur.lockedUntilMs) ? cur.lockedUntilMs : 0;
+      if (curUntil && curUntil > now) return false;
+
+      tx.set(
+        ref,
+        {
+          listingId: String(listingId).trim(),
+          runId,
+          holder: holder || null,
+          lockedUntilMs,
+          lockedUntil: new Date(lockedUntilMs).toISOString(),
+          updatedAt: nowIso,
+          createdAt: snap.exists ? cur?.createdAt || nowIso : nowIso,
+        },
+        { merge: true }
+      );
+      return true;
+    });
+
+    return { acquired, runId, lockedUntilMs };
+  } catch (e) {
+    console.warn('⚠️ Two-step lock acquire failed (continuing without lock):', e);
+    return { acquired: true, runId, lockedUntilMs: Date.now() + TWO_STEP_LOCK_TTL_MS };
+  }
+}
+
+async function releaseTwoStepLock(listingId: string, runId: string): Promise<void> {
+  try {
+    const { getAdminDb } = await import('@/lib/firebase/admin');
+    const adminDb = getAdminDb();
+    if (!adminDb) return;
+    const ref = adminDb.collection('stockxTwoStepLocks').doc(String(listingId).trim());
+    await adminDb.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return;
+      const cur = snap.data() as any;
+      if (cur?.runId && cur.runId !== runId) return;
+      tx.delete(ref);
+    });
+  } catch (e) {
+    // best-effort; TTL will auto-expire
+    console.warn('⚠️ Two-step lock release failed:', e);
+  }
+}
+
 async function pollListingOperationStatus(args: {
   listingId: string;
   operationId: string;
@@ -570,6 +639,27 @@ export async function POST(request: NextRequest) {
                   computedFinal
                 } as any;
               } else {
+              // Prevent overlapping Two-step sequences for the same listingId.
+              // If another run is already in-flight, skip (do NOT set $999).
+              const lock = await acquireTwoStepLock(listing.listingId, userId || null);
+              if (!lock.acquired) {
+                repricingResults.push({
+                  listingId: listing.listingId,
+                  currentPrice: listing.currentPrice,
+                  newPrice: listing.currentPrice,
+                  action: 'no_change',
+                  reason: 'Two-step skipped: another run is already in progress',
+                  market: { lowestAsk: currentStdAsk, flexLowestAsk: currentFlexAsk },
+                  twoStep: {
+                    ...twoStepMeta,
+                    mode: 'peek_next_lowest',
+                    lock: { acquired: false, lockedUntilMs: lock.lockedUntilMs }
+                  }
+                });
+                continue;
+              }
+
+              try {
               // Step 1: set to reset price (intentionally may violate maxPrice; it's temporary)
               const resetResult = await updateListingPrice(listing.listingId, resetPrice, accessToken, {
                 waitForCompletion: true,
@@ -586,6 +676,7 @@ export async function POST(request: NextRequest) {
                   twoStep: {
                     ...twoStepMeta,
                     mode: 'peek_next_lowest',
+                    lock: { acquired: true, lockedUntilMs: lock.lockedUntilMs },
                     resetOperationId: resetResult.operation?.operationId,
                     resetOperationStatus: resetResult.operationStatus
                   }
@@ -596,6 +687,7 @@ export async function POST(request: NextRequest) {
               if (twoStepMeta) {
                 twoStepMeta.resetOperationId = resetResult.operation?.operationId;
                 twoStepMeta.resetOperationStatus = resetResult.operationStatus;
+                (twoStepMeta as any).lock = { acquired: true, lockedUntilMs: lock.lockedUntilMs };
               }
 
               // From this point onward, the listing is (very likely) set to resetPrice on StockX.
@@ -688,6 +780,9 @@ export async function POST(request: NextRequest) {
               }
   
               // Continue into the normal constraint/safety/update pipeline for final price
+              } finally {
+                await releaseTwoStepLock(listing.listingId, lock.runId);
+              }
               }
             }
 
