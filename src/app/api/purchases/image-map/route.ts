@@ -109,6 +109,7 @@ export async function POST(request: NextRequest) {
   try {
     const cookieStore = cookies();
     const body = await request.json().catch(() => null);
+    const debug = Boolean(body?.debug) || request.nextUrl.searchParams.get('debug') === '1';
 
     const keys = Array.isArray(body?.keys) ? body.keys : [];
     if (keys.length === 0) {
@@ -144,8 +145,15 @@ export async function POST(request: NextRequest) {
     }
 
     const db = getAdminDb();
-    const snap = await db.collection('purchases').where('userId', '==', userId).get();
-    const purchases = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    // Some older pipelines wrote purchases with `uid` instead of `userId`. Query both and merge.
+    const [snapUserId, snapUid] = await Promise.all([
+      db.collection('purchases').where('userId', '==', userId).get(),
+      db.collection('purchases').where('uid', '==', userId).get(),
+    ]);
+    const byId = new Map<string, any>();
+    for (const d of snapUserId.docs) byId.set(d.id, { id: d.id, ...d.data() });
+    for (const d of snapUid.docs) if (!byId.has(d.id)) byId.set(d.id, { id: d.id, ...d.data() });
+    const purchases = Array.from(byId.values());
 
     const images: Record<string, string> = {};
 
@@ -169,6 +177,24 @@ export async function POST(request: NextRequest) {
         const k = `name:${normName}__${size}`;
         if (wanted.has(k) && !images[k]) images[k] = img;
       }
+    }
+
+    if (debug) {
+      const wantedArr = Array.from(wanted);
+      const foundKeys = Object.keys(images);
+      const missingKeys = wantedArr.filter((k) => !images[k]);
+      return NextResponse.json({
+        success: true,
+        images,
+        debug: {
+          wantedKeys: wantedArr.length,
+          foundKeys: foundKeys.length,
+          missingKeys: missingKeys.slice(0, 50),
+          purchasesScanned: purchases.length,
+          purchasesFromUserIdQuery: snapUserId.size,
+          purchasesFromUidQuery: snapUid.size,
+        },
+      });
     }
 
     return NextResponse.json({ success: true, images });

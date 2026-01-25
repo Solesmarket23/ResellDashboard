@@ -3107,11 +3107,12 @@ export default function StockXRepricing() {
           // Without a userId, the server can't read purchases. Skip this fallback.
           console.warn('⚠️ Purchases image fallback skipped: missing userId');
         } else {
-        const res = await fetch('/api/purchases/image-map', {
+        const res = await fetch('/api/purchases/image-map?debug=1', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-user-id': effectiveUserId },
           body: JSON.stringify({
             userId: effectiveUserId,
+            debug: true,
             keys: toLookup.map((k) => ({
               styleId: k.styleId || '',
               productName: k.productName || '',
@@ -3131,6 +3132,11 @@ export default function StockXRepricing() {
             localStorage.setItem(PURCHASE_IMAGE_CACHE_KEY, JSON.stringify(purchaseCache));
           } catch {
             // ignore
+          }
+          if (data?.debug) {
+            console.log('🖼️ purchases/image-map debug:', data.debug);
+          } else {
+            console.log('🖼️ purchases/image-map returned', Object.keys(images).length, 'images');
           }
         } else if (!res.ok) {
           console.warn('⚠️ Purchases image-map failed:', data?.error || `HTTP ${res.status}`);
