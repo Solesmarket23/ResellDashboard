@@ -116,6 +116,7 @@ export async function POST(request: NextRequest) {
     }
 
     let userId: string | undefined =
+      request.headers.get('x-user-id')?.trim() ||
       cookieStore.get('userId')?.value ||
       cookieStore.get('siteUserId')?.value ||
       cookieStore.get('site-user-id')?.value ||

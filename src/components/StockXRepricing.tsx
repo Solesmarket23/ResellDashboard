@@ -3102,10 +3102,16 @@ export default function StockXRepricing() {
 
       const toLookup = needsLookup.slice(0, 80);
       if (toLookup.length > 0) {
+        const effectiveUserId = authUser?.uid || getSiteUserId();
+        if (!effectiveUserId) {
+          // Without a userId, the server can't read purchases. Skip this fallback.
+          console.warn('⚠️ Purchases image fallback skipped: missing userId');
+        } else {
         const res = await fetch('/api/purchases/image-map', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-user-id': effectiveUserId },
           body: JSON.stringify({
+            userId: effectiveUserId,
             keys: toLookup.map((k) => ({
               styleId: k.styleId || '',
               productName: k.productName || '',
@@ -3126,6 +3132,9 @@ export default function StockXRepricing() {
           } catch {
             // ignore
           }
+        } else if (!res.ok) {
+          console.warn('⚠️ Purchases image-map failed:', data?.error || `HTTP ${res.status}`);
+        }
         }
       }
 
