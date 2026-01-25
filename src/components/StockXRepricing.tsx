@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useAuth } from '@/lib/contexts/AuthContext';
-import { DollarSign, TrendingDown, Target, Zap, RefreshCw, AlertTriangle, CheckCircle, Loader, Package, Copy, Check, ChevronUp, ChevronDown, ChevronsUpDown, Clock, Save, X, Wrench, Shield, MoreHorizontal, Footprints } from 'lucide-react';
+import { DollarSign, TrendingDown, Target, Zap, RefreshCw, AlertTriangle, CheckCircle, Loader, Package, Copy, Check, ChevronUp, ChevronDown, ChevronsUpDown, Clock, Save, X, Wrench, Shield, MoreHorizontal, Footprints, Crown, Link2 } from 'lucide-react';
 import NeonDropdown, { type NeonDropdownOption } from './NeonDropdown';
 import { addDocument, getDocuments, updateDocument, deleteField } from '@/lib/firebase/firebaseUtils';
 import { auth } from '@/lib/firebase/firebase';
@@ -4543,22 +4543,28 @@ export default function StockXRepricing() {
                         {listing.inventoryGroupId && inventoryGroups.get(listing.inventoryGroupId)?.listings.length > 1 && (
                           <div className="flex flex-col items-center gap-1">
                             {listing.isGroupLeader ? (
-                              <span className={`px-2 py-1 text-xs rounded-full flex items-center gap-1 ${
-                                isNeon 
-                                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' 
-                                  : 'bg-amber-100 text-amber-700 border border-amber-300'
-                              }`}
-                              title="Group Leader - Controls pricing for duplicate inventory">
-                                👑 Leader
+                              <span
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold leading-none whitespace-nowrap ${
+                                  isNeon
+                                    ? 'bg-gradient-to-r from-amber-500/20 to-yellow-500/10 text-amber-200 border-amber-400/25 shadow-sm'
+                                    : 'bg-amber-50 text-amber-800 border-amber-200 shadow-sm'
+                                }`}
+                                title="Group Leader - Controls pricing for duplicate inventory"
+                              >
+                                <Crown className="w-3.5 h-3.5" />
+                                Leader
                               </span>
                             ) : (
-                              <span className={`px-2 py-1 text-xs rounded-full ${
-                                isNeon 
-                                  ? 'bg-gray-600/50 text-gray-400 border border-gray-500/30' 
-                                  : 'bg-gray-100 text-gray-600 border border-gray-300'
-                              }`}
-                              title="Follower - Price synced with group leader">
-                                🔗 Synced
+                              <span
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold leading-none whitespace-nowrap ${
+                                  isNeon
+                                    ? 'bg-white/5 text-slate-200 border-white/10 shadow-sm'
+                                    : 'bg-gray-50 text-gray-700 border-gray-200 shadow-sm'
+                                }`}
+                                title="Follower - Price synced with group leader"
+                              >
+                                <Link2 className="w-3.5 h-3.5" />
+                                Synced
                               </span>
                             )}
                             <span className={`text-xs ${isNeon ? 'text-gray-500' : 'text-gray-500'}`}>
