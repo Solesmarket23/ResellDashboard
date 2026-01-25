@@ -4530,8 +4530,8 @@ const Purchases = () => {
                       className={`rounded ${currentTheme.name === 'Neon' ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-300'} cursor-pointer`}
                     />
                   </td>
-                  <td className="px-6 py-3">
-                    <div className="flex items-center gap-3 min-h-14">
+                  <td className="px-6 py-3 text-center align-middle">
+                    <div className="flex items-center justify-center gap-3 min-h-14">
                       <div 
                         className={`relative w-12 h-12 rounded-xl flex-shrink-0 overflow-hidden ${purchase.product?.bgColor || 'bg-gray-100'} flex items-center justify-center cursor-pointer transition-all duration-300 group-hover:scale-105 group-hover:shadow-xl ${
                           currentTheme.name === 'Neon' 
@@ -4560,7 +4560,7 @@ const Purchases = () => {
                           }}
                         />
                       </div>
-                      <div className="flex-1 py-1">
+                      <div className="flex-1 py-1 text-left">
                         <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary} leading-tight mb-1`} style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
                           {purchase.product?.name || 'Unknown Product'}
                         </div>
@@ -4574,8 +4574,9 @@ const Purchases = () => {
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-3 align-middle">
-                    <span className={getStatusBadge(purchase.status, deriveStatusColor(purchase.status, purchase.statusColor))}>
+                  <td className="px-6 py-3 align-middle text-center">
+                    <div className="flex items-center justify-center">
+                      <span className={getStatusBadge(purchase.status, deriveStatusColor(purchase.status, purchase.statusColor))}>
                       {/* Status icon */}
                       {(() => {
                         const statusLower = (purchase.status || '').toLowerCase();
@@ -4606,9 +4607,11 @@ const Purchases = () => {
                         }
                       })()}
                       {purchase.status}
-                    </span>
+                      </span>
+                    </div>
                   </td>
-                  <td className="px-6 py-3 align-middle">
+                  <td className="px-6 py-3 align-middle text-center">
+                    <div className="flex flex-col items-center">
                     <a 
                       href={generateGmailSearchUrl(purchase.orderNumber)}
                       target="_blank"
@@ -4656,13 +4659,17 @@ const Purchases = () => {
                         </span>
                       </div>
                     ) : null}
+                    </div>
                   </td>
-                  <td className="px-6 py-3 align-middle">
-                    <span className={`inline-flex items-center gap-1.5 text-sm font-medium ${currentTheme.colors.textPrimary}`}>
+                  <td className="px-6 py-3 align-middle text-center">
+                    <div className="flex items-center justify-center">
+                      <span className={`inline-flex items-center gap-1.5 text-sm font-medium ${currentTheme.colors.textPrimary}`}>
                       {purchase.product?.brand || purchase.extracted_brand || '—'}
-                    </span>
+                      </span>
+                    </div>
                   </td>
-                  <td className="px-6 py-3 align-middle">
+                  <td className="px-6 py-3 align-middle text-center">
+                    <div className="flex items-center justify-center">
                     <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-mono font-medium ${
                       currentTheme.name === 'Neon'
                         ? 'bg-white/5 text-gray-300 border border-white/10'
@@ -4670,11 +4677,12 @@ const Purchases = () => {
                     }`}>
                       {purchase.styleId || purchase.style_id || 'Unknown'}
                     </span>
+                    </div>
                   </td>
-                  <td className="px-6 py-2 align-middle">
+                  <td className="px-6 py-2 align-middle text-center">
                     {editingTracking === (purchase.id || purchase.orderNumber) ? (
                       // Inline editing mode
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center justify-center gap-1.5">
                         <input
                           type="text"
                           value={editingTrackingValue}
@@ -4724,7 +4732,7 @@ const Purchases = () => {
                       // Display mode with tracking
                       isTrackingSuspicious(purchase.tracking, purchase.carrier) ? (
                         // Suspicious tracking - show edit button and Gmail link
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center justify-center gap-2">
                           <button 
                             onClick={() => handleStartEditTracking(purchase)}
                             className={`${currentTheme.colors.accent} text-sm hover:underline transition-colors cursor-pointer`}
@@ -4760,7 +4768,7 @@ const Purchases = () => {
                       </button>
                     ) : (purchase.status?.toLowerCase() === 'shipped' || purchase.status?.toLowerCase() === 'delivered') ? (
                       // Shipped/Delivered but no tracking - show primary action button with secondary link
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-center gap-2">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
