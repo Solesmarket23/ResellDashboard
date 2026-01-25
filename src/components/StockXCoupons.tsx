@@ -765,6 +765,24 @@ export default function StockXCoupons() {
     [coupons]
   );
 
+  // Convert "You have X available coupon(s) archived" banner into a one-time toast.
+  const hiddenAvailToastLastCountRef = useRef<number>(0);
+  useEffect(() => {
+    if (showHidden) {
+      hiddenAvailToastLastCountRef.current = hiddenAvailableCount;
+      return;
+    }
+    const prev = hiddenAvailToastLastCountRef.current;
+    hiddenAvailToastLastCountRef.current = hiddenAvailableCount;
+    if (hiddenAvailableCount > 0 && prev === 0) {
+      setNotification({
+        isVisible: true,
+        type: 'warning',
+        message: `You have ${hiddenAvailableCount} available archived coupon${hiddenAvailableCount === 1 ? '' : 's'}.`,
+      });
+    }
+  }, [hiddenAvailableCount, showHidden]);
+
   return (
     <div className={`flex-1 ${currentTheme.colors.background} p-4 sm:p-8`}>
       {/* Add manual coupon modal */}
@@ -1054,6 +1072,20 @@ export default function StockXCoupons() {
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </button>
+            {!showHidden && hiddenAvailableCount > 0 ? (
+              <button
+                onClick={restoreHiddenAvailable}
+                disabled={loading || !gmailConnected}
+                className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+                  isNeon
+                    ? 'bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-200'
+                    : 'bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900'
+                }`}
+                title="Restore all available archived coupons"
+              >
+                Restore available ({hiddenAvailableCount})
+              </button>
+            ) : null}
             <button
               onClick={() => void toggleHideSubject()}
               disabled={!userId}
@@ -1097,25 +1129,7 @@ export default function StockXCoupons() {
           </>
         )}
 
-        {!showHidden && hiddenAvailableCount > 0 && (
-          <div className={`mt-4 rounded-lg border p-3 text-sm flex items-center justify-between gap-3 ${
-            isNeon ? 'border-amber-500/30 bg-amber-500/10 text-amber-200' : 'border-amber-300 bg-amber-50 text-amber-900'
-          }`}>
-            <div className="min-w-0">
-              You have <span className="font-semibold">{hiddenAvailableCount}</span> available coupon{hiddenAvailableCount === 1 ? '' : 's'} hidden.
-            </div>
-            <button
-              onClick={restoreHiddenAvailable}
-              disabled={loading || !gmailConnected}
-              className={`px-3 py-1.5 rounded-lg text-sm font-semibold whitespace-nowrap transition-colors disabled:opacity-50 ${
-                isNeon ? 'bg-white/10 hover:bg-white/20 border border-white/20' : 'bg-white hover:bg-amber-100 border border-amber-300'
-              }`}
-              title="Restore all available coupons"
-            >
-              Restore available
-            </button>
-          </div>
-        )}
+        {/* (was banner) now shown as a toast + a top-row action button */}
 
         {!gmailConnected && coupons.length === 0 ? (
           <div className={`mt-6 text-sm ${currentTheme.colors.textSecondary}`}>
