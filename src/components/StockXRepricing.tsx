@@ -226,6 +226,15 @@ export default function StockXRepricing() {
   // Lock touch gestures in the listings table to either horizontal (scroll the table) OR vertical (scroll the page),
   // based on the initial dominant direction.
   const listingsTableScrollRef = useRef<HTMLDivElement | null>(null);
+  const isIOS = useMemo(() => {
+    if (typeof navigator === 'undefined') return false;
+    const ua = navigator.userAgent || '';
+    const platform = (navigator as any).platform || '';
+    const maxTouchPoints = (navigator as any).maxTouchPoints || 0;
+    // iPadOS reports as MacIntel with touch points.
+    const isAppleTouch = platform === 'MacIntel' && maxTouchPoints > 1;
+    return /iPad|iPhone|iPod/.test(ua) || isAppleTouch;
+  }, []);
   useEffect(() => {
     const el = listingsTableScrollRef.current;
     if (!el) return;
@@ -4085,7 +4094,9 @@ export default function StockXRepricing() {
           }`}>
             <div
               ref={listingsTableScrollRef}
-              className="overflow-x-auto max-h-[70vh]"
+              // iOS Safari tends to “diagonal scroll” when a container is scrollable in both axes.
+              // On iOS, make this container horizontal-only so vertical swipes scroll the page instead.
+              className={isIOS ? 'overflow-x-auto overflow-y-visible' : 'overflow-x-auto max-h-[70vh] overflow-y-auto'}
               style={{
                 WebkitOverflowScrolling: 'touch',
               }}
