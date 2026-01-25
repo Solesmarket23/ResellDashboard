@@ -4502,7 +4502,7 @@ const Purchases = () => {
                         : 'hover:bg-gradient-to-r hover:from-blue-50/50 hover:via-transparent hover:to-blue-50/50 hover:shadow-md'
                   }`}
                 >
-                  <td className="px-3 py-3 text-center relative">
+                  <td className="px-3 py-3 text-center align-middle relative" style={{ width: `${columnWidths.checkbox}px` }}>
                     {/* NEW Purchase Indicator */}
                     {isNewPurchase && (
                       <div className={`absolute -left-0 top-0 bottom-0 w-2 ${
@@ -4530,7 +4530,7 @@ const Purchases = () => {
                       className={`rounded ${currentTheme.name === 'Neon' ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-300'} cursor-pointer`}
                     />
                   </td>
-                  <td className="px-6 py-3 text-center align-middle">
+                  <td className="px-6 py-3 text-center align-middle" style={{ width: `${columnWidths.product}px` }}>
                     <div className="flex items-center justify-center gap-3 min-h-14">
                       <div 
                         className={`relative w-12 h-12 rounded-xl flex-shrink-0 overflow-hidden ${purchase.product?.bgColor || 'bg-gray-100'} flex items-center justify-center cursor-pointer transition-all duration-300 group-hover:scale-105 group-hover:shadow-xl ${
@@ -4574,7 +4574,7 @@ const Purchases = () => {
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-3 align-middle text-center">
+                  <td className="px-6 py-3 align-middle text-center" style={{ width: `${columnWidths.status}px` }}>
                     <div className="flex items-center justify-center">
                       <span className={getStatusBadge(purchase.status, deriveStatusColor(purchase.status, purchase.statusColor))}>
                       {/* Status icon */}
@@ -4610,7 +4610,7 @@ const Purchases = () => {
                       </span>
                     </div>
                   </td>
-                  <td className="px-6 py-3 align-middle text-center">
+                  <td className="px-6 py-3 align-middle text-center" style={{ width: `${columnWidths.orderNumber}px` }}>
                     <div className="flex flex-col items-center">
                     <a 
                       href={generateGmailSearchUrl(purchase.orderNumber)}
@@ -4661,14 +4661,14 @@ const Purchases = () => {
                     ) : null}
                     </div>
                   </td>
-                  <td className="px-6 py-3 align-middle text-center">
+                  <td className="px-6 py-3 align-middle text-center" style={{ width: `${columnWidths.brand}px` }}>
                     <div className="flex items-center justify-center">
                       <span className={`inline-flex items-center gap-1.5 text-sm font-medium ${currentTheme.colors.textPrimary}`}>
                       {purchase.product?.brand || purchase.extracted_brand || '—'}
                       </span>
                     </div>
                   </td>
-                  <td className="px-6 py-3 align-middle text-center">
+                  <td className="px-6 py-3 align-middle text-center" style={{ width: `${columnWidths.styleId}px` }}>
                     <div className="flex items-center justify-center">
                     <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-mono font-medium ${
                       currentTheme.name === 'Neon'
@@ -4679,7 +4679,7 @@ const Purchases = () => {
                     </span>
                     </div>
                   </td>
-                  <td className="px-6 py-2 align-middle text-center">
+                  <td className="px-6 py-2 align-middle text-center" style={{ width: `${columnWidths.tracking}px` }}>
                     {editingTracking === (purchase.id || purchase.orderNumber) ? (
                       // Inline editing mode
                       <div className="flex items-center justify-center gap-1.5">
@@ -4844,8 +4844,9 @@ const Purchases = () => {
                       </button>
                     )}
                   </td>
-                  <td className="px-6 py-2 align-middle">
-                    <span className={`text-sm ${currentTheme.colors.textPrimary}`}>
+                  <td className="px-6 py-2 align-middle text-center" style={{ width: `${columnWidths.carrier}px` }}>
+                    <div className="flex items-center justify-center">
+                      <span className={`text-sm ${currentTheme.colors.textPrimary}`}>
                       {(() => {
                         // Show "-" if no tracking number
                         const tracking = purchase.tracking;
@@ -4874,9 +4875,11 @@ const Purchases = () => {
                         // Show valid carrier
                         return carrier;
                       })()}
-                    </span>
+                      </span>
+                    </div>
                   </td>
-                  <td className="px-6 py-3 align-middle">
+                  <td className="px-6 py-3 align-middle text-center" style={{ width: `${columnWidths.total}px` }}>
+                    <div className="flex flex-col items-center">
                     <div className={`inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-bold ${
                       currentTheme.name === 'Neon'
                         ? 'bg-gradient-to-r from-green-500/20 to-emerald-500/20 text-emerald-400 border border-emerald-500/30'
@@ -4889,8 +4892,10 @@ const Purchases = () => {
                         Credit applied: -{formatUsd(getCreditsAmount(purchase))}
                       </div>
                     )}
+                    </div>
                   </td>
-                  <td className="px-6 py-3 align-middle">
+                  <td className="px-6 py-3 align-middle text-center" style={{ width: `${columnWidths.purchaseDate}px` }}>
+                    <div className="flex items-center justify-center">
                     <span className={`inline-flex items-center gap-1.5 text-sm font-medium ${currentTheme.colors.textPrimary}`}>
                       {(() => {
                         // Prioritize consolidated purchaseDate (from order confirmation email)
@@ -4918,9 +4923,10 @@ const Purchases = () => {
                         return <span className={`text-xs ${currentTheme.colors.textSecondary}`}>Unknown</span>;
                       })()}
                     </span>
+                    </div>
                   </td>
-                  <td className="px-6 py-3 align-middle">
-                    <div className="flex items-center gap-1.5">
+                  <td className="px-6 py-3 align-middle text-center" style={{ width: `${columnWidths.actions}px` }}>
+                    <div className="flex items-center justify-center gap-1.5">
                       {/* Edit Purchase */}
                       <button
                         onClick={() => {
