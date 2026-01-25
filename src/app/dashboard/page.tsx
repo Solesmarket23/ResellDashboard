@@ -76,6 +76,7 @@ function DashboardContent() {
         'stockx-inventory',
         'stockx-market-research',
         'stockx-order-management',
+        'tracking',
       ]),
     []
   );
