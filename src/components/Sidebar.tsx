@@ -95,8 +95,6 @@ const navigationItems = [
       { id: 'alias-inventory', label: 'Inventory Manager', icon: Package },
       { id: 'alias-listings', label: 'Create Listing', icon: Plus },
       { id: 'alias-orders', label: 'Order Management', icon: Truck },
-      { id: 'alias-pricing', label: 'Pricing Insights', icon: LineChart },
-      { id: 'alias-arbitrage', label: 'Cross-Platform Arbitrage', icon: ArrowLeftRight },
     ]
   },
   {

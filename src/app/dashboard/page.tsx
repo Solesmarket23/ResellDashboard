@@ -78,6 +78,8 @@ function DashboardContent() {
         'stockx-order-management',
         'tracking',
         'trends',
+        'alias-arbitrage',
+        'alias-pricing',
       ]),
     []
   );
