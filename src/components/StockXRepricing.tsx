@@ -222,6 +222,71 @@ export default function StockXRepricing() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // iOS Safari can "diagonal scroll" (horizontal + vertical) inside nested scroll containers.
+  // Lock touch gestures in the listings table to either horizontal (scroll the table) OR vertical (scroll the page),
+  // based on the initial dominant direction.
+  const listingsTableScrollRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = listingsTableScrollRef.current;
+    if (!el) return;
+    if (typeof window === 'undefined') return;
+
+    const isTouchDevice = 'ontouchstart' in window || (navigator as any)?.maxTouchPoints > 0;
+    if (!isTouchDevice) return;
+
+    let startX = 0;
+    let startY = 0;
+    let startScrollLeft = 0;
+    let axis: 'x' | 'y' | null = null;
+    const THRESHOLD = 6;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      axis = null;
+      const t = e.touches[0];
+      startX = t.clientX;
+      startY = t.clientY;
+      startScrollLeft = el.scrollLeft;
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0];
+      const dx = t.clientX - startX;
+      const dy = t.clientY - startY;
+
+      if (axis === null) {
+        const adx = Math.abs(dx);
+        const ady = Math.abs(dy);
+        if (adx < THRESHOLD && ady < THRESHOLD) return;
+        axis = adx > ady ? 'x' : 'y';
+      }
+
+      if (axis === 'x') {
+        // Prevent the page from also scrolling vertically; we drive horizontal scroll manually.
+        e.preventDefault();
+        el.scrollLeft = startScrollLeft - dx;
+      }
+    };
+
+    const onTouchEnd = () => {
+      axis = null;
+    };
+
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    // Must be non-passive to call preventDefault.
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', onTouchEnd, { passive: true });
+    el.addEventListener('touchcancel', onTouchEnd, { passive: true });
+
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart as any);
+      el.removeEventListener('touchmove', onTouchMove as any);
+      el.removeEventListener('touchend', onTouchEnd as any);
+      el.removeEventListener('touchcancel', onTouchEnd as any);
+    };
+  }, []);
+
   const LISTINGS_CACHE_KEY = 'stockx_listings_cache_v1';
   const listingsCooldownUntilRef = useRef<number>(0);
   const listingsLastFetchStartedAtRef = useRef<number>(0);
@@ -3991,7 +4056,13 @@ export default function StockXRepricing() {
               ? 'bg-gradient-to-br from-gray-900/50 to-gray-900/30 border border-white/10 shadow-2xl'
               : 'bg-white border border-gray-200 shadow-lg'
           }`}>
-            <div className="overflow-x-auto max-h-[70vh]">
+            <div
+              ref={listingsTableScrollRef}
+              className="overflow-x-auto max-h-[70vh]"
+              style={{
+                WebkitOverflowScrolling: 'touch',
+              }}
+            >
               <table className="w-full" style={{ tableLayout: 'auto' }}>
                 <thead className={`${
                   isNeon
