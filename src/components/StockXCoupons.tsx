@@ -112,12 +112,14 @@ export default function StockXCoupons() {
   });
   const [copied, setCopied] = useState<{ code: string; nonce: number } | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    if (typeof window === 'undefined') return 'list';
+    // Default to Table view for new users; localStorage overrides once chosen.
+    if (typeof window === 'undefined') return 'table';
     try {
       const v = localStorage.getItem('stockxCoupons_viewMode');
-      return v === 'table' ? 'table' : 'list';
+      if (v === 'list' || v === 'table') return v;
+      return 'table';
     } catch {
-      return 'list';
+      return 'table';
     }
   });
   const [hideSubject, setHideSubject] = useState<boolean>(() => {
@@ -733,19 +735,6 @@ export default function StockXCoupons() {
     }`}>
       <button
         type="button"
-        onClick={() => setViewMode('list')}
-        className={`px-3 py-2 text-sm font-semibold inline-flex items-center gap-2 transition-colors ${
-          viewMode === 'list'
-            ? (isNeon ? 'bg-cyan-500/15 text-cyan-200' : 'bg-blue-50 text-blue-900')
-            : (isNeon ? 'text-white/80 hover:bg-white/10' : 'text-gray-700 hover:bg-gray-50')
-        }`}
-        title="List view"
-      >
-        <LayoutList className="w-4 h-4" />
-        List
-      </button>
-      <button
-        type="button"
         onClick={() => setViewMode('table')}
         className={`px-3 py-2 text-sm font-semibold inline-flex items-center gap-2 transition-colors ${
           viewMode === 'table'
@@ -756,6 +745,19 @@ export default function StockXCoupons() {
       >
         <Table2 className="w-4 h-4" />
         Table
+      </button>
+      <button
+        type="button"
+        onClick={() => setViewMode('list')}
+        className={`px-3 py-2 text-sm font-semibold inline-flex items-center gap-2 transition-colors ${
+          viewMode === 'list'
+            ? (isNeon ? 'bg-cyan-500/15 text-cyan-200' : 'bg-blue-50 text-blue-900')
+            : (isNeon ? 'text-white/80 hover:bg-white/10' : 'text-gray-700 hover:bg-gray-50')
+        }`}
+        title="List view"
+      >
+        <LayoutList className="w-4 h-4" />
+        List
       </button>
     </div>
   );
