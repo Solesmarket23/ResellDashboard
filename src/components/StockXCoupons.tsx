@@ -1211,10 +1211,10 @@ export default function StockXCoupons() {
                       <tr className={`${isNeon ? 'text-gray-300' : 'text-gray-600'}`}>
                         <th className="px-4 py-3 text-left w-[420px]">Code</th>
                         <th className="px-4 py-3 text-left w-[170px]">Discount</th>
+                        <th className="px-4 py-3 text-left w-[190px]">Status</th>
+                        <th className="px-4 py-3 text-left w-[90px]">Days left</th>
                         <th className="px-4 py-3 text-left w-[200px]">Sent</th>
                         <th className="px-4 py-3 text-left w-[200px]">Expires</th>
-                        <th className="px-4 py-3 text-left w-[90px]">Days left</th>
-                        <th className="px-4 py-3 text-left w-[190px]">Status</th>
                         <th className="px-4 py-3 text-left w-[160px]">Actions</th>
                       </tr>
                     </thead>
@@ -1298,11 +1298,6 @@ export default function StockXCoupons() {
                                 <span className={`${currentTheme.colors.textSecondary}`}>—</span>
                               )}
                             </td>
-                            <td className="px-4 py-3 whitespace-nowrap">{formatCouponDateTime(c.sentAt)}</td>
-                            <td className="px-4 py-3 whitespace-nowrap">{formatCouponDateTime(c.expiresAt)}</td>
-                            <td className={`px-4 py-3 whitespace-nowrap font-semibold ${daysLeftColor} ${isNeon ? daysLeftGlow : ''}`}>
-                              {c.daysLeft}d
-                            </td>
                             <td className="px-4 py-3">
                               <div className={isSaving ? 'pointer-events-none opacity-60' : ''}>
                                 <NeonDropdown
@@ -1317,6 +1312,11 @@ export default function StockXCoupons() {
                                 />
                               </div>
                             </td>
+                            <td className={`px-4 py-3 whitespace-nowrap font-semibold ${daysLeftColor} ${isNeon ? daysLeftGlow : ''}`}>
+                              {c.daysLeft}d
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">{formatCouponDateTime(c.sentAt)}</td>
+                            <td className="px-4 py-3 whitespace-nowrap">{formatCouponDateTime(c.expiresAt)}</td>
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2">
                                 {!isManual ? (
