@@ -127,6 +127,7 @@ export default function Tasks() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
   const [showDone, setShowDone] = useState(false);
+  const [filter, setFilter] = useState<'open' | 'today' | 'overdue' | 'high' | 'all'>('open');
 
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const toastTimerRef = useRef<number | null>(null);
@@ -147,6 +148,27 @@ export default function Tasks() {
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     toastTimerRef.current = window.setTimeout(() => setToast(null), 2200);
   };
+
+  const cls = useMemo(() => {
+    const primaryBtn = `inline-flex items-center gap-2 rounded-xl font-extrabold transition-all ${currentTheme.colors.primary} ${currentTheme.colors.primaryHover} text-white shadow-lg ${
+      isNeon ? 'hover:shadow-emerald-500/25' : 'hover:shadow-blue-500/25'
+    }`;
+    const secondaryBtn = `inline-flex items-center gap-2 rounded-xl font-semibold transition-all border ${
+      currentTheme.colors.cardBackground
+    } ${currentTheme.colors.border} ${currentTheme.colors.textPrimary} ${
+      isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-50'
+    }`;
+    const ghostBtn = `inline-flex items-center gap-2 rounded-xl font-semibold transition-all border ${
+      isNeon ? 'bg-white/5 border-white/10 text-white/90 hover:bg-white/10' : 'bg-white border-gray-200 text-gray-800 hover:bg-gray-50'
+    }`;
+    const card = `rounded-2xl border ${currentTheme.colors.cardBackground} ${currentTheme.colors.border}`;
+    const input = `w-full rounded-xl text-sm font-semibold outline-none transition-all ${
+      isNeon
+        ? 'bg-black/30 border border-white/10 text-white placeholder:text-gray-500 focus:border-cyan-500/40'
+        : 'bg-white border border-gray-200 text-gray-900 placeholder:text-gray-400 focus:border-blue-300'
+    }`;
+    return { primaryBtn, secondaryBtn, ghostBtn, card, input };
+  }, [currentTheme, isNeon]);
 
   const fetchTasks = async () => {
     const userId = resolveUserId();
@@ -185,7 +207,12 @@ export default function Tasks() {
   }, [tasks, today]);
 
   const displayed = useMemo(() => {
-    const list = showDone ? tasks : tasks.filter((t) => t.status !== 'done');
+    let list = showDone ? tasks : tasks.filter((t) => t.status !== 'done');
+    if (filter === 'open') list = list.filter((t) => t.status === 'open');
+    if (filter === 'today') list = list.filter((t) => t.status === 'open' && t.dueDate === today);
+    if (filter === 'overdue') list = list.filter((t) => t.status === 'open' && !!t.dueDate && t.dueDate < today);
+    if (filter === 'high') list = list.filter((t) => t.status === 'open' && t.priority === 'high');
+    // 'all' = no extra filter
     // Sort: open first, then priority high->low, then due date, then recency
     const priRank: Record<TaskPriority, number> = { high: 0, med: 1, low: 2 };
     return [...list].sort((a, b) => {
@@ -196,7 +223,7 @@ export default function Tasks() {
       if (aDue !== bDue) return aDue < bDue ? -1 : 1;
       return (b.createdAtMs || 0) - (a.createdAtMs || 0);
     });
-  }, [tasks, showDone]);
+  }, [tasks, showDone, filter, today]);
 
   const createTask = async (payload: {
     title: string;
@@ -314,15 +341,13 @@ export default function Tasks() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-3">
             <div
-              className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
-                isNeon ? 'bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-white/10' : 'bg-blue-50 border border-blue-100'
-              }`}
+              className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${currentTheme.colors.cardBackground} ${currentTheme.colors.border}`}
             >
-              <ListTodo className={isNeon ? 'text-cyan-300' : 'text-blue-600'} />
+              <ListTodo className={currentTheme.colors.accent} />
             </div>
             <div>
-              <div className={`text-2xl sm:text-3xl font-bold ${isNeon ? 'text-white' : 'text-gray-900'}`}>Tasks</div>
-              <div className={`text-sm ${isNeon ? 'text-slate-400' : 'text-gray-600'}`}>
+              <div className={`text-2xl sm:text-3xl font-bold ${currentTheme.colors.textPrimary}`}>Tasks</div>
+              <div className={`text-sm ${currentTheme.colors.textSecondary}`}>
                 Keep your day moving: verifications, tracking, expenses, repricing.
               </div>
             </div>
@@ -331,9 +356,7 @@ export default function Tasks() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => void fetchTasks()}
-              className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-all ${
-                isNeon ? 'bg-white/5 hover:bg-white/10 text-white/90 border border-white/10' : 'bg-white hover:bg-gray-50 text-gray-800 border border-gray-200'
-              }`}
+              className={`${cls.ghostBtn} px-3 py-2 text-sm`}
               title="Refresh"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -341,9 +364,7 @@ export default function Tasks() {
             </button>
             <button
               onClick={() => setShowDone((v) => !v)}
-              className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-all ${
-                isNeon ? 'bg-white/5 hover:bg-white/10 text-white/90 border border-white/10' : 'bg-white hover:bg-gray-50 text-gray-800 border border-gray-200'
-              }`}
+              className={`${cls.ghostBtn} px-3 py-2 text-sm`}
               title="Toggle completed"
             >
               <CheckCircle2 className="w-4 h-4" />
@@ -352,35 +373,61 @@ export default function Tasks() {
           </div>
         </div>
 
+        {/* Filters */}
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {(
+            [
+              { key: 'open', label: `Open (${openCount})` },
+              { key: 'today', label: `Today (${dueTodayCount})` },
+              { key: 'overdue', label: `Overdue (${overdueCount})` },
+              { key: 'high', label: 'High priority' },
+              { key: 'all', label: `All (${tasks.length})` },
+            ] as const
+          ).map((x) => (
+            <button
+              key={x.key}
+              onClick={() => setFilter(x.key)}
+              className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
+                filter === x.key
+                  ? `${currentTheme.colors.primary} text-white shadow-md ${isNeon ? 'shadow-emerald-500/20' : 'shadow-blue-500/20'}`
+                  : `${cls.ghostBtn} text-xs`
+              }`}
+              title="Filter"
+            >
+              {x.label}
+            </button>
+          ))}
+        </div>
+
         {/* Stats + Quick actions */}
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className={`rounded-2xl border p-5 ${isNeon ? 'bg-white/5 border-white/10' : 'bg-white border-gray-200'}`}>
-            <div className={`text-sm font-semibold ${isNeon ? 'text-gray-200' : 'text-gray-800'}`}>Today</div>
+          <div className={`${cls.card} p-5`}>
+            <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>Today</div>
             <div className="mt-3 flex items-baseline justify-between">
-              <div className={`text-3xl font-extrabold ${isNeon ? 'text-white' : 'text-gray-900'}`}>{dueTodayCount}</div>
-              <div className={`text-xs ${isNeon ? 'text-slate-400' : 'text-gray-500'}`}>due today</div>
+              <div className={`text-3xl font-extrabold ${currentTheme.colors.textPrimary}`}>{dueTodayCount}</div>
+              <div className={`text-xs ${currentTheme.colors.textSecondary}`}>due today</div>
             </div>
             <div className="mt-3 flex items-baseline justify-between">
-              <div className={`text-2xl font-bold ${overdueCount > 0 ? (isNeon ? 'text-red-300' : 'text-red-700') : isNeon ? 'text-white' : 'text-gray-900'}`}>
+              <div className={`text-2xl font-bold ${overdueCount > 0 ? (isNeon ? 'text-red-300' : 'text-red-700') : currentTheme.colors.textPrimary}`}>
                 {overdueCount}
               </div>
-              <div className={`text-xs ${isNeon ? 'text-slate-400' : 'text-gray-500'}`}>overdue</div>
+              <div className={`text-xs ${currentTheme.colors.textSecondary}`}>overdue</div>
             </div>
           </div>
 
-          <div className={`rounded-2xl border p-5 ${isNeon ? 'bg-white/5 border-white/10' : 'bg-white border-gray-200'}`}>
-            <div className={`text-sm font-semibold ${isNeon ? 'text-gray-200' : 'text-gray-800'}`}>Open tasks</div>
+          <div className={`${cls.card} p-5`}>
+            <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>Open tasks</div>
             <div className="mt-3 flex items-baseline justify-between">
-              <div className={`text-3xl font-extrabold ${isNeon ? 'text-white' : 'text-gray-900'}`}>{openCount}</div>
-              <div className={`text-xs ${isNeon ? 'text-slate-400' : 'text-gray-500'}`}>in progress</div>
+              <div className={`text-3xl font-extrabold ${currentTheme.colors.textPrimary}`}>{openCount}</div>
+              <div className={`text-xs ${currentTheme.colors.textSecondary}`}>in progress</div>
             </div>
-            <div className={`mt-4 text-xs ${isNeon ? 'text-slate-400' : 'text-gray-600'}`}>
+            <div className={`mt-4 text-xs ${currentTheme.colors.textSecondary}`}>
               Tip: Use templates to build your daily workflow in 1 click.
             </div>
           </div>
 
-          <div className={`rounded-2xl border p-5 ${isNeon ? 'bg-white/5 border-white/10' : 'bg-white border-gray-200'}`}>
-            <div className={`text-sm font-semibold ${isNeon ? 'text-gray-200' : 'text-gray-800'}`}>Quick jump</div>
+          <div className={`${cls.card} p-5`}>
+            <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>Quick jump</div>
             <div className="mt-3 grid grid-cols-2 gap-2">
               {[
                 { label: 'Repricing', section: 'stockx-repricing' },
@@ -391,9 +438,7 @@ export default function Tasks() {
                 <button
                   key={x.section}
                   onClick={() => jumpToSection(x.section)}
-                  className={`px-3 py-2 rounded-xl text-sm font-semibold transition-all ${
-                    isNeon ? 'bg-white/5 hover:bg-white/10 text-white/90 border border-white/10' : 'bg-gray-50 hover:bg-gray-100 text-gray-800 border border-gray-200'
-                  }`}
+                  className={`${cls.ghostBtn} px-3 py-2 text-sm`}
                 >
                   {x.label}
                 </button>
@@ -403,15 +448,13 @@ export default function Tasks() {
         </div>
 
         {/* Composer */}
-        <div className={`mt-6 rounded-2xl border p-5 ${isNeon ? 'bg-gradient-to-br from-white/5 to-white/0 border-white/10' : 'bg-white border-gray-200'}`}>
+        <div className={`mt-6 rounded-2xl border p-5 ${currentTheme.colors.cardBackground} ${currentTheme.colors.border}`}>
           <div className="flex items-center justify-between">
-            <div className={`text-sm font-semibold ${isNeon ? 'text-gray-200' : 'text-gray-800'}`}>Add task</div>
+            <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>Add task</div>
             {tasks.length === 0 && (
               <button
                 onClick={() => void createBulk()}
-                className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-all ${
-                  isNeon ? 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border border-cyan-500/30' : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200'
-                }`}
+                className={`${cls.secondaryBtn} px-3 py-2 text-sm`}
                 title="Add starter templates"
               >
                 <Plus className="w-4 h-4" />
@@ -426,11 +469,21 @@ export default function Tasks() {
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
                 placeholder="e.g. Call StockX about verification..."
-                className={`w-full px-4 py-3 rounded-xl text-sm font-semibold outline-none transition-all ${
-                  isNeon
-                    ? 'bg-black/30 border border-white/10 text-white placeholder:text-gray-500 focus:border-cyan-500/40'
-                    : 'bg-white border border-gray-200 text-gray-900 placeholder:text-gray-400 focus:border-blue-300'
-                }`}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const title = newTitle.trim();
+                    if (!title) return showToast('Enter a task title', 'info');
+                    void createTask({
+                      title,
+                      category: newCategory,
+                      priority: newPriority,
+                      dueDate: newDue || undefined,
+                      relatedSection: newLink || undefined,
+                    });
+                  }
+                }}
+                className={`${cls.input} px-4 py-3`}
               />
             </div>
 
@@ -438,9 +491,7 @@ export default function Tasks() {
               <select
                 value={newCategory}
                 onChange={(e) => setNewCategory(e.target.value as TaskCategory)}
-                className={`w-full px-3 py-3 rounded-xl text-sm font-semibold outline-none transition-all ${
-                  isNeon ? 'bg-black/30 border border-white/10 text-white focus:border-cyan-500/40' : 'bg-white border border-gray-200 text-gray-900 focus:border-blue-300'
-                }`}
+                className={`${cls.input} px-3 py-3`}
               >
                 <option value="repricing">Repricing</option>
                 <option value="stockx">StockX</option>
@@ -455,9 +506,7 @@ export default function Tasks() {
               <select
                 value={newPriority}
                 onChange={(e) => setNewPriority(e.target.value as TaskPriority)}
-                className={`w-full px-3 py-3 rounded-xl text-sm font-semibold outline-none transition-all ${
-                  isNeon ? 'bg-black/30 border border-white/10 text-white focus:border-cyan-500/40' : 'bg-white border border-gray-200 text-gray-900 focus:border-blue-300'
-                }`}
+                className={`${cls.input} px-3 py-3`}
               >
                 <option value="high">High</option>
                 <option value="med">Medium</option>
@@ -470,9 +519,7 @@ export default function Tasks() {
                 type="date"
                 value={newDue}
                 onChange={(e) => setNewDue(e.target.value)}
-                className={`w-full px-3 py-3 rounded-xl text-sm font-semibold outline-none transition-all ${
-                  isNeon ? 'bg-black/30 border border-white/10 text-white focus:border-cyan-500/40' : 'bg-white border border-gray-200 text-gray-900 focus:border-blue-300'
-                }`}
+                className={`${cls.input} px-3 py-3`}
               />
             </div>
 
@@ -489,11 +536,7 @@ export default function Tasks() {
                     relatedSection: newLink || undefined,
                   });
                 }}
-                className={`w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-extrabold transition-all ${
-                  isNeon
-                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white shadow-lg hover:shadow-cyan-500/30'
-                    : 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white shadow-md hover:shadow-lg'
-                }`}
+                className={`w-full justify-center px-4 py-3 text-sm ${cls.primaryBtn}`}
                 title="Add"
               >
                 <Plus className="w-4 h-4" />
@@ -503,7 +546,7 @@ export default function Tasks() {
           </div>
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <div className={`text-xs font-semibold ${isNeon ? 'text-slate-400' : 'text-gray-500'}`}>Link to:</div>
+            <div className={`text-xs font-semibold ${currentTheme.colors.textSecondary}`}>Link to:</div>
             {[
               { label: 'Repricing', section: 'stockx-repricing' },
               { label: 'Purchases', section: 'purchases' },
@@ -514,14 +557,10 @@ export default function Tasks() {
               <button
                 key={x.section}
                 onClick={() => setNewLink(x.section)}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all ${
                   newLink === x.section
-                    ? isNeon
-                      ? 'bg-cyan-500/20 border-cyan-500/30 text-cyan-200'
-                      : 'bg-blue-50 border-blue-200 text-blue-700'
-                    : isNeon
-                      ? 'bg-white/5 border-white/10 text-white/80 hover:bg-white/10'
-                      : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                    ? `${currentTheme.colors.primary} text-white shadow-sm ${isNeon ? 'shadow-emerald-500/20' : 'shadow-blue-500/20'}`
+                    : `${cls.ghostBtn} text-xs`
                 }`}
               >
                 {x.label}
@@ -531,15 +570,13 @@ export default function Tasks() {
 
           {/* Templates strip */}
           <div className="mt-4">
-            <div className={`text-xs font-semibold ${isNeon ? 'text-slate-400' : 'text-gray-500'}`}>Quick templates</div>
+            <div className={`text-xs font-semibold ${currentTheme.colors.textSecondary}`}>Quick templates</div>
             <div className="mt-2 flex flex-wrap gap-2">
               {TEMPLATES.map((t) => (
                 <button
                   key={t.title}
                   onClick={() => void createTask({ ...t, dueDate: t.priority === 'high' ? today : undefined })}
-                  className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
-                    isNeon ? 'bg-white/5 border-white/10 text-white/85 hover:bg-white/10' : 'bg-gray-50 border-gray-200 text-gray-800 hover:bg-gray-100'
-                  }`}
+                  className={`${cls.ghostBtn} px-3 py-2 text-xs`}
                   title={t.notes || t.title}
                 >
                   + {t.title}
@@ -550,18 +587,18 @@ export default function Tasks() {
         </div>
 
         {/* List */}
-        <div className={`mt-6 rounded-2xl border overflow-hidden ${isNeon ? 'bg-white/5 border-white/10' : 'bg-white border-gray-200'}`}>
+        <div className={`mt-6 rounded-2xl border overflow-hidden ${currentTheme.colors.cardBackground} ${currentTheme.colors.border}`}>
           <div className={`px-5 py-4 border-b ${isNeon ? 'border-white/10' : 'border-gray-200'} flex items-center justify-between`}>
-            <div className={`text-sm font-semibold ${isNeon ? 'text-gray-200' : 'text-gray-800'}`}>Your list</div>
-            <div className={`text-xs ${isNeon ? 'text-slate-400' : 'text-gray-500'}`}>
+            <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>Your list</div>
+            <div className={`text-xs ${currentTheme.colors.textSecondary}`}>
               {loading ? 'Loading…' : `${displayed.length} shown`}
             </div>
           </div>
 
           {displayed.length === 0 ? (
             <div className="p-8 text-center">
-              <div className={`text-sm font-semibold ${isNeon ? 'text-white' : 'text-gray-900'}`}>No tasks yet</div>
-              <div className={`mt-1 text-sm ${isNeon ? 'text-slate-400' : 'text-gray-600'}`}>
+              <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>No tasks yet</div>
+              <div className={`mt-1 text-sm ${currentTheme.colors.textSecondary}`}>
                 Add a task above, or click “Add templates” to seed your workflow.
               </div>
             </div>
@@ -583,7 +620,7 @@ export default function Tasks() {
 
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <div className={`text-sm font-bold ${isNeon ? 'text-white' : 'text-gray-900'} ${isDone ? 'line-through' : ''}`}>
+                        <div className={`text-sm font-bold ${currentTheme.colors.textPrimary} ${isDone ? 'line-through' : ''}`}>
                           {t.title}
                         </div>
 
@@ -619,7 +656,7 @@ export default function Tasks() {
                       </div>
 
                       {t.notes && (
-                        <div className={`mt-1 text-xs ${isNeon ? 'text-slate-400' : 'text-gray-600'}`}>{t.notes}</div>
+                        <div className={`mt-1 text-xs ${currentTheme.colors.textSecondary}`}>{t.notes}</div>
                       )}
                     </div>
 
@@ -627,11 +664,7 @@ export default function Tasks() {
                       {t.relatedSection && (
                         <button
                           onClick={() => jumpToSection(t.relatedSection!)}
-                          className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
-                            isNeon
-                              ? 'bg-white/5 hover:bg-white/10 text-white/90 border border-white/10'
-                              : 'bg-gray-50 hover:bg-gray-100 text-gray-800 border border-gray-200'
-                          }`}
+                          className={`${cls.ghostBtn} px-3 py-2 text-xs font-bold`}
                           title="Open related page"
                         >
                           Open
