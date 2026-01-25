@@ -515,8 +515,10 @@ export default function StockXCoupons() {
         persistCache(next);
         return next;
       });
+      setNotification({ isVisible: true, message: `Deleted ${code}`, type: 'success' });
     } catch (e: any) {
       setError(e?.message || 'Failed to remove coupon');
+      setNotification({ isVisible: true, message: e?.message || 'Failed to delete coupon', type: 'error' });
     } finally {
       setSavingCode(null);
     }
