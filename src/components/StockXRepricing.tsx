@@ -3168,7 +3168,10 @@ export default function StockXRepricing() {
     }
   }, []);
 
-  const resetImageCaches = useCallback(() => {
+  const resetImageCaches = useCallback(async () => {
+    setBulkActionMessage('🧼 Resetting images…');
+    setTimeout(() => setBulkActionMessage(null), 5000);
+
     try {
       localStorage.removeItem(PRODUCT_IMAGE_CACHE_KEY);
       localStorage.removeItem(PURCHASE_IMAGE_CACHE_KEY);
@@ -3195,17 +3198,48 @@ export default function StockXRepricing() {
     } catch {}
 
     setBrokenImageByListingId({});
+    brokenImageByListingIdRef.current = {};
     brokenProductIdRef.current = {};
 
-    // Re-run enrichment for everything missing/broken.
-    try {
-      const snapshot = listings as any as Listing[];
-      const needs = snapshot.filter((l) => !l.imageUrl || brokenImageByListingIdRef.current[String((l as any)?.listingId || '').trim()]);
-      enrichProductImagesForListings(needs.length > 0 ? needs : snapshot);
-    } catch {
-      enrichProductImagesForListings(listings as any as Listing[]);
+    // Force current-page listings to re-enrich first (most visible “it worked” signal).
+    const pageIds = new Set((paginatedListings || []).map((l) => l.listingId));
+    if (pageIds.size > 0) {
+      setListings((prev) => prev.map((l) => (pageIds.has(l.listingId) ? { ...l, imageUrl: null } : l)));
     }
-  }, [enrichProductImagesForListings, listings]);
+
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    // Re-run enrichment in batches so we don't get stuck behind the 60/80 caps.
+    const snapshot = (listings || []) as any as Listing[];
+    const needsAll = snapshot.filter(
+      (l) => !l.imageUrl || brokenImageByListingIdRef.current[String((l as any)?.listingId || '').trim()]
+    );
+    const prioritized = [
+      // current page first
+      ...((paginatedListings || []) as any as Listing[]).map((l) => ({ ...(l as any), imageUrl: null })),
+      ...needsAll.map((l) => ({ ...(l as any), imageUrl: null })),
+    ];
+    const seen = new Set<string>();
+    const unique = prioritized.filter((l: any) => {
+      const id = String(l?.listingId || '').trim();
+      if (!id) return false;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+
+    const batchSize = 80; // matches purchases lookup cap
+    for (let i = 0; i < unique.length; i += batchSize) {
+      const batch = unique.slice(i, i + batchSize);
+      // eslint-disable-next-line no-await-in-loop
+      await enrichProductImagesForListings(batch);
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(150);
+    }
+
+    setBulkActionMessage('✅ Reset images complete');
+    setTimeout(() => setBulkActionMessage(null), 5000);
+  }, [enrichProductImagesForListings, listings, paginatedListings]);
 
   const buildStockXProductUrl = (listing: Listing): string | null => {
     // Prefer StockX-provided `urlKey` slug when available (most accurate).
@@ -3690,7 +3724,7 @@ export default function StockXRepricing() {
             )}
           </button>
           <button
-            onClick={resetImageCaches}
+            onClick={() => void resetImageCaches()}
             disabled={loading}
             className={`flex items-center space-x-2 ${
               isNeon
