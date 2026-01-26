@@ -3,6 +3,7 @@ import { getAdminDb } from '@/lib/firebase/firebaseAdmin';
 import { SlackNotificationService } from '@/lib/notifications/slackService';
 import { trackingService } from '@/lib/tracking/trackingService';
 import { refreshStockXTokens } from '@/lib/stockx/tokenRefresh';
+import { fetchStockXMarketPrice } from '@/lib/stockx/marketPrice';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,73 +37,6 @@ function localParts(now: Date, timeZone: string) {
 
 function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
-}
-
-async function fetchStockXMarketPriceWithToken(args: {
-  accessToken: string;
-  apiKey: string;
-  productName: string;
-  size: string;
-  styleId?: string | null;
-}): Promise<number | null> {
-  const { accessToken, apiKey, productName, size, styleId } = args;
-  try {
-    const searchTerm = styleId || productName;
-    const searchQuery = encodeURIComponent(searchTerm);
-    const searchUrl = `https://api.stockx.com/v2/catalog/search?query=${searchQuery}&pageSize=5`;
-    const searchResponse = await fetch(searchUrl, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'X-API-Key': apiKey,
-        Accept: 'application/json',
-        'User-Agent': 'ResellDashboard/1.0'
-      }
-    });
-    if (!searchResponse.ok) return null;
-    const searchData = await searchResponse.json().catch(() => ({}));
-    const products = (searchData.results || searchData.Products || []) as any[];
-    if (!Array.isArray(products) || products.length === 0) return null;
-    const product = products[0];
-    const productId = product.id || product.uuid || product.productId;
-    if (!productId) return null;
-
-    const marketUrl = `https://api.stockx.com/v2/catalog/products/${productId}/market-data`;
-    const marketResponse = await fetch(marketUrl, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'X-API-Key': apiKey,
-        Accept: 'application/json',
-        'User-Agent': 'ResellDashboard/1.0'
-      }
-    });
-    if (!marketResponse.ok) return null;
-    const marketData = await marketResponse.json().catch(() => null);
-    const variants = Array.isArray(marketData) ? marketData : [];
-    if (!Array.isArray(variants) || variants.length === 0) return null;
-
-    let target = null as any;
-    if (size && size !== 'Unknown') {
-      target = variants.find((v: any) => {
-        const variantSize = v.variantValue || v.size || v.sizeValue || v.shoeSize || v.displaySize;
-        return variantSize === size || variantSize === `US M ${size}` || variantSize === `US W ${size}`;
-      });
-    }
-    if (!target) {
-      target =
-        variants.find((v: any) => (parseInt(v.lowestAskAmount) > 0) || (parseInt(v.flexLowestAskAmount) > 0)) ||
-        variants[0];
-    }
-    if (!target) return null;
-    const standardAsk = parseInt(target.lowestAskAmount) || 0;
-    const flexAsk = parseInt(target.flexLowestAskAmount) || 0;
-    const cents = standardAsk > 0 && flexAsk > 0 ? Math.min(standardAsk, flexAsk) : standardAsk > 0 ? standardAsk : flexAsk;
-    if (!cents) return null;
-    return cents / 100;
-  } catch {
-    return null;
-  }
 }
 
 export async function GET(request: NextRequest) {
@@ -249,7 +183,12 @@ export async function GET(request: NextRequest) {
               if (Number.isFinite(n) && n > 0) marketPrice = n;
             }
             if (!marketPrice) {
-              const realtime = await fetchStockXMarketPriceWithToken({ accessToken, apiKey, productName, size: productSize, styleId });
+              const realtime = await fetchStockXMarketPrice({
+                auth: { apiKey, accessToken, refreshToken },
+                productName,
+                size: productSize,
+                styleId
+              });
               if (realtime) marketPrice = realtime;
             }
             if (marketPrice !== undefined && (!Number.isFinite(marketPrice) || marketPrice <= 0)) {

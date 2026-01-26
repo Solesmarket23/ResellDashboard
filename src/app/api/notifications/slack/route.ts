@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSlackService } from '@/lib/notifications/slackService';
 import { getDocumentsServer } from '@/lib/firebase/firebaseServerUtils';
 import { trackingService } from '@/lib/tracking/trackingService';
+import { getAdminDb } from '@/lib/firebase/firebaseAdmin';
+import { fetchStockXMarketPrice } from '@/lib/stockx/marketPrice';
 
 /**
  * Helper function to extract brand from product name
@@ -39,151 +41,30 @@ function extractBrandFromProductName(productName: string): string {
   return firstWord || 'Unknown';
 }
 
-/**
- * Fetch real-time StockX market price for a product
- * Prioritizes styleId search for accuracy, falls back to product name
- */
-async function fetchStockXMarketPrice(
-  productName: string, 
-  size: string,
-  request: NextRequest,
-  styleId?: string
-): Promise<number | null> {
+async function getStockXAuthForUser(request: NextRequest, userId: string): Promise<{ apiKey: string; accessToken?: string; refreshToken?: string } | null> {
+  const apiKey = process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID;
+  if (!apiKey) return null;
+
+  const accessToken = request.cookies.get('stockx_access_token')?.value;
+  const refreshTokenCookie = request.cookies.get('stockx_refresh_token')?.value;
+  if (accessToken || refreshTokenCookie) {
+    return { apiKey, accessToken, refreshToken: refreshTokenCookie };
+  }
+
+  // Fallback: use user's stored refresh token (same approach as cron), so Slack can fetch prices even when cookies are missing.
   try {
-    const searchTerm = styleId || productName;
-    const searchType = styleId ? 'StyleId' : 'Product Name';
-    console.log(`🔍 Fetching StockX price for: ${productName} (Size: ${size}) using ${searchType}: ${searchTerm}`);
-    
-    // Get StockX credentials from cookies
-    const accessToken = request.cookies.get('stockx_access_token')?.value;
-    const refreshToken = request.cookies.get('stockx_refresh_token')?.value;
-    const apiKey = process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID;
-    
-    if (!accessToken || !apiKey) {
-      console.log(`⚠️ No StockX credentials available, skipping price fetch`);
-      return null;
-    }
-    
-    // Step 1: Search for the product using StyleId (much more accurate!) or product name
-    const searchQuery = encodeURIComponent(searchTerm);
-    const searchUrl = `https://api.stockx.com/v2/catalog/search?query=${searchQuery}&pageSize=5`;
-    
-    console.log(`🔎 Searching StockX by ${searchType}: ${searchUrl}`);
-    
-    const searchResponse = await fetch(searchUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'X-API-Key': apiKey,
-        'Accept': 'application/json',
-        'User-Agent': 'ResellDashboard/1.0'
-      }
-    });
-    
-    if (!searchResponse.ok) {
-      console.log(`❌ StockX search failed: ${searchResponse.status}`);
-      return null;
-    }
-    
-    const searchData = await searchResponse.json();
-    const products = searchData.results || searchData.Products || [];
-    
-    if (products.length === 0) {
-      console.log(`❌ No products found for ${searchType}: ${searchTerm}`);
-      return null;
-    }
-    
-    // Get the first matching product (when using styleId, should be exact match)
-    const product = products[0];
-    const productId = product.id || product.uuid || product.productId;
-    
-    if (!productId) {
-      console.log(`❌ No productId found in search results`);
-      return null;
-    }
-    
-    console.log(`✅ Found product: ${product.title || product.name} (ID: ${productId})${styleId ? ' via StyleId ✨' : ''}`);
-    
-    // Step 2: Get market data for this product
-    const marketUrl = `https://api.stockx.com/v2/catalog/products/${productId}/market-data`;
-    
-    console.log(`💰 Fetching market data: ${marketUrl}`);
-    
-    const marketResponse = await fetch(marketUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'X-API-Key': apiKey,
-        'Accept': 'application/json',
-        'User-Agent': 'ResellDashboard/1.0'
-      }
-    });
-    
-    if (!marketResponse.ok) {
-      console.log(`❌ Market data fetch failed: ${marketResponse.status}`);
-      return null;
-    }
-    
-    const marketData = await marketResponse.json();
-    const variants = Array.isArray(marketData) ? marketData : [];
-    
-    if (variants.length === 0) {
-      console.log(`❌ No market data available`);
-      return null;
-    }
-    
-    // Step 3: Find the variant matching the size
-    let targetVariant = null;
-    
-    // Try exact size match
-    if (size && size !== 'Unknown') {
-      targetVariant = variants.find((v: any) => {
-        const variantSize = v.variantValue || v.size || v.sizeValue || v.shoeSize || v.displaySize;
-        return variantSize === size || variantSize === `US M ${size}` || variantSize === `US W ${size}`;
-      });
-    }
-    
-    // If no exact match, use first variant with pricing
-    if (!targetVariant) {
-      targetVariant = variants.find((v: any) => 
-        (v.lowestAskAmount && parseInt(v.lowestAskAmount) > 0) ||
-        (v.flexLowestAskAmount && parseInt(v.flexLowestAskAmount) > 0)
-      ) || variants[0];
-    }
-    
-    if (!targetVariant) {
-      console.log(`❌ No matching variant found`);
-      return null;
-    }
-    
-    // Step 4: Extract the lowest ask price (in cents, convert to dollars)
-    const standardAsk = parseInt(targetVariant.lowestAskAmount) || 0;
-    const flexAsk = parseInt(targetVariant.flexLowestAskAmount) || 0;
-    
-    // Use the lower of the two prices
-    let lowestAskCents = 0;
-    if (standardAsk > 0 && flexAsk > 0) {
-      lowestAskCents = Math.min(standardAsk, flexAsk);
-    } else if (standardAsk > 0) {
-      lowestAskCents = standardAsk;
-    } else if (flexAsk > 0) {
-      lowestAskCents = flexAsk;
-    }
-    
-    if (lowestAskCents === 0) {
-      console.log(`❌ No pricing data available`);
-      return null;
-    }
-    
-    const lowestAsk = lowestAskCents / 100; // Convert cents to dollars
-    
-    console.log(`✅ Found market price: $${lowestAsk} for ${targetVariant.variantValue || 'variant'}`);
-    
-    return lowestAsk;
-    
-  } catch (error) {
-    console.error(`❌ Error fetching StockX price for ${productName}:`, error);
-    return null;
+    const db = getAdminDb();
+    const userSnap = await db.collection('users').doc(userId).get();
+    const data = userSnap.exists ? (userSnap.data() as any) : null;
+    const tokens = data?.stockxTokens || null;
+    const refreshToken =
+      (tokens?.refresh_token as string | undefined) ||
+      (tokens?.refreshToken as string | undefined) ||
+      undefined;
+    if (!refreshToken) return { apiKey };
+    return { apiKey, refreshToken };
+  } catch {
+    return { apiKey };
   }
 }
 
@@ -348,10 +229,20 @@ export async function POST(request: NextRequest) {
       
       // If no market price cached, fetch real-time from StockX (prioritize styleId for accuracy!)
       if (marketPrice === undefined) {
-        const realtimePrice = await fetchStockXMarketPrice(productName, productSize, request, styleId);
-        if (realtimePrice) {
-          marketPrice = realtimePrice;
-          console.log(`✅ Real-time price fetched: ${productName}${styleId ? ` (StyleId: ${styleId})` : ''} = $${marketPrice}`);
+        const auth = await getStockXAuthForUser(request, userId);
+        if (!auth) {
+          console.log(`⚠️ Missing STOCKX_API_KEY, skipping price fetch`);
+        } else {
+          const realtimePrice = await fetchStockXMarketPrice({
+            auth,
+            productName,
+            size: productSize,
+            styleId
+          });
+          if (realtimePrice) {
+            marketPrice = realtimePrice;
+            console.log(`✅ Real-time price fetched: ${productName}${styleId ? ` (StyleId: ${styleId})` : ''} = $${marketPrice}`);
+          }
         }
       } else {
         console.log(`📦 Using cached price: ${productName} = $${marketPrice}`);
