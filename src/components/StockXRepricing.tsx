@@ -429,17 +429,21 @@ export default function StockXRepricing() {
         value: 'queue_focus',
         label: 'Queue Focus',
         description: 'Match best ask without peeking. Preserves tie-queue behavior (best for high-volume SKUs).',
+        group: 'Recommended',
         badge: 'Default',
       },
       {
         value: 'peek_focus',
         label: 'Peek Focus (Low volume)',
         description: 'Occasionally peeks to discover the next ask and raise. Skips peeks at Min to preserve queue.',
+        group: 'Recommended',
       },
       {
         value: 'reset_then_beat_lowest',
         label: 'Two-step',
-        description: 'Temporarily resets high to reveal the next ask, then undercuts by $1. Use with Min/Max bounds.',
+        description: 'Legacy: resets high to reveal the next ask, then undercuts by $1. Use with Min/Max bounds.',
+        group: 'Legacy',
+        badge: 'Legacy',
       },
     ],
     []
