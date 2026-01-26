@@ -78,6 +78,15 @@ function parseStockXMoneyToDollars(raw: unknown): number | null {
   return n > 1000 ? n / 100 : n;
 }
 
+function toDisplayDollars(askDollars: number | null): number | null {
+  if (askDollars === null) return null;
+  if (!Number.isFinite(askDollars) || askDollars <= 0) return null;
+  // StockX UI displays whole-dollar asks. When the API returns cents (e.g. 250.5),
+  // the UI rounds up. Use ceil so "$1 below lowest" matches what you see (251 -> 250),
+  // instead of undercutting by $2 due to flooring (250.50 - 1 => 249.50 -> 249).
+  return Math.ceil(askDollars);
+}
+
 function minPositive(a: number | null, b: number | null): number | null {
   if (a === null && b === null) return null;
   if (a === null) return b;
@@ -514,8 +523,8 @@ export async function POST(request: NextRequest) {
         }
 
         // Market snapshot (dollars) for logging + persistence + change detection
-        const currentStdAsk = parseStockXMoneyToDollars((marketData as any).lowestAskAmount);
-        const currentFlexAsk = parseStockXMoneyToDollars((marketData as any).flexLowestAskAmount);
+        const currentStdAsk = toDisplayDollars(parseStockXMoneyToDollars((marketData as any).lowestAskAmount));
+        const currentFlexAsk = toDisplayDollars(parseStockXMoneyToDollars((marketData as any).flexLowestAskAmount));
 
         // Calculate new price based on strategy
         let newPrice: number;
@@ -575,8 +584,8 @@ export async function POST(request: NextRequest) {
           }
 
           if (isReserveFollower) {
-            const stdAsk = parseStockXMoneyToDollars((marketData as any).lowestAskAmount);
-            const flexAsk = parseStockXMoneyToDollars((marketData as any).flexLowestAskAmount);
+            const stdAsk = toDisplayDollars(parseStockXMoneyToDollars((marketData as any).lowestAskAmount));
+            const flexAsk = toDisplayDollars(parseStockXMoneyToDollars((marketData as any).flexLowestAskAmount));
             const bestAsk = minPositive(stdAsk, flexAsk);
             if (bestAsk === null) {
               repricingResults.push({
@@ -627,8 +636,8 @@ export async function POST(request: NextRequest) {
             twoStepMeta = { resetPrice, beatBy };
 
             // Compute the final target price from current market
-            const initialLowestAsk = parseStockXMoneyToDollars((marketData as any).lowestAskAmount);
-            const initialFlexLowestAsk = parseStockXMoneyToDollars((marketData as any).flexLowestAskAmount);
+            const initialLowestAsk = toDisplayDollars(parseStockXMoneyToDollars((marketData as any).lowestAskAmount));
+            const initialFlexLowestAsk = toDisplayDollars(parseStockXMoneyToDollars((marketData as any).flexLowestAskAmount));
             const initialBestAsk = minPositive(initialLowestAsk, initialFlexLowestAsk);
             const computedFinal = initialBestAsk !== null ? Math.max(1, initialBestAsk - beatBy) : listing.currentPrice;
             const shouldPeekNextLowest = forceTwoStepPeek
@@ -777,8 +786,8 @@ export async function POST(request: NextRequest) {
                   await new Promise(resolve => setTimeout(resolve, 1500 + attempt * 1000));
                   refreshedMarket = await getMarketData(listing.productId, listing.variantId, { bustCache: true });
 
-                  competitorLowestAsk = parseStockXMoneyToDollars((refreshedMarket as any).lowestAskAmount);
-                  competitorFlexLowestAsk = parseStockXMoneyToDollars((refreshedMarket as any).flexLowestAskAmount);
+                  competitorLowestAsk = toDisplayDollars(parseStockXMoneyToDollars((refreshedMarket as any).lowestAskAmount));
+                  competitorFlexLowestAsk = toDisplayDollars(parseStockXMoneyToDollars((refreshedMarket as any).flexLowestAskAmount));
                   competitorBestAsk = minPositive(competitorLowestAsk, competitorFlexLowestAsk);
 
                   if (competitorBestAsk !== null) break;
@@ -977,8 +986,8 @@ export async function POST(request: NextRequest) {
                   await new Promise(resolve => setTimeout(resolve, 1500 + attempt * 1000));
                   refreshedMarket = await getMarketData(listing.productId, listing.variantId, { bustCache: true });
 
-                  competitorLowestAsk = parseStockXMoneyToDollars((refreshedMarket as any).lowestAskAmount);
-                  competitorFlexLowestAsk = parseStockXMoneyToDollars((refreshedMarket as any).flexLowestAskAmount);
+                  competitorLowestAsk = toDisplayDollars(parseStockXMoneyToDollars((refreshedMarket as any).lowestAskAmount));
+                  competitorFlexLowestAsk = toDisplayDollars(parseStockXMoneyToDollars((refreshedMarket as any).flexLowestAskAmount));
                   competitorBestAsk = minPositive(competitorLowestAsk, competitorFlexLowestAsk);
                   if (competitorBestAsk !== null) break;
                 }
@@ -1158,6 +1167,10 @@ export async function POST(request: NextRequest) {
             continue;
           }
         }
+
+        // Normalize to an integer dollar amount before comparing/updating.
+        // StockX listing updates are whole-dollar, and we want consistent behavior vs UI.
+        newPrice = Math.max(1, Math.round(newPrice));
 
         // Optional: skip tiny changes to reduce churn
         if (isFiniteNumber(minPriceChange) && Math.abs(newPrice - comparisonCurrentPrice) < minPriceChange) {
