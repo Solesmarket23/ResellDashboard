@@ -1326,8 +1326,17 @@ export default function StockXCoupons() {
                         return (
                           <tr
                             key={c.code}
-                            className={`${isNeon ? 'text-white/85' : 'text-gray-900'} ${
+                            style={isCopied ? {
+                              boxShadow: isNeon
+                                ? 'inset 0 0 0 3px #22d3ee, 0 20px 50px rgba(34, 211, 238, 0.3)'
+                                : 'inset 0 0 0 3px #3b82f6, 0 20px 50px rgba(59, 130, 246, 0.3)'
+                            } : undefined}
+                            className={`${isNeon ? 'text-white/85' : 'text-gray-900'} transition-all duration-300 ${
                               enteringCodes[c.code] ? 'will-change-transform [animation:coupon-enter_260ms_ease-out]' : ''
+                            } ${
+                              isCopied
+                                ? (isNeon ? 'bg-gradient-to-r from-cyan-500/20 via-blue-500/10 to-cyan-500/20' : 'bg-gradient-to-r from-blue-200 via-blue-100 to-blue-200')
+                                : ''
                             }`}
                           >
                             <td className="px-4 py-3">
@@ -1337,7 +1346,7 @@ export default function StockXCoupons() {
                                   onClick={() => copyCode(c.code)}
                                   className={`h-8 w-8 p-0 inline-flex items-center justify-center rounded-md transition-colors ${
                                     isNeon ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'
-                                  } ${isCopied ? (isNeon ? 'ring-1 ring-emerald-400/50 bg-emerald-500/15' : 'ring-1 ring-emerald-500/40 bg-emerald-50') : ''}`}
+                                  } ${isCopied ? (isNeon ? 'ring-1 ring-cyan-400/50 bg-cyan-500/15' : 'ring-1 ring-blue-500/40 bg-blue-50') : ''}`}
                                   title={isCopied ? 'Copied' : 'Copy code'}
                                 >
                                   {isCopied ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
@@ -1473,9 +1482,18 @@ export default function StockXCoupons() {
               return (
                 <div
                   key={c.code}
-                  className={`rounded-xl border p-4 ${
+                  style={isCopied ? {
+                    boxShadow: isNeon
+                      ? 'inset 0 0 0 3px #22d3ee, 0 20px 50px rgba(34, 211, 238, 0.3)'
+                      : 'inset 0 0 0 3px #3b82f6, 0 20px 50px rgba(59, 130, 246, 0.3)'
+                  } : undefined}
+                  className={`rounded-xl border p-4 transition-all duration-300 ${
                     isNeon ? 'bg-white/5 border-white/15' : `${currentTheme.colors.border} border`
-                  } ${enteringCodes[c.code] ? 'will-change-transform [animation:coupon-enter_260ms_ease-out]' : ''}`}
+                  } ${enteringCodes[c.code] ? 'will-change-transform [animation:coupon-enter_260ms_ease-out]' : ''} ${
+                    isCopied
+                      ? (isNeon ? 'bg-gradient-to-r from-cyan-500/20 via-blue-500/10 to-cyan-500/20' : 'bg-gradient-to-r from-blue-200 via-blue-100 to-blue-200')
+                      : ''
+                  }`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -1488,7 +1506,7 @@ export default function StockXCoupons() {
                           onClick={() => copyCode(c.code)}
                           className={`h-7 w-7 p-0 inline-flex items-center justify-center rounded-md transition-colors ${
                             isNeon ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'
-                          } ${isCopied ? (isNeon ? 'ring-1 ring-emerald-400/50 bg-emerald-500/15' : 'ring-1 ring-emerald-500/40 bg-emerald-50') : ''}`}
+                          } ${isCopied ? (isNeon ? 'ring-1 ring-cyan-400/50 bg-cyan-500/15' : 'ring-1 ring-blue-500/40 bg-blue-50') : ''}`}
                           title={isCopied ? 'Copied' : 'Copy code'}
                         >
                           <span
