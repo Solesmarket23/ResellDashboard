@@ -140,6 +140,24 @@ export async function POST(request: NextRequest) {
     console.log(`🔄 Fetching live tracking data for ${trackingNumbers.length} packages`);
     const liveTrackingData = await trackingService.getBulkTrackingInfo(trackingNumbers);
 
+    const getBaseUrl = () => {
+      const host = request.headers.get('host') || '';
+      if (host.includes('solesmarket.com')) return 'https://www.solesmarket.com';
+      const envUrl =
+        process.env.NEXT_PUBLIC_BASE_URL ||
+        process.env.NEXT_PUBLIC_APP_URL ||
+        process.env.APP_URL ||
+        process.env.VERCEL_URL ||
+        '';
+      if (envUrl) {
+        if (!envUrl.startsWith('http://') && !envUrl.startsWith('https://')) return `https://${envUrl}`;
+        return envUrl;
+      }
+      const proto = request.headers.get('x-forwarded-proto') || 'https';
+      return host ? `${proto}://${host}` : 'http://localhost:3000';
+    };
+    const baseUrl = getBaseUrl();
+
     // Concurrency limiter to avoid StockX 429s
     class Semaphore {
       private available: number;
@@ -254,6 +272,7 @@ export async function POST(request: NextRequest) {
       const productName = purchase.productName || purchase.product?.name || 'Unknown Product';
       const productSize = purchase.productSize || purchase.size || purchase.product?.size || 'Unknown';
       const styleId = purchase.styleId || purchase.style_id || null;
+      const purchaseId = String(purchase.id || purchase.purchaseId || purchase.orderNumber || trackingValue || '').trim();
       
       // Extract brand from product name
       let productBrand = purchase.productBrand || purchase.brand;
@@ -337,6 +356,15 @@ export async function POST(request: NextRequest) {
                 marketDebug.failedHttpStatuses[key] = (marketDebug.failedHttpStatuses[key] || 0) + 1;
               }
             }
+
+              // Always attach a market link even if pricing failed, so you can verify the match.
+              const stockxUrlKey = (result as any).urlKey as string | undefined;
+              const termUsed = (result as any).termUsed as string | undefined;
+              const searchTerm = termUsed || styleId || productName;
+              const marketUrl = stockxUrlKey
+                ? `https://stockx.com/${stockxUrlKey}${productSize ? `?size=${encodeURIComponent(productSize)}` : ''}`
+                : `https://stockx.com/search?s=${encodeURIComponent(searchTerm)}`;
+              (purchase as any).__marketLink = `<${marketUrl}|Market>`;
           }
         }
         }
@@ -360,6 +388,7 @@ export async function POST(request: NextRequest) {
       console.log(`📦 ${productName}: tracking=${trackingValue}, eta=${estimatedDelivery}, status=${status}, purchase=$${purchasePrice}, market=$${marketPrice}, profit=$${estimatedProfit}`);
 
       return {
+        purchaseId,
         productName,
         productBrand,
         productSize,
@@ -369,7 +398,9 @@ export async function POST(request: NextRequest) {
         status,
         purchasePrice,
         marketPrice,
-        estimatedProfit
+        estimatedProfit,
+        purchaseLink: purchaseId ? `<${baseUrl}/dashboard?section=purchases&purchaseId=${encodeURIComponent(purchaseId)}|Purchase>` : undefined,
+        marketLink: (purchase as any).__marketLink as string | undefined
       };
     }));
 

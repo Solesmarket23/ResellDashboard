@@ -17,6 +17,7 @@ export interface DeliverySummary {
   purchaseCostOnTheWay?: number;
   marketPriceNote?: string;
   deliveries: Array<{
+    purchaseId?: string;
     productName: string;
     productBrand: string;
     productSize: string;
@@ -27,6 +28,8 @@ export interface DeliverySummary {
     purchasePrice?: number;
     marketPrice?: number;
     estimatedProfit?: number;
+    purchaseLink?: string;
+    marketLink?: string;
   }>;
 }
 
@@ -283,6 +286,8 @@ export class SlackNotificationService {
           estimatedProfit: (delivery as any).estimatedProfit,
         });
         const moneyLine = money.text ?? 'Purchase/Market/Profit: (missing)';
+        const links = [delivery.purchaseLink, delivery.marketLink].filter(Boolean).join(' | ');
+        const linksLine = links ? `\n  Links: ${links}` : '';
 
         blocks.push({
           type: 'section',
@@ -292,7 +297,7 @@ export class SlackNotificationService {
               `• *${delivery.productName}* (${delivery.productBrand})\n` +
               `  Size: ${delivery.productSize} | ETA: ${eta}\n` +
               `  ${delivery.carrier}: ${trackingLink}\n` +
-              `  ${moneyLine}`
+              `  ${moneyLine}${linksLine}`
           }
         });
       }

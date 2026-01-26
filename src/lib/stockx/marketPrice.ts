@@ -6,6 +6,10 @@ export type StockXAuth =
 
 export type StockXMarketPriceResult = {
   price: number | null;
+  productId?: string;
+  variantId?: string;
+  urlKey?: string;
+  termUsed?: string;
   reason:
     | 'ok'
     | 'missing_search_term'
@@ -170,6 +174,8 @@ export async function fetchStockXMarketPriceDetailed(args: {
 
   try {
     let productId: string | null = null;
+    let urlKey: string | null = null;
+    let termUsed: string | null = null;
     let lastNoProductsTerm: string | null = null;
 
     // Step 1: Catalog search -> productId (try a few query variants)
@@ -191,13 +197,15 @@ export async function fetchStockXMarketPriceDetailed(args: {
       const pid = product.productId || product.id || product.uuid;
       if (pid) {
         productId = String(pid);
+        urlKey = (product.urlKey || product.url_key || product.productUrlKey || product.slug || null) ? String(product.urlKey || product.url_key || product.productUrlKey || product.slug) : null;
+        termUsed = term;
         break;
       }
       return { price: null, reason: 'missing_product_id', stage: 'search', details: `term=${term}` };
     }
 
     if (!productId) {
-      return { price: null, reason: 'no_products', stage: 'search', details: lastNoProductsTerm ? `term=${lastNoProductsTerm}` : undefined };
+      return { price: null, reason: 'no_products', stage: 'search', details: lastNoProductsTerm ? `term=${lastNoProductsTerm}` : undefined, termUsed: lastNoProductsTerm || undefined };
     }
 
     // Step 2: Prefer repricer-style flow: fetch variants -> pick variantId -> variant market-data
@@ -209,10 +217,10 @@ export async function fetchStockXMarketPriceDetailed(args: {
     const variantsData = await variantsRes.json().catch(() => null);
     const variants = Array.isArray(variantsData) ? variantsData : (variantsData?.variants || []);
     if (!Array.isArray(variants) || variants.length === 0) {
-      return { price: null, reason: 'no_variants', stage: 'market' };
+      return { price: null, reason: 'no_variants', stage: 'market', productId, urlKey: urlKey || undefined, termUsed: termUsed || undefined };
     }
     const variantId = pickVariantIdBySize(variants, args.size);
-    if (!variantId) return { price: null, reason: 'no_variant', stage: 'market' };
+    if (!variantId) return { price: null, reason: 'no_variant', stage: 'market', productId, urlKey: urlKey || undefined, termUsed: termUsed || undefined };
 
     const variantMarketUrl = `https://api.stockx.com/v2/catalog/products/${productId}/variants/${variantId}/market-data`;
     const vmRes = await stockxFetchWithRetry(variantMarketUrl, { apiKey, accessToken });
@@ -221,25 +229,25 @@ export async function fetchStockXMarketPriceDetailed(args: {
       const fallbackUrl = `https://api.stockx.com/v2/catalog/products/${productId}/market-data`;
       const marketRes = await stockxFetchWithRetry(fallbackUrl, { apiKey, accessToken });
       if (!marketRes.ok) {
-        return { price: null, reason: 'market_http_error', stage: 'market', httpStatus: vmRes.status, details: `variant_market_failed_then_product_market_failed (${vmRes.status}/${marketRes.status})` };
+        return { price: null, reason: 'market_http_error', stage: 'market', httpStatus: vmRes.status, details: `variant_market_failed_then_product_market_failed (${vmRes.status}/${marketRes.status})`, productId, variantId, urlKey: urlKey || undefined, termUsed: termUsed || undefined };
       }
       const marketData = await marketRes.json().catch(() => null);
       const arr = Array.isArray(marketData) ? marketData : [];
       const variant = pickVariantBySize(arr, args.size);
-      if (!variant) return { price: null, reason: 'no_variant', stage: 'market' };
+      if (!variant) return { price: null, reason: 'no_variant', stage: 'market', productId, variantId, urlKey: urlKey || undefined, termUsed: termUsed || undefined };
       const price = lowestAskFromVariant(variant);
-      if (price === null) return { price: null, reason: 'no_price', stage: 'market' };
-      return { price, reason: 'ok', details: 'fallback_product_market_data' };
+      if (price === null) return { price: null, reason: 'no_price', stage: 'market', productId, variantId, urlKey: urlKey || undefined, termUsed: termUsed || undefined };
+      return { price, reason: 'ok', details: 'fallback_product_market_data', productId, variantId, urlKey: urlKey || undefined, termUsed: termUsed || undefined };
     }
 
     const vmData = await vmRes.json().catch(() => null);
     const variantData = Array.isArray(vmData)
       ? vmData.find((item: any) => String(item?.variantId) === String(variantId))
       : vmData;
-    if (!variantData) return { price: null, reason: 'no_variant', stage: 'market' };
+    if (!variantData) return { price: null, reason: 'no_variant', stage: 'market', productId, variantId, urlKey: urlKey || undefined, termUsed: termUsed || undefined };
     const price = lowestAskFromVariant(variantData);
-    if (price === null) return { price: null, reason: 'no_price', stage: 'market' };
-    return { price, reason: 'ok' };
+    if (price === null) return { price: null, reason: 'no_price', stage: 'market', productId, variantId, urlKey: urlKey || undefined, termUsed: termUsed || undefined };
+    return { price, reason: 'ok', productId, variantId, urlKey: urlKey || undefined, termUsed: termUsed || undefined };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     // Best-effort: never throw to callers (Slack notifications, etc.)

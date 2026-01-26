@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { ChevronDown, Edit, MoreHorizontal, Camera, RefreshCw, Mail, Trash2, Settings, Plus, Shield, Wrench, Download, FileSpreadsheet, FileText, FileJson } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
@@ -170,6 +171,21 @@ const Purchases = () => {
   const [editingTracking, setEditingTracking] = useState<string | null>(null); // Track which purchase is being edited (by id or orderNumber)
   const [editingTrackingValue, setEditingTrackingValue] = useState<string>(''); // Current value being edited
   const [highlightedPurchase, setHighlightedPurchase] = useState<string | null>(null); // Track which purchase was clicked to view email
+  const searchParams = useSearchParams();
+
+  // Deep-link support: /dashboard?section=purchases&purchaseId=...
+  useEffect(() => {
+    const pid = searchParams?.get('purchaseId');
+    if (!pid) return;
+    setSearchQuery(pid);
+    setHighlightedPurchase(pid);
+    // Scroll the matching row into view once the table renders
+    const t = setTimeout(() => {
+      const el = document.querySelector(`[data-purchase-id="${pid}"]`) as HTMLElement | null;
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 600);
+    return () => clearTimeout(t);
+  }, [searchParams]);
 
   // StockX cookie injection (for Puppeteer) - stored locally in the browser
   const [showStockxCookieModal, setShowStockxCookieModal] = useState(false);
