@@ -91,31 +91,37 @@ export async function fetchStockXMarketPrice(args: {
   size: string;
   styleId?: string | null;
 }): Promise<number | null> {
-  const apiKey = args.auth.apiKey;
-  const { accessToken } = await getStockXAccessToken(args.auth);
+  try {
+    const apiKey = args.auth.apiKey;
+    const { accessToken } = await getStockXAccessToken(args.auth);
 
-  const searchTerm = (args.styleId || args.productName || '').trim();
-  if (!searchTerm) return null;
+    const searchTerm = (args.styleId || args.productName || '').trim();
+    if (!searchTerm) return null;
 
-  // Step 1: Catalog search -> productId
-  const searchUrl = `https://api.stockx.com/v2/catalog/search?query=${encodeURIComponent(searchTerm)}&pageSize=5`;
-  const searchRes = await stockxFetchWithRetry(searchUrl, { apiKey, accessToken });
-  if (!searchRes.ok) return null;
-  const searchData = await searchRes.json().catch(() => ({}));
-  const products = (searchData.results || searchData.Products || []) as any[];
-  if (!Array.isArray(products) || products.length === 0) return null;
-  const product = products[0];
-  const productId = product.id || product.uuid || product.productId;
-  if (!productId) return null;
+    // Step 1: Catalog search -> productId
+    const searchUrl = `https://api.stockx.com/v2/catalog/search?query=${encodeURIComponent(searchTerm)}&pageSize=5`;
+    const searchRes = await stockxFetchWithRetry(searchUrl, { apiKey, accessToken });
+    if (!searchRes.ok) return null;
+    const searchData = await searchRes.json().catch(() => ({}));
+    const products = (searchData.results || searchData.Products || []) as any[];
+    if (!Array.isArray(products) || products.length === 0) return null;
+    const product = products[0];
+    const productId = product.id || product.uuid || product.productId;
+    if (!productId) return null;
 
-  // Step 2: Market data -> variant prices
-  const marketUrl = `https://api.stockx.com/v2/catalog/products/${productId}/market-data`;
-  const marketRes = await stockxFetchWithRetry(marketUrl, { apiKey, accessToken });
-  if (!marketRes.ok) return null;
-  const marketData = await marketRes.json().catch(() => null);
-  const variants = Array.isArray(marketData) ? marketData : [];
-  const variant = pickVariantBySize(variants, args.size);
-  if (!variant) return null;
-  return lowestAskFromVariant(variant);
+    // Step 2: Market data -> variant prices
+    const marketUrl = `https://api.stockx.com/v2/catalog/products/${productId}/market-data`;
+    const marketRes = await stockxFetchWithRetry(marketUrl, { apiKey, accessToken });
+    if (!marketRes.ok) return null;
+    const marketData = await marketRes.json().catch(() => null);
+    const variants = Array.isArray(marketData) ? marketData : [];
+    const variant = pickVariantBySize(variants, args.size);
+    if (!variant) return null;
+    return lowestAskFromVariant(variant);
+  } catch (e) {
+    // Best-effort: market price lookup should never break the caller (Slack notifications, etc.)
+    console.warn('⚠️ StockX market price lookup failed (non-fatal):', e instanceof Error ? e.message : String(e));
+    return null;
+  }
 }
 
