@@ -140,14 +140,77 @@ export async function POST(request: NextRequest) {
     console.log(`🔄 Fetching live tracking data for ${trackingNumbers.length} packages`);
     const liveTrackingData = await trackingService.getBulkTrackingInfo(trackingNumbers);
 
+    // Concurrency limiter to avoid StockX 429s
+    class Semaphore {
+      private available: number;
+      private queue: Array<() => void> = [];
+      constructor(available: number) {
+        this.available = Math.max(1, available);
+      }
+      async acquire(): Promise<void> {
+        if (this.available > 0) {
+          this.available--;
+          return;
+        }
+        await new Promise<void>((resolve) => this.queue.push(resolve));
+        this.available--;
+      }
+      release(): void {
+        this.available++;
+        const next = this.queue.shift();
+        if (next) next();
+      }
+    }
+    const stockxSem = new Semaphore(3);
+    const ACTIVE_STATUSES = new Set(['shipped', 'in_transit', 'out_for_delivery']);
+    const marketCache = new Map<string, Promise<ReturnType<typeof fetchStockXMarketPriceDetailed>>>();
+    let stockxRateLimited = false;
+
     const marketDebug = {
       apiKeyConfigured: Boolean(process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID),
       totalItems: purchasesWithTracking.length,
       cachedUsed: 0,
       fetchedOk: 0,
       skippedNoAuth: 0,
+      skippedNotActive: 0,
+      skippedRateLimited: 0,
       failedByReason: {} as Record<string, number>,
       failedHttpStatuses: {} as Record<string, number>,
+    };
+
+    const fetchMarketWithControls = async (args: {
+      auth: any;
+      productName: string;
+      size: string;
+      styleId?: string | null;
+    }) => {
+      if (stockxRateLimited) {
+        marketDebug.skippedRateLimited++;
+        marketDebug.failedByReason['rate_limited_short_circuit'] =
+          (marketDebug.failedByReason['rate_limited_short_circuit'] || 0) + 1;
+        return { price: null } as any;
+      }
+
+      const key = `${String(args.styleId || '').trim()}|${args.productName}|${args.size}`.toLowerCase();
+      const existing = marketCache.get(key);
+      if (existing) return existing;
+
+      const p = (async () => {
+        await stockxSem.acquire();
+        try {
+          const result = await fetchStockXMarketPriceDetailed(args);
+          // If we hit a 429 on search, short-circuit further requests to avoid hammering StockX.
+          if (result.reason === 'search_http_error' && result.httpStatus === 429) {
+            stockxRateLimited = true;
+          }
+          return result;
+        } finally {
+          stockxSem.release();
+        }
+      })();
+
+      marketCache.set(key, p);
+      return p;
     };
 
     // Build deliveries array with live tracking data AND real-time StockX prices
@@ -242,6 +305,10 @@ export async function POST(request: NextRequest) {
       
       // If no market price cached, fetch real-time from StockX (prioritize styleId for accuracy!)
       if (marketPrice === undefined) {
+        // Only fetch market prices for "active" shipments (used for on-the-way totals + section)
+        if (!ACTIVE_STATUSES.has(String(status || '').toLowerCase())) {
+          marketDebug.skippedNotActive++;
+        } else {
         const auth = await getStockXAuthForUser(request, userId);
         if (!auth) {
           console.log(`⚠️ Missing STOCKX_API_KEY, skipping price fetch`);
@@ -253,7 +320,7 @@ export async function POST(request: NextRequest) {
             marketDebug.failedByReason['missing_stockx_tokens'] =
               (marketDebug.failedByReason['missing_stockx_tokens'] || 0) + 1;
           } else {
-            const result = await fetchStockXMarketPriceDetailed({
+            const result = await fetchMarketWithControls({
               auth,
               productName,
               size: productSize,
@@ -271,6 +338,7 @@ export async function POST(request: NextRequest) {
               }
             }
           }
+        }
         }
       } else {
         console.log(`📦 Using cached price: ${productName} = $${marketPrice}`);

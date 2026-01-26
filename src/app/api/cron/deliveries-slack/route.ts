@@ -117,6 +117,60 @@ export async function GET(request: NextRequest) {
         }
         const accessToken = refreshResult.accessToken;
 
+        // Concurrency limiter & short-circuit for StockX 429s (cron can hit a lot of items)
+        class Semaphore {
+          private available: number;
+          private queue: Array<() => void> = [];
+          constructor(available: number) {
+            this.available = Math.max(1, available);
+          }
+          async acquire(): Promise<void> {
+            if (this.available > 0) {
+              this.available--;
+              return;
+            }
+            await new Promise<void>((resolve) => this.queue.push(resolve));
+            this.available--;
+          }
+          release(): void {
+            this.available++;
+            const next = this.queue.shift();
+            if (next) next();
+          }
+        }
+        const stockxSem = new Semaphore(3);
+        const ACTIVE_STATUSES = new Set(['shipped', 'in_transit', 'out_for_delivery']);
+        const marketCache = new Map<string, Promise<any>>();
+        let stockxRateLimited = false;
+
+        const fetchMarketWithControls = async (args: {
+          productName: string;
+          size: string;
+          styleId?: string | null;
+        }) => {
+          if (stockxRateLimited) return { price: null, reason: 'rate_limited_short_circuit' };
+          const key = `${String(args.styleId || '').trim()}|${args.productName}|${args.size}`.toLowerCase();
+          const existing = marketCache.get(key);
+          if (existing) return existing;
+          const p = (async () => {
+            await stockxSem.acquire();
+            try {
+              const result = await fetchStockXMarketPriceDetailed({
+                auth: { apiKey, accessToken, refreshToken },
+                productName: args.productName,
+                size: args.size,
+                styleId: args.styleId
+              });
+              if (result.reason === 'search_http_error' && result.httpStatus === 429) stockxRateLimited = true;
+              return result;
+            } finally {
+              stockxSem.release();
+            }
+          })();
+          marketCache.set(key, p);
+          return p;
+        };
+
         // Pull purchases with tracking for this user
         const [p1, p2] = await Promise.all([
           db.collection('purchases').where('userId', '==', userId).get(),
@@ -182,13 +236,8 @@ export async function GET(request: NextRequest) {
               const n = typeof cached === 'number' ? cached : parseFloat(cached);
               if (Number.isFinite(n) && n > 0) marketPrice = n;
             }
-            if (!marketPrice) {
-              const result = await fetchStockXMarketPriceDetailed({
-                auth: { apiKey, accessToken, refreshToken },
-                productName,
-                size: productSize,
-                styleId
-              });
+            if (!marketPrice && ACTIVE_STATUSES.has(String(status || '').toLowerCase())) {
+              const result = await fetchMarketWithControls({ productName, size: productSize, styleId });
               if (result.price) marketPrice = result.price;
             }
             if (marketPrice !== undefined && (!Number.isFinite(marketPrice) || marketPrice <= 0)) {
