@@ -333,6 +333,7 @@ export default function StockXRepricing() {
   }, []);
 
   const LISTINGS_CACHE_KEY = 'stockx_listings_cache_v1';
+  const cachedListingsMetaRef = useRef<{ cachedAt: number; hasHighSentinelPrice: boolean } | null>(null);
   const listingsCooldownUntilRef = useRef<number>(0);
   const listingsLastFetchStartedAtRef = useRef<number>(0);
 
@@ -538,6 +539,13 @@ export default function StockXRepricing() {
       // Only use cache if it's reasonably fresh (6 hours)
       if (Date.now() - cachedAt > 6 * 60 * 60 * 1000) return;
 
+      // Track whether we might be showing a stale "sentinel" price (e.g. $999 from a peek),
+      // so we can force-sync StockX prices on mount.
+      cachedListingsMetaRef.current = {
+        cachedAt,
+        hasHighSentinelPrice: cachedListings.some((l: any) => Number(l?.currentPrice) >= 900),
+      };
+
       setListings(
         cachedListings.map((l: any) => ({
           ...l,
@@ -618,7 +626,13 @@ export default function StockXRepricing() {
     if (!loading && !hasInitiallyFetched.current) {
       console.log('📋 Initial load - fetching listings...');
       hasInitiallyFetched.current = true;
-      fetchListings(false); // Don't force; fetchListings will show loading only if list is empty
+      // Default to cached refresh to reduce 429 risk, but if the cached table contains a $999-style
+      // "sentinel" price, force a sync so "My Price" reflects what's actually on StockX.
+      const shouldForce =
+        cachedListingsMetaRef.current?.hasHighSentinelPrice === true ||
+        (typeof cachedListingsMetaRef.current?.cachedAt === 'number' &&
+          Date.now() - cachedListingsMetaRef.current!.cachedAt > 2 * 60 * 1000);
+      fetchListings(shouldForce); // Force only when likely stale
     }
   }, []); // Run once
 
@@ -3846,7 +3860,7 @@ export default function StockXRepricing() {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => fetchListings(false)}
+            onClick={() => fetchListings(true)}
             disabled={loading}
             className={`flex items-center space-x-2 ${
               isNeon
@@ -3862,7 +3876,7 @@ export default function StockXRepricing() {
             ) : (
               <>
                 <RefreshCw className="w-4 h-4" />
-                Refresh Listings
+                Refresh Prices
               </>
             )}
           </button>
