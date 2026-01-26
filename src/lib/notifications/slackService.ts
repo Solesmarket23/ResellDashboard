@@ -244,6 +244,19 @@ export class SlackNotificationService {
       ]
     });
 
+    // If we have purchase cost but no market/profit, call it out explicitly (usually means StockX creds missing).
+    if (costOnTheWay !== null && marketOnTheWay === null && profitOnTheWay === null) {
+      blocks.push({
+        type: 'context',
+        elements: [
+          {
+            type: 'mrkdwn',
+            text: `⚠️ _Market price / profit totals unavailable (missing StockX market prices)._`
+          }
+        ]
+      });
+    }
+
     blocks.push({ type: 'divider' });
 
     // On the way (all active shipments): show per-item market/purchase/profit so you can sanity-check totals.

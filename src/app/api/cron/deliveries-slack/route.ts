@@ -285,25 +285,20 @@ export async function GET(request: NextRequest) {
         const localTomorrow = localParts(addDays(now, 1), timezone).localDate;
         const arrivingToday = deliveries.filter((d) => d.estimatedDelivery === localToday || d.status === 'out_for_delivery').length;
         const arrivingTomorrow = deliveries.filter((d) => d.estimatedDelivery === localTomorrow).length;
-        const projectedProfitToday = deliveries
-          .filter((d) => d.estimatedDelivery === localToday || d.status === 'out_for_delivery')
-          .reduce((sum, d) => sum + (typeof d.estimatedProfit === 'number' && Number.isFinite(d.estimatedProfit) ? d.estimatedProfit : 0), 0);
-        const projectedProfitTomorrow = deliveries
-          .filter((d) => d.estimatedDelivery === localTomorrow)
-          .reduce((sum, d) => sum + (typeof d.estimatedProfit === 'number' && Number.isFinite(d.estimatedProfit) ? d.estimatedProfit : 0), 0);
+        const sumFiniteOrNull = (values: Array<number | undefined>): number | null => {
+          const finite = values.filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+          if (finite.length === 0) return null;
+          return finite.reduce((sum, v) => sum + v, 0);
+        };
+
+        const todayItems = deliveries.filter((d) => d.estimatedDelivery === localToday || d.status === 'out_for_delivery');
+        const tomorrowItems = deliveries.filter((d) => d.estimatedDelivery === localTomorrow);
+        const projectedProfitToday = sumFiniteOrNull(todayItems.map((d) => d.estimatedProfit));
+        const projectedProfitTomorrow = sumFiniteOrNull(tomorrowItems.map((d) => d.estimatedProfit));
         const onTheWay = deliveries.filter((d) => ['in_transit', 'shipped', 'out_for_delivery'].includes(d.status));
-        const projectedProfitOnTheWay = onTheWay.reduce(
-          (sum, d) => sum + (typeof d.estimatedProfit === 'number' && Number.isFinite(d.estimatedProfit) ? d.estimatedProfit : 0),
-          0
-        );
-        const marketValueOnTheWay = onTheWay.reduce(
-          (sum, d) => sum + (typeof d.marketPrice === 'number' && Number.isFinite(d.marketPrice) ? d.marketPrice : 0),
-          0
-        );
-        const purchaseCostOnTheWay = onTheWay.reduce(
-          (sum, d) => sum + (typeof d.purchasePrice === 'number' && Number.isFinite(d.purchasePrice) ? d.purchasePrice : 0),
-          0
-        );
+        const projectedProfitOnTheWay = sumFiniteOrNull(onTheWay.map((d) => d.estimatedProfit));
+        const marketValueOnTheWay = sumFiniteOrNull(onTheWay.map((d) => d.marketPrice));
+        const purchaseCostOnTheWay = sumFiniteOrNull(onTheWay.map((d) => d.purchasePrice));
 
         const slack = new SlackNotificationService({
           webhookUrl,
@@ -316,11 +311,11 @@ export async function GET(request: NextRequest) {
           arrivingTomorrow,
           arrivingThisWeek: 0,
           inTransit: deliveries.filter((d) => ['in_transit', 'shipped', 'out_for_delivery'].includes(d.status)).length,
-          projectedProfitToday,
-          projectedProfitTomorrow,
-          projectedProfitOnTheWay,
-          marketValueOnTheWay,
-          purchaseCostOnTheWay,
+          ...(projectedProfitToday !== null ? { projectedProfitToday } : {}),
+          ...(projectedProfitTomorrow !== null ? { projectedProfitTomorrow } : {}),
+          ...(projectedProfitOnTheWay !== null ? { projectedProfitOnTheWay } : {}),
+          ...(marketValueOnTheWay !== null ? { marketValueOnTheWay } : {}),
+          ...(purchaseCostOnTheWay !== null ? { purchaseCostOnTheWay } : {}),
           deliveries
         });
 
