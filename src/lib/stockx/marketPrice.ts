@@ -25,6 +25,35 @@ export type StockXMarketPriceResult = {
   details?: string;
 };
 
+function buildSearchTerms(styleId: string | null | undefined, productName: string): string[] {
+  const terms: string[] = [];
+  const push = (s: unknown) => {
+    const t = typeof s === 'string' ? s.trim() : '';
+    if (t) terms.push(t);
+  };
+
+  push(styleId || '');
+  push(productName);
+
+  // Common cleanups to improve StockX catalog search hit rate.
+  // - remove parenthetical brand/notes: "Foo (adidas)" -> "Foo"
+  // - remove "Size: ..." suffixes
+  // - collapse whitespace
+  const cleaned1 = String(productName || '')
+    .replace(/\s*\([^)]*\)\s*/g, ' ')
+    .replace(/\bsize\s*:\s*.*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  push(cleaned1);
+
+  // More aggressive: strip common SKU-ish punctuation
+  const cleaned2 = cleaned1.replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim();
+  push(cleaned2);
+
+  // Dedupe while preserving order
+  return Array.from(new Set(terms));
+}
+
 function parseStockXMoneyToDollars(raw: unknown): number | null {
   if (raw === null || raw === undefined) return null;
   // StockX commonly returns cents as strings (e.g. "12345"), but sometimes dollars.
@@ -112,8 +141,8 @@ export async function fetchStockXMarketPriceDetailed(args: {
   size: string;
   styleId?: string | null;
 }): Promise<StockXMarketPriceResult> {
-  const searchTerm = (args.styleId || args.productName || '').trim();
-  if (!searchTerm) return { price: null, reason: 'missing_search_term' };
+  const searchTerms = buildSearchTerms(args.styleId, args.productName);
+  if (searchTerms.length === 0) return { price: null, reason: 'missing_search_term' };
 
   let accessToken: string;
   try {
@@ -133,21 +162,35 @@ export async function fetchStockXMarketPriceDetailed(args: {
   const apiKey = args.auth.apiKey;
 
   try {
-    // Step 1: Catalog search -> productId
-    const searchUrl = `https://api.stockx.com/v2/catalog/search?query=${encodeURIComponent(searchTerm)}&pageSize=5`;
-    const searchRes = await stockxFetchWithRetry(searchUrl, { apiKey, accessToken });
-    if (!searchRes.ok) {
-      return { price: null, reason: 'search_http_error', stage: 'search', httpStatus: searchRes.status };
+    let productId: string | null = null;
+    let lastNoProductsTerm: string | null = null;
+
+    // Step 1: Catalog search -> productId (try a few query variants)
+    for (const term of searchTerms) {
+      const searchUrl = `https://api.stockx.com/v2/catalog/search?query=${encodeURIComponent(term)}&pageSize=5`;
+      const searchRes = await stockxFetchWithRetry(searchUrl, { apiKey, accessToken });
+      if (!searchRes.ok) {
+        return { price: null, reason: 'search_http_error', stage: 'search', httpStatus: searchRes.status, details: `term=${term}` };
+      }
+      const searchData = await searchRes.json().catch(() => ({}));
+      // NOTE: StockX v2 catalog search in this codebase returns `products` (see /api/stockx/search),
+      // but some older codepaths use `results`/`Products`. Support all.
+      const products = (searchData.products || searchData.results || searchData.Products || []) as any[];
+      if (!Array.isArray(products) || products.length === 0) {
+        lastNoProductsTerm = term;
+        continue;
+      }
+      const product = products[0];
+      const pid = product.productId || product.id || product.uuid;
+      if (pid) {
+        productId = String(pid);
+        break;
+      }
+      return { price: null, reason: 'missing_product_id', stage: 'search', details: `term=${term}` };
     }
-    const searchData = await searchRes.json().catch(() => ({}));
-    const products = (searchData.results || searchData.Products || []) as any[];
-    if (!Array.isArray(products) || products.length === 0) {
-      return { price: null, reason: 'no_products', stage: 'search' };
-    }
-    const product = products[0];
-    const productId = product.id || product.uuid || product.productId;
+
     if (!productId) {
-      return { price: null, reason: 'missing_product_id', stage: 'search' };
+      return { price: null, reason: 'no_products', stage: 'search', details: lastNoProductsTerm ? `term=${lastNoProductsTerm}` : undefined };
     }
 
     // Step 2: Market data -> variant prices
