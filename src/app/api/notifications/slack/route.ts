@@ -341,9 +341,13 @@ export async function POST(request: NextRequest) {
       } else if (purchase.marketPrice) {
         marketPrice = typeof purchase.marketPrice === 'number' ? purchase.marketPrice : parseFloat(purchase.marketPrice);
       }
+      // Sanitize cached market price
+      if (marketPrice !== undefined && (!Number.isFinite(marketPrice) || marketPrice <= 0)) {
+        marketPrice = undefined;
+      }
       
       // If no market price cached, fetch real-time from StockX (prioritize styleId for accuracy!)
-      if (!marketPrice || marketPrice <= 0) {
+      if (marketPrice === undefined) {
         const realtimePrice = await fetchStockXMarketPrice(productName, productSize, request, styleId);
         if (realtimePrice) {
           marketPrice = realtimePrice;
@@ -352,9 +356,17 @@ export async function POST(request: NextRequest) {
       } else {
         console.log(`📦 Using cached price: ${productName} = $${marketPrice}`);
       }
+      if (marketPrice !== undefined && (!Number.isFinite(marketPrice) || marketPrice <= 0)) {
+        marketPrice = undefined;
+      }
 
       // Calculate estimated profit: Market Price - Purchase Price - $1
-      if (purchasePrice && marketPrice && !isNaN(purchasePrice) && !isNaN(marketPrice)) {
+      if (
+        purchasePrice !== undefined &&
+        marketPrice !== undefined &&
+        Number.isFinite(purchasePrice) &&
+        Number.isFinite(marketPrice)
+      ) {
         estimatedProfit = marketPrice - purchasePrice - 1; // Subtract $1 for pricing strategy
       }
       

@@ -40,11 +40,56 @@ export class SlackNotificationService {
   private webhookUrl: string;
   private username: string;
   private iconEmoji: string;
+  private static readonly PRICING_STRATEGY_FEE_USD = 1;
 
   constructor(options: SlackNotificationOptions) {
     this.webhookUrl = options.webhookUrl;
     this.username = options.username || 'Delivery Bot';
     this.iconEmoji = options.iconEmoji || ':package:';
+  }
+
+  private toFiniteNumber(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+      const cleaned = value.replace(/[$,]/g, '').trim();
+      const n = Number.parseFloat(cleaned);
+      return Number.isFinite(n) ? n : null;
+    }
+    return null;
+  }
+
+  private formatMoneyLine(args: {
+    purchasePrice?: unknown;
+    marketPrice?: unknown;
+    estimatedProfit?: unknown;
+  }): { text: string | null; profit: number | null } {
+    const purchase = this.toFiniteNumber(args.purchasePrice);
+    const market = this.toFiniteNumber(args.marketPrice);
+    const profitProvided = this.toFiniteNumber(args.estimatedProfit);
+    const profitComputed =
+      profitProvided ??
+      (purchase !== null && market !== null
+        ? market - purchase - SlackNotificationService.PRICING_STRATEGY_FEE_USD
+        : null);
+
+    const parts: string[] = [];
+    if (purchase !== null) parts.push(`Purchase: $${purchase.toFixed(2)}`);
+    if (market !== null) parts.push(`Market: $${market.toFixed(2)}`);
+    if (profitComputed !== null) {
+      const profitEmoji = profitComputed > 0 ? '💰' : '⚠️';
+      parts.push(`${profitEmoji} Profit: $${profitComputed.toFixed(2)}`);
+    }
+
+    return { text: parts.length ? parts.join(' | ') : null, profit: profitComputed };
+  }
+
+  private getWebhookHostForLogs(): string {
+    try {
+      const u = new URL(this.webhookUrl);
+      return u.host || '(unknown-host)';
+    } catch {
+      return '(invalid-webhook-url)';
+    }
   }
 
   /**
@@ -216,14 +261,12 @@ export class SlackNotificationService {
       for (const delivery of shown) {
         const trackingLink = this.formatTrackingLink(delivery.trackingNumber, delivery.carrier);
         const eta = delivery.estimatedDelivery && delivery.estimatedDelivery !== 'TBD' ? delivery.estimatedDelivery : 'TBD';
-        const hasNumbers =
-          typeof delivery.purchasePrice === 'number' &&
-          typeof delivery.marketPrice === 'number' &&
-          typeof delivery.estimatedProfit === 'number';
-        const profitEmoji = hasNumbers && (delivery.estimatedProfit as number) > 0 ? '💰' : '⚠️';
-        const moneyLine = hasNumbers
-          ? `Purchase: $${(delivery.purchasePrice as number).toFixed(2)} | Market: $${(delivery.marketPrice as number).toFixed(2)} | ${profitEmoji} Profit: $${(delivery.estimatedProfit as number).toFixed(2)}`
-          : 'Purchase/Market/Profit: (missing data)';
+        const money = this.formatMoneyLine({
+          purchasePrice: (delivery as any).purchasePrice,
+          marketPrice: (delivery as any).marketPrice,
+          estimatedProfit: (delivery as any).estimatedProfit,
+        });
+        const moneyLine = money.text ?? 'Purchase/Market/Profit: (missing)';
 
         blocks.push({
           type: 'section',
@@ -264,11 +307,12 @@ export class SlackNotificationService {
       );
 
       todayDeliveries.forEach(delivery => {
-        let profitText = '';
-        if (delivery.purchasePrice && delivery.marketPrice && delivery.estimatedProfit !== undefined) {
-          const profitEmoji = delivery.estimatedProfit > 0 ? '💰' : '⚠️';
-          profitText = `\n  Purchase: $${delivery.purchasePrice.toFixed(2)} | Market: $${delivery.marketPrice.toFixed(2)} | ${profitEmoji} Profit: $${delivery.estimatedProfit.toFixed(2)}`;
-        }
+        const money = this.formatMoneyLine({
+          purchasePrice: (delivery as any).purchasePrice,
+          marketPrice: (delivery as any).marketPrice,
+          estimatedProfit: (delivery as any).estimatedProfit,
+        });
+        const profitText = money.text ? `\n  ${money.text}` : '';
         const trackingLink = this.formatTrackingLink(delivery.trackingNumber, delivery.carrier);
         
         blocks.push({
@@ -302,11 +346,12 @@ export class SlackNotificationService {
       );
 
       tomorrowDeliveries.forEach(delivery => {
-        let profitText = '';
-        if (delivery.purchasePrice && delivery.marketPrice && delivery.estimatedProfit !== undefined) {
-          const profitEmoji = delivery.estimatedProfit > 0 ? '💰' : '⚠️';
-          profitText = `\n  Purchase: $${delivery.purchasePrice.toFixed(2)} | Market: $${delivery.marketPrice.toFixed(2)} | ${profitEmoji} Profit: $${delivery.estimatedProfit.toFixed(2)}`;
-        }
+        const money = this.formatMoneyLine({
+          purchasePrice: (delivery as any).purchasePrice,
+          marketPrice: (delivery as any).marketPrice,
+          estimatedProfit: (delivery as any).estimatedProfit,
+        });
+        const profitText = money.text ? `\n  ${money.text}` : '';
         const trackingLink = this.formatTrackingLink(delivery.trackingNumber, delivery.carrier);
         
         blocks.push({
@@ -354,11 +399,12 @@ export class SlackNotificationService {
         const etaDate = new Date(delivery.estimatedDelivery);
         const etaFormatted = isNaN(etaDate.getTime()) ? 'TBD' : etaDate.toLocaleDateString();
         
-        let profitText = '';
-        if (delivery.purchasePrice && delivery.marketPrice && delivery.estimatedProfit !== undefined) {
-          const profitEmoji = delivery.estimatedProfit > 0 ? '💰' : '⚠️';
-          profitText = `\n  Purchase: $${delivery.purchasePrice.toFixed(2)} | Market: $${delivery.marketPrice.toFixed(2)} | ${profitEmoji} Profit: $${delivery.estimatedProfit.toFixed(2)}`;
-        }
+        const money = this.formatMoneyLine({
+          purchasePrice: (delivery as any).purchasePrice,
+          marketPrice: (delivery as any).marketPrice,
+          estimatedProfit: (delivery as any).estimatedProfit,
+        });
+        const profitText = money.text ? `\n  ${money.text}` : '';
         const trackingLink = this.formatTrackingLink(delivery.trackingNumber, delivery.carrier);
         
         blocks.push({
@@ -392,17 +438,33 @@ export class SlackNotificationService {
    */
   private async sendMessage(payload: any): Promise<void> {
     try {
-      const response = await fetch(this.webhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          username: this.username,
-          icon_emoji: this.iconEmoji,
-          ...payload
-        })
-      });
+      let response: Response;
+      try {
+        response = await fetch(this.webhookUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            username: this.username,
+            icon_emoji: this.iconEmoji,
+            ...payload
+          })
+        });
+      } catch (err) {
+        const host = this.getWebhookHostForLogs();
+        const cause = (err as any)?.cause;
+        const causeMsg =
+          cause instanceof Error
+            ? cause.message
+            : typeof cause === 'string'
+              ? cause
+              : cause && typeof cause === 'object'
+                ? JSON.stringify(cause)
+                : '';
+        const details = causeMsg ? ` (cause: ${causeMsg})` : '';
+        throw new Error(`Slack webhook fetch failed (host: ${host})${details}: ${(err as any)?.message || String(err)}`);
+      }
 
       if (!response.ok) {
         const error = await response.text();

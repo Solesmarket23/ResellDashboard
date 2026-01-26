@@ -234,6 +234,12 @@ export async function GET(request: NextRequest) {
             else if (purchase.totalAmount !== undefined) purchasePrice = typeof purchase.totalAmount === 'number' ? purchase.totalAmount : parseFloat(purchase.totalAmount);
             else if (purchase.totalPayment !== undefined) purchasePrice = typeof purchase.totalPayment === 'number' ? purchase.totalPayment : parseFloat(purchase.totalPayment);
             else if (purchase.purchasePrice !== undefined) purchasePrice = typeof purchase.purchasePrice === 'number' ? purchase.purchasePrice : parseFloat(purchase.purchasePrice);
+            else if (purchase.price) {
+              // Try to parse price string like "$180.00" or "180.00 + $0.00"
+              const priceStr = String(purchase.price).replace(/[$,]/g, '').split('+')[0].trim();
+              const n = parseFloat(priceStr);
+              if (Number.isFinite(n)) purchasePrice = n;
+            }
             if (purchasePrice !== undefined && (!Number.isFinite(purchasePrice) || purchasePrice <= 0)) purchasePrice = undefined;
 
             let marketPrice: number | undefined;
@@ -246,9 +252,19 @@ export async function GET(request: NextRequest) {
               const realtime = await fetchStockXMarketPriceWithToken({ accessToken, apiKey, productName, size: productSize, styleId });
               if (realtime) marketPrice = realtime;
             }
+            if (marketPrice !== undefined && (!Number.isFinite(marketPrice) || marketPrice <= 0)) {
+              marketPrice = undefined;
+            }
 
             let estimatedProfit: number | undefined;
-            if (purchasePrice && marketPrice) estimatedProfit = marketPrice - purchasePrice - 1;
+            if (
+              purchasePrice !== undefined &&
+              marketPrice !== undefined &&
+              Number.isFinite(purchasePrice) &&
+              Number.isFinite(marketPrice)
+            ) {
+              estimatedProfit = marketPrice - purchasePrice - 1;
+            }
 
             return {
               productName,
