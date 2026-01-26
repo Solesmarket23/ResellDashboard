@@ -25,7 +25,17 @@ interface RepricingStrategy {
 }
 
 interface IndividualPricingStrategy {
-  type: 'beat_lowest' | 'match_lowest' | 'percentage_below' | 'manual' | 'keep_current' | 'market_peek' | 'reset_then_beat_lowest';
+  // UI exposes only two rules (Queue Focus + Peek Focus). Legacy types remain supported for older saved settings.
+  type:
+    | 'queue_focus'
+    | 'peek_focus'
+    | 'beat_lowest'
+    | 'match_lowest'
+    | 'percentage_below'
+    | 'manual'
+    | 'keep_current'
+    | 'market_peek'
+    | 'reset_then_beat_lowest';
   value?: number; // Amount for beat_lowest or percentage
   manualPrice?: number;
   beatBy?: number; // legacy; two-step is now hardcoded to beat by $1
@@ -182,7 +192,7 @@ export default function StockXRepricing() {
   const [authError, setAuthError] = useState(false);
   const [captchaDetected, setCaptchaDetected] = useState(false);
   const [captchaSnippet, setCaptchaSnippet] = useState<string | null>(null);
-  const [customRuleType, setCustomRuleType] = useState('below_dollar');
+  // (Legacy) bulk custom rules removed; keep simple two-rule bulk apply for clarity.
   const [listingStats, setListingStats] = useState<{
     rawCount?: number;
     trueDuplicatesRemoved?: number;
@@ -415,47 +425,15 @@ export default function StockXRepricing() {
   const pricingRuleOptions = useMemo<NeonDropdownOption[]>(
     () => [
       {
-        value: 'reset_then_beat_lowest',
-        label: '⚡ Two-step: reset then beat lowest',
-        description: 'Temporarily sets $999 to reveal real asks, then undercuts by $1.',
-        group: 'Advanced',
-        badge: 'Recommended',
+        value: 'queue_focus',
+        label: 'Queue Focus',
+        description: 'Match best ask without peeking. Preserves tie-queue behavior (best for high-volume SKUs).',
+        badge: 'Default',
       },
       {
-        value: 'keep_current',
-        label: 'Keep Current',
-        description: 'No automated price changes (manual only).',
-        group: 'Basics',
-      },
-      {
-        value: 'manual',
-        label: 'Manual',
-        description: 'You set a price manually; safety bounds still apply.',
-        group: 'Basics',
-      },
-      {
-        value: 'beat_lowest',
-        label: 'Beat Lowest by $1',
-        description: 'Sets price to (best ask − $1).',
-        group: 'Competitive',
-      },
-      {
-        value: 'match_lowest',
-        label: 'Match Lowest',
-        description: 'Sets price to the best ask.',
-        group: 'Competitive',
-      },
-      {
-        value: 'percentage_below',
-        label: 'Below %',
-        description: 'Sets price to (best ask × (1 − %)).',
-        group: 'Competitive',
-      },
-      {
-        value: 'market_peek',
-        label: '🔍 Market Peek',
-        description: 'Occasionally peeks by briefly raising to $999 to reveal the next ask. Note: can lose tie-queue priority at your Min.',
-        group: 'Advanced',
+        value: 'peek_focus',
+        label: 'Peek Focus (Low volume)',
+        description: 'Occasionally peeks to discover the next ask and raise. Skips peeks at Min to preserve queue.',
       },
     ],
     []
@@ -2049,25 +2027,23 @@ export default function StockXRepricing() {
     const newStrategy: any = { type };
     
     // Only add properties that are needed for each strategy type
-    if (type === 'beat_lowest') {
-      newStrategy.value = 1;
-    } else if (type === 'percentage_below') {
-      newStrategy.value = listing.pricingStrategy?.value || 5;
+    if (type === 'queue_focus') {
+      // No extra params
+    } else if (type === 'peek_focus') {
+      newStrategy.peekSettings = {
+        frequency:
+          listing.pricingStrategy?.peekSettings?.frequency ||
+          (listing.pricingStrategy?.type === 'market_peek' ? listing.pricingStrategy.peekSettings?.frequency : undefined) ||
+          'balanced',
+        peekHistory: listing.pricingStrategy?.peekSettings?.peekHistory || []
+      };
+      if (listing.pricingStrategy?.peekSettings?.lastPeekTime) {
+        newStrategy.peekSettings.lastPeekTime = listing.pricingStrategy.peekSettings.lastPeekTime;
+      }
     } else if (type === 'manual') {
       const mp = listing.pricingStrategy?.manualPrice;
       newStrategy.manualPrice =
         typeof mp === 'number' && Number.isFinite(mp) ? mp : listing.currentPrice;
-    } else if (type === 'reset_then_beat_lowest') {
-      // Hardcoded two-step: reset $999 then beat by $1
-    } else if (type === 'market_peek') {
-      newStrategy.peekSettings = {
-        frequency: listing.pricingStrategy?.peekSettings?.frequency || 'balanced',
-        peekHistory: listing.pricingStrategy?.peekSettings?.peekHistory || []
-      };
-      // Only add lastPeekTime if it exists
-      if (listing.pricingStrategy?.peekSettings?.lastPeekTime) {
-        newStrategy.peekSettings.lastPeekTime = listing.pricingStrategy.peekSettings.lastPeekTime;
-      }
     }
     
     // Always store as pending change (even if same value is selected)
@@ -2088,8 +2064,8 @@ export default function StockXRepricing() {
 
     // Immediate mode: changing a pricing rule should run right away (persist + reprice).
     // We pass the strategy explicitly so we don't race React state updates.
-    // Exception: selecting Manual or Two-step should NOT auto-save/run; user must click Save.
-    if (type === 'manual' || type === 'reset_then_beat_lowest') return;
+    // Exception: selecting Manual should NOT auto-save/run; user must click Save.
+    if (type === 'manual') return;
     void savePricingRuleChange(effectiveListingId, newStrategy);
   };
 
@@ -2316,14 +2292,18 @@ export default function StockXRepricing() {
       void runImmediateReprice(listingsToUpdateWithBounds, { reason: 'Saved', suppressToast: true });
       
       // Show success message
-      const strategyLabel = strategyToSave.type === 'beat_lowest' ? 'Beat Lowest by $1' :
-                           strategyToSave.type === 'match_lowest' ? 'Match Lowest' :
-                           strategyToSave.type === 'market_peek' ? 'Market Peek' :
-                           strategyToSave.type === 'reset_then_beat_lowest' ? 'Two-step' :
-                           strategyToSave.type === 'percentage_below' ? `Below ${(strategyToSave as any).value}%` :
-                           strategyToSave.type === 'manual' ? 'Manual' :
-                           hasPendingBounds ? 'Bounds updated' :
-                           'Keep Current';
+      const strategyLabel =
+        strategyToSave.type === 'queue_focus' ? 'Queue Focus' :
+        strategyToSave.type === 'peek_focus' ? 'Peek Focus' :
+        // Legacy types (still supported for older saved settings)
+        strategyToSave.type === 'match_lowest' ? 'Queue Focus' :
+        strategyToSave.type === 'market_peek' ? 'Peek Focus' :
+        strategyToSave.type === 'reset_then_beat_lowest' ? 'Peek Focus' :
+        strategyToSave.type === 'manual' ? 'Manual' :
+        strategyToSave.type === 'beat_lowest' ? 'Beat Lowest by $1' :
+        strategyToSave.type === 'percentage_below' ? `Below ${(strategyToSave as any).value}%` :
+        hasPendingBounds ? 'Bounds updated' :
+        'Keep Current';
 
       const boundsLabel =
         effectiveMin && effectiveMax
@@ -2628,14 +2608,14 @@ export default function StockXRepricing() {
     // Persist. If listing had no prior settings doc, this creates one (opt-in).
     saveSettingToFirebase(listingId, {
       enabled,
-      pricingStrategy: listing.pricingStrategy || { type: 'keep_current' },
+      pricingStrategy: listing.pricingStrategy || { type: 'queue_focus' },
       minPrice: listing.minPrice,
       maxPrice: listing.maxPrice,
       autoDeactivate: listing.autoDeactivate
     });
   };
 
-  const applyPricingRule = async (rule: string, value: number) => {
+  const applyPricingRule = async (rule: 'queue_focus' | 'peek_focus') => {
     const selectedListings = listings.filter(listing => listing.selected);
     
     if (selectedListings.length === 0) {
@@ -2643,42 +2623,42 @@ export default function StockXRepricing() {
       return;
     }
 
-    // Map rule to pricing strategy type
-    let strategyType: IndividualPricingStrategy['type'] = 'keep_current';
-    if (rule === 'beat_lowest') {
-      strategyType = 'beat_lowest';
-    } else if (rule === 'match_lowest') {
-      strategyType = 'match_lowest';
-    } else if (rule === 'percentage') {
-      strategyType = 'percentage_below';
-    }
+    const newStrategy: IndividualPricingStrategy =
+      rule === 'peek_focus'
+        ? {
+            type: 'peek_focus',
+            peekSettings: { frequency: 'balanced', peekHistory: [] }
+          }
+        : { type: 'queue_focus' };
 
     // Update the pricing strategy for all selected listings
     setListings(prev => prev.map(listing => {
       if (listing.selected) {
         return {
           ...listing,
-          pricingStrategy: {
-            type: strategyType,
-            value: value
-          }
+          pricingStrategy: newStrategy as any
         };
       }
       return listing;
     }));
 
-    // Show success message
-    console.log(`✅ Applied ${rule} pricing rule to ${selectedListings.length} listings`);
-    
-    // Display success message
-    let message = '';
-    if (rule === 'beat_lowest') {
-      message = `Applied "Beat Lowest by $${value}" to ${selectedListings.length} item${selectedListings.length > 1 ? 's' : ''}`;
-    } else if (rule === 'match_lowest') {
-      message = `Applied "Match Lowest Ask" to ${selectedListings.length} item${selectedListings.length > 1 ? 's' : ''}`;
-    } else if (rule === 'percentage') {
-      message = `Applied "${value}% Below Market" to ${selectedListings.length} item${selectedListings.length > 1 ? 's' : ''}`;
+    // Persist + run for each group leader (unique) so the action matches the button label.
+    const leaderIds = new Set<string>();
+    for (const l of selectedListings) {
+      const group = l.inventoryGroupId ? inventoryGroups.get(l.inventoryGroupId) : null;
+      const isFollower = !!group && group.listings.length > 1 && l.isGroupLeader === false;
+      const leaderId = isFollower ? (group!.leaderId || l.groupLeaderId || l.listingId) : l.listingId;
+      leaderIds.add(leaderId);
     }
+
+    for (const leaderId of Array.from(leaderIds.values())) {
+      void savePricingRuleChange(leaderId, newStrategy as any);
+    }
+
+    const message =
+      rule === 'peek_focus'
+        ? `Applied Peek Focus to ${selectedListings.length} item${selectedListings.length > 1 ? 's' : ''}`
+        : `Applied Queue Focus to ${selectedListings.length} item${selectedListings.length > 1 ? 's' : ''}`;
     
     setBulkActionMessage(message);
     setTimeout(() => setBulkActionMessage(null), 5000); // Clear after 5 seconds
@@ -2842,48 +2822,58 @@ export default function StockXRepricing() {
         const marketPrice = getTrueAsk(listing) || listing.currentPrice;
         
         switch (listing.pricingStrategy.type) {
-          case 'beat_lowest':
+          case 'queue_focus':
+            newPrice = marketPrice;
+            reason = 'Queue Focus (match best ask)';
+            break;
+
+          case 'peek_focus': {
+            const freq = listing.pricingStrategy.peekSettings?.frequency || 'balanced';
+            reason = `Peek Focus (${freq === 'conservative' ? '8h' : freq === 'balanced' ? '6h' : freq === 'aggressive' ? '4h' : '1h'})`;
+            // Preview shows the likely outcome (raise opportunity) without doing $999.
+            newPrice = Math.max(1, marketPrice);
+            break;
+          }
+
+          // Legacy cases (still supported for older saved settings)
+          case 'beat_lowest': {
             const beatBy = listing.pricingStrategy.value || 1;
             newPrice = Math.max(1, marketPrice - beatBy);
             reason = `Beat lowest by $${beatBy}`;
             break;
-            
+          }
           case 'match_lowest':
             newPrice = marketPrice;
             reason = 'Match lowest ask';
             break;
-            
-          case 'percentage_below':
+          case 'percentage_below': {
             const percentage = listing.pricingStrategy.value || 5;
             newPrice = Math.max(1, Math.round(marketPrice * (1 - percentage / 100)));
             reason = `${percentage}% below market`;
             break;
-
+          }
           case 'reset_then_beat_lowest': {
             const beatBy2 = 1;
-            // Preview is "what you'll end up at" (step 2). Step 1 happens server-side.
             newPrice = Math.max(1, Math.round(marketPrice - beatBy2));
-            reason = `Two-step: reset $999, then beat by $1`;
+            reason = `Two-step (legacy)`;
             break;
           }
-            
-          case 'manual':
+          case 'manual': {
             const mp = listing.pricingStrategy.manualPrice;
             newPrice = typeof mp === 'number' && Number.isFinite(mp) ? mp : listing.currentPrice;
             reason = 'Manual price';
             break;
-            
+          }
           case 'keep_current':
             newPrice = listing.currentPrice;
             reason = 'Keep current price';
             break;
-            
-          case 'market_peek':
-            // For preview, show what would happen after a peek
-            newPrice = Math.max(1, marketPrice - 1);
+          case 'market_peek': {
             const freq = listing.pricingStrategy.peekSettings?.frequency || 'balanced';
-            reason = `Market Peek (${freq === 'conservative' ? '8h' : freq === 'balanced' ? '6h' : '4h'})`;
+            reason = `Peek Focus (${freq === 'conservative' ? '8h' : freq === 'balanced' ? '6h' : '4h'})`;
+            newPrice = Math.max(1, marketPrice);
             break;
+          }
         }
         
         // Apply min/max constraints if set
@@ -4056,7 +4046,7 @@ export default function StockXRepricing() {
         </div>
       )}
 
-      {/* Bulk Pricing Button - Only show when items are selected */}
+      {/* Bulk Apply Rule - Only show when items are selected */}
       {selectedCount > 0 && (
         <div className="flex justify-center">
           <button
@@ -4068,7 +4058,7 @@ export default function StockXRepricing() {
             }`}
           >
             <Target className="w-5 h-5" />
-            Apply Pricing Rule to {selectedCount} Item{selectedCount > 1 ? 's' : ''}
+            Apply Repricing Rule to {selectedCount} Item{selectedCount > 1 ? 's' : ''}
           </button>
         </div>
       )}
@@ -4090,7 +4080,7 @@ export default function StockXRepricing() {
                   isNeon ? 'text-cyan-400' : 'text-gray-900'
                 }`}>
                   <Target className="w-6 h-6" />
-                  Bulk Pricing Rules
+                  Apply Repricing Rule
                 </h3>
                 <button
                   onClick={() => setShowBulkPricingModal(false)}
@@ -4106,139 +4096,38 @@ export default function StockXRepricing() {
                 </button>
               </div>
               <p className={`mt-2 text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-                Apply pricing rule to {selectedCount} selected item{selectedCount > 1 ? 's' : ''}
+                Choose which rule to apply to {selectedCount} selected item{selectedCount > 1 ? 's' : ''}.
               </p>
             </div>
             
             <div className="p-6 space-y-3">
-          {/* Quick Pricing Rules */}
-          <button
-            onClick={() => applyPricingRule('beat_lowest', 1)}
-            className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
-              isNeon 
-                ? 'bg-gray-900 border-gray-700 hover:border-cyan-500 hover:bg-cyan-500/10'
-                : 'bg-white border-gray-200 hover:border-blue-500 hover:bg-blue-50'
-            }`}
-          >
-            <div className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>
-              Beat Lowest Ask by $1
-            </div>
-            <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-              Set price to $1 below the current market price
-            </div>
-          </button>
-
-          <button
-            onClick={() => applyPricingRule('beat_lowest', 5)}
-            className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
-              isNeon 
-                ? 'bg-gray-900 border-gray-700 hover:border-cyan-500 hover:bg-cyan-500/10'
-                : 'bg-white border-gray-200 hover:border-blue-500 hover:bg-blue-50'
-            }`}
-          >
-            <div className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>
-              Beat Lowest Ask by $5
-            </div>
-            <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-              Set price to $5 below the current market price
-            </div>
-          </button>
-
-          <button
-            onClick={() => applyPricingRule('match_lowest', 0)}
-            className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
-              isNeon 
-                ? 'bg-gray-900 border-gray-700 hover:border-cyan-500 hover:bg-cyan-500/10'
-                : 'bg-white border-gray-200 hover:border-blue-500 hover:bg-blue-50'
-            }`}
-          >
-            <div className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>
-              Match Lowest Ask
-            </div>
-            <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-              Set price equal to the current market price
-            </div>
-          </button>
-
-          <button
-            onClick={() => applyPricingRule('percentage', 5)}
-            className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
-              isNeon 
-                ? 'bg-gray-900 border-gray-700 hover:border-cyan-500 hover:bg-cyan-500/10'
-                : 'bg-white border-gray-200 hover:border-blue-500 hover:bg-blue-50'
-            }`}
-          >
-            <div className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>
-              5% Below Market
-            </div>
-            <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-              Set price to 5% below the current market price
-            </div>
-          </button>
-
-          <button
-            onClick={() => applyPricingRule('percentage', 10)}
-            className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
-              isNeon 
-                ? 'bg-gray-900 border-gray-700 hover:border-cyan-500 hover:bg-cyan-500/10'
-                : 'bg-white border-gray-200 hover:border-blue-500 hover:bg-blue-50'
-            }`}
-          >
-            <div className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>
-              10% Below Market
-            </div>
-            <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-              Set price to 10% below the current market price
-            </div>
-          </button>
-
-          {/* Custom Price Input */}
-          <div className={`p-4 rounded-lg border-2 ${
-            isNeon ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'
-          }`}>
-            <label className={`block text-sm font-medium mb-2 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-              Custom Rule
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="number"
-                placeholder="Amount"
-                min="0"
-                step="1"
-                className={`flex-1 p-2 rounded-md ${
-                  isNeon 
-                    ? 'bg-gray-800 border border-gray-700 text-white focus:border-cyan-500 focus:outline-none'
-                    : 'bg-gray-50 border border-gray-300 focus:border-blue-500 focus:outline-none'
-                }`}
-                id="customAmount"
-              />
-              <NeonDropdown
-                value={customRuleType}
-                onChange={setCustomRuleType}
-                options={[
-                  { value: 'below_dollar', label: '$ Below Market' },
-                  { value: 'below_percent', label: '% Below Market' },
-                  { value: 'above_dollar', label: '$ Above Market' },
-                  { value: 'above_percent', label: '% Above Market' }
-                ]}
-                isNeon={isNeon}
-              />
               <button
-                onClick={() => {
-                  const amount = parseFloat((document.getElementById('customAmount') as HTMLInputElement).value);
-                  const type = customRuleType;
-                  if (amount) applyCustomRule(type, amount);
-                }}
-                className={`px-4 py-2 rounded-md font-medium ${
-                  isNeon 
-                    ? 'bg-cyan-500 text-black hover:bg-cyan-400'
-                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                onClick={() => applyPricingRule('queue_focus')}
+                className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
+                  isNeon
+                    ? 'bg-gray-900 border-gray-700 hover:border-emerald-500 hover:bg-emerald-500/10'
+                    : 'bg-white border-gray-200 hover:border-emerald-500 hover:bg-emerald-50'
                 }`}
               >
-                Apply
+                <div className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>Queue Focus</div>
+                <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                  High-volume SKUs. Match best ask without peeking to avoid losing tie-queue position.
+                </div>
               </button>
-            </div>
-          </div>
+
+              <button
+                onClick={() => applyPricingRule('peek_focus')}
+                className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
+                  isNeon
+                    ? 'bg-gray-900 border-gray-700 hover:border-cyan-500 hover:bg-cyan-500/10'
+                    : 'bg-white border-gray-200 hover:border-blue-500 hover:bg-blue-50'
+                }`}
+              >
+                <div className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>Peek Focus (Low volume)</div>
+                <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                  Low-volume SKUs. Occasionally peeks to discover the next ask and raise when the market moves up.
+                </div>
+              </button>
             </div>
           </div>
         </div>
@@ -4774,19 +4663,56 @@ export default function StockXRepricing() {
                     </td>
                     <td className="px-6 py-3 text-center">
                       <div className="flex w-full items-center justify-center gap-2">
+                        {(() => {
+                          const t = listing.pricingStrategy?.type;
+                          const isLegacy =
+                            !!t && t !== 'queue_focus' && t !== 'peek_focus' && t !== 'manual';
+                          if (!isLegacy) return null;
+                          const label =
+                            t === 'reset_then_beat_lowest' ? 'Two-step' :
+                            t === 'market_peek' ? 'Market Peek' :
+                            t === 'beat_lowest' ? 'Beat Lowest' :
+                            t === 'match_lowest' ? 'Match Lowest' :
+                            t === 'percentage_below' ? 'Below %' :
+                            t === 'keep_current' ? 'Keep Current' :
+                            String(t);
+                          return (
+                            <span
+                              className={`px-2 py-1 rounded-full text-[11px] font-semibold border whitespace-nowrap ${
+                                isNeon
+                                  ? 'bg-white/5 text-slate-200 border-white/10'
+                                  : 'bg-gray-50 text-gray-700 border-gray-200'
+                              }`}
+                              title="This listing is using a legacy rule. Pick Queue Focus or Peek Focus and click Save to convert."
+                            >
+                              Legacy: {label}
+                            </span>
+                          );
+                        })()}
                         <NeonDropdown
-                          value={listing.pricingStrategy?.type || 'keep_current'}
+                          value={
+                            listing.pricingStrategy?.type === 'peek_focus' ||
+                            listing.pricingStrategy?.type === 'market_peek' ||
+                            listing.pricingStrategy?.type === 'reset_then_beat_lowest'
+                              ? 'peek_focus'
+                              : 'queue_focus'
+                          }
                           onChange={(value) => updateListingStrategy(listing.listingId, value as any)}
-                          options={pricingRuleOptions.map((opt) => {
-                            if (opt.value !== 'percentage_below') return opt;
-                            // Make the selected % visible in the closed state.
-                            if (listing.pricingStrategy?.type !== 'percentage_below') return opt;
-                            const pct = listing.pricingStrategy?.value || 5;
-                            return { ...opt, label: `Below ${pct}%` };
-                          })}
+                          options={pricingRuleOptions}
                           isNeon={isNeon}
                           className="w-[260px] max-w-full"
                         />
+                        <button
+                          onClick={() => updateListingStrategy(listing.listingId, 'manual')}
+                          className={`px-2 py-1 rounded text-xs font-semibold transition-all whitespace-nowrap ${
+                            isNeon
+                              ? 'bg-white/5 hover:bg-white/10 text-gray-200 border border-white/10'
+                              : 'bg-gray-50 hover:bg-gray-100 text-gray-800 border border-gray-200'
+                          }`}
+                          title="Switch this row to Manual price mode (requires Save)"
+                        >
+                          Manual
+                        </button>
                         {(() => {
                           const group = listing.inventoryGroupId ? inventoryGroups.get(listing.inventoryGroupId) : null;
                           const effectiveId =
@@ -4824,7 +4750,7 @@ export default function StockXRepricing() {
                           </button>
                           );
                         })()}
-                        {listing.pricingStrategy?.type === 'market_peek' ? (
+                        {listing.pricingStrategy?.type === 'market_peek' || listing.pricingStrategy?.type === 'peek_focus' ? (
                           <select
                             value={listing.pricingStrategy?.peekSettings?.frequency || 'balanced'}
                             onChange={(e) => updatePeekFrequency(listing.listingId, e.target.value as any)}
@@ -4839,17 +4765,7 @@ export default function StockXRepricing() {
                             <option value="balanced">6h</option>
                             <option value="aggressive">4h</option>
                           </select>
-                        ) : (listing.pricingStrategy?.type === 'reset_then_beat_lowest') ? (
-                          <span
-                            className={`text-xs whitespace-nowrap ${
-                              isNeon ? 'text-gray-400' : 'text-gray-600'
-                            }`}
-                            title="Two-step is fully automatic: set $999 to reveal true lowest asks, then undercut by $1."
-                          >
-                            Auto: $999 → -$1
-                          </span>
-                        ) : (listing.pricingStrategy?.type === 'percentage_below' ||
-                            listing.pricingStrategy?.type === 'manual') ? (
+                        ) : (listing.pricingStrategy?.type === 'manual') ? (
                           <div className="flex items-center gap-1">
                           <input
                             type="number"
@@ -4858,14 +4774,8 @@ export default function StockXRepricing() {
                               const draft = strategyValueDraftByListingId[listing.listingId];
                               if (draft !== undefined) return draft;
 
-                              if (listing.pricingStrategy?.type === 'manual') {
-                                const mp = listing.pricingStrategy?.manualPrice;
-                                const base = Number.isFinite(mp as any) ? (mp as number) : listing.currentPrice;
-                                return String(base);
-                              }
-
-                              const v = listing.pricingStrategy?.value;
-                              const base = Number.isFinite(v as any) ? (v as number) : 1;
+                              const mp = listing.pricingStrategy?.manualPrice;
+                              const base = Number.isFinite(mp as any) ? (mp as number) : listing.currentPrice;
                               return String(base);
                             })()}
                             onChange={(e) => {
@@ -4876,8 +4786,7 @@ export default function StockXRepricing() {
                               if (next.trim() === '') return;
                               const value = parseFloat(next);
                               if (!Number.isFinite(value)) return;
-                              if (listing.pricingStrategy?.type === 'manual') updateManualPrice(listing.listingId, value);
-                              else updateStrategyValue(listing.listingId, value);
+                              updateManualPrice(listing.listingId, value);
                             }}
                             onBlur={() => {
                               const draft = strategyValueDraftByListingId[listing.listingId];
@@ -4912,21 +4821,19 @@ export default function StockXRepricing() {
                                 ? 'bg-gray-700 border-cyan-500/50 text-cyan-400 focus:ring-cyan-500/50' 
                                 : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500'
                             }`}
-                            placeholder={listing.pricingStrategy?.type === 'manual' ? '$' : '#'}
+                            placeholder="$"
                           />
-                            {listing.pricingStrategy?.type === 'manual' && (
-                              <button
-                                onClick={() => applyManualPriceNow(listing.listingId)}
-                                className={`px-2 py-1 rounded text-xs font-semibold transition-all whitespace-nowrap ${
-                                  isNeon
-                                    ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white'
-                                    : 'bg-emerald-600 text-white hover:bg-emerald-700'
-                                }`}
-                                title="Apply this price to StockX now"
-                              >
-                                Apply
-                              </button>
-                            )}
+                            <button
+                              onClick={() => applyManualPriceNow(listing.listingId)}
+                              className={`px-2 py-1 rounded text-xs font-semibold transition-all whitespace-nowrap ${
+                                isNeon
+                                  ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white'
+                                  : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                              }`}
+                              title="Apply this price to StockX now"
+                            >
+                              Apply
+                            </button>
                           </div>
                         ) : (
                           <div className="w-[70px]"></div>

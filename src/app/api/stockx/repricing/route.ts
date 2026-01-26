@@ -16,6 +16,8 @@ interface RepricingStrategy {
 
 interface IndividualPricingStrategy {
   type:
+    | 'queue_focus'
+    | 'peek_focus'
     | 'beat_lowest'
     | 'match_lowest'
     | 'percentage_below'
@@ -786,7 +788,29 @@ export async function POST(request: NextRequest) {
               }
             }
 
-          } else if (listing.pricingStrategy.type === 'market_peek') {
+          } else if (listing.pricingStrategy.type === 'queue_focus') {
+            // Queue Focus:
+            // - Goal: avoid churn that can lose tie-queue priority; do NOT use $999 peeks.
+            // - If you're winning, hold price.
+            // - If you're not winning, match best ask (no undercut).
+            const hasAnyAsk = currentStdAsk !== null || currentFlexAsk !== null;
+            const bestAsk = minPositive(currentStdAsk, currentFlexAsk);
+
+            const losingToFlex = currentFlexAsk !== null && currentFlexAsk <= listing.currentPrice;
+            const losingToStd = currentStdAsk !== null && currentStdAsk < listing.currentPrice;
+            const isWinning = hasAnyAsk ? (!losingToFlex && !losingToStd) : false;
+
+            if (!bestAsk) {
+              newPrice = listing.currentPrice;
+              skipReason = 'Queue focus: no lowest ask available';
+            } else if (isWinning) {
+              newPrice = listing.currentPrice;
+              skipReason = 'Queue focus: already winning (hold price)';
+            } else {
+              newPrice = Math.max(1, bestAsk);
+              skipReason = `Queue focus: match best ask ($${bestAsk} → $${newPrice})`;
+            }
+          } else if (listing.pricingStrategy.type === 'market_peek' || listing.pricingStrategy.type === 'peek_focus') {
             // Market Peek strategy:
             // - If you're NOT winning, undercut best ask immediately.
             // - If you ARE winning, and the peek is due, temporarily raise to a high price to reveal the next-lowest,
