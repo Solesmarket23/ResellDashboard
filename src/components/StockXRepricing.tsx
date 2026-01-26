@@ -3705,6 +3705,9 @@ export default function StockXRepricing() {
 
     setLoading(true);
     try {
+      const allowTwoStepForBatch = listingsToReprice.some(
+        (l: any) => String(l?.pricingStrategy?.type || '') === 'reset_then_beat_lowest'
+      );
       const response = await fetch('/api/stockx/repricing', {
         method: 'POST',
         headers: {
@@ -3719,6 +3722,8 @@ export default function StockXRepricing() {
           dryRun,
           notificationEmail: notificationEmail || undefined,
           useIndividualStrategies: true, // Flag to indicate we're using individual strategies
+          // Required for the reset_then_beat_lowest strategy to execute (otherwise repricing route blocks it)
+          allowTwoStep: allowTwoStepForBatch,
           inventoryGroups: Array.from(inventoryGroups.values()) // Send inventory groups for server-side syncing
         })
       });
