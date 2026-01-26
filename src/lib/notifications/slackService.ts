@@ -10,6 +10,7 @@ export interface DeliverySummary {
   arrivingThisWeek: number;
   inTransit: number;
   projectedProfitToday?: number;
+  projectedProfitTomorrow?: number;
   deliveries: Array<{
     productName: string;
     productBrand: string;
@@ -120,6 +121,10 @@ export class SlackNotificationService {
       typeof summary.projectedProfitToday === 'number' && Number.isFinite(summary.projectedProfitToday)
         ? summary.projectedProfitToday
         : null;
+    const profitTomorrow =
+      typeof summary.projectedProfitTomorrow === 'number' && Number.isFinite(summary.projectedProfitTomorrow)
+        ? summary.projectedProfitTomorrow
+        : null;
     blocks.push({
       type: 'section',
       fields: [
@@ -135,6 +140,14 @@ export class SlackNotificationService {
           type: 'mrkdwn',
           text: `*Arriving This Week:*\n📆 ${summary.arrivingThisWeek || 0}`
         },
+        ...(profitTomorrow !== null
+          ? [
+              {
+                type: 'mrkdwn',
+                text: `*Projected Profit (Tomorrow):*\n💰 $${profitTomorrow.toFixed(2)}`
+              }
+            ]
+          : []),
         ...(profitToday !== null
           ? [
               {

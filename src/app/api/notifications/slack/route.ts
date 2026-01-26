@@ -407,6 +407,9 @@ export async function POST(request: NextRequest) {
     const projectedProfitToday = deliveries
       .filter(d => d.estimatedDelivery === todayStr || d.status === 'out_for_delivery')
       .reduce((sum, d) => sum + (typeof d.estimatedProfit === 'number' && Number.isFinite(d.estimatedProfit) ? d.estimatedProfit : 0), 0);
+    const projectedProfitTomorrow = deliveries
+      .filter(d => d.estimatedDelivery === tomorrowStr)
+      .reduce((sum, d) => sum + (typeof d.estimatedProfit === 'number' && Number.isFinite(d.estimatedProfit) ? d.estimatedProfit : 0), 0);
 
     // Send notification
     if (type === 'daily_summary') {
@@ -417,6 +420,7 @@ export async function POST(request: NextRequest) {
         arrivingThisWeek,
         inTransit,
         projectedProfitToday,
+        projectedProfitTomorrow,
         deliveries
       });
     }

@@ -34,6 +34,10 @@ function localParts(now: Date, timeZone: string) {
   return { localDate: `${yyyy}-${mm}-${dd}`, hh, min };
 }
 
+function addDays(date: Date, days: number): Date {
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
 async function fetchStockXMarketPriceWithToken(args: {
   accessToken: string;
   apiKey: string;
@@ -124,7 +128,7 @@ export async function GET(request: NextRequest) {
       const data = doc.data() as any;
       const s = data?.deliveriesSlack || {};
       const webhookUrl = String(s.webhookUrl || '').trim();
-      const timeLocal = String(s.timeLocal || '08:00');
+      const timeLocal = String(s.timeLocal || '21:00');
       const timezone = String(s.timezone || 'America/New_York');
 
       if (!webhookUrl) {
@@ -262,9 +266,14 @@ export async function GET(request: NextRequest) {
         );
 
         const localToday = parts.localDate;
+        const localTomorrow = localParts(addDays(now, 1), timezone).localDate;
         const arrivingToday = deliveries.filter((d) => d.estimatedDelivery === localToday || d.status === 'out_for_delivery').length;
+        const arrivingTomorrow = deliveries.filter((d) => d.estimatedDelivery === localTomorrow).length;
         const projectedProfitToday = deliveries
           .filter((d) => d.estimatedDelivery === localToday || d.status === 'out_for_delivery')
+          .reduce((sum, d) => sum + (typeof d.estimatedProfit === 'number' && Number.isFinite(d.estimatedProfit) ? d.estimatedProfit : 0), 0);
+        const projectedProfitTomorrow = deliveries
+          .filter((d) => d.estimatedDelivery === localTomorrow)
           .reduce((sum, d) => sum + (typeof d.estimatedProfit === 'number' && Number.isFinite(d.estimatedProfit) ? d.estimatedProfit : 0), 0);
 
         const slack = new SlackNotificationService({
@@ -275,10 +284,11 @@ export async function GET(request: NextRequest) {
         await slack.sendDeliverySummary({
           totalDeliveries: deliveries.length,
           arrivingToday,
-          arrivingTomorrow: 0,
+          arrivingTomorrow,
           arrivingThisWeek: 0,
           inTransit: deliveries.filter((d) => ['in_transit', 'shipped', 'out_for_delivery'].includes(d.status)).length,
           projectedProfitToday,
+          projectedProfitTomorrow,
           deliveries
         });
 

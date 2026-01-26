@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
     const settings: DeliveriesSlackSettings = {
       enabled: s?.enabled === true,
       webhookUrl: typeof s?.webhookUrl === 'string' ? s.webhookUrl : '',
-      timeLocal: typeof s?.timeLocal === 'string' ? s.timeLocal : '08:00',
+      timeLocal: typeof s?.timeLocal === 'string' ? s.timeLocal : '21:00',
       timezone: typeof s?.timezone === 'string' ? s.timezone : 'America/New_York',
       updatedAt: typeof s?.updatedAt === 'string' ? s.updatedAt : null,
       lastSentLocalDate: typeof s?.lastSentLocalDate === 'string' ? s.lastSentLocalDate : null,
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
     if (webhookUrl && !/^https:\/\//i.test(webhookUrl)) {
       return NextResponse.json({ success: false, error: 'webhookUrl must be https' }, { status: 400 });
     }
-    const timeLocal = normalizeTimeLocal(body?.timeLocal) || '08:00';
+    const timeLocal = normalizeTimeLocal(body?.timeLocal) || '21:00';
     const timezone = normalizeTimezone(body?.timezone) || 'America/New_York';
 
     // Validate timezone via Intl (throws RangeError if invalid)
@@ -97,13 +97,21 @@ export async function POST(request: NextRequest) {
 
     const db = getAdminDb();
     const nowIso = new Date().toISOString();
+    // Preserve lastSentLocalDate if settings already exist (avoids accidental re-sends on edits).
+    const existing = await db.collection('users').doc(userId).get();
+    const existingData = existing.exists ? (existing.data() as any) : {};
+    const existingLastSent =
+      typeof existingData?.deliveriesSlack?.lastSentLocalDate === 'string'
+        ? existingData.deliveriesSlack.lastSentLocalDate
+        : null;
+
     const payload: DeliveriesSlackSettings = {
       enabled,
       webhookUrl: enabled ? webhookUrl : '',
       timeLocal,
       timezone,
       updatedAt: nowIso,
-      lastSentLocalDate: null,
+      lastSentLocalDate: existingLastSent,
     };
 
     await db.collection('users').doc(userId).set({ deliveriesSlack: payload, updatedAt: nowIso }, { merge: true });
