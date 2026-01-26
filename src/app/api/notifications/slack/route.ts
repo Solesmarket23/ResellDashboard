@@ -411,6 +411,20 @@ export async function POST(request: NextRequest) {
       .filter(d => d.estimatedDelivery === tomorrowStr)
       .reduce((sum, d) => sum + (typeof d.estimatedProfit === 'number' && Number.isFinite(d.estimatedProfit) ? d.estimatedProfit : 0), 0);
 
+    const onTheWay = deliveries.filter(d => d.status === 'in_transit' || d.status === 'shipped' || d.status === 'out_for_delivery');
+    const projectedProfitOnTheWay = onTheWay.reduce(
+      (sum, d) => sum + (typeof d.estimatedProfit === 'number' && Number.isFinite(d.estimatedProfit) ? d.estimatedProfit : 0),
+      0
+    );
+    const marketValueOnTheWay = onTheWay.reduce(
+      (sum, d) => sum + (typeof d.marketPrice === 'number' && Number.isFinite(d.marketPrice) ? d.marketPrice : 0),
+      0
+    );
+    const purchaseCostOnTheWay = onTheWay.reduce(
+      (sum, d) => sum + (typeof d.purchasePrice === 'number' && Number.isFinite(d.purchasePrice) ? d.purchasePrice : 0),
+      0
+    );
+
     // Send notification
     if (type === 'daily_summary') {
       await slackService.sendDeliverySummary({
@@ -421,6 +435,9 @@ export async function POST(request: NextRequest) {
         inTransit,
         projectedProfitToday,
         projectedProfitTomorrow,
+        projectedProfitOnTheWay,
+        marketValueOnTheWay,
+        purchaseCostOnTheWay,
         deliveries
       });
     }

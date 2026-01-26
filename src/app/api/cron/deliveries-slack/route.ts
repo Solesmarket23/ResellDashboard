@@ -275,6 +275,19 @@ export async function GET(request: NextRequest) {
         const projectedProfitTomorrow = deliveries
           .filter((d) => d.estimatedDelivery === localTomorrow)
           .reduce((sum, d) => sum + (typeof d.estimatedProfit === 'number' && Number.isFinite(d.estimatedProfit) ? d.estimatedProfit : 0), 0);
+        const onTheWay = deliveries.filter((d) => ['in_transit', 'shipped', 'out_for_delivery'].includes(d.status));
+        const projectedProfitOnTheWay = onTheWay.reduce(
+          (sum, d) => sum + (typeof d.estimatedProfit === 'number' && Number.isFinite(d.estimatedProfit) ? d.estimatedProfit : 0),
+          0
+        );
+        const marketValueOnTheWay = onTheWay.reduce(
+          (sum, d) => sum + (typeof d.marketPrice === 'number' && Number.isFinite(d.marketPrice) ? d.marketPrice : 0),
+          0
+        );
+        const purchaseCostOnTheWay = onTheWay.reduce(
+          (sum, d) => sum + (typeof d.purchasePrice === 'number' && Number.isFinite(d.purchasePrice) ? d.purchasePrice : 0),
+          0
+        );
 
         const slack = new SlackNotificationService({
           webhookUrl,
@@ -289,6 +302,9 @@ export async function GET(request: NextRequest) {
           inTransit: deliveries.filter((d) => ['in_transit', 'shipped', 'out_for_delivery'].includes(d.status)).length,
           projectedProfitToday,
           projectedProfitTomorrow,
+          projectedProfitOnTheWay,
+          marketValueOnTheWay,
+          purchaseCostOnTheWay,
           deliveries
         });
 
