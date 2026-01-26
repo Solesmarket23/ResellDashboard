@@ -105,6 +105,18 @@ function marketPeekIntervalMs(freq: string | undefined): number {
   }
 }
 
+function isStuckAtResetPrice(currentPrice: unknown): boolean {
+  return typeof currentPrice === 'number' && Number.isFinite(currentPrice) && currentPrice >= 900;
+}
+
+function computeRecoveryPrice(listing: ListingData): number | null {
+  // Best-effort: if we ever get left at a "peek/reset" sentinel price (e.g. $999),
+  // fall back to Min if present. This is strictly better than remaining at $999.
+  if (isFiniteNumber(listing.minPrice) && listing.minPrice > 0) return Math.round(listing.minPrice);
+  // If no Min is set, we don't have a universally "safe" fallback without market data.
+  return null;
+}
+
 // Prevent overlapping Two-step runs (cron + manual save, multiple tabs, etc.).
 // Two-step is multi-step (set $999 -> refetch -> set final). Overlaps can interleave and leave the listing at $999.
 const TWO_STEP_LOCK_TTL_MS = 2 * 60 * 1000; // 2 minutes
@@ -414,6 +426,29 @@ export async function POST(request: NextRequest) {
                   console.warn(
                     `⏳ Rate limited (429) fetching market data after token refresh; skipping listing ${listing.listingId} for now.`
                   );
+                  // Recovery: if the listing is stuck at a peek/reset sentinel price (e.g. $999),
+                  // bring it back down to Min even when market data is unavailable.
+                  const recoveryPrice = computeRecoveryPrice(listing);
+                  if (!dryRun && isStuckAtResetPrice(listing.currentPrice) && recoveryPrice !== null) {
+                    const recovery = await updateListingPrice(listing.listingId, recoveryPrice, accessToken, {
+                      waitForCompletion: true,
+                      timeoutMs: 30_000,
+                    });
+                    repricingResults.push({
+                      listingId: listing.listingId,
+                      currentPrice: listing.currentPrice,
+                      newPrice: recoveryPrice,
+                      action: recovery.success ? 'updated' : 'failed',
+                      reason: recovery.success
+                        ? `Recovered from high price while market is rate-limited (set to Min $${recoveryPrice})`
+                        : `Recovery failed while market is rate-limited: ${recovery.error || 'Unknown error'}`,
+                      operationId: recovery.operation?.operationId,
+                      operationStatus: recovery.operationStatus,
+                      market: { lowestAsk: null, flexLowestAsk: null },
+                    });
+                    continue;
+                  }
+
                   repricingResults.push({
                     listingId: listing.listingId,
                     currentPrice: listing.currentPrice,
@@ -434,6 +469,29 @@ export async function POST(request: NextRequest) {
             // Rate limited: treat as a soft skip so one 429 doesn't "fail" a listing.
             if (msg.includes('429')) {
               console.warn(`⏳ Rate limited (429) fetching market data; skipping listing ${listing.listingId} for now.`);
+              // Recovery: if the listing is stuck at a peek/reset sentinel price (e.g. $999),
+              // bring it back down to Min even when market data is unavailable.
+              const recoveryPrice = computeRecoveryPrice(listing);
+              if (!dryRun && isStuckAtResetPrice(listing.currentPrice) && recoveryPrice !== null) {
+                const recovery = await updateListingPrice(listing.listingId, recoveryPrice, accessToken, {
+                  waitForCompletion: true,
+                  timeoutMs: 30_000,
+                });
+                repricingResults.push({
+                  listingId: listing.listingId,
+                  currentPrice: listing.currentPrice,
+                  newPrice: recoveryPrice,
+                  action: recovery.success ? 'updated' : 'failed',
+                  reason: recovery.success
+                    ? `Recovered from high price while market is rate-limited (set to Min $${recoveryPrice})`
+                    : `Recovery failed while market is rate-limited: ${recovery.error || 'Unknown error'}`,
+                  operationId: recovery.operation?.operationId,
+                  operationStatus: recovery.operationStatus,
+                  market: { lowestAsk: null, flexLowestAsk: null },
+                });
+                continue;
+              }
+
               repricingResults.push({
                 listingId: listing.listingId,
                 currentPrice: listing.currentPrice,
