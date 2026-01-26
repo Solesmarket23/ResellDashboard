@@ -111,6 +111,8 @@ export default function StockXCoupons() {
     }
   });
   const [copied, setCopied] = useState<{ code: string; nonce: number } | null>(null);
+  // Persist the blue "active" highlight (similar to Purchases page) until another code is copied.
+  const [highlightedCode, setHighlightedCode] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     // Default to Table view for new users; localStorage overrides once chosen.
     if (typeof window === 'undefined') return 'table';
@@ -580,6 +582,7 @@ export default function StockXCoupons() {
   const copyCode = async (code: string) => {
     try {
       await navigator.clipboard.writeText(code);
+      setHighlightedCode(code);
       setCopied({ code, nonce: Date.now() });
       if (copiedTimerRef.current) window.clearTimeout(copiedTimerRef.current);
       copiedTimerRef.current = window.setTimeout(() => {
@@ -1322,11 +1325,12 @@ export default function StockXCoupons() {
                                 : '';
                         const isSaving = savingCode === c.code;
                         const isCopied = copied?.code === c.code;
+                        const isHighlighted = highlightedCode === c.code;
                         const isManual = c.source === 'manual';
                         return (
                           <tr
                             key={c.code}
-                            style={isCopied ? {
+                            style={isHighlighted ? {
                               boxShadow: isNeon
                                 ? 'inset 0 0 0 3px #22d3ee, 0 20px 50px rgba(34, 211, 238, 0.3)'
                                 : 'inset 0 0 0 3px #3b82f6, 0 20px 50px rgba(59, 130, 246, 0.3)'
@@ -1334,7 +1338,7 @@ export default function StockXCoupons() {
                             className={`${isNeon ? 'text-white/85' : 'text-gray-900'} transition-all duration-300 ${
                               enteringCodes[c.code] ? 'will-change-transform [animation:coupon-enter_260ms_ease-out]' : ''
                             } ${
-                              isCopied
+                              isHighlighted
                                 ? (isNeon ? 'bg-gradient-to-r from-cyan-500/20 via-blue-500/10 to-cyan-500/20' : 'bg-gradient-to-r from-blue-200 via-blue-100 to-blue-200')
                                 : ''
                             }`}
@@ -1477,12 +1481,13 @@ export default function StockXCoupons() {
               const Icon = c.status === 'available' ? Tag : c.status === 'used_on_bid' ? CheckCircle2 : AlertTriangle;
               const isSaving = savingCode === c.code;
               const isCopied = copied?.code === c.code;
+              const isHighlighted = highlightedCode === c.code;
               const isManual = c.source === 'manual';
 
               return (
                 <div
                   key={c.code}
-                  style={isCopied ? {
+                  style={isHighlighted ? {
                     boxShadow: isNeon
                       ? 'inset 0 0 0 3px #22d3ee, 0 20px 50px rgba(34, 211, 238, 0.3)'
                       : 'inset 0 0 0 3px #3b82f6, 0 20px 50px rgba(59, 130, 246, 0.3)'
@@ -1490,7 +1495,7 @@ export default function StockXCoupons() {
                   className={`rounded-xl border p-4 transition-all duration-300 ${
                     isNeon ? 'bg-white/5 border-white/15' : `${currentTheme.colors.border} border`
                   } ${enteringCodes[c.code] ? 'will-change-transform [animation:coupon-enter_260ms_ease-out]' : ''} ${
-                    isCopied
+                    isHighlighted
                       ? (isNeon ? 'bg-gradient-to-r from-cyan-500/20 via-blue-500/10 to-cyan-500/20' : 'bg-gradient-to-r from-blue-200 via-blue-100 to-blue-200')
                       : ''
                   }`}
