@@ -2179,7 +2179,13 @@ export default function StockXRepricing() {
   const savePricingRuleChange = async (
     listingId: string,
     overrideStrategy?: IndividualPricingStrategy,
-    opts?: { suppressToast?: boolean; suppressBanner?: boolean; suppressRowState?: boolean }
+    opts?: {
+      suppressToast?: boolean;
+      suppressBanner?: boolean;
+      suppressRowState?: boolean;
+      suppressImmediateReprice?: boolean;
+      skipTwoStepNoBoundsConfirm?: boolean;
+    }
   ): Promise<boolean> => {
     console.log('💾 Save button clicked for listing:', listingId);
     
@@ -2290,7 +2296,7 @@ export default function StockXRepricing() {
 
       // Immediate mode: any saved rule/bounds change should run right away.
       // Two-step stays guarded by the existing confirm when no bounds are set.
-      if (strategyToSave?.type === 'reset_then_beat_lowest') {
+      if (strategyToSave?.type === 'reset_then_beat_lowest' && !opts?.skipTwoStepNoBoundsConfirm) {
         const hasAnyBounds =
           (!!listing.minPrice && listing.minPrice > 0) || (!!listing.maxPrice && listing.maxPrice > 0);
         if (!hasAnyBounds) {
@@ -2324,7 +2330,9 @@ export default function StockXRepricing() {
 
       // Start repricing in the background (can take ~10–15s on StockX).
       // We intentionally do NOT await, so the row doesn't sit in "Saving…" for the duration.
-      void runImmediateReprice(listingsToUpdateWithBounds, { reason: 'Saved', suppressToast: true });
+      if (!opts?.suppressImmediateReprice) {
+        void runImmediateReprice(listingsToUpdateWithBounds, { reason: 'Saved', suppressToast: true });
+      }
       
       // Show success message
       const strategyLabel =
@@ -2656,7 +2664,7 @@ export default function StockXRepricing() {
     });
   };
 
-  const applyPricingRule = async (rule: 'queue_focus' | 'peek_focus') => {
+  const applyPricingRule = async (rule: 'queue_focus' | 'peek_focus' | 'two_step') => {
     const selectedListings = listings.filter(listing => listing.selected);
     
     if (selectedListings.length === 0) {
@@ -2670,6 +2678,8 @@ export default function StockXRepricing() {
             type: 'peek_focus',
             peekSettings: { frequency: 'balanced', peekHistory: [] }
           }
+        : rule === 'two_step'
+          ? { type: 'reset_then_beat_lowest', resetPrice: 999 } as any
         : { type: 'queue_focus' };
 
     // Update the pricing strategy for all selected listings
@@ -2694,14 +2704,42 @@ export default function StockXRepricing() {
 
     // Bulk mode: suppress per-row toasts/banners and emit ONE final toast.
     const ids = Array.from(leaderIds.values());
-    const results = await Promise.all(
-      ids.map((leaderId) => savePricingRuleChange(leaderId, newStrategy as any, { suppressToast: true, suppressBanner: true, suppressRowState: true }))
-    );
+
+    // For Two-step, confirm ONCE if any selected group leaders have no Min/Max bounds.
+    const leaderListings = ids
+      .map((id) => listings.find((l) => l.listingId === id))
+      .filter(Boolean) as any[];
+    const noBoundsCount = leaderListings.filter((l) => !(l?.minPrice > 0) && !(l?.maxPrice > 0)).length;
+    const shouldRunWithoutBounds =
+      rule !== 'two_step'
+        ? true
+        : noBoundsCount === 0
+          ? true
+          : window.confirm(
+              `Two-step will run LIVE for ${ids.length} group${ids.length === 1 ? '' : 's'}.\n\n` +
+                `${noBoundsCount} of them have no Min/Max safety bounds.\n\n` +
+                `Run Two-step anyway?`
+            );
+
+    const saveOpts =
+      rule === 'two_step'
+        ? {
+            suppressToast: true,
+            suppressBanner: true,
+            suppressRowState: true,
+            skipTwoStepNoBoundsConfirm: true,
+            suppressImmediateReprice: !shouldRunWithoutBounds,
+          }
+        : { suppressToast: true, suppressBanner: true, suppressRowState: true };
+
+    const results = await Promise.all(ids.map((leaderId) => savePricingRuleChange(leaderId, newStrategy as any, saveOpts as any)));
     const okCount = results.filter(Boolean).length;
     const failCount = results.length - okCount;
 
-    const label = rule === 'peek_focus' ? 'Peek Focus' : 'Queue Focus';
-    if (failCount === 0) {
+    const label = rule === 'peek_focus' ? 'Peek Focus' : rule === 'two_step' ? 'Two-step' : 'Queue Focus';
+    if (!shouldRunWithoutBounds && rule === 'two_step') {
+      showToast(`Saved • ${label} • ${selectedListings.length} item${selectedListings.length > 1 ? 's' : ''} (not executed — add Min/Max then Save)`, 'success');
+    } else if (failCount === 0) {
       showToast(`Applied • ${label} • ${selectedListings.length} item${selectedListings.length > 1 ? 's' : ''}`, 'success');
     } else {
       showToast(`Applied • ${label} • ${okCount}/${results.length} groups saved (${failCount} failed)`, 'error');
@@ -4175,6 +4213,20 @@ export default function StockXRepricing() {
                 <div className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>Peek Focus (Low volume)</div>
                 <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
                   Low-volume SKUs. Occasionally peeks to discover the next ask and raise when the market moves up.
+                </div>
+              </button>
+
+              <button
+                onClick={() => applyPricingRule('two_step')}
+                className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
+                  isNeon
+                    ? 'bg-gray-900 border-gray-700 hover:border-fuchsia-500 hover:bg-fuchsia-500/10'
+                    : 'bg-white border-gray-200 hover:border-fuchsia-500 hover:bg-fuchsia-50'
+                }`}
+              >
+                <div className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>Two-step (Legacy)</div>
+                <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                  Temporarily resets to $999 to reveal the next ask, then undercuts by $1. Strongly recommended to set Min/Max bounds.
                 </div>
               </button>
             </div>
