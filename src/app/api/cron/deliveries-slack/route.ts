@@ -3,7 +3,7 @@ import { getAdminDb } from '@/lib/firebase/firebaseAdmin';
 import { SlackNotificationService } from '@/lib/notifications/slackService';
 import { trackingService } from '@/lib/tracking/trackingService';
 import { refreshStockXTokens } from '@/lib/stockx/tokenRefresh';
-import { fetchStockXMarketPrice } from '@/lib/stockx/marketPrice';
+import { fetchStockXMarketPriceDetailed } from '@/lib/stockx/marketPrice';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -183,13 +183,13 @@ export async function GET(request: NextRequest) {
               if (Number.isFinite(n) && n > 0) marketPrice = n;
             }
             if (!marketPrice) {
-              const realtime = await fetchStockXMarketPrice({
+              const result = await fetchStockXMarketPriceDetailed({
                 auth: { apiKey, accessToken, refreshToken },
                 productName,
                 size: productSize,
                 styleId
               });
-              if (realtime) marketPrice = realtime;
+              if (result.price) marketPrice = result.price;
             }
             if (marketPrice !== undefined && (!Number.isFinite(marketPrice) || marketPrice <= 0)) {
               marketPrice = undefined;
@@ -239,6 +239,11 @@ export async function GET(request: NextRequest) {
         const marketValueOnTheWay = sumFiniteOrNull(onTheWay.map((d) => d.marketPrice));
         const purchaseCostOnTheWay = sumFiniteOrNull(onTheWay.map((d) => d.purchasePrice));
 
+        const marketPriceNote =
+          purchaseCostOnTheWay !== null && marketValueOnTheWay === null && projectedProfitOnTheWay === null
+            ? `Market prices unavailable: StockX market prices could not be fetched (check StockX tokens/API access).`
+            : null;
+
         const slack = new SlackNotificationService({
           webhookUrl,
           username: 'Delivery Tracker',
@@ -255,6 +260,7 @@ export async function GET(request: NextRequest) {
           ...(projectedProfitOnTheWay !== null ? { projectedProfitOnTheWay } : {}),
           ...(marketValueOnTheWay !== null ? { marketValueOnTheWay } : {}),
           ...(purchaseCostOnTheWay !== null ? { purchaseCostOnTheWay } : {}),
+          ...(marketPriceNote ? { marketPriceNote } : {}),
           deliveries
         });
 

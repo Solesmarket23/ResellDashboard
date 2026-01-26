@@ -15,6 +15,7 @@ export interface DeliverySummary {
   projectedProfitOnTheWay?: number;
   marketValueOnTheWay?: number;
   purchaseCostOnTheWay?: number;
+  marketPriceNote?: string;
   deliveries: Array<{
     productName: string;
     productBrand: string;
@@ -245,12 +246,15 @@ export class SlackNotificationService {
 
     // If we have purchase cost but no market/profit, call it out explicitly (usually means StockX creds missing).
     if (costOnTheWay !== null && marketOnTheWay === null && profitOnTheWay === null) {
+      const note = typeof summary.marketPriceNote === 'string' && summary.marketPriceNote.trim() ? summary.marketPriceNote.trim() : null;
       blocks.push({
         type: 'context',
         elements: [
           {
             type: 'mrkdwn',
-            text: `⚠️ _Market price / profit totals unavailable (missing StockX market prices)._`
+            text: note
+              ? `⚠️ _${note}_`
+              : `⚠️ _Market price / profit totals unavailable (missing StockX market prices)._`
           }
         ]
       });

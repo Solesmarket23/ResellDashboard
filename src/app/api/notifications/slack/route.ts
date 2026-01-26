@@ -3,7 +3,7 @@ import { createSlackService } from '@/lib/notifications/slackService';
 import { getDocumentsServer } from '@/lib/firebase/firebaseServerUtils';
 import { trackingService } from '@/lib/tracking/trackingService';
 import { getAdminDb } from '@/lib/firebase/firebaseAdmin';
-import { fetchStockXMarketPrice } from '@/lib/stockx/marketPrice';
+import { fetchStockXMarketPriceDetailed } from '@/lib/stockx/marketPrice';
 
 /**
  * Helper function to extract brand from product name
@@ -140,6 +140,16 @@ export async function POST(request: NextRequest) {
     console.log(`🔄 Fetching live tracking data for ${trackingNumbers.length} packages`);
     const liveTrackingData = await trackingService.getBulkTrackingInfo(trackingNumbers);
 
+    const marketDebug = {
+      apiKeyConfigured: Boolean(process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID),
+      totalItems: purchasesWithTracking.length,
+      cachedUsed: 0,
+      fetchedOk: 0,
+      skippedNoAuth: 0,
+      failedByReason: {} as Record<string, number>,
+      failedHttpStatuses: {} as Record<string, number>,
+    };
+
     // Build deliveries array with live tracking data AND real-time StockX prices
     console.log(`💰 Fetching real-time StockX prices for ${purchasesWithTracking.length} items...`);
     
@@ -226,22 +236,40 @@ export async function POST(request: NextRequest) {
       if (marketPrice !== undefined && (!Number.isFinite(marketPrice) || marketPrice <= 0)) {
         marketPrice = undefined;
       }
+      if (marketPrice !== undefined) {
+        marketDebug.cachedUsed++;
+      }
       
       // If no market price cached, fetch real-time from StockX (prioritize styleId for accuracy!)
       if (marketPrice === undefined) {
         const auth = await getStockXAuthForUser(request, userId);
         if (!auth) {
           console.log(`⚠️ Missing STOCKX_API_KEY, skipping price fetch`);
+          marketDebug.failedByReason['missing_api_key'] = (marketDebug.failedByReason['missing_api_key'] || 0) + 1;
         } else {
-          const realtimePrice = await fetchStockXMarketPrice({
-            auth,
-            productName,
-            size: productSize,
-            styleId
-          });
-          if (realtimePrice) {
-            marketPrice = realtimePrice;
-            console.log(`✅ Real-time price fetched: ${productName}${styleId ? ` (StyleId: ${styleId})` : ''} = $${marketPrice}`);
+          const hasAuth = Boolean((auth as any).accessToken || (auth as any).refreshToken);
+          if (!hasAuth) {
+            marketDebug.skippedNoAuth++;
+            marketDebug.failedByReason['missing_stockx_tokens'] =
+              (marketDebug.failedByReason['missing_stockx_tokens'] || 0) + 1;
+          } else {
+            const result = await fetchStockXMarketPriceDetailed({
+              auth,
+              productName,
+              size: productSize,
+              styleId
+            });
+            if (result.price) {
+              marketPrice = result.price;
+              marketDebug.fetchedOk++;
+              console.log(`✅ Real-time price fetched: ${productName}${styleId ? ` (StyleId: ${styleId})` : ''} = $${marketPrice}`);
+            } else {
+              marketDebug.failedByReason[result.reason] = (marketDebug.failedByReason[result.reason] || 0) + 1;
+              if (typeof result.httpStatus === 'number') {
+                const key = `${result.stage || 'unknown'}:${result.httpStatus}`;
+                marketDebug.failedHttpStatuses[key] = (marketDebug.failedHttpStatuses[key] || 0) + 1;
+              }
+            }
           }
         }
       } else {
@@ -323,6 +351,24 @@ export async function POST(request: NextRequest) {
     const marketValueOnTheWay = sumFiniteOrNull(onTheWay.map(d => d.marketPrice));
     const purchaseCostOnTheWay = sumFiniteOrNull(onTheWay.map(d => d.purchasePrice));
 
+    const buildMarketNote = (): string | null => {
+      const entries = Object.entries(marketDebug.failedByReason).sort((a, b) => b[1] - a[1]);
+      const top = entries[0];
+      if (!top) return null;
+      const topReason = top[0];
+      const counts = `cached ${marketDebug.cachedUsed}, fetched ${marketDebug.fetchedOk}, failed ${entries.reduce((s, [,c]) => s + c, 0)}`;
+      if (topReason === 'missing_stockx_tokens') return `Market prices unavailable: StockX not connected for this user (${counts}).`;
+      if (topReason === 'missing_refresh_token' || topReason === 'token_refresh_failed') return `Market prices unavailable: StockX token refresh failed (${counts}).`;
+      if (topReason.endsWith('_http_error')) return `Market prices unavailable: StockX HTTP errors (${counts}).`;
+      if (topReason === 'search_http_error' || topReason === 'market_http_error') return `Market prices unavailable: StockX HTTP errors (${counts}).`;
+      if (topReason === 'network_error') return `Market prices unavailable: StockX network errors (${counts}).`;
+      return `Market prices unavailable: ${topReason} (${counts}).`;
+    };
+    const marketPriceNote =
+      purchaseCostOnTheWay !== null && marketValueOnTheWay === null && projectedProfitOnTheWay === null
+        ? buildMarketNote()
+        : null;
+
     // Send notification
     if (type === 'daily_summary') {
       await slackService.sendDeliverySummary({
@@ -336,6 +382,7 @@ export async function POST(request: NextRequest) {
         ...(projectedProfitOnTheWay !== null ? { projectedProfitOnTheWay } : {}),
         ...(marketValueOnTheWay !== null ? { marketValueOnTheWay } : {}),
         ...(purchaseCostOnTheWay !== null ? { purchaseCostOnTheWay } : {}),
+        ...(marketPriceNote ? { marketPriceNote } : {}),
         deliveries
       });
     }
@@ -346,6 +393,7 @@ export async function POST(request: NextRequest) {
       success: true,
       message: 'Notification sent',
       sent: true,
+      marketPriceDebug: marketDebug,
       summary: {
         totalDeliveries: deliveries.length,
         arrivingToday,
