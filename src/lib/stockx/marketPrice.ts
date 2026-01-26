@@ -71,7 +71,8 @@ async function stockxFetchWithRetry(
   args: { apiKey: string; accessToken: string },
   opts?: { method?: string }
 ): Promise<Response> {
-  const retryStatuses = new Set([429, 500, 502, 503, 504]);
+  // Include 408 since we observed StockX returning timeouts for product-level market-data.
+  const retryStatuses = new Set([408, 429, 500, 502, 503, 504]);
   for (let attempt = 0; attempt < 6; attempt++) {
     const res = await fetch(url, {
       method: opts?.method || 'GET',
@@ -126,6 +127,12 @@ function pickVariantBySize(variants: any[], size: string): any | null {
     variants.find((v: any) => parseStockXMoneyToDollars(v.lowestAskAmount) || parseStockXMoneyToDollars(v.flexLowestAskAmount)) ||
     variants[0]
   );
+}
+
+function pickVariantIdBySize(variants: any[], size: string): string | null {
+  const v = pickVariantBySize(variants, size);
+  const vid = v?.variantId || v?.id || v?.uuid;
+  return vid ? String(vid) : null;
 }
 
 function lowestAskFromVariant(variant: any): number | null {
@@ -193,20 +200,44 @@ export async function fetchStockXMarketPriceDetailed(args: {
       return { price: null, reason: 'no_products', stage: 'search', details: lastNoProductsTerm ? `term=${lastNoProductsTerm}` : undefined };
     }
 
-    // Step 2: Market data -> variant prices
-    const marketUrl = `https://api.stockx.com/v2/catalog/products/${productId}/market-data`;
-    const marketRes = await stockxFetchWithRetry(marketUrl, { apiKey, accessToken });
-    if (!marketRes.ok) {
-      return { price: null, reason: 'market_http_error', stage: 'market', httpStatus: marketRes.status };
+    // Step 2: Prefer repricer-style flow: fetch variants -> pick variantId -> variant market-data
+    const variantsUrl = `https://api.stockx.com/v2/catalog/products/${productId}/variants`;
+    const variantsRes = await stockxFetchWithRetry(variantsUrl, { apiKey, accessToken });
+    if (!variantsRes.ok) {
+      return { price: null, reason: 'market_http_error', stage: 'market', httpStatus: variantsRes.status, details: 'variants' };
     }
-    const marketData = await marketRes.json().catch(() => null);
-    const variants = Array.isArray(marketData) ? marketData : [];
+    const variantsData = await variantsRes.json().catch(() => null);
+    const variants = Array.isArray(variantsData) ? variantsData : (variantsData?.variants || []);
     if (!Array.isArray(variants) || variants.length === 0) {
       return { price: null, reason: 'no_variants', stage: 'market' };
     }
-    const variant = pickVariantBySize(variants, args.size);
-    if (!variant) return { price: null, reason: 'no_variant', stage: 'market' };
-    const price = lowestAskFromVariant(variant);
+    const variantId = pickVariantIdBySize(variants, args.size);
+    if (!variantId) return { price: null, reason: 'no_variant', stage: 'market' };
+
+    const variantMarketUrl = `https://api.stockx.com/v2/catalog/products/${productId}/variants/${variantId}/market-data`;
+    const vmRes = await stockxFetchWithRetry(variantMarketUrl, { apiKey, accessToken });
+    if (!vmRes.ok) {
+      // Fallback to product-level market-data in case variant endpoint is temporarily unavailable.
+      const fallbackUrl = `https://api.stockx.com/v2/catalog/products/${productId}/market-data`;
+      const marketRes = await stockxFetchWithRetry(fallbackUrl, { apiKey, accessToken });
+      if (!marketRes.ok) {
+        return { price: null, reason: 'market_http_error', stage: 'market', httpStatus: vmRes.status, details: `variant_market_failed_then_product_market_failed (${vmRes.status}/${marketRes.status})` };
+      }
+      const marketData = await marketRes.json().catch(() => null);
+      const arr = Array.isArray(marketData) ? marketData : [];
+      const variant = pickVariantBySize(arr, args.size);
+      if (!variant) return { price: null, reason: 'no_variant', stage: 'market' };
+      const price = lowestAskFromVariant(variant);
+      if (price === null) return { price: null, reason: 'no_price', stage: 'market' };
+      return { price, reason: 'ok', details: 'fallback_product_market_data' };
+    }
+
+    const vmData = await vmRes.json().catch(() => null);
+    const variantData = Array.isArray(vmData)
+      ? vmData.find((item: any) => String(item?.variantId) === String(variantId))
+      : vmData;
+    if (!variantData) return { price: null, reason: 'no_variant', stage: 'market' };
+    const price = lowestAskFromVariant(variantData);
     if (price === null) return { price: null, reason: 'no_price', stage: 'market' };
     return { price, reason: 'ok' };
   } catch (e) {
