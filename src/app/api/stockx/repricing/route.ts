@@ -293,7 +293,8 @@ export async function POST(request: NextRequest) {
       notificationEmail,
       useIndividualStrategies = false,
       minPriceChange,
-      allowTwoStep = false
+      allowTwoStep = false,
+      forceTwoStepPeek = false
     }: {
       listings: ListingToReprice[];
       strategy: RepricingStrategy;
@@ -302,6 +303,7 @@ export async function POST(request: NextRequest) {
       useIndividualStrategies?: boolean;
       minPriceChange?: number;
       allowTwoStep?: boolean;
+      forceTwoStepPeek?: boolean;
     } = await request.json();
 
     console.log(`🔄 Starting repricing for ${listings.length} listings (dry run: ${dryRun})`);
@@ -629,7 +631,11 @@ export async function POST(request: NextRequest) {
             const initialFlexLowestAsk = parseStockXMoneyToDollars((marketData as any).flexLowestAskAmount);
             const initialBestAsk = minPositive(initialLowestAsk, initialFlexLowestAsk);
             const computedFinal = initialBestAsk !== null ? Math.max(1, initialBestAsk - beatBy) : listing.currentPrice;
-            const shouldPeekNextLowest = initialBestAsk !== null ? listing.currentPrice <= initialBestAsk : true;
+            const shouldPeekNextLowest = forceTwoStepPeek
+              ? true
+              : initialBestAsk !== null
+                ? listing.currentPrice <= initialBestAsk
+                : true;
             twoStepMeta.initialLowestAsk = initialLowestAsk;
             twoStepMeta.initialFlexLowestAsk = initialFlexLowestAsk;
             twoStepMeta.mode = shouldPeekNextLowest ? 'peek_next_lowest' : 'direct_undercut';
@@ -663,7 +669,7 @@ export async function POST(request: NextRequest) {
               return t;
             })();
 
-            if (!dryRun && boundedTarget !== computedFinal) {
+            if (!forceTwoStepPeek && !dryRun && boundedTarget !== computedFinal) {
               // Do NOT peek/reset if we'd just clamp. Set directly to the bounded value.
               newPrice = boundedTarget;
               skipReason =
@@ -689,9 +695,10 @@ export async function POST(request: NextRequest) {
                 computedFinal
               } as any;
             } else {
-              // If we're NOT currently the lowest ask, don't do the risky reset step.
+              // If we're NOT currently the lowest ask, don't do the risky reset step
+              // unless the caller explicitly requested a forced peek.
               // Just undercut the current lowest ask directly.
-              if (!shouldPeekNextLowest) {
+              if (!forceTwoStepPeek && !shouldPeekNextLowest) {
                 newPrice = computedFinal;
                 twoStepMeta = {
                   ...twoStepMeta,

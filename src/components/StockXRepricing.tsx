@@ -2085,16 +2085,15 @@ export default function StockXRepricing() {
       return prev.map(l => (l.listingId === listingId ? { ...l, pricingStrategy: newStrategy } : l));
     });
 
-    // Immediate mode: changing a pricing rule should run right away (persist + reprice).
-    // We pass the strategy explicitly so we don't race React state updates.
-    // Exception: selecting Manual should NOT auto-save/run; user must click Save.
-    if (type === 'manual') return;
+    // Exception: selecting Manual or Two-step should NOT auto-save/run; user must click Save.
+    // (Two-step should run only on Save, and Save can be used to re-run Two-step even when unchanged.)
+    if (type === 'manual' || type === 'reset_then_beat_lowest') return;
     void savePricingRuleChange(effectiveListingId, newStrategy);
   };
 
   const runImmediateReprice = async (
     listingsToReprice: Listing[],
-    opts?: { reason?: string; suppressToast?: boolean }
+    opts?: { reason?: string; suppressToast?: boolean; forceTwoStepPeek?: boolean }
   ): Promise<boolean> => {
     if (listingsToReprice.length === 0) return;
 
@@ -2123,6 +2122,7 @@ export default function StockXRepricing() {
           dryRun: false,
           useIndividualStrategies: true,
           allowTwoStep: true,
+          forceTwoStepPeek: opts?.forceTwoStepPeek === true,
           inventoryGroups: Array.from(inventoryGroups.values())
         })
       });
@@ -2185,6 +2185,7 @@ export default function StockXRepricing() {
       suppressRowState?: boolean;
       suppressImmediateReprice?: boolean;
       skipTwoStepNoBoundsConfirm?: boolean;
+      forceTwoStepPeek?: boolean;
     }
   ): Promise<boolean> => {
     console.log('💾 Save button clicked for listing:', listingId);
@@ -2331,7 +2332,13 @@ export default function StockXRepricing() {
       // Start repricing in the background (can take ~10–15s on StockX).
       // We intentionally do NOT await, so the row doesn't sit in "Saving…" for the duration.
       if (!opts?.suppressImmediateReprice) {
-        void runImmediateReprice(listingsToUpdateWithBounds, { reason: 'Saved', suppressToast: true });
+        const forceTwoStepPeek =
+          opts?.forceTwoStepPeek === true || strategyToSave?.type === 'reset_then_beat_lowest';
+        void runImmediateReprice(listingsToUpdateWithBounds, {
+          reason: 'Saved',
+          suppressToast: true,
+          forceTwoStepPeek,
+        });
       }
       
       // Show success message
@@ -2729,6 +2736,7 @@ export default function StockXRepricing() {
             suppressRowState: true,
             skipTwoStepNoBoundsConfirm: true,
             suppressImmediateReprice: !shouldRunWithoutBounds,
+            forceTwoStepPeek: true,
           }
         : { suppressToast: true, suppressBanner: true, suppressRowState: true };
 
@@ -4815,10 +4823,12 @@ export default function StockXRepricing() {
                               ? (group.leaderId || listing.groupLeaderId || listing.listingId)
                               : listing.listingId;
                           const hasPending = !!pendingStrategyChanges[effectiveId] || !!pendingBoundChanges[effectiveId];
-                          if (!hasPending) return null;
+                          const isTwoStep = listing.pricingStrategy?.type === 'reset_then_beat_lowest';
+                          // Save appears when row is dirty OR when Two-step is selected (to allow "re-save" to re-run Two-step).
+                          if (!hasPending && !isTwoStep) return null;
                           return (
                           <button
-                            onClick={() => savePricingRuleChange(effectiveId)}
+                            onClick={() => savePricingRuleChange(effectiveId, undefined, isTwoStep ? { forceTwoStepPeek: true } : undefined)}
                             className={`px-2 py-1 rounded text-xs font-semibold transition-all whitespace-nowrap flex items-center gap-1 ${
                               isNeon
                                 ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white'
