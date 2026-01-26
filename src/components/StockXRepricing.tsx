@@ -436,6 +436,11 @@ export default function StockXRepricing() {
         label: 'Peek Focus (Low volume)',
         description: 'Occasionally peeks to discover the next ask and raise. Skips peeks at Min to preserve queue.',
       },
+      {
+        value: 'reset_then_beat_lowest',
+        label: 'Two-step',
+        description: 'Temporarily resets high to reveal the next ask, then undercuts by $1. Use with Min/Max bounds.',
+      },
     ],
     []
   );
@@ -2043,7 +2048,7 @@ export default function StockXRepricing() {
     // Only add properties that are needed for each strategy type
     if (type === 'queue_focus') {
       // No extra params
-    } else if (type === 'peek_focus') {
+    } else if (type === 'peek_focus' || type === 'reset_then_beat_lowest') {
       newStrategy.peekSettings = {
         frequency:
           listing.pricingStrategy?.peekSettings?.frequency ||
@@ -2324,7 +2329,7 @@ export default function StockXRepricing() {
         // Legacy types (still supported for older saved settings)
         strategyToSave.type === 'match_lowest' ? 'Queue Focus' :
         strategyToSave.type === 'market_peek' ? 'Peek Focus' :
-        strategyToSave.type === 'reset_then_beat_lowest' ? 'Peek Focus' :
+        strategyToSave.type === 'reset_then_beat_lowest' ? 'Two-step' :
         strategyToSave.type === 'manual' ? 'Manual' :
         strategyToSave.type === 'beat_lowest' ? 'Beat Lowest by $1' :
         strategyToSave.type === 'percentage_below' ? `Below ${(strategyToSave as any).value}%` :
@@ -4706,7 +4711,7 @@ export default function StockXRepricing() {
                         {(() => {
                           const t = listing.pricingStrategy?.type;
                           const isLegacy =
-                            !!t && t !== 'queue_focus' && t !== 'peek_focus' && t !== 'manual';
+                            !!t && t !== 'queue_focus' && t !== 'peek_focus' && t !== 'reset_then_beat_lowest' && t !== 'manual';
                           if (!isLegacy) return null;
                           const label =
                             t === 'reset_then_beat_lowest' ? 'Two-step' :
@@ -4730,13 +4735,7 @@ export default function StockXRepricing() {
                           );
                         })()}
                         <NeonDropdown
-                          value={
-                            listing.pricingStrategy?.type === 'peek_focus' ||
-                            listing.pricingStrategy?.type === 'market_peek' ||
-                            listing.pricingStrategy?.type === 'reset_then_beat_lowest'
-                              ? 'peek_focus'
-                              : 'queue_focus'
-                          }
+                          value={(listing.pricingStrategy?.type as any) || 'queue_focus'}
                           onChange={(value) => updateListingStrategy(listing.listingId, value as any)}
                           options={pricingRuleOptions}
                           isNeon={isNeon}
