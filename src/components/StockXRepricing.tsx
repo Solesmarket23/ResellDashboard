@@ -454,7 +454,7 @@ export default function StockXRepricing() {
       {
         value: 'market_peek',
         label: '🔍 Market Peek',
-        description: 'Occasionally “peeks” market to re-check the true lowest ask.',
+        description: 'Occasionally peeks by briefly raising to $999 to reveal the next ask. Note: can lose tie-queue priority at your Min.',
         group: 'Advanced',
       },
     ],

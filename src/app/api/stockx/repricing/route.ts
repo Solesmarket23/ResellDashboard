@@ -829,6 +829,24 @@ export async function POST(request: NextRequest) {
               newPrice = listing.currentPrice;
               skipReason = `Market peek (dry-run): would raise to $${resetPrice}, then set to (nextLowestAsk - $${beatBy})`;
             } else {
+              // Queue safety: if you're pinned at Min, do NOT do the temporary reset.
+              // Resetting to $999 can cause you to lose tie-queue priority at Min, which hurts high-volume SKUs.
+              const hasMinBound = isFiniteNumber(listing.minPrice);
+              const pinnedAtMin =
+                hasMinBound && listing.currentPrice <= (listing.minPrice as number) + 0.01;
+              if (pinnedAtMin) {
+                newPrice = listing.currentPrice;
+                skipReason = `Market peek skipped: at Min ($${listing.minPrice}) — preserve queue`;
+                // Treat this as a "peek attempt" for cadence purposes so cron doesn't try every run.
+                (listing as any).lastPeekTime = new Date().toISOString();
+                (listing as any).__peekMeta = {
+                  frequency: freq,
+                  lastPeekTime: (listing as any).lastPeekTime,
+                  resetPrice,
+                  beatBy,
+                  skippedDueToMin: true
+                };
+              } else {
               // Perform the peek: temporarily raise, refetch market, then raise to next-lowest - $1.
               const originalPrice = listing.currentPrice;
 
@@ -985,6 +1003,7 @@ export async function POST(request: NextRequest) {
                 } as any);
                 continue;
               }
+            }
             }
 
           } else {
