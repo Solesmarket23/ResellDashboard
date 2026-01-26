@@ -202,7 +202,7 @@ export async function GET(request: NextRequest) {
               Number.isFinite(purchasePrice) &&
               Number.isFinite(marketPrice)
             ) {
-              estimatedProfit = marketPrice - purchasePrice - 1;
+              estimatedProfit = marketPrice - purchasePrice;
             }
 
             return {

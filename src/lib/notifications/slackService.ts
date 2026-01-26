@@ -40,7 +40,6 @@ export class SlackNotificationService {
   private webhookUrl: string;
   private username: string;
   private iconEmoji: string;
-  private static readonly PRICING_STRATEGY_FEE_USD = 1;
 
   constructor(options: SlackNotificationOptions) {
     this.webhookUrl = options.webhookUrl;
@@ -69,7 +68,7 @@ export class SlackNotificationService {
     const profitComputed =
       profitProvided ??
       (purchase !== null && market !== null
-        ? market - purchase - SlackNotificationService.PRICING_STRATEGY_FEE_USD
+        ? market - purchase
         : null);
 
     const parts: string[] = [];

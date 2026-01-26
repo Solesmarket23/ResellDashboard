@@ -190,7 +190,7 @@ export async function POST(request: NextRequest) {
         productBrand = extractBrandFromProductName(productName);
       }
       
-      // Calculate profit: Market Price - Purchase Price - $1 (pricing strategy)
+      // Calculate profit: Market Price - Purchase Price
       let purchasePrice: number | undefined;
       let marketPrice: number | undefined;
       let estimatedProfit: number | undefined;
@@ -251,14 +251,14 @@ export async function POST(request: NextRequest) {
         marketPrice = undefined;
       }
 
-      // Calculate estimated profit: Market Price - Purchase Price - $1
+      // Calculate estimated profit: Market Price - Purchase Price
       if (
         purchasePrice !== undefined &&
         marketPrice !== undefined &&
         Number.isFinite(purchasePrice) &&
         Number.isFinite(marketPrice)
       ) {
-        estimatedProfit = marketPrice - purchasePrice - 1; // Subtract $1 for pricing strategy
+        estimatedProfit = marketPrice - purchasePrice;
       }
       
       console.log(`📦 ${productName}: tracking=${trackingValue}, eta=${estimatedDelivery}, status=${status}, purchase=$${purchasePrice}, market=$${marketPrice}, profit=$${estimatedProfit}`);
