@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 interface DeliveryItem {
   id: string;
@@ -63,11 +63,13 @@ export function useRealTimeDeliveries({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<Date | null>(null);
+  const hasLoadedOnceRef = useRef(false);
 
   const fetchDeliveries = useCallback(async () => {
     if (!userId) return;
     
-    setLoading(true);
+    // Only show the "blocking" loading state for the first paint.
+    if (!hasLoadedOnceRef.current) setLoading(true);
     setError(null);
     
     try {
@@ -89,29 +91,51 @@ export function useRealTimeDeliveries({
             const purchases = JSON.parse(purchasesJson);
             console.log(`📦 Found ${purchases.length} purchases in localStorage, sending to API`);
             
-            // Send purchases as query param (for GET) or use POST
-            // Using POST is better for large data
-            const response = await fetch(`/api/deliveries/sync`, {
+            // Phase 1 (fast): return deliveries without live tracking so the page renders quickly.
+            if (!hasLoadedOnceRef.current) {
+              const liteResponse = await fetch(`/api/deliveries/sync`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  userId,
+                  purchases,
+                  fromLocalStorage: true,
+                  includeLiveTracking: false
+                })
+              });
+              const liteData = await liteResponse.json();
+              if (liteData.success) {
+                setDeliveries(liteData.deliveries);
+                setLastSync(new Date(liteData.lastSync));
+                hasLoadedOnceRef.current = true;
+                console.log(`✅ Loaded ${liteData.deliveries.length} deliveries (lite)`);
+              } else {
+                throw new Error(liteData.error || 'Failed to fetch deliveries');
+              }
+              setLoading(false);
+            }
+
+            // Phase 2 (slow): hydrate live tracking in the background (no blocking loader).
+            const fullResponse = await fetch(`/api/deliveries/sync`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 userId,
                 purchases,
-                fromLocalStorage: true
+                fromLocalStorage: true,
+                includeLiveTracking: true
               })
             });
-            
-            const data = await response.json();
-            
-            if (data.success) {
-              setDeliveries(data.deliveries);
-              setLastSync(new Date(data.lastSync));
-              console.log(`✅ Loaded ${data.deliveries.length} deliveries (${data.liveTrackingCount} with live data)`);
+            const fullData = await fullResponse.json();
+            if (fullData.success) {
+              setDeliveries(fullData.deliveries);
+              setLastSync(new Date(fullData.lastSync));
+              hasLoadedOnceRef.current = true;
+              console.log(`✅ Loaded ${fullData.deliveries.length} deliveries (${fullData.liveTrackingCount} with live data)`);
             } else {
-              throw new Error(data.error || 'Failed to fetch deliveries');
+              throw new Error(fullData.error || 'Failed to fetch deliveries');
             }
-            
-            setLoading(false);
+
             return;
           } catch (error) {
             console.error('❌ Error parsing localStorage purchases:', error);
@@ -121,12 +145,28 @@ export function useRealTimeDeliveries({
       }
       
       // Regular Firebase user flow
+      // Phase 1 (fast): fetch without live tracking on first load.
+      if (!hasLoadedOnceRef.current) {
+        const liteResp = await fetch(`${url}&includeLiveTracking=0`);
+        const lite = await liteResp.json();
+        if (lite.success) {
+          setDeliveries(lite.deliveries);
+          setLastSync(new Date(lite.lastSync));
+          hasLoadedOnceRef.current = true;
+          console.log(`✅ Loaded ${lite.deliveries.length} deliveries (lite)`);
+        } else {
+          throw new Error(lite.error || 'Failed to fetch deliveries');
+        }
+        setLoading(false);
+      }
+
+      // Phase 2 (slow): hydrate live tracking in background.
       const response = await fetch(url);
       const data = await response.json();
-      
       if (data.success) {
         setDeliveries(data.deliveries);
         setLastSync(new Date(data.lastSync));
+        hasLoadedOnceRef.current = true;
         console.log(`✅ Loaded ${data.deliveries.length} deliveries (${data.liveTrackingCount} with live data)`);
       } else {
         throw new Error(data.error || 'Failed to fetch deliveries');

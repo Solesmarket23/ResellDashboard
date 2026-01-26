@@ -75,6 +75,10 @@ export async function GET(request: NextRequest) {
     const userId = searchParams.get('userId');
     const testTrackingNumber = searchParams.get('trackingNumber');
     const clientPurchases = searchParams.get('purchases'); // New: Accept purchases from client
+    const includeLiveTracking =
+      searchParams.get('includeLiveTracking') === null
+        ? true
+        : searchParams.get('includeLiveTracking') !== '0' && searchParams.get('includeLiveTracking') !== 'false';
     
     if (!userId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
@@ -198,17 +202,30 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Extract tracking numbers
-    const trackingNumbers = purchasesWithTracking.map((purchase: any) => {
-      return purchase.tracking || 
-             purchase.trackingNumber || 
-             purchase.tracking_number ||
-             purchase.shipment?.tracking ||
-             purchase.shipment?.trackingNumber;
-    });
+    // Extract tracking numbers (deduped) - and skip live tracking calls for delivered items
+    const purchasesNeedingLiveTracking = includeLiveTracking
+      ? purchasesWithTracking.filter((p: any) => String(p?.status || '').toLowerCase() !== 'delivered')
+      : [];
+    const trackingNumbers = includeLiveTracking
+      ? Array.from(
+          new Set(
+            purchasesNeedingLiveTracking
+              .map((purchase: any) => {
+                return (
+                  purchase.tracking ||
+                  purchase.trackingNumber ||
+                  purchase.tracking_number ||
+                  purchase.shipment?.tracking ||
+                  purchase.shipment?.trackingNumber
+                );
+              })
+              .filter((v: any) => typeof v === 'string' && v.trim() !== '')
+          )
+        )
+      : [];
 
-    // Get live tracking data for all tracking numbers
-    const liveTrackingData = await trackingService.getBulkTrackingInfo(trackingNumbers);
+    // Get live tracking data for all tracking numbers (if enabled)
+    const liveTrackingData = includeLiveTracking ? await trackingService.getBulkTrackingInfo(trackingNumbers) : [];
     
     // Merge live tracking data with purchases
     const deliveriesWithLiveTracking = purchasesWithTracking.map((purchase: any) => {
@@ -352,7 +369,13 @@ export async function DELETE(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, forceRefresh = false, purchases: clientPurchases, fromLocalStorage = false } = await request.json();
+    const {
+      userId,
+      forceRefresh = false,
+      purchases: clientPurchases,
+      fromLocalStorage = false,
+      includeLiveTracking = true,
+    } = await request.json();
     
     if (!userId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
@@ -443,17 +466,30 @@ export async function POST(request: NextRequest) {
       ];
     }
 
-    // Extract tracking numbers
-    const trackingNumbers = purchasesWithTracking.map((purchase: any) => {
-      return purchase.tracking || 
-             purchase.trackingNumber || 
-             purchase.tracking_number ||
-             purchase.shipment?.tracking ||
-             purchase.shipment?.trackingNumber;
-    });
+    // Extract tracking numbers (deduped) - and skip live tracking calls for delivered items
+    const purchasesNeedingLiveTracking = includeLiveTracking
+      ? purchasesWithTracking.filter((p: any) => String(p?.status || '').toLowerCase() !== 'delivered')
+      : [];
+    const trackingNumbers = includeLiveTracking
+      ? Array.from(
+          new Set(
+            purchasesNeedingLiveTracking
+              .map((purchase: any) => {
+                return (
+                  purchase.tracking ||
+                  purchase.trackingNumber ||
+                  purchase.tracking_number ||
+                  purchase.shipment?.tracking ||
+                  purchase.shipment?.trackingNumber
+                );
+              })
+              .filter((v: any) => typeof v === 'string' && v.trim() !== '')
+          )
+        )
+      : [];
 
-    // Get live tracking data for all tracking numbers
-    const liveTrackingData = await trackingService.getBulkTrackingInfo(trackingNumbers);
+    // Get live tracking data for all tracking numbers (if enabled)
+    const liveTrackingData = includeLiveTracking ? await trackingService.getBulkTrackingInfo(trackingNumbers) : [];
     
     // Create delivery items with live tracking data
     const deliveries = purchasesWithTracking.map((purchase: any) => {
