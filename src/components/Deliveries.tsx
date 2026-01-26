@@ -487,6 +487,10 @@ const DeliveriesNew: React.FC = () => {
         throw new Error(data.error || 'Failed to send notification');
       }
 
+      if (data?.marketPriceDebug) {
+        console.log('📊 Slack marketPriceDebug:', data.marketPriceDebug);
+      }
+
       if (data.sent) {
         showNotification(
           `✅ Sent to Slack! ${data.summary.arrivingToday} arriving today, ${data.summary.arrivingTomorrow} tomorrow`,
