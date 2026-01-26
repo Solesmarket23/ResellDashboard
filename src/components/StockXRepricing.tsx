@@ -2153,7 +2153,11 @@ export default function StockXRepricing() {
   };
 
   // Save the pending pricing rule change (and any pending min/max bound edits) and run immediately
-  const savePricingRuleChange = async (listingId: string, overrideStrategy?: IndividualPricingStrategy) => {
+  const savePricingRuleChange = async (
+    listingId: string,
+    overrideStrategy?: IndividualPricingStrategy,
+    opts?: { suppressToast?: boolean; suppressBanner?: boolean; suppressRowState?: boolean }
+  ): Promise<boolean> => {
     console.log('💾 Save button clicked for listing:', listingId);
     
     const listing = listings.find(l => l.listingId === listingId);
@@ -2167,7 +2171,7 @@ export default function StockXRepricing() {
     
     if (!listing || !strategyToSave) {
       console.error('❌ Cannot save: missing listing');
-      return;
+      return false;
     }
 
     // IMPORTANT: On mobile Safari, tapping Save while a number input is focused can run
@@ -2188,18 +2192,24 @@ export default function StockXRepricing() {
     // For manual pricing, we require at least a Min bound as a safety rail.
     if (strategyToSave.type === 'manual') {
       if (!effectiveMin || effectiveMin <= 0) {
-        setBulkActionMessage('⚠️ Please enter a Min price before saving manual pricing');
-        setTimeout(() => setBulkActionMessage(null), 5000);
-        return;
+        if (!opts?.suppressBanner) {
+          setBulkActionMessage('⚠️ Please enter a Min price before saving manual pricing');
+          setTimeout(() => setBulkActionMessage(null), 5000);
+        }
+        if (!opts?.suppressToast) showToast('Min price required for Manual', 'error');
+        return false;
       }
     }
     
     // For all strategies: if min/max are provided, validate they make sense
     if (effectiveMin && effectiveMax) {
       if (effectiveMin >= effectiveMax) {
-        setBulkActionMessage('⚠️ Min price must be less than Max price');
-        setTimeout(() => setBulkActionMessage(null), 5000);
-        return;
+        if (!opts?.suppressBanner) {
+          setBulkActionMessage('⚠️ Min price must be less than Max price');
+          setTimeout(() => setBulkActionMessage(null), 5000);
+        }
+        if (!opts?.suppressToast) showToast('Min must be less than Max', 'error');
+        return false;
       }
     }
     
@@ -2245,7 +2255,7 @@ export default function StockXRepricing() {
     
     // Save to Firebase for all updated listings
     try {
-      setRowSaveState(prev => ({ ...prev, [listingId]: 'saving' }));
+      if (!opts?.suppressRowState) setRowSaveState(prev => ({ ...prev, [listingId]: 'saving' }));
       for (const l of listingsToUpdateWithBounds) {
         await saveSettingToFirebase(l.listingId, {
           pricingStrategy: strategyToSave,
@@ -2265,7 +2275,7 @@ export default function StockXRepricing() {
             'Two-step will run LIVE now.\n\nWarning: you have no Min/Max safety bounds set for this listing.\n\nRun anyway?'
           );
           if (!ok) {
-            showToast('Saved • Two-step • No bounds (not executed)', 'success');
+            if (!opts?.suppressToast) showToast('Saved • Two-step • No bounds (not executed)', 'success');
             // Remove from pending changes and exit early
             setPendingStrategyChanges(prev => {
               const newPending = { ...prev };
@@ -2278,11 +2288,13 @@ export default function StockXRepricing() {
               return next;
             });
             delete boundDraftRefByListingId.current[listingId];
-            setRowSaveState(prev => ({ ...prev, [listingId]: 'saved' }));
-            setTimeout(() => {
-              setRowSaveState(prev => ({ ...prev, [listingId]: 'idle' }));
-            }, 1200);
-            return;
+            if (!opts?.suppressRowState) {
+              setRowSaveState(prev => ({ ...prev, [listingId]: 'saved' }));
+              setTimeout(() => {
+                setRowSaveState(prev => ({ ...prev, [listingId]: 'idle' }));
+              }, 1200);
+            }
+            return true;
           }
         }
       }
@@ -2313,7 +2325,9 @@ export default function StockXRepricing() {
             : effectiveMax
               ? `Max $${effectiveMax}`
               : 'No bounds';
-      showToast(`Saved • ${strategyLabel} • ${boundsLabel}`, 'success');
+      if (!opts?.suppressToast) {
+        showToast(`Saved • ${strategyLabel} • ${boundsLabel}`, 'success');
+      }
       
       // Remove from pending changes
       setPendingStrategyChanges(prev => {
@@ -2329,14 +2343,18 @@ export default function StockXRepricing() {
       // Clear drafts for this row now that we've persisted.
       delete boundDraftRefByListingId.current[listingId];
 
-      setRowSaveState(prev => ({ ...prev, [listingId]: 'saved' }));
-      setTimeout(() => {
-        setRowSaveState(prev => ({ ...prev, [listingId]: 'idle' }));
-      }, 1500);
+      if (!opts?.suppressRowState) {
+        setRowSaveState(prev => ({ ...prev, [listingId]: 'saved' }));
+        setTimeout(() => {
+          setRowSaveState(prev => ({ ...prev, [listingId]: 'idle' }));
+        }, 1500);
+      }
+      return true;
     } catch (error) {
       console.error('Error saving pricing rule:', error);
-      showToast('Failed to save pricing rule. Please try again.', 'error');
-      setRowSaveState(prev => ({ ...prev, [listingId]: 'idle' }));
+      if (!opts?.suppressToast) showToast('Failed to save pricing rule. Please try again.', 'error');
+      if (!opts?.suppressRowState) setRowSaveState(prev => ({ ...prev, [listingId]: 'idle' }));
+      return false;
     }
   };
 
@@ -2651,17 +2669,20 @@ export default function StockXRepricing() {
       leaderIds.add(leaderId);
     }
 
-    for (const leaderId of Array.from(leaderIds.values())) {
-      void savePricingRuleChange(leaderId, newStrategy as any);
-    }
+    // Bulk mode: suppress per-row toasts/banners and emit ONE final toast.
+    const ids = Array.from(leaderIds.values());
+    const results = await Promise.all(
+      ids.map((leaderId) => savePricingRuleChange(leaderId, newStrategy as any, { suppressToast: true, suppressBanner: true, suppressRowState: true }))
+    );
+    const okCount = results.filter(Boolean).length;
+    const failCount = results.length - okCount;
 
-    const message =
-      rule === 'peek_focus'
-        ? `Applied Peek Focus to ${selectedListings.length} item${selectedListings.length > 1 ? 's' : ''}`
-        : `Applied Queue Focus to ${selectedListings.length} item${selectedListings.length > 1 ? 's' : ''}`;
-    
-    setBulkActionMessage(message);
-    setTimeout(() => setBulkActionMessage(null), 5000); // Clear after 5 seconds
+    const label = rule === 'peek_focus' ? 'Peek Focus' : 'Queue Focus';
+    if (failCount === 0) {
+      showToast(`Applied • ${label} • ${selectedListings.length} item${selectedListings.length > 1 ? 's' : ''}`, 'success');
+    } else {
+      showToast(`Applied • ${label} • ${okCount}/${results.length} groups saved (${failCount} failed)`, 'error');
+    }
     
     // Close the modal
     setShowBulkPricingModal(false);
