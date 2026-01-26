@@ -560,7 +560,11 @@ const DeliveriesNew: React.FC = () => {
     loadStatsSettings();
   }, [user]);
 
-  if (loading) {
+  // Only show the full-screen loader on the FIRST load.
+  // Background refreshes should be silent so the page doesn't "flash" every minute.
+  const initialLoading = loading && deliveries.length === 0;
+
+  if (initialLoading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
         <div className="text-center">

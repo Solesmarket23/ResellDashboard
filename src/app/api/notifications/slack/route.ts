@@ -404,6 +404,10 @@ export async function POST(request: NextRequest) {
       d.status === 'in_transit' || d.status === 'shipped' || d.status === 'out_for_delivery'
     ).length;
 
+    const projectedProfitToday = deliveries
+      .filter(d => d.estimatedDelivery === todayStr || d.status === 'out_for_delivery')
+      .reduce((sum, d) => sum + (typeof d.estimatedProfit === 'number' && Number.isFinite(d.estimatedProfit) ? d.estimatedProfit : 0), 0);
+
     // Send notification
     if (type === 'daily_summary') {
       await slackService.sendDeliverySummary({
@@ -412,6 +416,7 @@ export async function POST(request: NextRequest) {
         arrivingTomorrow,
         arrivingThisWeek,
         inTransit,
+        projectedProfitToday,
         deliveries
       });
     }

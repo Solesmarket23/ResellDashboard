@@ -9,6 +9,7 @@ export interface DeliverySummary {
   arrivingTomorrow: number;
   arrivingThisWeek: number;
   inTransit: number;
+  projectedProfitToday?: number;
   deliveries: Array<{
     productName: string;
     productBrand: string;
@@ -114,7 +115,11 @@ export class SlackNotificationService {
       }
     });
 
-    // Summary stats - removed Total Deliveries
+    // Summary stats
+    const profitToday =
+      typeof summary.projectedProfitToday === 'number' && Number.isFinite(summary.projectedProfitToday)
+        ? summary.projectedProfitToday
+        : null;
     blocks.push({
       type: 'section',
       fields: [
@@ -129,7 +134,15 @@ export class SlackNotificationService {
         {
           type: 'mrkdwn',
           text: `*Arriving This Week:*\n📆 ${summary.arrivingThisWeek || 0}`
-        }
+        },
+        ...(profitToday !== null
+          ? [
+              {
+                type: 'mrkdwn',
+                text: `*Projected Profit (Today):*\n💰 $${profitToday.toFixed(2)}`
+              }
+            ]
+          : [])
       ]
     });
 
