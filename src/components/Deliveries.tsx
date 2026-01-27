@@ -532,15 +532,20 @@ const DeliveriesNew: React.FC = () => {
         }
       }
 
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 45_000);
+
       const res = await fetch('/api/notifications/slack', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           userId: user.uid,
           type: 'daily_summary',
           purchases // Send purchases for localStorage users
         })
       });
+      window.clearTimeout(timeout);
 
       const data = await res.json();
 
@@ -564,6 +569,11 @@ const DeliveriesNew: React.FC = () => {
       console.error('Failed to send Slack notification:', e);
       const errorMsg = e instanceof Error ? e.message : 'Unknown error';
       
+      if (String((e as any)?.name || '').toLowerCase().includes('abort')) {
+        showNotification('Slack send timed out — try again (or reduce the number of tracked items)', 'error');
+        return;
+      }
+
       if (errorMsg.includes('not configured')) {
         showNotification('Slack not configured. Add SLACK_WEBHOOK_URL to .env.local', 'error');
       } else {

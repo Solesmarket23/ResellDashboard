@@ -291,13 +291,28 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
-        const trackingNumbers = purchasesWithTracking.map((p: any) => p.tracking || p.trackingNumber || p.tracking_number || p.shipment?.tracking || p.shipment?.trackingNumber);
-        const liveTrackingData = await trackingService.getBulkTrackingInfo(trackingNumbers);
+        // Only fetch live tracking for purchases that aren't already delivered, and dedupe tracking numbers.
+        const purchasesNeedingLiveTracking = purchasesWithTracking.filter((p: any) => {
+          const status = String(p?.status || p?.shippingStatus || '').toLowerCase().trim();
+          return status !== 'delivered';
+        });
+        const trackingNumbers = Array.from(
+          new Set(
+            purchasesNeedingLiveTracking
+              .map((p: any) => p.tracking || p.trackingNumber || p.tracking_number || p.shipment?.tracking || p.shipment?.trackingNumber)
+              .filter((t: any) => t && String(t).trim() !== '' && t !== 'TBD')
+              .map((t: any) => String(t).trim())
+          )
+        );
+        const liveTrackingData = trackingNumbers.length > 0 ? await trackingService.getBulkTrackingInfo(trackingNumbers) : [];
+        const liveTrackingByNumber = new Map<string, any>(
+          (liveTrackingData || []).map((lt: any) => [String(lt?.trackingNumber || '').trim(), lt])
+        );
 
         const deliveries = await Promise.all(
           purchasesWithTracking.map(async (purchase: any) => {
             const trackingValue = purchase.tracking || purchase.trackingNumber || purchase.tracking_number || purchase.shipment?.tracking || purchase.shipment?.trackingNumber;
-            const liveTracking = liveTrackingData.find((lt: any) => lt.trackingNumber === trackingValue);
+            const liveTracking = liveTrackingByNumber.get(String(trackingValue || '').trim());
 
             let status = String(purchase.status || '').toLowerCase() || 'shipped';
             if (liveTracking && !liveTracking.error) status = liveTracking.status;

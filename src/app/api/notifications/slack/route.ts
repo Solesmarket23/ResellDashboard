@@ -242,14 +242,26 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Get tracking numbers
-    const trackingNumbers = purchasesWithTracking.map((purchase: any) => 
-      purchase.tracking || purchase.trackingNumber || purchase.tracking_number
+    // Get live tracking data ONLY for purchases that aren't already delivered, and dedupe tracking numbers.
+    const purchasesNeedingLiveTracking = purchasesWithTracking.filter((purchase: any) => {
+      const status = String(purchase?.status || purchase?.shippingStatus || '').toLowerCase().trim();
+      return status !== 'delivered';
+    });
+    const trackingNumbers = Array.from(
+      new Set(
+        purchasesNeedingLiveTracking
+          .map((purchase: any) => purchase.tracking || purchase.trackingNumber || purchase.tracking_number)
+          .filter((t: any) => t && String(t).trim() !== '' && t !== 'TBD')
+          .map((t: any) => String(t).trim())
+      )
     );
 
-    // Get live tracking data
-    console.log(`🔄 Fetching live tracking data for ${trackingNumbers.length} packages`);
-    const liveTrackingData = await trackingService.getBulkTrackingInfo(trackingNumbers);
+    console.log(`🔄 Fetching live tracking data for ${trackingNumbers.length} packages (non-delivered only)`);
+    const liveTrackingData =
+      trackingNumbers.length > 0 ? await trackingService.getBulkTrackingInfo(trackingNumbers) : [];
+    const liveTrackingByNumber = new Map<string, any>(
+      (liveTrackingData || []).map((lt: any) => [String(lt?.trackingNumber || '').trim(), lt])
+    );
 
     const getBaseUrl = () => {
       const host = request.headers.get('host') || '';
@@ -351,7 +363,7 @@ export async function POST(request: NextRequest) {
     
     const deliveries = await Promise.all(purchasesWithTracking.map(async (purchase: any) => {
       const trackingValue = purchase.tracking || purchase.trackingNumber || purchase.tracking_number;
-      const liveTracking = liveTrackingData.find(lt => lt.trackingNumber === trackingValue);
+      const liveTracking = liveTrackingByNumber.get(String(trackingValue || '').trim());
       
       // Determine status from live tracking or purchase status
       let status = purchase.status?.toLowerCase() || 'shipped';
