@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createSlackService } from '@/lib/notifications/slackService';
+import { SlackNotificationService, createSlackService } from '@/lib/notifications/slackService';
 import { getDocumentsServer } from '@/lib/firebase/firebaseServerUtils';
 import { trackingService } from '@/lib/tracking/trackingService';
 import { getAdminDb } from '@/lib/firebase/firebaseAdmin';
@@ -41,6 +41,24 @@ function extractBrandFromProductName(productName: string): string {
   return firstWord || 'Unknown';
 }
 
+function normalizeStockXShoeSize(raw: unknown): string {
+  const s = String(raw ?? '').trim();
+  if (!s) return 'Unknown';
+  if (s.toLowerCase() === 'unknown') return 'Unknown';
+  // Prefer numeric shoe size if present: "US M 8.5" -> "8.5"
+  const m = s.match(/(\d+(?:\.\d+)?)/);
+  if (m) return m[1];
+  return s.replace(/^US\s+[MW]\s+/i, '').trim();
+}
+
+function isOnTheWayStatus(statusRaw: unknown): boolean {
+  const s = String(statusRaw ?? '').toLowerCase().trim();
+  if (!s) return true; // treat missing as "in progress"
+  // Exclude clearly-not-on-the-way states
+  if (s === 'delivered' || s === 'returned' || s === 'cancelled' || s === 'canceled') return false;
+  return true;
+}
+
 async function getStockXAuthForUser(request: NextRequest, userId: string): Promise<{ apiKey: string; accessToken?: string; refreshToken?: string } | null> {
   const apiKey = process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID;
   if (!apiKey) return null;
@@ -80,12 +98,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
     }
 
-    // Create Slack service
-    const slackService = createSlackService();
+    // Create Slack service (prefer per-user Deliveries Slack settings; fallback to env)
+    let slackService: SlackNotificationService | null = null;
+    try {
+      const db = getAdminDb();
+      const snap = await db.collection('users').doc(userId).get();
+      const data = snap.exists ? (snap.data() as any) : null;
+      const webhookUrl = String(data?.deliveriesSlack?.webhookUrl || '').trim();
+      if (webhookUrl) {
+        slackService = new SlackNotificationService({ webhookUrl, username: 'Delivery Tracker', iconEmoji: ':package:' });
+      }
+    } catch {
+      // ignore and fall back to env
+    }
+    slackService = slackService || createSlackService();
     if (!slackService) {
-      return NextResponse.json({ 
-        error: 'Slack not configured. Please set SLACK_WEBHOOK_URL in .env.local' 
-      }, { status: 500 });
+      return NextResponse.json(
+        { error: 'Slack not configured. Add a webhook in Deliveries settings (or set SLACK_WEBHOOK_URL).' },
+        { status: 500 }
+      );
     }
 
     console.log(`📨 Sending Slack notification (${type}) for user: ${userId}`);
@@ -180,7 +211,8 @@ export async function POST(request: NextRequest) {
       }
     }
     const stockxSem = new Semaphore(3);
-    const ACTIVE_STATUSES = new Set(['shipped', 'in_transit', 'out_for_delivery']);
+    // We want market prices for anything "on the way" (not just a narrow carrier-status subset).
+    // Many tracking APIs return UNKNOWN/LABEL_CREATED/etc, which should still count as on-the-way.
     const marketCache = new Map<string, Promise<ReturnType<typeof fetchStockXMarketPriceDetailed>>>();
     let stockxRateLimited = false;
 
@@ -270,7 +302,8 @@ export async function POST(request: NextRequest) {
       }
 
       const productName = purchase.productName || purchase.product?.name || 'Unknown Product';
-      const productSize = purchase.productSize || purchase.size || purchase.product?.size || 'Unknown';
+      const productSizeRaw = purchase.productSize || purchase.size || purchase.product?.size || 'Unknown';
+      const productSize = normalizeStockXShoeSize(productSizeRaw);
       const styleId = purchase.styleId || purchase.style_id || null;
       const purchaseId = String(purchase.id || purchase.purchaseId || purchase.orderNumber || trackingValue || '').trim();
       
@@ -324,8 +357,8 @@ export async function POST(request: NextRequest) {
       
       // If no market price cached, fetch real-time from StockX (prioritize styleId for accuracy!)
       if (marketPrice === undefined) {
-        // Only fetch market prices for "active" shipments (used for on-the-way totals + section)
-        if (!ACTIVE_STATUSES.has(String(status || '').toLowerCase())) {
+        // Only skip if it's clearly not on the way (delivered/cancelled/etc)
+        if (!isOnTheWayStatus(status)) {
           marketDebug.skippedNotActive++;
         } else {
         const auth = await getStockXAuthForUser(request, userId);

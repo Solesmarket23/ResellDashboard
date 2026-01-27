@@ -265,10 +265,14 @@ export class SlackNotificationService {
 
     blocks.push({ type: 'divider' });
 
-    // On the way (all active shipments): show per-item market/purchase/profit so you can sanity-check totals.
-    const onTheWay = summary.deliveries.filter(d =>
-      ['shipped', 'in_transit', 'out_for_delivery'].includes(String(d.status || '').toLowerCase())
-    );
+    // On the way: show per-item market/purchase/profit so you can sanity-check totals.
+    // Don't restrict to only shipped/in_transit/out_for_delivery; carriers frequently report UNKNOWN/LABEL_CREATED/etc.
+    const onTheWay = summary.deliveries.filter((d) => {
+      const s = String(d.status || '').toLowerCase().trim();
+      if (!s) return true;
+      if (s === 'delivered' || s === 'returned' || s === 'cancelled' || s === 'canceled') return false;
+      return true;
+    });
     if (onTheWay.length > 0) {
       blocks.push({
         type: 'section',

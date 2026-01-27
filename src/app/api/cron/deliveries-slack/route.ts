@@ -39,6 +39,22 @@ function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
+function normalizeStockXShoeSize(raw: unknown): string {
+  const s = String(raw ?? '').trim();
+  if (!s) return 'Unknown';
+  if (s.toLowerCase() === 'unknown') return 'Unknown';
+  const m = s.match(/(\d+(?:\.\d+)?)/);
+  if (m) return m[1];
+  return s.replace(/^US\s+[MW]\s+/i, '').trim();
+}
+
+function isOnTheWayStatus(statusRaw: unknown): boolean {
+  const s = String(statusRaw ?? '').toLowerCase().trim();
+  if (!s) return true;
+  if (s === 'delivered' || s === 'returned' || s === 'cancelled' || s === 'canceled') return false;
+  return true;
+}
+
 export async function GET(request: NextRequest) {
   try {
     if (!verifyCron(request)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
@@ -139,7 +155,8 @@ export async function GET(request: NextRequest) {
           }
         }
         const stockxSem = new Semaphore(3);
-        const ACTIVE_STATUSES = new Set(['shipped', 'in_transit', 'out_for_delivery']);
+        // We want market prices for anything "on the way" (not only shipped/in_transit/out_for_delivery),
+        // because carriers often return UNKNOWN/LABEL_CREATED/etc.
         const marketCache = new Map<string, Promise<any>>();
         let stockxRateLimited = false;
 
@@ -214,7 +231,8 @@ export async function GET(request: NextRequest) {
             }
 
             const productName = purchase.productName || purchase.product?.name || 'Unknown Product';
-            const productSize = purchase.productSize || purchase.size || purchase.product?.size || 'Unknown';
+            const productSizeRaw = purchase.productSize || purchase.size || purchase.product?.size || 'Unknown';
+            const productSize = normalizeStockXShoeSize(productSizeRaw);
             const styleId = purchase.styleId || purchase.style_id || null;
 
             let purchasePrice: number | undefined;
@@ -236,7 +254,7 @@ export async function GET(request: NextRequest) {
               const n = typeof cached === 'number' ? cached : parseFloat(cached);
               if (Number.isFinite(n) && n > 0) marketPrice = n;
             }
-            if (!marketPrice && ACTIVE_STATUSES.has(String(status || '').toLowerCase())) {
+            if (!marketPrice && isOnTheWayStatus(status)) {
               const result = await fetchMarketWithControls({ productName, size: productSize, styleId });
               if (result.price) marketPrice = result.price;
             }
