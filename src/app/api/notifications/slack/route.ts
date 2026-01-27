@@ -266,6 +266,21 @@ export async function POST(request: NextRequest) {
     const getBaseUrl = () => {
       const host = request.headers.get('host') || '';
       if (host.includes('solesmarket.com')) return 'https://www.solesmarket.com';
+      // Slack links must be publicly reachable. If we're on localhost or an ngrok host,
+      // prefer an explicit public base URL (or default to production).
+      if (host.includes('localhost') || host.includes('127.0.0.1') || host.includes('ngrok')) {
+        const explicit =
+          process.env.SLACK_LINK_BASE_URL ||
+          process.env.NEXT_PUBLIC_BASE_URL ||
+          process.env.NEXT_PUBLIC_APP_URL ||
+          process.env.APP_URL ||
+          '';
+        if (explicit) {
+          if (!explicit.startsWith('http://') && !explicit.startsWith('https://')) return `https://${explicit}`;
+          return explicit;
+        }
+        return 'https://www.solesmarket.com';
+      }
       const envUrl =
         process.env.NEXT_PUBLIC_BASE_URL ||
         process.env.NEXT_PUBLIC_APP_URL ||
