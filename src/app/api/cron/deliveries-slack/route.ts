@@ -111,6 +111,25 @@ function extractStockXUrlKeyFromPurchase(purchase: any): string | null {
   return null;
 }
 
+function extractStockXIdsFromPurchase(purchase: any): { productId?: string; variantId?: string } {
+  const pid =
+    purchase?.stockxProductId ||
+    purchase?.productId ||
+    purchase?.product?.productId ||
+    purchase?.product?.id ||
+    undefined;
+  const vid =
+    purchase?.stockxVariantId ||
+    purchase?.variantId ||
+    purchase?.variant?.variantId ||
+    purchase?.variant?.id ||
+    undefined;
+
+  const productId = typeof pid === 'string' && pid.trim() ? pid.trim() : undefined;
+  const variantId = typeof vid === 'string' && vid.trim() ? vid.trim() : undefined;
+  return { productId, variantId };
+}
+
 export async function GET(request: NextRequest) {
   try {
     if (!verifyCron(request)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
@@ -221,9 +240,11 @@ export async function GET(request: NextRequest) {
           size: string;
           styleId?: string | null;
           urlKey?: string | null;
+          productId?: string;
+          variantId?: string;
         }) => {
           if (stockxRateLimited) return { price: null, reason: 'rate_limited_short_circuit' };
-          const key = `${String(args.urlKey || '').trim()}|${String(args.styleId || '').trim()}|${args.productName}|${args.size}`.toLowerCase();
+          const key = `${String(args.productId || '').trim()}|${String(args.variantId || '').trim()}|${String(args.urlKey || '').trim()}|${String(args.styleId || '').trim()}|${args.productName}|${args.size}`.toLowerCase();
           const existing = marketCache.get(key);
           if (existing) return existing;
           const p = (async () => {
@@ -235,6 +256,8 @@ export async function GET(request: NextRequest) {
                 size: args.size,
                 styleId: args.styleId,
                 urlKey: args.urlKey,
+                productId: args.productId,
+                variantId: args.variantId,
               });
               if (result.reason === 'search_http_error' && result.httpStatus === 429) stockxRateLimited = true;
               return result;
@@ -293,6 +316,7 @@ export async function GET(request: NextRequest) {
             const productSize = normalizeStockXShoeSize(productSizeRaw);
             const styleId = purchase.styleId || purchase.style_id || null;
             const urlKey = extractStockXUrlKeyFromPurchase(purchase);
+            const ids = extractStockXIdsFromPurchase(purchase);
 
             let purchasePrice: number | undefined;
             if (purchase.total_amount !== undefined) purchasePrice = typeof purchase.total_amount === 'number' ? purchase.total_amount : parseFloat(purchase.total_amount);
@@ -314,8 +338,38 @@ export async function GET(request: NextRequest) {
               if (Number.isFinite(n) && n > 0) marketPrice = n;
             }
             if (!marketPrice && isOnTheWayStatus(status)) {
-              const result = await fetchMarketWithControls({ productName, size: productSize, styleId, urlKey });
-              if (result.price) marketPrice = result.price;
+              const result = await fetchMarketWithControls({
+                productName,
+                size: productSize,
+                styleId,
+                urlKey,
+                productId: ids.productId,
+                variantId: ids.variantId,
+              });
+              if (result.price) {
+                marketPrice = result.price;
+                // Backfill for future runs (best-effort)
+                const docId = typeof purchase?.id === 'string' ? purchase.id.trim() : '';
+                if (docId) {
+                  try {
+                    await db
+                      .collection('purchases')
+                      .doc(docId)
+                      .set(
+                        {
+                          stockxProductId: result.productId || ids.productId || null,
+                          stockxVariantId: result.variantId || ids.variantId || null,
+                          stockxUrlKey: result.urlKey || urlKey || null,
+                          marketPrice: result.price,
+                          marketPriceUpdatedAt: new Date().toISOString(),
+                        },
+                        { merge: true }
+                      );
+                  } catch {
+                    // non-fatal
+                  }
+                }
+              }
             }
             if (marketPrice !== undefined && (!Number.isFinite(marketPrice) || marketPrice <= 0)) {
               marketPrice = undefined;

@@ -158,6 +158,8 @@ export async function fetchStockXMarketPriceDetailed(args: {
   size: string;
   styleId?: string | null;
   urlKey?: string | null;
+  productId?: string | null;
+  variantId?: string | null;
 }): Promise<StockXMarketPriceResult> {
   const searchTerms = buildSearchTerms({ urlKey: args.urlKey, styleId: args.styleId, productName: args.productName });
   if (searchTerms.length === 0) return { price: null, reason: 'missing_search_term' };
@@ -180,6 +182,59 @@ export async function fetchStockXMarketPriceDetailed(args: {
   const apiKey = args.auth.apiKey;
 
   try {
+    // Fast path: if we already know productId+variantId (repricer-style), skip catalog search entirely.
+    const directProductId = args.productId ? String(args.productId).trim() : '';
+    const directVariantId = args.variantId ? String(args.variantId).trim() : '';
+    if (directProductId && directVariantId) {
+      const variantMarketUrl = `https://api.stockx.com/v2/catalog/products/${directProductId}/variants/${directVariantId}/market-data`;
+      const vmRes = await stockxFetchWithRetry(variantMarketUrl, { apiKey, accessToken });
+      if (!vmRes.ok) {
+        return {
+          price: null,
+          reason: 'market_http_error',
+          stage: 'market',
+          httpStatus: vmRes.status,
+          details: 'direct_variant_market_data',
+          productId: directProductId,
+          variantId: directVariantId,
+          urlKey: args.urlKey || undefined,
+        };
+      }
+      const vmData = await vmRes.json().catch(() => null);
+      const variantData = Array.isArray(vmData)
+        ? vmData.find((item: any) => String(item?.variantId) === String(directVariantId))
+        : vmData;
+      if (!variantData) {
+        return {
+          price: null,
+          reason: 'no_variant',
+          stage: 'market',
+          productId: directProductId,
+          variantId: directVariantId,
+          urlKey: args.urlKey || undefined,
+        };
+      }
+      const price = lowestAskFromVariant(variantData);
+      if (price === null) {
+        return {
+          price: null,
+          reason: 'no_price',
+          stage: 'market',
+          productId: directProductId,
+          variantId: directVariantId,
+          urlKey: args.urlKey || undefined,
+        };
+      }
+      return {
+        price,
+        reason: 'ok',
+        details: 'direct_variant_market_data',
+        productId: directProductId,
+        variantId: directVariantId,
+        urlKey: args.urlKey || undefined,
+      };
+    }
+
     let productId: string | null = null;
     let urlKey: string | null = null;
     let termUsed: string | null = null;

@@ -120,6 +120,25 @@ function extractStockXUrlKeyFromPurchase(purchase: any): string | null {
   return null;
 }
 
+function extractStockXIdsFromPurchase(purchase: any): { productId?: string; variantId?: string } {
+  const pid =
+    purchase?.stockxProductId ||
+    purchase?.productId ||
+    purchase?.product?.productId ||
+    purchase?.product?.id ||
+    undefined;
+  const vid =
+    purchase?.stockxVariantId ||
+    purchase?.variantId ||
+    purchase?.variant?.variantId ||
+    purchase?.variant?.id ||
+    undefined;
+
+  const productId = typeof pid === 'string' && pid.trim() ? pid.trim() : undefined;
+  const variantId = typeof vid === 'string' && vid.trim() ? vid.trim() : undefined;
+  return { productId, variantId };
+}
+
 async function getStockXAuthForUser(request: NextRequest, userId: string): Promise<{ apiKey: string; accessToken?: string; refreshToken?: string } | null> {
   const apiKey = process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID;
   if (!apiKey) return null;
@@ -295,6 +314,8 @@ export async function POST(request: NextRequest) {
       size: string;
       styleId?: string | null;
       urlKey?: string | null;
+      productId?: string;
+      variantId?: string;
     }) => {
       if (stockxRateLimited) {
         marketDebug.skippedRateLimited++;
@@ -303,7 +324,7 @@ export async function POST(request: NextRequest) {
         return { price: null } as any;
       }
 
-      const key = `${String(args.urlKey || '').trim()}|${String(args.styleId || '').trim()}|${args.productName}|${args.size}`.toLowerCase();
+      const key = `${String(args.productId || '').trim()}|${String(args.variantId || '').trim()}|${String(args.urlKey || '').trim()}|${String(args.styleId || '').trim()}|${args.productName}|${args.size}`.toLowerCase();
       const existing = marketCache.get(key);
       if (existing) return existing;
 
@@ -368,6 +389,7 @@ export async function POST(request: NextRequest) {
       const productSize = normalizeStockXShoeSize(productSizeRaw);
       const styleId = purchase.styleId || purchase.style_id || null;
       const urlKey = extractStockXUrlKeyFromPurchase(purchase);
+      const ids = extractStockXIdsFromPurchase(purchase);
       const purchaseId = String(purchase.id || purchase.purchaseId || purchase.orderNumber || trackingValue || '').trim();
       
       // Extract brand from product name
@@ -440,12 +462,38 @@ export async function POST(request: NextRequest) {
               productName,
               size: productSize,
               styleId,
-              urlKey
+              urlKey,
+              productId: ids.productId,
+              variantId: ids.variantId,
             });
             if (result.price) {
               marketPrice = result.price;
               marketDebug.fetchedOk++;
               console.log(`✅ Real-time price fetched: ${productName}${styleId ? ` (StyleId: ${styleId})` : ''} = $${marketPrice}`);
+
+              // Best-effort backfill so next time we can use the repricer-style direct market-data call.
+              // Only applies when the purchase came from Firebase (so it has a Firestore doc id at purchase.id).
+              const docId = typeof purchase?.id === 'string' ? purchase.id.trim() : '';
+              if (docId) {
+                try {
+                  const db = getAdminDb();
+                  await db
+                    .collection('purchases')
+                    .doc(docId)
+                    .set(
+                      {
+                        stockxProductId: result.productId || ids.productId || null,
+                        stockxVariantId: result.variantId || ids.variantId || null,
+                        stockxUrlKey: result.urlKey || urlKey || null,
+                        marketPrice: result.price,
+                        marketPriceUpdatedAt: new Date().toISOString(),
+                      },
+                      { merge: true }
+                    );
+                } catch {
+                  // non-fatal
+                }
+              }
             } else {
               marketDebug.failedByReason[result.reason] = (marketDebug.failedByReason[result.reason] || 0) + 1;
               if (typeof result.httpStatus === 'number') {
