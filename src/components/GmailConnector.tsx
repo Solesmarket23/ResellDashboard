@@ -10,9 +10,16 @@ interface GmailConnectorProps {
   connectedDescription?: string;
   connectDescription?: string;
   variant?: 'full' | 'compact';
+  className?: string;
 }
 
-const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange, connectedDescription, connectDescription, variant = 'full' }) => {
+const GmailConnector: React.FC<GmailConnectorProps> = ({
+  onConnectionChange,
+  connectedDescription,
+  connectDescription,
+  variant = 'full',
+  className = ''
+}) => {
   const { currentTheme } = useTheme();
   const { user } = useAuth();
   const [isConnected, setIsConnected] = useState(false);
@@ -272,7 +279,7 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange, con
     if (variant === 'compact') {
       return (
         <div
-          className={`rounded-xl border px-4 py-3 flex items-center justify-between gap-3 ${
+          className={`rounded-xl border px-4 py-3 flex items-center justify-between gap-3 ${className} ${
             isNeonTheme
               ? 'bg-emerald-500/10 border-emerald-500/25 shadow-md shadow-emerald-500/10'
               : 'bg-green-50 border-green-200 shadow-sm'
@@ -327,7 +334,7 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange, con
       );
     }
     return (
-      <div className={`relative overflow-hidden rounded-xl border transition-all duration-300 ${ 
+      <div className={`relative overflow-hidden rounded-xl border transition-all duration-300 ${className} ${ 
         isNeonTheme 
           ? 'bg-gradient-to-br from-emerald-500/10 via-green-500/10 to-teal-500/10 border-emerald-500/30 shadow-lg shadow-emerald-500/10' 
           : 'bg-gradient-to-br from-green-50 to-emerald-50 border-green-200 shadow-sm'
@@ -541,7 +548,7 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange, con
   return (
     variant === 'compact' ? (
       <div
-        className={`rounded-xl border px-4 py-3 flex items-center justify-between gap-3 ${
+        className={`rounded-xl border px-4 py-3 flex items-center justify-between gap-3 ${className} ${
           isNeonTheme
             ? 'bg-blue-500/10 border-blue-500/25 shadow-md shadow-blue-500/10'
             : 'bg-blue-50 border-blue-200 shadow-sm'
@@ -582,7 +589,7 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange, con
         </button>
       </div>
     ) : (
-    <div className={`relative overflow-hidden rounded-xl border transition-all duration-300 hover:shadow-lg ${ 
+    <div className={`relative overflow-hidden rounded-xl border transition-all duration-300 hover:shadow-lg ${className} ${ 
       isNeonTheme 
         ? 'bg-gradient-to-br from-blue-500/10 via-indigo-500/10 to-purple-500/10 border-blue-500/30 shadow-md hover:shadow-blue-500/20' 
         : 'bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 shadow-sm hover:shadow-md'

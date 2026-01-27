@@ -1126,12 +1126,15 @@ export default function StockXCoupons() {
             </button>
           </div>
         </div>
-        <GmailConnector
-          onConnectionChange={setGmailConnected}
-          connectDescription="Connect Gmail to find StockX coupon emails."
-          connectedDescription="Gmail connected — coupon emails can now be fetched."
-          variant={gmailBannerMode}
-        />
+        <div className={gmailBannerMode === 'compact' ? 'flex justify-start' : ''}>
+          <GmailConnector
+            onConnectionChange={setGmailConnected}
+            connectDescription="Connect Gmail to find StockX coupon emails."
+            connectedDescription="Gmail connected — coupon emails can now be fetched."
+            variant={gmailBannerMode}
+            className={gmailBannerMode === 'compact' ? 'w-full max-w-2xl' : 'w-full'}
+          />
+        </div>
       </div>
 
       <div
