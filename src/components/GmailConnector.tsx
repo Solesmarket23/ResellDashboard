@@ -9,9 +9,10 @@ interface GmailConnectorProps {
   onConnectionChange?: (connected: boolean) => void;
   connectedDescription?: string;
   connectDescription?: string;
+  variant?: 'full' | 'compact';
 }
 
-const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange, connectedDescription, connectDescription }) => {
+const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange, connectedDescription, connectDescription, variant = 'full' }) => {
   const { currentTheme } = useTheme();
   const { user } = useAuth();
   const [isConnected, setIsConnected] = useState(false);
@@ -268,6 +269,63 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange, con
   }
 
   if (isConnected) {
+    if (variant === 'compact') {
+      return (
+        <div
+          className={`rounded-xl border px-4 py-3 flex items-center justify-between gap-3 ${
+            isNeonTheme
+              ? 'bg-emerald-500/10 border-emerald-500/25 shadow-md shadow-emerald-500/10'
+              : 'bg-green-50 border-green-200 shadow-sm'
+          }`}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div
+              className={`flex items-center justify-center w-9 h-9 rounded-full flex-shrink-0 ${
+                isNeonTheme ? 'bg-emerald-500/20 ring-1 ring-emerald-500/40' : 'bg-green-100 ring-1 ring-green-300'
+              }`}
+              aria-hidden="true"
+            >
+              <img src="/google-g.svg" alt="" className="w-4 h-4" loading="lazy" decoding="async" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className={`font-semibold text-sm ${isNeonTheme ? 'text-emerald-300' : 'text-green-800'}`}>
+                  Gmail Connected
+                </span>
+                <span
+                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${
+                    isNeonTheme
+                      ? 'bg-emerald-500/15 text-emerald-200 border-emerald-500/25'
+                      : 'bg-green-100 text-green-700 border-green-300'
+                  }`}
+                >
+                  Active
+                </span>
+                {daysRemaining !== null ? (
+                  <span className={`text-[11px] ${isNeonTheme ? 'text-emerald-300/70' : 'text-green-700/80'}`}>
+                    {daysRemaining > 1 ? `${daysRemaining}d` : daysRemaining === 1 ? '1d' : '0d'}
+                  </span>
+                ) : null}
+              </div>
+              <div className={`text-xs truncate ${isNeonTheme ? 'text-emerald-300/70' : 'text-green-700/80'}`}>
+                {connectedDescription || 'Gmail connected'}
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={disconnectFromGmail}
+            className={`px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-200 whitespace-nowrap ${
+              isNeonTheme
+                ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-200 border border-emerald-500/30'
+                : 'bg-white hover:bg-green-50 text-green-700 border border-green-300 shadow-sm'
+            }`}
+          >
+            Disconnect
+          </button>
+        </div>
+      );
+    }
     return (
       <div className={`relative overflow-hidden rounded-xl border transition-all duration-300 ${ 
         isNeonTheme 
@@ -481,6 +539,49 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange, con
   }
 
   return (
+    variant === 'compact' ? (
+      <div
+        className={`rounded-xl border px-4 py-3 flex items-center justify-between gap-3 ${
+          isNeonTheme
+            ? 'bg-blue-500/10 border-blue-500/25 shadow-md shadow-blue-500/10'
+            : 'bg-blue-50 border-blue-200 shadow-sm'
+        }`}
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <div
+            className={`flex items-center justify-center w-9 h-9 rounded-full flex-shrink-0 ${
+              isNeonTheme ? 'bg-blue-500/20 ring-1 ring-blue-500/40' : 'bg-blue-100 ring-1 ring-blue-300'
+            }`}
+            aria-hidden="true"
+          >
+            <Mail className={`w-4 h-4 ${isNeonTheme ? 'text-blue-300' : 'text-blue-700'}`} />
+          </div>
+          <div className="min-w-0">
+            <div className={`font-semibold text-sm ${isNeonTheme ? 'text-blue-200' : 'text-blue-900'}`}>Gmail</div>
+            <div className={`text-xs truncate ${isNeonTheme ? 'text-blue-200/70' : 'text-blue-800/70'}`}>
+              {connectDescription || 'Connect to fetch coupon emails'}
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={connectToGmail}
+          disabled={isConnecting}
+          className={`px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-200 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${
+            `${currentTheme.colors.primary} ${currentTheme.colors.primaryHover} text-white shadow-sm`
+          }`}
+        >
+          {isConnecting ? (
+            <span className="flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Connecting...
+            </span>
+          ) : (
+            <span>Connect</span>
+          )}
+        </button>
+      </div>
+    ) : (
     <div className={`relative overflow-hidden rounded-xl border transition-all duration-300 hover:shadow-lg ${ 
       isNeonTheme 
         ? 'bg-gradient-to-br from-blue-500/10 via-indigo-500/10 to-purple-500/10 border-blue-500/30 shadow-md hover:shadow-blue-500/20' 
@@ -532,6 +633,7 @@ const GmailConnector: React.FC<GmailConnectorProps> = ({ onConnectionChange, con
         </button>
       </div>
     </div>
+    )
   );
 };
 

@@ -13,6 +13,7 @@ type CouponSource = 'gmail' | 'manual';
 type SortMode = 'expiring_available' | 'sent_newest' | 'expired_only';
 type CouponBenefit = 'amount_off' | 'free_shipping' | 'half_off_shipping';
 type ViewMode = 'list' | 'table';
+type GmailBannerMode = 'full' | 'compact';
 
 type Coupon = {
   code: string;
@@ -122,6 +123,15 @@ export default function StockXCoupons() {
       return 'table';
     } catch {
       return 'table';
+    }
+  });
+  const [gmailBannerMode, setGmailBannerMode] = useState<GmailBannerMode>(() => {
+    if (typeof window === 'undefined') return 'full';
+    try {
+      const v = localStorage.getItem('stockxCoupons_gmailBannerMode');
+      return v === 'compact' || v === 'full' ? (v as GmailBannerMode) : 'full';
+    } catch {
+      return 'full';
     }
   });
   const [hideSubject, setHideSubject] = useState<boolean>(() => {
@@ -414,6 +424,15 @@ export default function StockXCoupons() {
       // ignore
     }
   }, [viewMode]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem('stockxCoupons_gmailBannerMode', gmailBannerMode);
+    } catch {
+      // ignore
+    }
+  }, [gmailBannerMode]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1065,10 +1084,53 @@ export default function StockXCoupons() {
       )}
 
       <div className="mb-6 space-y-4">
+        <div className="flex items-center justify-end">
+          <div
+            className={`inline-flex rounded-lg border overflow-hidden ${
+              isNeon ? 'border-white/15 bg-white/5' : 'border-gray-200 bg-white'
+            }`}
+            role="group"
+            aria-label="Gmail banner view"
+          >
+            <button
+              type="button"
+              onClick={() => setGmailBannerMode('full')}
+              className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
+                gmailBannerMode === 'full'
+                  ? isNeon
+                    ? 'bg-cyan-500/20 text-cyan-200'
+                    : 'bg-blue-600 text-white'
+                  : isNeon
+                    ? 'text-gray-300 hover:bg-white/10'
+                    : 'text-gray-700 hover:bg-gray-50'
+              }`}
+              title="Show the full Gmail banner"
+            >
+              Detailed
+            </button>
+            <button
+              type="button"
+              onClick={() => setGmailBannerMode('compact')}
+              className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
+                gmailBannerMode === 'compact'
+                  ? isNeon
+                    ? 'bg-cyan-500/20 text-cyan-200'
+                    : 'bg-blue-600 text-white'
+                  : isNeon
+                    ? 'text-gray-300 hover:bg-white/10'
+                    : 'text-gray-700 hover:bg-gray-50'
+              }`}
+              title="Show a compact Gmail banner"
+            >
+              Compact
+            </button>
+          </div>
+        </div>
         <GmailConnector
           onConnectionChange={setGmailConnected}
           connectDescription="Connect Gmail to find StockX coupon emails."
           connectedDescription="Gmail connected — coupon emails can now be fetched."
+          variant={gmailBannerMode}
         />
       </div>
 
