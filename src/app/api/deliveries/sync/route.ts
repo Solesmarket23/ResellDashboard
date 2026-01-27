@@ -238,6 +238,44 @@ export async function GET(request: NextRequest) {
       const liveTracking = liveTrackingData.find((tracking) => tracking.trackingNumber === trackingNumber);
       const hasValidLiveTracking = !!(liveTracking && !liveTracking.error);
 
+      const toIsoDate = (raw: unknown): string | null => {
+        if (!raw) return null;
+        const dt = new Date(String(raw));
+        if (Number.isNaN(dt.getTime())) return null;
+        return dt.toISOString().split('T')[0];
+      };
+
+      // Always produce a delivery date so the UI never shows TBD.
+      // Priority:
+      // 1) Manual override
+      // 2) Live tracking (estimated/actual)
+      // 3) Purchase stored estimate
+      // 4) Calculated (purchaseDate/createdAt + 5 days)
+      const calcFallback = () => {
+        const base =
+          purchase?.purchaseDate ||
+          purchase?.createdAt ||
+          purchase?.updatedAt ||
+          purchase?.timestamp ||
+          null;
+        const baseIso = toIsoDate(base);
+        const dt = baseIso ? new Date(baseIso) : new Date();
+        dt.setDate(dt.getDate() + 5);
+        return dt.toISOString().split('T')[0];
+      };
+
+      const liveEstimated =
+        hasValidLiveTracking
+          ? toIsoDate(liveTracking?.estimatedDelivery) ||
+            toIsoDate(liveTracking?.courierEstimatedDelivery) ||
+            toIsoDate(liveTracking?.afterShipEstimatedDelivery)
+          : null;
+      const liveActual = hasValidLiveTracking ? toIsoDate(liveTracking?.actualDelivery) : null;
+      const purchaseEstimate = toIsoDate(purchase?.estimatedDelivery);
+      const manual = toIsoDate(purchase?.manualDeliveryDate);
+
+      const computedEstimatedDelivery = manual || liveActual || liveEstimated || purchaseEstimate || calcFallback();
+
       return {
         id: purchase.id,
         trackingNumber: trackingNumber,
@@ -246,8 +284,13 @@ export async function GET(request: NextRequest) {
         productBrand: pickBrand(purchase),
         productSize: pickSize(purchase),
         status: (hasValidLiveTracking ? liveTracking?.status : undefined) || (purchase.status || 'unknown'),
-        estimatedDelivery: (hasValidLiveTracking ? liveTracking?.estimatedDelivery : undefined) || purchase.estimatedDelivery || 'TBD',
-        actualDelivery: (hasValidLiveTracking ? liveTracking?.actualDelivery : undefined) || purchase.actualDelivery,
+        estimatedDelivery: computedEstimatedDelivery,
+        actualDelivery:
+          liveActual ||
+          toIsoDate(purchase?.actualDelivery) ||
+          (String((hasValidLiveTracking ? liveTracking?.status : purchase?.status) || '').toLowerCase().trim() === 'delivered'
+            ? computedEstimatedDelivery
+            : undefined),
         origin: (hasValidLiveTracking ? liveTracking?.origin : undefined) || purchase.origin || 'Unknown',
         destination: (hasValidLiveTracking ? liveTracking?.destination : undefined) || purchase.destination || 'Unknown',
         lastUpdate:
