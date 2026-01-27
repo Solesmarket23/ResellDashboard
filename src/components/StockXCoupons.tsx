@@ -1374,8 +1374,8 @@ export default function StockXCoupons() {
                     <thead className={`${isNeon ? 'bg-white/5' : 'bg-gray-50'} text-xs uppercase tracking-wide`}>
                       <tr className={`${isNeon ? 'text-gray-300' : 'text-gray-600'}`}>
                         <th className="px-4 py-3 text-left w-[420px]">Code</th>
-                        <th className="px-4 py-3 text-left w-[170px]">Discount</th>
                         <th className="px-4 py-3 text-left w-[190px]">Status</th>
+                        <th className="px-4 py-3 text-left w-[170px]">Discount</th>
                         <th className="px-4 py-3 text-left w-[90px]">Days left</th>
                         <th className="px-4 py-3 text-left w-[200px]">Sent</th>
                         <th className="px-4 py-3 text-left w-[200px]">Expires</th>
@@ -1405,6 +1405,7 @@ export default function StockXCoupons() {
                         const isCopied = copied?.code === c.code;
                         const isHighlighted = highlightedCode === c.code;
                         const isManual = c.source === 'manual';
+                        const isUsed = c.status === 'used_on_bid';
                         return (
                           <tr
                             key={c.code}
@@ -1419,11 +1420,21 @@ export default function StockXCoupons() {
                               isHighlighted
                                 ? (isNeon ? 'bg-gradient-to-r from-cyan-500/20 via-blue-500/10 to-cyan-500/20' : 'bg-gradient-to-r from-blue-200 via-blue-100 to-blue-200')
                                 : ''
+                            } ${
+                              isUsed && !isHighlighted ? (isNeon ? 'bg-white/5' : 'bg-gray-50') : ''
                             }`}
                           >
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2">
-                                <span className="font-mono font-semibold">{c.code}</span>
+                                <span
+                                  className={`font-mono font-semibold ${
+                                    isUsed
+                                      ? (isNeon ? 'text-white/60 line-through decoration-white/30' : 'text-gray-500 line-through decoration-gray-400')
+                                      : ''
+                                  }`}
+                                >
+                                  {c.code}
+                                </span>
                                 <button
                                   onClick={() => copyCode(c.code)}
                                   className={`h-8 w-8 p-0 inline-flex items-center justify-center rounded-md transition-colors ${
@@ -1450,6 +1461,20 @@ export default function StockXCoupons() {
                                 </div>
                               ) : null}
                             </td>
+                            <td className="px-4 py-3">
+                              <div className={isSaving ? 'pointer-events-none opacity-60' : ''}>
+                                <NeonDropdown
+                                  value={c.status}
+                                  onChange={(v) => {
+                                    if (v === c.status) return;
+                                    void setStatus(c.code, v as CouponStatus);
+                                  }}
+                                  options={statusOptions}
+                                  isNeon={isNeon}
+                                  className="w-[170px] max-w-full"
+                                />
+                              </div>
+                            </td>
                             <td className="px-4 py-3 whitespace-nowrap">
                               {c.benefit === 'free_shipping' ? (
                                 <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold whitespace-nowrap ${
@@ -1472,20 +1497,6 @@ export default function StockXCoupons() {
                               ) : (
                                 <span className={`${currentTheme.colors.textSecondary}`}>—</span>
                               )}
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className={isSaving ? 'pointer-events-none opacity-60' : ''}>
-                                <NeonDropdown
-                                  value={c.status}
-                                  onChange={(v) => {
-                                    if (v === c.status) return;
-                                    void setStatus(c.code, v as CouponStatus);
-                                  }}
-                                  options={statusOptions}
-                                  isNeon={isNeon}
-                                  className="w-[170px] max-w-full"
-                                />
-                              </div>
                             </td>
                             <td className={`px-4 py-3 whitespace-nowrap font-semibold ${daysLeftColor} ${isNeon ? daysLeftGlow : ''}`}>
                               {effectiveDaysLeft}d
@@ -1562,6 +1573,7 @@ export default function StockXCoupons() {
               const isCopied = copied?.code === c.code;
               const isHighlighted = highlightedCode === c.code;
               const isManual = c.source === 'manual';
+              const isUsed = c.status === 'used_on_bid';
 
               return (
                 <div
@@ -1583,7 +1595,11 @@ export default function StockXCoupons() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <Icon className="w-4 h-4 text-white/70" />
-                        <div className={`font-mono text-lg font-semibold ${currentTheme.colors.textPrimary}`}>
+                        <div
+                          className={`font-mono text-lg font-semibold ${
+                            isUsed ? (isNeon ? 'text-white/60 line-through decoration-white/30' : 'text-gray-500 line-through decoration-gray-400') : currentTheme.colors.textPrimary
+                          }`}
+                        >
                           {c.code}
                         </div>
                         <button
