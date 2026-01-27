@@ -192,11 +192,14 @@ const DeliveriesNew: React.FC = () => {
   // Copy tracking number to clipboard
   const [copiedTrackingId, setCopiedTrackingId] = useState<string | null>(null);
   const [copiedShipmentId, setCopiedShipmentId] = useState<string | null>(null);
+  // Persist the blue "active" highlight until another copy action.
+  const [highlightedDeliveryId, setHighlightedDeliveryId] = useState<string | null>(null);
   
   const copyTrackingNumber = async (trackingNumber: string, deliveryId: string) => {
     try {
       await navigator.clipboard.writeText(trackingNumber);
       setCopiedTrackingId(deliveryId);
+      setHighlightedDeliveryId(deliveryId);
       showNotification('Tracking number copied to clipboard!', 'success');
       setTimeout(() => setCopiedTrackingId(null), 2000);
     } catch (error) {
@@ -232,6 +235,7 @@ const DeliveriesNew: React.FC = () => {
       
       await navigator.clipboard.writeText(JSON.stringify(shipmentData, null, 2));
       setCopiedShipmentId(deliveryId);
+      setHighlightedDeliveryId(deliveryId);
       showNotification('Shipment data copied to clipboard!', 'success');
       setTimeout(() => setCopiedShipmentId(null), 2000);
         } catch (error) {
@@ -1205,6 +1209,10 @@ const DeliveriesNew: React.FC = () => {
                           selectedDelivery?.id === delivery.id 
                             ? 'bg-cyan-50 dark:bg-cyan-900/20 border-cyan-300 dark:border-cyan-700' 
                             : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                        } ${
+                          highlightedDeliveryId === delivery.id
+                            ? 'shadow-[inset_0_0_0_2px_rgba(59,130,246,0.65)] border-blue-400/70 dark:border-blue-500/60'
+                            : ''
                         }`}
                       >
                         <div className="flex items-center gap-3">
@@ -1442,6 +1450,10 @@ const DeliveriesNew: React.FC = () => {
                       key={delivery.id}
                       className={`hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors duration-150 ${
                         selectedDelivery?.id === delivery.id ? 'bg-cyan-50 dark:bg-cyan-900/20' : ''
+                      } ${
+                        highlightedDeliveryId === delivery.id
+                          ? 'shadow-[inset_0_0_0_2px_rgba(59,130,246,0.65)]'
+                          : ''
                       }`}
                     >
                       {/* Product */}
