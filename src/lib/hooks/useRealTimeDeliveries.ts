@@ -10,6 +10,8 @@ interface DeliveryItem {
   status: 'shipped' | 'in_transit' | 'out_for_delivery' | 'delivered' | 'exception' | 'unknown';
   estimatedDelivery: string;
   actualDelivery?: string;
+  emailUrl?: string | null;
+  statusNote?: string;
   origin: string;
   destination: string;
   lastUpdate: string;

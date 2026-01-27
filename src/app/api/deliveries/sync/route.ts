@@ -61,6 +61,22 @@ function pickImage(purchase: any): string | null {
   );
 }
 
+function buildGmailEmailUrl(args: { emailId?: unknown; orderNumber?: unknown; trackingNumber?: unknown }): string | null {
+  const emailId = typeof args.emailId === 'string' ? args.emailId.trim() : '';
+  if (emailId && !emailId.startsWith('manual:')) {
+    return `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(emailId)}`;
+  }
+  const orderNumber = typeof args.orderNumber === 'string' ? args.orderNumber.trim() : '';
+  if (orderNumber) {
+    return `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(`"${orderNumber}"`)}`;
+  }
+  const trackingNumber = typeof args.trackingNumber === 'string' ? args.trackingNumber.trim() : '';
+  if (trackingNumber) {
+    return `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(`"${trackingNumber}"`)}`;
+  }
+  return null;
+}
+
 function sortDeliveriesNewestFirst(deliveries: any[]) {
   return deliveries.sort((a, b) => {
     const da = new Date(a?.lastUpdate || 0).getTime();
@@ -300,6 +316,11 @@ export async function GET(request: NextRequest) {
         estimatedDelivery,
         actualDelivery,
         statusNote,
+        emailUrl: buildGmailEmailUrl({
+          emailId: (purchase as any)?.emailId || (purchase as any)?.email_id || (purchase as any)?.gmailEmailId,
+          orderNumber: (purchase as any)?.orderNumber,
+          trackingNumber: trackingNumber,
+        }),
         origin: (hasValidLiveTracking ? liveTracking?.origin : undefined) || purchase.origin || 'Unknown',
         destination: (hasValidLiveTracking ? liveTracking?.destination : undefined) || purchase.destination || 'Unknown',
         lastUpdate:
@@ -654,6 +675,11 @@ export async function POST(request: NextRequest) {
         estimatedDelivery: estimatedDelivery,
         actualDelivery,
         statusNote,
+        emailUrl: buildGmailEmailUrl({
+          emailId: (purchase as any)?.emailId || (purchase as any)?.email_id || (purchase as any)?.gmailEmailId,
+          orderNumber: (purchase as any)?.orderNumber,
+          trackingNumber: trackingValue,
+        }),
         origin: (hasValidLiveTracking ? liveTracking?.origin : undefined) || 'Unknown Origin',
         destination: liveTracking?.destination || 'Your Address',
         lastUpdate:

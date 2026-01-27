@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { Package, Truck, CheckCircle, Clock, MapPin, Calendar, Filter, Search, MoreHorizontal, RefreshCw, Wifi, WifiOff, X, ChevronDown, Trash2, Copy, Grid3X3, List, Settings, GripVertical, Bell, Shield, AlertTriangle } from 'lucide-react';
+import { Package, Truck, CheckCircle, Clock, MapPin, Calendar, Filter, Search, MoreHorizontal, RefreshCw, Wifi, WifiOff, X, ChevronDown, Trash2, Copy, Grid3X3, List, Settings, GripVertical, Bell, Shield, AlertTriangle, Mail } from 'lucide-react';
 import NeonNotification, { type NotificationType } from './NeonNotification';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
@@ -26,6 +26,7 @@ interface DeliveryItem {
   status: 'shipped' | 'in_transit' | 'out_for_delivery' | 'delivered' | 'exception' | 'unknown';
   estimatedDelivery: string;
   actualDelivery?: string;
+  emailUrl?: string | null;
   statusNote?: string;
   origin: string;
   destination: string;
@@ -242,6 +243,15 @@ const DeliveriesNew: React.FC = () => {
       console.error('Failed to copy shipment data:', error);
       showNotification('Failed to copy shipment data', 'error');
     }
+  };
+
+  const openOrderEmail = (delivery: DeliveryItem) => {
+    const url = typeof delivery?.emailUrl === 'string' ? delivery.emailUrl.trim() : '';
+    if (!url) {
+      showNotification('No order email link found for this entry', 'info');
+      return;
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   // Status icon helper
@@ -1263,6 +1273,22 @@ const DeliveriesNew: React.FC = () => {
                               <div className="flex items-center gap-1">
                                 <span>{delivery.productBrand} • Size {delivery.productSize}</span>
                               </div>
+                              {delivery.emailUrl ? (
+                                <div className="flex items-center gap-1">
+                                  <Mail className="w-3 h-3 text-blue-500" />
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openOrderEmail(delivery);
+                                    }}
+                                    className="text-blue-500 hover:text-blue-400 transition-colors duration-200 text-xs font-semibold"
+                                    title="Open order confirmation email"
+                                  >
+                                    Open email
+                                  </button>
+                                </div>
+                              ) : null}
                               <div className="flex items-center gap-1">
                                 <span>{delivery.carrier} • </span>
                       <button
@@ -1482,6 +1508,22 @@ const DeliveriesNew: React.FC = () => {
                             <div className={`text-xs ${currentTheme.colors.textSecondary}`}>
                               {delivery.productBrand} • Size {delivery.productSize}
                 </div>
+                            {delivery.emailUrl ? (
+                              <div className="mt-1 flex items-center gap-1">
+                                <Mail className="w-3 h-3 text-blue-500" />
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openOrderEmail(delivery);
+                                  }}
+                                  className="text-xs font-semibold text-blue-500 hover:text-blue-400 transition-colors"
+                                  title="Open order confirmation email"
+                                >
+                                  Open email
+                                </button>
+                              </div>
+                            ) : null}
             </div>
       </div>
                       </td>
