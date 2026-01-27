@@ -86,6 +86,33 @@ function buildGmailEmailUrl(args: { emailId?: unknown; orderNumber?: unknown; tr
   return null;
 }
 
+function normalizeTrackingError(error: unknown): string | null {
+  if (typeof error !== 'string') return null;
+  const msg = error.trim();
+  if (!msg) return null;
+  const lower = msg.toLowerCase();
+
+  if (
+    lower.includes('tracking not found') ||
+    lower.includes('no tracking results') ||
+    lower.includes('unable to locate') ||
+    (lower.includes('not found') && lower.includes('tracking'))
+  ) {
+    return 'Tracking not found — check the number';
+  }
+
+  if (lower.includes('api not configured') || lower.includes('no tracking apis configured')) {
+    return 'Live tracking not configured';
+  }
+
+  if (lower.includes('timeout') || lower.includes('timed out')) {
+    return 'Tracking lookup timed out — try again';
+  }
+
+  // Keep it user-friendly; raw carrier errors can be noisy.
+  return 'Tracking lookup error — try again';
+}
+
 function sortDeliveriesNewestFirst(deliveries: any[]) {
   return deliveries.sort((a, b) => {
     const da = new Date(a?.lastUpdate || 0).getTime();
@@ -262,6 +289,7 @@ export async function GET(request: NextRequest) {
       
       const liveTracking = liveTrackingData.find((tracking) => tracking.trackingNumber === trackingNumber);
       const hasValidLiveTracking = !!(liveTracking && !liveTracking.error);
+      const friendlyTrackingError = normalizeTrackingError(liveTracking?.error);
 
       const toIsoDate = (raw: unknown): string | null => {
         if (!raw) return null;
@@ -295,10 +323,16 @@ export async function GET(request: NextRequest) {
 
       // Label-created / awaiting scan: carrier has no ETA and no scan history.
       const hasScans = hasValidLiveTracking ? (Array.isArray(liveTracking?.updates) && liveTracking.updates.length > 0) : false;
-      const isLabelCreated = hasValidLiveTracking && !hasScans && !liveEstimated && !liveActual && normalizedStatus !== 'delivered';
+      const isLabelCreated =
+        hasValidLiveTracking &&
+        normalizedStatus === 'shipped' &&
+        !hasScans &&
+        !liveEstimated &&
+        !liveActual;
 
       let statusNote: string | undefined;
-      if (isLabelCreated) statusNote = 'Label created — awaiting carrier scan';
+      if (friendlyTrackingError) statusNote = friendlyTrackingError;
+      else if (isLabelCreated) statusNote = 'Label created — awaiting carrier scan';
       else if (normalizedStatus !== 'delivered' && !manualDate && !liveEstimated && !purchaseEstimated) statusNote = 'No ETA yet';
 
       // Delivery date rules:
@@ -317,12 +351,12 @@ export async function GET(request: NextRequest) {
       return {
         id: purchase.id,
         trackingNumber: trackingNumber,
-        carrier: (hasValidLiveTracking ? liveTracking?.carrier : undefined) || purchase.carrier || 'Unknown',
+        carrier: (liveTracking?.carrier as any) || purchase.carrier || 'Unknown',
         productName: pickProductName(purchase),
         productBrand: pickBrand(purchase),
         productSize: pickSize(purchase),
         productImage: pickImage(purchase),
-        status: (hasValidLiveTracking ? liveTracking?.status : undefined) || (purchase.status || 'unknown'),
+        status: (hasValidLiveTracking ? liveTracking?.status : undefined) || (friendlyTrackingError ? 'unknown' : (purchase.status || 'unknown')),
         estimatedDelivery,
         actualDelivery,
         statusNote,
@@ -584,6 +618,7 @@ export async function POST(request: NextRequest) {
       
       const liveTracking = liveTrackingData.find((lt) => lt.trackingNumber === trackingValue);
       const hasValidLiveTracking = !!(liveTracking && !liveTracking.error);
+      const friendlyTrackingError = normalizeTrackingError(liveTracking?.error);
       
       // Determine delivery status from live tracking or purchase status
       let deliveryStatus = 'shipped';
@@ -661,7 +696,12 @@ export async function POST(request: NextRequest) {
         .trim();
 
       const hasScans = hasValidLiveTracking ? (Array.isArray(liveTracking?.updates) && liveTracking.updates.length > 0) : false;
-      const isLabelCreated = hasValidLiveTracking && !hasScans && !liveEstimated && !liveActual && rawStatus !== 'delivered';
+      const isLabelCreated =
+        hasValidLiveTracking &&
+        rawStatus === 'shipped' &&
+        !hasScans &&
+        !liveEstimated &&
+        !liveActual;
 
       if (rawStatus === 'delivered' || deliveryStatus === 'delivered') {
         actualDelivery = liveActual || toIsoDate(purchase.actualDelivery) || manualDate || undefined;
@@ -669,7 +709,8 @@ export async function POST(request: NextRequest) {
         if (!actualDelivery) statusNote = 'Delivered — date not provided by carrier';
       } else {
         estimatedDelivery = manualDate || liveEstimated || purchaseEstimated || 'TBD';
-        if (isLabelCreated) statusNote = 'Label created — awaiting carrier scan';
+        if (friendlyTrackingError) statusNote = friendlyTrackingError;
+        else if (isLabelCreated) statusNote = 'Label created — awaiting carrier scan';
         else if (estimatedDelivery === 'TBD') statusNote = 'No ETA yet';
       }
 
@@ -681,7 +722,7 @@ export async function POST(request: NextRequest) {
         productBrand: pickBrand(purchase),
         productSize: pickSize(purchase),
         productImage: pickImage(purchase),
-        status: deliveryStatus,
+        status: (hasValidLiveTracking ? (liveTracking?.status as any) : undefined) || (friendlyTrackingError ? 'unknown' : deliveryStatus),
         estimatedDelivery: estimatedDelivery,
         actualDelivery,
         statusNote,

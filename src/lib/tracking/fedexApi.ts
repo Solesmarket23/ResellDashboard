@@ -187,6 +187,28 @@ export class FedExTrackingAPI {
 
       // Parse scan events into tracking updates
       const scanEvents = Array.isArray((trackResults as any).scanEvents) ? ((trackResults as any).scanEvents as any[]) : [];
+      const dateAndTimes = Array.isArray((trackResults as any).dateAndTimes) ? ((trackResults as any).dateAndTimes as any[]) : [];
+
+      // If FedEx indicates there are no associated shipments, treat as not-found.
+      const hasAssociatedShipments = (trackResults as any)?.additionalTrackingInfo?.hasAssociatedShipments;
+      const rawStatusCode = String((trackResults as any)?.statusCode || (trackResults as any)?.statusDetail?.code || '').trim();
+      const isEffectivelyNotFound =
+        hasAssociatedShipments === false &&
+        scanEvents.length === 0 &&
+        dateAndTimes.length === 0 &&
+        (!rawStatusCode || rawStatusCode.toUpperCase() === 'UNKNOWN');
+
+      if (isEffectivelyNotFound) {
+        return {
+          trackingNumber,
+          carrier: 'FedEx',
+          status: 'unknown',
+          lastUpdate: new Date().toISOString(),
+          updates: [],
+          error: 'Tracking not found'
+        };
+      }
+
       const updates: TrackingUpdate[] = scanEvents.map((scan: any) => ({
         timestamp: scan.date,
         location: this.formatLocation(scan.scanLocation),
@@ -206,8 +228,6 @@ export class FedExTrackingAPI {
       const currentStatus = this.mapFedExStatus(trackResults.statusCode || trackResults.statusDetail?.code || 'UNKNOWN');
       
       // Get delivery dates from dateAndTimes array (most reliable method)
-      const dateAndTimes = Array.isArray((trackResults as any).dateAndTimes) ? ((trackResults as any).dateAndTimes as any[]) : [];
-      
       // Debug: Log all available date types from FedEx API
       console.log(`📅 FedEx dateAndTimes for ${trackingNumber}:`, 
         dateAndTimes.map(dt => `${dt.type}: ${dt.dateTime}`).join(', '));
