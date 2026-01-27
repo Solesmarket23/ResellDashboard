@@ -59,6 +59,13 @@ function formatCouponDateTime(iso: string): string {
   return `${month} ${day}, ${time}`;
 }
 
+function computeDaysLeft(expiresAtIso: string): number {
+  const ms = Date.parse(expiresAtIso);
+  if (!Number.isFinite(ms)) return 0;
+  const diffMs = ms - Date.now();
+  return Math.max(0, Math.ceil(diffMs / (24 * 60 * 60 * 1000)));
+}
+
 function statusPill(status: CouponStatus) {
   switch (status) {
     case 'available':
@@ -334,8 +341,8 @@ export default function StockXCoupons() {
     } finally {
       if (timeoutId) window.clearTimeout(timeoutId);
       if (fetchSeqRef.current === seq) {
-        setLoading(false);
-        fetchInFlightRef.current = false;
+      setLoading(false);
+      fetchInFlightRef.current = false;
         fetchAbortRef.current = null;
       }
     }
@@ -508,13 +515,15 @@ export default function StockXCoupons() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.success) throw new Error(data?.error || `Save failed (${res.status})`);
 
-      setCoupons((prev) =>
-        {
-          const next = prev.map((c) => (c.code === code ? { ...c, status, statusSource: 'user' } : c));
+      setCoupons((prev) => {
+        const next = prev.map((c) => {
+          if (c.code !== code) return c;
+          const nextDaysLeft = status === 'expired' ? 0 : computeDaysLeft(c.expiresAt);
+          return { ...c, status, statusSource: 'user', daysLeft: nextDaysLeft };
+        });
           persistCache(next);
           return next;
-        }
-      );
+      });
       const label = status === 'available' ? 'Available' : status === 'used_on_bid' ? 'Used' : 'Expired';
       setNotification({ isVisible: true, message: `${code} marked ${label}`, type: 'success' });
     } catch (e: any) {
@@ -1130,13 +1139,13 @@ export default function StockXCoupons() {
           </div>
         </div>
         <div className={gmailBannerMode === 'compact' ? 'flex justify-start' : ''}>
-          <GmailConnector
-            onConnectionChange={setGmailConnected}
-            connectDescription="Connect Gmail to find StockX coupon emails."
-            connectedDescription="Gmail connected — coupon emails can now be fetched."
+        <GmailConnector
+          onConnectionChange={setGmailConnected}
+          connectDescription="Connect Gmail to find StockX coupon emails."
+          connectedDescription="Gmail connected — coupon emails can now be fetched."
             variant={gmailBannerMode}
             className={gmailBannerMode === 'compact' ? 'w-full max-w-2xl' : 'w-full'}
-          />
+        />
         </div>
       </div>
 
@@ -1257,11 +1266,11 @@ export default function StockXCoupons() {
 
         {showHidden && hiddenCount > 0 && (
           <>
-            <div className={`mt-4 rounded-lg border p-3 text-sm ${
-              isNeon ? 'border-white/15 bg-white/5 text-white/80' : 'border-gray-200 bg-gray-50 text-gray-700'
-            }`}>
+          <div className={`mt-4 rounded-lg border p-3 text-sm ${
+            isNeon ? 'border-white/15 bg-white/5 text-white/80' : 'border-gray-200 bg-gray-50 text-gray-700'
+          }`}>
               Showing <span className="font-semibold">archived</span> coupons. Click <span className="font-semibold">Restore</span> to show a coupon in the normal list.
-            </div>
+          </div>
           </>
         )}
 
@@ -1339,7 +1348,7 @@ export default function StockXCoupons() {
                   }`}>
                     Expired: {pageCounts.expired}
                   </span>
-                </div>
+              </div>
               </div>
               <div className="flex items-center gap-3">
                 {ViewToggle}
@@ -1375,12 +1384,13 @@ export default function StockXCoupons() {
                     </thead>
                     <tbody className={`${isNeon ? 'divide-y divide-white/10' : 'divide-y divide-gray-100'}`}>
                       {displayCoupons.map((c) => {
+                        const effectiveDaysLeft = c.status === 'expired' ? 0 : computeDaysLeft(c.expiresAt);
                         const daysLeftColor =
-                          c.daysLeft <= 0 ? 'text-red-300' : c.daysLeft <= 2 ? 'text-amber-300' : 'text-emerald-300';
+                          effectiveDaysLeft <= 0 ? 'text-red-300' : effectiveDaysLeft <= 2 ? 'text-amber-300' : 'text-emerald-300';
                         const daysLeftGlow =
-                          c.daysLeft <= 0
+                          effectiveDaysLeft <= 0
                             ? 'animate-pulse-glow-red-soft'
-                            : c.daysLeft <= 2
+                            : effectiveDaysLeft <= 2
                               ? 'animate-pulse-glow-yellow-soft'
                               : 'animate-pulse-glow-green-soft';
                         const benefitGlow =
@@ -1478,7 +1488,7 @@ export default function StockXCoupons() {
                               </div>
                             </td>
                             <td className={`px-4 py-3 whitespace-nowrap font-semibold ${daysLeftColor} ${isNeon ? daysLeftGlow : ''}`}>
-                              {c.daysLeft}d
+                              {effectiveDaysLeft}d
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap">{formatCouponDateTime(c.sentAt)}</td>
                             <td className="px-4 py-3 whitespace-nowrap">{formatCouponDateTime(c.expiresAt)}</td>
@@ -1528,14 +1538,15 @@ export default function StockXCoupons() {
                 </div>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-3">
-              {displayCoupons.map((c) => {
+            <div className="grid grid-cols-1 gap-3">
+            {displayCoupons.map((c) => {
+              const effectiveDaysLeft = c.status === 'expired' ? 0 : computeDaysLeft(c.expiresAt);
               const daysLeftColor =
-                c.daysLeft <= 0 ? 'text-red-300' : c.daysLeft <= 2 ? 'text-amber-300' : 'text-emerald-300';
+                effectiveDaysLeft <= 0 ? 'text-red-300' : effectiveDaysLeft <= 2 ? 'text-amber-300' : 'text-emerald-300';
               const daysLeftGlow =
-                c.daysLeft <= 0
+                effectiveDaysLeft <= 0
                   ? 'animate-pulse-glow-red-soft'
-                  : c.daysLeft <= 2
+                  : effectiveDaysLeft <= 2
                     ? 'animate-pulse-glow-yellow-soft'
                     : 'animate-pulse-glow-green-soft';
               const benefitGlow =
@@ -1602,9 +1613,9 @@ export default function StockXCoupons() {
                       </div>
 
                       {!hideSubject ? (
-                        <div className={`mt-1 text-xs ${currentTheme.colors.textSecondary} truncate`}>
-                          {isManual ? 'Manual coupon' : c.subject}
-                        </div>
+                      <div className={`mt-1 text-xs ${currentTheme.colors.textSecondary} truncate`}>
+                        {isManual ? 'Manual coupon' : c.subject}
+                      </div>
                       ) : null}
 
                       <div className={`mt-2 flex flex-wrap items-center gap-3 text-xs ${currentTheme.colors.textSecondary}`}>
@@ -1618,7 +1629,7 @@ export default function StockXCoupons() {
                           >
                             Free shipping
                           </span>
-                        ) : c.benefit === 'half_off_shipping' ? (
+                          ) : c.benefit === 'half_off_shipping' ? (
                           <span
                             className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${
                               isNeon
@@ -1628,7 +1639,7 @@ export default function StockXCoupons() {
                           >
                             Half off shipping
                           </span>
-                        ) : typeof c.amount === 'number' && Number.isFinite(c.amount) ? (
+                          ) : typeof c.amount === 'number' && Number.isFinite(c.amount) ? (
                           <span
                             className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${
                               isNeon
@@ -1636,8 +1647,8 @@ export default function StockXCoupons() {
                                 : 'bg-violet-50 border-violet-200 text-violet-800'
                             }`}
                           >
-                            <span className="font-semibold">${c.amount}</span> off
-                          </span>
+                              <span className="font-semibold">${c.amount}</span> off
+                            </span>
                         ) : null}
                         <span className="inline-flex items-center gap-1">
                           <Clock className="w-3.5 h-3.5" />
@@ -1648,7 +1659,7 @@ export default function StockXCoupons() {
                           Expires: {formatCouponDateTime(c.expiresAt)}
                         </span>
                         <span className={`inline-flex items-center gap-1 font-semibold ${daysLeftColor} ${isNeon ? daysLeftGlow : ''}`}>
-                          {c.daysLeft} day{c.daysLeft === 1 ? '' : 's'} left
+                          {effectiveDaysLeft} day{effectiveDaysLeft === 1 ? '' : 's'} left
                         </span>
                       </div>
                     </div>
@@ -1725,7 +1736,7 @@ export default function StockXCoupons() {
                 </div>
               );
             })}
-              </div>
+            </div>
             )}
           </div>
         )}
