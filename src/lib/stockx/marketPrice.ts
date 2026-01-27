@@ -29,21 +29,27 @@ export type StockXMarketPriceResult = {
   details?: string;
 };
 
-function buildSearchTerms(styleId: string | null | undefined, productName: string): string[] {
+function buildSearchTerms(args: {
+  urlKey?: string | null;
+  styleId?: string | null;
+  productName?: string | null;
+}): string[] {
   const terms: string[] = [];
   const push = (s: unknown) => {
     const t = typeof s === 'string' ? s.trim() : '';
     if (t) terms.push(t);
   };
 
-  push(styleId || '');
-  push(productName);
+  // Strongest identifier first: StockX urlKey/slug (e.g. "asics-gel-nyc-oyster-grey")
+  push(args.urlKey || '');
+  push(args.styleId || '');
+  push(args.productName || '');
 
   // Common cleanups to improve StockX catalog search hit rate.
   // - remove parenthetical brand/notes: "Foo (adidas)" -> "Foo"
   // - remove "Size: ..." suffixes
   // - collapse whitespace
-  const cleaned1 = String(productName || '')
+  const cleaned1 = String(args.productName || '')
     .replace(/\s*\([^)]*\)\s*/g, ' ')
     .replace(/\bsize\s*:\s*.*$/i, '')
     .replace(/\s+/g, ' ')
@@ -151,8 +157,9 @@ export async function fetchStockXMarketPriceDetailed(args: {
   productName: string;
   size: string;
   styleId?: string | null;
+  urlKey?: string | null;
 }): Promise<StockXMarketPriceResult> {
-  const searchTerms = buildSearchTerms(args.styleId, args.productName);
+  const searchTerms = buildSearchTerms({ urlKey: args.urlKey, styleId: args.styleId, productName: args.productName });
   if (searchTerms.length === 0) return { price: null, reason: 'missing_search_term' };
 
   let accessToken: string;

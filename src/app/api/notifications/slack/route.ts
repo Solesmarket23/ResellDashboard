@@ -59,6 +59,67 @@ function isOnTheWayStatus(statusRaw: unknown): boolean {
   return true;
 }
 
+function extractStockXUrlKeyFromLink(raw: unknown): string | null {
+  const input = typeof raw === 'string' ? raw.trim() : '';
+  if (!input) return null;
+
+  const tryParse = (maybeUrl: string): string | null => {
+    try {
+      const u = new URL(maybeUrl);
+
+      // Some email trackers wrap the real destination in ?r=...
+      const redirected =
+        u.searchParams.get('r') ||
+        u.searchParams.get('redirect') ||
+        u.searchParams.get('redirect_url') ||
+        u.searchParams.get('url');
+      if (redirected && redirected.includes('stockx.com')) {
+        const nested = tryParse(redirected);
+        if (nested) return nested;
+      }
+
+      const host = u.host.toLowerCase();
+      if (!host.includes('stockx.com')) return null;
+
+      const path = u.pathname.replace(/^\/+/, '');
+      const first = path.split('/')[0]?.trim() || '';
+      if (!first) return null;
+      // Ignore non-product paths
+      if (first === 'search' || first === 'category' || first === 'news' || first === 'help') return null;
+      return first;
+    } catch {
+      return null;
+    }
+  };
+
+  // Accept both raw slugs and URLs
+  if (!input.startsWith('http://') && !input.startsWith('https://')) {
+    if (/^[a-z0-9]+(?:-[a-z0-9]+)+$/i.test(input)) return input;
+  }
+
+  return tryParse(input);
+}
+
+function extractStockXUrlKeyFromPurchase(purchase: any): string | null {
+  const candidates: unknown[] = [
+    purchase?.urlKey,
+    purchase?.stockxUrlKey,
+    purchase?.stockxUrl,
+    purchase?.productUrl,
+    purchase?.productLink,
+    purchase?.url,
+    purchase?.product?.urlKey,
+    purchase?.product?.stockxUrl,
+    purchase?.product?.url,
+    purchase?.links?.stockx,
+  ];
+  for (const c of candidates) {
+    const key = extractStockXUrlKeyFromLink(c);
+    if (key) return key;
+  }
+  return null;
+}
+
 async function getStockXAuthForUser(request: NextRequest, userId: string): Promise<{ apiKey: string; accessToken?: string; refreshToken?: string } | null> {
   const apiKey = process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID;
   if (!apiKey) return null;
@@ -233,6 +294,7 @@ export async function POST(request: NextRequest) {
       productName: string;
       size: string;
       styleId?: string | null;
+      urlKey?: string | null;
     }) => {
       if (stockxRateLimited) {
         marketDebug.skippedRateLimited++;
@@ -241,7 +303,7 @@ export async function POST(request: NextRequest) {
         return { price: null } as any;
       }
 
-      const key = `${String(args.styleId || '').trim()}|${args.productName}|${args.size}`.toLowerCase();
+      const key = `${String(args.urlKey || '').trim()}|${String(args.styleId || '').trim()}|${args.productName}|${args.size}`.toLowerCase();
       const existing = marketCache.get(key);
       if (existing) return existing;
 
@@ -305,6 +367,7 @@ export async function POST(request: NextRequest) {
       const productSizeRaw = purchase.productSize || purchase.size || purchase.product?.size || 'Unknown';
       const productSize = normalizeStockXShoeSize(productSizeRaw);
       const styleId = purchase.styleId || purchase.style_id || null;
+      const urlKey = extractStockXUrlKeyFromPurchase(purchase);
       const purchaseId = String(purchase.id || purchase.purchaseId || purchase.orderNumber || trackingValue || '').trim();
       
       // Extract brand from product name
@@ -376,7 +439,8 @@ export async function POST(request: NextRequest) {
               auth,
               productName,
               size: productSize,
-              styleId
+              styleId,
+              urlKey
             });
             if (result.price) {
               marketPrice = result.price;

@@ -55,6 +55,62 @@ function isOnTheWayStatus(statusRaw: unknown): boolean {
   return true;
 }
 
+function extractStockXUrlKeyFromLink(raw: unknown): string | null {
+  const input = typeof raw === 'string' ? raw.trim() : '';
+  if (!input) return null;
+
+  const tryParse = (maybeUrl: string): string | null => {
+    try {
+      const u = new URL(maybeUrl);
+      const redirected =
+        u.searchParams.get('r') ||
+        u.searchParams.get('redirect') ||
+        u.searchParams.get('redirect_url') ||
+        u.searchParams.get('url');
+      if (redirected && redirected.includes('stockx.com')) {
+        const nested = tryParse(redirected);
+        if (nested) return nested;
+      }
+
+      const host = u.host.toLowerCase();
+      if (!host.includes('stockx.com')) return null;
+
+      const path = u.pathname.replace(/^\/+/, '');
+      const first = path.split('/')[0]?.trim() || '';
+      if (!first) return null;
+      if (first === 'search' || first === 'category' || first === 'news' || first === 'help') return null;
+      return first;
+    } catch {
+      return null;
+    }
+  };
+
+  if (!input.startsWith('http://') && !input.startsWith('https://')) {
+    if (/^[a-z0-9]+(?:-[a-z0-9]+)+$/i.test(input)) return input;
+  }
+  return tryParse(input);
+}
+
+function extractStockXUrlKeyFromPurchase(purchase: any): string | null {
+  const candidates: unknown[] = [
+    purchase?.urlKey,
+    purchase?.stockxUrlKey,
+    purchase?.stockxUrl,
+    purchase?.productUrl,
+    purchase?.productLink,
+    purchase?.url,
+    purchase?.product?.urlKey,
+    purchase?.product?.stockxUrl,
+    purchase?.product?.url,
+    purchase?.links?.stockx,
+  ];
+  for (const c of candidates) {
+    const key = extractStockXUrlKeyFromLink(c);
+    if (key) return key;
+  }
+  return null;
+}
+
 export async function GET(request: NextRequest) {
   try {
     if (!verifyCron(request)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
@@ -164,9 +220,10 @@ export async function GET(request: NextRequest) {
           productName: string;
           size: string;
           styleId?: string | null;
+          urlKey?: string | null;
         }) => {
           if (stockxRateLimited) return { price: null, reason: 'rate_limited_short_circuit' };
-          const key = `${String(args.styleId || '').trim()}|${args.productName}|${args.size}`.toLowerCase();
+          const key = `${String(args.urlKey || '').trim()}|${String(args.styleId || '').trim()}|${args.productName}|${args.size}`.toLowerCase();
           const existing = marketCache.get(key);
           if (existing) return existing;
           const p = (async () => {
@@ -176,7 +233,8 @@ export async function GET(request: NextRequest) {
                 auth: { apiKey, accessToken, refreshToken },
                 productName: args.productName,
                 size: args.size,
-                styleId: args.styleId
+                styleId: args.styleId,
+                urlKey: args.urlKey,
               });
               if (result.reason === 'search_http_error' && result.httpStatus === 429) stockxRateLimited = true;
               return result;
@@ -234,6 +292,7 @@ export async function GET(request: NextRequest) {
             const productSizeRaw = purchase.productSize || purchase.size || purchase.product?.size || 'Unknown';
             const productSize = normalizeStockXShoeSize(productSizeRaw);
             const styleId = purchase.styleId || purchase.style_id || null;
+            const urlKey = extractStockXUrlKeyFromPurchase(purchase);
 
             let purchasePrice: number | undefined;
             if (purchase.total_amount !== undefined) purchasePrice = typeof purchase.total_amount === 'number' ? purchase.total_amount : parseFloat(purchase.total_amount);
@@ -255,7 +314,7 @@ export async function GET(request: NextRequest) {
               if (Number.isFinite(n) && n > 0) marketPrice = n;
             }
             if (!marketPrice && isOnTheWayStatus(status)) {
-              const result = await fetchMarketWithControls({ productName, size: productSize, styleId });
+              const result = await fetchMarketWithControls({ productName, size: productSize, styleId, urlKey });
               if (result.price) marketPrice = result.price;
             }
             if (marketPrice !== undefined && (!Number.isFinite(marketPrice) || marketPrice <= 0)) {
