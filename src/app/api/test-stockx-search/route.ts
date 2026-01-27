@@ -1,22 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { refreshStockXTokens } from '@/lib/stockx/tokenRefresh';
+import { getAdminDb } from '@/lib/firebase/firebaseAdmin';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const query = searchParams.get('query') || 'nike';
+  const userId = (searchParams.get('userId') || '').trim();
   
   try {
     console.log(`🔍 Testing StockX search for: "${query}"`);
     
     // Get authentication tokens from cookies
-    const accessToken = request.cookies.get('stockx_access_token')?.value;
+    let accessToken = request.cookies.get('stockx_access_token')?.value;
     const apiKey = process.env.STOCKX_API_KEY;
     
+    // Fallback for non-cookie contexts (e.g. Cursor browser): use stored refresh token if userId is provided.
+    if (!accessToken && userId) {
+      try {
+        const db = getAdminDb();
+        const snap = await db.collection('users').doc(userId).get();
+        const data = snap.exists ? (snap.data() as any) : null;
+        const refreshToken = (data?.stockxTokens?.refresh_token || data?.stockxTokens?.refreshToken || '').toString().trim();
+        if (refreshToken) {
+          const refreshed = await refreshStockXTokens(refreshToken);
+          if (refreshed.success && refreshed.accessToken) {
+            accessToken = refreshed.accessToken;
+          }
+        }
+      } catch (e) {
+        console.warn('⚠️ test-stockx-search: failed to refresh token from Firebase:', e);
+      }
+    }
+
     if (!accessToken) {
-      return NextResponse.json({
-        success: false,
-        error: 'No StockX access token found',
-        message: 'Please authenticate with StockX first'
-      }, { status: 401 });
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'No StockX access token found',
+          message: userId
+            ? 'No StockX access token found (cookie missing; Firebase refresh token missing/invalid)'
+            : 'Please authenticate with StockX first (or pass ?userId=...)',
+        },
+        { status: 401 }
+      );
     }
     
     if (!apiKey) {
@@ -93,6 +119,7 @@ export async function GET(request: NextRequest) {
       
       return NextResponse.json({
         success: true,
+        authMode: request.cookies.get('stockx_access_token')?.value ? 'cookie' : userId ? 'firebase_refresh' : 'unknown',
         query: query,
         searchResults: {
           productCount: products.length,
