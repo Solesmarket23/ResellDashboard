@@ -758,11 +758,14 @@ export default function StockXCoupons() {
   }, [coupons, sortMode, showHidden]);
 
   const pageCounts = useMemo(() => {
-    const total = displayCoupons.length;
-    const expired = displayCoupons.filter((c) => c.status === 'expired').length;
-    const active = total - expired; // "active" = not expired
-    return { total, active, expired };
-  }, [displayCoupons]);
+    // Counters should reflect the underlying data set (visible vs archived), not the current sort filter.
+    // Otherwise "Expired only" would make Total/Active look wrong.
+    const base = showHidden ? [...coupons] : coupons.filter((c) => !c.hidden);
+    const total = base.length;
+    const expired = base.filter((c) => c.status === 'expired').length;
+    const available = base.filter((c) => c.status === 'available').length;
+    return { total, available, expired };
+  }, [coupons, showHidden]);
 
   const ViewToggle = (
     <div className={`inline-flex items-center rounded-lg border overflow-hidden ${
@@ -1329,7 +1332,7 @@ export default function StockXCoupons() {
                   <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${
                     isNeon ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-200' : 'bg-emerald-50 border-emerald-200 text-emerald-800'
                   }`}>
-                    Active: {pageCounts.active}
+                    Available: {pageCounts.available}
                   </span>
                   <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${
                     isNeon ? 'bg-red-500/10 border-red-500/25 text-red-200' : 'bg-red-50 border-red-200 text-red-800'
