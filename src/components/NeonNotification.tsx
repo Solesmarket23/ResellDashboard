@@ -9,6 +9,7 @@ interface NeonNotificationProps {
   type: NotificationType;
   onClose: () => void;
   duration?: number;
+  placement?: 'fixed' | 'inline';
 }
 
 const NeonNotification: React.FC<NeonNotificationProps> = ({ 
@@ -16,7 +17,8 @@ const NeonNotification: React.FC<NeonNotificationProps> = ({
   message, 
   type, 
   onClose, 
-  duration = 5000 
+  duration = 5000,
+  placement = 'fixed'
 }) => {
   const EXIT_MS = 220;
   const shouldShow = controlledVisible ?? true;
@@ -151,7 +153,7 @@ const NeonNotification: React.FC<NeonNotificationProps> = ({
   return (
     <div
       className={`
-        fixed top-6 right-4 z-50
+        ${placement === 'fixed' ? 'fixed top-6 right-4 z-50' : 'relative'}
         transform-gpu transition-all ease-out
         pointer-events-auto
         ${present ? 'translate-x-0 opacity-100' : 'translate-x-6 opacity-0'}

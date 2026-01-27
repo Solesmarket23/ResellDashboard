@@ -44,15 +44,7 @@ const Dashboard = () => {
     'total_profit', 'total_revenue', 'unsold_inventory', 'inventory_value', 'avg_profit', 'total_spend'
   ]);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const [notification, setNotification] = useState<{
-    isVisible: boolean;
-    message: string;
-    type: NotificationType;
-  }>({
-    isVisible: false,
-    message: '',
-    type: 'success'
-  });
+  const [toasts, setToasts] = useState<Array<{ id: string; message: string; type: NotificationType }>>([]);
   const [selectedBar, setSelectedBar] = useState<number | null>(null);
   const [mockDataEnabled, setMockDataEnabled] = useState(false);
   const profitChartOverlayRef = useRef<HTMLDivElement | null>(null);
@@ -439,10 +431,11 @@ const Dashboard = () => {
   
   // Show notification helper
   const showNotification = (message: string, type: NotificationType = 'success') => {
-    setNotification({
-      isVisible: true,
-      message,
-      type
+    const id = (globalThis as any).crypto?.randomUUID ? (globalThis as any).crypto.randomUUID() : `${Date.now()}_${Math.random()}`;
+    setToasts((prev) => {
+      const next = [...prev, { id, message, type }];
+      // Keep the stack small so it never covers the whole screen.
+      return next.slice(-3);
     });
   };
 
@@ -1532,12 +1525,18 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {notification.isVisible && (
-        <NeonNotification
-          message={notification.message}
-          type={notification.type}
-          onClose={() => setNotification((p) => ({ ...p, isVisible: false }))}
-        />
+      {toasts.length > 0 && (
+        <div className="fixed top-6 right-4 z-50 flex flex-col gap-3 items-end">
+          {toasts.map((t) => (
+            <NeonNotification
+              key={t.id}
+              message={t.message}
+              type={t.type}
+              placement="inline"
+              onClose={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}
+            />
+          ))}
+        </div>
       )}
 
     </div>
