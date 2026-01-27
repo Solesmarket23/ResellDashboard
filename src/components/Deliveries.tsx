@@ -14,6 +14,7 @@ import { deliveryArrivalLogger } from '../lib/delivery/arrivalLogger';
 import { formatDisplayDate } from '../lib/utils/dateUtils';
 import UPSOAuthButton from './UPSOAuthButton';
 import { useUPSOAuth } from '../lib/hooks/useUPSOAuth';
+import ImagePreviewModal from './ImagePreviewModal';
 
 interface DeliveryItem {
   id: string;
@@ -189,6 +190,20 @@ const DeliveriesNew: React.FC = () => {
       local: { ok: localOk, siteUserId: localSetup.siteUserId, purchasesCount: localSetup.purchasesCount },
     };
   }, [localSetup.purchasesCount, localSetup.siteUserId, setupStatus]);
+
+  const [imagePreview, setImagePreview] = useState<{
+    isOpen: boolean;
+    imageUrl: string;
+    productName: string;
+    productBrand: string;
+    productSize: string;
+  }>({
+    isOpen: false,
+    imageUrl: '',
+    productName: '',
+    productBrand: '',
+    productSize: ''
+  });
   
   // Copy tracking number to clipboard
   const [copiedTrackingId, setCopiedTrackingId] = useState<string | null>(null);
@@ -253,6 +268,33 @@ const DeliveriesNew: React.FC = () => {
     }
     window.open(url, '_blank', 'noopener,noreferrer');
   };
+
+  const handleDeliveryImageClick = (delivery: DeliveryItem) => {
+    if (!delivery.productImage) return;
+    setImagePreview({
+      isOpen: true,
+      imageUrl: delivery.productImage,
+      productName: delivery.productName,
+      productBrand: delivery.productBrand,
+      productSize: delivery.productSize,
+    });
+  };
+
+  const closeImagePreview = () => {
+    setImagePreview((prev) => ({ ...prev, isOpen: false }));
+  };
+
+  const SizePill = ({ size }: { size: string }) => (
+    <span
+      className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold ${
+        currentTheme.name === 'Neon'
+          ? 'bg-white/5 text-gray-300 border border-white/10'
+          : 'bg-gray-100 text-gray-700 border border-gray-200'
+      }`}
+    >
+      {size || 'Unknown'}
+    </span>
+  );
 
   // Status icon helper
   const getStatusIcon = (status: string) => {
@@ -1228,21 +1270,34 @@ const DeliveriesNew: React.FC = () => {
                         <div className="flex items-center gap-3">
                           {/* Product Image */}
                           {delivery.productImage ? (
-                            <div className="flex-shrink-0">
-                              <img 
-                                src={delivery.productImage} 
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeliveryImageClick(delivery);
+                              }}
+                              className={`relative w-12 h-12 rounded-xl flex-shrink-0 overflow-hidden flex items-center justify-center cursor-pointer transition-all duration-300 hover:scale-105 hover:shadow-xl ${
+                                currentTheme.name === 'Neon'
+                                  ? 'ring-2 ring-white/10 hover:ring-cyan-400'
+                                  : 'ring-2 ring-gray-200 hover:ring-blue-400 shadow-md'
+                              }`}
+                              title="Click to preview image"
+                              aria-label={`Preview image for ${delivery.productName}`}
+                            >
+                              <img
+                                src={delivery.productImage}
                                 alt={delivery.productName}
-                                className="w-12 h-12 object-cover rounded-lg border border-gray-200 dark:border-gray-700"
+                                className="w-full h-full object-cover rounded-xl"
                                 onError={(e) => {
-                                  // Fallback to status icon if image fails to load
-                                  e.currentTarget.style.display = 'none';
-                                  e.currentTarget.nextElementSibling!.style.display = 'flex';
+                                  const target = e.currentTarget;
+                                  if (target.getAttribute('data-fallback') !== '1') {
+                                    target.setAttribute('data-fallback', '1');
+                                    target.src = '/placeholder-shoe.png';
+                                    target.style.display = 'block';
+                                  }
                                 }}
                               />
-                              <div className="hidden flex-shrink-0">
-                                {getStatusIcon(delivery.status)}
-                              </div>
-                            </div>
+                            </button>
                           ) : (
                             <div className="flex-shrink-0">
                               {getStatusIcon(delivery.status)}
@@ -1271,7 +1326,9 @@ const DeliveriesNew: React.FC = () => {
                   
                             <div className="text-xs text-gray-600 dark:text-gray-400 space-y-0.5">
                               <div className="flex items-center gap-1">
-                                <span>{delivery.productBrand} • Size {delivery.productSize}</span>
+                                <span>{delivery.productBrand}</span>
+                                <span className="text-gray-400">•</span>
+                                <SizePill size={delivery.productSize} />
                               </div>
                               {delivery.emailUrl ? (
                                 <div className="flex items-center gap-1">
@@ -1489,16 +1546,34 @@ const DeliveriesNew: React.FC = () => {
                       <td className="px-4 py-4">
                         <div className="flex items-center">
                           {delivery.productImage ? (
-                            <img
-                              src={delivery.productImage}
-                              alt={delivery.productName}
-                              className="w-10 h-10 object-cover rounded-lg border border-gray-200 dark:border-gray-700 flex-shrink-0"
-                              onError={(e) => {
-                                e.currentTarget.style.display = 'none';
-                                const fallback = e.currentTarget.parentElement?.querySelector('.status-icon-fallback');
-                                if (fallback) fallback.classList.remove('hidden');
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeliveryImageClick(delivery);
                               }}
-                            />
+                              className={`relative w-12 h-12 rounded-xl flex-shrink-0 overflow-hidden flex items-center justify-center cursor-pointer transition-all duration-300 hover:scale-105 hover:shadow-xl ${
+                                currentTheme.name === 'Neon'
+                                  ? 'ring-2 ring-white/10 hover:ring-cyan-400'
+                                  : 'ring-2 ring-gray-200 hover:ring-blue-400 shadow-md'
+                              }`}
+                              title="Click to preview image"
+                              aria-label={`Preview image for ${delivery.productName}`}
+                            >
+                              <img
+                                src={delivery.productImage}
+                                alt={delivery.productName}
+                                className="w-full h-full object-cover rounded-xl"
+                                onError={(e) => {
+                                  const target = e.currentTarget;
+                                  if (target.getAttribute('data-fallback') !== '1') {
+                                    target.setAttribute('data-fallback', '1');
+                                    target.src = '/placeholder-shoe.png';
+                                    target.style.display = 'block';
+                                  }
+                                }}
+                              />
+                            </button>
                           ) : null}
                           <div className={`${delivery.productImage ? 'hidden' : ''} status-icon-fallback`}>
                             {getStatusIcon(delivery.status)}
@@ -1512,8 +1587,9 @@ const DeliveriesNew: React.FC = () => {
                           <div className={`text-sm font-medium ${currentTheme.colors.textPrimary} truncate`}>
                             {delivery.productName}
                           </div>
-                          <div className={`text-xs ${currentTheme.colors.textSecondary}`}>
-                            {delivery.productBrand} • Size {delivery.productSize}
+                          <div className="mt-0.5 flex items-center gap-2">
+                            <span className={`text-xs ${currentTheme.colors.textSecondary}`}>{delivery.productBrand}</span>
+                            <SizePill size={delivery.productSize} />
                           </div>
                           {delivery.emailUrl ? (
                             <div className="mt-1 flex items-center gap-1">
@@ -1722,6 +1798,16 @@ const DeliveriesNew: React.FC = () => {
             onClose={() => setNotification((p) => ({ ...p, show: false }))}
           />
         )}
+
+      {/* Image Preview Modal */}
+      <ImagePreviewModal
+        isOpen={imagePreview.isOpen}
+        onClose={closeImagePreview}
+        imageUrl={imagePreview.imageUrl}
+        productName={imagePreview.productName}
+        productBrand={imagePreview.productBrand}
+        productSize={imagePreview.productSize}
+      />
       </div>
     </div>
   );
