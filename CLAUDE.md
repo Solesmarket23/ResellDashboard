@@ -104,6 +104,23 @@ npx cap open android # Open Android project in Android Studio
 
 ## Development Guidelines
 
+### UI/UX Quality Bar
+
+Use this checklist for every UI change (new features, refactors, styling, tables, modals):
+
+- **Clarity**: plain language, obvious labels, minimal clutter. Prefer fewer controls with sensible defaults.
+- **Consistency**: reuse existing components + theme tokens; match spacing/typography patterns already used in the app.
+- **Feedback**: every action has an immediate state (loading/success/error) without flicker or layout shift.
+- **Error prevention**: validate early, disable impossible actions, confirm destructive actions.
+- **Accessibility**: semantic elements first; keyboard + focus states; add ARIA only when needed; maintain contrast.
+- **Mobile-first**: touch targets ≥ 44px; responsive layouts; avoid scroll traps and janky mixed-axis scrolling.
+- **Perceived performance**: prefer cached/optimistic UI and background refresh; avoid full-page spinners except on first load.
+
+**Process**
+- If requirements are clear, implement directly.
+- If requirements are ambiguous, ask targeted clarifying questions before coding.
+- After implementing UI, include a short manual test checklist (desktop + mobile) for the changed area.
+
 ### Database Patterns
 - All user data is scoped by `userId` field
 - Use `getDocuments()` and `addDocument()` from `firebaseUtils.ts`
