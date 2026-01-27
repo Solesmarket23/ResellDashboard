@@ -12,6 +12,7 @@ import { getDocuments } from '../lib/firebase/firebaseUtils';
 import { useSales } from '../lib/hooks/useSales';
 import { formatOrderNumberForDisplay } from '../lib/utils/orderNumberUtils';
 import DatePicker from './DatePicker';
+import NeonNotification, { type NotificationType } from './NeonNotification';
 
 const Dashboard = () => {
   const { currentTheme, setTheme, themes } = useTheme();
@@ -44,11 +45,11 @@ const Dashboard = () => {
   ]);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [notification, setNotification] = useState<{
-    show: boolean;
+    isVisible: boolean;
     message: string;
-    type: 'success' | 'error' | 'info';
+    type: NotificationType;
   }>({
-    show: false,
+    isVisible: false,
     message: '',
     type: 'success'
   });
@@ -437,17 +438,12 @@ const Dashboard = () => {
   }, [showDatePicker, showBackground]);
   
   // Show notification helper
-  const showNotification = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+  const showNotification = (message: string, type: NotificationType = 'success') => {
     setNotification({
-      show: true,
+      isVisible: true,
       message,
       type
     });
-    
-    // Auto-hide after 3 seconds
-    setTimeout(() => {
-      setNotification(prev => ({ ...prev, show: false }));
-    }, 3000);
   };
 
   // Stats configuration
@@ -1056,7 +1052,7 @@ const Dashboard = () => {
                 setMockDataEnabled(!mockDataEnabled);
                 showNotification(
                   mockDataEnabled ? 'Switched to real data' : 'Switched to mock data', 
-                  'info'
+                  'success'
                 );
               }}
               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
@@ -1536,42 +1532,12 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Notification */}
-      {notification.show && (
-        <div className="fixed top-4 right-4 z-50 animate-in slide-in-from-right-2 duration-300">
-          <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-lg border-2 p-4 max-w-sm ${
-            notification.type === 'success' 
-              ? 'border-green-500 bg-green-50 dark:bg-green-900/20' 
-              : notification.type === 'error'
-              ? 'border-red-500 bg-red-50 dark:bg-red-900/20'
-              : 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-          }`}>
-            <div className="flex items-center gap-3">
-              <div className={`w-2 h-2 rounded-full ${
-                notification.type === 'success' 
-                  ? 'bg-green-500'
-                  : notification.type === 'error'
-                  ? 'bg-red-500'
-                  : 'bg-blue-500'
-              }`}></div>
-              <span className={`font-medium ${
-                notification.type === 'success' 
-                  ? 'text-green-800 dark:text-green-200'
-                  : notification.type === 'error'
-                  ? 'text-red-800 dark:text-red-200'
-                  : 'text-blue-800 dark:text-blue-200'
-              }`}>
-                {notification.message}
-              </span>
-              <button
-                onClick={() => setNotification(prev => ({ ...prev, show: false }))}
-                className="ml-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
+      {notification.isVisible && (
+        <NeonNotification
+          message={notification.message}
+          type={notification.type}
+          onClose={() => setNotification((p) => ({ ...p, isVisible: false }))}
+        />
       )}
 
     </div>

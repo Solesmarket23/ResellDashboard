@@ -3240,15 +3240,12 @@ const Sales = () => {
         </>
       )}
 
-      {/* Purchase Link Success Message */}
       {purchaseLinkSuccessMessage && (
-        <div className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg ${
-          isNeon 
-            ? 'bg-green-500/20 border border-green-500/30 text-green-400' 
-            : 'bg-green-100 border border-green-200 text-green-800'
-        }`}>
-          {purchaseLinkSuccessMessage}
-        </div>
+        <NeonNotification
+          message={purchaseLinkSuccessMessage}
+          type="success"
+          onClose={() => setPurchaseLinkSuccessMessage('')}
+        />
       )}
 
       {/* Purchase Link Popup */}

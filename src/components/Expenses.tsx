@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
-import NeonNotification from './NeonNotification';
+import NeonNotification, { type NotificationType } from './NeonNotification';
 import {
   Wallet,
   Plus,
@@ -103,7 +103,7 @@ export default function Expenses() {
   const [month, setMonth] = useState(() => yyyyMm(new Date()));
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: NotificationType } | null>(null);
   const toastTimerRef = useRef<number | null>(null);
 
   const [amount, setAmount] = useState<string>('');
@@ -113,7 +113,7 @@ export default function Expenses() {
   const [notes, setNotes] = useState<string>('');
   const [recurrence, setRecurrence] = useState<ExpenseRecurrence>('once');
 
-  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+  const showToast = (message: string, type: NotificationType = 'success') => {
     setToast({ message, type });
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     toastTimerRef.current = window.setTimeout(() => setToast(null), 2200);
@@ -186,7 +186,7 @@ export default function Expenses() {
     const userId = resolveUserId();
     if (!userId) return showToast('Missing user session. Refresh and try again.', 'error');
     const amt = payload?.amount ?? parseFloat(amount || '');
-    if (!Number.isFinite(amt) || amt <= 0) return showToast('Enter a valid amount', 'info');
+    if (!Number.isFinite(amt) || amt <= 0) return showToast('Enter a valid amount', 'warning');
     const chosenDate = payload?.date ?? date;
 
     try {
@@ -242,9 +242,11 @@ export default function Expenses() {
   return (
     <div className={`flex-1 overflow-y-auto ${currentTheme.colors.background}`}>
       {toast && (
-        <div className="fixed top-4 right-4 z-50">
-          <NeonNotification message={toast.message} type={toast.type} isVisible={true} />
-        </div>
+        <NeonNotification
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
       )}
 
       <div className="p-4 sm:p-8">

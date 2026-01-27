@@ -5,6 +5,7 @@ import { Search, DollarSign, Package, CheckCircle, AlertCircle, Loader, X, Trend
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { getUserStockXSettings, saveUserStockXSettings, UserStockXSettings } from '@/lib/firebase/userDataUtils';
+import NeonNotification from './NeonNotification';
 
 interface Product {
   productId: string;
@@ -582,12 +583,12 @@ export default function StockXListingCreator() {
           </p>
         </div>
 
-        {/* Success Notification */}
         {showSaveSuccess && (
-          <div className="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 z-50 animate-in slide-in-from-right duration-300">
-            <CheckCircle className="w-5 h-5" />
-            <span className="font-medium">Settings saved successfully!</span>
-          </div>
+          <NeonNotification
+            message="Settings saved"
+            type="success"
+            onClose={() => setShowSaveSuccess(false)}
+          />
         )}
 
         {/* StockX Settings Modal */}

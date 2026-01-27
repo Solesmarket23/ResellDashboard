@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
-import NeonNotification from './NeonNotification';
+import NeonNotification, { type NotificationType } from './NeonNotification';
 
 type TaskStatus = 'open' | 'done';
 type TaskPriority = 'low' | 'med' | 'high';
@@ -132,7 +132,7 @@ export default function Tasks() {
   const [showDone, setShowDone] = useState(false);
   const [filter, setFilter] = useState<'open' | 'today' | 'overdue' | 'high' | 'all'>('open');
 
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: NotificationType } | null>(null);
   const toastTimerRef = useRef<number | null>(null);
 
   const [newTitle, setNewTitle] = useState('');
@@ -147,7 +147,7 @@ export default function Tasks() {
     return (user?.uid || siteUserId || '').trim();
   };
 
-  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+  const showToast = (message: string, type: NotificationType = 'success') => {
     setToast({ message, type });
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     toastTimerRef.current = window.setTimeout(() => setToast(null), 2200);
@@ -342,9 +342,11 @@ export default function Tasks() {
     <div className={`flex-1 overflow-y-auto ${currentTheme.colors.background}`}>
       {/* Toast */}
       {toast && (
-        <div className="fixed top-4 right-4 z-50">
-          <NeonNotification message={toast.message} type={toast.type} isVisible={true} />
-        </div>
+        <NeonNotification
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
       )}
 
       <div className="p-4 sm:p-8">
@@ -484,7 +486,7 @@ export default function Tasks() {
                   if (e.key === 'Enter') {
                     e.preventDefault();
                     const title = newTitle.trim();
-                    if (!title) return showToast('Enter a task title', 'info');
+                    if (!title) return showToast('Enter a task title', 'warning');
                     void createTask({
                       title,
                       category: newCategory,
@@ -552,7 +554,7 @@ export default function Tasks() {
               <button
                 onClick={() => {
                   const title = newTitle.trim();
-                  if (!title) return showToast('Enter a task title', 'info');
+                  if (!title) return showToast('Enter a task title', 'warning');
                   void createTask({
                     title,
                     category: newCategory,
