@@ -1445,6 +1445,9 @@ const DeliveriesNew: React.FC = () => {
                 <thead className={`bg-gray-50 dark:bg-gray-800 border-b ${currentTheme.colors.border}`}>
                   <tr>
                     <th className={`px-4 py-3 text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`}>
+                      Image
+                    </th>
+                    <th className={`px-4 py-3 text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`}>
                       Product
                     </th>
                     <th className={`px-4 py-3 text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`}>
@@ -1482,50 +1485,53 @@ const DeliveriesNew: React.FC = () => {
                           : ''
                       }`}
                     >
-                      {/* Product */}
+                      {/* Image */}
                       <td className="px-4 py-4">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center">
                           {delivery.productImage ? (
-                            <img 
-                              src={delivery.productImage} 
+                            <img
+                              src={delivery.productImage}
                               alt={delivery.productName}
                               className="w-10 h-10 object-cover rounded-lg border border-gray-200 dark:border-gray-700 flex-shrink-0"
                               onError={(e) => {
-                                // Fallback to status icon if image fails to load
                                 e.currentTarget.style.display = 'none';
-                                const statusIcon = e.currentTarget.parentElement?.querySelector('.status-icon-fallback');
-                                if (statusIcon) statusIcon.classList.remove('hidden');
+                                const fallback = e.currentTarget.parentElement?.querySelector('.status-icon-fallback');
+                                if (fallback) fallback.classList.remove('hidden');
                               }}
                             />
                           ) : null}
                           <div className={`${delivery.productImage ? 'hidden' : ''} status-icon-fallback`}>
                             {getStatusIcon(delivery.status)}
                           </div>
-                          <div className="min-w-0">
-                            <div className={`text-sm font-medium ${currentTheme.colors.textPrimary} truncate`}>
-                              {delivery.productName}
-                  </div>
-                            <div className={`text-xs ${currentTheme.colors.textSecondary}`}>
-                              {delivery.productBrand} • Size {delivery.productSize}
-                </div>
-                            {delivery.emailUrl ? (
-                              <div className="mt-1 flex items-center gap-1">
-                                <Mail className="w-3 h-3 text-blue-500" />
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openOrderEmail(delivery);
-                                  }}
-                                  className="text-xs font-semibold text-blue-500 hover:text-blue-400 transition-colors"
-                                  title="Open order confirmation email"
-                                >
-                                  Open email
-                                </button>
-                              </div>
-                            ) : null}
-            </div>
-      </div>
+                        </div>
+                      </td>
+
+                      {/* Product */}
+                      <td className="px-4 py-4">
+                        <div className="min-w-0">
+                          <div className={`text-sm font-medium ${currentTheme.colors.textPrimary} truncate`}>
+                            {delivery.productName}
+                          </div>
+                          <div className={`text-xs ${currentTheme.colors.textSecondary}`}>
+                            {delivery.productBrand} • Size {delivery.productSize}
+                          </div>
+                          {delivery.emailUrl ? (
+                            <div className="mt-1 flex items-center gap-1">
+                              <Mail className="w-3 h-3 text-blue-500" />
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openOrderEmail(delivery);
+                                }}
+                                className="text-xs font-semibold text-blue-500 hover:text-blue-400 transition-colors"
+                                title="Open order confirmation email"
+                              >
+                                Open email
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
                       </td>
                       
                       {/* Tracking */}

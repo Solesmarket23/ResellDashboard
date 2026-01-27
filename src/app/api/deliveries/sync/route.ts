@@ -54,8 +54,13 @@ function pickImage(purchase: any): string | null {
   return (
     firstNonEmptyString(
       purchase?.product?.image,
+      purchase?.product?.imageUrl,
+      purchase?.product?.thumbnail,
+      purchase?.product?.thumbnailUrl,
+      purchase?.productImageUrl,
       purchase?.productImage,
       purchase?.image,
+      purchase?.imageUrl,
       purchase?.product?.img
     ) || null
   );
@@ -312,6 +317,7 @@ export async function GET(request: NextRequest) {
         productName: pickProductName(purchase),
         productBrand: pickBrand(purchase),
         productSize: pickSize(purchase),
+        productImage: pickImage(purchase),
         status: (hasValidLiveTracking ? liveTracking?.status : undefined) || (purchase.status || 'unknown'),
         estimatedDelivery,
         actualDelivery,
