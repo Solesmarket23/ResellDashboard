@@ -7,6 +7,7 @@ interface DeliveryItem {
   productName: string;
   productBrand: string;
   productSize: string;
+  productImage?: string | null;
   status: 'shipped' | 'in_transit' | 'out_for_delivery' | 'delivered' | 'exception' | 'unknown';
   estimatedDelivery: string;
   actualDelivery?: string;

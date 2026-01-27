@@ -55,8 +55,12 @@ function pickImage(purchase: any): string | null {
     firstNonEmptyString(
       purchase?.product?.image,
       purchase?.product?.imageUrl,
+      purchase?.product?.image_url,
       purchase?.product?.thumbnail,
       purchase?.product?.thumbnailUrl,
+      purchase?.product?.thumb,
+      Array.isArray(purchase?.product?.images) ? purchase.product.images[0] : null,
+      Array.isArray(purchase?.images) ? purchase.images[0] : null,
       purchase?.productImageUrl,
       purchase?.productImage,
       purchase?.image,
