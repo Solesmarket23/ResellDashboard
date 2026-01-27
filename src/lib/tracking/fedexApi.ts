@@ -171,14 +171,23 @@ export class FedExTrackingAPI {
 
   private parseTrackingResponse(response: FedExTrackingResponse, trackingNumber: string): TrackingInfo {
     try {
-      const trackResults = response.output.completeTrackResults[0]?.trackResults[0];
+      const complete = Array.isArray((response as any)?.output?.completeTrackResults)
+        ? ((response as any).output.completeTrackResults as any[])
+        : [];
+
+      // Prefer the matching trackingNumber result if present, else fall back to first.
+      const matching = complete.find((c: any) => String(c?.trackingNumber || '').trim() === String(trackingNumber).trim());
+      const trackResults =
+        (matching?.trackResults && Array.isArray(matching.trackResults) ? matching.trackResults[0] : null) ||
+        (complete[0]?.trackResults && Array.isArray(complete[0].trackResults) ? complete[0].trackResults[0] : null);
       
       if (!trackResults) {
         throw new Error('No tracking results found');
       }
 
       // Parse scan events into tracking updates
-      const updates: TrackingUpdate[] = trackResults.scanEvents.map(scan => ({
+      const scanEvents = Array.isArray((trackResults as any).scanEvents) ? ((trackResults as any).scanEvents as any[]) : [];
+      const updates: TrackingUpdate[] = scanEvents.map((scan: any) => ({
         timestamp: scan.date,
         location: this.formatLocation(scan.scanLocation),
         status: this.mapFedExStatus(scan.eventType),
@@ -197,21 +206,45 @@ export class FedExTrackingAPI {
       const currentStatus = this.mapFedExStatus(trackResults.statusCode || trackResults.statusDetail?.code || 'UNKNOWN');
       
       // Get delivery dates from dateAndTimes array (most reliable method)
-      const dateAndTimes = trackResults.dateAndTimes || [];
+      const dateAndTimes = Array.isArray((trackResults as any).dateAndTimes) ? ((trackResults as any).dateAndTimes as any[]) : [];
       
       // Debug: Log all available date types from FedEx API
       console.log(`📅 FedEx dateAndTimes for ${trackingNumber}:`, 
         dateAndTimes.map(dt => `${dt.type}: ${dt.dateTime}`).join(', '));
-      
-      // Find estimated delivery date - prioritize ESTIMATED_DELIVERY over COMMITMENT
-      // ESTIMATED_DELIVERY = most up-to-date delivery estimate (e.g., 12/7)
-      // COMMITMENT = original scheduled delivery date (e.g., 12/6)
-      const estimatedDeliveryDate = dateAndTimes.find(dt => dt.type === 'ESTIMATED_DELIVERY')?.dateTime || 
-                                    dateAndTimes.find(dt => dt.type === 'COMMITMENT')?.dateTime;
-      
-      console.log(`🎯 Using estimated delivery: ${estimatedDeliveryDate} (from ${
-        dateAndTimes.find(dt => dt.type === 'ESTIMATED_DELIVERY') ? 'ESTIMATED_DELIVERY' : 'COMMITMENT'
-      })`);
+
+      const toDate = (raw: unknown): string | null => {
+        if (!raw) return null;
+        const dt = new Date(String(raw));
+        return Number.isNaN(dt.getTime()) ? null : dt.toISOString();
+      };
+
+      const pickDateAndTimes = (types: string[]): { date: string | null; from: string | null } => {
+        for (const t of types) {
+          const raw = dateAndTimes.find((dt: any) => dt?.type === t)?.dateTime;
+          const parsed = toDate(raw);
+          if (parsed) return { date: parsed, from: t };
+        }
+        return { date: null, from: null };
+      };
+
+      // Step 1: Prefer explicit FedEx dateAndTimes (best)
+      const eta1 = pickDateAndTimes(['ESTIMATED_DELIVERY', 'COMMITMENT', 'APPOINTMENT_DELIVERY', 'ESTIMATED_RETURN_TO_STATION']);
+
+      // Step 2: Fallback to time windows (often present even when dateAndTimes is empty)
+      const windowEnds =
+        (trackResults as any)?.estimatedDeliveryTimeWindow?.window?.ends ||
+        (trackResults as any)?.estimatedDeliveryTimeWindow?.window?.starts ||
+        (trackResults as any)?.standardTransitTimeWindow?.window?.ends ||
+        (trackResults as any)?.standardTransitTimeWindow?.window?.starts;
+      const eta2 = toDate(windowEnds);
+
+      // Step 3: Last-resort fallback: if we have scan events, use the newest scan date as a weak proxy
+      const newestScanIso = updates[0]?.timestamp ? toDate(updates[0].timestamp) : null;
+
+      const estimatedDeliveryDate = eta1.date || eta2 || null;
+      const estimatedFrom = eta1.from || (eta2 ? 'TIME_WINDOW' : newestScanIso ? 'SCAN_EVENT' : null);
+
+      console.log(`🎯 Using estimated delivery: ${estimatedDeliveryDate || 'none'} (from ${estimatedFrom || 'none'})`);
       
       // Find actual delivery date
       const actualDeliveryDate = dateAndTimes.find(dt => 
