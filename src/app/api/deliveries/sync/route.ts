@@ -245,24 +245,8 @@ export async function GET(request: NextRequest) {
         return dt.toISOString().split('T')[0];
       };
 
-      // Always produce a delivery date so the UI never shows TBD.
-      // Priority:
-      // 1) Manual override
-      // 2) Live tracking (estimated/actual)
-      // 3) Purchase stored estimate
-      // 4) Calculated (purchaseDate/createdAt + 5 days)
-      const calcFallback = () => {
-        const base =
-          purchase?.purchaseDate ||
-          purchase?.createdAt ||
-          purchase?.updatedAt ||
-          purchase?.timestamp ||
-          null;
-        const baseIso = toIsoDate(base);
-        const dt = baseIso ? new Date(baseIso) : new Date();
-        dt.setDate(dt.getDate() + 5);
-        return dt.toISOString().split('T')[0];
-      };
+      const manualDate = toIsoDate(purchase?.manualDeliveryDate);
+      const purchaseEstimated = toIsoDate(purchase?.estimatedDelivery);
 
       const liveEstimated =
         hasValidLiveTracking
@@ -270,11 +254,40 @@ export async function GET(request: NextRequest) {
             toIsoDate(liveTracking?.courierEstimatedDelivery) ||
             toIsoDate(liveTracking?.afterShipEstimatedDelivery)
           : null;
-      const liveActual = hasValidLiveTracking ? toIsoDate(liveTracking?.actualDelivery) : null;
-      const purchaseEstimate = toIsoDate(purchase?.estimatedDelivery);
-      const manual = toIsoDate(purchase?.manualDeliveryDate);
+      const liveActual =
+        hasValidLiveTracking
+          ? toIsoDate(liveTracking?.actualDelivery) ||
+            // Best-effort: if carrier marks delivered but doesn't provide a date, use lastUpdate / last scan date.
+            (String(liveTracking?.status || '').toLowerCase().trim() === 'delivered'
+              ? toIsoDate(liveTracking?.lastUpdate) || toIsoDate(liveTracking?.updates?.[0]?.timestamp)
+              : null)
+          : null;
 
-      const computedEstimatedDelivery = manual || liveActual || liveEstimated || purchaseEstimate || calcFallback();
+      const rawStatus = String((hasValidLiveTracking ? liveTracking?.status : purchase?.status) || 'unknown')
+        .toLowerCase()
+        .trim();
+      const normalizedStatus = rawStatus || 'unknown';
+
+      // Label-created / awaiting scan: carrier has no ETA and no scan history.
+      const hasScans = hasValidLiveTracking ? (Array.isArray(liveTracking?.updates) && liveTracking.updates.length > 0) : false;
+      const isLabelCreated = hasValidLiveTracking && !hasScans && !liveEstimated && !liveActual && normalizedStatus !== 'delivered';
+
+      let statusNote: string | undefined;
+      if (isLabelCreated) statusNote = 'Label created — awaiting carrier scan';
+      else if (normalizedStatus !== 'delivered' && !manualDate && !liveEstimated && !purchaseEstimated) statusNote = 'No ETA yet';
+
+      // Delivery date rules:
+      // - Label created / no ETA: keep TBD (plus note)
+      // - On the way with ETA: show ETA
+      // - Delivered: show actual delivery date
+      const estimatedDelivery =
+        normalizedStatus === 'delivered'
+          ? 'TBD'
+          : manualDate || liveEstimated || purchaseEstimated || 'TBD';
+      const actualDelivery =
+        normalizedStatus === 'delivered'
+          ? liveActual || toIsoDate(purchase?.actualDelivery) || manualDate || undefined
+          : undefined;
 
       return {
         id: purchase.id,
@@ -284,13 +297,9 @@ export async function GET(request: NextRequest) {
         productBrand: pickBrand(purchase),
         productSize: pickSize(purchase),
         status: (hasValidLiveTracking ? liveTracking?.status : undefined) || (purchase.status || 'unknown'),
-        estimatedDelivery: computedEstimatedDelivery,
-        actualDelivery:
-          liveActual ||
-          toIsoDate(purchase?.actualDelivery) ||
-          (String((hasValidLiveTracking ? liveTracking?.status : purchase?.status) || '').toLowerCase().trim() === 'delivered'
-            ? computedEstimatedDelivery
-            : undefined),
+        estimatedDelivery,
+        actualDelivery,
+        statusNote,
         origin: (hasValidLiveTracking ? liveTracking?.origin : undefined) || purchase.origin || 'Unknown',
         destination: (hasValidLiveTracking ? liveTracking?.destination : undefined) || purchase.destination || 'Unknown',
         lastUpdate:
@@ -585,29 +594,52 @@ export async function POST(request: NextRequest) {
 
       // Use live tracking estimated delivery or fallback to calculated
       let estimatedDelivery = 'TBD';
+      let actualDelivery: string | undefined;
+      let statusNote: string | undefined;
+
+      const toIsoDate = (raw: unknown): string | null => {
+        if (!raw) return null;
+        const dt = new Date(String(raw));
+        if (Number.isNaN(dt.getTime())) return null;
+        return dt.toISOString().split('T')[0];
+      };
       
-      // Priority order for estimated delivery:
-      // 1. Manual delivery date (highest priority)
-      // 2. Live tracking estimated delivery
-      // 3. Purchase estimated delivery
-      // 4. Calculated estimate
+      // Priority order for delivery dates:
+      // - Label created / no ETA: keep TBD + statusNote
+      // - On the way with ETA: show ETA
+      // - Delivered: show actual delivery date
       
-      if (purchase.manualDeliveryDate) {
-        console.log(`📦 Using manual delivery date: ${purchase.manualDeliveryDate} for ${trackingValue}`);
-        estimatedDelivery = purchase.manualDeliveryDate;
-      } else if (hasValidLiveTracking && liveTracking?.estimatedDelivery) {
-        console.log(`📦 Using live tracking estimated delivery: ${liveTracking.estimatedDelivery} for ${trackingValue}`);
-        estimatedDelivery = liveTracking.estimatedDelivery;
-      } else if (purchase.estimatedDelivery) {
-        console.log(`📦 Using purchase estimated delivery: ${purchase.estimatedDelivery} for ${trackingValue}`);
-        estimatedDelivery = purchase.estimatedDelivery;
+      const manualDate = toIsoDate(purchase.manualDeliveryDate);
+      const purchaseEstimated = toIsoDate(purchase.estimatedDelivery);
+      const liveEstimated =
+        hasValidLiveTracking
+          ? toIsoDate(liveTracking?.estimatedDelivery) ||
+            toIsoDate(liveTracking?.courierEstimatedDelivery) ||
+            toIsoDate(liveTracking?.afterShipEstimatedDelivery)
+          : null;
+      const liveActual =
+        hasValidLiveTracking
+          ? toIsoDate(liveTracking?.actualDelivery) ||
+            (String(liveTracking?.status || '').toLowerCase().trim() === 'delivered'
+              ? toIsoDate(liveTracking?.lastUpdate) || toIsoDate(liveTracking?.updates?.[0]?.timestamp)
+              : null)
+          : null;
+
+      const rawStatus = String((hasValidLiveTracking ? liveTracking?.status : purchase?.status) || deliveryStatus)
+        .toLowerCase()
+        .trim();
+
+      const hasScans = hasValidLiveTracking ? (Array.isArray(liveTracking?.updates) && liveTracking.updates.length > 0) : false;
+      const isLabelCreated = hasValidLiveTracking && !hasScans && !liveEstimated && !liveActual && rawStatus !== 'delivered';
+
+      if (rawStatus === 'delivered' || deliveryStatus === 'delivered') {
+        actualDelivery = liveActual || toIsoDate(purchase.actualDelivery) || manualDate || undefined;
+        estimatedDelivery = 'TBD';
+        if (!actualDelivery) statusNote = 'Delivered — date not provided by carrier';
       } else {
-        // Calculate estimated delivery (purchase date + 5 days)
-        const purchaseDate = new Date(purchase.createdAt || purchase.purchaseDate);
-        const estimated = new Date(purchaseDate);
-        estimated.setDate(estimated.getDate() + 5);
-        estimatedDelivery = estimated.toISOString().split('T')[0];
-        console.log(`📦 Using calculated estimated delivery: ${estimatedDelivery} for ${trackingValue}`);
+        estimatedDelivery = manualDate || liveEstimated || purchaseEstimated || 'TBD';
+        if (isLabelCreated) statusNote = 'Label created — awaiting carrier scan';
+        else if (estimatedDelivery === 'TBD') statusNote = 'No ETA yet';
       }
 
       return {
@@ -620,7 +652,8 @@ export async function POST(request: NextRequest) {
         productImage: pickImage(purchase),
         status: deliveryStatus,
         estimatedDelivery: estimatedDelivery,
-        actualDelivery: deliveryStatus === 'delivered' ? estimatedDelivery : undefined,
+        actualDelivery,
+        statusNote,
         origin: (hasValidLiveTracking ? liveTracking?.origin : undefined) || 'Unknown Origin',
         destination: liveTracking?.destination || 'Your Address',
         lastUpdate:

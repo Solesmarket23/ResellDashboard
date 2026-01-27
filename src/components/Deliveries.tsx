@@ -26,6 +26,7 @@ interface DeliveryItem {
   status: 'shipped' | 'in_transit' | 'out_for_delivery' | 'delivered' | 'exception' | 'unknown';
   estimatedDelivery: string;
   actualDelivery?: string;
+  statusNote?: string;
   origin: string;
   destination: string;
   lastUpdate: string;
@@ -1276,7 +1277,7 @@ const DeliveriesNew: React.FC = () => {
                       {delivery.status === 'delivered' && delivery.actualDelivery
                         ? `Delivered ${formatDisplayDate(delivery.actualDelivery)}`
                         : delivery.estimatedDelivery === 'TBD'
-                        ? 'Est. TBD'
+                        ? (delivery.statusNote ? `Est. TBD • ${delivery.statusNote}` : 'Est. TBD')
                         : `Est. ${formatDisplayDate(delivery.estimatedDelivery)}`
                       }
                     </span>
@@ -1512,7 +1513,7 @@ const DeliveriesNew: React.FC = () => {
                           {delivery.status === 'delivered' && delivery.actualDelivery
                             ? `Delivered ${formatDisplayDate(delivery.actualDelivery)}`
                             : delivery.estimatedDelivery === 'TBD'
-                            ? 'TBD'
+                            ? (delivery.statusNote ? `TBD • ${delivery.statusNote}` : 'TBD')
                             : formatDisplayDate(delivery.estimatedDelivery)
                           }
                         </div>
