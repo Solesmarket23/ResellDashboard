@@ -73,15 +73,16 @@ function pickImage(purchase: any): string | null {
 function buildGmailEmailUrl(args: { emailId?: unknown; orderNumber?: unknown; trackingNumber?: unknown }): string | null {
   const emailId = typeof args.emailId === 'string' ? args.emailId.trim() : '';
   if (emailId && !emailId.startsWith('manual:')) {
-    return `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(emailId)}`;
+    // Avoid hardcoding /u/0 which can be the wrong account when users have multiple Gmail accounts.
+    return `https://mail.google.com/mail/#all/${encodeURIComponent(emailId)}`;
   }
   const orderNumber = typeof args.orderNumber === 'string' ? args.orderNumber.trim() : '';
   if (orderNumber) {
-    return `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(`"${orderNumber}"`)}`;
+    return `https://mail.google.com/mail/#search/${encodeURIComponent(`"${orderNumber}"`)}`;
   }
   const trackingNumber = typeof args.trackingNumber === 'string' ? args.trackingNumber.trim() : '';
   if (trackingNumber) {
-    return `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(`"${trackingNumber}"`)}`;
+    return `https://mail.google.com/mail/#search/${encodeURIComponent(`"${trackingNumber}"`)}`;
   }
   return null;
 }

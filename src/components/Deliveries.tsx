@@ -440,7 +440,10 @@ const DeliveriesNew: React.FC = () => {
     // Treat "Open email" as an active action: persist the blue highlight.
     setHighlightedDeliveryId(delivery.id);
     setSelectedDelivery(delivery);
-    window.open(url, '_blank', 'noopener,noreferrer');
+    const win = window.open(url, '_blank', 'noopener,noreferrer');
+    if (!win) {
+      showNotification('Popup blocked — allow popups for this site to open Gmail', 'error');
+    }
   };
 
   // Persist the active highlight across navigation/back/refreshes for this user.
