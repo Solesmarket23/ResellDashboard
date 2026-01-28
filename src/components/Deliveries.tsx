@@ -181,6 +181,23 @@ const DeliveriesNew: React.FC = () => {
     return { needs, invalid };
   }, [deliveries]);
 
+  const getHighlightStyle = (isHighlighted: boolean): React.CSSProperties | undefined => {
+    if (!isHighlighted) return undefined;
+    return {
+      boxShadow:
+        currentTheme.name === 'Neon'
+          ? 'inset 0 0 0 3px #22d3ee, 0 20px 50px rgba(34, 211, 238, 0.3)'
+          : 'inset 0 0 0 3px #3b82f6, 0 20px 50px rgba(59, 130, 246, 0.3)',
+    };
+  };
+
+  const getHighlightBgClass = (isHighlighted: boolean): string => {
+    if (!isHighlighted) return '';
+    return currentTheme.name === 'Neon'
+      ? 'bg-gradient-to-r from-cyan-500/30 via-blue-500/20 to-cyan-500/30'
+      : 'bg-gradient-to-r from-blue-200 via-blue-100 to-blue-200';
+  };
+
   // Table sorting (Delivery column)
   const [deliverySort, setDeliverySort] = useState<'asc' | 'desc' | null>(null);
   const [trackingSort, setTrackingSort] = useState<'asc' | 'desc' | null>(null);
@@ -1864,15 +1881,14 @@ const DeliveriesNew: React.FC = () => {
             <div 
               key={delivery.id} 
               data-delivery-id={delivery.id}
+              style={getHighlightStyle(highlightedDeliveryId === delivery.id)}
                         onClick={() => setSelectedDelivery(delivery)}
                         className={`p-3 rounded-lg border cursor-pointer hover:shadow-md transition-all duration-200 ${
                           selectedDelivery?.id === delivery.id 
                             ? 'bg-cyan-50 dark:bg-cyan-900/20 border-cyan-300 dark:border-cyan-700' 
                             : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
                         } ${
-                          highlightedDeliveryId === delivery.id
-                            ? 'shadow-[inset_0_0_0_2px_rgba(59,130,246,0.65)] border-blue-400/70 dark:border-blue-500/60'
-                            : ''
+                          getHighlightBgClass(highlightedDeliveryId === delivery.id)
                         }`}
                       >
                         <div className="flex items-center gap-3">
@@ -2256,13 +2272,10 @@ const DeliveriesNew: React.FC = () => {
                     <tr 
                       key={delivery.id}
                       data-delivery-id={delivery.id}
+                      style={getHighlightStyle(highlightedDeliveryId === delivery.id)}
                       className={`hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors duration-150 ${
                         selectedDelivery?.id === delivery.id ? 'bg-cyan-50 dark:bg-cyan-900/20' : ''
-                      } ${
-                        highlightedDeliveryId === delivery.id
-                          ? 'shadow-[inset_0_0_0_2px_rgba(59,130,246,0.65)]'
-                          : ''
-                      }`}
+                      } ${getHighlightBgClass(highlightedDeliveryId === delivery.id)}`}
                     >
                       {/* Image */}
                       <td className="px-4 py-4">
