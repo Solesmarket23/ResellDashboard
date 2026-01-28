@@ -139,6 +139,7 @@ const DeliveriesNew: React.FC = () => {
 
   // Table sorting (Delivery column)
   const [deliverySort, setDeliverySort] = useState<'asc' | 'desc' | null>(null);
+  const [trackingSort, setTrackingSort] = useState<'asc' | 'desc' | null>(null);
 
   const localSetup = useMemo(() => {
     if (typeof window === 'undefined') return { siteUserId: '', purchasesCount: 0 };
@@ -960,11 +961,17 @@ const DeliveriesNew: React.FC = () => {
   });
 
   const toggleDeliverySort = () => {
+    setTrackingSort(null);
     setDeliverySort((prev) => (prev === 'asc' ? 'desc' : 'asc'));
   };
 
+  const toggleTrackingSort = () => {
+    setDeliverySort(null);
+    setTrackingSort((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+  };
+
   const sortedDeliveries = useMemo(() => {
-    if (!deliverySort) return filteredDeliveries;
+    if (!deliverySort && !trackingSort) return filteredDeliveries;
 
     const toDateMs = (raw: string | undefined | null): number | null => {
       if (!raw) return null;
@@ -981,9 +988,24 @@ const DeliveriesNew: React.FC = () => {
       return toDateMs(d.estimatedDelivery);
     };
 
-    const dir = deliverySort === 'asc' ? 1 : -1;
+    const dir = (deliverySort || trackingSort) === 'asc' ? 1 : -1;
 
     return [...filteredDeliveries].sort((a, b) => {
+      if (trackingSort) {
+        const at = String(a.trackingNumber || '').trim();
+        const bt = String(b.trackingNumber || '').trim();
+        const aMissing = !at;
+        const bMissing = !bt;
+        // Keep missing tracking at the bottom regardless of direction.
+        if (aMissing && !bMissing) return 1;
+        if (!aMissing && bMissing) return -1;
+        if (!aMissing && !bMissing && at !== bt) return at.localeCompare(bt) * dir;
+        // Tie-breaker: product + id so it feels stable
+        const aKey = `${a.productName || ''} ${a.id || ''}`.toLowerCase();
+        const bKey = `${b.productName || ''} ${b.id || ''}`.toLowerCase();
+        return aKey.localeCompare(bKey) * dir;
+      }
+
       const am = getDeliveryMs(a);
       const bm = getDeliveryMs(b);
 
@@ -1000,7 +1022,7 @@ const DeliveriesNew: React.FC = () => {
       const bKey = `${b.productName || ''} ${b.trackingNumber || ''}`.toLowerCase();
       return aKey.localeCompare(bKey) * dir;
     });
-  }, [deliverySort, filteredDeliveries]);
+  }, [deliverySort, filteredDeliveries, trackingSort]);
 
   // Save view mode to localStorage when it changes
   useEffect(() => {
@@ -2034,7 +2056,19 @@ const DeliveriesNew: React.FC = () => {
                       Product
                     </th>
                     <th className={`px-4 py-3 text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`}>
-                      Tracking
+                      <button
+                        type="button"
+                        onClick={toggleTrackingSort}
+                        className="inline-flex items-center gap-1 hover:opacity-90"
+                        title={`Sort by Tracking ${trackingSort === 'asc' ? '(A→Z)' : '(Z→A)'}`}
+                      >
+                        Tracking
+                        <ChevronDown
+                          className={`w-3.5 h-3.5 transition-transform ${
+                            trackingSort === 'asc' ? 'rotate-180' : ''
+                          }`}
+                        />
+                      </button>
                     </th>
                     <th className={`px-4 py-3 text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`}>
                       Status
