@@ -179,6 +179,11 @@ const DeliveriesNew: React.FC = () => {
     );
   };
 
+  function isArchivedDelivery(delivery: DeliveryItem): boolean {
+    const at = (delivery as any)?.archivedAt;
+    return !!(typeof at === 'string' ? at.trim() : at);
+  }
+
   const presetCounts = useMemo(() => {
     let needs = 0;
     let invalid = 0;
@@ -366,11 +371,6 @@ const DeliveriesNew: React.FC = () => {
   const isTrackingNotFound = (delivery: DeliveryItem) => {
     const note = String(delivery?.statusNote || '').toLowerCase();
     return note.includes('tracking not found') || note.includes('invalid tracking') || note.includes('check the number');
-  };
-
-  const isArchivedDelivery = (delivery: DeliveryItem): boolean => {
-    const at = (delivery as any)?.archivedAt;
-    return !!(typeof at === 'string' ? at.trim() : at);
   };
 
   const requestClearTracking = (delivery: DeliveryItem) => {
