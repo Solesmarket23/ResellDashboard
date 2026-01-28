@@ -604,8 +604,18 @@ const DeliveriesNew: React.FC = () => {
     setHighlightedDeliveryId(delivery.id);
     setSelectedDelivery(delivery);
     const win = window.open(url, '_blank', 'noopener,noreferrer');
+    // In some embedded browsers (including Cursor's), window.open can return null even when the tab successfully opens.
+    // Only show an error if it truly failed, and otherwise fall back to copying the link.
     if (!win) {
-      showNotification('Popup blocked — allow popups for this site to open Gmail', 'error');
+      // Best-effort: try copying the link so the user can paste it anywhere.
+      void (async () => {
+        try {
+          await navigator.clipboard.writeText(url);
+          showNotification('Opened email link (if blocked, link copied to clipboard)', 'info');
+        } catch {
+          showNotification('Could not open email link (popup may be blocked)', 'error');
+        }
+      })();
     }
   };
 
