@@ -153,6 +153,10 @@ export async function GET(request: NextRequest) {
       searchParams.get('includeLiveTracking') === null
         ? true
         : searchParams.get('includeLiveTracking') !== '0' && searchParams.get('includeLiveTracking') !== 'false';
+    const includeArchived =
+      searchParams.get('includeArchived') === '1' ||
+      searchParams.get('includeArchived') === 'true' ||
+      searchParams.get('includeArchived') === 'yes';
     
     if (!userId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
@@ -209,7 +213,22 @@ export async function GET(request: NextRequest) {
       return s === 'shipped' || s === 'in transit' || s === 'in_transit' || s === 'out for delivery' || s === 'out_for_delivery';
     };
 
-    let purchasesWithTracking = uniquePurchases.filter((purchase: any) => hasTracking(purchase) || isInProgressStatus(purchase));
+    const isArchivedPurchase = (purchase: any): boolean => {
+      const at = firstNonEmptyString(purchase?.archivedAt, purchase?.archived_at);
+      if (at) return true;
+      return purchase?.archived === true || purchase?.isArchived === true;
+    };
+
+    // Default: hide archived purchases from Deliveries.
+    // When includeArchived=1, include them so the UI can restore them, but do not live-track them.
+    let purchasesWithTracking = uniquePurchases.filter((purchase: any) => {
+      const archived = isArchivedPurchase(purchase);
+      if (!includeArchived && archived) return false;
+      // Active purchases: include those with tracking or in-progress status
+      if (!archived) return hasTracking(purchase) || isInProgressStatus(purchase);
+      // Archived purchases: include for restore view
+      return true;
+    });
 
     // Include any manual trackings added via PUT (in-memory during this process lifetime)
     const manualFromMemory = manualTrackingStorage.get(userId) || [];
@@ -286,7 +305,9 @@ export async function GET(request: NextRequest) {
 
     // Extract tracking numbers (deduped) - and skip live tracking calls for delivered items
     const purchasesNeedingLiveTracking = includeLiveTracking
-      ? purchasesWithTracking.filter((p: any) => String(p?.status || '').toLowerCase() !== 'delivered' && hasTracking(p))
+      ? purchasesWithTracking.filter(
+          (p: any) => !isArchivedPurchase(p) && String(p?.status || '').toLowerCase() !== 'delivered' && hasTracking(p)
+        )
       : [];
     const trackingNumbers = includeLiveTracking
       ? Array.from(
@@ -319,7 +340,13 @@ export async function GET(request: NextRequest) {
       const trackingStr = typeof trackingNumber === 'string' ? trackingNumber.trim() : '';
       const trackingMissing = trackingStr === '' || trackingStr === 'TBD';
       
-      const liveTracking = trackingMissing ? undefined : liveTrackingData.find((tracking) => tracking.trackingNumber === trackingStr);
+      const archivedAt = firstNonEmptyString(purchase?.archivedAt, purchase?.archived_at) || null;
+      const isArchived = isArchivedPurchase(purchase);
+
+      const liveTracking =
+        trackingMissing || isArchived
+          ? undefined
+          : liveTrackingData.find((tracking) => tracking.trackingNumber === trackingStr);
       const hasValidLiveTracking = !!(liveTracking && !liveTracking.error);
       const friendlyTrackingError =
         normalizeTrackingError(liveTracking?.error) ||
@@ -365,7 +392,8 @@ export async function GET(request: NextRequest) {
         !liveActual;
 
       let statusNote: string | undefined;
-      if (trackingMissing) statusNote = 'Needs tracking — add the correct number';
+      if (isArchived) statusNote = 'Archived';
+      else if (trackingMissing) statusNote = 'Needs tracking — add the correct number';
       else if (friendlyTrackingError) statusNote = friendlyTrackingError;
       else if (isLabelCreated) statusNote = 'Label created — awaiting carrier scan';
       else if (normalizedStatus !== 'delivered' && !manualDate && !liveEstimated && !purchaseEstimated) {
@@ -399,6 +427,7 @@ export async function GET(request: NextRequest) {
         estimatedDelivery,
         actualDelivery,
         statusNote,
+        archivedAt,
         emailUrl: buildGmailEmailUrl({
           emailId: (purchase as any)?.emailId || (purchase as any)?.email_id || (purchase as any)?.gmailEmailId,
           orderNumber: (purchase as any)?.orderNumber,
@@ -412,7 +441,7 @@ export async function GET(request: NextRequest) {
           '1970-01-01T00:00:00.000Z',
         updates: (hasValidLiveTracking ? liveTracking?.updates : undefined) || [],
         liveTracking: liveTracking,
-        isLiveTrackingEnabled: hasValidLiveTracking,
+        isLiveTrackingEnabled: !isArchived && hasValidLiveTracking,
         // Additional fields
         orderNumber: purchase.orderNumber,
         purchaseDate: purchase.purchaseDate,
@@ -531,6 +560,7 @@ export async function POST(request: NextRequest) {
       purchases: clientPurchases,
       fromLocalStorage = false,
       includeLiveTracking = true,
+      includeArchived = false,
     } = await request.json();
     
     if (!userId) {
@@ -582,7 +612,18 @@ export async function POST(request: NextRequest) {
       return s === 'shipped' || s === 'in transit' || s === 'in_transit' || s === 'out for delivery' || s === 'out_for_delivery';
     };
 
-    let purchasesWithTracking = uniquePurchases.filter((purchase: any) => hasTracking(purchase) || isInProgressStatus(purchase));
+    const isArchivedPurchase = (purchase: any): boolean => {
+      const at = firstNonEmptyString(purchase?.archivedAt, purchase?.archived_at);
+      if (at) return true;
+      return purchase?.archived === true || purchase?.isArchived === true;
+    };
+
+    let purchasesWithTracking = uniquePurchases.filter((purchase: any) => {
+      const archived = isArchivedPurchase(purchase);
+      if (!includeArchived && archived) return false;
+      if (!archived) return hasTracking(purchase) || isInProgressStatus(purchase);
+      return true;
+    });
 
     console.log(`📦 Found ${purchasesWithTracking.length} purchases eligible for deliveries (tracking + in-progress)`);
 
@@ -627,7 +668,9 @@ export async function POST(request: NextRequest) {
 
     // Extract tracking numbers (deduped) - and skip live tracking calls for delivered items
     const purchasesNeedingLiveTracking = includeLiveTracking
-      ? purchasesWithTracking.filter((p: any) => String(p?.status || '').toLowerCase() !== 'delivered' && hasTracking(p))
+      ? purchasesWithTracking.filter(
+          (p: any) => !isArchivedPurchase(p) && String(p?.status || '').toLowerCase() !== 'delivered' && hasTracking(p)
+        )
       : [];
     const trackingNumbers = includeLiveTracking
       ? Array.from(
@@ -659,8 +702,11 @@ export async function POST(request: NextRequest) {
                            purchase.shipment?.trackingNumber;
       const trackingStr = typeof trackingValue === 'string' ? trackingValue.trim() : '';
       const trackingMissing = trackingStr === '' || trackingStr === 'TBD';
-      
-      const liveTracking = trackingMissing ? undefined : liveTrackingData.find((lt) => lt.trackingNumber === trackingStr);
+
+      const archivedAt = firstNonEmptyString(purchase?.archivedAt, purchase?.archived_at) || null;
+      const isArchived = isArchivedPurchase(purchase);
+      const liveTracking =
+        trackingMissing || isArchived ? undefined : liveTrackingData.find((lt) => lt.trackingNumber === trackingStr);
       const hasValidLiveTracking = !!(liveTracking && !liveTracking.error);
       const friendlyTrackingError =
         normalizeTrackingError(liveTracking?.error) ||
@@ -756,7 +802,8 @@ export async function POST(request: NextRequest) {
         if (!actualDelivery) statusNote = 'Delivered — date not provided by carrier';
       } else {
         estimatedDelivery = manualDate || liveEstimated || purchaseEstimated || 'TBD';
-        if (trackingMissing) statusNote = 'Needs tracking — add the correct number';
+        if (isArchived) statusNote = 'Archived';
+        else if (trackingMissing) statusNote = 'Needs tracking — add the correct number';
         else if (friendlyTrackingError) statusNote = friendlyTrackingError;
         else if (isLabelCreated) statusNote = 'Label created — awaiting carrier scan';
         else if (estimatedDelivery === 'TBD') statusNote = includeLiveTracking ? 'No ETA yet' : 'Verifying tracking…';
@@ -774,6 +821,7 @@ export async function POST(request: NextRequest) {
         estimatedDelivery: estimatedDelivery,
         actualDelivery,
         statusNote,
+        archivedAt,
         emailUrl: buildGmailEmailUrl({
           emailId: (purchase as any)?.emailId || (purchase as any)?.email_id || (purchase as any)?.gmailEmailId,
           orderNumber: (purchase as any)?.orderNumber,
@@ -798,7 +846,7 @@ export async function POST(request: NextRequest) {
                       deliveryStatus === 'in_transit' ? 'Package in transit' : 'Package shipped'
         }],
         liveTracking: liveTracking,
-        isLiveTrackingEnabled: hasValidLiveTracking,
+        isLiveTrackingEnabled: !isArchived && hasValidLiveTracking,
         // Additional courier information
         courierEstimatedDelivery: hasValidLiveTracking ? liveTracking?.courierEstimatedDelivery : undefined,
         afterShipEstimatedDelivery: hasValidLiveTracking ? liveTracking?.afterShipEstimatedDelivery : undefined,

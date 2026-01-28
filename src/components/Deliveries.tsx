@@ -29,6 +29,7 @@ interface DeliveryItem {
   actualDelivery?: string;
   emailUrl?: string | null;
   statusNote?: string;
+  archivedAt?: string | null;
   origin: string;
   destination: string;
   lastUpdate: string;
@@ -104,6 +105,13 @@ const DeliveriesNew: React.FC = () => {
     const legacy = localStorage.getItem('deliveriesPresetFilter');
     return legacy === 'invalid_tracking';
   });
+  const [presetArchived, setPresetArchived] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const saved = localStorage.getItem('deliveriesPresetArchived');
+    if (saved === 'true') return true;
+    if (saved === 'false') return false;
+    return false;
+  });
   const [statusFilter, setStatusFilter] = useState<string>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('deliveriesStatusFilter');
@@ -174,11 +182,13 @@ const DeliveriesNew: React.FC = () => {
   const presetCounts = useMemo(() => {
     let needs = 0;
     let invalid = 0;
+    let archived = 0;
     for (const d of deliveries || []) {
       if (isNeedsTracking(d)) needs += 1;
       if (isInvalidTracking(d)) invalid += 1;
+      if (isArchivedDelivery(d)) archived += 1;
     }
-    return { needs, invalid };
+    return { needs, invalid, archived };
   }, [deliveries]);
 
   const getHighlightStyle = (isHighlighted: boolean): React.CSSProperties | undefined => {
@@ -282,6 +292,10 @@ const DeliveriesNew: React.FC = () => {
   const [confirmClearTrackingOpen, setConfirmClearTrackingOpen] = useState(false);
   const [clearTrackingTarget, setClearTrackingTarget] = useState<DeliveryItem | null>(null);
   const [clearingTracking, setClearingTracking] = useState(false);
+
+  const [confirmArchiveOpen, setConfirmArchiveOpen] = useState(false);
+  const [archiveTarget, setArchiveTarget] = useState<DeliveryItem | null>(null);
+  const [archiving, setArchiving] = useState(false);
   
   const copyTrackingNumber = async (trackingNumber: string, deliveryId: string) => {
     try {
@@ -352,6 +366,11 @@ const DeliveriesNew: React.FC = () => {
   const isTrackingNotFound = (delivery: DeliveryItem) => {
     const note = String(delivery?.statusNote || '').toLowerCase();
     return note.includes('tracking not found') || note.includes('invalid tracking') || note.includes('check the number');
+  };
+
+  const isArchivedDelivery = (delivery: DeliveryItem): boolean => {
+    const at = (delivery as any)?.archivedAt;
+    return !!(typeof at === 'string' ? at.trim() : at);
   };
 
   const requestClearTracking = (delivery: DeliveryItem) => {
@@ -454,6 +473,88 @@ const DeliveriesNew: React.FC = () => {
       showNotification(e?.message || 'Failed to clear tracking', 'error');
     } finally {
       setClearingTracking(false);
+    }
+  };
+
+  const requestArchive = (delivery: DeliveryItem) => {
+    setArchiveTarget(delivery);
+    setConfirmArchiveOpen(true);
+  };
+
+  const archiveOrRestore = async (mode: 'archive' | 'restore') => {
+    if (!archiveTarget || !user) return;
+    const target = archiveTarget;
+    setArchiving(true);
+    try {
+      const isManualInMemory = String(target.id || '').startsWith('manual-') && String((target as any)?.platform || '').toLowerCase().includes('manual');
+
+      // Manual in-memory "test" entries: delete via /api/deliveries/sync DELETE (no restore).
+      if (isManualInMemory) {
+        if (mode === 'restore') {
+          showNotification('This test-only entry cannot be restored', 'info');
+        } else {
+          const tn = String(target.trackingNumber || '').trim();
+          await fetch(`/api/deliveries/sync?userId=${encodeURIComponent(user.uid)}&trackingNumber=${encodeURIComponent(tn)}`, {
+            method: 'DELETE'
+          });
+        }
+      } else {
+        const updates: any =
+          mode === 'archive'
+            ? { archivedAt: new Date().toISOString(), archivedReason: 'user_deleted', archivedBy: 'deliveries' }
+            : { archivedAt: null, archivedReason: null, archivedBy: null };
+
+        const siteUserId = typeof window !== 'undefined' ? (localStorage.getItem('siteUserId') || '').trim() : '';
+        const shouldUseLocalStoragePurchases = !!(siteUserId && siteUserId === user.uid);
+        const localKey = shouldUseLocalStoragePurchases ? `purchases_${siteUserId}` : '';
+
+        const tryFirebaseFirst = async () => {
+          const res = await fetch('/api/purchases/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: user.uid, purchaseId: target.id, updates }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data?.success) throw new Error(data?.error || data?.details || `HTTP ${res.status}`);
+        };
+
+        if (!shouldUseLocalStoragePurchases) {
+          await tryFirebaseFirst();
+        } else {
+          const raw = localKey ? localStorage.getItem(localKey) : null;
+          if (!raw) {
+            await tryFirebaseFirst();
+          } else {
+            const parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed)) throw new Error('Local purchases data is invalid');
+            const next = parsed.map((p: any) => {
+              const id = String(p?.id || '').trim();
+              if (id && id === target.id) {
+                const clone = { ...p, ...updates, updatedAt: new Date().toISOString() };
+                // For restore, remove fields cleanly
+                if (mode === 'restore') {
+                  delete clone.archivedAt;
+                  delete clone.archivedReason;
+                  delete clone.archivedBy;
+                }
+                return clone;
+              }
+              return p;
+            });
+            localStorage.setItem(localKey, JSON.stringify(next));
+          }
+        }
+      }
+
+      setConfirmArchiveOpen(false);
+      setArchiveTarget(null);
+      showNotification(mode === 'archive' ? 'Entry archived' : 'Entry restored', 'success');
+      await refreshDeliveries();
+    } catch (e: any) {
+      console.error(e);
+      showNotification(e?.message || 'Failed to update entry', 'error');
+    } finally {
+      setArchiving(false);
     }
   };
 
@@ -1014,6 +1115,14 @@ const DeliveriesNew: React.FC = () => {
 
   // Filter deliveries
   const filteredDeliveries = deliveries.filter((delivery) => {
+    const archived = isArchivedDelivery(delivery);
+    // Default: hide archived. When Archived preset is enabled, show only archived.
+    if (presetArchived) {
+      if (!archived) return false;
+    } else {
+      if (archived) return false;
+    }
+
     const matchesSearch = !searchTerm || 
       delivery.productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          delivery.trackingNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1143,6 +1252,12 @@ const DeliveriesNew: React.FC = () => {
       localStorage.setItem('deliveriesPresetInvalidTracking', String(!!presetInvalidTracking));
     }
   }, [presetInvalidTracking]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('deliveriesPresetArchived', String(!!presetArchived));
+    }
+  }, [presetArchived]);
 
   // Auto-select first delivery if none selected
   useEffect(() => {
@@ -1580,6 +1695,60 @@ const DeliveriesNew: React.FC = () => {
         </div>
       )}
 
+      {/* Confirm Archive/Restore Modal */}
+      {confirmArchiveOpen && archiveTarget && (
+        <div className="fixed inset-0 bg-black bg-opacity-80 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-200 dark:border-gray-700 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>
+                {isArchivedDelivery(archiveTarget) ? 'Restore this entry?' : 'Archive this entry?'}
+              </h3>
+              <button
+                onClick={() => {
+                  if (archiving) return;
+                  setConfirmArchiveOpen(false);
+                  setArchiveTarget(null);
+                }}
+                className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                title="Close"
+              >
+                <X className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+              </button>
+            </div>
+            <p className={`text-sm ${currentTheme.colors.textSecondary}`}>
+              <span className="font-semibold">{archiveTarget.productName}</span>
+              {isArchivedDelivery(archiveTarget)
+                ? ' will be restored to Deliveries and included in tracking refreshes again.'
+                : ' will be hidden from Deliveries (and skipped on future refreshes). You can restore it later from the Archived preset.'}
+            </p>
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  if (archiving) return;
+                  setConfirmArchiveOpen(false);
+                  setArchiveTarget(null);
+                }}
+                className={`px-4 py-2 border rounded-lg ${currentTheme.colors.border} ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary}`}
+                disabled={archiving}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void archiveOrRestore(isArchivedDelivery(archiveTarget) ? 'restore' : 'archive')}
+                disabled={archiving}
+                className={`px-4 py-2 ${
+                  isArchivedDelivery(archiveTarget) ? 'bg-blue-600 hover:bg-blue-700' : 'bg-red-600 hover:bg-red-700'
+                } disabled:bg-gray-400 text-white rounded-lg font-semibold`}
+              >
+                {archiving
+                  ? (isArchivedDelivery(archiveTarget) ? 'Restoring…' : 'Archiving…')
+                  : (isArchivedDelivery(archiveTarget) ? 'Restore' : 'Archive')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
           {/* Customizable Stats */}
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold text-white">Dashboard Stats</h2>
@@ -1739,9 +1908,10 @@ const DeliveriesNew: React.FC = () => {
             onClick={() => {
               setPresetNeedsTracking(false);
               setPresetInvalidTracking(false);
+              setPresetArchived(false);
             }}
             className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
-              !presetNeedsTracking && !presetInvalidTracking
+              !presetNeedsTracking && !presetInvalidTracking && !presetArchived
                 ? 'bg-blue-600 text-white border-blue-600'
                 : `${currentTheme.colors.border} ${currentTheme.colors.textPrimary} hover:bg-gray-100 dark:hover:bg-gray-700`
             }`}
@@ -1752,6 +1922,7 @@ const DeliveriesNew: React.FC = () => {
             type="button"
             onClick={() => {
               setPresetNeedsTracking((v) => !v);
+              setPresetArchived(false);
               setStatusFilter('all');
               setCarrierFilter('all');
               setSearchTerm('');
@@ -1771,6 +1942,7 @@ const DeliveriesNew: React.FC = () => {
             type="button"
             onClick={() => {
               setPresetInvalidTracking((v) => !v);
+              setPresetArchived(false);
               setStatusFilter('all');
               setCarrierFilter('all');
               setSearchTerm('');
@@ -1785,6 +1957,28 @@ const DeliveriesNew: React.FC = () => {
             title="Show deliveries where the carrier lookup failed (tracking not found/invalid)"
           >
             Invalid tracking ({presetCounts.invalid})
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setPresetArchived((v) => !v);
+              // Archived view is its own section
+              setPresetNeedsTracking(false);
+              setPresetInvalidTracking(false);
+              setStatusFilter('all');
+              setCarrierFilter('all');
+              setSearchTerm('');
+              setDeliverySort(null);
+              setTrackingSort(null);
+            }}
+            className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
+              presetArchived
+                ? 'bg-blue-600 text-white border-blue-600'
+                : `${currentTheme.colors.border} ${currentTheme.colors.textPrimary} hover:bg-gray-100 dark:hover:bg-gray-700`
+            }`}
+            title="Show archived entries (can be restored)"
+          >
+            Archived ({presetCounts.archived})
           </button>
         </div>
 
@@ -1833,6 +2027,7 @@ const DeliveriesNew: React.FC = () => {
               carrierFilter !== 'all' ||
               presetNeedsTracking ||
               presetInvalidTracking ||
+              presetArchived ||
               searchTerm) && (
               <button
                 onClick={() => {
@@ -1841,6 +2036,7 @@ const DeliveriesNew: React.FC = () => {
                   setSearchTerm('');
                   setPresetNeedsTracking(false);
                   setPresetInvalidTracking(false);
+                  setPresetArchived(false);
                 }}
                 className={`px-4 py-2 border rounded-lg ${currentTheme.colors.border} ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary} hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500`}
               >
@@ -2041,6 +2237,35 @@ const DeliveriesNew: React.FC = () => {
                                     <Trash2 className="w-3 h-3 text-red-500" />
                                   </button>
                                 ) : null}
+                                {/* Archive / Restore */}
+                                {presetArchived || isArchivedDelivery(delivery) ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setArchiveTarget(delivery);
+                                      setConfirmArchiveOpen(true);
+                                    }}
+                                    className="ml-1 p-1 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors duration-200"
+                                    title="Restore from archive"
+                                    aria-label="Restore from archive"
+                                  >
+                                    <RefreshCw className="w-3 h-3 text-blue-500" />
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      requestArchive(delivery);
+                                    }}
+                                    className="ml-1 p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors duration-200"
+                                    title="Archive entry"
+                                    aria-label="Archive entry"
+                                  >
+                                    <Trash2 className="w-3 h-3 text-red-500" />
+                                  </button>
+                                )}
                               </div>
                               <div className="flex items-center gap-1">
                                 <Calendar className="w-3 h-3" />
@@ -2476,6 +2701,26 @@ const DeliveriesNew: React.FC = () => {
                           >
                             <Copy className="w-4 h-4" />
               </button>
+                          {isArchivedDelivery(delivery) ? (
+                            <button
+                              onClick={() => {
+                                setArchiveTarget(delivery);
+                                setConfirmArchiveOpen(true);
+                              }}
+                              className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors duration-200 text-blue-600 dark:text-blue-400"
+                              title="Restore from archive"
+                            >
+                              <RefreshCw className="w-4 h-4" />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => requestArchive(delivery)}
+                              className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors duration-200 text-red-600 dark:text-red-400"
+                              title="Archive entry"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
             </div>
                       </td>
                     </tr>

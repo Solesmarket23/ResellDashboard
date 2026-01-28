@@ -126,6 +126,12 @@ export async function POST(request: NextRequest) {
     maybeDelete(normalizedUpdates, 'shipment.tracking');
     maybeDelete(normalizedUpdates, 'shipment.trackingNumber');
 
+    // Allow clearing archive-related fields (used by Deliveries "Archive/Restore" actions).
+    maybeDelete(normalizedUpdates, 'archivedAt');
+    maybeDelete(normalizedUpdates, 'archivedReason');
+    maybeDelete(normalizedUpdates, 'archivedBy');
+    maybeDelete(normalizedUpdates, 'archived_at');
+
     // Unit number: used for physical inventory labels (1–999)
     if (Object.prototype.hasOwnProperty.call(normalizedUpdates, 'unitNumber')) {
       const raw = normalizedUpdates.unitNumber;

@@ -31,6 +31,7 @@ interface DeliveryItem {
   signatureRequired?: string;
   courierTrackingLink?: string;
   onTimeStatus?: string;
+  archivedAt?: string | null;
 }
 
 interface UseRealTimeDeliveriesOptions {
@@ -82,7 +83,9 @@ export function useRealTimeDeliveries({
       // Otherwise, a stale siteUserId from a previous session can cause Deliveries to use the wrong dataset.
       const siteUserId = typeof window !== 'undefined' ? localStorage.getItem('siteUserId') : null;
       const shouldUseLocalStoragePurchases = !!(siteUserId && siteUserId === userId);
-      let url = `/api/deliveries/sync?userId=${encodeURIComponent(userId)}`;
+      // Include archived items in the payload so the UI can show an Archived view + restore,
+      // but server will skip live tracking for archived entries.
+      let url = `/api/deliveries/sync?userId=${encodeURIComponent(userId)}&includeArchived=1`;
       
       // If site password user, get purchases from localStorage and send to API
       if (shouldUseLocalStoragePurchases && typeof window !== 'undefined') {
@@ -103,7 +106,8 @@ export function useRealTimeDeliveries({
                   userId,
                   purchases,
                   fromLocalStorage: true,
-                  includeLiveTracking: false
+                  includeLiveTracking: false,
+                  includeArchived: true
                 })
               });
               const liteData = await liteResponse.json();
@@ -126,7 +130,8 @@ export function useRealTimeDeliveries({
                 userId,
                 purchases,
                 fromLocalStorage: true,
-                includeLiveTracking: true
+                includeLiveTracking: true,
+                includeArchived: true
               })
             });
             const fullData = await fullResponse.json();
