@@ -84,12 +84,25 @@ const DeliveriesNew: React.FC = () => {
   const { isAuthenticated: upsOAuthConnected, isLoading: upsOAuthLoading, error: upsOAuthError } = useUPSOAuth();
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [presetFilter, setPresetFilter] = useState<'all' | 'needs_tracking' | 'invalid_tracking'>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('deliveriesPresetFilter');
-      if (saved === 'needs_tracking' || saved === 'invalid_tracking' || saved === 'all') return saved;
-    }
-    return 'all';
+  const [presetNeedsTracking, setPresetNeedsTracking] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    // New format
+    const saved = localStorage.getItem('deliveriesPresetNeedsTracking');
+    if (saved === 'true') return true;
+    if (saved === 'false') return false;
+    // Back-compat with old single-select preset
+    const legacy = localStorage.getItem('deliveriesPresetFilter');
+    return legacy === 'needs_tracking';
+  });
+  const [presetInvalidTracking, setPresetInvalidTracking] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    // New format
+    const saved = localStorage.getItem('deliveriesPresetInvalidTracking');
+    if (saved === 'true') return true;
+    if (saved === 'false') return false;
+    // Back-compat with old single-select preset
+    const legacy = localStorage.getItem('deliveriesPresetFilter');
+    return legacy === 'invalid_tracking';
   });
   const [statusFilter, setStatusFilter] = useState<string>(() => {
     if (typeof window !== 'undefined') {
@@ -997,9 +1010,11 @@ const DeliveriesNew: React.FC = () => {
         : delivery.status === statusFilter);
     const matchesCarrier = carrierFilter === 'all' || delivery.carrier === carrierFilter;
 
-    const matchesPreset =
-      presetFilter === 'all' ||
-      (presetFilter === 'needs_tracking' ? isNeedsTracking(delivery) : isInvalidTracking(delivery));
+    const anyPresetOn = presetNeedsTracking || presetInvalidTracking;
+    const matchesPreset = !anyPresetOn
+      ? true
+      : (presetNeedsTracking && isNeedsTracking(delivery)) ||
+        (presetInvalidTracking && isInvalidTracking(delivery));
     
     return matchesSearch && matchesStatus && matchesCarrier && matchesPreset;
   });
@@ -1102,9 +1117,15 @@ const DeliveriesNew: React.FC = () => {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      localStorage.setItem('deliveriesPresetFilter', presetFilter);
+      localStorage.setItem('deliveriesPresetNeedsTracking', String(!!presetNeedsTracking));
     }
-  }, [presetFilter]);
+  }, [presetNeedsTracking]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('deliveriesPresetInvalidTracking', String(!!presetInvalidTracking));
+    }
+  }, [presetInvalidTracking]);
 
   // Auto-select first delivery if none selected
   useEffect(() => {
@@ -1699,10 +1720,11 @@ const DeliveriesNew: React.FC = () => {
           <button
             type="button"
             onClick={() => {
-              setPresetFilter('all');
+              setPresetNeedsTracking(false);
+              setPresetInvalidTracking(false);
             }}
             className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
-              presetFilter === 'all'
+              !presetNeedsTracking && !presetInvalidTracking
                 ? 'bg-blue-600 text-white border-blue-600'
                 : `${currentTheme.colors.border} ${currentTheme.colors.textPrimary} hover:bg-gray-100 dark:hover:bg-gray-700`
             }`}
@@ -1712,7 +1734,7 @@ const DeliveriesNew: React.FC = () => {
           <button
             type="button"
             onClick={() => {
-              setPresetFilter('needs_tracking');
+              setPresetNeedsTracking((v) => !v);
               setStatusFilter('all');
               setCarrierFilter('all');
               setSearchTerm('');
@@ -1720,7 +1742,7 @@ const DeliveriesNew: React.FC = () => {
               setTrackingSort(null);
             }}
             className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
-              presetFilter === 'needs_tracking'
+              presetNeedsTracking
                 ? 'bg-blue-600 text-white border-blue-600'
                 : `${currentTheme.colors.border} ${currentTheme.colors.textPrimary} hover:bg-gray-100 dark:hover:bg-gray-700`
             }`}
@@ -1731,7 +1753,7 @@ const DeliveriesNew: React.FC = () => {
           <button
             type="button"
             onClick={() => {
-              setPresetFilter('invalid_tracking');
+              setPresetInvalidTracking((v) => !v);
               setStatusFilter('all');
               setCarrierFilter('all');
               setSearchTerm('');
@@ -1739,7 +1761,7 @@ const DeliveriesNew: React.FC = () => {
               setTrackingSort(null);
             }}
             className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
-              presetFilter === 'invalid_tracking'
+              presetInvalidTracking
                 ? 'bg-blue-600 text-white border-blue-600'
                 : `${currentTheme.colors.border} ${currentTheme.colors.textPrimary} hover:bg-gray-100 dark:hover:bg-gray-700`
             }`}
@@ -1790,13 +1812,18 @@ const DeliveriesNew: React.FC = () => {
               <option value="USPS">USPS</option>
             </select>
             
-            {(statusFilter !== 'all' || carrierFilter !== 'all' || presetFilter !== 'all' || searchTerm) && (
+            {(statusFilter !== 'all' ||
+              carrierFilter !== 'all' ||
+              presetNeedsTracking ||
+              presetInvalidTracking ||
+              searchTerm) && (
               <button
                 onClick={() => {
                   setStatusFilter('all');
                   setCarrierFilter('all');
                   setSearchTerm('');
-                  setPresetFilter('all');
+                  setPresetNeedsTracking(false);
+                  setPresetInvalidTracking(false);
                 }}
                 className={`px-4 py-2 border rounded-lg ${currentTheme.colors.border} ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary} hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500`}
               >
