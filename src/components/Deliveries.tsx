@@ -774,7 +774,7 @@ const DeliveriesNew: React.FC = () => {
         const shouldUseLocalStoragePurchases = !!(siteUserId && siteUserId === user.uid);
         const localKey = shouldUseLocalStoragePurchases ? `purchases_${siteUserId}` : '';
 
-        if (!shouldUseLocalStoragePurchases) {
+        const saveToFirebase = async () => {
           const res = await fetch('/api/purchases/update', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -786,25 +786,34 @@ const DeliveriesNew: React.FC = () => {
           });
           const data = await res.json().catch(() => ({}));
           if (!res.ok || !data?.success) throw new Error(data?.error || data?.details || 'Failed to update tracking');
+        };
+
+        if (!shouldUseLocalStoragePurchases) {
+          await saveToFirebase();
         } else {
           const raw = localKey ? localStorage.getItem(localKey) : null;
-          if (!raw) throw new Error('No local purchases found');
-          const parsed = JSON.parse(raw);
-          if (!Array.isArray(parsed)) throw new Error('Local purchases data is invalid');
-          const next = parsed.map((p: any) => {
-            const id = String(p?.id || '').trim();
-            if (id && id === newTracking.purchaseId) {
-              return {
-                ...p,
-                tracking: newTracking.trackingNumber.trim(),
-                trackingNumber: newTracking.trackingNumber.trim(),
-                carrier: newTracking.carrier === 'AUTO' ? (p?.carrier || undefined) : newTracking.carrier,
-                updatedAt: new Date().toISOString(),
-              };
-            }
-            return p;
-          });
-          localStorage.setItem(localKey, JSON.stringify(next));
+          // Some sessions have siteUserId present but purchases are still stored in Firebase.
+          // If local purchases aren't available, fall back to Firebase update.
+          if (!raw) {
+            await saveToFirebase();
+          } else {
+            const parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed)) throw new Error('Local purchases data is invalid');
+            const next = parsed.map((p: any) => {
+              const id = String(p?.id || '').trim();
+              if (id && id === newTracking.purchaseId) {
+                return {
+                  ...p,
+                  tracking: newTracking.trackingNumber.trim(),
+                  trackingNumber: newTracking.trackingNumber.trim(),
+                  carrier: newTracking.carrier === 'AUTO' ? (p?.carrier || undefined) : newTracking.carrier,
+                  updatedAt: new Date().toISOString(),
+                };
+              }
+              return p;
+            });
+            localStorage.setItem(localKey, JSON.stringify(next));
+          }
         }
 
         setHighlightedDeliveryId(newTracking.purchaseId);
@@ -866,6 +875,17 @@ const DeliveriesNew: React.FC = () => {
     if (!purchaseId) return;
     window.open(`/dashboard?section=purchases&purchaseId=${encodeURIComponent(purchaseId)}`, '_blank', 'noopener,noreferrer');
   };
+
+  // Keep the highlighted item easy to find after refresh/sorts by scrolling it into view.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!highlightedDeliveryId) return;
+    const t = window.setTimeout(() => {
+      const el = document.querySelector(`[data-delivery-id="${CSS.escape(highlightedDeliveryId)}"]`) as HTMLElement | null;
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 450);
+    return () => window.clearTimeout(t);
+  }, [highlightedDeliveryId, sortedDeliveries.length, viewMode]);
 
   // Send Slack notification
   const handleSendSlackNotification = async () => {
@@ -1716,6 +1736,7 @@ const DeliveriesNew: React.FC = () => {
                     {sortedDeliveries.map((delivery) => (
             <div 
               key={delivery.id} 
+              data-delivery-id={delivery.id}
                         onClick={() => setSelectedDelivery(delivery)}
                         className={`p-3 rounded-lg border cursor-pointer hover:shadow-md transition-all duration-200 ${
                           selectedDelivery?.id === delivery.id 
@@ -2107,6 +2128,7 @@ const DeliveriesNew: React.FC = () => {
                   {sortedDeliveries.map((delivery) => (
                     <tr 
                       key={delivery.id}
+                      data-delivery-id={delivery.id}
                       className={`hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors duration-150 ${
                         selectedDelivery?.id === delivery.id ? 'bg-cyan-50 dark:bg-cyan-900/20' : ''
                       } ${
