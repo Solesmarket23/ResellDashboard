@@ -726,6 +726,8 @@ const DeliveriesNew: React.FC = () => {
     }
     try {
       setAddingTracking(true);
+      let savedOk = false;
+      let successMessage = 'Tracking saved';
       // If we're fixing a purchase that has missing/invalid tracking, persist to the purchase record.
       if (newTracking.purchaseId) {
         const updates: any = {
@@ -772,7 +774,8 @@ const DeliveriesNew: React.FC = () => {
         }
 
         setHighlightedDeliveryId(newTracking.purchaseId);
-        showNotification('Tracking updated', 'success');
+        savedOk = true;
+        successMessage = 'Tracking saved';
       } else {
         // Otherwise, treat as adding a manual tracking entry (existing behavior)
         const res = await fetch('/api/deliveries/sync', {
@@ -789,14 +792,23 @@ const DeliveriesNew: React.FC = () => {
         });
         const data = await res.json();
         if (!res.ok || !data.success) throw new Error(data.error || 'Failed to add tracking');
-        showNotification('Tracking added');
+        savedOk = true;
+        successMessage = 'Tracking added';
       }
       setShowAddTrackingModal(false);
       setNewTracking({ purchaseId: '', trackingNumber: '', carrier: 'AUTO', productName: '', productBrand: '', productSize: '' });
-      await refreshDeliveries();
+      if (savedOk) showNotification(successMessage, 'success');
+
+      // Refresh is best-effort; don't override a successful save with an error toast.
+      try {
+        await refreshDeliveries();
+      } catch (err) {
+        console.error('Refresh after saving tracking failed:', err);
+        showNotification('Saved, but refresh failed — click Refresh', 'info');
+      }
     } catch (e) {
       console.error(e);
-      showNotification('Failed to add tracking', 'error');
+      showNotification((e as any)?.message || 'Failed to save tracking', 'error');
     } finally {
       setAddingTracking(false);
     }
