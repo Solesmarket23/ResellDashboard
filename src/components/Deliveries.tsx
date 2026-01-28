@@ -84,6 +84,13 @@ const DeliveriesNew: React.FC = () => {
   const { isAuthenticated: upsOAuthConnected, isLoading: upsOAuthLoading, error: upsOAuthError } = useUPSOAuth();
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [presetFilter, setPresetFilter] = useState<'all' | 'needs_tracking' | 'invalid_tracking'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('deliveriesPresetFilter');
+      if (saved === 'needs_tracking' || saved === 'invalid_tracking' || saved === 'all') return saved;
+    }
+    return 'all';
+  });
   const [statusFilter, setStatusFilter] = useState<string>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('deliveriesStatusFilter');
@@ -136,6 +143,30 @@ const DeliveriesNew: React.FC = () => {
 
   const [setupStatus, setSetupStatus] = useState<any | null>(null);
   const [setupStatusLoading, setSetupStatusLoading] = useState(false);
+
+  const isNeedsTracking = (delivery: DeliveryItem): boolean => {
+    return !String(delivery.trackingNumber || '').trim();
+  };
+
+  const isInvalidTracking = (delivery: DeliveryItem): boolean => {
+    const note = String((delivery as any)?.statusNote || '').toLowerCase();
+    const liveErr = String((delivery as any)?.liveTracking?.error || '').toLowerCase();
+    return (
+      /tracking not found|invalid/.test(note) ||
+      /check the number/.test(note) ||
+      /tracking not found|invalid/.test(liveErr)
+    );
+  };
+
+  const presetCounts = useMemo(() => {
+    let needs = 0;
+    let invalid = 0;
+    for (const d of deliveries || []) {
+      if (isNeedsTracking(d)) needs += 1;
+      if (isInvalidTracking(d)) invalid += 1;
+    }
+    return { needs, invalid };
+  }, [deliveries]);
 
   // Table sorting (Delivery column)
   const [deliverySort, setDeliverySort] = useState<'asc' | 'desc' | null>(null);
@@ -965,8 +996,12 @@ const DeliveriesNew: React.FC = () => {
         ? delivery.status !== 'delivered'
         : delivery.status === statusFilter);
     const matchesCarrier = carrierFilter === 'all' || delivery.carrier === carrierFilter;
+
+    const matchesPreset =
+      presetFilter === 'all' ||
+      (presetFilter === 'needs_tracking' ? isNeedsTracking(delivery) : isInvalidTracking(delivery));
     
-    return matchesSearch && matchesStatus && matchesCarrier;
+    return matchesSearch && matchesStatus && matchesCarrier && matchesPreset;
   });
 
   const toggleDeliverySort = () => {
@@ -1064,6 +1099,12 @@ const DeliveriesNew: React.FC = () => {
       localStorage.setItem('deliveriesCarrierFilter', carrierFilter);
     }
   }, [carrierFilter]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('deliveriesPresetFilter', presetFilter);
+    }
+  }, [presetFilter]);
 
   // Auto-select first delivery if none selected
   useEffect(() => {
@@ -1650,6 +1691,64 @@ const DeliveriesNew: React.FC = () => {
 
       {/* Filters */}
       <div className={`${currentTheme.colors.cardBackground} rounded-lg p-6 border ${currentTheme.colors.border} mb-6`}>
+        {/* Presets */}
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <span className={`text-xs font-semibold uppercase tracking-wider ${currentTheme.colors.textSecondary}`}>
+            Presets
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setPresetFilter('all');
+            }}
+            className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
+              presetFilter === 'all'
+                ? 'bg-blue-600 text-white border-blue-600'
+                : `${currentTheme.colors.border} ${currentTheme.colors.textPrimary} hover:bg-gray-100 dark:hover:bg-gray-700`
+            }`}
+          >
+            All
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setPresetFilter('needs_tracking');
+              setStatusFilter('all');
+              setCarrierFilter('all');
+              setSearchTerm('');
+              setDeliverySort(null);
+              setTrackingSort(null);
+            }}
+            className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
+              presetFilter === 'needs_tracking'
+                ? 'bg-blue-600 text-white border-blue-600'
+                : `${currentTheme.colors.border} ${currentTheme.colors.textPrimary} hover:bg-gray-100 dark:hover:bg-gray-700`
+            }`}
+            title="Show deliveries missing a tracking number"
+          >
+            Needs tracking ({presetCounts.needs})
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setPresetFilter('invalid_tracking');
+              setStatusFilter('all');
+              setCarrierFilter('all');
+              setSearchTerm('');
+              setDeliverySort(null);
+              setTrackingSort(null);
+            }}
+            className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
+              presetFilter === 'invalid_tracking'
+                ? 'bg-blue-600 text-white border-blue-600'
+                : `${currentTheme.colors.border} ${currentTheme.colors.textPrimary} hover:bg-gray-100 dark:hover:bg-gray-700`
+            }`}
+            title="Show deliveries where the carrier lookup failed (tracking not found/invalid)"
+          >
+            Invalid tracking ({presetCounts.invalid})
+          </button>
+        </div>
+
         <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-1">
             <div className="relative">
@@ -1691,12 +1790,13 @@ const DeliveriesNew: React.FC = () => {
               <option value="USPS">USPS</option>
             </select>
             
-            {(statusFilter !== 'all' || carrierFilter !== 'all' || searchTerm) && (
+            {(statusFilter !== 'all' || carrierFilter !== 'all' || presetFilter !== 'all' || searchTerm) && (
               <button
                 onClick={() => {
                   setStatusFilter('all');
                   setCarrierFilter('all');
                   setSearchTerm('');
+                  setPresetFilter('all');
                 }}
                 className={`px-4 py-2 border rounded-lg ${currentTheme.colors.border} ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary} hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500`}
               >
