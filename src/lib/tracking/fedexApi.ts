@@ -192,13 +192,41 @@ export class FedExTrackingAPI {
       // If FedEx indicates there are no associated shipments, treat as not-found.
       const hasAssociatedShipments = (trackResults as any)?.additionalTrackingInfo?.hasAssociatedShipments;
       const rawStatusCode = String((trackResults as any)?.statusCode || (trackResults as any)?.statusDetail?.code || '').trim();
+      const rawStatusText = String(
+        (trackResults as any)?.statusDetail?.description ||
+          (trackResults as any)?.statusDetail?.statusByLocale ||
+          (trackResults as any)?.statusDescription ||
+          ''
+      ).trim();
+      const lowerStatusText = rawStatusText.toLowerCase();
+
+      const looksLikeNotFoundText =
+        lowerStatusText.includes('not found') ||
+        lowerStatusText.includes('no record') ||
+        lowerStatusText.includes('no records') ||
+        lowerStatusText.includes('no shipment') ||
+        lowerStatusText.includes('unable to locate') ||
+        lowerStatusText.includes('invalid tracking') ||
+        lowerStatusText.includes('invalid number') ||
+        lowerStatusText.includes('invalid') && lowerStatusText.includes('tracking');
+
       const isEffectivelyNotFound =
         hasAssociatedShipments === false &&
         scanEvents.length === 0 &&
         dateAndTimes.length === 0 &&
         (!rawStatusCode || rawStatusCode.toUpperCase() === 'UNKNOWN');
 
-      if (isEffectivelyNotFound) {
+      // Also treat as not-found when FedEx returns an "UNKNOWN" + empty payload with a not-found-ish status message.
+      const isEmptyPayload =
+        scanEvents.length === 0 &&
+        dateAndTimes.length === 0 &&
+        !(trackResults as any)?.estimatedDeliveryTimeWindow?.window &&
+        !(trackResults as any)?.standardTransitTimeWindow?.window &&
+        !(trackResults as any)?.deliveryDetails?.actualDeliveryTimestamp;
+      const isUnknownStatus = !rawStatusCode || rawStatusCode.toUpperCase() === 'UNKNOWN';
+      const isNotFound = isEffectivelyNotFound || (isEmptyPayload && isUnknownStatus && looksLikeNotFoundText);
+
+      if (isNotFound) {
         return {
           trackingNumber,
           carrier: 'FedEx',

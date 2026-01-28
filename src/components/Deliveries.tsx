@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useMemo, useState, useEffect } from 'react';
-import { Package, Truck, CheckCircle, Clock, MapPin, Calendar, Filter, Search, MoreHorizontal, RefreshCw, Wifi, WifiOff, X, ChevronDown, Trash2, Copy, Grid3X3, List, Settings, GripVertical, Bell, Shield, AlertTriangle, Mail } from 'lucide-react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import { Package, Truck, CheckCircle, Clock, MapPin, Calendar, Filter, Search, MoreHorizontal, RefreshCw, Wifi, WifiOff, X, ChevronDown, Trash2, Copy, Grid3X3, List, Settings, GripVertical, Bell, Shield, AlertTriangle, Mail, ExternalLink } from 'lucide-react';
 import NeonNotification, { type NotificationType } from './NeonNotification';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
@@ -41,6 +41,8 @@ interface DeliveryItem {
   liveTracking?: TrackingInfo;
   isLiveTrackingEnabled?: boolean;
 }
+
+type DisplayStatus = 'label_created' | 'shipped' | 'out_for_delivery' | 'delivered' | 'unknown';
 
 const DeliveriesNew: React.FC = () => {
   const { currentTheme } = useTheme();
@@ -123,6 +125,7 @@ const DeliveriesNew: React.FC = () => {
   const [showAddTrackingModal, setShowAddTrackingModal] = useState(false);
   const [addingTracking, setAddingTracking] = useState(false);
   const [newTracking, setNewTracking] = useState({
+    purchaseId: '' as string,
     trackingNumber: '',
     carrier: 'AUTO',
     productName: '',
@@ -133,6 +136,9 @@ const DeliveriesNew: React.FC = () => {
 
   const [setupStatus, setSetupStatus] = useState<any | null>(null);
   const [setupStatusLoading, setSetupStatusLoading] = useState(false);
+
+  // Table sorting (Delivery column)
+  const [deliverySort, setDeliverySort] = useState<'asc' | 'desc' | null>(null);
 
   const localSetup = useMemo(() => {
     if (typeof window === 'undefined') return { siteUserId: '', purchasesCount: 0 };
@@ -210,9 +216,17 @@ const DeliveriesNew: React.FC = () => {
   const [copiedShipmentId, setCopiedShipmentId] = useState<string | null>(null);
   // Persist the blue "active" highlight until another copy action.
   const [highlightedDeliveryId, setHighlightedDeliveryId] = useState<string | null>(null);
+
+  const [confirmClearTrackingOpen, setConfirmClearTrackingOpen] = useState(false);
+  const [clearTrackingTarget, setClearTrackingTarget] = useState<DeliveryItem | null>(null);
+  const [clearingTracking, setClearingTracking] = useState(false);
   
   const copyTrackingNumber = async (trackingNumber: string, deliveryId: string) => {
     try {
+      if (!trackingNumber || !trackingNumber.trim()) {
+        showNotification('No tracking number to copy', 'info');
+        return;
+      }
       await navigator.clipboard.writeText(trackingNumber);
       setCopiedTrackingId(deliveryId);
       setHighlightedDeliveryId(deliveryId);
@@ -221,6 +235,163 @@ const DeliveriesNew: React.FC = () => {
     } catch (error) {
       console.error('Failed to copy tracking number:', error);
       showNotification('Failed to copy tracking number', 'error');
+    }
+  };
+
+  const getFedExTrackingUrl = (trackingNumber: string) =>
+    `https://www.fedex.com/fedextrack/?trknbr=${encodeURIComponent(trackingNumber)}`;
+
+  const extractTrackingNumberFromText = (raw: string): { trackingNumber: string | null; carrierHint?: string } => {
+    const text = String(raw || '').trim();
+    if (!text) return { trackingNumber: null };
+
+    // Try URL parsing first
+    if (text.includes('http://') || text.includes('https://')) {
+      try {
+        const url = new URL(text);
+        const qp = url.searchParams;
+        const candidates = [
+          qp.get('trknbr'),
+          qp.get('trackingNumber'),
+          qp.get('trackingnumber'),
+          qp.get('tracking'),
+          qp.get('tracknum'),
+          qp.get('trk'),
+        ]
+          .map((v) => (typeof v === 'string' ? v.trim() : ''))
+          .filter(Boolean);
+
+        for (const c of candidates) {
+          const cleaned = c.replace(/[\s\-_]/g, '').toUpperCase();
+          if (/^1Z[0-9A-Z]{15,18}$/.test(cleaned)) return { trackingNumber: cleaned, carrierHint: 'UPS' };
+          if (/^[0-9]{12,15}$/.test(cleaned)) return { trackingNumber: cleaned, carrierHint: 'FedEx' };
+          if (/^9[0-9]{19,21}$/.test(cleaned) || /^9[0-9]{12}$/.test(cleaned)) return { trackingNumber: cleaned, carrierHint: 'USPS' };
+          if (/^[0-9]{10}$/.test(cleaned)) return { trackingNumber: cleaned, carrierHint: 'DHL' };
+        }
+      } catch {
+        // ignore invalid URL
+      }
+    }
+
+    // Fallback: extract the first tracking-looking token from the text
+    const compact = text.replace(/\s+/g, ' ').trim();
+    const mUps = compact.toUpperCase().match(/1Z[0-9A-Z]{15,18}/);
+    if (mUps) return { trackingNumber: mUps[0], carrierHint: 'UPS' };
+    const mFedex = compact.match(/\b[0-9]{12,15}\b/);
+    if (mFedex) return { trackingNumber: mFedex[0], carrierHint: 'FedEx' };
+    const mUsps = compact.match(/\b9[0-9]{19,21}\b|\b9[0-9]{12}\b/);
+    if (mUsps) return { trackingNumber: mUsps[0], carrierHint: 'USPS' };
+    const mDhl = compact.match(/\b[0-9]{10}\b/);
+    if (mDhl) return { trackingNumber: mDhl[0], carrierHint: 'DHL' };
+
+    return { trackingNumber: null };
+  };
+
+  const isTrackingNotFound = (delivery: DeliveryItem) => {
+    const note = String(delivery?.statusNote || '').toLowerCase();
+    return note.includes('tracking not found') || note.includes('invalid tracking') || note.includes('check the number');
+  };
+
+  const requestClearTracking = (delivery: DeliveryItem) => {
+    setClearTrackingTarget(delivery);
+    setConfirmClearTrackingOpen(true);
+  };
+
+  const clearTracking = async () => {
+    if (!clearTrackingTarget || !user) return;
+    const target = clearTrackingTarget;
+    setClearingTracking(true);
+    try {
+      const updates = {
+        tracking: null,
+        trackingNumber: null,
+        tracking_number: null,
+        'shipment.tracking': null,
+        'shipment.trackingNumber': null,
+      };
+
+      // Prefer clearing in Firebase (works for both Firebase-auth and site-password users if their purchases are stored in Firestore).
+      // Fall back to localStorage only when this user is using the local purchases dataset.
+      const siteUserId = typeof window !== 'undefined' ? (localStorage.getItem('siteUserId') || '').trim() : '';
+      const shouldUseLocalStoragePurchases = !!(siteUserId && siteUserId === user.uid);
+      const localKey = shouldUseLocalStoragePurchases ? `purchases_${siteUserId}` : '';
+
+      const tryFirebaseFirst = async () => {
+        const res = await fetch('/api/purchases/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.uid, purchaseId: target.id, updates }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data?.success) throw new Error(data?.error || data?.details || `HTTP ${res.status}`);
+      };
+
+      if (!shouldUseLocalStoragePurchases) {
+        await tryFirebaseFirst();
+      } else {
+        const raw = localKey ? localStorage.getItem(localKey) : null;
+        // Some users have a siteUserId cookie but still store purchases in Firebase. If local data isn't present, fall back to Firebase.
+        if (!raw) {
+          await tryFirebaseFirst();
+        } else {
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) throw new Error('Local purchases data is invalid');
+        const next = parsed.map((p: any) => {
+          const id = String(p?.id || '').trim();
+          if (id && id === target.id) {
+            const clone = { ...p };
+            delete clone.tracking;
+            delete clone.trackingNumber;
+            delete clone.tracking_number;
+            clone.updatedAt = new Date().toISOString();
+            if (clone.shipment && typeof clone.shipment === 'object') {
+              const s = { ...clone.shipment };
+              delete s.tracking;
+              delete s.trackingNumber;
+              clone.shipment = s;
+            }
+            return clone;
+          }
+          // Fallback: if ids are missing, match by tracking number string
+          const tn = String(
+            p?.tracking ||
+              p?.trackingNumber ||
+              p?.tracking_number ||
+              p?.shipment?.tracking ||
+              p?.shipment?.trackingNumber ||
+              ''
+          ).trim();
+          if (tn && tn === target.trackingNumber) {
+            const clone = { ...p };
+            delete clone.tracking;
+            delete clone.trackingNumber;
+            delete clone.tracking_number;
+            clone.updatedAt = new Date().toISOString();
+            if (clone.shipment && typeof clone.shipment === 'object') {
+              const s = { ...clone.shipment };
+              delete s.tracking;
+              delete s.trackingNumber;
+              clone.shipment = s;
+            }
+            return clone;
+          }
+          return p;
+        });
+        localStorage.setItem(localKey, JSON.stringify(next));
+        }
+      }
+
+      setConfirmClearTrackingOpen(false);
+      setClearTrackingTarget(null);
+      showNotification('Tracking cleared', 'success');
+      // Keep the user on the same row: highlight it and immediately prompt for the correct tracking number.
+      openSetTrackingForDelivery({ ...target, trackingNumber: '' });
+      await refreshDeliveries();
+    } catch (e: any) {
+      console.error(e);
+      showNotification(e?.message || 'Failed to clear tracking', 'error');
+    } finally {
+      setClearingTracking(false);
     }
   };
 
@@ -297,13 +468,15 @@ const DeliveriesNew: React.FC = () => {
   );
 
   // Status icon helper
-  const getStatusIcon = (status: string) => {
+  const getStatusIcon = (status: DisplayStatus) => {
     switch (status) {
+      case 'label_created':
+        return <Clock className="w-4 h-4 text-amber-500" />;
       case 'delivered':
         return <CheckCircle className="w-4 h-4 text-green-500" />;
       case 'out_for_delivery':
         return <Truck className="w-4 h-4 text-orange-500" />;
-      case 'in_transit':
+      case 'shipped':
         return <Package className="w-4 h-4 text-blue-500" />;
       case 'exception':
         return <X className="w-4 h-4 text-red-500" />;
@@ -313,24 +486,38 @@ const DeliveriesNew: React.FC = () => {
   };
 
   // Status color helper
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: DisplayStatus) => {
     switch (status) {
+      case 'label_created':
+        return 'bg-amber-100 text-amber-900 dark:bg-amber-900 dark:text-amber-100';
       case 'delivered':
         return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
       case 'out_for_delivery':
         return 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200';
-      case 'in_transit':
+      case 'shipped':
         return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
-      case 'exception':
-        return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
       default:
         return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200';
     }
   };
 
   // Format status helper
-  const formatStatus = (status: string) => {
-    return status.replace('_', ' ').toUpperCase();
+  const formatStatus = (status: DisplayStatus) => {
+    if (status === 'label_created') return 'LABEL CREATED';
+    if (status === 'out_for_delivery') return 'OUT FOR DELIVERY';
+    if (status === 'delivered') return 'DELIVERED';
+    if (status === 'shipped') return 'SHIPPED';
+    return 'UNKNOWN';
+  };
+
+  const getDisplayStatus = (delivery: DeliveryItem): DisplayStatus => {
+    const note = String(delivery?.statusNote || '').toLowerCase();
+    if (note.includes('label created')) return 'label_created';
+    if (delivery.status === 'delivered') return 'delivered';
+    if (delivery.status === 'out_for_delivery') return 'out_for_delivery';
+    // Collapse in_transit into "shipped" for a simpler, more intuitive set
+    if (delivery.status === 'in_transit' || delivery.status === 'shipped') return 'shipped';
+    return 'unknown';
   };
 
   // Stats configuration
@@ -515,17 +702,16 @@ const DeliveriesNew: React.FC = () => {
   };
 
   // Show notification helper
+  const closeToast = useCallback(() => {
+    setNotification((p) => ({ ...p, show: false }));
+  }, []);
+
   const showNotification = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
     setNotification({
       show: true,
       message,
       type
     });
-    
-    // Auto-hide after 3 seconds
-    setTimeout(() => {
-      setNotification(prev => ({ ...prev, show: false }));
-    }, 3000);
   };
 
   // Add manual tracking
@@ -540,23 +726,73 @@ const DeliveriesNew: React.FC = () => {
     }
     try {
       setAddingTracking(true);
-      const res = await fetch('/api/deliveries/sync', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.uid,
+      // If we're fixing a purchase that has missing/invalid tracking, persist to the purchase record.
+      if (newTracking.purchaseId) {
+        const updates: any = {
+          tracking: newTracking.trackingNumber.trim(),
           trackingNumber: newTracking.trackingNumber.trim(),
           carrier: newTracking.carrier === 'AUTO' ? undefined : newTracking.carrier,
-          productName: newTracking.productName || undefined,
-          productBrand: newTracking.productBrand || undefined,
-          productSize: newTracking.productSize || undefined
-        })
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to add tracking');
-      showNotification('Tracking added');
+        };
+
+        const siteUserId = typeof window !== 'undefined' ? (localStorage.getItem('siteUserId') || '').trim() : '';
+        const shouldUseLocalStoragePurchases = !!(siteUserId && siteUserId === user.uid);
+        const localKey = shouldUseLocalStoragePurchases ? `purchases_${siteUserId}` : '';
+
+        if (!shouldUseLocalStoragePurchases) {
+          const res = await fetch('/api/purchases/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: user.uid,
+              purchaseId: newTracking.purchaseId,
+              updates,
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data?.success) throw new Error(data?.error || data?.details || 'Failed to update tracking');
+        } else {
+          const raw = localKey ? localStorage.getItem(localKey) : null;
+          if (!raw) throw new Error('No local purchases found');
+          const parsed = JSON.parse(raw);
+          if (!Array.isArray(parsed)) throw new Error('Local purchases data is invalid');
+          const next = parsed.map((p: any) => {
+            const id = String(p?.id || '').trim();
+            if (id && id === newTracking.purchaseId) {
+              return {
+                ...p,
+                tracking: newTracking.trackingNumber.trim(),
+                trackingNumber: newTracking.trackingNumber.trim(),
+                carrier: newTracking.carrier === 'AUTO' ? (p?.carrier || undefined) : newTracking.carrier,
+                updatedAt: new Date().toISOString(),
+              };
+            }
+            return p;
+          });
+          localStorage.setItem(localKey, JSON.stringify(next));
+        }
+
+        setHighlightedDeliveryId(newTracking.purchaseId);
+        showNotification('Tracking updated', 'success');
+      } else {
+        // Otherwise, treat as adding a manual tracking entry (existing behavior)
+        const res = await fetch('/api/deliveries/sync', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.uid,
+            trackingNumber: newTracking.trackingNumber.trim(),
+            carrier: newTracking.carrier === 'AUTO' ? undefined : newTracking.carrier,
+            productName: newTracking.productName || undefined,
+            productBrand: newTracking.productBrand || undefined,
+            productSize: newTracking.productSize || undefined
+          })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Failed to add tracking');
+        showNotification('Tracking added');
+      }
       setShowAddTrackingModal(false);
-      setNewTracking({ trackingNumber: '', carrier: 'AUTO', productName: '', productBrand: '', productSize: '' });
+      setNewTracking({ purchaseId: '', trackingNumber: '', carrier: 'AUTO', productName: '', productBrand: '', productSize: '' });
       await refreshDeliveries();
     } catch (e) {
       console.error(e);
@@ -564,6 +800,25 @@ const DeliveriesNew: React.FC = () => {
     } finally {
       setAddingTracking(false);
     }
+  };
+
+  const openSetTrackingForDelivery = (delivery: DeliveryItem) => {
+    setNewTracking({
+      purchaseId: delivery.id,
+      trackingNumber: delivery.trackingNumber || '',
+      carrier: 'AUTO',
+      productName: delivery.productName || '',
+      productBrand: delivery.productBrand || '',
+      productSize: delivery.productSize || '',
+    });
+    setHighlightedDeliveryId(delivery.id);
+    setSelectedDelivery(delivery);
+    setShowAddTrackingModal(true);
+  };
+
+  const openPurchasesForDelivery = (purchaseId: string) => {
+    if (!purchaseId) return;
+    window.open(`/dashboard?section=purchases&purchaseId=${encodeURIComponent(purchaseId)}`, '_blank', 'noopener,noreferrer');
   };
 
   // Send Slack notification
@@ -659,6 +914,49 @@ const DeliveriesNew: React.FC = () => {
     return matchesSearch && matchesStatus && matchesCarrier;
   });
 
+  const toggleDeliverySort = () => {
+    setDeliverySort((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+  };
+
+  const sortedDeliveries = useMemo(() => {
+    if (!deliverySort) return filteredDeliveries;
+
+    const toDateMs = (raw: string | undefined | null): number | null => {
+      if (!raw) return null;
+      const s = String(raw).trim();
+      if (!s || s.toUpperCase() === 'TBD') return null;
+      const ms = Date.parse(s);
+      return Number.isFinite(ms) ? ms : null;
+    };
+
+    const getDeliveryMs = (d: DeliveryItem): number | null => {
+      // Delivered items sort by actual delivery date when available.
+      if (d.status === 'delivered') return toDateMs(d.actualDelivery) ?? toDateMs(d.estimatedDelivery);
+      // Otherwise sort by ETA (estimatedDelivery).
+      return toDateMs(d.estimatedDelivery);
+    };
+
+    const dir = deliverySort === 'asc' ? 1 : -1;
+
+    return [...filteredDeliveries].sort((a, b) => {
+      const am = getDeliveryMs(a);
+      const bm = getDeliveryMs(b);
+
+      // Keep TBD/invalid dates at the bottom regardless of direction.
+      const aMissing = am == null;
+      const bMissing = bm == null;
+      if (aMissing && !bMissing) return 1;
+      if (!aMissing && bMissing) return -1;
+
+      if (am != null && bm != null && am !== bm) return (am - bm) * dir;
+
+      // Stable-ish tie-breakers (so sort doesn't feel random)
+      const aKey = `${a.productName || ''} ${a.trackingNumber || ''}`.toLowerCase();
+      const bKey = `${b.productName || ''} ${b.trackingNumber || ''}`.toLowerCase();
+      return aKey.localeCompare(bKey) * dir;
+    });
+  }, [deliverySort, filteredDeliveries]);
+
   // Save view mode to localStorage when it changes
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -682,10 +980,10 @@ const DeliveriesNew: React.FC = () => {
 
   // Auto-select first delivery if none selected
   useEffect(() => {
-    if (filteredDeliveries.length > 0 && !selectedDelivery) {
-      setSelectedDelivery(filteredDeliveries[0]);
+    if (sortedDeliveries.length > 0 && !selectedDelivery) {
+      setSelectedDelivery(sortedDeliveries[0]);
     }
-  }, [filteredDeliveries, selectedDelivery]);
+  }, [selectedDelivery, sortedDeliveries]);
 
   // Load customizable stats settings from Firebase
   useEffect(() => {
@@ -939,8 +1237,16 @@ const DeliveriesNew: React.FC = () => {
         <div className="fixed inset-0 bg-black bg-opacity-80 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-200 dark:border-gray-700 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>Add Manual Tracking Number</h3>
-              <button onClick={() => setShowAddTrackingModal(false)} className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700">
+              <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>
+                {newTracking.purchaseId ? 'Set tracking number' : 'Add Manual Tracking Number'}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowAddTrackingModal(false);
+                  setNewTracking({ purchaseId: '', trackingNumber: '', carrier: 'AUTO', productName: '', productBrand: '', productSize: '' });
+                }}
+                className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+              >
                 <X className="w-5 h-5 text-gray-600 dark:text-gray-300" />
               </button>
             </div>
@@ -950,9 +1256,36 @@ const DeliveriesNew: React.FC = () => {
                 <input
                   type="text"
                   value={newTracking.trackingNumber}
-                  onChange={(e) => setNewTracking({ ...newTracking, trackingNumber: e.target.value })}
+                  onPaste={(e) => {
+                    const pasted = e.clipboardData?.getData('text') || '';
+                    const extracted = extractTrackingNumberFromText(pasted);
+                    if (extracted.trackingNumber) {
+                      e.preventDefault();
+                      setNewTracking((prev) => ({
+                        ...prev,
+                        trackingNumber: extracted.trackingNumber || '',
+                        carrier: extracted.carrierHint ? extracted.carrierHint : prev.carrier,
+                      }));
+                      showNotification('Extracted tracking number from link', 'success');
+                    }
+                  }}
+                  onChange={(e) => {
+                    const nextVal = e.target.value;
+                    const extracted = extractTrackingNumberFromText(nextVal);
+                    // Only auto-rewrite when the user pasted a URL-like string; avoid fighting manual typing.
+                    const looksLikeUrl = nextVal.includes('http://') || nextVal.includes('https://') || nextVal.includes('fedex.com') || nextVal.includes('ups.com');
+                    if (looksLikeUrl && extracted.trackingNumber) {
+                      setNewTracking((prev) => ({
+                        ...prev,
+                        trackingNumber: extracted.trackingNumber || '',
+                        carrier: extracted.carrierHint ? extracted.carrierHint : prev.carrier,
+                      }));
+                      return;
+                    }
+                    setNewTracking({ ...newTracking, trackingNumber: nextVal });
+                  }}
                   className={`w-full px-3 py-2 border rounded-lg ${currentTheme.colors.border} ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary} focus:outline-none focus:ring-2 focus:ring-blue-500`}
-                  placeholder="e.g., 1Z..."
+                  placeholder="Paste a tracking # or a FedEx/UPS tracking link…"
                 />
               </div>
               <div>
@@ -1003,19 +1336,78 @@ const DeliveriesNew: React.FC = () => {
               </div>
               <div className="flex justify-end gap-3 pt-2">
                 <button
-                  onClick={() => setShowAddTrackingModal(false)}
+                  onClick={() => {
+                    setShowAddTrackingModal(false);
+                    setNewTracking({ purchaseId: '', trackingNumber: '', carrier: 'AUTO', productName: '', productBrand: '', productSize: '' });
+                  }}
                   className={`px-4 py-2 border rounded-lg ${currentTheme.colors.border} ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary}`}
                 >
                   Cancel
                 </button>
+                {newTracking.purchaseId ? (
+                  <button
+                    type="button"
+                    onClick={() => openPurchasesForDelivery(newTracking.purchaseId)}
+                    className="px-4 py-2 border rounded-lg border-white/15 bg-white/5 text-white/90 hover:bg-white/10 transition-colors"
+                    title="Open this purchase in Purchases"
+                  >
+                    Open in Purchases
+                  </button>
+                ) : null}
                 <button
                   onClick={handleAddManualTracking}
                   disabled={addingTracking}
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg"
                 >
-                  {addingTracking ? 'Adding…' : 'Add Tracking'}
+                  {addingTracking ? 'Saving…' : (newTracking.purchaseId ? 'Save tracking' : 'Add Tracking')}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Clear Tracking Modal */}
+      {confirmClearTrackingOpen && clearTrackingTarget && (
+        <div className="fixed inset-0 bg-black bg-opacity-80 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-200 dark:border-gray-700 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>Clear tracking number?</h3>
+              <button
+                onClick={() => {
+                  if (clearingTracking) return;
+                  setConfirmClearTrackingOpen(false);
+                  setClearTrackingTarget(null);
+                }}
+                className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                title="Close"
+              >
+                <X className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+              </button>
+            </div>
+            <p className={`text-sm ${currentTheme.colors.textSecondary}`}>
+              This will remove <span className="font-mono font-semibold">{clearTrackingTarget.trackingNumber}</span> from this purchase.
+              {' It will be saved to your purchases (Firebase if stored there; otherwise local storage).'}
+            </p>
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  if (clearingTracking) return;
+                  setConfirmClearTrackingOpen(false);
+                  setClearTrackingTarget(null);
+                }}
+                className={`px-4 py-2 border rounded-lg ${currentTheme.colors.border} ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary}`}
+                disabled={clearingTracking}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void clearTracking()}
+                disabled={clearingTracking}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white rounded-lg font-semibold"
+              >
+                {clearingTracking ? 'Clearing…' : 'Yes, clear'}
+              </button>
             </div>
           </div>
         </div>
@@ -1228,7 +1620,7 @@ const DeliveriesNew: React.FC = () => {
       </div>
 
          {/* Main Content */}
-        {filteredDeliveries.length === 0 ? (
+        {sortedDeliveries.length === 0 ? (
           <div className={`${currentTheme.colors.cardBackground} rounded-lg p-12 text-center border ${currentTheme.colors.border}`}>
             <Package className={`w-12 h-12 mx-auto mb-4 ${currentTheme.colors.textSecondary}`} />
             <h3 className={`text-lg font-medium ${currentTheme.colors.textPrimary} mb-2`}>No deliveries found</h3>
@@ -1245,7 +1637,7 @@ const DeliveriesNew: React.FC = () => {
               <div className={`bg-white/10 backdrop-blur-sm rounded-lg border ${currentTheme.colors.border} flex-1 flex flex-col`}>
                 <div className="p-4 border-b border-gray-200 dark:border-gray-700">
                   <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>
-                    Deliveries ({filteredDeliveries.length})
+                    Deliveries ({sortedDeliveries.length})
                   </h3>
                   <p className={`text-sm ${currentTheme.colors.textSecondary} mt-1`}>
                     Click a delivery to view details
@@ -1253,7 +1645,7 @@ const DeliveriesNew: React.FC = () => {
           </div>
                 <div className="flex-1 overflow-y-auto">
                   <div className="space-y-2 p-4">
-                    {filteredDeliveries.map((delivery) => (
+                    {sortedDeliveries.map((delivery) => (
             <div 
               key={delivery.id} 
                         onClick={() => setSelectedDelivery(delivery)}
@@ -1300,7 +1692,7 @@ const DeliveriesNew: React.FC = () => {
                             </button>
                           ) : (
                             <div className="flex-shrink-0">
-                              {getStatusIcon(delivery.status)}
+                              {getStatusIcon(getDisplayStatus(delivery))}
                             </div>
                           )}
                           
@@ -1310,8 +1702,8 @@ const DeliveriesNew: React.FC = () => {
                               <h4 className={`text-sm font-medium ${currentTheme.colors.textPrimary} truncate`}>
                       {delivery.productName}
                               </h4>
-                              <span className={`px-1.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(delivery.status)}`}>
-                      {formatStatus(delivery.status)}
+                              <span className={`px-1.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(getDisplayStatus(delivery))}`}>
+                      {formatStatus(getDisplayStatus(delivery))}
                     </span>
                     {delivery.liveTracking && !delivery.liveTracking.error && (
                                 <Wifi className="w-3 h-3 text-green-500" title="Live tracking" />
@@ -1348,20 +1740,76 @@ const DeliveriesNew: React.FC = () => {
                               ) : null}
                               <div className="flex items-center gap-1">
                                 <span>{delivery.carrier} • </span>
-                      <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    copyTrackingNumber(delivery.trackingNumber, delivery.id);
-                                  }}
-                                  className="hover:text-blue-500 transition-colors duration-200 font-mono"
-                        title="Click to copy tracking number"
-                      >
-                        {delivery.trackingNumber}
-                        {copiedTrackingId === delivery.id && (
-                                    <span className="text-green-500 ml-1">✓</span>
-                        )}
-                      </button>
-                  </div>
+                                {delivery.trackingNumber ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openSetTrackingForDelivery(delivery);
+                                      }}
+                                      className="hover:text-blue-500 transition-colors duration-200 font-mono underline underline-offset-2"
+                                      title="Edit tracking number"
+                                    >
+                                      {delivery.trackingNumber}
+                                    </button>
+                                    <a
+                                      href={getFedExTrackingUrl(delivery.trackingNumber)}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="ml-1 inline-flex items-center text-gray-400 hover:text-blue-400 transition-colors"
+                                      title="Open FedEx tracking in a new tab"
+                                      aria-label="Open FedEx tracking"
+                                    >
+                                      <ExternalLink className="w-3 h-3" />
+                                    </a>
+                                  </>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openSetTrackingForDelivery(delivery);
+                                    }}
+                                    className="text-xs font-semibold text-amber-300 hover:text-amber-200 underline underline-offset-2"
+                                    title="Set the correct tracking number"
+                                  >
+                                    Needs tracking
+                                  </button>
+                                )}
+                                {copiedTrackingId === delivery.id && (
+                                  <span className="text-green-500 ml-1">✓</span>
+                                )}
+                                {delivery.trackingNumber ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      void copyTrackingNumber(delivery.trackingNumber, delivery.id);
+                                    }}
+                                    className="ml-1 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200"
+                                    title="Copy tracking number"
+                                    aria-label="Copy tracking number"
+                                  >
+                                    <Copy className="w-3 h-3 text-gray-500 hover:text-blue-500" />
+                                  </button>
+                                ) : null}
+                                {isTrackingNotFound(delivery) ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      requestClearTracking(delivery);
+                                    }}
+                                    className="ml-1 p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors duration-200"
+                                    title="Clear invalid tracking number"
+                                    aria-label="Clear invalid tracking number"
+                                  >
+                                    <Trash2 className="w-3 h-3 text-red-500" />
+                                  </button>
+                                ) : null}
+                              </div>
                               <div className="flex items-center gap-1">
                                 <Calendar className="w-3 h-3" />
                                 <span>
@@ -1408,16 +1856,49 @@ const DeliveriesNew: React.FC = () => {
                     </p>
                   </div>
                               <div className="flex items-center gap-2">
-                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(selectedDelivery.status)}`}>
-                             {formatStatus(selectedDelivery.status)}
-                           </span>
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(getDisplayStatus(selectedDelivery))}`}>
+                                  {formatStatus(getDisplayStatus(selectedDelivery))}
+                                </span>
+                                {selectedDelivery.trackingNumber ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => openSetTrackingForDelivery(selectedDelivery)}
+                                      className="text-sm font-mono text-blue-500 hover:text-blue-400 underline underline-offset-2"
+                                      title="Edit tracking number"
+                                    >
+                                      {selectedDelivery.trackingNumber}
+                                    </button>
+                                    <a
+                                      href={getFedExTrackingUrl(selectedDelivery.trackingNumber)}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center text-gray-400 hover:text-blue-400 transition-colors"
+                                      title="Open FedEx tracking in a new tab"
+                                      aria-label="Open FedEx tracking"
+                                    >
+                                      <ExternalLink className="w-4 h-4" />
+                                    </a>
+                                    <button
+                                      type="button"
+                                      onClick={() => void copyTrackingNumber(selectedDelivery.trackingNumber, selectedDelivery.id)}
+                                      className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors duration-200"
+                                      title="Copy tracking number"
+                                      aria-label="Copy tracking number"
+                                    >
+                                      <Copy className="w-4 h-4 text-gray-500 hover:text-blue-500" />
+                                    </button>
+                                  </>
+                                ) : (
                                   <button
-                             onClick={() => copyTrackingNumber(selectedDelivery.trackingNumber, selectedDelivery.id)}
-                                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors duration-200"
-                                    title="Click to copy tracking number"
+                                    type="button"
+                                    onClick={() => openSetTrackingForDelivery(selectedDelivery)}
+                                    className="text-sm font-semibold text-amber-300 hover:text-amber-200 underline underline-offset-2"
+                                    title="Set the correct tracking number"
                                   >
-                                    <Copy className="w-4 h-4 text-gray-500 hover:text-blue-500" />
+                                    Needs tracking
                                   </button>
+                                )}
                               </div>
                             </div>
                             </div>
@@ -1517,7 +1998,19 @@ const DeliveriesNew: React.FC = () => {
                       Carrier
                     </th>
                     <th className={`px-4 py-3 text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`}>
-                      Delivery
+                      <button
+                        type="button"
+                        onClick={toggleDeliverySort}
+                        className="inline-flex items-center gap-1 hover:opacity-90"
+                        title={`Sort by Delivery ${deliverySort === 'asc' ? '(A→Z)' : '(Z→A)'}`}
+                      >
+                        Delivery
+                        <ChevronDown
+                          className={`w-3.5 h-3.5 transition-transform ${
+                            deliverySort === 'asc' ? 'rotate-180' : ''
+                          }`}
+                        />
+                      </button>
                     </th>
                     <th className={`px-4 py-3 text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`}>
                       Route
@@ -1531,7 +2024,7 @@ const DeliveriesNew: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className={`${currentTheme.colors.cardBackground} divide-y ${currentTheme.colors.border}`}>
-                  {filteredDeliveries.map((delivery) => (
+                  {sortedDeliveries.map((delivery) => (
                     <tr 
                       key={delivery.id}
                       className={`hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors duration-150 ${
@@ -1576,7 +2069,7 @@ const DeliveriesNew: React.FC = () => {
                             </button>
                           ) : null}
                           <div className={`${delivery.productImage ? 'hidden' : ''} status-icon-fallback`}>
-                            {getStatusIcon(delivery.status)}
+                            {getStatusIcon(getDisplayStatus(delivery))}
                           </div>
                         </div>
                       </td>
@@ -1613,26 +2106,69 @@ const DeliveriesNew: React.FC = () => {
                       {/* Tracking */}
                       <td className="px-4 py-4">
                         <div className="flex items-center gap-2">
-                          <span className={`font-mono text-sm ${currentTheme.colors.textPrimary}`}>
-                            {delivery.trackingNumber}
-                    </span>
-                          <button
-                            onClick={() => copyTrackingNumber(delivery.trackingNumber, delivery.id)}
-                            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors duration-200"
-                            title="Click to copy tracking number"
-                          >
-                            <Copy className="w-3 h-3 text-gray-500 hover:text-blue-500" />
-                          </button>
+                          {delivery.trackingNumber ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => openSetTrackingForDelivery(delivery)}
+                                className={`font-mono text-sm underline underline-offset-2 ${
+                                  currentTheme.name === 'Neon' ? 'text-cyan-300 hover:text-cyan-200' : 'text-blue-600 hover:text-blue-500'
+                                }`}
+                                title="Edit tracking number"
+                              >
+                                {delivery.trackingNumber}
+                              </button>
+                              <a
+                                href={getFedExTrackingUrl(delivery.trackingNumber)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center text-gray-400 hover:text-blue-400 transition-colors"
+                                title="Open FedEx tracking in a new tab"
+                                aria-label="Open FedEx tracking"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => void copyTrackingNumber(delivery.trackingNumber, delivery.id)}
+                                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors duration-200"
+                                title="Copy tracking number"
+                                aria-label="Copy tracking number"
+                              >
+                                <Copy className="w-3 h-3 text-gray-500 hover:text-blue-500" />
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => openSetTrackingForDelivery(delivery)}
+                              className="text-xs font-semibold text-amber-600 hover:text-amber-500"
+                              title="Set the correct tracking number"
+                            >
+                              Needs tracking
+                            </button>
+                          )}
                           {copiedTrackingId === delivery.id && (
                             <span className="text-green-500 text-xs">✓</span>
                 )}
+                          {isTrackingNotFound(delivery) ? (
+                            <button
+                              type="button"
+                              onClick={() => requestClearTracking(delivery)}
+                              className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors duration-200"
+                              title="Clear invalid tracking number"
+                              aria-label="Clear invalid tracking number"
+                            >
+                              <Trash2 className="w-3 h-3 text-red-500" />
+                            </button>
+                          ) : null}
               </div>
                       </td>
                       
                       {/* Status */}
                       <td className="px-4 py-4">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(delivery.status)}`}>
-                          {formatStatus(delivery.status)}
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(getDisplayStatus(delivery))}`}>
+                          {formatStatus(getDisplayStatus(delivery))}
                         </span>
                       </td>
                       
@@ -1722,8 +2258,8 @@ const DeliveriesNew: React.FC = () => {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(selectedDelivery.status)}`}>
-                    {formatStatus(selectedDelivery.status)}
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(getDisplayStatus(selectedDelivery))}`}>
+                    {formatStatus(getDisplayStatus(selectedDelivery))}
                   </span>
                 <button
                     onClick={() => setSelectedDelivery(null)}
@@ -1795,7 +2331,8 @@ const DeliveriesNew: React.FC = () => {
           <NeonNotification
             message={notification.message}
             type={(notification.type === 'error' ? 'error' : notification.type === 'success' ? 'success' : 'warning') as NotificationType}
-            onClose={() => setNotification((p) => ({ ...p, show: false }))}
+            onClose={closeToast}
+            duration={3000}
           />
         )}
 

@@ -5,7 +5,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { userId, purchaseId, updates } = body;
+    const { userId, purchaseId, updates, allowDuplicateTracking } = body;
 
     console.log('📝 Update request received:', { userId, purchaseId, updates });
 
@@ -35,7 +35,8 @@ export async function POST(request: NextRequest) {
     // Verify user owns this purchase (if userId provided)
     if (userId) {
       const purchaseData = purchaseDoc.data();
-      if (purchaseData?.userId && purchaseData.userId !== userId) {
+      const owner = String((purchaseData as any)?.userId || (purchaseData as any)?.uid || '').trim();
+      if (owner && owner !== String(userId).trim()) {
         console.error(`❌ User ${userId} does not own purchase ${purchaseId}`);
         return NextResponse.json({ 
           error: 'Unauthorized',
@@ -46,6 +47,84 @@ export async function POST(request: NextRequest) {
     
     // Normalize/validate updates
     const normalizedUpdates: any = { ...updates };
+
+    const pickTrackingFromUpdates = (u: any): string => {
+      const v =
+        u?.tracking ??
+        u?.trackingNumber ??
+        u?.tracking_number ??
+        u?.shipment?.tracking ??
+        u?.shipment?.trackingNumber ??
+        '';
+      return typeof v === 'string' ? v.trim() : '';
+    };
+
+    // Duplicate tracking number guard (per user) unless allowDuplicateTracking === true
+    const nextTracking = pickTrackingFromUpdates(normalizedUpdates);
+    if (nextTracking && allowDuplicateTracking !== true) {
+      const purchaseData = purchaseDoc.data() as any;
+      const owner = String(userId || purchaseData?.userId || purchaseData?.uid || '').trim();
+      if (!owner) {
+        return NextResponse.json(
+          { error: 'User ID required', details: 'userId is required when updating tracking numbers' },
+          { status: 400 }
+        );
+      }
+
+      const candidates: Array<{ fieldPath: string }> = [
+        { fieldPath: 'tracking' },
+        { fieldPath: 'trackingNumber' },
+        { fieldPath: 'tracking_number' },
+        { fieldPath: 'shipment.tracking' },
+        { fieldPath: 'shipment.trackingNumber' },
+      ];
+
+      const matchesById = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
+      for (const { fieldPath } of candidates) {
+        const snap = await adminDb.collection('purchases').where(fieldPath, '==', nextTracking).limit(25).get();
+        for (const doc of snap.docs) {
+          if (doc.id === purchaseId) continue;
+          const data = doc.data() as any;
+          const docOwner = String(data?.userId || data?.uid || '').trim();
+          if (docOwner === owner) {
+            matchesById.set(doc.id, doc);
+          }
+        }
+      }
+
+      const conflict = [...matchesById.values()][0];
+      if (conflict) {
+        const d = conflict.data() as any;
+        return NextResponse.json(
+          {
+            error: 'Duplicate tracking number',
+            details: `Tracking number ${nextTracking} is already used on another purchase`,
+            trackingNumber: nextTracking,
+            conflict: {
+              purchaseId: conflict.id,
+              orderNumber: d?.orderNumber || d?.order_number || null,
+              productName: d?.productName || d?.product?.name || d?.product?.productName || d?.title || null,
+              status: d?.status || d?.shippingStatus || null,
+            },
+          },
+          { status: 409 }
+        );
+      }
+    }
+
+    // Allow clearing tracking-related fields by sending null/'' (we delete the fields).
+    // This is used when the UI detects a bogus tracking number and the user wants to remove it.
+    const maybeDelete = (obj: any, key: string) => {
+      if (!Object.prototype.hasOwnProperty.call(obj, key)) return;
+      const v = obj[key];
+      if (v === null || v === '') obj[key] = FieldValue.delete();
+    };
+    maybeDelete(normalizedUpdates, 'tracking');
+    maybeDelete(normalizedUpdates, 'trackingNumber');
+    maybeDelete(normalizedUpdates, 'tracking_number');
+    // Dot-path updates are supported by Firestore Admin `update()`
+    maybeDelete(normalizedUpdates, 'shipment.tracking');
+    maybeDelete(normalizedUpdates, 'shipment.trackingNumber');
 
     // Unit number: used for physical inventory labels (1–999)
     if (Object.prototype.hasOwnProperty.call(normalizedUpdates, 'unitNumber')) {

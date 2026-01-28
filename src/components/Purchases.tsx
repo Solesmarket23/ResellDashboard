@@ -171,6 +171,13 @@ const Purchases = () => {
   const [editingTracking, setEditingTracking] = useState<string | null>(null); // Track which purchase is being edited (by id or orderNumber)
   const [editingTrackingValue, setEditingTrackingValue] = useState<string>(''); // Current value being edited
   const [highlightedPurchase, setHighlightedPurchase] = useState<string | null>(null); // Track which purchase was clicked to view email
+  const [duplicateTrackingModal, setDuplicateTrackingModal] = useState<{
+    open: boolean;
+    trackingNumber: string;
+    purchaseId: string;
+    carrier: string | null;
+    conflict?: { purchaseId?: string; orderNumber?: string | null; productName?: string | null; status?: string | null };
+  }>({ open: false, trackingNumber: '', purchaseId: '', carrier: null });
   const searchParams = useSearchParams();
 
   // Deep-link support: /dashboard?section=purchases&purchaseId=...
@@ -3121,55 +3128,45 @@ const Purchases = () => {
         const userId = user?.uid || siteUserId;
         
         if (userId && purchaseId) {
-          // Save to Firebase using API endpoint for site password users
-          const isSitePasswordUser = !user && siteUserId;
-          
-          if (isSitePasswordUser) {
-            // Site password user - use Admin SDK via API
-            try {
-              const response = await fetch('/api/purchases/update', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  userId: userId,
-                  purchaseId: purchaseId,
-                  updates: {
-                    tracking: trackingNumber,
-                    carrier: updatedPurchase.carrier
-                  }
-                })
+          try {
+            const response = await fetch('/api/purchases/update', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                userId: userId,
+                purchaseId: purchaseId,
+                updates: {
+                  tracking: trackingNumber,
+                  carrier: updatedPurchase.carrier
+                }
+              })
+            });
+
+            if (response.status === 409) {
+              const errorData = await response.json().catch(() => null);
+              setDuplicateTrackingModal({
+                open: true,
+                trackingNumber,
+                purchaseId,
+                carrier: updatedPurchase.carrier,
+                conflict: errorData?.conflict || undefined,
               });
-              
-              if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.details || 'Failed to update purchase');
-              }
-              
-              console.log(`✅ Saved tracking to Firebase via API: ${trackingNumber} (carrier: ${updatedPurchase.carrier || 'null'})`);
-            } catch (error) {
-              console.error('Error saving tracking to Firebase:', error);
-              setNotification({
-                isVisible: true,
-                message: `Failed to save tracking: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                type: 'error'
-              });
+              return;
             }
-          } else {
-            // Firebase authenticated user - save directly
-            try {
-              await updateDocument('purchases', purchaseId, {
-                tracking: trackingNumber,
-                carrier: updatedPurchase.carrier
-              }, true);
-              console.log(`✅ Saved tracking to Firebase: ${trackingNumber} (carrier: ${updatedPurchase.carrier || 'null'})`);
-            } catch (error) {
-              console.error('Error saving tracking to Firebase:', error);
-              setNotification({
-                isVisible: true,
-                message: `Failed to save tracking: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                type: 'error'
-              });
+
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => null);
+              throw new Error(errorData?.details || errorData?.error || 'Failed to update purchase');
             }
+
+            console.log(`✅ Saved tracking via API: ${trackingNumber} (carrier: ${updatedPurchase.carrier || 'null'})`);
+          } catch (error) {
+            console.error('Error saving tracking:', error);
+            setNotification({
+              isVisible: true,
+              message: `Failed to save tracking: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              type: 'error'
+            });
           }
         } else {
           console.warn('⚠️ Cannot save: missing userId or purchaseId', { userId, purchaseId });
@@ -3190,6 +3187,46 @@ const Purchases = () => {
       setNotification({
         isVisible: true,
         message: `Failed to save tracking: ${error.message}`,
+        type: 'error'
+      });
+    }
+  };
+
+  const confirmSaveDuplicateTracking = async () => {
+    if (!duplicateTrackingModal.open) return;
+    const { trackingNumber, purchaseId, carrier } = duplicateTrackingModal;
+    const siteUserId = localStorage.getItem('siteUserId');
+    const userId = user?.uid || siteUserId;
+    if (!userId || !purchaseId) return;
+
+    try {
+      const response = await fetch('/api/purchases/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          purchaseId,
+          allowDuplicateTracking: true,
+          updates: { tracking: trackingNumber, carrier }
+        })
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.details || errorData?.error || 'Failed to update purchase');
+      }
+
+      setNotification({
+        isVisible: true,
+        message: `Tracking number saved (duplicate allowed): ${trackingNumber}`,
+        type: 'success'
+      });
+      setDuplicateTrackingModal({ open: false, trackingNumber: '', purchaseId: '', carrier: null });
+      setEditingTracking(null);
+      setEditingTrackingValue('');
+    } catch (e: any) {
+      setNotification({
+        isVisible: true,
+        message: `Failed to save tracking: ${e?.message || 'Unknown error'}`,
         type: 'error'
       });
     }

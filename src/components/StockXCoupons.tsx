@@ -1421,7 +1421,7 @@ export default function StockXCoupons() {
                                 ? (isNeon ? 'bg-gradient-to-r from-cyan-500/20 via-blue-500/10 to-cyan-500/20' : 'bg-gradient-to-r from-blue-200 via-blue-100 to-blue-200')
                                 : ''
                             } ${
-                              isUsed && !isHighlighted ? (isNeon ? 'bg-white/5' : 'bg-gray-50') : ''
+                              isUsed && !isHighlighted ? (isNeon ? 'bg-white/5' : 'bg-slate-50') : ''
                             }`}
                           >
                             <td className="px-4 py-3">
@@ -1429,12 +1429,24 @@ export default function StockXCoupons() {
                                 <span
                                   className={`font-mono font-semibold ${
                                     isUsed
-                                      ? (isNeon ? 'text-white/60 line-through decoration-white/30' : 'text-gray-500 line-through decoration-gray-400')
+                                      ? (isNeon ? 'text-white/60 line-through decoration-2 decoration-red-300/70' : 'text-gray-500 line-through decoration-2 decoration-red-500/60')
                                       : ''
                                   }`}
                                 >
                                   {c.code}
                                 </span>
+                                {isUsed ? (
+                                  <span
+                                    className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-extrabold tracking-wider ${
+                                      isNeon
+                                        ? 'bg-rose-500/25 text-rose-200 border-rose-400/50'
+                                        : 'bg-rose-200 text-rose-950 border-rose-400'
+                                    }`}
+                                    title="This coupon was marked as used"
+                                  >
+                                    USED
+                                  </span>
+                                ) : null}
                                 <button
                                   onClick={() => copyCode(c.code)}
                                   className={`h-8 w-8 p-0 inline-flex items-center justify-center rounded-md transition-colors ${
@@ -1589,6 +1601,8 @@ export default function StockXCoupons() {
                     isHighlighted
                       ? (isNeon ? 'bg-gradient-to-r from-cyan-500/20 via-blue-500/10 to-cyan-500/20' : 'bg-gradient-to-r from-blue-200 via-blue-100 to-blue-200')
                       : ''
+                  } ${
+                    isUsed && !isHighlighted ? (isNeon ? 'bg-white/5' : 'bg-slate-50') : ''
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -1597,11 +1611,25 @@ export default function StockXCoupons() {
                         <Icon className="w-4 h-4 text-white/70" />
                         <div
                           className={`font-mono text-lg font-semibold ${
-                            isUsed ? (isNeon ? 'text-white/60 line-through decoration-white/30' : 'text-gray-500 line-through decoration-gray-400') : currentTheme.colors.textPrimary
+                            isUsed
+                              ? (isNeon ? 'text-white/60 line-through decoration-2 decoration-red-300/70' : 'text-gray-500 line-through decoration-2 decoration-red-500/60')
+                              : currentTheme.colors.textPrimary
                           }`}
                         >
                           {c.code}
                         </div>
+                        {isUsed ? (
+                          <span
+                            className={`ml-1 inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-extrabold tracking-wider ${
+                              isNeon
+                                ? 'bg-rose-500/25 text-rose-200 border-rose-400/50'
+                                : 'bg-rose-200 text-rose-950 border-rose-400'
+                            }`}
+                            title="This coupon was marked as used"
+                          >
+                            USED
+                          </span>
+                        ) : null}
                         <button
                           onClick={() => copyCode(c.code)}
                           className={`h-7 w-7 p-0 inline-flex items-center justify-center rounded-md transition-colors ${

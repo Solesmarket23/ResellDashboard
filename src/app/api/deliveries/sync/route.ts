@@ -113,6 +113,27 @@ function normalizeTrackingError(error: unknown): string | null {
   return 'Tracking lookup error — try again';
 }
 
+function inferTrackingNotFound(liveTracking: any): boolean {
+  if (!liveTracking) return false;
+  if (liveTracking?.error) return false; // explicit errors handled elsewhere
+  const status = String(liveTracking?.status || '').toLowerCase().trim();
+  if (status !== 'unknown') return false;
+
+  const updates = Array.isArray(liveTracking?.updates) ? liveTracking.updates : [];
+  const hasAnyDates =
+    !!liveTracking?.estimatedDelivery ||
+    !!liveTracking?.actualDelivery ||
+    !!liveTracking?.courierEstimatedDelivery ||
+    !!liveTracking?.afterShipEstimatedDelivery ||
+    !!liveTracking?.commitmentDate ||
+    !!liveTracking?.appointmentDeliveryDate ||
+    !!liveTracking?.deliveryTimeWindow?.estimated?.starts ||
+    !!liveTracking?.deliveryTimeWindow?.estimated?.ends;
+
+  const hasAnySignal = updates.length > 0 || hasAnyDates;
+  return !hasAnySignal;
+}
+
 function sortDeliveriesNewestFirst(deliveries: any[]) {
   return deliveries.sort((a, b) => {
     const da = new Date(a?.lastUpdate || 0).getTime();
@@ -169,17 +190,25 @@ export async function GET(request: NextRequest) {
       console.log(`📦 Found ${uniquePurchases.length} total purchases for user from Firebase`);
     }
 
-    // Filter purchases with tracking numbers
-    let purchasesWithTracking = uniquePurchases.filter((purchase: any) => {
+    // Purchases eligible for Deliveries:
+    // - those with tracking numbers (normal)
+    // - AND those missing tracking but still in a shipped/in-progress state (so the user can fix bad/missing tracking)
+    const hasTracking = (purchase: any): boolean => {
       const trackingValue = purchase.tracking || 
                            purchase.trackingNumber || 
                            purchase.tracking_number ||
                            purchase.shipment?.tracking ||
                            purchase.shipment?.trackingNumber;
-      return trackingValue && 
-             trackingValue.trim() !== '' && 
-             trackingValue !== 'TBD';
-    });
+      return !!(typeof trackingValue === 'string' && trackingValue.trim() !== '' && trackingValue !== 'TBD');
+    };
+
+    const isInProgressStatus = (purchase: any): boolean => {
+      const s = String(purchase?.status || purchase?.shippingStatus || '').toLowerCase().trim();
+      // Keep this intentionally broad; Deliveries will show "Needs tracking" when tracking is missing/cleared.
+      return s === 'shipped' || s === 'in transit' || s === 'in_transit' || s === 'out for delivery' || s === 'out_for_delivery';
+    };
+
+    let purchasesWithTracking = uniquePurchases.filter((purchase: any) => hasTracking(purchase) || isInProgressStatus(purchase));
 
     // Include any manual trackings added via PUT (in-memory during this process lifetime)
     const manualFromMemory = manualTrackingStorage.get(userId) || [];
@@ -188,7 +217,7 @@ export async function GET(request: NextRequest) {
       purchasesWithTracking = [...manualFromMemory, ...purchasesWithTracking];
     }
 
-    console.log(`📦 Found ${purchasesWithTracking.length} purchases with tracking numbers (including manual if any)`);
+    console.log(`📦 Found ${purchasesWithTracking.length} purchases eligible for deliveries (tracking + in-progress)`);
 
     // If no purchases found, add some test data for demonstration
     if (purchasesWithTracking.length === 0) {
@@ -256,7 +285,7 @@ export async function GET(request: NextRequest) {
 
     // Extract tracking numbers (deduped) - and skip live tracking calls for delivered items
     const purchasesNeedingLiveTracking = includeLiveTracking
-      ? purchasesWithTracking.filter((p: any) => String(p?.status || '').toLowerCase() !== 'delivered')
+      ? purchasesWithTracking.filter((p: any) => String(p?.status || '').toLowerCase() !== 'delivered' && hasTracking(p))
       : [];
     const trackingNumbers = includeLiveTracking
       ? Array.from(
@@ -286,10 +315,14 @@ export async function GET(request: NextRequest) {
                            purchase.tracking_number ||
                            purchase.shipment?.tracking ||
                            purchase.shipment?.trackingNumber;
+      const trackingStr = typeof trackingNumber === 'string' ? trackingNumber.trim() : '';
+      const trackingMissing = trackingStr === '' || trackingStr === 'TBD';
       
-      const liveTracking = liveTrackingData.find((tracking) => tracking.trackingNumber === trackingNumber);
+      const liveTracking = trackingMissing ? undefined : liveTrackingData.find((tracking) => tracking.trackingNumber === trackingStr);
       const hasValidLiveTracking = !!(liveTracking && !liveTracking.error);
-      const friendlyTrackingError = normalizeTrackingError(liveTracking?.error);
+      const friendlyTrackingError =
+        normalizeTrackingError(liveTracking?.error) ||
+        (inferTrackingNotFound(liveTracking) ? 'Tracking not found — check the number' : null);
 
       const toIsoDate = (raw: unknown): string | null => {
         if (!raw) return null;
@@ -331,9 +364,14 @@ export async function GET(request: NextRequest) {
         !liveActual;
 
       let statusNote: string | undefined;
-      if (friendlyTrackingError) statusNote = friendlyTrackingError;
+      if (trackingMissing) statusNote = 'Needs tracking — add the correct number';
+      else if (friendlyTrackingError) statusNote = friendlyTrackingError;
       else if (isLabelCreated) statusNote = 'Label created — awaiting carrier scan';
-      else if (normalizedStatus !== 'delivered' && !manualDate && !liveEstimated && !purchaseEstimated) statusNote = 'No ETA yet';
+      else if (normalizedStatus !== 'delivered' && !manualDate && !liveEstimated && !purchaseEstimated) {
+        // On first paint we sometimes return a "lite" payload without live tracking.
+        // Avoid implying the carrier has no ETA until we've actually attempted a lookup.
+        statusNote = includeLiveTracking ? 'No ETA yet' : 'Verifying tracking…';
+      }
 
       // Delivery date rules:
       // - Label created / no ETA: keep TBD (plus note)
@@ -350,7 +388,7 @@ export async function GET(request: NextRequest) {
 
       return {
         id: purchase.id,
-        trackingNumber: trackingNumber,
+        trackingNumber: trackingMissing ? '' : trackingStr,
         carrier: (liveTracking?.carrier as any) || purchase.carrier || 'Unknown',
         productName: pickProductName(purchase),
         productBrand: pickBrand(purchase),
@@ -363,7 +401,7 @@ export async function GET(request: NextRequest) {
         emailUrl: buildGmailEmailUrl({
           emailId: (purchase as any)?.emailId || (purchase as any)?.email_id || (purchase as any)?.gmailEmailId,
           orderNumber: (purchase as any)?.orderNumber,
-          trackingNumber: trackingNumber,
+          trackingNumber: trackingMissing ? undefined : trackingStr,
         }),
         origin: (hasValidLiveTracking ? liveTracking?.origin : undefined) || purchase.origin || 'Unknown',
         destination: (hasValidLiveTracking ? liveTracking?.destination : undefined) || purchase.destination || 'Unknown',
@@ -525,24 +563,27 @@ export async function POST(request: NextRequest) {
       console.log(`📦 Found ${uniquePurchases.length} purchases from Firebase`);
     }
 
-    // Filter purchases with tracking numbers
-    let purchasesWithTracking = uniquePurchases.filter((purchase: any) => {
-      const trackingValue = purchase.tracking || 
-                           purchase.trackingNumber || 
-                           purchase.tracking_number ||
-                           purchase.shipment?.tracking ||
-                           purchase.shipment?.trackingNumber;
-      
-      return trackingValue && 
-             trackingValue !== '' && 
-             trackingValue !== 'No tracking' &&
-             trackingValue !== null &&
-             trackingValue !== undefined &&
-             trackingValue !== 'N/A' &&
-             trackingValue !== 'TBD';
-    });
+    // Purchases eligible for Deliveries:
+    // - those with tracking numbers (normal)
+    // - AND those missing tracking but still in a shipped/in-progress state (so the user can fix bad/missing tracking)
+    const hasTracking = (purchase: any): boolean => {
+      const v =
+        purchase.tracking ||
+        purchase.trackingNumber ||
+        purchase.tracking_number ||
+        purchase.shipment?.tracking ||
+        purchase.shipment?.trackingNumber;
+      return !!(typeof v === 'string' && v.trim() !== '' && v.trim() !== 'TBD' && v.trim() !== 'N/A' && v.trim() !== 'No tracking');
+    };
 
-    console.log(`📦 Found ${purchasesWithTracking.length} purchases with tracking numbers`);
+    const isInProgressStatus = (purchase: any): boolean => {
+      const s = String(purchase?.status || purchase?.shippingStatus || '').toLowerCase().trim();
+      return s === 'shipped' || s === 'in transit' || s === 'in_transit' || s === 'out for delivery' || s === 'out_for_delivery';
+    };
+
+    let purchasesWithTracking = uniquePurchases.filter((purchase: any) => hasTracking(purchase) || isInProgressStatus(purchase));
+
+    console.log(`📦 Found ${purchasesWithTracking.length} purchases eligible for deliveries (tracking + in-progress)`);
 
     // If no purchases found, add some test data for demonstration
     if (purchasesWithTracking.length === 0) {
@@ -585,7 +626,7 @@ export async function POST(request: NextRequest) {
 
     // Extract tracking numbers (deduped) - and skip live tracking calls for delivered items
     const purchasesNeedingLiveTracking = includeLiveTracking
-      ? purchasesWithTracking.filter((p: any) => String(p?.status || '').toLowerCase() !== 'delivered')
+      ? purchasesWithTracking.filter((p: any) => String(p?.status || '').toLowerCase() !== 'delivered' && hasTracking(p))
       : [];
     const trackingNumbers = includeLiveTracking
       ? Array.from(
@@ -615,10 +656,14 @@ export async function POST(request: NextRequest) {
                            purchase.tracking_number ||
                            purchase.shipment?.tracking ||
                            purchase.shipment?.trackingNumber;
+      const trackingStr = typeof trackingValue === 'string' ? trackingValue.trim() : '';
+      const trackingMissing = trackingStr === '' || trackingStr === 'TBD';
       
-      const liveTracking = liveTrackingData.find((lt) => lt.trackingNumber === trackingValue);
+      const liveTracking = trackingMissing ? undefined : liveTrackingData.find((lt) => lt.trackingNumber === trackingStr);
       const hasValidLiveTracking = !!(liveTracking && !liveTracking.error);
-      const friendlyTrackingError = normalizeTrackingError(liveTracking?.error);
+      const friendlyTrackingError =
+        normalizeTrackingError(liveTracking?.error) ||
+        (inferTrackingNotFound(liveTracking) ? 'Tracking not found — check the number' : null);
       
       // Determine delivery status from live tracking or purchase status
       let deliveryStatus = 'shipped';
@@ -649,6 +694,7 @@ export async function POST(request: NextRequest) {
       // Determine carrier
       const getCarrier = (tracking: string, storedCarrier?: string) => {
         if (storedCarrier) return storedCarrier;
+        if (!tracking) return 'Unknown';
         if (tracking.startsWith('1Z')) return 'UPS';
         if (/^[0-9]{12,15}$/.test(tracking)) return 'FedEx';
         if (/^9[0-9]{19,21}$/.test(tracking)) return 'USPS';
@@ -656,7 +702,7 @@ export async function POST(request: NextRequest) {
         return 'Unknown';
       };
 
-      const carrier = getCarrier(trackingValue, purchase.carrier);
+      const carrier = getCarrier(trackingStr, purchase.carrier);
 
       // Use live tracking estimated delivery or fallback to calculated
       let estimatedDelivery = 'TBD';
@@ -709,14 +755,15 @@ export async function POST(request: NextRequest) {
         if (!actualDelivery) statusNote = 'Delivered — date not provided by carrier';
       } else {
         estimatedDelivery = manualDate || liveEstimated || purchaseEstimated || 'TBD';
-        if (friendlyTrackingError) statusNote = friendlyTrackingError;
+        if (trackingMissing) statusNote = 'Needs tracking — add the correct number';
+        else if (friendlyTrackingError) statusNote = friendlyTrackingError;
         else if (isLabelCreated) statusNote = 'Label created — awaiting carrier scan';
-        else if (estimatedDelivery === 'TBD') statusNote = 'No ETA yet';
+        else if (estimatedDelivery === 'TBD') statusNote = includeLiveTracking ? 'No ETA yet' : 'Verifying tracking…';
       }
 
       return {
         id: purchase.id || purchase.orderNumber,
-        trackingNumber: trackingValue,
+        trackingNumber: trackingMissing ? '' : trackingStr,
         carrier: carrier,
         productName: pickProductName(purchase),
         productBrand: pickBrand(purchase),
@@ -729,7 +776,7 @@ export async function POST(request: NextRequest) {
         emailUrl: buildGmailEmailUrl({
           emailId: (purchase as any)?.emailId || (purchase as any)?.email_id || (purchase as any)?.gmailEmailId,
           orderNumber: (purchase as any)?.orderNumber,
-          trackingNumber: trackingValue,
+          trackingNumber: trackingMissing ? undefined : trackingStr,
         }),
         origin: (hasValidLiveTracking ? liveTracking?.origin : undefined) || 'Unknown Origin',
         destination: liveTracking?.destination || 'Your Address',
