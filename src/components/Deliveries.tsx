@@ -437,8 +437,38 @@ const DeliveriesNew: React.FC = () => {
       showNotification('No order email link found for this entry', 'info');
       return;
     }
+    // Treat "Open email" as an active action: persist the blue highlight.
+    setHighlightedDeliveryId(delivery.id);
+    setSelectedDelivery(delivery);
     window.open(url, '_blank', 'noopener,noreferrer');
   };
+
+  // Persist the active highlight across navigation/back/refreshes for this user.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!user?.uid) return;
+    const key = `deliveriesHighlighted_${user.uid}`;
+    try {
+      const saved = localStorage.getItem(key);
+      if (saved && !highlightedDeliveryId) setHighlightedDeliveryId(saved);
+    } catch {
+      // ignore
+    }
+    // Only run when user becomes available
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!user?.uid) return;
+    const key = `deliveriesHighlighted_${user.uid}`;
+    try {
+      if (highlightedDeliveryId) localStorage.setItem(key, highlightedDeliveryId);
+      else localStorage.removeItem(key);
+    } catch {
+      // ignore
+    }
+  }, [highlightedDeliveryId, user?.uid]);
 
   const handleDeliveryImageClick = (delivery: DeliveryItem) => {
     if (!delivery.productImage) return;
