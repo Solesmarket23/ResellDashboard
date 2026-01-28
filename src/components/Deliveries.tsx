@@ -876,17 +876,6 @@ const DeliveriesNew: React.FC = () => {
     window.open(`/dashboard?section=purchases&purchaseId=${encodeURIComponent(purchaseId)}`, '_blank', 'noopener,noreferrer');
   };
 
-  // Keep the highlighted item easy to find after refresh/sorts by scrolling it into view.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!highlightedDeliveryId) return;
-    const t = window.setTimeout(() => {
-      const el = document.querySelector(`[data-delivery-id="${CSS.escape(highlightedDeliveryId)}"]`) as HTMLElement | null;
-      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 450);
-    return () => window.clearTimeout(t);
-  }, [highlightedDeliveryId, sortedDeliveries.length, viewMode]);
-
   // Send Slack notification
   const handleSendSlackNotification = async () => {
     if (!user) {
@@ -1043,6 +1032,17 @@ const DeliveriesNew: React.FC = () => {
       return aKey.localeCompare(bKey) * dir;
     });
   }, [deliverySort, filteredDeliveries, trackingSort]);
+
+  // Keep the highlighted item easy to find after refresh/sorts by scrolling it into view.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!highlightedDeliveryId) return;
+    const t = window.setTimeout(() => {
+      const el = document.querySelector(`[data-delivery-id="${CSS.escape(highlightedDeliveryId)}"]`) as HTMLElement | null;
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 450);
+    return () => window.clearTimeout(t);
+  }, [highlightedDeliveryId, sortedDeliveries.length, viewMode]);
 
   // Save view mode to localStorage when it changes
   useEffect(() => {
