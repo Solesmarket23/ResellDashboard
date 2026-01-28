@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminDb } from '@/lib/firebase/firebaseAdmin';
 import { FieldValue } from 'firebase-admin/firestore';
+import { trackingService } from '@/lib/tracking/trackingService';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { userId, purchaseId, updates, allowDuplicateTracking } = body;
+    const { userId, purchaseId, updates, allowDuplicateTracking, allowInvalidTracking } = body;
 
     console.log('📝 Update request received:', { userId, purchaseId, updates });
 
@@ -61,6 +62,64 @@ export async function POST(request: NextRequest) {
 
     // Duplicate tracking number guard (per user) unless allowDuplicateTracking === true
     const nextTracking = pickTrackingFromUpdates(normalizedUpdates);
+
+    const inferNotFound = (t: any): boolean => {
+      if (!t) return false;
+      if (t?.error) return false; // explicit errors handled separately
+      const status = String(t?.status || '').toLowerCase().trim();
+      if (status !== 'unknown') return false;
+      const updates = Array.isArray(t?.updates) ? t.updates : [];
+      const hasAnyDates =
+        !!t?.estimatedDelivery ||
+        !!t?.actualDelivery ||
+        !!t?.courierEstimatedDelivery ||
+        !!t?.afterShipEstimatedDelivery ||
+        !!t?.commitmentDate ||
+        !!t?.appointmentDeliveryDate ||
+        !!t?.deliveryTimeWindow?.estimated?.starts ||
+        !!t?.deliveryTimeWindow?.estimated?.ends;
+      return updates.length === 0 && !hasAnyDates;
+    };
+
+    // If a user is trying to save a tracking number, validate that the carrier can actually find it.
+    // This prevents accidental "random 12-digit" entries from being treated as real.
+    if (nextTracking && allowInvalidTracking !== true) {
+      try {
+        const [result] = await trackingService.getBulkTrackingInfo([nextTracking]);
+        const err = String(result?.error || '').trim();
+        const errLower = err.toLowerCase();
+        const notConfigured =
+          errLower.includes('api not configured') ||
+          errLower.includes('no tracking apis configured') ||
+          errLower.includes('not configured');
+
+        if (!notConfigured) {
+          const looksNotFound =
+            errLower.includes('tracking not found') ||
+            errLower.includes('no tracking results') ||
+            errLower.includes('unable to locate') ||
+            (errLower.includes('not found') && errLower.includes('tracking')) ||
+            inferNotFound(result);
+
+          if (looksNotFound) {
+            return NextResponse.json(
+              {
+                error: 'Tracking not found/invalid',
+                details:
+                  'Carrier lookup did not find this tracking number. If it was just created, it may not work until the first carrier scan.',
+                trackingNumber: nextTracking,
+                carrier: (result as any)?.carrier || null,
+              },
+              { status: 422 }
+            );
+          }
+        }
+      } catch (e) {
+        // Best-effort validation only; don't block updates if validation fails unexpectedly.
+        console.warn('⚠️ Tracking validation failed (skipping):', e);
+      }
+    }
+
     if (nextTracking && allowDuplicateTracking !== true) {
       const purchaseData = purchaseDoc.data() as any;
       const owner = String(userId || purchaseData?.userId || purchaseData?.uid || '').trim();

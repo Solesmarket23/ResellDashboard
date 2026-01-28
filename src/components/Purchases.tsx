@@ -178,6 +178,13 @@ const Purchases = () => {
     carrier: string | null;
     conflict?: { purchaseId?: string; orderNumber?: string | null; productName?: string | null; status?: string | null };
   }>({ open: false, trackingNumber: '', purchaseId: '', carrier: null });
+  const [invalidTrackingModal, setInvalidTrackingModal] = useState<{
+    open: boolean;
+    trackingNumber: string;
+    purchaseId: string;
+    carrier: string | null;
+    details?: string;
+  }>({ open: false, trackingNumber: '', purchaseId: '', carrier: null });
   const searchParams = useSearchParams();
 
   // Deep-link support: /dashboard?section=purchases&purchaseId=...
@@ -3102,7 +3109,63 @@ const Purchases = () => {
         carrier: detectedCarrier // Will be null if can't detect, which will show "-"
       };
 
-      // Update in state
+      // Save to Firebase for all users (both Firebase auth and site password users)
+      const siteUserId = localStorage.getItem('siteUserId');
+      const userId = user?.uid || siteUserId;
+      
+      if (!userId || !purchaseId) {
+        console.warn('⚠️ Cannot save: missing userId or purchaseId', { userId, purchaseId });
+        setNotification({
+          isVisible: true,
+          message: 'Cannot save tracking (missing user/session). Please refresh.',
+          type: 'error'
+        });
+        return;
+      }
+
+      const response = await fetch('/api/purchases/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: userId,
+          purchaseId: purchaseId,
+          updates: {
+            tracking: trackingNumber,
+            carrier: updatedPurchase.carrier
+          }
+        })
+      });
+
+      if (response.status === 409) {
+        const errorData = await response.json().catch(() => null);
+        setDuplicateTrackingModal({
+          open: true,
+          trackingNumber,
+          purchaseId,
+          carrier: updatedPurchase.carrier,
+          conflict: errorData?.conflict || undefined,
+        });
+        return;
+      }
+
+      if (response.status === 422) {
+        const errorData = await response.json().catch(() => null);
+        setInvalidTrackingModal({
+          open: true,
+          trackingNumber,
+          purchaseId,
+          carrier: updatedPurchase.carrier,
+          details: errorData?.details || errorData?.error || undefined,
+        });
+        return;
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.details || errorData?.error || 'Failed to update purchase');
+      }
+
+      // Update in state only after server accepts the tracking number
       const allPurchases = [...purchases, ...manualPurchases];
       const purchaseIndex = allPurchases.findIndex(p => 
         (p.id && p.id === purchase.id) || 
@@ -3114,62 +3177,11 @@ const Purchases = () => {
         let updatedManualPurchases = [...manualPurchases];
         
         if (purchaseIndex < purchases.length) {
-          // Update in purchases
           updatedPurchases[purchaseIndex] = updatedPurchase;
           setPurchases(updatedPurchases);
         } else {
-          // Update in manualPurchases
           updatedManualPurchases[purchaseIndex - purchases.length] = updatedPurchase;
           setManualPurchases(updatedManualPurchases);
-        }
-
-        // Save to Firebase for all users (both Firebase auth and site password users)
-        const siteUserId = localStorage.getItem('siteUserId');
-        const userId = user?.uid || siteUserId;
-        
-        if (userId && purchaseId) {
-          try {
-            const response = await fetch('/api/purchases/update', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                userId: userId,
-                purchaseId: purchaseId,
-                updates: {
-                  tracking: trackingNumber,
-                  carrier: updatedPurchase.carrier
-                }
-              })
-            });
-
-            if (response.status === 409) {
-              const errorData = await response.json().catch(() => null);
-              setDuplicateTrackingModal({
-                open: true,
-                trackingNumber,
-                purchaseId,
-                carrier: updatedPurchase.carrier,
-                conflict: errorData?.conflict || undefined,
-              });
-              return;
-            }
-
-            if (!response.ok) {
-              const errorData = await response.json().catch(() => null);
-              throw new Error(errorData?.details || errorData?.error || 'Failed to update purchase');
-            }
-
-            console.log(`✅ Saved tracking via API: ${trackingNumber} (carrier: ${updatedPurchase.carrier || 'null'})`);
-          } catch (error) {
-            console.error('Error saving tracking:', error);
-            setNotification({
-              isVisible: true,
-              message: `Failed to save tracking: ${error instanceof Error ? error.message : 'Unknown error'}`,
-              type: 'error'
-            });
-          }
-        } else {
-          console.warn('⚠️ Cannot save: missing userId or purchaseId', { userId, purchaseId });
         }
       }
 
@@ -3215,12 +3227,77 @@ const Purchases = () => {
         throw new Error(errorData?.details || errorData?.error || 'Failed to update purchase');
       }
 
+      // Ensure UI reflects the forced save (we no longer optimistically update before API response)
+      setPurchases((prev) => prev.map((p: any) => (p?.id === purchaseId ? { ...p, tracking: trackingNumber, carrier } : p)));
+      setManualPurchases((prev) =>
+        prev.map((p: any) => (p?.id === purchaseId ? { ...p, tracking: trackingNumber, carrier } : p))
+      );
+
       setNotification({
         isVisible: true,
         message: `Tracking number saved (duplicate allowed): ${trackingNumber}`,
         type: 'success'
       });
       setDuplicateTrackingModal({ open: false, trackingNumber: '', purchaseId: '', carrier: null });
+      setEditingTracking(null);
+      setEditingTrackingValue('');
+    } catch (e: any) {
+      setNotification({
+        isVisible: true,
+        message: `Failed to save tracking: ${e?.message || 'Unknown error'}`,
+        type: 'error'
+      });
+    }
+  };
+
+  const confirmSaveInvalidTracking = async () => {
+    if (!invalidTrackingModal.open) return;
+    const { trackingNumber, purchaseId, carrier } = invalidTrackingModal;
+    const siteUserId = localStorage.getItem('siteUserId');
+    const userId = user?.uid || siteUserId;
+    if (!userId || !purchaseId) return;
+
+    try {
+      const response = await fetch('/api/purchases/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          purchaseId,
+          allowInvalidTracking: true,
+          updates: { tracking: trackingNumber, carrier }
+        })
+      });
+
+      if (response.status === 409) {
+        const errorData = await response.json().catch(() => null);
+        setDuplicateTrackingModal({
+          open: true,
+          trackingNumber,
+          purchaseId,
+          carrier,
+          conflict: errorData?.conflict || undefined,
+        });
+        setInvalidTrackingModal({ open: false, trackingNumber: '', purchaseId: '', carrier: null });
+        return;
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.details || errorData?.error || 'Failed to update purchase');
+      }
+
+      setPurchases((prev) => prev.map((p: any) => (p?.id === purchaseId ? { ...p, tracking: trackingNumber, carrier } : p)));
+      setManualPurchases((prev) =>
+        prev.map((p: any) => (p?.id === purchaseId ? { ...p, tracking: trackingNumber, carrier } : p))
+      );
+
+      setNotification({
+        isVisible: true,
+        message: `Tracking saved (unverified): ${trackingNumber}`,
+        type: 'info'
+      });
+      setInvalidTrackingModal({ open: false, trackingNumber: '', purchaseId: '', carrier: null });
       setEditingTracking(null);
       setEditingTrackingValue('');
     } catch (e: any) {
@@ -6033,6 +6110,130 @@ const Purchases = () => {
           type={notification.type}
           onClose={() => setNotification({ ...notification, isVisible: false })}
         />
+      )}
+
+      {/* Invalid tracking confirmation modal */}
+      {invalidTrackingModal.open && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className={`w-full max-w-md rounded-2xl p-6 ${
+            currentTheme.name === 'Neon'
+              ? 'bg-gray-950 border border-cyan-500/30 shadow-2xl shadow-cyan-500/20'
+              : 'bg-white border border-gray-200 shadow-2xl'
+          }`}>
+            <div className="flex items-start justify-between gap-4 mb-3">
+              <div>
+                <h3 className={`text-lg font-bold ${currentTheme.colors.textPrimary}`}>
+                  Tracking not found
+                </h3>
+                <p className={`text-sm mt-1 ${currentTheme.colors.textSecondary}`}>
+                  <span className="font-mono font-semibold">{invalidTrackingModal.trackingNumber}</span>
+                  {invalidTrackingModal.details ? ` — ${invalidTrackingModal.details}` : ''}
+                </p>
+              </div>
+              <button
+                onClick={() => setInvalidTrackingModal({ open: false, trackingNumber: '', purchaseId: '', carrier: null })}
+                className={`p-2 rounded-lg ${
+                  currentTheme.name === 'Neon' ? 'hover:bg-white/10 text-gray-300' : 'hover:bg-gray-100 text-gray-600'
+                }`}
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className={`text-sm ${currentTheme.colors.textSecondary}`}>
+              If you’re sure it’s correct, you can save it anyway (sometimes it won’t validate until the first carrier scan).
+              Otherwise, cancel and it will show up in Deliveries as <span className="font-semibold">Needs tracking</span>.
+            </div>
+
+            <div className="flex items-center justify-end gap-2 mt-5">
+              <button
+                onClick={() => setInvalidTrackingModal({ open: false, trackingNumber: '', purchaseId: '', carrier: null })}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold ${
+                  currentTheme.name === 'Neon'
+                    ? 'bg-white/5 hover:bg-white/10 text-gray-200 border border-white/10'
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-800 border border-gray-200'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void confirmSaveInvalidTracking()}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold ${
+                  currentTheme.name === 'Neon'
+                    ? 'bg-cyan-600 hover:bg-cyan-700 text-white'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
+              >
+                Save anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Duplicate tracking confirmation modal */}
+      {duplicateTrackingModal.open && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className={`w-full max-w-md rounded-2xl p-6 ${
+            currentTheme.name === 'Neon'
+              ? 'bg-gray-950 border border-cyan-500/30 shadow-2xl shadow-cyan-500/20'
+              : 'bg-white border border-gray-200 shadow-2xl'
+          }`}>
+            <div className="flex items-start justify-between gap-4 mb-3">
+              <div>
+                <h3 className={`text-lg font-bold ${currentTheme.colors.textPrimary}`}>
+                  Duplicate tracking number
+                </h3>
+                <p className={`text-sm mt-1 ${currentTheme.colors.textSecondary}`}>
+                  <span className="font-mono font-semibold">{duplicateTrackingModal.trackingNumber}</span> is already used on another purchase.
+                </p>
+              </div>
+              <button
+                onClick={() => setDuplicateTrackingModal({ open: false, trackingNumber: '', purchaseId: '', carrier: null })}
+                className={`p-2 rounded-lg ${
+                  currentTheme.name === 'Neon' ? 'hover:bg-white/10 text-gray-300' : 'hover:bg-gray-100 text-gray-600'
+                }`}
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            {duplicateTrackingModal.conflict ? (
+              <div className={`text-sm ${currentTheme.colors.textSecondary} mt-2`}>
+                Conflicts with:
+                <div className="mt-1">
+                  <span className="font-semibold">{duplicateTrackingModal.conflict.productName || 'Unknown item'}</span>
+                  {duplicateTrackingModal.conflict.orderNumber ? ` • ${duplicateTrackingModal.conflict.orderNumber}` : ''}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="flex items-center justify-end gap-2 mt-5">
+              <button
+                onClick={() => setDuplicateTrackingModal({ open: false, trackingNumber: '', purchaseId: '', carrier: null })}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold ${
+                  currentTheme.name === 'Neon'
+                    ? 'bg-white/5 hover:bg-white/10 text-gray-200 border border-white/10'
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-800 border border-gray-200'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void confirmSaveDuplicateTracking()}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold ${
+                  currentTheme.name === 'Neon'
+                    ? 'bg-cyan-600 hover:bg-cyan-700 text-white'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
+              >
+                Use anyway
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* StockX Cookie Modal (for Puppeteer authenticated extraction) */}
