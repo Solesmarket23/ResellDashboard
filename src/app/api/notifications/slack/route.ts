@@ -637,22 +637,13 @@ export async function POST(request: NextRequest) {
             marketDebug.skippedNoAuth++;
             marketDebug.failedByReason['missing_stockx_tokens'] =
               (marketDebug.failedByReason['missing_stockx_tokens'] || 0) + 1;
-            // Fallback to cached if we have it; otherwise skip.
-            if (cachedMarketPrice !== undefined) {
-              marketPrice = cachedMarketPrice;
-              marketDebug.cachedUsed++;
-              marketDebug.items.push({
-                ...itemDebugBase,
-                decision: 'used_cached',
-                cachedMarketPrice,
-                result: { details: cachedMarketSource || 'cached_unknown_field' },
-              });
-            } else {
-              marketDebug.items.push({
-                ...itemDebugBase,
-                decision: 'skipped_missing_stockx_tokens',
-              });
-            }
+            // User-requested behavior: do NOT fall back to cached; keep as unknown so we can verify live fetch coverage.
+            marketDebug.items.push({
+              ...itemDebugBase,
+              decision: 'skipped_missing_stockx_tokens',
+              ...(cachedMarketPrice !== undefined ? { cachedMarketPrice } : {}),
+              result: { details: cachedMarketSource || (cachedMarketPrice !== undefined ? 'cached_unknown_field' : undefined) },
+            });
           } else {
             if (stockxRateLimited) {
               // (fetchMarketWithControls will also short-circuit, but this makes the per-item trace explicit)
@@ -738,14 +729,10 @@ export async function POST(request: NextRequest) {
               const marketUrl = stockxUrlKey
                 ? `https://stockx.com/${stockxUrlKey}${productSize ? `?size=${encodeURIComponent(productSize)}` : ''}`
                 : `https://stockx.com/search?s=${encodeURIComponent(searchTerm)}`;
-              // If live fetch fails, fall back to cached market price if available.
-              if (cachedMarketPrice !== undefined) {
-                marketPrice = cachedMarketPrice;
-                marketDebug.cachedUsed++;
-              }
+              // User-requested behavior: If live fetch fails, DO NOT fall back to cached.
               marketDebug.items.push({
                 ...itemDebugBase,
-                decision: cachedMarketPrice !== undefined ? ('used_cached' as any) : 'fetched_failed',
+                decision: 'fetched_failed',
                 ...(cachedMarketPrice !== undefined ? { cachedMarketPrice } : {}),
                 result: {
                   reason: (result as any).reason,
@@ -755,7 +742,7 @@ export async function POST(request: NextRequest) {
                   urlKey: (result as any).urlKey,
                   productId: (result as any).productId,
                   variantId: (result as any).variantId,
-                  details: cachedMarketPrice !== undefined ? (cachedMarketSource || 'cached_unknown_field') : (result as any).details,
+                  details: (result as any).details,
                   askSource: (result as any).askSource,
                   askStd: (result as any).askStd,
                   askFlex: (result as any).askFlex,
