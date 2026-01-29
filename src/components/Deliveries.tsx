@@ -708,7 +708,8 @@ const DeliveriesNew: React.FC = () => {
       case 'delivered':
         return <CheckCircle className="w-4 h-4 text-green-500" />;
       case 'out_for_delivery':
-        return <Truck className="w-4 h-4 text-orange-500" />;
+        // Slightly lighter orange (less red) for better visual distinction from "exception" red.
+        return <Truck className="w-4 h-4 text-orange-400" />;
       case 'shipped':
         return <Package className="w-4 h-4 text-blue-500" />;
       case 'exception':
@@ -726,7 +727,8 @@ const DeliveriesNew: React.FC = () => {
       case 'delivered':
         return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
       case 'out_for_delivery':
-        return 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200';
+        // Lighter orange to avoid reading as red/orange in the UI.
+        return 'bg-orange-50 text-orange-900 dark:bg-orange-500/15 dark:text-orange-200';
       case 'shipped':
         return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
       default:
