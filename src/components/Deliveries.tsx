@@ -1318,7 +1318,9 @@ const DeliveriesNew: React.FC = () => {
       }
 
       const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 45_000);
+      // Slack summary can do live tracking + optional market-price fetches; give it a bit more time.
+      // (We also cap work server-side, but this keeps the UX resilient on slower connections.)
+      const timeout = window.setTimeout(() => controller.abort(), 90_000);
 
       const res = await fetch('/api/notifications/slack', {
         method: 'POST',

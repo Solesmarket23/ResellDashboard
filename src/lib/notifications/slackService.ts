@@ -249,10 +249,22 @@ export class SlackNotificationService {
       text: { type: 'mrkdwn', text: '*On the way (all shipments)*' },
     });
 
-    const onTheWay = summary.deliveries.filter((d) => {
+    const onTheWayAll = summary.deliveries.filter((d) => {
       const s = String(d.status || '').toLowerCase();
       return s === 'in_transit' || s === 'shipped' || s === 'out_for_delivery';
     });
+
+    // Slack hard limit: 50 blocks. Each delivery item here is one block + overhead.
+    const MAX_ON_THE_WAY_ITEMS = 40;
+    const truncated = onTheWayAll.length > MAX_ON_THE_WAY_ITEMS;
+    const onTheWay = onTheWayAll.slice(0, MAX_ON_THE_WAY_ITEMS);
+
+    if (truncated) {
+      blocks.push({
+        type: 'context',
+        elements: [{ type: 'mrkdwn', text: `_Showing ${MAX_ON_THE_WAY_ITEMS} of ${onTheWayAll.length} on-the-way shipments to stay within Slack limits._` }],
+      });
+    }
 
     if (!onTheWay.length) {
       blocks.push({
@@ -314,31 +326,42 @@ export class SlackNotificationService {
   private async sendMessage(payload: any): Promise<void> {
     try {
       let response: Response;
+      const attempt = async (): Promise<Response> => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12_000);
+        try {
+          return await fetch(this.webhookUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            signal: controller.signal,
+            body: JSON.stringify({
+              username: this.username,
+              icon_emoji: this.iconEmoji,
+              ...payload
+            })
+          });
+        } finally {
+          clearTimeout(timeoutId);
+        }
+      };
+
       try {
-        response = await fetch(this.webhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          username: this.username,
-          icon_emoji: this.iconEmoji,
-          ...payload
-        })
-      });
-      } catch (err) {
-        const host = this.getWebhookHostForLogs();
-        const cause = (err as any)?.cause;
-        const causeMsg =
-          cause instanceof Error
-            ? cause.message
-            : typeof cause === 'string'
-              ? cause
-              : cause && typeof cause === 'object'
-                ? JSON.stringify(cause)
-                : '';
-        const details = causeMsg ? ` (cause: ${causeMsg})` : '';
-        throw new Error(`Slack webhook fetch failed (host: ${host})${details}: ${(err as any)?.message || String(err)}`);
+        response = await attempt();
+      } catch (err: any) {
+        // One quick retry for transient network/timeout issues.
+        if (String(err?.name || '').toLowerCase().includes('abort')) {
+          await new Promise((r) => setTimeout(r, 500));
+          response = await attempt();
+        } else {
+          throw err;
+        }
+      }
+
+      // fetch() succeeded but we still might want richer context if it wasn't OK.
+      if (!response) {
+        throw new Error('Slack webhook fetch failed: no response');
       }
 
       if (!response.ok) {
@@ -347,9 +370,22 @@ export class SlackNotificationService {
       }
 
       console.log('✅ Slack notification sent successfully');
-    } catch (error) {
-      console.error('❌ Failed to send Slack notification:', error);
-      throw error;
+    } catch (err) {
+        const host = this.getWebhookHostForLogs();
+      const cause = (err as any)?.cause;
+      const causeMsg =
+        cause instanceof Error
+          ? cause.message
+          : typeof cause === 'string'
+            ? cause
+            : cause && typeof cause === 'object'
+              ? JSON.stringify(cause)
+              : '';
+      const details = causeMsg ? ` (cause: ${causeMsg})` : '';
+      const msg = (err as any)?.message || String(err);
+      const wrapped = new Error(`Slack send failed (host: ${host})${details}: ${msg}`);
+      console.error('❌ Failed to send Slack notification:', wrapped);
+      throw wrapped;
     }
   }
 

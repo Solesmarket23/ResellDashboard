@@ -5,6 +5,9 @@ import { trackingService } from '@/lib/tracking/trackingService';
 import { getAdminDb } from '@/lib/firebase/firebaseAdmin';
 import { fetchStockXMarketPriceDetailed } from '@/lib/stockx/marketPrice';
 
+// This route can do bulk tracking + optional StockX lookups; allow a longer execution window in serverless runtimes.
+export const maxDuration = 90;
+
 /**
  * Helper function to extract brand from product name
  */
@@ -392,6 +395,11 @@ export async function POST(request: NextRequest) {
       }
     }
     const stockxSem = new Semaphore(3);
+    // Guardrails to keep Slack sends fast and within Slack's block limits.
+    const MAX_LIVE_MARKET_FETCH_ITEMS = 12; // cap expensive live StockX lookups per request
+    const MAX_DELIVERIES_IN_SLACK_MESSAGE = 40; // Slack blocks max is 50; each item is ~1 block + overhead
+    const allowAnyLiveMarketFetch = purchasesWithTracking.length <= 25; // disable entirely for very large tracked sets
+    let remainingLiveMarketFetchBudget = MAX_LIVE_MARKET_FETCH_ITEMS;
     // We want market prices for anything "on the way" (not just a narrow carrier-status subset).
     // Many tracking APIs return UNKNOWN/LABEL_CREATED/etc, which should still count as on-the-way.
     const marketCache = new Map<string, Promise<ReturnType<typeof fetchStockXMarketPriceDetailed>>>();
@@ -588,9 +596,18 @@ export async function POST(request: NextRequest) {
         marketPrice = undefined;
       }
       const cachedMarketPrice = marketPrice;
-      // Option A (user request): for on-the-way items with StockX productId+variantId, always fetch live price.
+      // Live StockX pricing can be expensive. We only do it for a small number of on-the-way items,
+      // and we disable it entirely for very large tracked sets.
+      const shouldAttemptLiveFetch = (() => {
+        if (!onTheWay) return false;
+        if (!allowAnyLiveMarketFetch) return false;
+        if (remainingLiveMarketFetchBudget <= 0) return false;
+        remainingLiveMarketFetchBudget--;
+        return true;
+      })();
+      // If we have exact StockX productId+variantId, prefer forcing live price (but only when allowed).
       const forceLivePrice =
-        onTheWay &&
+        shouldAttemptLiveFetch &&
         typeof ids.productId === 'string' &&
         ids.productId.trim() !== '' &&
         typeof ids.variantId === 'string' &&
@@ -625,6 +642,16 @@ export async function POST(request: NextRequest) {
             decision: 'skipped_not_active',
             cachedMarketPrice: undefined,
             fetchedMarketPrice: undefined,
+          });
+        } else if (!shouldAttemptLiveFetch) {
+          // Keep Slack fast: skip live fetch when disabled or budget exhausted.
+          marketDebug.failedByReason['live_fetch_skipped_for_speed'] =
+            (marketDebug.failedByReason['live_fetch_skipped_for_speed'] || 0) + 1;
+          marketDebug.items.push({
+            ...itemDebugBase,
+            decision: 'skipped_rate_limited',
+            ...(cachedMarketPrice !== undefined ? { cachedMarketPrice } : {}),
+            result: { reason: 'live_fetch_skipped_for_speed', stage: 'budget' },
           });
         } else {
         const auth = await getStockXAuthForUser(request, userId);
@@ -814,6 +841,18 @@ export async function POST(request: NextRequest) {
       };
     }));
 
+    // Slack message payload guardrail: keep within Slack block limits and keep request snappy.
+    const toSlackPriority = (d: any): number => {
+      const s = String(d?.status || '').toLowerCase();
+      if (s === 'out_for_delivery') return 3;
+      if (s === 'in_transit') return 2;
+      if (s === 'shipped') return 1;
+      return 0;
+    };
+    const deliveriesSortedForSlack = [...deliveries].sort((a, b) => toSlackPriority(b) - toSlackPriority(a));
+    const truncatedForSlack = deliveriesSortedForSlack.length > MAX_DELIVERIES_IN_SLACK_MESSAGE;
+    const deliveriesForSlack = deliveriesSortedForSlack.slice(0, MAX_DELIVERIES_IN_SLACK_MESSAGE);
+
     // Calculate summary stats
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -873,10 +912,15 @@ export async function POST(request: NextRequest) {
       if (topReason === 'network_error') return `Market prices unavailable: StockX network errors (${counts}).`;
       return `Market prices unavailable: ${topReason} (${counts}).`;
     };
-    const marketPriceNote =
+    const baseMarketNote =
       purchaseCostOnTheWay !== null && marketValueOnTheWay === null && projectedProfitOnTheWay === null
         ? buildMarketNote()
         : null;
+    const slackTruncationNote = truncatedForSlack
+      ? `Slack message truncated to ${MAX_DELIVERIES_IN_SLACK_MESSAGE} items (of ${deliveriesSortedForSlack.length} tracked with delivery info).`
+      : null;
+    const marketPriceNote =
+      [baseMarketNote, slackTruncationNote].filter(Boolean).join(' ') || null;
 
     // Send notification
     if (type === 'daily_summary') {
@@ -892,7 +936,7 @@ export async function POST(request: NextRequest) {
         ...(marketValueOnTheWay !== null ? { marketValueOnTheWay } : {}),
         ...(purchaseCostOnTheWay !== null ? { purchaseCostOnTheWay } : {}),
         ...(marketPriceNote ? { marketPriceNote } : {}),
-        deliveries
+        deliveries: deliveriesForSlack
       });
     }
 
