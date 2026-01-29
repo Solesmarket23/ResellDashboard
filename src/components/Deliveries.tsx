@@ -13,7 +13,7 @@ import { db } from '../lib/firebase/firebase';
 import { deliveryArrivalLogger } from '../lib/delivery/arrivalLogger';
 import { formatDisplayDate, formatShortDate, parseLocalDate } from '../lib/utils/dateUtils';
 import UPSOAuthButton from './UPSOAuthButton';
-import { useUPSOAuth } from '../lib/hooks/useUPSOAuth';
+// UPS OAuth UI is handled by `UPSOAuthButton`
 import ImagePreviewModal from './ImagePreviewModal';
 
 interface DeliveryItem {
@@ -132,9 +132,6 @@ const DeliveriesNew: React.FC = () => {
     const t = window.setTimeout(() => setShowStatsSkeleton(false), wait);
     return () => window.clearTimeout(t);
   }, [shouldShowStatsSkeleton]);
-
-  // UPS OAuth status
-  const { isAuthenticated: upsOAuthConnected, isLoading: upsOAuthLoading, error: upsOAuthError } = useUPSOAuth();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [presetNeedsTracking, setPresetNeedsTracking] = useState<boolean>(() => {
@@ -1468,12 +1465,6 @@ const DeliveriesNew: React.FC = () => {
               <h1 className="text-3xl font-bold text-white mb-2">Deliveries</h1>
               <p className="text-gray-300">
                 Track your packages and monitor delivery status
-                {upsOAuthConnected && (
-                  <span className="ml-2 text-green-400">• UPS OAuth Connected</span>
-                )}
-                {upsOAuthError && (
-                  <span className="ml-2 text-red-400">• UPS OAuth Error</span>
-              )}
             </p>
           </div>
              <div className="flex items-center gap-4">

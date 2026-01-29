@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useUPSOAuth } from '@/lib/hooks/useUPSOAuth';
 import { useTheme } from '@/lib/contexts/ThemeContext';
+import { ChevronDown } from 'lucide-react';
 
 interface UPSOAuthButtonProps {
   userId?: string;
@@ -56,44 +57,58 @@ export default function UPSOAuthButton({
   if (isAuthenticated) {
     return (
       <div className={className}>
-        <div
-          className={`h-11 inline-flex items-center justify-between gap-3 rounded-xl px-4 border ${
-            currentTheme.name === 'Neon'
-              ? 'bg-emerald-500/10 border-emerald-400/30 text-emerald-200'
-              : 'bg-green-50 border-green-200 text-green-800'
-          }`}
-        >
-          <div className="flex items-center gap-2 min-w-0">
-            <div className={`w-2 h-2 rounded-full ${currentTheme.name === 'Neon' ? 'bg-emerald-400' : 'bg-green-500'}`} />
-            <span className="text-sm font-semibold truncate">UPS Connected</span>
-          </div>
+        <details className="relative">
+          <summary
+            className={`list-none h-11 inline-flex items-center gap-2 rounded-xl px-3 border cursor-pointer select-none transition-colors focus:outline-none focus:ring-2 ${
+              currentTheme.name === 'Neon'
+                ? 'bg-white/5 border-cyan-500/30 text-white hover:bg-white/10 focus:ring-cyan-400/40'
+                : 'bg-white border-gray-200 text-gray-900 hover:bg-gray-50 focus:ring-blue-500'
+            }`}
+            title="UPS OAuth is connected"
+          >
+            <span className={`w-2 h-2 rounded-full ${currentTheme.name === 'Neon' ? 'bg-emerald-400' : 'bg-green-500'}`} />
+            <span className="text-sm font-semibold">UPS</span>
+            <ChevronDown className="w-4 h-4 opacity-80" />
+          </summary>
 
-          <div className="flex items-center gap-2">
+          <div
+            className={`absolute right-0 mt-2 min-w-40 rounded-xl border p-1 shadow-xl z-50 ${
+              currentTheme.name === 'Neon'
+                ? 'bg-gray-900/95 border-cyan-500/30 text-white'
+                : 'bg-white border-gray-200 text-gray-900'
+            }`}
+          >
             <button
               type="button"
-              onClick={handleRefresh}
+              onClick={(e) => {
+                e.preventDefault();
+                handleRefresh();
+              }}
               disabled={isRefreshing}
-              className={`text-xs font-semibold px-2 py-1 rounded-md transition-colors disabled:opacity-60 ${
+              className={`w-full text-left px-3 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-60 ${
                 currentTheme.name === 'Neon'
-                  ? 'text-emerald-200 hover:bg-white/10'
-                  : 'text-green-700 hover:bg-green-100'
+                  ? 'hover:bg-white/10'
+                  : 'hover:bg-gray-100'
               }`}
             >
-              {isRefreshing ? 'Refreshing…' : 'Refresh'}
+              {isRefreshing ? 'Refreshing…' : 'Refresh token'}
             </button>
             <button
               type="button"
-              onClick={handleLogout}
-              className={`text-xs font-semibold px-2 py-1 rounded-md transition-colors ${
+              onClick={(e) => {
+                e.preventDefault();
+                handleLogout();
+              }}
+              className={`w-full text-left px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
                 currentTheme.name === 'Neon'
                   ? 'text-red-300 hover:bg-white/10'
-                  : 'text-red-700 hover:bg-red-100'
+                  : 'text-red-700 hover:bg-red-50'
               }`}
             >
               Disconnect
             </button>
           </div>
-        </div>
+        </details>
       </div>
     );
   }
