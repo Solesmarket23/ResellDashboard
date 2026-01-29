@@ -382,6 +382,35 @@ export async function GET(request: NextRequest) {
         .trim();
       const normalizedStatus = rawStatus || 'unknown';
 
+      // When live tracking is not included (first-paint "lite" payload), many purchases don't have a reliable
+      // `status` field. Use a robust fallback (status/shippingStatus/shipping_status) so the UI doesn't show UNKNOWN.
+      const purchaseStatus = String(purchase?.status || purchase?.shippingStatus || purchase?.shipping_status || '')
+        .toLowerCase()
+        .trim();
+      let fallbackStatus: any = 'shipped';
+      switch (purchaseStatus) {
+        case 'delivered':
+          fallbackStatus = 'delivered';
+          break;
+        case 'shipped':
+          fallbackStatus = 'shipped';
+          break;
+        case 'in transit':
+        case 'in_transit':
+          fallbackStatus = 'in_transit';
+          break;
+        case 'out for delivery':
+        case 'out_for_delivery':
+          fallbackStatus = 'out_for_delivery';
+          break;
+        case 'label_created':
+        case 'pre_transit':
+          fallbackStatus = 'shipped';
+          break;
+        default:
+          fallbackStatus = 'shipped';
+      }
+
       // Label-created / awaiting scan: carrier has no ETA and no scan history.
       const hasScans = hasValidLiveTracking ? (Array.isArray(liveTracking?.updates) && liveTracking.updates.length > 0) : false;
       const isLabelCreated =
@@ -423,7 +452,7 @@ export async function GET(request: NextRequest) {
         productBrand: pickBrand(purchase),
         productSize: pickSize(purchase),
         productImage: pickImage(purchase),
-        status: (hasValidLiveTracking ? liveTracking?.status : undefined) || (friendlyTrackingError ? 'unknown' : (purchase.status || 'unknown')),
+        status: (hasValidLiveTracking ? liveTracking?.status : undefined) || (friendlyTrackingError ? 'unknown' : fallbackStatus),
         estimatedDelivery,
         actualDelivery,
         statusNote,
