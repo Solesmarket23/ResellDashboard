@@ -77,16 +77,19 @@ const DeliveriesNew: React.FC = () => {
   const [carrierOpen, setCarrierOpen] = useState(false);
   const statusRef = useRef<HTMLDivElement | null>(null);
   const carrierRef = useRef<HTMLDivElement | null>(null);
+  const [modalCarrierOpen, setModalCarrierOpen] = useState(false);
+  const modalCarrierRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const onDocMouseDown = (e: MouseEvent) => {
       const t = e.target as Node | null;
       if (statusOpen && statusRef.current && t && !statusRef.current.contains(t)) setStatusOpen(false);
       if (carrierOpen && carrierRef.current && t && !carrierRef.current.contains(t)) setCarrierOpen(false);
+      if (modalCarrierOpen && modalCarrierRef.current && t && !modalCarrierRef.current.contains(t)) setModalCarrierOpen(false);
     };
     document.addEventListener('mousedown', onDocMouseDown);
     return () => document.removeEventListener('mousedown', onDocMouseDown);
-  }, [carrierOpen, statusOpen]);
+  }, [carrierOpen, modalCarrierOpen, statusOpen]);
 
   // Helper function to find the best update to display (most recent with location, or most recent)
   const getBestUpdate = (updates: any[]) => {
@@ -1677,17 +1680,69 @@ const DeliveriesNew: React.FC = () => {
               </div>
               <div>
                 <label className={`block text-sm mb-1 ${currentTheme.colors.textSecondary}`}>Carrier</label>
-                <select
-                  value={newTracking.carrier}
-                  onChange={(e) => setNewTracking({ ...newTracking, carrier: e.target.value })}
-                  className={`w-full px-3 py-2 border rounded-lg ${currentTheme.colors.border} ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary} focus:outline-none focus:ring-2 focus:ring-blue-500`}
-                >
-                  <option value="AUTO">Auto-detect</option>
-                  <option value="UPS">UPS</option>
-                  <option value="FedEx">FedEx</option>
-                  <option value="USPS">USPS</option>
-                  <option value="DHL">DHL</option>
-                </select>
+                <div className="relative" ref={modalCarrierRef}>
+                  <button
+                    type="button"
+                    onClick={() => setModalCarrierOpen((p) => !p)}
+                    className={`w-full px-3 py-2 border rounded-lg text-left inline-flex items-center justify-between gap-2 ${
+                      currentTheme.name === 'Neon'
+                        ? 'bg-white/5 border-cyan-500/30 text-white focus:ring-cyan-400/40'
+                        : `${currentTheme.colors.cardBackground} ${currentTheme.colors.border} ${currentTheme.colors.textPrimary} focus:ring-blue-500`
+                    } focus:outline-none focus:ring-2`}
+                    aria-haspopup="listbox"
+                    aria-expanded={modalCarrierOpen}
+                  >
+                    <span className="font-semibold">
+                      {newTracking.carrier === 'AUTO' ? 'Auto-detect' : newTracking.carrier}
+                    </span>
+                    <ChevronDown className={`w-4 h-4 opacity-80 transition-transform ${modalCarrierOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {modalCarrierOpen ? (
+                    <div
+                      className={`absolute left-0 right-0 mt-2 rounded-xl border shadow-xl overflow-hidden z-50 ${
+                        currentTheme.name === 'Neon'
+                          ? 'bg-gray-900/95 border-cyan-500/30 text-white'
+                          : 'bg-white border-gray-200 text-gray-900'
+                      }`}
+                      role="listbox"
+                    >
+                      {[
+                        { value: 'AUTO', label: 'Auto-detect' },
+                        { value: 'UPS', label: 'UPS' },
+                        { value: 'FedEx', label: 'FedEx' },
+                        { value: 'USPS', label: 'USPS' },
+                        { value: 'DHL', label: 'DHL' },
+                      ].map((opt) => {
+                        const selected = newTracking.carrier === opt.value;
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => {
+                              setNewTracking((prev) => ({ ...prev, carrier: opt.value }));
+                              setModalCarrierOpen(false);
+                            }}
+                            className={`w-full px-3 py-2 text-left text-sm font-semibold inline-flex items-center gap-2 transition-colors ${
+                              currentTheme.name === 'Neon'
+                                ? selected
+                                  ? 'bg-cyan-500/15 text-white'
+                                  : 'hover:bg-white/10 text-white'
+                                : selected
+                                  ? 'bg-blue-50 text-blue-900'
+                                  : 'hover:bg-gray-100 text-gray-900'
+                            }`}
+                            role="option"
+                            aria-selected={selected}
+                          >
+                            <span className={`w-4 inline-flex justify-center ${selected ? 'opacity-100' : 'opacity-0'}`}>✓</span>
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
