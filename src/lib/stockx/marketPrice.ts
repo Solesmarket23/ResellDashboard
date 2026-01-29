@@ -134,6 +134,7 @@ function pickVariantBySize(variants: any[], size: string): any | null {
       .toUpperCase()
       .replace(/\s+/g, '');
   const wanted = normalize(wantedRaw);
+  const isLetterSize = (t: string) => ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'].includes(t);
   if (wanted && wanted !== 'UNKNOWN') {
     const exact = variants.find((v: any) => {
       const variantSize = v.variantValue || v.size || v.sizeValue || v.shoeSize || v.displaySize;
@@ -142,7 +143,12 @@ function pickVariantBySize(variants: any[], size: string): any | null {
       if (candidate === wanted) return true;
       // Handle common StockX variants like "USM8.5" / "USW8.5" / "USM" etc.
       if (candidate === `USM${wanted}` || candidate === `USW${wanted}`) return true;
-      if (wanted.length <= 4 && (candidate.endsWith(wanted) || candidate.includes(wanted))) return true; // letter sizes / short tokens
+      if (isLetterSize(wanted)) {
+        // Letter sizes must match exactly (avoid XS matching XXS, etc.)
+        return candidate === `US${wanted}` || candidate === `USM${wanted}` || candidate === `USW${wanted}`;
+      }
+      // Numeric/other short tokens: allow end-match (e.g. "USM8.5" ends with "8.5")
+      if (wanted.length <= 6 && candidate.endsWith(wanted)) return true;
       return false;
     });
     if (exact) return exact;
@@ -152,6 +158,23 @@ function pickVariantBySize(variants: any[], size: string): any | null {
     variants.find((v: any) => parseStockXMoneyToDollars(v.lowestAskAmount) || parseStockXMoneyToDollars(v.flexLowestAskAmount)) ||
     variants[0]
   );
+}
+
+function stockxSizeMatchesWanted(wantedRaw: string, actualRaw: unknown): boolean {
+  const normalize = (s: unknown) =>
+    String(s ?? '')
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, '');
+  const wanted = normalize(wantedRaw);
+  if (!wanted || wanted === 'UNKNOWN') return true;
+  const actual = normalize(actualRaw);
+  if (!actual) return false;
+  const isLetterSize = (t: string) => ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'].includes(t);
+  if (actual === wanted) return true;
+  if (actual === `US${wanted}` || actual === `USM${wanted}` || actual === `USW${wanted}`) return true;
+  if (isLetterSize(wanted)) return false; // do not allow substring matches for letter sizes
+  return actual.endsWith(wanted);
 }
 
 function pickVariantIdBySize(variants: any[], size: string): string | null {
@@ -238,6 +261,17 @@ export async function fetchStockXMarketPriceDetailed(args: {
           urlKey: args.urlKey || undefined,
         };
       }
+      // Safety: if the stored variantId doesn't match the requested size, fall back to selecting by size.
+      const variantSize =
+        (variantData as any)?.variantValue ||
+        (variantData as any)?.size ||
+        (variantData as any)?.sizeValue ||
+        (variantData as any)?.shoeSize ||
+        (variantData as any)?.displaySize;
+      if (!stockxSizeMatchesWanted(args.size, variantSize)) {
+        // Continue through non-direct flow below (variants list + pick by size).
+        // NOTE: We'll keep productId, but ignore the variantId to avoid wrong-size pricing.
+      } else {
       const ask = askDebugFromVariant(variantData);
       const price = ask.price;
       if (price === null) {
@@ -261,12 +295,21 @@ export async function fetchStockXMarketPriceDetailed(args: {
         variantId: directVariantId,
         urlKey: args.urlKey || undefined,
       };
+      }
     }
 
     let productId: string | null = null;
     let urlKey: string | null = null;
     let termUsed: string | null = null;
     let lastNoProductsTerm: string | null = null;
+
+    // If we have a productId but no usable variantId (or it mismatched size above), skip search and go straight to variants.
+    const preferredProductId = args.productId ? String(args.productId).trim() : '';
+    if (preferredProductId) {
+      productId = preferredProductId;
+      urlKey = args.urlKey ? String(args.urlKey).trim() : null;
+      termUsed = args.urlKey ? String(args.urlKey).trim() : (args.styleId ? String(args.styleId).trim() : null);
+    } else {
 
     // Step 1: Catalog search -> productId (try a few query variants)
     for (const term of searchTerms) {
@@ -296,6 +339,7 @@ export async function fetchStockXMarketPriceDetailed(args: {
 
     if (!productId) {
       return { price: null, reason: 'no_products', stage: 'search', details: lastNoProductsTerm ? `term=${lastNoProductsTerm}` : undefined, termUsed: lastNoProductsTerm || undefined };
+    }
     }
 
     // Step 2: Prefer repricer-style flow: fetch variants -> pick variantId -> variant market-data
