@@ -29,7 +29,11 @@ export interface DeliverySummary {
     marketPrice?: number;
     estimatedProfit?: number;
     purchaseLink?: string;
+    // Legacy (kept for backward compatibility if any callers still provide it)
     marketLink?: string;
+    // New: direct links requested by user
+    gmailLink?: string;
+    stockxLink?: string;
   }>;
 }
 
@@ -290,7 +294,9 @@ export class SlackNotificationService {
           estimatedProfit: (delivery as any).estimatedProfit,
         });
         const moneyLine = money.text ?? 'Purchase/Market/Profit: (missing)';
-        const links = [delivery.purchaseLink, delivery.marketLink].filter(Boolean).join(' | ');
+        const links = [delivery.purchaseLink, (delivery as any).gmailLink, (delivery as any).stockxLink, delivery.marketLink]
+          .filter(Boolean)
+          .join(' | ');
         const linksLine = links ? `\n  Links: ${links}` : '';
 
         blocks.push({
@@ -339,12 +345,16 @@ export class SlackNotificationService {
         });
         const profitText = money.text ? `\n  ${money.text}` : '';
         const trackingLink = this.formatTrackingLink(delivery.trackingNumber, delivery.carrier);
+        const links = [delivery.purchaseLink, (delivery as any).gmailLink, (delivery as any).stockxLink, delivery.marketLink]
+          .filter(Boolean)
+          .join(' | ');
+        const linksLine = links ? `\n  Links: ${links}` : '';
         
         blocks.push({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `• *${delivery.productName}* (${delivery.productBrand})\n  Size: ${delivery.productSize} | ${delivery.carrier}: ${trackingLink}${profitText}`
+            text: `• *${delivery.productName}* (${delivery.productBrand})\n  Size: ${delivery.productSize} | ${delivery.carrier}: ${trackingLink}${profitText}${linksLine}`
           }
         });
       });
@@ -378,12 +388,16 @@ export class SlackNotificationService {
         });
         const profitText = money.text ? `\n  ${money.text}` : '';
         const trackingLink = this.formatTrackingLink(delivery.trackingNumber, delivery.carrier);
+        const links = [delivery.purchaseLink, (delivery as any).gmailLink, (delivery as any).stockxLink, delivery.marketLink]
+          .filter(Boolean)
+          .join(' | ');
+        const linksLine = links ? `\n  Links: ${links}` : '';
         
         blocks.push({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `• *${delivery.productName}* (${delivery.productBrand})\n  Size: ${delivery.productSize} | ${delivery.carrier}: ${trackingLink}${profitText}`
+            text: `• *${delivery.productName}* (${delivery.productBrand})\n  Size: ${delivery.productSize} | ${delivery.carrier}: ${trackingLink}${profitText}${linksLine}`
           }
         });
       });
@@ -431,12 +445,16 @@ export class SlackNotificationService {
         });
         const profitText = money.text ? `\n  ${money.text}` : '';
         const trackingLink = this.formatTrackingLink(delivery.trackingNumber, delivery.carrier);
+        const links = [delivery.purchaseLink, (delivery as any).gmailLink, (delivery as any).stockxLink, delivery.marketLink]
+          .filter(Boolean)
+          .join(' | ');
+        const linksLine = links ? `\n  Links: ${links}` : '';
         
         blocks.push({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `• *${delivery.productName}* (${delivery.productBrand})\n  Size: ${delivery.productSize} | ${delivery.carrier}: ${trackingLink} | ETA: ${etaFormatted}${profitText}`
+            text: `• *${delivery.productName}* (${delivery.productBrand})\n  Size: ${delivery.productSize} | ${delivery.carrier}: ${trackingLink} | ETA: ${etaFormatted}${profitText}${linksLine}`
           }
         });
       });
@@ -466,16 +484,16 @@ export class SlackNotificationService {
       let response: Response;
       try {
         response = await fetch(this.webhookUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            username: this.username,
-            icon_emoji: this.iconEmoji,
-            ...payload
-          })
-        });
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username: this.username,
+          icon_emoji: this.iconEmoji,
+          ...payload
+        })
+      });
       } catch (err) {
         const host = this.getWebhookHostForLogs();
         const cause = (err as any)?.cause;

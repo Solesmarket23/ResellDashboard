@@ -51,6 +51,42 @@ function normalizeStockXShoeSize(raw: unknown): string {
   return s.replace(/^US\s+[MW]\s+/i, '').trim();
 }
 
+function buildGmailEmailUrl(args: { emailId?: unknown; orderNumber?: unknown; trackingNumber?: unknown }): string | null {
+  const emailId = typeof args.emailId === 'string' ? args.emailId.trim() : '';
+  if (emailId && !emailId.startsWith('manual:')) {
+    // Avoid hardcoding /u/0 which can be the wrong account when users have multiple Gmail accounts.
+    return `https://mail.google.com/mail/#all/${encodeURIComponent(emailId)}`;
+  }
+  const orderNumber = typeof args.orderNumber === 'string' ? args.orderNumber.trim() : '';
+  if (orderNumber) {
+    return `https://mail.google.com/mail/#search/${encodeURIComponent(`"${orderNumber}"`)}`;
+  }
+  const trackingNumber = typeof args.trackingNumber === 'string' ? args.trackingNumber.trim() : '';
+  if (trackingNumber) {
+    return `https://mail.google.com/mail/#search/${encodeURIComponent(`"${trackingNumber}"`)}`;
+  }
+  return null;
+}
+
+function buildStockXSlackLink(args: {
+  urlKey?: string | null;
+  styleId?: string | null;
+  productName: string;
+  size: string;
+}): string {
+  const urlKey = typeof args.urlKey === 'string' ? args.urlKey.trim() : '';
+  const size = String(args.size || '').trim();
+  const hasSize = !!size && size !== 'Unknown';
+  if (urlKey) {
+    const url = `https://stockx.com/${urlKey}${hasSize ? `?size=${encodeURIComponent(size)}` : ''}`;
+    const label = hasSize ? `StockX (${size})` : 'StockX';
+    return `<${url}|${label}>`;
+  }
+  const term = String(args.styleId || '').trim() || String(args.productName || '').trim() || 'StockX';
+  const url = `https://stockx.com/search?s=${encodeURIComponent(term)}`;
+  return `<${url}|StockX Search>`;
+}
+
 function isOnTheWayStatus(statusRaw: unknown): boolean {
   const s = String(statusRaw ?? '').toLowerCase().trim();
   if (!s) return true; // treat missing as "in progress"
@@ -453,6 +489,13 @@ export async function POST(request: NextRequest) {
       const ids = extractStockXIdsFromPurchase(purchase);
       const purchaseId = String(purchase.id || purchase.purchaseId || purchase.orderNumber || trackingValue || '').trim();
       const onTheWay = isOnTheWayStatus(status);
+      const orderNumber = purchase.orderNumber || purchase.order_number || purchase.orderId;
+      const emailUrl = buildGmailEmailUrl({
+        emailId: (purchase as any)?.emailId || (purchase as any)?.email_id || (purchase as any)?.gmailEmailId,
+        orderNumber,
+        trackingNumber: trackingValue,
+      });
+      const gmailLink = emailUrl ? `<${emailUrl}|Gmail>` : undefined;
       
       // Extract brand from product name
       let productBrand = purchase.productBrand || purchase.brand;
@@ -646,19 +689,20 @@ export async function POST(request: NextRequest) {
               });
             }
 
-              // Always attach a market link even if pricing failed, so you can verify the match.
+              // Always attach a StockX link (prefer exact urlKey+size; otherwise fall back to search).
               const stockxUrlKey = (result as any).urlKey as string | undefined;
-              const termUsed = (result as any).termUsed as string | undefined;
-              const searchTerm = termUsed || styleId || productName;
-              const marketUrl = stockxUrlKey
-                ? `https://stockx.com/${stockxUrlKey}${productSize ? `?size=${encodeURIComponent(productSize)}` : ''}`
-                : `https://stockx.com/search?s=${encodeURIComponent(searchTerm)}`;
-              (purchase as any).__marketLink = `<${marketUrl}|Market>`;
+              (purchase as any).__stockxLink = buildStockXSlackLink({
+                urlKey: stockxUrlKey || urlKey,
+                styleId,
+                productName,
+                size: productSize,
+              });
           }
         }
         }
       } else {
         console.log(`📦 Using cached price: ${productName} = $${marketPrice}`);
+        (purchase as any).__stockxLink = buildStockXSlackLink({ urlKey, styleId, productName, size: productSize });
         // Capture a per-item trace of cached prices too (helps verify we're actually covering all items)
         marketDebug.items.push({
           ...itemDebugBase,
@@ -695,7 +739,8 @@ export async function POST(request: NextRequest) {
         marketPrice,
         estimatedProfit,
         purchaseLink: purchaseId ? `<${baseUrl}/dashboard?section=purchases&purchaseId=${encodeURIComponent(purchaseId)}|Purchase>` : undefined,
-        marketLink: (purchase as any).__marketLink as string | undefined
+        gmailLink,
+        stockxLink: (purchase as any).__stockxLink as string | undefined,
       };
     }));
 
