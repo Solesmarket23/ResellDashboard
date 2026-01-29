@@ -55,7 +55,7 @@ const DeliveriesNew: React.FC = () => {
 
   type DropdownOption = { value: string; label: string };
   const statusOptions: DropdownOption[] = [
-    { value: 'all', label: 'All Status' },
+    { value: 'all', label: 'All Statuses' },
     { value: 'today', label: 'Arriving Today' },
     { value: 'tomorrow', label: 'Arriving Tomorrow' },
     { value: 'this_week', label: 'Arriving This Week' },
