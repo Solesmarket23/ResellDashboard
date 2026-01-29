@@ -165,8 +165,9 @@ const DeliveriesNew: React.FC = () => {
   });
   const [sendingSlackNotification, setSendingSlackNotification] = useState(false);
 
-  const [setupStatus, setSetupStatus] = useState<any | null>(null);
-  const [setupStatusLoading, setSetupStatusLoading] = useState(false);
+  // Setup status UI removed (debug-only)
+  // const [setupStatus, setSetupStatus] = useState<any | null>(null);
+  // const [setupStatusLoading, setSetupStatusLoading] = useState(false);
 
   const isNeedsTracking = (delivery: DeliveryItem): boolean => {
     return !String(delivery.trackingNumber || '').trim();
@@ -234,48 +235,7 @@ const DeliveriesNew: React.FC = () => {
     }
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      setSetupStatusLoading(true);
-      try {
-        const res = await fetch('/api/deliveries/setup-status', { cache: 'no-store' });
-        const data = await res.json().catch(() => null);
-        if (cancelled) return;
-        if (!res.ok || !data?.success) {
-          setSetupStatus({ success: false, error: data?.error || `HTTP ${res.status}` });
-          return;
-        }
-        setSetupStatus(data);
-      } catch (e: any) {
-        if (!cancelled) setSetupStatus({ success: false, error: e?.message || 'Failed to load setup status' });
-      } finally {
-        if (!cancelled) setSetupStatusLoading(false);
-      }
-    };
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const setupPills = useMemo(() => {
-    const firebaseEnvOk = !!setupStatus?.firebase?.envOk;
-    const firebaseAdminOk = !!setupStatus?.firebase?.adminOk;
-    const firebaseOk = firebaseEnvOk && firebaseAdminOk;
-
-    const fedexOk = !!setupStatus?.tracking?.fedexOk;
-    const upsOk = !!setupStatus?.tracking?.upsOk;
-    const trackingOk = fedexOk || upsOk;
-
-    const localOk = !!localSetup.siteUserId && localSetup.purchasesCount > 0;
-
-    return {
-      firebase: { ok: firebaseOk, envOk: firebaseEnvOk, adminOk: firebaseAdminOk, error: setupStatus?.firebase?.adminError || null },
-      tracking: { ok: trackingOk, fedexOk, upsOk },
-      local: { ok: localOk, siteUserId: localSetup.siteUserId, purchasesCount: localSetup.purchasesCount },
-    };
-  }, [localSetup.purchasesCount, localSetup.siteUserId, setupStatus]);
+  // setupPills removed with setup status UI
 
   const [imagePreview, setImagePreview] = useState<{
     isOpen: boolean;
@@ -1509,137 +1469,7 @@ const DeliveriesNew: React.FC = () => {
         </div>
       </div>
 
-      {/* Setup Status */}
-      <div className="mb-6 rounded-xl border border-white/10 bg-white/5 backdrop-blur-sm p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Shield className="w-4 h-4 text-cyan-300" />
-            <div className="text-sm font-semibold text-white">Setup status</div>
-            {setupStatusLoading ? (
-              <span className="text-xs text-gray-400">Checking…</span>
-            ) : null}
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={async () => {
-                try {
-                  const payload = {
-                    firebase: setupPills.firebase,
-                    tracking: setupPills.tracking,
-                    local: setupPills.local,
-                    upsOAuthConnected,
-                    userMode: user?.uid ? (firebaseUser ? 'firebase' : 'site') : 'none',
-                  };
-                  await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
-                  showNotification('Copied setup debug', 'success');
-                } catch {
-                  showNotification('Failed to copy debug', 'error');
-                }
-              }}
-              className="px-3 py-2 rounded-lg text-sm font-semibold bg-white/5 hover:bg-white/10 border border-white/10 text-white/90 transition-colors flex items-center gap-2"
-              title="Copy setup debug"
-            >
-              <Copy className="w-4 h-4" />
-              Copy debug
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-            <div className="flex items-center justify-between">
-              <div className="text-xs font-semibold text-gray-300">Firebase Admin</div>
-              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold border ${
-                setupPills.firebase.ok
-                  ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-200'
-                  : 'bg-amber-500/10 border-amber-500/25 text-amber-200'
-              }`}>
-                {setupPills.firebase.ok ? 'Ready' : 'Not ready'}
-              </span>
-            </div>
-            <div className="mt-2 text-xs text-gray-400 space-y-1">
-              <div className="flex items-center justify-between">
-                <span>Env vars</span>
-                <span className={setupPills.firebase.envOk ? 'text-emerald-300' : 'text-amber-300'}>
-                  {setupPills.firebase.envOk ? 'OK' : 'Missing'}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Admin init</span>
-                <span className={setupPills.firebase.adminOk ? 'text-emerald-300' : 'text-amber-300'}>
-                  {setupPills.firebase.adminOk ? 'OK' : 'Failed'}
-                </span>
-              </div>
-              {!setupPills.firebase.adminOk && setupPills.firebase.error ? (
-                <div className="mt-2 flex items-start gap-2 text-amber-200">
-                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  <div className="break-words">{String(setupPills.firebase.error)}</div>
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-            <div className="flex items-center justify-between">
-              <div className="text-xs font-semibold text-gray-300">Tracking APIs</div>
-              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold border ${
-                setupPills.tracking.ok
-                  ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-200'
-                  : 'bg-amber-500/10 border-amber-500/25 text-amber-200'
-              }`}>
-                {setupPills.tracking.ok ? 'Ready' : 'Not set'}
-              </span>
-            </div>
-            <div className="mt-2 text-xs text-gray-400 space-y-1">
-              <div className="flex items-center justify-between">
-                <span>UPS</span>
-                <span className={setupPills.tracking.upsOk ? 'text-emerald-300' : 'text-amber-300'}>
-                  {setupPills.tracking.upsOk ? 'OK' : 'Missing'}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>FedEx</span>
-                <span className={setupPills.tracking.fedexOk ? 'text-emerald-300' : 'text-amber-300'}>
-                  {setupPills.tracking.fedexOk ? 'OK' : 'Missing'}
-                </span>
-              </div>
-              <div className="mt-2 text-[11px] text-gray-500">
-                If neither is set, deliveries still load but tracking may show “Unknown”.
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-            <div className="flex items-center justify-between">
-              <div className="text-xs font-semibold text-gray-300">Site-user fallback</div>
-              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold border ${
-                setupPills.local.ok
-                  ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-200'
-                  : 'bg-amber-500/10 border-amber-500/25 text-amber-200'
-              }`}>
-                {setupPills.local.ok ? 'Ready' : 'Empty'}
-              </span>
-            </div>
-            <div className="mt-2 text-xs text-gray-400 space-y-1">
-              <div className="flex items-center justify-between">
-                <span>siteUserId</span>
-                <span className={setupPills.local.siteUserId ? 'text-emerald-300' : 'text-amber-300'}>
-                  {setupPills.local.siteUserId ? 'Present' : 'Missing'}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Local purchases</span>
-                <span className={setupPills.local.purchasesCount > 0 ? 'text-emerald-300' : 'text-amber-300'}>
-                  {setupPills.local.purchasesCount || 0}
-                </span>
-              </div>
-              <div className="mt-2 text-[11px] text-gray-500">
-                Used only if you’re logged in via site password (not Firebase).
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Setup status / debug card removed */}
 
       {/* Add Manual Tracking Modal */}
       {showAddTrackingModal && (
