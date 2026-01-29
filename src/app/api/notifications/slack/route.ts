@@ -434,6 +434,9 @@ export async function POST(request: NextRequest) {
           productId?: string;
           variantId?: string;
           details?: string;
+          askSource?: 'standard' | 'flex';
+          askStd?: number | null;
+          askFlex?: number | null;
         };
         marketLink?: string;
       }>,
@@ -567,10 +570,13 @@ export async function POST(request: NextRequest) {
       }
 
       // Get current market price from StockX - try cached first, then fetch real-time
+      let cachedMarketSource: 'purchase.lowestAsk' | 'purchase.marketPrice' | undefined;
       if (purchase.lowestAsk) {
         marketPrice = typeof purchase.lowestAsk === 'number' ? purchase.lowestAsk : parseFloat(purchase.lowestAsk);
+        cachedMarketSource = 'purchase.lowestAsk';
       } else if (purchase.marketPrice) {
         marketPrice = typeof purchase.marketPrice === 'number' ? purchase.marketPrice : parseFloat(purchase.marketPrice);
+        cachedMarketSource = 'purchase.marketPrice';
       }
       // Sanitize cached market price
       if (marketPrice !== undefined && (!Number.isFinite(marketPrice) || marketPrice <= 0)) {
@@ -667,6 +673,9 @@ export async function POST(request: NextRequest) {
                   productId: (result as any).productId,
                   variantId: (result as any).variantId,
                   details: (result as any).details,
+                  askSource: (result as any).askSource,
+                  askStd: (result as any).askStd,
+                  askFlex: (result as any).askFlex,
                 },
                 marketLink: `<${marketUrl}|Market>`,
               });
@@ -719,6 +728,9 @@ export async function POST(request: NextRequest) {
                   productId: (result as any).productId,
                   variantId: (result as any).variantId,
                   details: (result as any).details,
+                  askSource: (result as any).askSource,
+                  askStd: (result as any).askStd,
+                  askFlex: (result as any).askFlex,
                 },
                 marketLink: `<${marketUrl}|Market>`,
               });
@@ -743,6 +755,7 @@ export async function POST(request: NextRequest) {
           ...itemDebugBase,
           decision: 'used_cached',
           cachedMarketPrice: marketPrice,
+          result: { details: cachedMarketSource || 'cached_unknown_field' },
         });
       }
       if (marketPrice !== undefined && (!Number.isFinite(marketPrice) || marketPrice <= 0)) {

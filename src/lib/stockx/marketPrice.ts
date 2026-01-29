@@ -10,6 +10,9 @@ export type StockXMarketPriceResult = {
   variantId?: string;
   urlKey?: string;
   termUsed?: string;
+  askSource?: 'standard' | 'flex';
+  askStd?: number | null;
+  askFlex?: number | null;
   reason:
     | 'ok'
     | 'missing_search_term'
@@ -153,6 +156,14 @@ function lowestAskFromVariant(variant: any): number | null {
   return std ?? flex ?? null;
 }
 
+function askDebugFromVariant(variant: any): { price: number | null; askSource?: 'standard' | 'flex'; askStd: number | null; askFlex: number | null } {
+  const askStd = parseStockXMoneyToDollars(variant?.lowestAskAmount);
+  const askFlex = parseStockXMoneyToDollars(variant?.flexLowestAskAmount);
+  if (askStd !== null) return { price: askStd, askSource: 'standard', askStd, askFlex };
+  if (askFlex !== null) return { price: askFlex, askSource: 'flex', askStd, askFlex };
+  return { price: null, askStd, askFlex };
+}
+
 export async function fetchStockXMarketPriceDetailed(args: {
   auth: StockXAuth;
   productName: string;
@@ -215,7 +226,8 @@ export async function fetchStockXMarketPriceDetailed(args: {
           urlKey: args.urlKey || undefined,
         };
       }
-      const price = lowestAskFromVariant(variantData);
+      const ask = askDebugFromVariant(variantData);
+      const price = ask.price;
       if (price === null) {
         return {
           price: null,
@@ -228,6 +240,9 @@ export async function fetchStockXMarketPriceDetailed(args: {
       }
       return {
         price,
+        askSource: ask.askSource,
+        askStd: ask.askStd,
+        askFlex: ask.askFlex,
         reason: 'ok',
         details: 'direct_variant_market_data',
         productId: directProductId,
@@ -298,9 +313,10 @@ export async function fetchStockXMarketPriceDetailed(args: {
       const arr = Array.isArray(marketData) ? marketData : [];
       const variant = pickVariantBySize(arr, args.size);
       if (!variant) return { price: null, reason: 'no_variant', stage: 'market', productId, variantId, urlKey: urlKey || undefined, termUsed: termUsed || undefined };
-      const price = lowestAskFromVariant(variant);
+      const ask = askDebugFromVariant(variant);
+      const price = ask.price;
       if (price === null) return { price: null, reason: 'no_price', stage: 'market', productId, variantId, urlKey: urlKey || undefined, termUsed: termUsed || undefined };
-      return { price, reason: 'ok', details: 'fallback_product_market_data', productId, variantId, urlKey: urlKey || undefined, termUsed: termUsed || undefined };
+      return { price, askSource: ask.askSource, askStd: ask.askStd, askFlex: ask.askFlex, reason: 'ok', details: 'fallback_product_market_data', productId, variantId, urlKey: urlKey || undefined, termUsed: termUsed || undefined };
     }
 
     const vmData = await vmRes.json().catch(() => null);
@@ -308,9 +324,10 @@ export async function fetchStockXMarketPriceDetailed(args: {
       ? vmData.find((item: any) => String(item?.variantId) === String(variantId))
       : vmData;
     if (!variantData) return { price: null, reason: 'no_variant', stage: 'market', productId, variantId, urlKey: urlKey || undefined, termUsed: termUsed || undefined };
-    const price = lowestAskFromVariant(variantData);
+    const ask = askDebugFromVariant(variantData);
+    const price = ask.price;
     if (price === null) return { price: null, reason: 'no_price', stage: 'market', productId, variantId, urlKey: urlKey || undefined, termUsed: termUsed || undefined };
-    return { price, reason: 'ok', productId, variantId, urlKey: urlKey || undefined, termUsed: termUsed || undefined };
+    return { price, askSource: ask.askSource, askStd: ask.askStd, askFlex: ask.askFlex, reason: 'ok', productId, variantId, urlKey: urlKey || undefined, termUsed: termUsed || undefined };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     // Best-effort: never throw to callers (Slack notifications, etc.)
