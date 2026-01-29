@@ -128,10 +128,14 @@ export default function UPSOAuthButton({
               </svg>
             </div>
             <div className="ml-3">
-              <h3 className="text-sm font-medium text-red-800">
+              <h3 className={`text-sm font-medium ${
+                currentTheme.name === 'Neon' ? 'text-red-200' : 'text-red-800'
+              }`}>
                 Authentication Error
               </h3>
-              <div className="mt-2 text-sm text-red-700">
+              <div className={`mt-2 text-sm ${
+                currentTheme.name === 'Neon' ? 'text-red-200/90' : 'text-red-700'
+              }`}>
                 <p>{error}</p>
               </div>
             </div>
@@ -143,7 +147,7 @@ export default function UPSOAuthButton({
         style={{ pointerEvents: 'auto', cursor: 'pointer' }}
         className={`h-11 inline-flex items-center justify-center px-4 rounded-xl text-sm font-semibold transition-colors focus:outline-none focus:ring-2 ${
           currentTheme.name === 'Neon'
-            ? 'bg-indigo-500/90 hover:bg-indigo-500 text-white focus:ring-cyan-400/40'
+            ? 'bg-white/5 hover:bg-white/10 border border-cyan-500/30 text-white focus:ring-cyan-400/40'
             : 'bg-indigo-600 hover:bg-indigo-700 text-white focus:ring-indigo-500'
         }`}
       >
