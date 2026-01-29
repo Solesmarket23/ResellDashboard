@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
-import { Package, Truck, CheckCircle, Clock, MapPin, Calendar, Filter, Search, MoreHorizontal, RefreshCw, Wifi, WifiOff, X, ChevronDown, Trash2, Copy, Grid3X3, List, Settings, GripVertical, Bell, Shield, AlertTriangle, Mail, ExternalLink } from 'lucide-react';
+import { Package, Truck, CheckCircle, Clock, MapPin, Calendar, Filter, Search, MoreHorizontal, RefreshCw, Wifi, WifiOff, X, ChevronDown, Trash2, Copy, Grid3X3, List, Settings, GripVertical, Bell, Shield, AlertTriangle, Mail, ExternalLink, Info } from 'lucide-react';
 import NeonNotification, { type NotificationType } from './NeonNotification';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
@@ -2580,7 +2580,19 @@ const DeliveriesNew: React.FC = () => {
                       Carrier
                     </th>
                     <th className={`px-4 py-3 text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`}>
-                      Live
+                      <span className="relative inline-flex items-center gap-1 group">
+                        <span>Live</span>
+                        <Info className="w-3.5 h-3.5 opacity-70 group-hover:opacity-100 transition-opacity" />
+                        <span
+                          className={`pointer-events-none absolute left-0 top-full mt-2 w-64 rounded-lg border px-3 py-2 text-[11px] normal-case tracking-normal opacity-0 group-hover:opacity-100 transition-opacity shadow-xl z-50 ${
+                            currentTheme.name === 'Neon'
+                              ? 'bg-gray-900/95 border-cyan-500/30 text-gray-100 shadow-cyan-500/10'
+                              : 'bg-white border-gray-200 text-gray-700 shadow-black/10'
+                          }`}
+                        >
+                          Live tracking is enabled for this delivery — the app will fetch real-time carrier updates (scans/ETA) instead of only using the original email/purchase data.
+                        </span>
+                      </span>
                     </th>
                     <th className={`px-4 py-3 text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`}>
                       Actions
