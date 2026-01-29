@@ -1490,9 +1490,9 @@ const DeliveriesNew: React.FC = () => {
           <div className="flex items-center justify-between mb-6">
           <div>
               <h1 className="text-3xl font-bold text-white mb-2">Deliveries</h1>
-              <p className="text-gray-300">
-                Track your packages and monitor delivery status
-            </p>
+              <p className="text-gray-300 whitespace-nowrap truncate max-w-[min(720px,60vw)]">
+                Track your packages and monitor delivery statuses
+              </p>
           </div>
              <div className="flex items-center gap-4">
                <UPSOAuthButton className="shrink-0" />
