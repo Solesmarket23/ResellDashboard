@@ -2817,7 +2817,10 @@ const DeliveriesNew: React.FC = () => {
                             <>
                               <button
                                 type="button"
-                                onClick={() => openSetTrackingForDelivery(delivery)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openSetTrackingForDelivery(delivery);
+                                }}
                                 className={`font-mono text-sm underline underline-offset-2 ${
                                   currentTheme.name === 'Neon' ? 'text-cyan-300 hover:text-cyan-200' : 'text-blue-600 hover:text-blue-500'
                                 }`}
@@ -2829,7 +2832,8 @@ const DeliveriesNew: React.FC = () => {
                                 href={getFedExTrackingUrl(delivery.trackingNumber)}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   setHighlightedDeliveryId(delivery.id);
                                   setSelectedDelivery(delivery);
                                 }}
@@ -2841,7 +2845,10 @@ const DeliveriesNew: React.FC = () => {
                               </a>
                               <button
                                 type="button"
-                                onClick={() => void copyTrackingNumber(delivery.trackingNumber, delivery.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void copyTrackingNumber(delivery.trackingNumber, delivery.id);
+                                }}
                                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors duration-200"
                                 title="Copy tracking number"
                                 aria-label="Copy tracking number"
@@ -2852,7 +2859,10 @@ const DeliveriesNew: React.FC = () => {
                           ) : (
                             <button
                               type="button"
-                              onClick={() => openSetTrackingForDelivery(delivery)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openSetTrackingForDelivery(delivery);
+                              }}
                               className="text-xs font-semibold text-amber-600 hover:text-amber-500"
                               title="Set the correct tracking number"
                             >
@@ -2865,7 +2875,10 @@ const DeliveriesNew: React.FC = () => {
                           {isTrackingNotFound(delivery) ? (
                             <button
                               type="button"
-                              onClick={() => requestClearTracking(delivery)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                requestClearTracking(delivery);
+                              }}
                               className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors duration-200"
                               title="Clear invalid tracking number"
                               aria-label="Clear invalid tracking number"
