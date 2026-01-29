@@ -275,6 +275,8 @@ const DeliveriesNew: React.FC = () => {
   const [copiedShipmentId, setCopiedShipmentId] = useState<string | null>(null);
   // Persist the blue "active" highlight until another copy action.
   const [highlightedDeliveryId, setHighlightedDeliveryId] = useState<string | null>(null);
+  // Sometimes we intentionally do NOT want to auto-scroll to the highlighted row (e.g. when clearing a stat filter).
+  const suppressNextHighlightScrollRef = React.useRef(false);
 
   const [confirmClearTrackingOpen, setConfirmClearTrackingOpen] = useState(false);
   const [clearTrackingTarget, setClearTrackingTarget] = useState<DeliveryItem | null>(null);
@@ -1319,6 +1321,10 @@ const DeliveriesNew: React.FC = () => {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!highlightedDeliveryId) return;
+    if (suppressNextHighlightScrollRef.current) {
+      suppressNextHighlightScrollRef.current = false;
+      return;
+    }
     const t = window.setTimeout(() => {
       const el = document.querySelector(`[data-delivery-id="${CSS.escape(highlightedDeliveryId)}"]`) as HTMLElement | null;
       el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1867,7 +1873,12 @@ const DeliveriesNew: React.FC = () => {
                     if (!mapped) return;
                     // Toggle behavior: clicking the active card clears the filter and shows the full table again.
                     if (isActive) {
+                      suppressNextHighlightScrollRef.current = true;
                       setStatusFilter('all');
+                      // Bring the user back to the top of the table/list when clearing.
+                      window.setTimeout(() => {
+                        document.getElementById('deliveriesTableTop')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }, 0);
                       return;
                     }
                     setPresetNeedsTracking(false);
@@ -1921,7 +1932,11 @@ const DeliveriesNew: React.FC = () => {
             <button
               type="button"
               onClick={() => {
+                suppressNextHighlightScrollRef.current = true;
                 setStatusFilter('all');
+                window.setTimeout(() => {
+                  document.getElementById('deliveriesTableTop')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }, 0);
               }}
               className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-white/5 hover:bg-white/10 border border-white/10 text-white/90"
               title="Clear status filter"
@@ -2081,6 +2096,7 @@ const DeliveriesNew: React.FC = () => {
       </div>
 
          {/* Main Content */}
+        <div id="deliveriesTableTop" />
         {sortedDeliveries.length === 0 ? (
           <div className={`${currentTheme.colors.cardBackground} rounded-lg p-12 text-center border ${currentTheme.colors.border}`}>
             <Package className={`w-12 h-12 mx-auto mb-4 ${currentTheme.colors.textSecondary}`} />
