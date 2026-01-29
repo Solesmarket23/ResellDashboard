@@ -463,7 +463,9 @@ export async function GET(request: NextRequest) {
           trackingNumber: trackingMissing ? undefined : trackingStr,
         }),
         origin: (hasValidLiveTracking ? liveTracking?.origin : undefined) || purchase.origin || 'Unknown',
-        destination: (hasValidLiveTracking ? liveTracking?.destination : undefined) || purchase.destination || 'Unknown',
+        // Destination is often not provided by carrier APIs in a clean "city/state" form.
+        // If we don't have a destination, show "Your Address" instead of "Unknown" for a better UX.
+        destination: (hasValidLiveTracking ? liveTracking?.destination : undefined) || purchase.destination || 'Your Address',
         lastUpdate:
           (hasValidLiveTracking ? liveTracking?.lastUpdate : undefined) ||
           firstNonEmptyString(purchase.updatedAt, purchase.lastUpdated, purchase.createdAt, purchase.purchaseDate) ||
