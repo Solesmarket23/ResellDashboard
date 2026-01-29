@@ -87,6 +87,7 @@ const menuSections = [
       { id: 'analytics', label: 'Analytics', icon: BarChart3 },
       { id: 'performance', label: 'Performance', icon: Activity },
       { id: 'cashflow', label: 'Cash Flow', icon: DollarSign },
+      { id: 'pnl', label: 'P&L', icon: LineChart },
       { id: 'expenses', label: 'Expenses', icon: Wallet },
     ]
   },

@@ -958,13 +958,13 @@ export default function StockXRepricing() {
     }
     
     if (!opts?.silent) {
-      console.log(`💾 Starting save for ${listingId}:`, {
-        settings,
-        minPrice: settings.minPrice,
-        maxPrice: settings.maxPrice,
-        hasMinPrice: 'minPrice' in settings,
-        hasMaxPrice: 'maxPrice' in settings
-      });
+    console.log(`💾 Starting save for ${listingId}:`, {
+      settings,
+      minPrice: settings.minPrice,
+      maxPrice: settings.maxPrice,
+      hasMinPrice: 'minPrice' in settings,
+      hasMaxPrice: 'maxPrice' in settings
+    });
     }
     
     setSavingSettings(true);
@@ -1617,7 +1617,7 @@ export default function StockXRepricing() {
               if (fromProduct) return { ...l, imageUrl: fromProduct };
               const fromPurchase = pickPurchase(l);
               return fromPurchase ? { ...l, imageUrl: fromPurchase } : l;
-            });
+          });
           } catch {
             return finalListings;
           }
@@ -2075,7 +2075,7 @@ export default function StockXRepricing() {
       ...prev,
       [effectiveListingId]: newStrategy
     }));
-
+    
     // Update UI immediately for preview
     setListings(prev => {
       if (isFollowerInGroup) {
@@ -2223,8 +2223,8 @@ export default function StockXRepricing() {
     if (strategyToSave.type === 'manual') {
       if (!effectiveMin || effectiveMin <= 0) {
         if (!opts?.suppressBanner) {
-          setBulkActionMessage('⚠️ Please enter a Min price before saving manual pricing');
-          setTimeout(() => setBulkActionMessage(null), 5000);
+        setBulkActionMessage('⚠️ Please enter a Min price before saving manual pricing');
+        setTimeout(() => setBulkActionMessage(null), 5000);
         }
         if (!opts?.suppressToast) showToast('Min price required for Manual', 'error');
         return false;
@@ -2235,8 +2235,8 @@ export default function StockXRepricing() {
     if (effectiveMin && effectiveMax) {
       if (effectiveMin >= effectiveMax) {
         if (!opts?.suppressBanner) {
-          setBulkActionMessage('⚠️ Min price must be less than Max price');
-          setTimeout(() => setBulkActionMessage(null), 5000);
+        setBulkActionMessage('⚠️ Min price must be less than Max price');
+        setTimeout(() => setBulkActionMessage(null), 5000);
         }
         if (!opts?.suppressToast) showToast('Min must be less than Max', 'error');
         return false;
@@ -2321,13 +2321,13 @@ export default function StockXRepricing() {
             if (!opts?.suppressRowState) {
               setRowSaveState(prev => ({ ...prev, [listingId]: 'saved' }));
               setTimeout(() => {
-                setRowSaveState(prev => ({ ...prev, [listingId]: 'idle' }));
+            setRowSaveState(prev => ({ ...prev, [listingId]: 'idle' }));
               }, 1200);
-            }
+          }
             return true;
           }
         }
-      }
+        }
 
       // Start repricing in the background (can take ~10–15s on StockX).
       // We intentionally do NOT await, so the row doesn't sit in "Saving…" for the duration.
@@ -2349,12 +2349,12 @@ export default function StockXRepricing() {
         strategyToSave.type === 'match_lowest' ? 'Queue Focus' :
         strategyToSave.type === 'market_peek' ? 'Peek Focus' :
         strategyToSave.type === 'reset_then_beat_lowest' ? 'Two-step' :
-        strategyToSave.type === 'manual' ? 'Manual' :
+                           strategyToSave.type === 'manual' ? 'Manual' :
         strategyToSave.type === 'beat_lowest' ? 'Beat Lowest by $1' :
         strategyToSave.type === 'percentage_below' ? `Below ${(strategyToSave as any).value}%` :
-        hasPendingBounds ? 'Bounds updated' :
-        'Keep Current';
-
+                           hasPendingBounds ? 'Bounds updated' :
+                           'Keep Current';
+      
       const boundsLabel =
         effectiveMin && effectiveMax
           ? `$${effectiveMin}–$${effectiveMax}`
@@ -2382,10 +2382,10 @@ export default function StockXRepricing() {
       delete boundDraftRefByListingId.current[listingId];
 
       if (!opts?.suppressRowState) {
-        setRowSaveState(prev => ({ ...prev, [listingId]: 'saved' }));
-        setTimeout(() => {
-          setRowSaveState(prev => ({ ...prev, [listingId]: 'idle' }));
-        }, 1500);
+      setRowSaveState(prev => ({ ...prev, [listingId]: 'saved' }));
+      setTimeout(() => {
+        setRowSaveState(prev => ({ ...prev, [listingId]: 'idle' }));
+      }, 1500);
       }
       return true;
     } catch (error) {
@@ -3746,7 +3746,7 @@ export default function StockXRepricing() {
     }
 
     // Validate min < max only when max is provided
-    const invalidPriceRanges = listingsToReprice.filter(listing =>
+    const invalidPriceRanges = listingsToReprice.filter(listing => 
       typeof listing.minPrice === 'number' &&
       listing.minPrice > 0 &&
       typeof listing.maxPrice === 'number' &&
@@ -4163,47 +4163,47 @@ export default function StockXRepricing() {
             </div>
             
             <div className="p-6 space-y-3">
-              <button
+          <button
                 onClick={() => applyPricingRule('queue_focus')}
-                className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
-                  isNeon
+            className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
+              isNeon 
                     ? 'bg-gray-900 border-gray-700 hover:border-emerald-500 hover:bg-emerald-500/10'
                     : 'bg-white border-gray-200 hover:border-emerald-500 hover:bg-emerald-50'
-                }`}
-              >
+            }`}
+          >
                 <div className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>Queue Focus</div>
-                <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+            <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
                   High-volume SKUs. Match best ask without peeking to avoid losing tie-queue position.
-                </div>
-              </button>
+            </div>
+          </button>
 
-              <button
+          <button
                 onClick={() => applyPricingRule('peek_focus')}
-                className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
-                  isNeon
-                    ? 'bg-gray-900 border-gray-700 hover:border-cyan-500 hover:bg-cyan-500/10'
-                    : 'bg-white border-gray-200 hover:border-blue-500 hover:bg-blue-50'
-                }`}
-              >
+            className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
+              isNeon 
+                ? 'bg-gray-900 border-gray-700 hover:border-cyan-500 hover:bg-cyan-500/10'
+                : 'bg-white border-gray-200 hover:border-blue-500 hover:bg-blue-50'
+            }`}
+          >
                 <div className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>Peek Focus (Low volume)</div>
-                <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+            <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
                   Low-volume SKUs. Occasionally peeks to discover the next ask and raise when the market moves up.
-                </div>
-              </button>
+            </div>
+          </button>
 
-              <button
+          <button
                 onClick={() => applyPricingRule('two_step')}
-                className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
-                  isNeon
+            className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
+              isNeon 
                     ? 'bg-gray-900 border-gray-700 hover:border-fuchsia-500 hover:bg-fuchsia-500/10'
                     : 'bg-white border-gray-200 hover:border-fuchsia-500 hover:bg-fuchsia-50'
-                }`}
-              >
+            }`}
+          >
                 <div className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>Two-step (Legacy)</div>
-                <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+            <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
                   Temporarily resets to $999 to reveal the next ask, then undercuts by $1. Strongly recommended to set Min/Max bounds.
-                </div>
-              </button>
+            </div>
+          </button>
             </div>
           </div>
         </div>
@@ -4557,14 +4557,14 @@ export default function StockXRepricing() {
                     <td className="px-6 py-3">
                       <div className="flex items-center gap-3">
                         {listing.imageUrl && !brokenImageByListingId[listing.listingId] ? (
-                          <img
-                            src={listing.imageUrl}
-                            alt={listing.productName}
+                                <img
+                                  src={listing.imageUrl}
+                                  alt={listing.productName}
                             className={`w-12 h-12 rounded-lg object-cover flex-shrink-0 ${
-                              isNeon ? 'ring-1 ring-white/10' : 'ring-1 ring-gray-200'
-                            }`}
-                            loading="lazy"
-                            referrerPolicy="no-referrer"
+                                    isNeon ? 'ring-1 ring-white/10' : 'ring-1 ring-gray-200'
+                                  }`}
+                                  loading="lazy"
+                                  referrerPolicy="no-referrer"
                             onClick={() => openImagePreview(listing)}
                             onError={(e) => {
                               // If a StockX CDN URL is missing/expired/blocked, mark it broken and immediately
@@ -4620,9 +4620,9 @@ export default function StockXRepricing() {
                           <div
                             className={`w-12 h-12 rounded-lg flex-shrink-0 flex items-center justify-center ${
                               isNeon ? 'bg-white/5 ring-1 ring-white/10 text-gray-500' : 'bg-gray-100 ring-1 ring-gray-200 text-gray-400'
-                            }`}
+                                        }`}
                             title="No image available"
-                          >
+                                      >
                             <Footprints className="w-5 h-5 opacity-80" />
                           </div>
                         )}
@@ -4685,10 +4685,10 @@ export default function StockXRepricing() {
                             {listing.isGroupLeader ? (
                               <span
                                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold leading-none whitespace-nowrap ${
-                                  isNeon
+                                isNeon 
                                     ? 'bg-gradient-to-r from-amber-500/20 to-yellow-500/10 text-amber-200 border-amber-400/25 shadow-sm'
                                     : 'bg-amber-50 text-amber-800 border-amber-200 shadow-sm'
-                                }`}
+                              }`}
                                 title="Group Leader - Controls pricing for duplicate inventory"
                               >
                                 <Crown className="w-3.5 h-3.5" />
@@ -4697,10 +4697,10 @@ export default function StockXRepricing() {
                             ) : (
                               <span
                                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold leading-none whitespace-nowrap ${
-                                  isNeon
+                                isNeon 
                                     ? 'bg-white/5 text-slate-200 border-white/10 shadow-sm'
                                     : 'bg-gray-50 text-gray-700 border-gray-200 shadow-sm'
-                                }`}
+                              }`}
                                 title="Follower - Price synced with group leader"
                               >
                                 <Link2 className="w-3.5 h-3.5" />
@@ -4772,7 +4772,7 @@ export default function StockXRepricing() {
                           isNeon={isNeon}
                           className="w-[260px] max-w-full"
                         />
-                        <button
+                          <button
                           onClick={() => updateListingStrategy(listing.listingId, 'manual')}
                           className={`px-2 py-1 rounded text-xs font-semibold transition-all whitespace-nowrap ${
                             isNeon
@@ -4858,7 +4858,7 @@ export default function StockXRepricing() {
                               if (next.trim() === '') return;
                               const value = parseFloat(next);
                               if (!Number.isFinite(value)) return;
-                              updateManualPrice(listing.listingId, value);
+                                updateManualPrice(listing.listingId, value);
                             }}
                             onBlur={() => {
                               const draft = strategyValueDraftByListingId[listing.listingId];
@@ -4895,17 +4895,17 @@ export default function StockXRepricing() {
                             }`}
                             placeholder="$"
                           />
-                            <button
-                              onClick={() => applyManualPriceNow(listing.listingId)}
-                              className={`px-2 py-1 rounded text-xs font-semibold transition-all whitespace-nowrap ${
-                                isNeon
-                                  ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white'
-                                  : 'bg-emerald-600 text-white hover:bg-emerald-700'
-                              }`}
-                              title="Apply this price to StockX now"
-                            >
-                              Apply
-                            </button>
+                              <button
+                                onClick={() => applyManualPriceNow(listing.listingId)}
+                                className={`px-2 py-1 rounded text-xs font-semibold transition-all whitespace-nowrap ${
+                                  isNeon
+                                    ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white'
+                                    : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                                }`}
+                                title="Apply this price to StockX now"
+                              >
+                                Apply
+                              </button>
                           </div>
                         ) : (
                           <div className="w-[70px]"></div>

@@ -466,45 +466,113 @@ const Purchases = () => {
           bValue = parseFloat(b.price.replace('$', '').replace(',', ''));
           break;
         case 'purchaseDate':
-          // Robust sorting across all pages: use a consistent derived timestamp.
-          // We prefer true purchase date, but fall back to email_date / createdAt / syncedAt when needed.
-          // This guarantees *every* row has a sortable date value.
-          const getDateMs = (p: any): number | null => {
-            const candidates: Array<string | undefined> = [
-              p?.purchaseDate,
-              p?.purchase_date,
+          // Robust, deterministic sorting:
+          // - Prefer true purchase date/time when present
+          // - If purchaseDate is date-only, prefer email timestamp on the same day (more specific)
+          // - Fall back to createdAt/syncedAt/dateAdded
+          // - Add tie-breakers so same-day rows don't appear "random"
+          const normalizeDateString = (raw: any): string | null => {
+            if (raw == null) return null;
+            const s = String(raw).trim();
+            if (!s) return null;
+            if (s === 'TBD' || s === 'Unknown' || s === 'N/A' || s === 'Invalid Date') return null;
+            return s.replace('\n', ' ');
+          };
+
+          const parseMs = (raw: any): number | null => {
+            const s = normalizeDateString(raw);
+            if (!s) return null;
+            const t = Date.parse(s);
+            return Number.isFinite(t) ? t : null;
+          };
+
+          const hasTimeComponent = (raw: any): boolean => {
+            const s = normalizeDateString(raw);
+            if (!s) return false;
+            // ISO time ("T19:30") or common time formats ("7:30 PM")
+            return /T\d{2}:\d{2}/.test(s) || /\d{1,2}:\d{2}\s*(AM|PM)?/i.test(s);
+          };
+
+          const isoDay = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+
+          const bestPurchaseMs = (p: any): number | null => {
+            const purchaseRaw = p?.purchaseDate ?? p?.purchase_date ?? null;
+            const purchaseMs = parseMs(purchaseRaw);
+            if (purchaseMs != null && hasTimeComponent(purchaseRaw)) return purchaseMs;
+
+            // If we only have a date-ish purchaseDate, prefer an email timestamp on the same day.
+            const emailRaw = p?.email_date ?? p?.emailDate ?? null;
+            const emailMs = parseMs(emailRaw);
+            if (purchaseMs != null && emailMs != null && isoDay(purchaseMs) === isoDay(emailMs)) {
+              return emailMs;
+            }
+
+            if (purchaseMs != null) return purchaseMs;
+
+            // Fall back to other timestamps
+            const fallback = [
               p?.email_date,
               p?.emailDate,
-              p?.createdAt,
               p?.syncedAt,
+              p?.updatedAt,
+              p?.createdAt,
               typeof p?.dateAdded === 'string' ? p.dateAdded.replace('\n', ' ') : undefined,
             ];
-            for (const c of candidates) {
-              if (!c) continue;
-              if (c === 'TBD' || c === 'Unknown' || c === 'N/A' || c === 'Invalid Date') continue;
-              const d = new Date(c);
-              if (!isNaN(d.getTime())) return d.getTime();
+            for (const c of fallback) {
+              const ms = parseMs(c);
+              if (ms != null) return ms;
             }
             return null;
           };
 
-          const aParsed = getDateMs(a);
-          const bParsed = getDateMs(b);
+          const tieBreakerMs = (p: any): number => {
+            const candidates = [
+              p?.syncedAt,
+              p?.updatedAt,
+              p?.createdAt,
+              typeof p?.dateAdded === 'string' ? p.dateAdded.replace('\n', ' ') : undefined,
+            ];
+            for (const c of candidates) {
+              const ms = parseMs(c);
+              if (ms != null) return ms;
+            }
+            return 0;
+          };
+
+          const aParsed = bestPurchaseMs(a);
+          const bParsed = bestPurchaseMs(b);
 
           const aInvalid = aParsed === null;
           const bInvalid = bParsed === null;
 
-          // Put invalid dates at the end
+          // Put invalid dates at the end (independent of direction)
           if (aInvalid && bInvalid) {
+            // fall through to final stable string tie-breaker below
             aValue = 0;
             bValue = 0;
           } else if (aInvalid) {
-            return direction === 'asc' ? 1 : -1;
+            return 1;
           } else if (bInvalid) {
-            return direction === 'asc' ? -1 : 1;
+            return -1;
           } else {
-            aValue = aParsed;
-            bValue = bParsed;
+            const primary = direction === 'asc' ? (aParsed as number) - (bParsed as number) : (bParsed as number) - (aParsed as number);
+            if (primary !== 0) return primary;
+
+            const aTie = tieBreakerMs(a);
+            const bTie = tieBreakerMs(b);
+            const secondary = direction === 'asc' ? aTie - bTie : bTie - aTie;
+            if (secondary !== 0) return secondary;
+
+            // Final deterministic tie-breaker: orderNumber then id
+            const onA = String(a?.orderNumber ?? '');
+            const onB = String(b?.orderNumber ?? '');
+            const onCmp = onA.localeCompare(onB);
+            if (onCmp !== 0) return direction === 'asc' ? onCmp : -onCmp;
+
+            const idA = String(a?.id ?? '');
+            const idB = String(b?.id ?? '');
+            const idCmp = idA.localeCompare(idB);
+            return direction === 'asc' ? idCmp : -idCmp;
           }
           break;
         case 'dateAdded':
@@ -522,9 +590,9 @@ const Purchases = () => {
             aValue = 0;
             bValue = 0;
           } else if (aAddedInvalid) {
-            return direction === 'asc' ? 1 : -1;
+            return 1;
           } else if (bAddedInvalid) {
-            return direction === 'asc' ? -1 : 1;
+            return -1;
           } else {
             aValue = aAddedParsed;
             bValue = bAddedParsed;
@@ -1274,8 +1342,36 @@ const Purchases = () => {
         },
         // Map other fields to expected format
         orderNumber: purchase.orderNumber || purchase.order_number,
-        status: purchase.shippingStatus || purchase.status || 'Ordered',
-        shipping_status: purchase.shipping_status || purchase.shippingStatus || purchase.status || 'Ordered', // Preserve for consolidation
+        // Status can arrive in multiple shapes (status, shippingStatus, shipping_status).
+        // Pick the highest-priority one so we don't show "Ordered" when we actually have a shipped/delivered signal.
+        status: (() => {
+          const candidates = [
+            purchase.status,
+            purchase.shippingStatus,
+            purchase.shipping_status,
+            purchase.shipping_status
+          ]
+            .map((s: any) => String(s || '').trim())
+            .filter(Boolean);
+          if (candidates.length === 0) return 'Ordered';
+          return candidates.reduce((best: string, cur: string) =>
+            getStatusPriority(cur) >= getStatusPriority(best) ? cur : best
+          , candidates[0]);
+        })(),
+        shipping_status: (() => {
+          const candidates = [
+            purchase.shipping_status,
+            purchase.shippingStatus,
+            purchase.status,
+            purchase.shipping_status
+          ]
+            .map((s: any) => String(s || '').trim())
+            .filter(Boolean);
+          if (candidates.length === 0) return 'Ordered';
+          return candidates.reduce((best: string, cur: string) =>
+            getStatusPriority(cur) >= getStatusPriority(best) ? cur : best
+          , candidates[0]);
+        })(), // Preserve for consolidation
         tracking: tracking,
         carrier: carrier, // Use re-detected carrier
         market: purchase.merchant || purchase.market || 'StockX',
@@ -1632,12 +1728,19 @@ const Purchases = () => {
             
             // Merge new data with existing data, preserving manual edits
             // IMPORTANT: Prioritize purchaseDate from consolidated purchaseData (from order confirmation email)
+            const existingStatusRaw = existingPurchase.status || existingPurchase.shipping_status || 'Ordered';
+            const incomingStatusRaw = purchaseData.status || purchaseData.shipping_status || 'Ordered';
+            const bestStatus =
+              getStatusPriority(String(incomingStatusRaw)) >= getStatusPriority(String(existingStatusRaw))
+                ? incomingStatusRaw
+                : existingStatusRaw;
             const updatedPurchase = {
               ...existingPurchase,
               // Update with new Gmail data
               product: purchaseData.product || existingPurchase.product,
               productName: purchaseData.productName || existingPurchase.productName,
-              status: purchaseData.status || existingPurchase.status,
+              // Never downgrade status (e.g. "Ordered" overwriting "Shipped")
+              status: bestStatus,
               price: purchaseData.price || existingPurchase.price,
               market: purchaseData.market || existingPurchase.market,
               // CRITICAL: Use purchaseDate from consolidated purchaseData (order confirmation date) if available
@@ -1649,7 +1752,7 @@ const Purchases = () => {
               emailId: purchaseData.emailId || existingPurchase.emailId,
               emailDate: purchaseData.emailDate || purchaseData.email_date || existingPurchase.emailDate,
               email_date: purchaseData.email_date || purchaseData.emailDate || existingPurchase.email_date || existingPurchase.emailDate, // Preserve for consolidation
-              shipping_status: purchaseData.shipping_status || purchaseData.status || existingPurchase.shipping_status || existingPurchase.status, // Preserve for consolidation
+              shipping_status: bestStatus, // Preserve for consolidation, never downgrade
               // Preserve manual edits (tracking, notes, etc.)
               tracking: existingPurchase.tracking || purchaseData.tracking,
               // Only set carrier if there's a tracking number

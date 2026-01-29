@@ -31,12 +31,12 @@ export async function GET(request: NextRequest) {
         console.warn('⚠️ test-stockx-search: failed to refresh token from Firebase:', e);
       }
     }
-
+    
     if (!accessToken) {
       return NextResponse.json(
         {
-          success: false,
-          error: 'No StockX access token found',
+        success: false,
+        error: 'No StockX access token found',
           message: userId
             ? 'No StockX access token found (cookie missing; Firebase refresh token missing/invalid)'
             : 'Please authenticate with StockX first (or pass ?userId=...)',

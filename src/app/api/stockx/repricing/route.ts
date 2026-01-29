@@ -944,7 +944,7 @@ export async function POST(request: NextRequest) {
                   beatBy,
                   skippedDueToMin: true
                 };
-              } else {
+            } else {
               // Perform the peek: temporarily raise, refetch market, then raise to next-lowest - $1.
               const originalPrice = listing.currentPrice;
 
@@ -1101,7 +1101,7 @@ export async function POST(request: NextRequest) {
                 } as any);
                 continue;
               }
-            }
+              }
             }
 
           } else {

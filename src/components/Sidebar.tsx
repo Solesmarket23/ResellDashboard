@@ -67,6 +67,7 @@ const navigationItems = [
     items: [
       { id: 'analytics', label: 'Analytics', icon: BarChart3 },
       { id: 'cashflow', label: 'Cash Flow', icon: DollarSign },
+      { id: 'pnl', label: 'P&L', icon: LineChart },
       { id: 'expenses', label: 'Expenses', icon: Wallet },
       { id: 'performance', label: 'Performance', icon: Package },
     ]
@@ -252,11 +253,11 @@ const Sidebar = ({ activeItem, onItemClick, isOpen, onClose, isCollapsed = false
                 aria-label={isCollapsed ? 'Show menu' : 'Hide menu'}
               >
                 <span className={`inline-flex items-center ${isCollapsed ? '' : 'justify-start'}`}>
-                  {isCollapsed ? (
-                    <ChevronRight className="w-5 h-5" />
-                  ) : (
+                {isCollapsed ? (
+                  <ChevronRight className="w-5 h-5" />
+                ) : (
                     <ChevronLeft className="w-5 h-5" />
-                  )}
+                )}
                   {/* Avoid swapping visible wording between states (prevents “Hide menu” flicker). */}
                   <span className={isCollapsed ? 'sr-only' : 'ml-2'}>Menu</span>
                 </span>

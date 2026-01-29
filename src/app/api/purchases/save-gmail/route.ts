@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminDb } from '@/lib/firebase/firebaseAdmin';
+import { getStatusPriority } from '@/lib/utils/statusPriority';
+
+function pickBestStatus(existing: any, incoming: any): string {
+  const existingStatus = String(existing?.status || existing?.shipping_status || 'Ordered');
+  const incomingStatus = String(incoming?.status || incoming?.shipping_status || 'Ordered');
+  return getStatusPriority(incomingStatus) >= getStatusPriority(existingStatus) ? incomingStatus : existingStatus;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -94,15 +101,25 @@ export async function POST(request: NextRequest) {
 
       if (incomingOrderNumber && existingByOrderNumber.has(incomingOrderNumber) && reset !== true) {
         const existing = existingByOrderNumber.get(incomingOrderNumber)!;
+        const bestStatus = pickBestStatus(existing.data, purchaseData);
         await adminDb.collection('purchases').doc(existing.id).set(
           {
             ...purchaseData,
             userId,
             type: 'gmail',
+            // Never downgrade status (e.g., don't let an "Ordered" email overwrite a previously "Shipped" order)
+            status: bestStatus,
+            shipping_status: bestStatus,
             syncedAt: nowIso
           },
           { merge: true }
         );
+        // Keep our in-memory map updated so multiple rows for the same orderNumber in one request
+        // can't "flip-flop" status based on iteration order.
+        existingByOrderNumber.set(incomingOrderNumber, {
+          id: existing.id,
+          data: { ...(existing.data || {}), ...purchaseData, status: bestStatus, shipping_status: bestStatus }
+        });
         updated++;
         continue;
       }

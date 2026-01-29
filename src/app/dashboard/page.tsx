@@ -44,6 +44,7 @@ const AliasInventory = dynamic(() => import('../../components/AliasInventory'), 
 const AliasListingCreator = dynamic(() => import('../../components/AliasListingCreator'), { ssr: false, loading: SectionFallback });
 const AliasOrderManagement = dynamic(() => import('../../components/AliasOrderManagement'), { ssr: false, loading: SectionFallback });
 const Cashflow = dynamic(() => import('../../components/Cashflow'), { ssr: false, loading: SectionFallback });
+const ProfitAndLoss = dynamic(() => import('../../components/ProfitAndLoss'), { ssr: false, loading: SectionFallback });
 const Analytics = dynamic(() => import('../../components/Analytics'), { ssr: false, loading: SectionFallback });
 const Performance = dynamic(() => import('../../components/Performance'), { ssr: false, loading: SectionFallback });
 const Tasks = dynamic(() => import('../../components/Tasks'), { ssr: false, loading: SectionFallback });
@@ -182,6 +183,8 @@ function DashboardContent() {
         return <Analytics />;
       case 'cashflow':
         return <Cashflow />;
+      case 'pnl':
+        return <ProfitAndLoss />;
       case 'performance':
         return <Performance />;
       case 'tasks':
