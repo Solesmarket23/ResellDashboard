@@ -2125,7 +2125,7 @@ const DeliveriesNew: React.FC = () => {
                   setStatusOpen((v) => !v);
                   setCarrierOpen(false);
                 }}
-                className={`w-56 px-4 py-2 pr-12 border rounded-lg cursor-pointer transition-colors text-left whitespace-nowrap focus:outline-none focus:ring-2 ${
+                className={`relative w-56 px-4 py-2 pr-11 border rounded-lg cursor-pointer transition-colors text-left whitespace-nowrap focus:outline-none focus:ring-2 ${
                   currentTheme.colors.border
                 } ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary} ${
                   currentTheme.name === 'Neon'
@@ -2139,7 +2139,7 @@ const DeliveriesNew: React.FC = () => {
                   {getOptionLabel(statusOptions, statusFilter)}
                 </span>
                 <ChevronDown
-                  className={`pointer-events-none absolute right-5 top-1/2 -translate-y-1/2 w-4 h-4 ${
+                  className={`pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 ${
                     currentTheme.name === 'Neon' ? 'text-cyan-200/80' : 'text-gray-500'
                   }`}
                 />
@@ -2183,7 +2183,7 @@ const DeliveriesNew: React.FC = () => {
                   setCarrierOpen((v) => !v);
                   setStatusOpen(false);
                 }}
-                className={`w-44 px-4 py-2 pr-12 border rounded-lg cursor-pointer transition-colors text-left whitespace-nowrap focus:outline-none focus:ring-2 ${
+                className={`relative w-44 px-4 py-2 pr-11 border rounded-lg cursor-pointer transition-colors text-left whitespace-nowrap focus:outline-none focus:ring-2 ${
                   currentTheme.colors.border
                 } ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary} ${
                   currentTheme.name === 'Neon'
@@ -2197,7 +2197,7 @@ const DeliveriesNew: React.FC = () => {
                   {getOptionLabel(carrierOptions, carrierFilter)}
                 </span>
                 <ChevronDown
-                  className={`pointer-events-none absolute right-5 top-1/2 -translate-y-1/2 w-4 h-4 ${
+                  className={`pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 ${
                     currentTheme.name === 'Neon' ? 'text-cyan-200/80' : 'text-gray-500'
                   }`}
                 />
