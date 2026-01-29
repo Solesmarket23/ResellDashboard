@@ -102,6 +102,17 @@ const DeliveriesNew: React.FC = () => {
     // Return the update with location, or fall back to the most recent update
     return updateWithLocation || updates[0];
   };
+
+  const getLastKnownLocation = (delivery: DeliveryItem): string => {
+    const liveUpdates = delivery.liveTracking?.updates;
+    const updatesToUse =
+      liveUpdates && liveUpdates.length > 0 ? (liveUpdates as any[]) : (delivery.updates as any[]);
+
+    const best = getBestUpdate(updatesToUse);
+    const loc = (best?.location as string | undefined) ?? '';
+    if (!loc || loc.trim() === '' || loc === 'Unknown') return '—';
+    return loc;
+  };
   
   // Real-time deliveries hook
   const {
@@ -2683,6 +2694,9 @@ const DeliveriesNew: React.FC = () => {
                       </button>
                     </th>
                     <th className={`px-4 py-3 text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`}>
+                      Location
+                    </th>
+                    <th className={`px-4 py-3 text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`}>
                       Carrier
                     </th>
                     <th className={`px-4 py-3 text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`}>
@@ -2874,6 +2888,21 @@ const DeliveriesNew: React.FC = () => {
                         <div className={`text-sm ${currentTheme.colors.textPrimary}`}>
                           {getDeliveryCell(delivery)}
                         </div>
+                      </td>
+
+                      {/* Location */}
+                      <td className="px-4 py-4">
+                        {(() => {
+                          const loc = getLastKnownLocation(delivery);
+                          return (
+                            <span
+                              className={`text-sm ${currentTheme.colors.textPrimary} max-w-[240px] block truncate`}
+                              title={loc === '—' ? undefined : loc}
+                            >
+                              {loc}
+                            </span>
+                          );
+                        })()}
                       </td>
 
                       {/* Carrier */}
