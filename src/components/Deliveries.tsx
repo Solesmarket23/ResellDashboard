@@ -2089,7 +2089,11 @@ const DeliveriesNew: React.FC = () => {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className={`px-4 py-2 border rounded-lg ${currentTheme.colors.border} ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary} focus:outline-none focus:ring-2 focus:ring-blue-500`}
+              className={`px-4 py-2 border rounded-lg cursor-pointer transition-colors ${currentTheme.colors.border} ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary} focus:outline-none focus:ring-2 ${
+                currentTheme.name === 'Neon'
+                  ? 'hover:border-cyan-400/60 focus:ring-cyan-400/40 focus:border-cyan-400/60 shadow-[0_0_0_1px_rgba(34,211,238,0.25)]'
+                  : 'hover:border-gray-300 focus:ring-blue-500'
+              }`}
             >
               <option value="all">All Status</option>
               <option value="today">Arriving Today</option>
@@ -2104,7 +2108,11 @@ const DeliveriesNew: React.FC = () => {
             <select
               value={carrierFilter}
               onChange={(e) => setCarrierFilter(e.target.value)}
-              className={`px-4 py-2 border rounded-lg ${currentTheme.colors.border} ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary} focus:outline-none focus:ring-2 focus:ring-blue-500`}
+              className={`px-4 py-2 border rounded-lg cursor-pointer transition-colors ${currentTheme.colors.border} ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary} focus:outline-none focus:ring-2 ${
+                currentTheme.name === 'Neon'
+                  ? 'hover:border-cyan-400/60 focus:ring-cyan-400/40 focus:border-cyan-400/60 shadow-[0_0_0_1px_rgba(34,211,238,0.25)]'
+                  : 'hover:border-gray-300 focus:ring-blue-500'
+              }`}
             >
               <option value="all">All Carriers</option>
               <option value="UPS">UPS</option>
