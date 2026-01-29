@@ -1790,7 +1790,7 @@ const DeliveriesNew: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => openPurchasesForDelivery(newTracking.purchaseId)}
-                    className="px-4 py-2 border rounded-lg border-white/15 bg-white/5 text-white/90 hover:bg-white/10 transition-colors"
+                    className={`px-4 py-2 border rounded-lg ${currentTheme.colors.border} ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary} hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors`}
                     title="Open this purchase in Purchases"
                   >
                     Open in Purchases
