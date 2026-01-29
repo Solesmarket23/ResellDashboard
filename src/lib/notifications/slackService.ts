@@ -173,26 +173,10 @@ export class SlackNotificationService {
       }
     });
 
-    // Summary stats
+    // Summary stats (keep this Slack message focused on "Arriving Today")
     const profitToday =
       typeof summary.projectedProfitToday === 'number' && Number.isFinite(summary.projectedProfitToday)
         ? summary.projectedProfitToday
-        : null;
-    const profitTomorrow =
-      typeof summary.projectedProfitTomorrow === 'number' && Number.isFinite(summary.projectedProfitTomorrow)
-        ? summary.projectedProfitTomorrow
-        : null;
-    const profitOnTheWay =
-      typeof summary.projectedProfitOnTheWay === 'number' && Number.isFinite(summary.projectedProfitOnTheWay)
-        ? summary.projectedProfitOnTheWay
-        : null;
-    const marketOnTheWay =
-      typeof summary.marketValueOnTheWay === 'number' && Number.isFinite(summary.marketValueOnTheWay)
-        ? summary.marketValueOnTheWay
-        : null;
-    const costOnTheWay =
-      typeof summary.purchaseCostOnTheWay === 'number' && Number.isFinite(summary.purchaseCostOnTheWay)
-        ? summary.purchaseCostOnTheWay
         : null;
     blocks.push({
       type: 'section',
@@ -201,46 +185,6 @@ export class SlackNotificationService {
           type: 'mrkdwn',
           text: `*Arriving Today:*\n🚚 ${summary.arrivingToday}`
         },
-        {
-          type: 'mrkdwn',
-          text: `*Arriving Tomorrow:*\n📅 ${summary.arrivingTomorrow}`
-        },
-        {
-          type: 'mrkdwn',
-          text: `*Arriving This Week:*\n📆 ${summary.arrivingThisWeek || 0}`
-        },
-        ...(profitOnTheWay !== null
-          ? [
-              {
-                type: 'mrkdwn',
-                text: `*Projected Profit (On the way):*\n💰 $${profitOnTheWay.toFixed(2)}`
-              }
-            ]
-          : []),
-        ...(marketOnTheWay !== null
-          ? [
-              {
-                type: 'mrkdwn',
-                text: `*Market Value (On the way):*\n📈 $${marketOnTheWay.toFixed(2)}`
-              }
-            ]
-          : []),
-        ...(costOnTheWay !== null
-          ? [
-              {
-                type: 'mrkdwn',
-                text: `*Purchase Cost (On the way):*\n🧾 $${costOnTheWay.toFixed(2)}`
-              }
-            ]
-          : []),
-        ...(profitTomorrow !== null
-          ? [
-              {
-                type: 'mrkdwn',
-                text: `*Projected Profit (Tomorrow):*\n💰 $${profitTomorrow.toFixed(2)}`
-              }
-            ]
-          : []),
         ...(profitToday !== null
           ? [
               {
@@ -252,84 +196,7 @@ export class SlackNotificationService {
       ]
     });
 
-    // If we have purchase cost but no market/profit, call it out explicitly (usually means StockX creds missing).
-    if (costOnTheWay !== null && marketOnTheWay === null && profitOnTheWay === null) {
-      const note = typeof summary.marketPriceNote === 'string' && summary.marketPriceNote.trim() ? summary.marketPriceNote.trim() : null;
-      blocks.push({
-        type: 'context',
-        elements: [
-          {
-            type: 'mrkdwn',
-            text: note
-              ? `⚠️ _${note}_`
-              : `⚠️ _Market price / profit totals unavailable (missing StockX market prices)._`
-          }
-        ]
-      });
-    }
-
     blocks.push({ type: 'divider' });
-
-    // On the way: show per-item market/purchase/profit so you can sanity-check totals.
-    // Don't restrict to only shipped/in_transit/out_for_delivery; carriers frequently report UNKNOWN/LABEL_CREATED/etc.
-    const onTheWay = summary.deliveries.filter((d) => {
-      const s = String(d.status || '').toLowerCase().trim();
-      if (!s) return true;
-      if (s === 'delivered' || s === 'returned' || s === 'cancelled' || s === 'canceled') return false;
-      return true;
-    });
-    if (onTheWay.length > 0) {
-      blocks.push({
-        type: 'section',
-        text: { type: 'mrkdwn', text: '*📦 On the way (all shipments)*' }
-      });
-
-      const MAX_ITEMS = 18; // keep Slack blocks under limits
-      const shown = onTheWay.slice(0, MAX_ITEMS);
-      for (const delivery of shown) {
-        const trackingLink = this.formatTrackingLink(delivery.trackingNumber, delivery.carrier);
-        const eta = delivery.estimatedDelivery && delivery.estimatedDelivery !== 'TBD' ? delivery.estimatedDelivery : 'TBD';
-        const money = this.formatMoneyLine({
-          purchasePrice: (delivery as any).purchasePrice,
-          marketPrice: (delivery as any).marketPrice,
-          estimatedProfit: (delivery as any).estimatedProfit,
-        });
-        const moneyLine = money.text ?? 'Purchase/Market/Profit: (missing)';
-        const links = [delivery.purchaseLink, (delivery as any).gmailLink, (delivery as any).stockxLink, delivery.marketLink]
-          .filter(Boolean)
-          .join(' | ');
-        const linksLine = links ? `\n  Links: ${links}` : '';
-
-        const section: any = {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text:
-              `• *${delivery.productName}* (${delivery.productBrand})\n` +
-              `  Size: ${delivery.productSize} | ETA: ${eta}\n` +
-              `  ${delivery.carrier}: ${trackingLink}\n` +
-              `  ${moneyLine}${linksLine}`
-          }
-        };
-        if (typeof delivery.productImage === 'string' && delivery.productImage.startsWith('https://')) {
-          section.accessory = {
-            type: 'image',
-            image_url: delivery.productImage,
-            alt_text: String(delivery.productName || 'Product').slice(0, 200),
-          };
-        }
-        blocks.push(section);
-      }
-
-      const remaining = onTheWay.length - shown.length;
-      if (remaining > 0) {
-        blocks.push({
-          type: 'context',
-          elements: [{ type: 'mrkdwn', text: `_…and ${remaining} more shipments_` }]
-        });
-      }
-      blocks.push({ type: 'divider' });
-    }
 
     // Items arriving today
     if (summary.arrivingToday > 0) {
@@ -364,122 +231,6 @@ export class SlackNotificationService {
           text: {
             type: 'mrkdwn',
             text: `• *${delivery.productName}* (${delivery.productBrand})\n  Size: ${delivery.productSize} | ${delivery.carrier}: ${trackingLink}${profitText}${linksLine}`
-          }
-        };
-        if (typeof (delivery as any).productImage === 'string' && (delivery as any).productImage.startsWith('https://')) {
-          section.accessory = {
-            type: 'image',
-            image_url: (delivery as any).productImage,
-            alt_text: String(delivery.productName || 'Product').slice(0, 200),
-          };
-        }
-        blocks.push(section);
-      });
-
-      blocks.push({ type: 'divider' });
-    }
-
-    // Items arriving tomorrow
-    if (summary.arrivingTomorrow > 0) {
-      blocks.push({
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: '*📅 Arriving Tomorrow*'
-        }
-      });
-
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const tomorrowStr = tomorrow.toISOString().split('T')[0];
-      
-      const tomorrowDeliveries = summary.deliveries.filter(d => 
-        d.estimatedDelivery === tomorrowStr
-      );
-
-      tomorrowDeliveries.forEach(delivery => {
-        const money = this.formatMoneyLine({
-          purchasePrice: (delivery as any).purchasePrice,
-          marketPrice: (delivery as any).marketPrice,
-          estimatedProfit: (delivery as any).estimatedProfit,
-        });
-        const profitText = money.text ? `\n  ${money.text}` : '';
-        const trackingLink = this.formatTrackingLink(delivery.trackingNumber, delivery.carrier);
-        const links = [delivery.purchaseLink, (delivery as any).gmailLink, (delivery as any).stockxLink, delivery.marketLink]
-          .filter(Boolean)
-          .join(' | ');
-        const linksLine = links ? `\n  Links: ${links}` : '';
-        
-        const section: any = {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: `• *${delivery.productName}* (${delivery.productBrand})\n  Size: ${delivery.productSize} | ${delivery.carrier}: ${trackingLink}${profitText}${linksLine}`
-          }
-        };
-        if (typeof (delivery as any).productImage === 'string' && (delivery as any).productImage.startsWith('https://')) {
-          section.accessory = {
-            type: 'image',
-            image_url: (delivery as any).productImage,
-            alt_text: String(delivery.productName || 'Product').slice(0, 200),
-          };
-        }
-        blocks.push(section);
-      });
-
-      blocks.push({ type: 'divider' });
-    }
-
-    // Items arriving this week (excluding today and tomorrow)
-    if (summary.arrivingThisWeek > 0) {
-      blocks.push({
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: '*📆 Arriving This Week*'
-        }
-      });
-
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const todayStr = today.toISOString().split('T')[0];
-      
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const tomorrowStr = tomorrow.toISOString().split('T')[0];
-      
-      const weekEnd = new Date(today);
-      weekEnd.setDate(weekEnd.getDate() + 7);
-
-      const thisWeekDeliveries = summary.deliveries.filter(d => {
-        if (!d.estimatedDelivery || d.estimatedDelivery === 'TBD') return false;
-        const deliveryDate = new Date(d.estimatedDelivery);
-        return deliveryDate > tomorrow && deliveryDate <= weekEnd && 
-               d.estimatedDelivery !== todayStr && 
-               d.estimatedDelivery !== tomorrowStr;
-      });
-
-      thisWeekDeliveries.forEach(delivery => {
-        const etaDate = new Date(delivery.estimatedDelivery);
-        const etaFormatted = isNaN(etaDate.getTime()) ? 'TBD' : etaDate.toLocaleDateString();
-        
-        const money = this.formatMoneyLine({
-          purchasePrice: (delivery as any).purchasePrice,
-          marketPrice: (delivery as any).marketPrice,
-          estimatedProfit: (delivery as any).estimatedProfit,
-        });
-        const profitText = money.text ? `\n  ${money.text}` : '';
-        const trackingLink = this.formatTrackingLink(delivery.trackingNumber, delivery.carrier);
-        const links = [delivery.purchaseLink, (delivery as any).gmailLink, (delivery as any).stockxLink, delivery.marketLink]
-          .filter(Boolean)
-          .join(' | ');
-        const linksLine = links ? `\n  Links: ${links}` : '';
-        
-        const section: any = {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: `• *${delivery.productName}* (${delivery.productBrand})\n  Size: ${delivery.productSize} | ${delivery.carrier}: ${trackingLink} | ETA: ${etaFormatted}${profitText}${linksLine}`
           }
         };
         if (typeof (delivery as any).productImage === 'string' && (delivery as any).productImage.startsWith('https://')) {
