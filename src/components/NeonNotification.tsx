@@ -17,7 +17,7 @@ const NeonNotification: React.FC<NeonNotificationProps> = ({
   message, 
   type, 
   onClose, 
-  duration = 5000,
+  duration = 8000,
   placement = 'fixed'
 }) => {
   const EXIT_MS = 220;
@@ -25,8 +25,8 @@ const NeonNotification: React.FC<NeonNotificationProps> = ({
   const [present, setPresent] = useState(false);
   const [copied, setCopied] = useState(false);
   const [paused, setPaused] = useState(false);
-  // Errors need more time (and are the most likely to be copied).
-  const effectiveDuration = type === 'error' ? Math.max(duration, 20_000) : duration;
+  // Keep toast duration consistent across types by default; callers can override via `duration`.
+  const effectiveDuration = duration;
   const [remainingMs, setRemainingMs] = useState(effectiveDuration);
   const [progressKey, setProgressKey] = useState(0);
   const timerRef = useRef<number | null>(null);
