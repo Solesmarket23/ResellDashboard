@@ -1257,7 +1257,7 @@ const DeliveriesNew: React.FC = () => {
 
       if (data.sent) {
         showNotification(
-          `✅ Sent to Slack! ${data.summary.arrivingToday} arriving today, ${data.summary.arrivingTomorrow} tomorrow`,
+          `Sent to Slack! ${data.summary.arrivingToday} arriving today, ${data.summary.arrivingTomorrow} tomorrow`,
           'success'
         );
       } else {
