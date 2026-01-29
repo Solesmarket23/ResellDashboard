@@ -128,11 +128,35 @@ export async function getStockXAccessToken(auth: StockXAuth): Promise<{ accessTo
 function pickVariantBySize(variants: any[], size: string): any | null {
   if (!Array.isArray(variants) || variants.length === 0) return null;
   const wantedRaw = String(size || '').trim();
-  const normalize = (s: unknown) =>
-    String(s ?? '')
+  const canonicalize = (s: unknown) => {
+    const raw = String(s ?? '')
       .trim()
       .toUpperCase()
-      .replace(/\s+/g, '');
+      .replace(/\s+/g, '')
+      .replace(/-/g, '');
+    if (!raw) return '';
+    // Strip common "US" prefixes
+    const t = raw.replace(/^US(?:M|W)?/i, '');
+    // Canonicalize letter sizes (handle "XSMALL", "EXTRASMALL", etc.)
+    const map: Record<string, string> = {
+      EXTRASMALL: 'XS',
+      XSMALL: 'XS',
+      EXTRASMALLL: 'XS',
+      EXTRALARGE: 'XL',
+      XLARGE: 'XL',
+      EXTRALARGE2: 'XL',
+      XXSMALL: 'XXS',
+      XXXSMALL: 'XXXS',
+      XXLARGE: 'XXL',
+      XXXLARGE: 'XXXL',
+    };
+    if (map[t]) return map[t];
+    if (t === 'SMALL') return 'S';
+    if (t === 'MEDIUM') return 'M';
+    if (t === 'LARGE') return 'L';
+    return t;
+  };
+  const normalize = canonicalize;
   const wanted = normalize(wantedRaw);
   const isLetterSize = (t: string) => ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'].includes(t);
   if (wanted && wanted !== 'UNKNOWN') {
@@ -161,11 +185,31 @@ function pickVariantBySize(variants: any[], size: string): any | null {
 }
 
 function stockxSizeMatchesWanted(wantedRaw: string, actualRaw: unknown): boolean {
-  const normalize = (s: unknown) =>
-    String(s ?? '')
+  const canonicalize = (s: unknown) => {
+    const raw = String(s ?? '')
       .trim()
       .toUpperCase()
-      .replace(/\s+/g, '');
+      .replace(/\s+/g, '')
+      .replace(/-/g, '');
+    if (!raw) return '';
+    const t = raw.replace(/^US(?:M|W)?/i, '');
+    const map: Record<string, string> = {
+      EXTRASMALL: 'XS',
+      XSMALL: 'XS',
+      XXSMALL: 'XXS',
+      XXXSMALL: 'XXXS',
+      XLARGE: 'XL',
+      EXTRALARGE: 'XL',
+      XXLARGE: 'XXL',
+      XXXLARGE: 'XXXL',
+    };
+    if (map[t]) return map[t];
+    if (t === 'SMALL') return 'S';
+    if (t === 'MEDIUM') return 'M';
+    if (t === 'LARGE') return 'L';
+    return t;
+  };
+  const normalize = canonicalize;
   const wanted = normalize(wantedRaw);
   if (!wanted || wanted === 'UNKNOWN') return true;
   const actual = normalize(actualRaw);
