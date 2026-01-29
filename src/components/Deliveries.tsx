@@ -2531,9 +2531,6 @@ const DeliveriesNew: React.FC = () => {
                       Carrier
                     </th>
                     <th className={`px-4 py-3 text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`}>
-                      Route
-                    </th>
-                    <th className={`px-4 py-3 text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`}>
                       Live
                     </th>
                     <th className={`px-4 py-3 text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`}>
@@ -2704,13 +2701,6 @@ const DeliveriesNew: React.FC = () => {
                         <span className={`text-sm ${currentTheme.colors.textPrimary}`}>
                           {delivery.carrier}
                         </span>
-                      </td>
-                      
-                      {/* Route */}
-                      <td className="px-4 py-4">
-                        <div className={`text-sm ${currentTheme.colors.textPrimary} truncate max-w-32`}>
-                          {delivery.origin} → {delivery.destination}
-                    </div>
                       </td>
                       
                       {/* Live Tracking */}
