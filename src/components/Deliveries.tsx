@@ -2567,9 +2567,6 @@ const DeliveriesNew: React.FC = () => {
                       Status
                     </th>
                     <th className={`px-4 py-3 text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`}>
-                      Carrier
-                    </th>
-                    <th className={`px-4 py-3 text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`}>
                       <button
                         type="button"
                         onClick={toggleDeliverySort}
@@ -2583,6 +2580,9 @@ const DeliveriesNew: React.FC = () => {
                           }`}
                         />
                       </button>
+                    </th>
+                    <th className={`px-4 py-3 text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`}>
+                      Carrier
                     </th>
                     <th className={`px-4 py-3 text-left text-xs font-medium ${currentTheme.colors.textSecondary} uppercase tracking-wider`}>
                       Route
@@ -2746,18 +2746,18 @@ const DeliveriesNew: React.FC = () => {
                         </span>
                       </td>
                       
-                      {/* Carrier */}
-                      <td className="px-4 py-4">
-                        <span className={`text-sm ${currentTheme.colors.textPrimary}`}>
-                          {delivery.carrier}
-                        </span>
-                      </td>
-                      
                       {/* Delivery */}
                       <td className="px-4 py-4">
                         <div className={`text-sm ${currentTheme.colors.textPrimary}`}>
                           {getDeliveryCell(delivery)}
                         </div>
+                      </td>
+
+                      {/* Carrier */}
+                      <td className="px-4 py-4">
+                        <span className={`text-sm ${currentTheme.colors.textPrimary}`}>
+                          {delivery.carrier}
+                        </span>
                       </td>
                       
                       {/* Route */}
