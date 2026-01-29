@@ -105,9 +105,17 @@ export class SlackNotificationService {
    */
   async sendDeliverySummary(summary: DeliverySummary): Promise<void> {
     const message = this.formatDeliverySummary(summary);
-    
+    const profitToday =
+      typeof summary.projectedProfitToday === 'number' && Number.isFinite(summary.projectedProfitToday)
+        ? summary.projectedProfitToday
+        : null;
+    const profitText = profitToday !== null ? `$${profitToday.toFixed(2)}` : 'unknown';
+    const subject = `${summary.arrivingToday} item${summary.arrivingToday === 1 ? '' : 's'} arriving today for a ${profitText} projected profit`;
+
     await this.sendMessage({
-      text: `📦 Daily Delivery Summary - ${new Date().toLocaleDateString()}`,
+      // Slack push notification previews use this top-level `text`.
+      // Keep it concise and informational.
+      text: subject,
       blocks: message
     });
   }
