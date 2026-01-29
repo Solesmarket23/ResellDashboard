@@ -1498,21 +1498,21 @@ const DeliveriesNew: React.FC = () => {
       <div className="max-w-screen-2xl mx-auto py-8">
       {/* Header */}
         <div className="flex-1 p-4 sm:p-8 bg-gradient-to-br from-gray-900 via-gray-800 to-slate-900">
-          <div className="flex items-center justify-between mb-6">
-          <div>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between mb-6">
+          <div className="min-w-0">
               <h1 className="text-3xl font-bold text-white mb-2">Deliveries</h1>
               <p className="text-gray-300 whitespace-nowrap truncate max-w-[min(720px,60vw)]">
                 Track your packages and monitor delivery statuses
               </p>
           </div>
-             <div className="flex items-center gap-4">
+             <div className="flex flex-wrap items-center gap-2 justify-start lg:justify-end">
                <UPSOAuthButton className="shrink-0" />
                
                {/* Send Slack Notification Button */}
                <button
                  onClick={handleSendSlackNotification}
                  disabled={sendingSlackNotification || deliveries.length === 0}
-                 className={`h-11 px-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 ${
+                 className={`h-11 px-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 ${
                    currentTheme.name === 'Neon' ? 'focus:ring-cyan-400/40' : 'focus:ring-blue-500'
                  } bg-purple-600 hover:bg-purple-700`}
                  title="Send delivery summary to Slack"
@@ -1525,7 +1525,7 @@ const DeliveriesNew: React.FC = () => {
                <div className="h-11 inline-flex items-center rounded-xl p-1 bg-white/5 border border-white/10">
             <button
                    onClick={() => setViewMode('split')}
-                   className={`h-9 px-3 rounded-lg text-sm font-semibold transition-colors inline-flex items-center gap-2 focus:outline-none ${
+                   className={`h-9 px-3 rounded-lg text-sm font-semibold whitespace-nowrap transition-colors inline-flex items-center gap-2 focus:outline-none ${
                      viewMode === 'split'
                        ? 'bg-blue-600 text-white shadow-sm'
                        : 'text-gray-200 hover:text-white hover:bg-white/10'
@@ -1536,7 +1536,7 @@ const DeliveriesNew: React.FC = () => {
             </button>
             <button
                    onClick={() => setViewMode('table')}
-                   className={`h-9 px-3 rounded-lg text-sm font-semibold transition-colors inline-flex items-center gap-2 focus:outline-none ${
+                   className={`h-9 px-3 rounded-lg text-sm font-semibold whitespace-nowrap transition-colors inline-flex items-center gap-2 focus:outline-none ${
                      viewMode === 'table'
                        ? 'bg-blue-600 text-white shadow-sm'
                        : 'text-gray-200 hover:text-white hover:bg-white/10'
@@ -1550,7 +1550,7 @@ const DeliveriesNew: React.FC = () => {
                {/* Add Manual Tracking */}
                <button
                  onClick={() => setShowAddTrackingModal(true)}
-                 className={`h-11 px-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-colors focus:outline-none focus:ring-2 ${
+                 className={`h-11 px-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors focus:outline-none focus:ring-2 ${
                    currentTheme.name === 'Neon' ? 'focus:ring-cyan-400/40' : 'focus:ring-blue-500'
                  } bg-emerald-600 hover:bg-emerald-700 text-white`}
                >
@@ -1567,7 +1567,7 @@ const DeliveriesNew: React.FC = () => {
                      showNotification('Failed to refresh deliveries', 'error');
                    }
                  }}
-                 className={`h-11 px-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-colors focus:outline-none focus:ring-2 ${
+                 className={`h-11 px-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors focus:outline-none focus:ring-2 ${
                    currentTheme.name === 'Neon' ? 'focus:ring-cyan-400/40' : 'focus:ring-blue-500'
                  } bg-blue-600 hover:bg-blue-700 text-white`}
                >
