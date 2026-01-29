@@ -367,6 +367,12 @@ const DeliveriesNew: React.FC = () => {
   const [confirmArchiveOpen, setConfirmArchiveOpen] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<DeliveryItem | null>(null);
   const [archiving, setArchiving] = useState(false);
+
+  // After opening an email, optionally open the "edit tracking" modal when the user returns focus.
+  const [pendingTrackingAfterEmail, setPendingTrackingAfterEmail] = useState<{
+    deliveryId: string;
+    clearPrefill: boolean;
+  } | null>(null);
   
   const copyTrackingNumber = async (trackingNumber: string, deliveryId: string) => {
     try {
@@ -715,6 +721,19 @@ const DeliveriesNew: React.FC = () => {
     // Treat "Open email" as an active action: persist the blue highlight.
     setHighlightedDeliveryId(delivery.id);
     setSelectedDelivery(delivery);
+
+    // If this entry needs tracking attention, help the user by reopening the edit modal on return.
+    const needsAttention = !delivery.trackingNumber || isTrackingNotFound(delivery);
+    if (needsAttention) {
+      setPendingTrackingAfterEmail({
+        deliveryId: delivery.id,
+        // If marked invalid, start the modal with an empty tracking field (but don't persist any clearing).
+        clearPrefill: isTrackingNotFound(delivery),
+      });
+    } else {
+      setPendingTrackingAfterEmail(null);
+    }
+
     const win = window.open(url, '_blank', 'noopener,noreferrer');
     // In some embedded browsers (including Cursor's), window.open can return null even when the tab successfully opens.
     // Only show an error if it truly failed, and otherwise fall back to copying the link.
@@ -730,6 +749,30 @@ const DeliveriesNew: React.FC = () => {
       })();
     }
   };
+
+  useEffect(() => {
+    if (!pendingTrackingAfterEmail) return;
+
+    const onFocus = () => {
+      const pending = pendingTrackingAfterEmail;
+      if (!pending) return;
+
+      const delivery =
+        deliveries.find((d) => d.id === pending.deliveryId) ||
+        (selectedDelivery && selectedDelivery.id === pending.deliveryId ? selectedDelivery : null);
+
+      if (delivery) {
+        openSetTrackingForDelivery(delivery, {
+          prefillTrackingNumber: pending.clearPrefill ? '' : (delivery.trackingNumber || ''),
+        });
+      }
+
+      setPendingTrackingAfterEmail(null);
+    };
+
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [deliveries, pendingTrackingAfterEmail, selectedDelivery]);
 
   // NOTE: Do not persist highlighted row across browser reloads.
   // (Users reported reloads should start with no highlighted entry.)
@@ -1227,10 +1270,15 @@ const DeliveriesNew: React.FC = () => {
     }
   };
 
-  const openSetTrackingForDelivery = (delivery: DeliveryItem) => {
+  const openSetTrackingForDelivery = (
+    delivery: DeliveryItem,
+    opts?: { prefillTrackingNumber?: string }
+  ) => {
+    const prefill =
+      typeof opts?.prefillTrackingNumber === 'string' ? opts.prefillTrackingNumber : (delivery.trackingNumber || '');
     setNewTracking({
       purchaseId: delivery.id,
-      trackingNumber: delivery.trackingNumber || '',
+      trackingNumber: prefill,
       carrier: 'AUTO',
       productName: delivery.productName || '',
       productBrand: delivery.productBrand || '',
