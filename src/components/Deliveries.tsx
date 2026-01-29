@@ -876,6 +876,27 @@ const DeliveriesNew: React.FC = () => {
     }
   };
 
+  const statCardFilterMap: Record<string, { statusFilter: string; label: string }> = {
+    arriving_today: { statusFilter: 'today', label: 'Arriving Today' },
+    arriving_tomorrow: { statusFilter: 'tomorrow', label: 'Arriving Tomorrow' },
+    arriving_this_week: { statusFilter: 'this_week', label: 'Arriving This Week' },
+    in_transit: { statusFilter: 'in_transit', label: 'In Transit' },
+    delivered: { statusFilter: 'delivered', label: 'Delivered' },
+    // total/live_tracking/exceptions intentionally not mapped for now
+  };
+
+  const activeStatusFilterLabel = useMemo((): string | null => {
+    if (!statusFilter || statusFilter === 'all') return null;
+    if (statusFilter === 'today') return 'Arriving Today';
+    if (statusFilter === 'tomorrow') return 'Arriving Tomorrow';
+    if (statusFilter === 'this_week') return 'Arriving This Week';
+    if (statusFilter === 'in_transit') return 'In Transit';
+    if (statusFilter === 'delivered') return 'Delivered';
+    if (statusFilter === 'out_for_delivery') return 'Out for Delivery';
+    if (statusFilter === 'shipped') return 'Shipped';
+    return `Status: ${statusFilter}`;
+  }, [statusFilter]);
+
   // Handle stat selection
   const handleStatToggle = (statId: string) => {
     if (selectedStats.includes(statId)) {
@@ -1984,16 +2005,41 @@ const DeliveriesNew: React.FC = () => {
               if (!stat) return null;
               
               const Icon = stat.icon;
+              const mapped = statCardFilterMap[statId];
+              const isActive = !!mapped && statusFilter === mapped.statusFilter;
               return (
-                <div key={statId} className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
+                <button
+                  key={statId}
+                  type="button"
+                  onClick={() => {
+                    if (!mapped) return;
+                    setPresetNeedsTracking(false);
+                    setPresetInvalidTracking(false);
+                    setPresetArchived(false);
+                    setCarrierFilter('all');
+                    setSearchTerm('');
+                    setDeliverySort(null);
+                    setTrackingSort(null);
+                    setStatusFilter(mapped.statusFilter);
+                  }}
+                  className={`bg-white/10 backdrop-blur-sm rounded-lg p-4 text-left transition-all duration-200 ${
+                    mapped ? 'cursor-pointer hover:bg-white/15' : 'cursor-default'
+                  } ${isActive ? 'ring-2 ring-blue-500/80 shadow-lg shadow-blue-500/20' : ''}`}
+                  title={mapped ? `Filter table: ${mapped.label}` : undefined}
+                >
                   <div className="flex items-center gap-2">
                     <Icon className={`w-5 h-5 ${stat.color}`} />
                     <span className="text-white font-semibold">{stat.label}</span>
-            </div>
+                  </div>
                   <p className="text-2xl font-bold text-white mt-1">
                     {stat.getValue()}
                   </p>
-          </div>
+                  {isActive ? (
+                    <p className="text-xs text-blue-200 mt-2 font-semibold">
+                      Table filtered
+                    </p>
+                  ) : null}
+                </button>
               );
             })}
         </div>
@@ -2001,6 +2047,25 @@ const DeliveriesNew: React.FC = () => {
 
       {/* Filters */}
       <div className={`${currentTheme.colors.cardBackground} rounded-lg p-6 border ${currentTheme.colors.border} mb-6`}>
+        {activeStatusFilterLabel ? (
+          <div className={`mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border ${currentTheme.colors.border} px-3 py-2`}>
+            <div className={`text-sm ${currentTheme.colors.textPrimary}`}>
+              <span className="font-semibold">Table filtered to:</span> {activeStatusFilterLabel}{' '}
+              <span className={`${currentTheme.colors.textSecondary}`}>({sortedDeliveries.length})</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setStatusFilter('all');
+              }}
+              className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100"
+              title="Clear status filter"
+            >
+              Clear
+            </button>
+          </div>
+        ) : null}
+
         {/* Presets */}
         <div className="flex flex-wrap items-center gap-2 mb-4">
           <span className={`text-xs font-semibold uppercase tracking-wider ${currentTheme.colors.textSecondary}`}>
