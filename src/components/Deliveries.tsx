@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { Package, Truck, CheckCircle, Clock, MapPin, Calendar, Filter, Search, MoreHorizontal, RefreshCw, Wifi, WifiOff, X, ChevronDown, Trash2, Copy, Grid3X3, List, Settings, GripVertical, Bell, Shield, AlertTriangle, Mail, ExternalLink, Info } from 'lucide-react';
 import NeonNotification, { type NotificationType } from './NeonNotification';
 import { useTheme } from '../lib/contexts/ThemeContext';
@@ -52,6 +52,41 @@ const DeliveriesNew: React.FC = () => {
   
   // Use either Firebase user or site user
   const user = firebaseUser || siteUser;
+
+  type DropdownOption = { value: string; label: string };
+  const statusOptions: DropdownOption[] = [
+    { value: 'all', label: 'All Status' },
+    { value: 'today', label: 'Arriving Today' },
+    { value: 'tomorrow', label: 'Arriving Tomorrow' },
+    { value: 'this_week', label: 'Arriving This Week' },
+    { value: 'delivered', label: 'Delivered' },
+    { value: 'shipped', label: 'Shipped' },
+    { value: 'in_transit', label: 'In Transit' },
+    { value: 'out_for_delivery', label: 'Out for Delivery' },
+  ];
+  const carrierOptions: DropdownOption[] = [
+    { value: 'all', label: 'All Carriers' },
+    { value: 'UPS', label: 'UPS' },
+    { value: 'FedEx', label: 'FedEx' },
+    { value: 'USPS', label: 'USPS' },
+  ];
+  const getOptionLabel = (options: DropdownOption[], value: string) =>
+    options.find((o) => o.value === value)?.label ?? value;
+
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [carrierOpen, setCarrierOpen] = useState(false);
+  const statusRef = useRef<HTMLDivElement | null>(null);
+  const carrierRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const onDocMouseDown = (e: MouseEvent) => {
+      const t = e.target as Node | null;
+      if (statusOpen && statusRef.current && t && !statusRef.current.contains(t)) setStatusOpen(false);
+      if (carrierOpen && carrierRef.current && t && !carrierRef.current.contains(t)) setCarrierOpen(false);
+    };
+    document.addEventListener('mousedown', onDocMouseDown);
+    return () => document.removeEventListener('mousedown', onDocMouseDown);
+  }, [carrierOpen, statusOpen]);
 
   // Helper function to find the best update to display (most recent with location, or most recent)
   const getBestUpdate = (updates: any[]) => {
@@ -2083,48 +2118,116 @@ const DeliveriesNew: React.FC = () => {
           </div>
           
           <div className="flex gap-4">
-            <div className="relative">
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className={`appearance-none px-4 py-2 pr-10 border rounded-lg cursor-pointer transition-colors ${currentTheme.colors.border} ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary} focus:outline-none focus:ring-2 ${
+            <div ref={statusRef} className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusOpen((v) => !v);
+                  setCarrierOpen(false);
+                }}
+                className={`w-52 px-4 py-2 pr-12 border rounded-lg cursor-pointer transition-colors text-left focus:outline-none focus:ring-2 ${
+                  currentTheme.colors.border
+                } ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary} ${
                   currentTheme.name === 'Neon'
                     ? 'hover:border-cyan-400/60 focus:ring-cyan-400/40 focus:border-cyan-400/60 shadow-[0_0_0_1px_rgba(34,211,238,0.25)]'
                     : 'hover:border-gray-300 focus:ring-blue-500'
                 }`}
+                aria-haspopup="listbox"
+                aria-expanded={statusOpen}
               >
-                <option value="all">All Status</option>
-                <option value="today">Arriving Today</option>
-                <option value="tomorrow">Arriving Tomorrow</option>
-                <option value="this_week">Arriving This Week</option>
-                <option value="delivered">Delivered</option>
-                <option value="shipped">Shipped</option>
-                <option value="in_transit">In Transit</option>
-                <option value="out_for_delivery">Out for Delivery</option>
-              </select>
-              <ChevronDown className={`pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 ${
-                currentTheme.name === 'Neon' ? 'text-cyan-200/80' : 'text-gray-500'
-              }`} />
+                {getOptionLabel(statusOptions, statusFilter)}
+                <ChevronDown
+                  className={`pointer-events-none absolute right-5 top-1/2 -translate-y-1/2 w-4 h-4 ${
+                    currentTheme.name === 'Neon' ? 'text-cyan-200/80' : 'text-gray-500'
+                  }`}
+                />
+              </button>
+              {statusOpen && (
+                <div
+                  role="listbox"
+                  className={`absolute z-50 mt-2 w-full rounded-xl border p-1 shadow-xl ${
+                    currentTheme.name === 'Neon'
+                      ? 'bg-gray-900/95 border-cyan-500/30 text-white'
+                      : 'bg-white border-gray-200 text-gray-900'
+                  }`}
+                >
+                  {statusOptions.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        setStatusFilter(opt.value);
+                        setStatusOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                        opt.value === statusFilter
+                          ? currentTheme.name === 'Neon'
+                            ? 'bg-white/10'
+                            : 'bg-gray-100'
+                          : ''
+                      } ${currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             
-            <div className="relative">
-              <select
-                value={carrierFilter}
-                onChange={(e) => setCarrierFilter(e.target.value)}
-                className={`appearance-none px-4 py-2 pr-10 border rounded-lg cursor-pointer transition-colors ${currentTheme.colors.border} ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary} focus:outline-none focus:ring-2 ${
+            <div ref={carrierRef} className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setCarrierOpen((v) => !v);
+                  setStatusOpen(false);
+                }}
+                className={`w-44 px-4 py-2 pr-12 border rounded-lg cursor-pointer transition-colors text-left focus:outline-none focus:ring-2 ${
+                  currentTheme.colors.border
+                } ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary} ${
                   currentTheme.name === 'Neon'
                     ? 'hover:border-cyan-400/60 focus:ring-cyan-400/40 focus:border-cyan-400/60 shadow-[0_0_0_1px_rgba(34,211,238,0.25)]'
                     : 'hover:border-gray-300 focus:ring-blue-500'
                 }`}
+                aria-haspopup="listbox"
+                aria-expanded={carrierOpen}
               >
-                <option value="all">All Carriers</option>
-                <option value="UPS">UPS</option>
-                <option value="FedEx">FedEx</option>
-                <option value="USPS">USPS</option>
-              </select>
-              <ChevronDown className={`pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 ${
-                currentTheme.name === 'Neon' ? 'text-cyan-200/80' : 'text-gray-500'
-              }`} />
+                {getOptionLabel(carrierOptions, carrierFilter)}
+                <ChevronDown
+                  className={`pointer-events-none absolute right-5 top-1/2 -translate-y-1/2 w-4 h-4 ${
+                    currentTheme.name === 'Neon' ? 'text-cyan-200/80' : 'text-gray-500'
+                  }`}
+                />
+              </button>
+              {carrierOpen && (
+                <div
+                  role="listbox"
+                  className={`absolute z-50 mt-2 w-full rounded-xl border p-1 shadow-xl ${
+                    currentTheme.name === 'Neon'
+                      ? 'bg-gray-900/95 border-cyan-500/30 text-white'
+                      : 'bg-white border-gray-200 text-gray-900'
+                  }`}
+                >
+                  {carrierOptions.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        setCarrierFilter(opt.value);
+                        setCarrierOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                        opt.value === carrierFilter
+                          ? currentTheme.name === 'Neon'
+                            ? 'bg-white/10'
+                            : 'bg-gray-100'
+                          : ''
+                      } ${currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             
             {(statusFilter !== 'all' ||
