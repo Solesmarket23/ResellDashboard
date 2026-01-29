@@ -212,6 +212,7 @@ const DeliveriesNew: React.FC = () => {
     return 'all';
   });
   const [selectedDelivery, setSelectedDelivery] = useState<DeliveryItem | null>(null);
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'split' | 'table'>(() => {
     // Load saved view mode from localStorage
     if (typeof window !== 'undefined') {
@@ -220,6 +221,11 @@ const DeliveriesNew: React.FC = () => {
     }
     return 'split';
   });
+
+  // If the user switches away from table view, close the table details modal.
+  useEffect(() => {
+    if (viewMode !== 'table') setDetailsModalOpen(false);
+  }, [viewMode]);
   const [showStatsSettings, setShowStatsSettings] = useState(false);
   const [selectedStats, setSelectedStats] = useState<string[]>([
     'total', 'in_transit', 'delivered', 'live_tracking'
@@ -2704,13 +2710,17 @@ const DeliveriesNew: React.FC = () => {
                     <tr 
                       key={delivery.id}
                       data-delivery-id={delivery.id}
-                      onClick={() => setSelectedDelivery(delivery)}
+                      onClick={() => {
+                        setSelectedDelivery(delivery);
+                        setDetailsModalOpen(true);
+                      }}
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
                           setSelectedDelivery(delivery);
+                          setDetailsModalOpen(true);
                         }
                       }}
                       style={getHighlightStyle(highlightedDeliveryId === delivery.id)}
@@ -2935,88 +2945,102 @@ const DeliveriesNew: React.FC = () => {
         </div>
       )}
 
-        {/* Details Panel for Table View */}
-        {viewMode === 'table' && selectedDelivery && (
-          <div className={`${currentTheme.colors.cardBackground} rounded-lg border ${currentTheme.colors.border} mt-6`}>
-            <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>
-                    {selectedDelivery.productName}
-                  </h3>
-                  <p className={`text-sm ${currentTheme.colors.textSecondary} mt-1`}>
-                    {selectedDelivery.productBrand} • Size {selectedDelivery.productSize} • {selectedDelivery.carrier}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(getDisplayStatus(selectedDelivery))}`}>
-                    {formatStatus(getDisplayStatus(selectedDelivery))}
-                  </span>
-                <button
-                    onClick={() => setSelectedDelivery(null)}
-                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors duration-200 text-gray-500 dark:text-gray-400"
-                    title="Close details"
-                >
-                    <X className="w-4 h-4" />
-                </button>
-                </div>
-              </div>
-            </div>
-            <div className="p-4">
-              {/* Tracking Updates */}
-              {selectedDelivery.updates && selectedDelivery.updates.length > 0 && (
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <h5 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>
-                      Tracking History ({selectedDelivery.updates.length})
-                    </h5>
-                <button
-                      onClick={() => copyShipmentData(selectedDelivery, selectedDelivery.id)}
-                      className="flex items-center gap-2 px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg transition-colors duration-200"
-                      title="Copy full shipment data as JSON"
+        {/* Table View: Details Modal */}
+        {viewMode === 'table' && selectedDelivery && detailsModalOpen && (
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Delivery details"
+            onMouseDown={(e) => {
+              // close when clicking the backdrop
+              if (e.target === e.currentTarget) setDetailsModalOpen(false);
+            }}
+          >
+            <div className={`${currentTheme.colors.cardBackground} w-full max-w-4xl rounded-xl border ${currentTheme.colors.border} overflow-hidden shadow-2xl`}>
+              <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary} truncate`}>
+                      {selectedDelivery.productName}
+                    </h3>
+                    <p className={`text-sm ${currentTheme.colors.textSecondary} mt-1 truncate`}>
+                      {selectedDelivery.productBrand} • Size {selectedDelivery.productSize} • {selectedDelivery.carrier}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(getDisplayStatus(selectedDelivery))}`}>
+                      {formatStatus(getDisplayStatus(selectedDelivery))}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setDetailsModalOpen(false)}
+                      className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors duration-200 text-gray-500 dark:text-gray-400"
+                      title="Close details"
+                      aria-label="Close details"
                     >
-                      <Copy className="w-4 h-4" />
-                      Copy Data
-                      {copiedShipmentId === selectedDelivery.id && (
-                        <span className="text-green-500 text-xs">✓</span>
-                  )}
-                </button>
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
               </div>
-                  <div className="space-y-3 max-h-96 overflow-y-auto">
-                    {selectedDelivery.updates.map((update, index) => (
-                      <div key={index} className={`${currentTheme.colors.cardBackground} rounded-lg p-3 border ${currentTheme.colors.border}`}>
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <p className={`${currentTheme.colors.textPrimary} font-medium text-sm`}>
-                              {update.description || 'No description'}
-                            </p>
-                            <p className={`${currentTheme.colors.textSecondary} text-xs mt-1`}>
-                              {update.location || 'Unknown location'}
-                            </p>
-            </div>
-                          <div className="text-right">
-                            <p className={`${currentTheme.colors.textSecondary} text-xs`}>
-                              {update.timestamp ? new Date(update.timestamp).toLocaleString() : 'Unknown time'}
-                            </p>
-                            <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium mt-1 ${
-                              update.status === 'delivered' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                              update.status === 'exception' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-                              update.status === 'in_transit' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
-                              update.status === 'out_for_delivery' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200' :
-                              'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'
-                            }`}>
-                              {update.status.replace('_', ' ').toUpperCase()}
-                            </span>
+              <div className="p-4">
+                {/* Tracking Updates */}
+                {selectedDelivery.updates && selectedDelivery.updates.length > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <h5 className={`text-lg font-semibold ${currentTheme.colors.textPrimary}`}>
+                        Tracking History ({selectedDelivery.updates.length})
+                      </h5>
+                      <button
+                        type="button"
+                        onClick={() => copyShipmentData(selectedDelivery, selectedDelivery.id)}
+                        className="flex items-center gap-2 px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg transition-colors duration-200"
+                        title="Copy full shipment data as JSON"
+                      >
+                        <Copy className="w-4 h-4" />
+                        Copy Data
+                        {copiedShipmentId === selectedDelivery.id && (
+                          <span className="text-green-500 text-xs">✓</span>
+                        )}
+                      </button>
+                    </div>
+                    <div className="space-y-3 max-h-[70vh] overflow-y-auto">
+                      {selectedDelivery.updates.map((update, index) => (
+                        <div key={index} className={`${currentTheme.colors.cardBackground} rounded-lg p-3 border ${currentTheme.colors.border}`}>
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <p className={`${currentTheme.colors.textPrimary} font-medium text-sm`}>
+                                {update.description || 'No description'}
+                              </p>
+                              <p className={`${currentTheme.colors.textSecondary} text-xs mt-1`}>
+                                {update.location || 'Unknown location'}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className={`${currentTheme.colors.textSecondary} text-xs`}>
+                                {update.timestamp ? new Date(update.timestamp).toLocaleString() : 'Unknown time'}
+                              </p>
+                              <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium mt-1 ${
+                                update.status === 'delivered' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                                update.status === 'exception' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                                update.status === 'in_transit' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
+                                update.status === 'out_for_delivery' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200' :
+                                'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'
+                              }`}>
+                                {update.status.replace('_', ' ').toUpperCase()}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
-      )}
-          </div>
-        </div>
-      )}
+        )}
 
         {notification.show && (
           <NeonNotification
