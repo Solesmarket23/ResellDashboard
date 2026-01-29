@@ -240,7 +240,7 @@ export class FedExTrackingAPI {
       const updates: TrackingUpdate[] = scanEvents.map((scan: any) => ({
         timestamp: scan.date,
         location: this.formatLocation(scan.scanLocation),
-        status: this.mapFedExStatus(scan.eventType),
+        status: this.mapFedExStatus(scan.eventType, scan.eventDescription),
         description: scan.eventDescription,
         details: {
           eventType: scan.eventType,
@@ -252,8 +252,15 @@ export class FedExTrackingAPI {
       // Sort updates by timestamp (newest first)
       updates.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-      // Determine current status
-      const currentStatus = this.mapFedExStatus(trackResults.statusCode || trackResults.statusDetail?.code || 'UNKNOWN');
+      // Determine current status:
+      // Prefer derivedCode if present (more consistent), then statusCode, then statusDetail.code.
+      const currentStatus = this.mapFedExStatus(
+        (trackResults as any)?.statusDetail?.derivedCode ||
+          (trackResults as any)?.statusCode ||
+          (trackResults as any)?.statusDetail?.code ||
+          'UNKNOWN',
+        rawStatusText
+      );
       
       // Get delivery dates from dateAndTimes array (most reliable method)
       // Debug: Log all available date types from FedEx API
@@ -370,21 +377,65 @@ export class FedExTrackingAPI {
     return parts.join(', ') || 'Unknown';
   }
 
-  private mapFedExStatus(fedexStatus: string): string {
-    const statusMap: { [key: string]: string } = {
-      'OC': 'shipped', // Origin scan
-      'DP': 'shipped', // Departed origin
-      'IT': 'in_transit', // In transit
-      'OD': 'out_for_delivery', // Out for delivery
-      'DL': 'delivered', // Delivered
-      'DE': 'delivered', // Delivered
-      'EX': 'exception', // Exception
-      'CA': 'exception', // Cancelled
-      'SE': 'exception', // Shipment exception
-      'UNKNOWN': 'unknown'
+  private mapFedExStatus(fedexStatus: string, statusText?: string): TrackingInfo['status'] {
+    const code = String(fedexStatus || '').trim().toUpperCase();
+    const text = String(statusText || '').trim().toLowerCase();
+
+    // Common FedEx codes (not exhaustive, but covers most real-world scans/statuses)
+    const statusMap: Record<string, TrackingInfo['status']> = {
+      // Picked up / tendered / shipped
+      OC: 'shipped', // Origin scan
+      DP: 'shipped', // Departed origin
+      PU: 'shipped', // Picked up
+      SH: 'shipped', // Shipped
+      SR: 'shipped', // Shipment information sent / label created-ish
+      SE: 'exception', // Shipment exception
+
+      // In transit / arrived / departed hubs
+      IT: 'in_transit', // In transit
+      AR: 'in_transit', // Arrived
+      AD: 'in_transit', // At destination / facility
+      AA: 'in_transit',
+      FD: 'in_transit',
+
+      // Out for delivery
+      OD: 'out_for_delivery',
+      ODL: 'out_for_delivery',
+
+      // Delivered
+      DL: 'delivered',
+      DE: 'delivered',
+
+      // Exceptions / holds / cancellations
+      EX: 'exception',
+      CA: 'exception',
+      CD: 'exception',
+      HL: 'exception',
+      DY: 'exception',
+
+      UNKNOWN: 'unknown',
     };
 
-    return statusMap[fedexStatus] || 'unknown';
+    if (statusMap[code]) return statusMap[code];
+
+    // Heuristic fallback from human-readable text/description
+    if (text.includes('delivered')) return 'delivered';
+    if (text.includes('out for delivery') || text.includes('on fedex vehicle')) return 'out_for_delivery';
+    if (
+      text.includes('in transit') ||
+      text.includes('departed') ||
+      text.includes('arrived') ||
+      text.includes('at local') ||
+      text.includes('at destination') ||
+      text.includes('at fedex')
+    )
+      return 'in_transit';
+    if (text.includes('picked up') || text.includes('shipment information sent') || text.includes('label created'))
+      return 'shipped';
+    if (text.includes('exception') || text.includes('delayed') || text.includes('held') || text.includes('returned'))
+      return 'exception';
+
+    return 'unknown';
   }
 
   // Method to check if tracking number is valid FedEx format
