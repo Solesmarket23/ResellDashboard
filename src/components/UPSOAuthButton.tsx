@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useUPSOAuth } from '@/lib/hooks/useUPSOAuth';
+import { useTheme } from '@/lib/contexts/ThemeContext';
 
 interface UPSOAuthButtonProps {
   userId?: string;
@@ -18,25 +19,15 @@ export default function UPSOAuthButton({
   className = '',
   children 
 }: UPSOAuthButtonProps) {
+  const { currentTheme } = useTheme();
   const { 
     isAuthenticated, 
     isLoading, 
     error, 
     tokenInfo, 
-    startAuth, 
     refreshToken, 
     logout, 
-    clearError 
   } = useUPSOAuth(userId);
-
-  // Debug logging
-  console.log('🔍 UPSOAuthButton render:', { 
-    isAuthenticated, 
-    isLoading, 
-    error, 
-    userId,
-    hasTokenInfo: !!tokenInfo 
-  });
 
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -64,38 +55,57 @@ export default function UPSOAuthButton({
 
   if (isAuthenticated) {
     return (
-      <div className={`space-y-3 ${className}`}>
-        {/* Clean, minimal status indicator */}
-        <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-lg px-4 py-3">
-          <div className="flex items-center space-x-3">
-            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-            <span className="text-sm font-medium text-green-800">UPS Connected</span>
+      <div className={className}>
+        <div
+          className={`h-11 inline-flex items-center justify-between gap-3 rounded-xl px-4 border ${
+            currentTheme.name === 'Neon'
+              ? 'bg-emerald-500/10 border-emerald-400/30 text-emerald-200'
+              : 'bg-green-50 border-green-200 text-green-800'
+          }`}
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <div className={`w-2 h-2 rounded-full ${currentTheme.name === 'Neon' ? 'bg-emerald-400' : 'bg-green-500'}`} />
+            <span className="text-sm font-semibold truncate">UPS Connected</span>
           </div>
-          <div className="flex items-center space-x-2">
+
+          <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={handleRefresh}
               disabled={isRefreshing}
-              className="text-xs text-green-600 hover:text-green-800 underline disabled:opacity-50"
+              className={`text-xs font-semibold px-2 py-1 rounded-md transition-colors disabled:opacity-60 ${
+                currentTheme.name === 'Neon'
+                  ? 'text-emerald-200 hover:bg-white/10'
+                  : 'text-green-700 hover:bg-green-100'
+              }`}
             >
-              {isRefreshing ? 'Refreshing...' : 'Refresh'}
+              {isRefreshing ? 'Refreshing…' : 'Refresh'}
             </button>
             <button
+              type="button"
               onClick={handleLogout}
-              className="text-xs text-red-600 hover:text-red-800 underline"
+              className={`text-xs font-semibold px-2 py-1 rounded-md transition-colors ${
+                currentTheme.name === 'Neon'
+                  ? 'text-red-300 hover:bg-white/10'
+                  : 'text-red-700 hover:bg-red-100'
+              }`}
             >
               Disconnect
             </button>
           </div>
         </div>
-
       </div>
     );
   }
 
   return (
-    <div className={`space-y-4 ${className}`}>
+    <div className={className}>
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+        <div className={`mb-3 rounded-lg p-3 border ${
+          currentTheme.name === 'Neon'
+            ? 'bg-red-500/10 border-red-400/30 text-red-200'
+            : 'bg-red-50 border-red-200 text-red-800'
+        }`}>
           <div className="flex">
             <div className="flex-shrink-0">
               <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
@@ -113,64 +123,17 @@ export default function UPSOAuthButton({
           </div>
         </div>
       )}
-
-      <div className="space-y-2">
-        <a
-          href="/api/ups/oauth/authorize"
-          onClick={(e) => {
-            console.log('🔗 UPS OAuth link clicked!', e);
-            console.log('🔗 Link href:', e.currentTarget.href);
-            console.log('🔗 User ID:', userId);
-            console.log('🔗 Event target:', e.target);
-            console.log('🔗 Event current target:', e.currentTarget);
-          }}
-          style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-        >
-          {children || 'Connect with UPS OAuth'}
-        </a>
-        
-        {/* Debug button */}
-        <button
-          onClick={() => {
-            console.log('🧪 Test button clicked!');
-            console.log('🧪 Current state:', { isAuthenticated, isLoading, error, userId });
-            
-            try {
-              console.log('🧪 Attempting navigation...');
-              window.location.href = '/api/ups/oauth/authorize';
-              console.log('🧪 Navigation command sent');
-            } catch (error) {
-              console.error('🧪 Navigation error:', error);
-            }
-          }}
-          className="inline-flex items-center px-2 py-1 text-xs bg-gray-500 text-white rounded hover:bg-gray-600"
-        >
-          Test OAuth (Debug)
-        </button>
-        
-        {/* Simple test link */}
-        <a 
-          href="/api/ups/oauth/authorize" 
-          className="inline-block px-2 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600"
-        >
-          Simple Test Link
-        </a>
-        
-        {/* Test redirect to Google */}
-        <a 
-          href="/api/test-redirect" 
-          className="inline-block px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
-        >
-          Test Redirect to Google
-        </a>
-      </div>
-
-      {!userId && (
-        <p className="text-sm text-gray-500">
-          User ID is required for OAuth authentication
-        </p>
-      )}
+      <a
+        href="/api/ups/oauth/authorize"
+        style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+        className={`h-11 inline-flex items-center justify-center px-4 rounded-xl text-sm font-semibold transition-colors focus:outline-none focus:ring-2 ${
+          currentTheme.name === 'Neon'
+            ? 'bg-indigo-500/90 hover:bg-indigo-500 text-white focus:ring-cyan-400/40'
+            : 'bg-indigo-600 hover:bg-indigo-700 text-white focus:ring-indigo-500'
+        }`}
+      >
+        {isLoading ? 'Connecting…' : (children || 'Connect UPS')}
+      </a>
     </div>
   );
 }

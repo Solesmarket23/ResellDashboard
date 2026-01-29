@@ -1477,13 +1477,15 @@ const DeliveriesNew: React.FC = () => {
             </p>
           </div>
              <div className="flex items-center gap-4">
-               <UPSOAuthButton />
+               <UPSOAuthButton className="shrink-0" />
                
                {/* Send Slack Notification Button */}
                <button
                  onClick={handleSendSlackNotification}
                  disabled={sendingSlackNotification || deliveries.length === 0}
-                 className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+                 className={`h-11 px-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 ${
+                   currentTheme.name === 'Neon' ? 'focus:ring-cyan-400/40' : 'focus:ring-blue-500'
+                 } bg-purple-600 hover:bg-purple-700`}
                  title="Send delivery summary to Slack"
                >
                  <Bell className="w-4 h-4" />
@@ -1491,13 +1493,13 @@ const DeliveriesNew: React.FC = () => {
                </button>
                
                {/* View Mode Toggle */}
-               <div className="flex items-center bg-gray-800 rounded-lg p-1">
+               <div className="h-11 inline-flex items-center rounded-xl p-1 bg-white/5 border border-white/10">
             <button
                    onClick={() => setViewMode('split')}
-                   className={`px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${
+                   className={`h-9 px-3 rounded-lg text-sm font-semibold transition-colors inline-flex items-center gap-2 focus:outline-none ${
                      viewMode === 'split'
-                       ? 'bg-blue-600 text-white'
-                       : 'text-gray-300 hover:text-white hover:bg-gray-700'
+                       ? 'bg-blue-600 text-white shadow-sm'
+                       : 'text-gray-200 hover:text-white hover:bg-white/10'
                    }`}
                  >
                    <Grid3X3 className="w-4 h-4" />
@@ -1505,25 +1507,27 @@ const DeliveriesNew: React.FC = () => {
             </button>
             <button
                    onClick={() => setViewMode('table')}
-                   className={`px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${
+                   className={`h-9 px-3 rounded-lg text-sm font-semibold transition-colors inline-flex items-center gap-2 focus:outline-none ${
                      viewMode === 'table'
-                       ? 'bg-blue-600 text-white'
-                       : 'text-gray-300 hover:text-white hover:bg-gray-700'
+                       ? 'bg-blue-600 text-white shadow-sm'
+                       : 'text-gray-200 hover:text-white hover:bg-white/10'
                    }`}
                  >
                    <List className="w-4 h-4" />
                    Table View
             </button>
-
-            {/* Add Manual Tracking */}
-            <button
-              onClick={() => setShowAddTrackingModal(true)}
-              className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-            >
-              <Package className="w-4 h-4" />
-              Add Manual Tracking
-            </button>
                </div>
+
+               {/* Add Manual Tracking */}
+               <button
+                 onClick={() => setShowAddTrackingModal(true)}
+                 className={`h-11 px-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-colors focus:outline-none focus:ring-2 ${
+                   currentTheme.name === 'Neon' ? 'focus:ring-cyan-400/40' : 'focus:ring-blue-500'
+                 } bg-emerald-600 hover:bg-emerald-700 text-white`}
+               >
+                 <Package className="w-4 h-4" />
+                 Add Manual Tracking
+               </button>
                
             <button
                  onClick={async () => {
@@ -1534,7 +1538,9 @@ const DeliveriesNew: React.FC = () => {
                      showNotification('Failed to refresh deliveries', 'error');
                    }
                  }}
-                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+                 className={`h-11 px-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-colors focus:outline-none focus:ring-2 ${
+                   currentTheme.name === 'Neon' ? 'focus:ring-cyan-400/40' : 'focus:ring-blue-500'
+                 } bg-blue-600 hover:bg-blue-700 text-white`}
                >
                  <RefreshCw className="w-4 h-4" />
                  Refresh
