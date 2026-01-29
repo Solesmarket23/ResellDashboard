@@ -394,6 +394,13 @@ const DeliveriesNew: React.FC = () => {
     const text = String(raw || '').trim();
     if (!text) return { trackingNumber: null };
 
+    // If the user pasted only a tracking-like token (no other text), accept it.
+    const compactOnly = text.replace(/[\s\-_]/g, '').toUpperCase();
+    if (/^1Z[0-9A-Z]{15,18}$/.test(compactOnly)) return { trackingNumber: compactOnly, carrierHint: 'UPS' };
+    if (/^[0-9]{12,15}$/.test(compactOnly)) return { trackingNumber: compactOnly, carrierHint: 'FedEx' };
+    if (/^9[0-9]{19,21}$/.test(compactOnly) || /^9[0-9]{12}$/.test(compactOnly)) return { trackingNumber: compactOnly, carrierHint: 'USPS' };
+    if (/^[0-9]{10}$/.test(compactOnly)) return { trackingNumber: compactOnly, carrierHint: 'DHL' };
+
     // Try URL parsing first
     if (text.includes('http://') || text.includes('https://')) {
       try {
@@ -426,8 +433,42 @@ const DeliveriesNew: React.FC = () => {
     const compact = text.replace(/\s+/g, ' ').trim();
     const mUps = compact.toUpperCase().match(/1Z[0-9A-Z]{15,18}/);
     if (mUps) return { trackingNumber: mUps[0], carrierHint: 'UPS' };
-    const mFedex = compact.match(/\b[0-9]{12,15}\b/);
-    if (mFedex) return { trackingNumber: mFedex[0], carrierHint: 'FedEx' };
+
+    // FedEx numbers are easily confused with order IDs. Only pick a 12–15 digit token from
+    // longer text if there's a nearby tracking keyword and it's NOT clearly labeled as an order number.
+    const lower = compact.toLowerCase();
+    const keywordIdxs: number[] = [];
+    for (const kw of ['tracking', 'track', 'trk', 'shipment', 'carrier']) {
+      let i = lower.indexOf(kw);
+      while (i !== -1) {
+        keywordIdxs.push(i);
+        i = lower.indexOf(kw, i + kw.length);
+      }
+    }
+    const fedexCandidates = Array.from(compact.matchAll(/\b[0-9]{12,15}\b/g)).map((m) => ({
+      value: m[0],
+      index: m.index ?? -1,
+    }));
+    const isOrderContext = (idx: number) => {
+      if (idx < 0) return false;
+      const start = Math.max(0, idx - 14);
+      const ctx = lower.slice(start, idx);
+      return /\border\b|\border\s*#|\bconfirmation\b|\binvoice\b/.test(ctx);
+    };
+    if (fedexCandidates.length > 0 && keywordIdxs.length > 0) {
+      const scored = fedexCandidates
+        .filter((c) => !isOrderContext(c.index))
+        .map((c) => {
+          const d = Math.min(...keywordIdxs.map((k) => Math.abs(c.index - k)));
+          return { ...c, score: d };
+        })
+        .sort((a, b) => a.score - b.score);
+      // Require a keyword reasonably close (prevents picking random order numbers elsewhere in the text)
+      if (scored[0] && scored[0].score <= 40) {
+        return { trackingNumber: scored[0].value, carrierHint: 'FedEx' };
+      }
+    }
+
     const mUsps = compact.match(/\b9[0-9]{19,21}\b|\b9[0-9]{12}\b/);
     if (mUsps) return { trackingNumber: mUsps[0], carrierHint: 'USPS' };
     const mDhl = compact.match(/\b[0-9]{10}\b/);
@@ -2815,19 +2856,29 @@ const DeliveriesNew: React.FC = () => {
                         <div className="flex items-center gap-2">
                           {delivery.trackingNumber ? (
                             <>
+                              {(() => {
+                                const invalid = isTrackingNotFound(delivery);
+                                const label = invalid ? 'Invalid' : delivery.trackingNumber;
+                                const labelClass =
+                                  invalid
+                                    ? 'text-red-500 hover:text-red-400'
+                                    : currentTheme.name === 'Neon'
+                                      ? 'text-cyan-300 hover:text-cyan-200'
+                                      : 'text-blue-600 hover:text-blue-500';
+                                return (
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   openSetTrackingForDelivery(delivery);
                                 }}
-                                className={`font-mono text-sm underline underline-offset-2 ${
-                                  currentTheme.name === 'Neon' ? 'text-cyan-300 hover:text-cyan-200' : 'text-blue-600 hover:text-blue-500'
-                                }`}
-                                title="Edit tracking number"
+                                className={`font-mono text-sm underline underline-offset-2 ${labelClass}`}
+                                title={invalid ? 'Invalid tracking — click to edit' : 'Edit tracking number'}
                               >
-                                {delivery.trackingNumber}
+                                {label}
                               </button>
+                                );
+                              })()}
                               <a
                                 href={getFedExTrackingUrl(delivery.trackingNumber)}
                                 target="_blank"
@@ -2840,6 +2891,7 @@ const DeliveriesNew: React.FC = () => {
                                 className="inline-flex items-center text-gray-400 hover:text-blue-400 transition-colors"
                                 title="Open FedEx tracking in a new tab"
                                 aria-label="Open FedEx tracking"
+                                style={{ display: isTrackingNotFound(delivery) ? 'none' : undefined }}
                               >
                                 <ExternalLink className="w-3.5 h-3.5" />
                               </a>
