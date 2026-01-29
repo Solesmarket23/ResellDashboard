@@ -333,6 +333,40 @@ export async function POST(request: NextRequest) {
       skippedRateLimited: 0,
       failedByReason: {} as Record<string, number>,
       failedHttpStatuses: {} as Record<string, number>,
+      items: [] as Array<{
+        purchaseId: string;
+        productName: string;
+        productSizeRaw: string;
+        normalizedSize: string;
+        status: string;
+        onTheWay: boolean;
+        identifiers: {
+          styleId?: string | null;
+          urlKey?: string | null;
+          productId?: string;
+          variantId?: string;
+        };
+        cachedMarketPrice?: number;
+        fetchedMarketPrice?: number;
+        decision:
+          | 'used_cached'
+          | 'skipped_not_active'
+          | 'skipped_missing_stockx_tokens'
+          | 'skipped_rate_limited'
+          | 'fetched_ok'
+          | 'fetched_failed';
+        result?: {
+          reason?: string;
+          stage?: string;
+          httpStatus?: number;
+          termUsed?: string;
+          urlKey?: string;
+          productId?: string;
+          variantId?: string;
+          details?: string;
+        };
+        marketLink?: string;
+      }>,
     };
 
     const fetchMarketWithControls = async (args: {
@@ -418,6 +452,7 @@ export async function POST(request: NextRequest) {
       const urlKey = extractStockXUrlKeyFromPurchase(purchase);
       const ids = extractStockXIdsFromPurchase(purchase);
       const purchaseId = String(purchase.id || purchase.purchaseId || purchase.orderNumber || trackingValue || '').trim();
+      const onTheWay = isOnTheWayStatus(status);
       
       // Extract brand from product name
       let productBrand = purchase.productBrand || purchase.brand;
@@ -466,24 +501,62 @@ export async function POST(request: NextRequest) {
       if (marketPrice !== undefined) {
         marketDebug.cachedUsed++;
       }
+
+      const itemDebugBase = {
+        purchaseId,
+        productName,
+        productSizeRaw: String(productSizeRaw ?? ''),
+        normalizedSize: productSize,
+        status,
+        onTheWay,
+        identifiers: {
+          styleId,
+          urlKey,
+          productId: ids.productId,
+          variantId: ids.variantId,
+        },
+      } as const;
       
       // If no market price cached, fetch real-time from StockX (prioritize styleId for accuracy!)
       if (marketPrice === undefined) {
         // Only skip if it's clearly not on the way (delivered/cancelled/etc)
-        if (!isOnTheWayStatus(status)) {
+        if (!onTheWay) {
           marketDebug.skippedNotActive++;
+          marketDebug.items.push({
+            ...itemDebugBase,
+            decision: 'skipped_not_active',
+            cachedMarketPrice: undefined,
+            fetchedMarketPrice: undefined,
+          });
         } else {
         const auth = await getStockXAuthForUser(request, userId);
         if (!auth) {
           console.log(`⚠️ Missing STOCKX_API_KEY, skipping price fetch`);
           marketDebug.failedByReason['missing_api_key'] = (marketDebug.failedByReason['missing_api_key'] || 0) + 1;
+          marketDebug.items.push({
+            ...itemDebugBase,
+            decision: 'fetched_failed',
+            result: { reason: 'missing_api_key', stage: 'auth' },
+          });
         } else {
           const hasAuth = Boolean((auth as any).accessToken || (auth as any).refreshToken);
           if (!hasAuth) {
             marketDebug.skippedNoAuth++;
             marketDebug.failedByReason['missing_stockx_tokens'] =
               (marketDebug.failedByReason['missing_stockx_tokens'] || 0) + 1;
+            marketDebug.items.push({
+              ...itemDebugBase,
+              decision: 'skipped_missing_stockx_tokens',
+            });
           } else {
+            if (stockxRateLimited) {
+              // (fetchMarketWithControls will also short-circuit, but this makes the per-item trace explicit)
+              marketDebug.items.push({
+                ...itemDebugBase,
+                decision: 'skipped_rate_limited',
+                result: { reason: 'rate_limited_short_circuit' },
+              });
+            }
             const result = await fetchMarketWithControls({
               auth,
               productName,
@@ -497,6 +570,28 @@ export async function POST(request: NextRequest) {
               marketPrice = result.price;
               marketDebug.fetchedOk++;
               console.log(`✅ Real-time price fetched: ${productName}${styleId ? ` (StyleId: ${styleId})` : ''} = $${marketPrice}`);
+              const stockxUrlKey = (result as any).urlKey as string | undefined;
+              const termUsed = (result as any).termUsed as string | undefined;
+              const searchTerm = termUsed || styleId || productName;
+              const marketUrl = stockxUrlKey
+                ? `https://stockx.com/${stockxUrlKey}${productSize ? `?size=${encodeURIComponent(productSize)}` : ''}`
+                : `https://stockx.com/search?s=${encodeURIComponent(searchTerm)}`;
+              marketDebug.items.push({
+                ...itemDebugBase,
+                decision: 'fetched_ok',
+                fetchedMarketPrice: marketPrice,
+                result: {
+                  reason: (result as any).reason,
+                  stage: (result as any).stage,
+                  httpStatus: (result as any).httpStatus,
+                  termUsed,
+                  urlKey: (result as any).urlKey,
+                  productId: (result as any).productId,
+                  variantId: (result as any).variantId,
+                  details: (result as any).details,
+                },
+                marketLink: `<${marketUrl}|Market>`,
+              });
 
               // Best-effort backfill so next time we can use the repricer-style direct market-data call.
               // Only applies when the purchase came from Firebase (so it has a Firestore doc id at purchase.id).
@@ -527,6 +622,28 @@ export async function POST(request: NextRequest) {
                 const key = `${result.stage || 'unknown'}:${result.httpStatus}`;
                 marketDebug.failedHttpStatuses[key] = (marketDebug.failedHttpStatuses[key] || 0) + 1;
               }
+
+              const stockxUrlKey = (result as any).urlKey as string | undefined;
+              const termUsed = (result as any).termUsed as string | undefined;
+              const searchTerm = termUsed || styleId || productName;
+              const marketUrl = stockxUrlKey
+                ? `https://stockx.com/${stockxUrlKey}${productSize ? `?size=${encodeURIComponent(productSize)}` : ''}`
+                : `https://stockx.com/search?s=${encodeURIComponent(searchTerm)}`;
+              marketDebug.items.push({
+                ...itemDebugBase,
+                decision: 'fetched_failed',
+                result: {
+                  reason: (result as any).reason,
+                  stage: (result as any).stage,
+                  httpStatus: (result as any).httpStatus,
+                  termUsed,
+                  urlKey: (result as any).urlKey,
+                  productId: (result as any).productId,
+                  variantId: (result as any).variantId,
+                  details: (result as any).details,
+                },
+                marketLink: `<${marketUrl}|Market>`,
+              });
             }
 
               // Always attach a market link even if pricing failed, so you can verify the match.
@@ -542,6 +659,12 @@ export async function POST(request: NextRequest) {
         }
       } else {
         console.log(`📦 Using cached price: ${productName} = $${marketPrice}`);
+        // Capture a per-item trace of cached prices too (helps verify we're actually covering all items)
+        marketDebug.items.push({
+          ...itemDebugBase,
+          decision: 'used_cached',
+          cachedMarketPrice: marketPrice,
+        });
       }
       if (marketPrice !== undefined && (!Number.isFinite(marketPrice) || marketPrice <= 0)) {
         marketPrice = undefined;
