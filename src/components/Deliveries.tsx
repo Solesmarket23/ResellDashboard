@@ -2604,8 +2604,17 @@ const DeliveriesNew: React.FC = () => {
                     <tr 
                       key={delivery.id}
                       data-delivery-id={delivery.id}
+                      onClick={() => setSelectedDelivery(delivery)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setSelectedDelivery(delivery);
+                        }
+                      }}
                       style={getHighlightStyle(highlightedDeliveryId === delivery.id)}
-                      className={`hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors duration-150 ${
+                      className={`cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors duration-150 ${
                         selectedDelivery?.id === delivery.id ? 'bg-cyan-50 dark:bg-cyan-900/20' : ''
                       } ${getHighlightBgClass(highlightedDeliveryId === delivery.id)}`}
                     >
@@ -2783,18 +2792,10 @@ const DeliveriesNew: React.FC = () => {
                       <td className="px-4 py-4">
                         <div className="flex items-center gap-2">
               <button
-                            onClick={() => setSelectedDelivery(delivery)}
-                            className={`p-2 rounded-lg transition-colors duration-200 ${
-                              selectedDelivery?.id === delivery.id 
-                                ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400' 
-                                : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400'
-                            }`}
-                            title="View details"
-                          >
-                            <ChevronDown className="w-4 h-4" />
-              </button>
-              <button
-                            onClick={() => copyShipmentData(delivery, delivery.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              copyShipmentData(delivery, delivery.id);
+                            }}
                             className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors duration-200 text-gray-500 dark:text-gray-400"
                             title="Copy shipment data"
                           >
@@ -2802,7 +2803,8 @@ const DeliveriesNew: React.FC = () => {
               </button>
                           {isArchivedDelivery(delivery) ? (
                             <button
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 setArchiveTarget(delivery);
                                 setConfirmArchiveOpen(true);
                               }}
@@ -2813,7 +2815,10 @@ const DeliveriesNew: React.FC = () => {
                             </button>
                           ) : (
                             <button
-                              onClick={() => requestArchive(delivery)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                requestArchive(delivery);
+                              }}
                               className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors duration-200 text-red-600 dark:text-red-400"
                               title="Archive entry"
                             >
