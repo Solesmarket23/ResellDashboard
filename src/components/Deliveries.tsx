@@ -81,6 +81,9 @@ const DeliveriesNew: React.FC = () => {
     enableWebSocket: false
   });
 
+  // Avoid showing misleading "0" counts on first paint while deliveries are still loading.
+  const statsLoading = loading && deliveries.length === 0;
+
   // UPS OAuth status
   const { isAuthenticated: upsOAuthConnected, isLoading: upsOAuthLoading, error: upsOAuthError } = useUPSOAuth();
 
@@ -2024,7 +2027,9 @@ const DeliveriesNew: React.FC = () => {
                   }}
                   className={`bg-white/10 backdrop-blur-sm rounded-lg p-4 text-left transition-all duration-200 ${
                     mapped ? 'cursor-pointer hover:bg-white/15' : 'cursor-default'
-                  } ${isActive ? 'ring-2 ring-blue-500/80 shadow-lg shadow-blue-500/20' : ''}`}
+                  } ${isActive ? 'ring-2 ring-blue-500/80 shadow-lg shadow-blue-500/20' : ''} ${
+                    statsLoading ? 'animate-pulse shadow-lg shadow-black/10' : ''
+                  }`}
                   title={mapped ? `Filter table: ${mapped.label}` : undefined}
                 >
                   <div className="flex items-center gap-2">
@@ -2032,7 +2037,7 @@ const DeliveriesNew: React.FC = () => {
                     <span className="text-white font-semibold">{stat.label}</span>
                   </div>
                   <p className="text-2xl font-bold text-white mt-1">
-                    {stat.getValue()}
+                    {statsLoading ? '…' : stat.getValue()}
                   </p>
                   {isActive ? (
                     <p className="text-xs text-blue-200 mt-2 font-semibold">
