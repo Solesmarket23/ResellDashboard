@@ -254,13 +254,19 @@ export class FedExTrackingAPI {
 
       // Determine current status:
       // Prefer derivedCode if present (more consistent), then statusCode, then statusDetail.code.
-      const currentStatus = this.mapFedExStatus(
+      let currentStatus = this.mapFedExStatus(
         (trackResults as any)?.statusDetail?.derivedCode ||
           (trackResults as any)?.statusCode ||
           (trackResults as any)?.statusDetail?.code ||
           'UNKNOWN',
         rawStatusText
       );
+      // If FedEx gives us an unfamiliar status code but we have scan events, infer status from the newest scan.
+      // This fixes cases where the top-level status code is "UNKNOWN"/non-mapped while scan text clearly indicates "Arrived", "In transit", etc.
+      const newestScanStatus = (updates[0]?.status as TrackingInfo['status'] | undefined) || undefined;
+      if (currentStatus === 'unknown' && newestScanStatus && newestScanStatus !== 'unknown') {
+        currentStatus = newestScanStatus;
+      }
       
       // Get delivery dates from dateAndTimes array (most reliable method)
       // Debug: Log all available date types from FedEx API
