@@ -1654,7 +1654,6 @@ const DeliveriesNew: React.FC = () => {
                         trackingNumber: extracted.trackingNumber || '',
                         carrier: extracted.carrierHint ? extracted.carrierHint : prev.carrier,
                       }));
-                      showNotification('Extracted tracking number from link', 'success');
                     }
                   }}
                   onChange={(e) => {
@@ -2406,22 +2405,6 @@ const DeliveriesNew: React.FC = () => {
                                 <span className="text-gray-400">•</span>
                                 <SizePill size={delivery.productSize} />
                               </div>
-                              {delivery.emailUrl ? (
-                                <div className="flex items-center gap-1">
-                                  <Mail className="w-3 h-3 text-blue-500" />
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      openOrderEmail(delivery);
-                                    }}
-                                    className="text-blue-500 hover:text-blue-400 transition-colors duration-200 text-xs font-semibold"
-                                    title="Open order confirmation email"
-                                  >
-                                    Open email
-                                  </button>
-                                </div>
-                              ) : null}
                               <div className="flex items-center gap-1">
                                 <span>{delivery.carrier} • </span>
                                 {delivery.trackingNumber ? (
@@ -2527,6 +2510,22 @@ const DeliveriesNew: React.FC = () => {
                                   </button>
                                 )}
                               </div>
+                              {delivery.emailUrl ? (
+                                <div className="mt-1 flex items-center gap-1">
+                                  <Mail className="w-3 h-3 text-blue-500" />
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openOrderEmail(delivery);
+                                    }}
+                                    className="text-blue-500 hover:text-blue-400 transition-colors duration-200 text-xs font-semibold"
+                                    title="Open order confirmation email"
+                                  >
+                                    Open email
+                                  </button>
+                                </div>
+                              ) : null}
                               <div className="flex items-start gap-2">
                                 <Calendar className="w-3 h-3 mt-1" />
                                 <div>{getDeliveryCell(delivery)}</div>
@@ -2832,28 +2831,13 @@ const DeliveriesNew: React.FC = () => {
                             <span className={`text-xs ${currentTheme.colors.textSecondary}`}>{delivery.productBrand}</span>
                             <SizePill size={delivery.productSize} />
                           </div>
-                          {delivery.emailUrl ? (
-                            <div className="mt-1 flex items-center gap-1">
-                              <Mail className="w-3 h-3 text-blue-500" />
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openOrderEmail(delivery);
-                                }}
-                                className="text-xs font-semibold text-blue-500 hover:text-blue-400 transition-colors"
-                                title="Open order confirmation email"
-                              >
-                                Open email
-                              </button>
-                            </div>
-                          ) : null}
                         </div>
                       </td>
                       
                       {/* Tracking */}
                       <td className="px-4 py-4">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-col items-start gap-1">
+                          <div className="flex items-center gap-2">
                           {delivery.trackingNumber ? (
                             <>
                               {(() => {
@@ -2939,6 +2923,23 @@ const DeliveriesNew: React.FC = () => {
                             </button>
                           ) : null}
               </div>
+                          {delivery.emailUrl ? (
+                            <div className="flex items-center gap-1">
+                              <Mail className="w-3 h-3 text-blue-500" />
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openOrderEmail(delivery);
+                                }}
+                                className="text-xs font-semibold text-blue-500 hover:text-blue-400 transition-colors"
+                                title="Open order confirmation email"
+                              >
+                                Open email
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
                       </td>
                       
                       {/* Status */}
