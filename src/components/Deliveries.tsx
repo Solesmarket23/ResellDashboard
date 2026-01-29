@@ -2125,7 +2125,7 @@ const DeliveriesNew: React.FC = () => {
                   setStatusOpen((v) => !v);
                   setCarrierOpen(false);
                 }}
-                className={`w-52 px-4 py-2 pr-12 border rounded-lg cursor-pointer transition-colors text-left focus:outline-none focus:ring-2 ${
+                className={`w-56 px-4 py-2 pr-12 border rounded-lg cursor-pointer transition-colors text-left whitespace-nowrap focus:outline-none focus:ring-2 ${
                   currentTheme.colors.border
                 } ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary} ${
                   currentTheme.name === 'Neon'
@@ -2135,7 +2135,9 @@ const DeliveriesNew: React.FC = () => {
                 aria-haspopup="listbox"
                 aria-expanded={statusOpen}
               >
-                {getOptionLabel(statusOptions, statusFilter)}
+                <span className="block truncate" title={getOptionLabel(statusOptions, statusFilter)}>
+                  {getOptionLabel(statusOptions, statusFilter)}
+                </span>
                 <ChevronDown
                   className={`pointer-events-none absolute right-5 top-1/2 -translate-y-1/2 w-4 h-4 ${
                     currentTheme.name === 'Neon' ? 'text-cyan-200/80' : 'text-gray-500'
@@ -2181,7 +2183,7 @@ const DeliveriesNew: React.FC = () => {
                   setCarrierOpen((v) => !v);
                   setStatusOpen(false);
                 }}
-                className={`w-44 px-4 py-2 pr-12 border rounded-lg cursor-pointer transition-colors text-left focus:outline-none focus:ring-2 ${
+                className={`w-44 px-4 py-2 pr-12 border rounded-lg cursor-pointer transition-colors text-left whitespace-nowrap focus:outline-none focus:ring-2 ${
                   currentTheme.colors.border
                 } ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary} ${
                   currentTheme.name === 'Neon'
@@ -2191,7 +2193,9 @@ const DeliveriesNew: React.FC = () => {
                 aria-haspopup="listbox"
                 aria-expanded={carrierOpen}
               >
-                {getOptionLabel(carrierOptions, carrierFilter)}
+                <span className="block truncate" title={getOptionLabel(carrierOptions, carrierFilter)}>
+                  {getOptionLabel(carrierOptions, carrierFilter)}
+                </span>
                 <ChevronDown
                   className={`pointer-events-none absolute right-5 top-1/2 -translate-y-1/2 w-4 h-4 ${
                     currentTheme.name === 'Neon' ? 'text-cyan-200/80' : 'text-gray-500'
