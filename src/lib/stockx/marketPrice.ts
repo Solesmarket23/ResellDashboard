@@ -148,7 +148,8 @@ function pickVariantIdBySize(variants: any[], size: string): string | null {
 function lowestAskFromVariant(variant: any): number | null {
   const std = parseStockXMoneyToDollars(variant?.lowestAskAmount);
   const flex = parseStockXMoneyToDollars(variant?.flexLowestAskAmount);
-  if (std !== null && flex !== null) return Math.min(std, flex);
+  // Prefer the standard "Lowest Ask" shown in most StockX UI surfaces.
+  // Fall back to flex-only ask if standard isn't available.
   return std ?? flex ?? null;
 }
 
