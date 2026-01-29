@@ -82,7 +82,26 @@ const DeliveriesNew: React.FC = () => {
   });
 
   // Avoid showing misleading "0" counts on first paint while deliveries are still loading.
+  // Also enforce a small minimum skeleton duration so the effect is actually noticeable.
   const statsLoading = loading && deliveries.length === 0;
+  const statsSkeletonStartRef = React.useRef<number>(Date.now());
+  const [showStatsSkeleton, setShowStatsSkeleton] = useState<boolean>(true);
+
+  useEffect(() => {
+    // When we enter a loading-with-empty state, show the skeleton immediately.
+    if (statsLoading) {
+      statsSkeletonStartRef.current = Date.now();
+      setShowStatsSkeleton(true);
+      return;
+    }
+
+    // When data arrives, keep the skeleton visible for at least 600ms total.
+    const elapsed = Date.now() - statsSkeletonStartRef.current;
+    const minMs = 600;
+    const wait = Math.max(0, minMs - elapsed);
+    const t = window.setTimeout(() => setShowStatsSkeleton(false), wait);
+    return () => window.clearTimeout(t);
+  }, [statsLoading]);
 
   // UPS OAuth status
   const { isAuthenticated: upsOAuthConnected, isLoading: upsOAuthLoading, error: upsOAuthError } = useUPSOAuth();
@@ -1863,7 +1882,7 @@ const DeliveriesNew: React.FC = () => {
                   className={`bg-white/10 backdrop-blur-sm rounded-lg p-4 text-left transition-all duration-200 ${
                     mapped ? 'cursor-pointer hover:bg-white/15' : 'cursor-default'
                   } ${isActive ? 'ring-2 ring-blue-500/80 shadow-lg shadow-blue-500/20' : ''} ${
-                    statsLoading ? 'animate-pulse shadow-lg shadow-black/10' : ''
+                    showStatsSkeleton ? 'shadow-xl shadow-black/30 ring-1 ring-white/10' : ''
                   }`}
                   title={mapped ? `Filter table: ${mapped.label}` : undefined}
                 >
@@ -1871,9 +1890,15 @@ const DeliveriesNew: React.FC = () => {
                     <Icon className={`w-5 h-5 ${stat.color}`} />
                     <span className="text-white font-semibold">{stat.label}</span>
                   </div>
-                  <p className="text-2xl font-bold text-white mt-1">
-                    {statsLoading ? '…' : stat.getValue()}
-                  </p>
+                  {showStatsSkeleton ? (
+                    <div className="mt-2">
+                      <div className="h-7 w-14 rounded bg-white/15 animate-pulse" />
+                    </div>
+                  ) : (
+                    <p className="text-2xl font-bold text-white mt-1">
+                      {stat.getValue()}
+                    </p>
+                  )}
                   {isActive ? (
                     <p className="text-xs text-blue-200 mt-2 font-semibold">
                       Table filtered
