@@ -2851,8 +2851,8 @@ const DeliveriesNew: React.FC = () => {
                       </td>
                       
                       {/* Status */}
-                      <td className="px-4 py-4">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(getDisplayStatus(delivery))}`}>
+                      <td className="px-4 py-4 min-w-[160px]">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ${getStatusColor(getDisplayStatus(delivery))}`}>
                           {formatStatus(getDisplayStatus(delivery))}
                         </span>
                       </td>
