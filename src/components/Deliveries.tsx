@@ -2200,7 +2200,11 @@ const DeliveriesNew: React.FC = () => {
                                       href={getFedExTrackingUrl(delivery.trackingNumber)}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      onClick={(e) => e.stopPropagation()}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setHighlightedDeliveryId(delivery.id);
+                                        setSelectedDelivery(delivery);
+                                      }}
                                       className="ml-1 inline-flex items-center text-gray-400 hover:text-blue-400 transition-colors"
                                       title="Open FedEx tracking in a new tab"
                                       aria-label="Open FedEx tracking"
@@ -2345,6 +2349,9 @@ const DeliveriesNew: React.FC = () => {
                                       href={getFedExTrackingUrl(selectedDelivery.trackingNumber)}
                                       target="_blank"
                                       rel="noopener noreferrer"
+                                      onClick={() => {
+                                        setHighlightedDeliveryId(selectedDelivery.id);
+                                      }}
                                       className="inline-flex items-center text-gray-400 hover:text-blue-400 transition-colors"
                                       title="Open FedEx tracking in a new tab"
                                       aria-label="Open FedEx tracking"
@@ -2604,6 +2611,10 @@ const DeliveriesNew: React.FC = () => {
                                 href={getFedExTrackingUrl(delivery.trackingNumber)}
                                 target="_blank"
                                 rel="noopener noreferrer"
+                                onClick={() => {
+                                  setHighlightedDeliveryId(delivery.id);
+                                  setSelectedDelivery(delivery);
+                                }}
                                 className="inline-flex items-center text-gray-400 hover:text-blue-400 transition-colors"
                                 title="Open FedEx tracking in a new tab"
                                 aria-label="Open FedEx tracking"
