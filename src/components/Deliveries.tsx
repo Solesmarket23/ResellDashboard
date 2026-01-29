@@ -2470,7 +2470,11 @@ const DeliveriesNew: React.FC = () => {
                                         e.stopPropagation();
                                         openSetTrackingForDelivery(delivery);
                                       }}
-                                      className="hover:text-blue-500 transition-colors duration-200 font-mono underline underline-offset-2"
+                                      className={`font-mono underline underline-offset-2 decoration-1 ${
+                                        currentTheme.name === 'Neon'
+                                          ? 'text-cyan-200/80 hover:text-cyan-100 decoration-cyan-300/40 hover:decoration-cyan-200/70'
+                                          : 'text-blue-600 hover:text-blue-500'
+                                      }`}
                                       title="Edit tracking number"
                                     >
                                       {delivery.trackingNumber}
@@ -2902,7 +2906,7 @@ const DeliveriesNew: React.FC = () => {
                                   invalid
                                     ? 'text-red-500 hover:text-red-400'
                                     : currentTheme.name === 'Neon'
-                                      ? 'text-cyan-300 hover:text-cyan-200'
+                                      ? 'text-cyan-200/80 hover:text-cyan-100 decoration-cyan-300/40 hover:decoration-cyan-200/70'
                                       : 'text-blue-600 hover:text-blue-500';
                                 return (
                               <button
@@ -2911,7 +2915,7 @@ const DeliveriesNew: React.FC = () => {
                                   e.stopPropagation();
                                   openSetTrackingForDelivery(delivery);
                                 }}
-                                className={`font-mono text-sm underline underline-offset-2 ${labelClass}`}
+                                className={`font-mono text-sm underline underline-offset-2 decoration-1 ${labelClass}`}
                                 title={invalid ? 'Invalid tracking — click to edit' : 'Edit tracking number'}
                               >
                                 {label}
