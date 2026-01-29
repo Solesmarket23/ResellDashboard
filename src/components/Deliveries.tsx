@@ -1253,6 +1253,12 @@ const DeliveriesNew: React.FC = () => {
 
       if (data?.marketPriceDebug) {
         console.log('📊 Slack marketPriceDebug:', data.marketPriceDebug);
+        const items = (data.marketPriceDebug as any)?.items;
+        if (Array.isArray(items)) {
+          console.log('📊 Slack marketPriceDebug.items:', items);
+        } else {
+          console.log('📊 Slack marketPriceDebug keys:', Object.keys(data.marketPriceDebug || {}));
+        }
       }
 
       if (data.sent) {
