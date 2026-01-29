@@ -1846,6 +1846,11 @@ const DeliveriesNew: React.FC = () => {
                   type="button"
                   onClick={() => {
                     if (!mapped) return;
+                    // Toggle behavior: clicking the active card clears the filter and shows the full table again.
+                    if (isActive) {
+                      setStatusFilter('all');
+                      return;
+                    }
                     setPresetNeedsTracking(false);
                     setPresetInvalidTracking(false);
                     setPresetArchived(false);
@@ -1883,7 +1888,7 @@ const DeliveriesNew: React.FC = () => {
       {/* Filters */}
       <div className={`${currentTheme.colors.cardBackground} rounded-lg p-6 border ${currentTheme.colors.border} mb-6`}>
         {activeStatusFilterLabel ? (
-          <div className={`mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border ${currentTheme.colors.border} px-3 py-2`}>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/10 backdrop-blur-sm px-3 py-2">
             <div className={`text-sm ${currentTheme.colors.textPrimary}`}>
               <span className="font-semibold">Table filtered to:</span> {activeStatusFilterLabel}{' '}
               <span className={`${currentTheme.colors.textSecondary}`}>({sortedDeliveries.length})</span>
@@ -1893,7 +1898,7 @@ const DeliveriesNew: React.FC = () => {
               onClick={() => {
                 setStatusFilter('all');
               }}
-              className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100"
+              className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-white/5 hover:bg-white/10 border border-white/10 text-white/90"
               title="Clear status filter"
             >
               Clear
