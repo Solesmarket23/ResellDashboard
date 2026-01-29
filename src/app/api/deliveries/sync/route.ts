@@ -15,6 +15,17 @@ function firstNonEmptyString(...vals: any[]): string | undefined {
   return undefined;
 }
 
+function normalizeLocationDisplay(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const s = raw.trim();
+  if (!s) return undefined;
+  const lower = s.toLowerCase();
+  if (lower === 'unknown' || lower === 'unknown destination' || lower === 'unknown origin') return undefined;
+  // Some carriers return placeholders like "N/A"
+  if (lower === 'n/a') return undefined;
+  return s;
+}
+
 function pickProductName(purchase: any): string {
   return (
     firstNonEmptyString(
@@ -462,10 +473,16 @@ export async function GET(request: NextRequest) {
           orderNumber: (purchase as any)?.orderNumber,
           trackingNumber: trackingMissing ? undefined : trackingStr,
         }),
-        origin: (hasValidLiveTracking ? liveTracking?.origin : undefined) || purchase.origin || 'Unknown',
+        origin:
+          normalizeLocationDisplay(hasValidLiveTracking ? liveTracking?.origin : undefined) ||
+          normalizeLocationDisplay(purchase.origin) ||
+          'US',
         // Destination is often not provided by carrier APIs in a clean "city/state" form.
-        // If we don't have a destination, show "Your Address" instead of "Unknown" for a better UX.
-        destination: (hasValidLiveTracking ? liveTracking?.destination : undefined) || purchase.destination || 'Your Address',
+        // If we don't have a destination (or it's a placeholder like "Unknown"), show "Your Address".
+        destination:
+          normalizeLocationDisplay(hasValidLiveTracking ? liveTracking?.destination : undefined) ||
+          normalizeLocationDisplay(purchase.destination) ||
+          'Your Address',
         lastUpdate:
           (hasValidLiveTracking ? liveTracking?.lastUpdate : undefined) ||
           firstNonEmptyString(purchase.updatedAt, purchase.lastUpdated, purchase.createdAt, purchase.purchaseDate) ||
@@ -858,8 +875,8 @@ export async function POST(request: NextRequest) {
           orderNumber: (purchase as any)?.orderNumber,
           trackingNumber: trackingMissing ? undefined : trackingStr,
         }),
-        origin: (hasValidLiveTracking ? liveTracking?.origin : undefined) || 'Unknown Origin',
-        destination: liveTracking?.destination || 'Your Address',
+        origin: normalizeLocationDisplay(hasValidLiveTracking ? liveTracking?.origin : undefined) || 'US',
+        destination: normalizeLocationDisplay(liveTracking?.destination) || 'Your Address',
         lastUpdate:
           (hasValidLiveTracking ? liveTracking?.lastUpdate : undefined) ||
           firstNonEmptyString(purchase.updatedAt, purchase.createdAt, purchase.purchaseDate) ||
