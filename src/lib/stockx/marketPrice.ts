@@ -127,11 +127,23 @@ export async function getStockXAccessToken(auth: StockXAuth): Promise<{ accessTo
 
 function pickVariantBySize(variants: any[], size: string): any | null {
   if (!Array.isArray(variants) || variants.length === 0) return null;
-  const wanted = String(size || '').trim();
-  if (wanted && wanted !== 'Unknown') {
+  const wantedRaw = String(size || '').trim();
+  const normalize = (s: unknown) =>
+    String(s ?? '')
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, '');
+  const wanted = normalize(wantedRaw);
+  if (wanted && wanted !== 'UNKNOWN') {
     const exact = variants.find((v: any) => {
       const variantSize = v.variantValue || v.size || v.sizeValue || v.shoeSize || v.displaySize;
-      return variantSize === wanted || variantSize === `US M ${wanted}` || variantSize === `US W ${wanted}`;
+      const candidate = normalize(variantSize);
+      if (!candidate) return false;
+      if (candidate === wanted) return true;
+      // Handle common StockX variants like "USM8.5" / "USW8.5" / "USM" etc.
+      if (candidate === `USM${wanted}` || candidate === `USW${wanted}`) return true;
+      if (wanted.length <= 4 && (candidate.endsWith(wanted) || candidate.includes(wanted))) return true; // letter sizes / short tokens
+      return false;
     });
     if (exact) return exact;
   }

@@ -41,14 +41,18 @@ function extractBrandFromProductName(productName: string): string {
   return firstWord || 'Unknown';
 }
 
-function normalizeStockXShoeSize(raw: unknown): string {
+function normalizeStockXSizeForLookup(raw: unknown): string {
   const s = String(raw ?? '').trim();
   if (!s) return 'Unknown';
   if (s.toLowerCase() === 'unknown') return 'Unknown';
-  // Prefer numeric shoe size if present: "US M 8.5" -> "8.5"
+  // If numeric size is present: "US M 8.5" -> "8.5", "US 6.5Y" -> "6.5"
   const m = s.match(/(\d+(?:\.\d+)?)/);
   if (m) return m[1];
-  return s.replace(/^US\s+[MW]\s+/i, '').trim();
+  // Apparel sizes: normalize to a simple token (S/M/L/XL/XXL/XXXL/XS) when possible.
+  const letter = s.match(/\b(XXXL|XXL|XL|XS|S|M|L)\b/i)?.[1];
+  if (letter) return letter.toUpperCase();
+  // Fallback: keep the raw token (prevents turning "US M" into an empty string)
+  return s;
 }
 
 function pickFirstString(...candidates: unknown[]): string | null {
@@ -520,7 +524,8 @@ export async function POST(request: NextRequest) {
 
       const productName = purchase.productName || purchase.product?.name || 'Unknown Product';
       const productSizeRaw = purchase.productSize || purchase.size || purchase.product?.size || 'Unknown';
-      const productSize = normalizeStockXShoeSize(productSizeRaw);
+      const productSizeDisplay = String(productSizeRaw ?? '').trim() || 'Unknown';
+      const productSizeLookup = normalizeStockXSizeForLookup(productSizeRaw);
       const styleId = purchase.styleId || purchase.style_id || null;
       const urlKey = extractStockXUrlKeyFromPurchase(purchase);
       const ids = extractStockXIdsFromPurchase(purchase);
@@ -599,7 +604,7 @@ export async function POST(request: NextRequest) {
         purchaseId,
         productName,
         productSizeRaw: String(productSizeRaw ?? ''),
-        normalizedSize: productSize,
+        normalizedSize: productSizeLookup,
         status,
         onTheWay,
         identifiers: {
@@ -656,7 +661,7 @@ export async function POST(request: NextRequest) {
             const result = await fetchMarketWithControls({
               auth,
               productName,
-              size: productSize,
+              size: productSizeLookup,
               styleId,
               urlKey,
               productId: ids.productId,
@@ -670,7 +675,7 @@ export async function POST(request: NextRequest) {
               const termUsed = (result as any).termUsed as string | undefined;
               const searchTerm = termUsed || styleId || productName;
               const marketUrl = stockxUrlKey
-                ? `https://stockx.com/${stockxUrlKey}${productSize ? `?size=${encodeURIComponent(productSize)}` : ''}`
+                ? `https://stockx.com/${stockxUrlKey}${productSizeLookup && productSizeLookup !== 'Unknown' ? `?size=${encodeURIComponent(productSizeLookup)}` : ''}`
                 : `https://stockx.com/search?s=${encodeURIComponent(searchTerm)}`;
               marketDebug.items.push({
                 ...itemDebugBase,
@@ -757,14 +762,14 @@ export async function POST(request: NextRequest) {
                 urlKey: stockxUrlKey || urlKey,
                 styleId,
                 productName,
-                size: productSize,
+                size: productSizeLookup,
               });
           }
         }
         }
       } else {
         console.log(`📦 Using cached price: ${productName} = $${marketPrice}`);
-        (purchase as any).__stockxLink = buildStockXSlackLink({ urlKey, styleId, productName, size: productSize });
+        (purchase as any).__stockxLink = buildStockXSlackLink({ urlKey, styleId, productName, size: productSizeLookup });
         // Capture a per-item trace of cached prices too (helps verify we're actually covering all items)
         marketDebug.items.push({
           ...itemDebugBase,
@@ -794,7 +799,7 @@ export async function POST(request: NextRequest) {
         purchaseId,
         productName,
         productBrand,
-        productSize,
+        productSize: productSizeDisplay,
         productImage,
         trackingNumber: trackingValue,
         carrier: liveTracking?.carrier || purchase.carrier || 'Unknown',
