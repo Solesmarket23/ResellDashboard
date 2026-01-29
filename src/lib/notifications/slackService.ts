@@ -181,65 +181,105 @@ export class SlackNotificationService {
       }
     });
 
-    // Summary stats (keep this Slack message focused on "Arriving Today")
+    // Summary stats
     const profitToday =
       typeof summary.projectedProfitToday === 'number' && Number.isFinite(summary.projectedProfitToday)
         ? summary.projectedProfitToday
         : null;
+    const profitTomorrow =
+      typeof summary.projectedProfitTomorrow === 'number' && Number.isFinite(summary.projectedProfitTomorrow)
+        ? summary.projectedProfitTomorrow
+        : null;
+    const profitOnTheWay =
+      typeof summary.projectedProfitOnTheWay === 'number' && Number.isFinite(summary.projectedProfitOnTheWay)
+        ? summary.projectedProfitOnTheWay
+        : null;
+    const marketOnTheWay =
+      typeof summary.marketValueOnTheWay === 'number' && Number.isFinite(summary.marketValueOnTheWay)
+        ? summary.marketValueOnTheWay
+        : null;
+    const purchaseOnTheWay =
+      typeof summary.purchaseCostOnTheWay === 'number' && Number.isFinite(summary.purchaseCostOnTheWay)
+        ? summary.purchaseCostOnTheWay
+        : null;
+
     blocks.push({
       type: 'section',
       fields: [
-        {
-          type: 'mrkdwn',
-          text: `*Arriving Today:*\n🚚 ${summary.arrivingToday}`
-        },
-        ...(profitToday !== null
-          ? [
-              {
-                type: 'mrkdwn',
-                text: `*Projected Profit (Today):*\n💰 $${profitToday.toFixed(2)}`
-              }
-            ]
-          : [])
-      ]
+        { type: 'mrkdwn', text: `*Arriving Today:*\n🚚 ${summary.arrivingToday}` },
+        { type: 'mrkdwn', text: `*Arriving Tomorrow:*\n📅 ${summary.arrivingTomorrow}` },
+        { type: 'mrkdwn', text: `*Arriving This Week:*\n🗓️ ${summary.arrivingThisWeek}` },
+        { type: 'mrkdwn', text: `*In Transit:*\n📦 ${summary.inTransit}` },
+      ],
     });
+
+    const moneyFields: any[] = [];
+    if (profitOnTheWay !== null) {
+      moneyFields.push({ type: 'mrkdwn', text: `*Projected Profit (On the way):*\n💰 $${profitOnTheWay.toFixed(2)}` });
+    }
+    if (marketOnTheWay !== null) {
+      moneyFields.push({ type: 'mrkdwn', text: `*Market Value (On the way):*\n📈 $${marketOnTheWay.toFixed(2)}` });
+    }
+    if (purchaseOnTheWay !== null) {
+      moneyFields.push({ type: 'mrkdwn', text: `*Purchase Cost (On the way):*\n🧾 $${purchaseOnTheWay.toFixed(2)}` });
+    }
+    if (profitTomorrow !== null) {
+      moneyFields.push({ type: 'mrkdwn', text: `*Projected Profit (Tomorrow):*\n💰 $${profitTomorrow.toFixed(2)}` });
+    }
+    if (profitToday !== null) {
+      moneyFields.push({ type: 'mrkdwn', text: `*Projected Profit (Today):*\n💰 $${profitToday.toFixed(2)}` });
+    }
+
+    if (moneyFields.length) {
+      blocks.push({ type: 'section', fields: moneyFields.slice(0, 10) });
+    }
+
+    if (typeof summary.marketPriceNote === 'string' && summary.marketPriceNote.trim()) {
+      blocks.push({
+        type: 'context',
+        elements: [{ type: 'mrkdwn', text: `_${summary.marketPriceNote.trim()}_` }],
+      });
+    }
 
     blocks.push({ type: 'divider' });
 
-    // Items arriving today
-    if (summary.arrivingToday > 0) {
+    // On the way (all shipments)
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: '*On the way (all shipments)*' },
+    });
+
+    const onTheWay = summary.deliveries.filter((d) => {
+      const s = String(d.status || '').toLowerCase();
+      return s === 'in_transit' || s === 'shipped' || s === 'out_for_delivery';
+    });
+
+    if (!onTheWay.length) {
       blocks.push({
         type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: '*🚚 Arriving Today*'
-        }
+        text: { type: 'mrkdwn', text: '_No shipments currently on the way._' },
       });
-
-      const today = new Date().toISOString().split('T')[0];
-      const todayDeliveries = summary.deliveries.filter(d => 
-        d.estimatedDelivery === today || d.status === 'out_for_delivery'
-      );
-
-      todayDeliveries.forEach(delivery => {
+    } else {
+      onTheWay.forEach((delivery) => {
+        const eta = delivery.estimatedDelivery && delivery.estimatedDelivery !== 'TBD' ? delivery.estimatedDelivery : 'TBD';
         const money = this.formatMoneyLine({
           purchasePrice: (delivery as any).purchasePrice,
           marketPrice: (delivery as any).marketPrice,
           estimatedProfit: (delivery as any).estimatedProfit,
         });
-        const profitText = money.text ? `\n  ${money.text}` : '';
+        const moneyLine = money.text ? `\n  ${money.text}` : '';
         const trackingLink = this.formatTrackingLink(delivery.trackingNumber, delivery.carrier);
         const links = [delivery.purchaseLink, (delivery as any).gmailLink, (delivery as any).stockxLink, delivery.marketLink]
           .filter(Boolean)
           .join(' | ');
         const linksLine = links ? `\n  Links: ${links}` : '';
-        
+
         const section: any = {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `• *${delivery.productName}* (${delivery.productBrand})\n  Size: ${delivery.productSize} | ${delivery.carrier}: ${trackingLink}${profitText}${linksLine}`
-          }
+            text: `• *${delivery.productName}* (${delivery.productBrand})\n  Size: ${delivery.productSize} | ETA: ${eta}\n  ${delivery.carrier}: ${trackingLink}${moneyLine}${linksLine}`,
+          },
         };
         if (typeof (delivery as any).productImage === 'string' && (delivery as any).productImage.startsWith('https://')) {
           section.accessory = {
@@ -250,9 +290,9 @@ export class SlackNotificationService {
         }
         blocks.push(section);
       });
-
-      blocks.push({ type: 'divider' });
     }
+
+    blocks.push({ type: 'divider' });
 
     // Footer
     blocks.push({
