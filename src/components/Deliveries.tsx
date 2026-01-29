@@ -81,27 +81,57 @@ const DeliveriesNew: React.FC = () => {
     enableWebSocket: false
   });
 
-  // Avoid showing misleading "0" counts on first paint while deliveries are still loading.
-  // Also enforce a small minimum skeleton duration so the effect is actually noticeable.
-  const statsLoading = loading && deliveries.length === 0;
+  // ---- Dashboard stats loading UX ----
+  // On reload, avoid flashing "0" counts while deliveries are hydrating.
+  // If we have last-known values, show them immediately; otherwise keep a shimmer during an initial grace window.
+  const hasDeliveries = deliveries.length > 0;
+  const statsCacheKey = user?.uid ? `deliveriesStatsCache_${user.uid}` : null;
+  const [cachedStatValues, setCachedStatValues] = useState<Record<string, number> | null>(null);
+  const [statsGraceOver, setStatsGraceOver] = useState(false);
   const statsSkeletonStartRef = React.useRef<number>(Date.now());
   const [showStatsSkeleton, setShowStatsSkeleton] = useState<boolean>(true);
 
   useEffect(() => {
-    // When we enter a loading-with-empty state, show the skeleton immediately.
-    if (statsLoading) {
+    if (!statsCacheKey || typeof window === 'undefined') return;
+    try {
+      const raw = localStorage.getItem(statsCacheKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      const values = parsed?.values;
+      if (values && typeof values === 'object') {
+        setCachedStatValues(values as Record<string, number>);
+      }
+    } catch {
+      // ignore cache parse errors
+    }
+  }, [statsCacheKey]);
+
+  useEffect(() => {
+    const graceMs = 5000;
+    const t = window.setTimeout(() => setStatsGraceOver(true), graceMs);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  const shouldShowStatsSkeleton = useMemo(() => {
+    if (hasDeliveries) return false;
+    if (cachedStatValues) return false;
+    if (loading) return true;
+    return !statsGraceOver;
+  }, [cachedStatValues, hasDeliveries, loading, statsGraceOver]);
+
+  useEffect(() => {
+    if (shouldShowStatsSkeleton) {
       statsSkeletonStartRef.current = Date.now();
       setShowStatsSkeleton(true);
       return;
     }
-
-    // When data arrives, keep the skeleton visible for at least 600ms total.
+    // When we're done, keep the skeleton visible for at least 600ms total (prevents flicker).
     const elapsed = Date.now() - statsSkeletonStartRef.current;
     const minMs = 600;
     const wait = Math.max(0, minMs - elapsed);
     const t = window.setTimeout(() => setShowStatsSkeleton(false), wait);
     return () => window.clearTimeout(t);
-  }, [statsLoading]);
+  }, [shouldShowStatsSkeleton]);
 
   // UPS OAuth status
   const { isAuthenticated: upsOAuthConnected, isLoading: upsOAuthLoading, error: upsOAuthError } = useUPSOAuth();
@@ -859,6 +889,24 @@ const DeliveriesNew: React.FC = () => {
       getValue: () => deliveries.filter(d => d.status === 'exception').length
     }
   };
+
+  // Cache last-known stat values so reloads show stable numbers immediately (no "0 flash" while hydrating).
+  useEffect(() => {
+    if (!statsCacheKey || typeof window === 'undefined') return;
+    if (!hasDeliveries) return; // don't overwrite good cache with a temporary empty list
+    try {
+      const values: Record<string, number> = {};
+      Object.keys(availableStats).forEach((id) => {
+        const stat = (availableStats as any)[id];
+        if (stat?.getValue) values[id] = Number(stat.getValue()) || 0;
+      });
+      localStorage.setItem(statsCacheKey, JSON.stringify({ updatedAt: Date.now(), values }));
+      setCachedStatValues(values);
+    } catch {
+      // ignore cache write errors
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statsCacheKey, hasDeliveries, deliveries]);
 
   const statCardFilterMap: Record<string, { statusFilter: string; label: string }> = {
     arriving_today: { statusFilter: 'today', label: 'Arriving Today' },
@@ -1903,7 +1951,7 @@ const DeliveriesNew: React.FC = () => {
                     </div>
                   ) : (
                     <p className="text-2xl font-bold text-white mt-1">
-                      {stat.getValue()}
+                      {hasDeliveries ? stat.getValue() : (cachedStatValues?.[statId] ?? 0)}
                     </p>
                   )}
                   {isActive ? (
