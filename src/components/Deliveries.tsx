@@ -11,7 +11,7 @@ import { TrackingInfo } from '../lib/tracking/trackingService';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase/firebase';
 import { deliveryArrivalLogger } from '../lib/delivery/arrivalLogger';
-import { formatDisplayDate } from '../lib/utils/dateUtils';
+import { formatDisplayDate, formatShortDate, parseLocalDate } from '../lib/utils/dateUtils';
 import UPSOAuthButton from './UPSOAuthButton';
 import { useUPSOAuth } from '../lib/hooks/useUPSOAuth';
 import ImagePreviewModal from './ImagePreviewModal';
@@ -745,6 +745,57 @@ const DeliveriesNew: React.FC = () => {
     const [yy, mm, dd] = s.split('-').map((n) => Number(n));
     if (!yy || !mm || !dd) return null;
     return new Date(yy, mm - 1, dd);
+  };
+
+  const getDeliveryCell = (delivery: DeliveryItem) => {
+    // Delivered: show delivered date (when available)
+    if (delivery.status === 'delivered') {
+      const d = delivery.actualDelivery ? parseLocalDate(delivery.actualDelivery) : null;
+      const day = d ? d.toLocaleDateString('en-US', { weekday: 'short' }) : null;
+      return (
+        <div>
+          <div className="font-semibold">
+            {d ? `Delivered • ${day}` : 'Delivered'}
+          </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            {delivery.actualDelivery ? formatShortDate(delivery.actualDelivery) : 'Date not provided'}
+          </div>
+        </div>
+      );
+    }
+
+    // No ETA: keep TBD and show note prominently
+    if (!delivery.estimatedDelivery || delivery.estimatedDelivery === 'TBD') {
+      return (
+        <div>
+          <div className="font-semibold">TBD</div>
+          {delivery.statusNote ? (
+            <div className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-48">
+              {delivery.statusNote}
+            </div>
+          ) : (
+            <div className="text-xs text-gray-500 dark:text-gray-400">No ETA yet</div>
+          )}
+        </div>
+      );
+    }
+
+    // ETA date: show a relative label + short date
+    const etaDate = parseLocalDate(delivery.estimatedDelivery);
+    const etaYmd = toLocalYmd(etaDate);
+    const todayYmd = toLocalYmd(new Date());
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowYmd = toLocalYmd(tomorrow);
+    const label =
+      etaYmd === todayYmd ? 'Today' : etaYmd === tomorrowYmd ? 'Tomorrow' : etaDate.toLocaleDateString('en-US', { weekday: 'short' });
+
+    return (
+      <div>
+        <div className="font-semibold">{label}</div>
+        <div className="text-xs text-gray-500 dark:text-gray-400">{formatShortDate(delivery.estimatedDelivery)}</div>
+      </div>
+    );
   };
 
   const availableStats = {
@@ -2323,17 +2374,10 @@ const DeliveriesNew: React.FC = () => {
                                   </button>
                                 )}
                               </div>
-                              <div className="flex items-center gap-1">
-                                <Calendar className="w-3 h-3" />
-                                <span>
-                      {delivery.status === 'delivered' && delivery.actualDelivery
-                        ? `Delivered ${formatDisplayDate(delivery.actualDelivery)}`
-                        : delivery.estimatedDelivery === 'TBD'
-                        ? (delivery.statusNote ? `Est. TBD • ${delivery.statusNote}` : 'Est. TBD')
-                        : `Est. ${formatDisplayDate(delivery.estimatedDelivery)}`
-                      }
-                    </span>
-                  </div>
+                              <div className="flex items-start gap-2">
+                                <Calendar className="w-3 h-3 mt-1" />
+                                <div>{getDeliveryCell(delivery)}</div>
+                              </div>
                   </div>
                 </div>
                 
@@ -2712,12 +2756,7 @@ const DeliveriesNew: React.FC = () => {
                       {/* Delivery */}
                       <td className="px-4 py-4">
                         <div className={`text-sm ${currentTheme.colors.textPrimary}`}>
-                          {delivery.status === 'delivered' && delivery.actualDelivery
-                            ? `Delivered ${formatDisplayDate(delivery.actualDelivery)}`
-                            : delivery.estimatedDelivery === 'TBD'
-                            ? (delivery.statusNote ? `TBD • ${delivery.statusNote}` : 'TBD')
-                            : formatDisplayDate(delivery.estimatedDelivery)
-                          }
+                          {getDeliveryCell(delivery)}
                         </div>
                       </td>
                       
