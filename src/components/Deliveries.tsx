@@ -670,32 +670,8 @@ const DeliveriesNew: React.FC = () => {
     }
   };
 
-  // Persist the active highlight across navigation/back/refreshes for this user.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!user?.uid) return;
-    const key = `deliveriesHighlighted_${user.uid}`;
-    try {
-      const saved = localStorage.getItem(key);
-      if (saved && !highlightedDeliveryId) setHighlightedDeliveryId(saved);
-    } catch {
-      // ignore
-    }
-    // Only run when user becomes available
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.uid]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!user?.uid) return;
-    const key = `deliveriesHighlighted_${user.uid}`;
-    try {
-      if (highlightedDeliveryId) localStorage.setItem(key, highlightedDeliveryId);
-      else localStorage.removeItem(key);
-    } catch {
-      // ignore
-    }
-  }, [highlightedDeliveryId, user?.uid]);
+  // NOTE: Do not persist highlighted row across browser reloads.
+  // (Users reported reloads should start with no highlighted entry.)
 
   const handleDeliveryImageClick = (delivery: DeliveryItem) => {
     if (!delivery.productImage) return;
@@ -1463,12 +1439,8 @@ const DeliveriesNew: React.FC = () => {
     }
   }, [presetArchived]);
 
-  // Auto-select first delivery if none selected
-  useEffect(() => {
-    if (sortedDeliveries.length > 0 && !selectedDelivery) {
-      setSelectedDelivery(sortedDeliveries[0]);
-    }
-  }, [selectedDelivery, sortedDeliveries]);
+  // NOTE: Do not auto-select a row on load.
+  // (Users want reloads to start with no selected/highlighted entry.)
 
   // Load customizable stats settings from Firebase
   useEffect(() => {
