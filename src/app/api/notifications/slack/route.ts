@@ -51,6 +51,37 @@ function normalizeStockXShoeSize(raw: unknown): string {
   return s.replace(/^US\s+[MW]\s+/i, '').trim();
 }
 
+function pickFirstString(...candidates: unknown[]): string | null {
+  for (const c of candidates) {
+    if (typeof c === 'string') {
+      const s = c.trim();
+      if (s) return s;
+    }
+  }
+  return null;
+}
+
+function pickProductImageUrl(purchase: any): string | undefined {
+  const raw = pickFirstString(
+    purchase?.productImage,
+    purchase?.productImageUrl,
+    purchase?.image,
+    purchase?.imageUrl,
+    purchase?.product?.image,
+    purchase?.product?.imageUrl,
+    purchase?.product?.image_url,
+    purchase?.product?.thumbnail,
+    purchase?.product?.thumbnailUrl,
+    purchase?.product?.thumb,
+    Array.isArray(purchase?.product?.images) ? purchase.product.images[0] : null,
+    Array.isArray(purchase?.images) ? purchase.images[0] : null
+  );
+  if (!raw) return undefined;
+  // Slack image accessories must be publicly reachable; require https.
+  if (!raw.startsWith('https://')) return undefined;
+  return raw;
+}
+
 function buildGmailEmailUrl(args: { emailId?: unknown; orderNumber?: unknown; trackingNumber?: unknown }): string | null {
   const emailId = typeof args.emailId === 'string' ? args.emailId.trim() : '';
   if (emailId && !emailId.startsWith('manual:')) {
@@ -299,36 +330,39 @@ export async function POST(request: NextRequest) {
       (liveTrackingData || []).map((lt: any) => [String(lt?.trackingNumber || '').trim(), lt])
     );
 
+    const isClearlyPublicUrl = (raw: string): boolean => {
+      const s = (raw || '').trim().toLowerCase();
+      if (!s) return false;
+      return !(s.includes('localhost') || s.includes('127.0.0.1') || s.includes('ngrok'));
+    };
+
+    const sanitizeBaseUrl = (raw: string): string | null => {
+      const s = String(raw || '').trim();
+      if (!s) return null;
+      const withProto = s.startsWith('http://') || s.startsWith('https://') ? s : `https://${s}`;
+      if (!isClearlyPublicUrl(withProto)) return null;
+      // strip trailing slash
+      return withProto.replace(/\/+$/, '');
+    };
+
     const getBaseUrl = () => {
       const host = request.headers.get('host') || '';
       if (host.includes('solesmarket.com')) return 'https://www.solesmarket.com';
-      // Slack links must be publicly reachable. If we're on localhost or an ngrok host,
-      // prefer an explicit public base URL (or default to production).
-      if (host.includes('localhost') || host.includes('127.0.0.1') || host.includes('ngrok')) {
-        const explicit =
-          process.env.SLACK_LINK_BASE_URL ||
-          process.env.NEXT_PUBLIC_BASE_URL ||
-          process.env.NEXT_PUBLIC_APP_URL ||
-          process.env.APP_URL ||
-          '';
-        if (explicit) {
-          if (!explicit.startsWith('http://') && !explicit.startsWith('https://')) return `https://${explicit}`;
-          return explicit;
-        }
-        return 'https://www.solesmarket.com';
-      }
-      const envUrl =
+
+      // Slack links must be publicly reachable. Prefer an explicit public base URL,
+      // but NEVER allow localhost/ngrok to slip into Slack messages.
+      const explicit =
+        process.env.SLACK_PUBLIC_BASE_URL ||
+        process.env.SLACK_LINK_BASE_URL ||
         process.env.NEXT_PUBLIC_BASE_URL ||
         process.env.NEXT_PUBLIC_APP_URL ||
         process.env.APP_URL ||
-        process.env.VERCEL_URL ||
         '';
-      if (envUrl) {
-        if (!envUrl.startsWith('http://') && !envUrl.startsWith('https://')) return `https://${envUrl}`;
-        return envUrl;
-      }
-      const proto = request.headers.get('x-forwarded-proto') || 'https';
-      return host ? `${proto}://${host}` : 'http://localhost:3000';
+      const sanitized = sanitizeBaseUrl(explicit);
+      if (sanitized) return sanitized;
+
+      // Default to production if we can't determine a safe public base URL.
+      return 'https://www.solesmarket.com';
     };
     const baseUrl = getBaseUrl();
 
@@ -489,6 +523,7 @@ export async function POST(request: NextRequest) {
       const ids = extractStockXIdsFromPurchase(purchase);
       const purchaseId = String(purchase.id || purchase.purchaseId || purchase.orderNumber || trackingValue || '').trim();
       const onTheWay = isOnTheWayStatus(status);
+      const productImage = pickProductImageUrl(purchase);
       const orderNumber = purchase.orderNumber || purchase.order_number || purchase.orderId;
       const emailUrl = buildGmailEmailUrl({
         emailId: (purchase as any)?.emailId || (purchase as any)?.email_id || (purchase as any)?.gmailEmailId,
@@ -731,6 +766,7 @@ export async function POST(request: NextRequest) {
         productName,
         productBrand,
         productSize,
+        productImage,
         trackingNumber: trackingValue,
         carrier: liveTracking?.carrier || purchase.carrier || 'Unknown',
         estimatedDelivery,

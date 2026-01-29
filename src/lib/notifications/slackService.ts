@@ -21,6 +21,7 @@ export interface DeliverySummary {
     productName: string;
     productBrand: string;
     productSize: string;
+    productImage?: string;
     trackingNumber: string;
     carrier: string;
     estimatedDelivery: string;
@@ -299,7 +300,7 @@ export class SlackNotificationService {
           .join(' | ');
         const linksLine = links ? `\n  Links: ${links}` : '';
 
-        blocks.push({
+        const section: any = {
           type: 'section',
           text: {
             type: 'mrkdwn',
@@ -309,7 +310,15 @@ export class SlackNotificationService {
               `  ${delivery.carrier}: ${trackingLink}\n` +
               `  ${moneyLine}${linksLine}`
           }
-        });
+        };
+        if (typeof delivery.productImage === 'string' && delivery.productImage.startsWith('https://')) {
+          section.accessory = {
+            type: 'image',
+            image_url: delivery.productImage,
+            alt_text: String(delivery.productName || 'Product').slice(0, 200),
+          };
+        }
+        blocks.push(section);
       }
 
       const remaining = onTheWay.length - shown.length;
@@ -350,13 +359,21 @@ export class SlackNotificationService {
           .join(' | ');
         const linksLine = links ? `\n  Links: ${links}` : '';
         
-        blocks.push({
+        const section: any = {
           type: 'section',
           text: {
             type: 'mrkdwn',
             text: `• *${delivery.productName}* (${delivery.productBrand})\n  Size: ${delivery.productSize} | ${delivery.carrier}: ${trackingLink}${profitText}${linksLine}`
           }
-        });
+        };
+        if (typeof (delivery as any).productImage === 'string' && (delivery as any).productImage.startsWith('https://')) {
+          section.accessory = {
+            type: 'image',
+            image_url: (delivery as any).productImage,
+            alt_text: String(delivery.productName || 'Product').slice(0, 200),
+          };
+        }
+        blocks.push(section);
       });
 
       blocks.push({ type: 'divider' });
@@ -393,13 +410,21 @@ export class SlackNotificationService {
           .join(' | ');
         const linksLine = links ? `\n  Links: ${links}` : '';
         
-        blocks.push({
+        const section: any = {
           type: 'section',
           text: {
             type: 'mrkdwn',
             text: `• *${delivery.productName}* (${delivery.productBrand})\n  Size: ${delivery.productSize} | ${delivery.carrier}: ${trackingLink}${profitText}${linksLine}`
           }
-        });
+        };
+        if (typeof (delivery as any).productImage === 'string' && (delivery as any).productImage.startsWith('https://')) {
+          section.accessory = {
+            type: 'image',
+            image_url: (delivery as any).productImage,
+            alt_text: String(delivery.productName || 'Product').slice(0, 200),
+          };
+        }
+        blocks.push(section);
       });
 
       blocks.push({ type: 'divider' });
@@ -450,13 +475,21 @@ export class SlackNotificationService {
           .join(' | ');
         const linksLine = links ? `\n  Links: ${links}` : '';
         
-        blocks.push({
+        const section: any = {
           type: 'section',
           text: {
             type: 'mrkdwn',
             text: `• *${delivery.productName}* (${delivery.productBrand})\n  Size: ${delivery.productSize} | ${delivery.carrier}: ${trackingLink} | ETA: ${etaFormatted}${profitText}${linksLine}`
           }
-        });
+        };
+        if (typeof (delivery as any).productImage === 'string' && (delivery as any).productImage.startsWith('https://')) {
+          section.accessory = {
+            type: 'image',
+            image_url: (delivery as any).productImage,
+            alt_text: String(delivery.productName || 'Product').slice(0, 200),
+          };
+        }
+        blocks.push(section);
       });
 
       blocks.push({ type: 'divider' });
