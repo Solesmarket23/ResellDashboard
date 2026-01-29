@@ -319,8 +319,13 @@ const DeliveriesNew: React.FC = () => {
     }
   };
 
-  const getFedExTrackingUrl = (trackingNumber: string) =>
-    `https://www.fedex.com/fedextrack/?trknbr=${encodeURIComponent(trackingNumber)}`;
+  const getFedExTrackingUrl = (rawTracking: string) => {
+    // Sometimes the stored "tracking" is actually a full FedEx/UPS URL or includes extra query params
+    // (e.g. "888169917500&trkqual=..."). Always extract the real tracking number first.
+    const extracted = extractTrackingNumberFromText(String(rawTracking || '')).trackingNumber;
+    const tn = extracted || String(rawTracking || '').trim();
+    return `https://www.fedex.com/fedextrack/?trknbr=${encodeURIComponent(tn)}`;
+  };
 
   const extractTrackingNumberFromText = (raw: string): { trackingNumber: string | null; carrierHint?: string } => {
     const text = String(raw || '').trim();
