@@ -732,7 +732,7 @@ export async function POST(request: NextRequest) {
               const termUsed = (result as any).termUsed as string | undefined;
               const searchTerm = termUsed || styleId || productName;
               const marketUrl = stockxUrlKey
-                ? `https://stockx.com/${stockxUrlKey}${productSize ? `?size=${encodeURIComponent(productSize)}` : ''}`
+                ? `https://stockx.com/${stockxUrlKey}${productSizeLookup && productSizeLookup !== 'Unknown' ? `?size=${encodeURIComponent(productSizeLookup)}` : ''}`
                 : `https://stockx.com/search?s=${encodeURIComponent(searchTerm)}`;
               // User-requested behavior: If live fetch fails, DO NOT fall back to cached.
               marketDebug.items.push({
