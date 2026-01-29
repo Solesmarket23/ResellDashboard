@@ -732,6 +732,21 @@ const DeliveriesNew: React.FC = () => {
   };
 
   // Stats configuration
+  const toLocalYmd = (d: Date): string => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  const parseYmdAsLocalDate = (ymd: string): Date | null => {
+    const s = String(ymd || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+    const [yy, mm, dd] = s.split('-').map((n) => Number(n));
+    if (!yy || !mm || !dd) return null;
+    return new Date(yy, mm - 1, dd);
+  };
+
   const availableStats = {
     total: {
       id: 'total',
@@ -767,7 +782,7 @@ const DeliveriesNew: React.FC = () => {
       icon: Calendar,
       color: 'text-red-400',
       getValue: () => {
-        const today = new Date().toISOString().split('T')[0];
+        const today = toLocalYmd(new Date());
         return deliveries.filter(d => d.estimatedDelivery === today || d.status === 'out_for_delivery').length;
       }
     },
@@ -779,7 +794,7 @@ const DeliveriesNew: React.FC = () => {
       getValue: () => {
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
-        const tomorrowStr = tomorrow.toISOString().split('T')[0];
+        const tomorrowStr = toLocalYmd(tomorrow);
         return deliveries.filter(d => d.estimatedDelivery === tomorrowStr).length;
       }
     },
@@ -789,12 +804,15 @@ const DeliveriesNew: React.FC = () => {
       icon: Calendar,
       color: 'text-purple-400',
       getValue: () => {
-        const today = new Date();
-        const weekFromNow = new Date(today);
-        weekFromNow.setDate(weekFromNow.getDate() + 7);
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(start);
+        end.setDate(end.getDate() + 7);
         return deliveries.filter(d => {
-          const deliveryDate = new Date(d.estimatedDelivery);
-          return deliveryDate >= today && deliveryDate <= weekFromNow && d.status !== 'delivered';
+          if (d.status === 'delivered') return false;
+          const dd = parseYmdAsLocalDate(d.estimatedDelivery);
+          if (!dd) return false;
+          return dd >= start && dd <= end;
         }).length;
       }
     },
@@ -1148,7 +1166,26 @@ const DeliveriesNew: React.FC = () => {
       // "Shipped" is used as an "active shipments" view: include common in-progress states plus unknown.
       (statusFilter === 'shipped'
         ? delivery.status !== 'delivered'
-        : delivery.status === statusFilter);
+        : statusFilter === 'today'
+          ? (delivery.estimatedDelivery === toLocalYmd(new Date()) || delivery.status === 'out_for_delivery')
+          : statusFilter === 'tomorrow'
+            ? (() => {
+                const t = new Date();
+                t.setDate(t.getDate() + 1);
+                return delivery.estimatedDelivery === toLocalYmd(t);
+              })()
+            : statusFilter === 'this_week'
+              ? (() => {
+                  if (delivery.status === 'delivered') return false;
+                  const start = new Date();
+                  start.setHours(0, 0, 0, 0);
+                  const end = new Date(start);
+                  end.setDate(end.getDate() + 7);
+                  const dd = parseYmdAsLocalDate(delivery.estimatedDelivery);
+                  if (!dd) return false;
+                  return dd >= start && dd <= end;
+                })()
+              : delivery.status === statusFilter);
     const matchesCarrier = carrierFilter === 'all' || delivery.carrier === carrierFilter;
 
     const anyPresetOn = presetNeedsTracking || presetInvalidTracking;
