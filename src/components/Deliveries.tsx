@@ -3150,7 +3150,7 @@ const DeliveriesNew: React.FC = () => {
         {/* Table View: Details Modal */}
         {viewMode === 'table' && selectedDelivery && detailsModalOpen && (
           <div
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-md p-4"
             role="dialog"
             aria-modal="true"
             aria-label="Delivery details"
@@ -3159,16 +3159,123 @@ const DeliveriesNew: React.FC = () => {
               if (e.target === e.currentTarget) setDetailsModalOpen(false);
             }}
           >
-            <div className={`${currentTheme.colors.cardBackground} w-full max-w-4xl rounded-xl border ${currentTheme.colors.border} overflow-hidden shadow-2xl`}>
+            <div
+              className={`w-full max-w-4xl rounded-xl border overflow-hidden shadow-2xl ${
+                currentTheme.name === 'Neon'
+                  ? 'bg-gray-900/95 border-cyan-500/30'
+                  : `${currentTheme.colors.cardBackground} ${currentTheme.colors.border}`
+              }`}
+            >
               <div className="p-4 border-b border-gray-200 dark:border-gray-700">
                 <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary} truncate`}>
-                      {selectedDelivery.productName}
-                    </h3>
-                    <p className={`text-sm ${currentTheme.colors.textSecondary} mt-1 truncate`}>
-                      {selectedDelivery.productBrand} • Size {selectedDelivery.productSize} • {selectedDelivery.carrier}
-                    </p>
+                  <div className="min-w-0 flex items-start gap-3">
+                    {/* Product Image */}
+                    {selectedDelivery.productImage ? (
+                      <button
+                        type="button"
+                        onClick={() => handleDeliveryImageClick(selectedDelivery)}
+                        className={`relative w-14 h-14 rounded-xl flex-shrink-0 overflow-hidden flex items-center justify-center cursor-pointer transition-all duration-300 hover:scale-[1.02] ${
+                          currentTheme.name === 'Neon'
+                            ? 'ring-2 ring-white/10 hover:ring-cyan-400'
+                            : 'ring-2 ring-gray-200 hover:ring-blue-400 shadow-md'
+                        }`}
+                        title="Click to preview image"
+                        aria-label={`Preview image for ${selectedDelivery.productName}`}
+                      >
+                        <img
+                          src={selectedDelivery.productImage}
+                          alt={selectedDelivery.productName}
+                          className="w-full h-full object-cover rounded-xl"
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            if (target.getAttribute('data-fallback') !== '1') {
+                              target.setAttribute('data-fallback', '1');
+                              target.src = '/placeholder-shoe.png';
+                              target.style.display = 'block';
+                            }
+                          }}
+                        />
+                      </button>
+                    ) : (
+                      <div className="mt-1">{getStatusIcon(getDisplayStatus(selectedDelivery))}</div>
+                    )}
+
+                    <div className="min-w-0">
+                      <h3 className={`text-lg font-semibold ${currentTheme.colors.textPrimary} break-words`}>
+                        {selectedDelivery.productName}
+                      </h3>
+                      <p className={`text-sm ${currentTheme.colors.textSecondary} mt-1 break-words`}>
+                        {selectedDelivery.productBrand} • Size {selectedDelivery.productSize} • {selectedDelivery.carrier}
+                      </p>
+
+                      {/* Tracking */}
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        {(() => {
+                          const invalid = isTrackingNotFound(selectedDelivery);
+                          const hasTracking = !!(selectedDelivery.trackingNumber && selectedDelivery.trackingNumber.trim());
+                          if (!hasTracking) {
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => openSetTrackingForDelivery(selectedDelivery)}
+                                className="text-xs font-semibold text-amber-300 hover:text-amber-200 underline underline-offset-2"
+                                title="Set the correct tracking number"
+                              >
+                                Needs tracking
+                              </button>
+                            );
+                          }
+                          return (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => openSetTrackingForDelivery(selectedDelivery)}
+                                className={`font-mono text-sm underline underline-offset-2 decoration-1 ${
+                                  invalid
+                                    ? 'text-red-300 hover:text-red-200'
+                                    : currentTheme.name === 'Neon'
+                                      ? 'text-cyan-200/80 hover:text-cyan-100 decoration-cyan-300/40 hover:decoration-cyan-200/70'
+                                      : 'text-blue-600 hover:text-blue-500'
+                                }`}
+                                title={invalid ? 'Invalid tracking — click to edit' : 'Edit tracking number'}
+                              >
+                                {invalid ? 'Invalid' : selectedDelivery.trackingNumber}
+                              </button>
+
+                              {!invalid ? (
+                                <>
+                                  <a
+                                    href={getFedExTrackingUrl(selectedDelivery.trackingNumber)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={() => {
+                                      setHighlightedDeliveryId(selectedDelivery.id);
+                                    }}
+                                    className="inline-flex items-center text-gray-400 hover:text-blue-400 transition-colors"
+                                    title="Open FedEx tracking in a new tab"
+                                    aria-label="Open FedEx tracking"
+                                  >
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                  </a>
+                                  <button
+                                    type="button"
+                                    onClick={() => void copyTrackingNumber(selectedDelivery.trackingNumber, selectedDelivery.id)}
+                                    className="p-1 hover:bg-white/10 rounded transition-colors duration-200"
+                                    title="Copy tracking number"
+                                    aria-label="Copy tracking number"
+                                  >
+                                    <Copy className="w-3.5 h-3.5 text-gray-400 hover:text-cyan-200/80" />
+                                  </button>
+                                  {copiedTrackingId === selectedDelivery.id && (
+                                    <span className="text-green-500 text-xs">✓</span>
+                                  )}
+                                </>
+                              ) : null}
+                            </>
+                          );
+                        })()}
+                      </div>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(getDisplayStatus(selectedDelivery))}`}>
@@ -3209,7 +3316,14 @@ const DeliveriesNew: React.FC = () => {
                     </div>
                     <div className="space-y-3 max-h-[70vh] overflow-y-auto">
                       {selectedDelivery.updates.map((update, index) => (
-                        <div key={index} className={`${currentTheme.colors.cardBackground} rounded-lg p-3 border ${currentTheme.colors.border}`}>
+                        <div
+                          key={index}
+                          className={`rounded-lg p-3 border ${
+                            currentTheme.name === 'Neon'
+                              ? 'bg-gray-800/60 border-cyan-500/20'
+                              : `${currentTheme.colors.cardBackground} ${currentTheme.colors.border}`
+                          }`}
+                        >
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
                               <p className={`${currentTheme.colors.textPrimary} font-medium text-sm`}>
