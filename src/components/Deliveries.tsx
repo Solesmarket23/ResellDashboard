@@ -1593,7 +1593,7 @@ const DeliveriesNew: React.FC = () => {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between mb-6">
           <div className="min-w-0">
               <h1 className="text-3xl font-bold text-white mb-2">Deliveries</h1>
-              <p className="text-gray-300 whitespace-nowrap truncate max-w-[min(720px,60vw)]">
+              <p className="text-gray-300 leading-snug max-w-[min(720px,100%)] break-words">
                 Track your packages and monitor delivery statuses
               </p>
           </div>
