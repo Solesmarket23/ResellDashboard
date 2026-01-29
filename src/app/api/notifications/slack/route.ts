@@ -582,8 +582,17 @@ export async function POST(request: NextRequest) {
       if (marketPrice !== undefined && (!Number.isFinite(marketPrice) || marketPrice <= 0)) {
         marketPrice = undefined;
       }
-      if (marketPrice !== undefined) {
-        marketDebug.cachedUsed++;
+      const cachedMarketPrice = marketPrice;
+      // Option A (user request): for on-the-way items with StockX productId+variantId, always fetch live price.
+      const forceLivePrice =
+        onTheWay &&
+        typeof ids.productId === 'string' &&
+        ids.productId.trim() !== '' &&
+        typeof ids.variantId === 'string' &&
+        ids.variantId.trim() !== '';
+      if (forceLivePrice) {
+        // We'll still keep cached as fallback, but don't use it as the primary Slack market price.
+        marketPrice = undefined;
       }
 
       const itemDebugBase = {
@@ -628,10 +637,22 @@ export async function POST(request: NextRequest) {
             marketDebug.skippedNoAuth++;
             marketDebug.failedByReason['missing_stockx_tokens'] =
               (marketDebug.failedByReason['missing_stockx_tokens'] || 0) + 1;
-            marketDebug.items.push({
-              ...itemDebugBase,
-              decision: 'skipped_missing_stockx_tokens',
-            });
+            // Fallback to cached if we have it; otherwise skip.
+            if (cachedMarketPrice !== undefined) {
+              marketPrice = cachedMarketPrice;
+              marketDebug.cachedUsed++;
+              marketDebug.items.push({
+                ...itemDebugBase,
+                decision: 'used_cached',
+                cachedMarketPrice,
+                result: { details: cachedMarketSource || 'cached_unknown_field' },
+              });
+            } else {
+              marketDebug.items.push({
+                ...itemDebugBase,
+                decision: 'skipped_missing_stockx_tokens',
+              });
+            }
           } else {
             if (stockxRateLimited) {
               // (fetchMarketWithControls will also short-circuit, but this makes the per-item trace explicit)
@@ -663,6 +684,7 @@ export async function POST(request: NextRequest) {
               marketDebug.items.push({
                 ...itemDebugBase,
                 decision: 'fetched_ok',
+                ...(cachedMarketPrice !== undefined ? { cachedMarketPrice } : {}),
                 fetchedMarketPrice: marketPrice,
                 result: {
                   reason: (result as any).reason,
@@ -716,9 +738,15 @@ export async function POST(request: NextRequest) {
               const marketUrl = stockxUrlKey
                 ? `https://stockx.com/${stockxUrlKey}${productSize ? `?size=${encodeURIComponent(productSize)}` : ''}`
                 : `https://stockx.com/search?s=${encodeURIComponent(searchTerm)}`;
+              // If live fetch fails, fall back to cached market price if available.
+              if (cachedMarketPrice !== undefined) {
+                marketPrice = cachedMarketPrice;
+                marketDebug.cachedUsed++;
+              }
               marketDebug.items.push({
                 ...itemDebugBase,
-                decision: 'fetched_failed',
+                decision: cachedMarketPrice !== undefined ? ('used_cached' as any) : 'fetched_failed',
+                ...(cachedMarketPrice !== undefined ? { cachedMarketPrice } : {}),
                 result: {
                   reason: (result as any).reason,
                   stage: (result as any).stage,
@@ -727,7 +755,7 @@ export async function POST(request: NextRequest) {
                   urlKey: (result as any).urlKey,
                   productId: (result as any).productId,
                   variantId: (result as any).variantId,
-                  details: (result as any).details,
+                  details: cachedMarketPrice !== undefined ? (cachedMarketSource || 'cached_unknown_field') : (result as any).details,
                   askSource: (result as any).askSource,
                   askStd: (result as any).askStd,
                   askFlex: (result as any).askFlex,
@@ -757,6 +785,7 @@ export async function POST(request: NextRequest) {
           cachedMarketPrice: marketPrice,
           result: { details: cachedMarketSource || 'cached_unknown_field' },
         });
+        marketDebug.cachedUsed++;
       }
       if (marketPrice !== undefined && (!Number.isFinite(marketPrice) || marketPrice <= 0)) {
         marketPrice = undefined;
