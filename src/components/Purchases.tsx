@@ -834,6 +834,8 @@ const Purchases = () => {
       const beforeSearch = uniquePurchases.length;
       uniquePurchases = uniquePurchases.filter(purchase => {
         // Search across multiple fields
+        const id = (purchase.id ?? '').toString().toLowerCase();
+        const purchaseId = (purchase.purchaseId ?? '').toString().toLowerCase();
         const productName = (purchase.product?.name || purchase.productName || '').toLowerCase();
         const orderNumber = (purchase.orderNumber || '').toLowerCase();
         const tracking = (purchase.tracking || '').toLowerCase();
@@ -842,7 +844,9 @@ const Purchases = () => {
         const status = (purchase.status || '').toLowerCase();
         const styleId = (purchase.styleId || purchase.style_id || '').toLowerCase();
         
-        const matches = productName.includes(query) ||
+        const matches = id.includes(query) ||
+               purchaseId.includes(query) ||
+               productName.includes(query) ||
                orderNumber.includes(query) ||
                tracking.includes(query) ||
                size.includes(query) ||
