@@ -1608,10 +1608,17 @@ const DeliveriesNew: React.FC = () => {
                  disabled={sendingSlackNotification || deliveries.length === 0}
                  className={`h-11 px-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 ${
                    currentTheme.name === 'Neon' ? 'focus:ring-cyan-400/40' : 'focus:ring-blue-500'
-                 } bg-purple-600 hover:bg-purple-700`}
+                 } bg-purple-600 hover:bg-purple-700 ${
+                   sendingSlackNotification ? 'animate-pulse' : ''
+                 }`}
                  title="Send delivery summary to Slack"
+                 aria-busy={sendingSlackNotification}
                >
-                 <Bell className="w-4 h-4" />
+                 {sendingSlackNotification ? (
+                   <RefreshCw className="w-4 h-4 animate-spin" />
+                 ) : (
+                   <Bell className="w-4 h-4" />
+                 )}
                  {sendingSlackNotification ? 'Sending...' : 'Send to Slack'}
                </button>
                
