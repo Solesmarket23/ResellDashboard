@@ -2411,12 +2411,68 @@ const DeliveriesNew: React.FC = () => {
         {sortedDeliveries.length === 0 ? (
           <div className={`${currentTheme.colors.cardBackground} rounded-lg p-12 text-center border ${currentTheme.colors.border}`}>
             <Package className={`w-12 h-12 mx-auto mb-4 ${currentTheme.colors.textSecondary}`} />
-            <h3 className={`text-lg font-medium ${currentTheme.colors.textPrimary} mb-2`}>No deliveries found</h3>
-            <p className={`${currentTheme.colors.textSecondary} mb-4`}>
-              {searchTerm || statusFilter !== 'all' || carrierFilter !== 'all'
-                ? 'Try adjusting your filters or search terms'
-                : 'No purchases with tracking numbers found. Make sure your purchases have tracking information.'}
-            </p>
+            {(() => {
+              const hasAnyFilter =
+                !!searchTerm ||
+                statusFilter !== 'all' ||
+                carrierFilter !== 'all' ||
+                presetNeedsTracking ||
+                presetInvalidTracking ||
+                presetArchived;
+
+              const chips: string[] = [];
+              if (presetNeedsTracking) chips.push('Needs tracking');
+              if (presetInvalidTracking) chips.push('Invalid tracking');
+              if (presetArchived) chips.push('Archived');
+              if (statusFilter !== 'all') chips.push(`Status: ${getOptionLabel(statusOptions, statusFilter)}`);
+              if (carrierFilter !== 'all') chips.push(`Carrier: ${getOptionLabel(carrierOptions, carrierFilter)}`);
+              if (searchTerm) chips.push(`Search: "${searchTerm}"`);
+
+              return (
+                <>
+                  <h3 className={`text-lg font-medium ${currentTheme.colors.textPrimary} mb-2`}>
+                    {hasAnyFilter ? 'No deliveries match your current filters' : 'No deliveries found'}
+                  </h3>
+                  <p className={`${currentTheme.colors.textSecondary} mb-4`}>
+                    {hasAnyFilter
+                      ? 'Try clearing a preset/filter or broadening your search.'
+                      : 'No purchases with tracking numbers found. Make sure your purchases have tracking information.'}
+                  </p>
+                  {hasAnyFilter && chips.length ? (
+                    <div className="flex flex-wrap items-center justify-center gap-2 mb-4">
+                      {chips.map((c) => (
+                        <span
+                          key={c}
+                          className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${
+                            currentTheme.name === 'Neon'
+                              ? 'bg-white/5 border-white/10 text-white/80'
+                              : 'bg-gray-50 border-gray-200 text-gray-700'
+                          }`}
+                        >
+                          {c}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {hasAnyFilter ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStatusFilter('all');
+                        setCarrierFilter('all');
+                        setSearchTerm('');
+                        setPresetNeedsTracking(false);
+                        setPresetInvalidTracking(false);
+                        setPresetArchived(false);
+                      }}
+                      className={`px-4 py-2 border rounded-lg ${currentTheme.colors.border} ${currentTheme.colors.cardBackground} ${currentTheme.colors.textPrimary} hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                    >
+                      Clear Filters
+                    </button>
+                  ) : null}
+                </>
+              );
+            })()}
               </div>
          ) : viewMode === 'split' ? (
            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[600px]">
