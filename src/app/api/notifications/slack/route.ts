@@ -398,7 +398,8 @@ export async function POST(request: NextRequest) {
     // Guardrails to keep Slack sends fast and within Slack's block limits.
     const MAX_LIVE_MARKET_FETCH_ITEMS = 50; // cap expensive live StockX lookups per request
     const MAX_DELIVERIES_IN_SLACK_MESSAGE = 40; // Slack blocks max is 50; each item is ~1 block + overhead
-    const allowAnyLiveMarketFetch = purchasesWithTracking.length <= 50; // disable entirely for very large tracked sets
+    // Never hard-disable live pricing based on total tracked items; instead we prioritize which items consume budget.
+    const allowAnyLiveMarketFetch = true;
     let remainingLiveMarketFetchBudget = MAX_LIVE_MARKET_FETCH_ITEMS;
 
     // Prioritize live StockX fetches for items arriving today (the Slack "daily" breakdown),
@@ -435,6 +436,58 @@ export async function POST(request: NextRequest) {
       }
     })();
     const includeTomorrowForSlack = localHourForSlack >= 21;
+
+    const parsePurchasePrice = (purchase: any): number | null => {
+      const pick = (v: any): number | null => {
+        if (v === null || v === undefined) return null;
+        const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/[$,]/g, '').split('+')[0].trim());
+        return Number.isFinite(n) && n > 0 ? n : null;
+      };
+      return (
+        pick(purchase?.total_amount) ??
+        pick(purchase?.totalAmount) ??
+        pick(purchase?.totalPayment) ??
+        pick(purchase?.purchasePrice) ??
+        pick(purchase?.price) ??
+        null
+      );
+    };
+
+    const normalizeEtaYmd = (purchase: any, liveTracking: any): string => {
+      const raw = (liveTracking?.estimatedDelivery || purchase?.estimatedDelivery || '').trim?.() || String(liveTracking?.estimatedDelivery || purchase?.estimatedDelivery || '').trim();
+      if (!raw || raw === 'TBD') return 'TBD';
+      try {
+        const d = new Date(raw);
+        if (!Number.isFinite(d.getTime())) return 'TBD';
+        return d.toISOString().split('T')[0];
+      } catch {
+        return 'TBD';
+      }
+    };
+
+    // Reorder processing so the live StockX budget is spent on the highest-impact arrivals first.
+    const purchasesWithTrackingSorted = [...purchasesWithTracking].sort((a: any, b: any) => {
+      const aTracking = String(a?.tracking || a?.trackingNumber || a?.tracking_number || '').trim();
+      const bTracking = String(b?.tracking || b?.trackingNumber || b?.tracking_number || '').trim();
+      const aLive = liveTrackingByNumber.get(aTracking);
+      const bLive = liveTrackingByNumber.get(bTracking);
+
+      const aStatus = (aLive && !aLive.error ? String(aLive.status) : String(a?.status || '')).toLowerCase().trim();
+      const bStatus = (bLive && !bLive.error ? String(bLive.status) : String(b?.status || '')).toLowerCase().trim();
+
+      const aEta = normalizeEtaYmd(a, aLive);
+      const bEta = normalizeEtaYmd(b, bLive);
+
+      const aArr = aEta === todayStrForSlack || aStatus === 'out_for_delivery' || (includeTomorrowForSlack && aEta === tomorrowStrForSlack);
+      const bArr = bEta === todayStrForSlack || bStatus === 'out_for_delivery' || (includeTomorrowForSlack && bEta === tomorrowStrForSlack);
+      if (aArr !== bArr) return aArr ? -1 : 1;
+
+      const ap = parsePurchasePrice(a) ?? 0;
+      const bp = parsePurchasePrice(b) ?? 0;
+      if (ap !== bp) return bp - ap; // higher purchase price first
+
+      return String(a?.productName || '').localeCompare(String(b?.productName || ''));
+    });
     // We want market prices for anything "on the way" (not just a narrow carrier-status subset).
     // Many tracking APIs return UNKNOWN/LABEL_CREATED/etc, which should still count as on-the-way.
     const marketCache = new Map<string, Promise<ReturnType<typeof fetchStockXMarketPriceDetailed>>>();
@@ -530,7 +583,7 @@ export async function POST(request: NextRequest) {
     // Build deliveries array with live tracking data AND real-time StockX prices
     console.log(`💰 Fetching real-time StockX prices for ${purchasesWithTracking.length} items...`);
     
-    const deliveries = await Promise.all(purchasesWithTracking.map(async (purchase: any) => {
+    const deliveries = await Promise.all(purchasesWithTrackingSorted.map(async (purchase: any) => {
       const trackingValue = purchase.tracking || purchase.trackingNumber || purchase.tracking_number;
       const liveTracking = liveTrackingByNumber.get(String(trackingValue || '').trim());
       
