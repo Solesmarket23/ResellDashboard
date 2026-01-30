@@ -265,6 +265,7 @@ const DeliveriesNew: React.FC = () => {
     productSize: ''
   });
   const [sendingSlackNotification, setSendingSlackNotification] = useState(false);
+  const [sendingSlackType, setSendingSlackType] = useState<'daily_summary' | 'out_for_delivery' | null>(null);
 
   // Setup status UI removed (debug-only)
   // const [setupStatus, setSetupStatus] = useState<any | null>(null);
@@ -1302,6 +1303,7 @@ const DeliveriesNew: React.FC = () => {
 
     try {
       setSendingSlackNotification(true);
+      setSendingSlackType(type);
       console.log('📨 Sending Slack notification...');
 
       // Get purchases from localStorage for site password users
@@ -1383,6 +1385,7 @@ const DeliveriesNew: React.FC = () => {
       }
     } finally {
       setSendingSlackNotification(false);
+      setSendingSlackType(null);
     }
   };
 
@@ -1622,17 +1625,17 @@ const DeliveriesNew: React.FC = () => {
                  className={`h-11 px-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 ${
                    currentTheme.name === 'Neon' ? 'focus:ring-cyan-400/40' : 'focus:ring-blue-500'
                  } bg-purple-600 hover:bg-purple-700 ${
-                   sendingSlackNotification ? 'animate-pulse' : ''
+                   sendingSlackNotification && sendingSlackType === 'daily_summary' ? 'animate-pulse' : ''
                  }`}
                  title="Send delivery summary to Slack"
-                 aria-busy={sendingSlackNotification}
+                 aria-busy={sendingSlackNotification && sendingSlackType === 'daily_summary'}
                >
-                 {sendingSlackNotification ? (
+                 {sendingSlackNotification && sendingSlackType === 'daily_summary' ? (
                    <RefreshCw className="w-4 h-4 animate-spin" />
                  ) : (
                    <Bell className="w-4 h-4" />
                  )}
-                 {sendingSlackNotification ? 'Sending...' : 'Send to Slack'}
+                 {sendingSlackNotification && sendingSlackType === 'daily_summary' ? 'Sending...' : 'Send to Slack'}
                </button>
 
                {/* Send Out-for-Delivery-only Slack Button */}
@@ -1645,17 +1648,17 @@ const DeliveriesNew: React.FC = () => {
                  className={`h-11 px-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 ${
                    currentTheme.name === 'Neon' ? 'focus:ring-cyan-400/40' : 'focus:ring-blue-500'
                  } bg-orange-600 hover:bg-orange-700 ${
-                   sendingSlackNotification ? 'animate-pulse' : ''
+                   sendingSlackNotification && sendingSlackType === 'out_for_delivery' ? 'animate-pulse' : ''
                  }`}
                  title="Send Out for Delivery items to Slack"
-                 aria-busy={sendingSlackNotification}
+                 aria-busy={sendingSlackNotification && sendingSlackType === 'out_for_delivery'}
                >
-                 {sendingSlackNotification ? (
+                 {sendingSlackNotification && sendingSlackType === 'out_for_delivery' ? (
                    <RefreshCw className="w-4 h-4 animate-spin" />
                  ) : (
                    <Truck className="w-4 h-4" />
                  )}
-                 {sendingSlackNotification ? 'Sending...' : 'Send OFD'}
+                 {sendingSlackNotification && sendingSlackType === 'out_for_delivery' ? 'Sending...' : 'Send OFD'}
                </button>
                
                {/* View Mode Toggle */}
