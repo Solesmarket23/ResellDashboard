@@ -143,11 +143,12 @@ function pickVariantBySize(variants: any[], size: string): any | null {
   const wantsMen = /\bM\b/.test(wantedUpper) || wantedUpper.includes('USM') || wantedUpper.includes("MEN");
   const wantsYouth = /\bY\b/.test(wantedUpper);
   const canonicalize = (s: unknown) => {
-    const raw = String(s ?? '')
-      .trim()
-      .toUpperCase()
-      .replace(/\s+/g, '')
-      .replace(/-/g, '');
+    const rawWithSpaces = String(s ?? '').trim().toUpperCase();
+    // Apparel sizes often come through as "US M" / "US XL". Treat these as letter sizes (not "US Men's").
+    const apparelLetter = rawWithSpaces.match(/\b(XXXS|XXS|XS|S|M|L|XL|XXL|XXXL)\b/)?.[1];
+    if (apparelLetter && !/\d/.test(rawWithSpaces)) return apparelLetter;
+
+    const raw = rawWithSpaces.replace(/\s+/g, '').replace(/-/g, '');
     if (!raw) return '';
     // Strip common "US" prefixes
     const t = raw.replace(/^US(?:M|W)?/i, '');
@@ -271,11 +272,12 @@ function stockxSizeMatchesWanted(wantedRaw: string, actualRaw: unknown): boolean
   if (wantsYouth && !(actualUpper.includes('Y') || actualUpper.endsWith('Y'))) return false;
 
   const canonicalize = (s: unknown) => {
-    const raw = String(s ?? '')
-      .trim()
-      .toUpperCase()
-      .replace(/\s+/g, '')
-      .replace(/-/g, '');
+    const rawWithSpaces = String(s ?? '').trim().toUpperCase();
+    // Apparel sizes often come through as "US M" / "US XL". Treat these as letter sizes (not "US Men's").
+    const apparelLetter = rawWithSpaces.match(/\b(XXXS|XXS|XS|S|M|L|XL|XXL|XXXL)\b/)?.[1];
+    if (apparelLetter && !/\d/.test(rawWithSpaces)) return apparelLetter;
+
+    const raw = rawWithSpaces.replace(/\s+/g, '').replace(/-/g, '');
     if (!raw) return '';
     const t = raw.replace(/^US(?:M|W)?/i, '');
     const map: Record<string, string> = {
