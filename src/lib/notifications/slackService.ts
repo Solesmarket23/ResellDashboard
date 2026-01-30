@@ -259,36 +259,38 @@ export class SlackNotificationService {
 
     blocks.push({ type: 'divider' });
 
-    // On the way (all shipments)
+    // Item breakdown: only include shipments arriving today (or out for delivery).
     blocks.push({
       type: 'section',
-      text: { type: 'mrkdwn', text: '*On the way (all shipments)*' },
+      text: { type: 'mrkdwn', text: '*🚚 Arriving Today (breakdown)*' },
     });
 
-    const onTheWayAll = summary.deliveries.filter((d) => {
-      const s = String(d.status || '').toLowerCase();
-      return s === 'in_transit' || s === 'shipped' || s === 'out_for_delivery';
+    const today = new Date().toISOString().split('T')[0];
+    const arrivingTodayAll = summary.deliveries.filter((d) => {
+      const eta = String(d.estimatedDelivery || '').trim();
+      const s = String(d.status || '').toLowerCase().trim();
+      return eta === today || s === 'out_for_delivery';
     });
 
     // Slack hard limit: 50 blocks. Each delivery item here is one block + overhead.
-    const MAX_ON_THE_WAY_ITEMS = 40;
-    const truncated = onTheWayAll.length > MAX_ON_THE_WAY_ITEMS;
-    const onTheWay = onTheWayAll.slice(0, MAX_ON_THE_WAY_ITEMS);
+    const MAX_TODAY_ITEMS = 40;
+    const truncated = arrivingTodayAll.length > MAX_TODAY_ITEMS;
+    const arrivingToday = arrivingTodayAll.slice(0, MAX_TODAY_ITEMS);
 
     if (truncated) {
       blocks.push({
         type: 'context',
-        elements: [{ type: 'mrkdwn', text: `_Showing ${MAX_ON_THE_WAY_ITEMS} of ${onTheWayAll.length} on-the-way shipments to stay within Slack limits._` }],
+        elements: [{ type: 'mrkdwn', text: `_Showing ${MAX_TODAY_ITEMS} of ${arrivingTodayAll.length} arriving-today shipments to stay within Slack limits._` }],
       });
     }
 
-    if (!onTheWay.length) {
+    if (!arrivingToday.length) {
       blocks.push({
         type: 'section',
-        text: { type: 'mrkdwn', text: '_No shipments currently on the way._' },
+        text: { type: 'mrkdwn', text: '_No items arriving today._' },
       });
     } else {
-      onTheWay.forEach((delivery) => {
+      arrivingToday.forEach((delivery) => {
         const eta = delivery.estimatedDelivery && delivery.estimatedDelivery !== 'TBD' ? delivery.estimatedDelivery : 'TBD';
         const money = this.formatMoneyLine({
           purchasePrice: (delivery as any).purchasePrice,
