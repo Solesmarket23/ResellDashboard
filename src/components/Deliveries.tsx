@@ -266,6 +266,23 @@ const DeliveriesNew: React.FC = () => {
   });
   const [sendingSlackNotification, setSendingSlackNotification] = useState(false);
   const [sendingSlackType, setSendingSlackType] = useState<'daily_summary' | 'out_for_delivery' | null>(null);
+  const [showSlackScheduleModal, setShowSlackScheduleModal] = useState(false);
+  const [slackScheduleLoading, setSlackScheduleLoading] = useState(false);
+  const [slackScheduleSaving, setSlackScheduleSaving] = useState(false);
+  const [slackSchedule, setSlackSchedule] = useState<{
+    enabled: boolean;
+    webhookUrl: string;
+    timeLocal: string; // HH:MM
+    timezone: string; // IANA
+    lastSentLocalDate?: string | null;
+  }>({
+    enabled: false,
+    webhookUrl: '',
+    timeLocal: '09:30',
+    timezone: 'America/New_York',
+    lastSentLocalDate: null,
+  });
+  const [cronStatus, setCronStatus] = useState<{ status?: string; paused?: boolean; message?: string } | null>(null);
 
   // Setup status UI removed (debug-only)
   // const [setupStatus, setSetupStatus] = useState<any | null>(null);
@@ -1399,6 +1416,76 @@ const DeliveriesNew: React.FC = () => {
     await sendSlack('out_for_delivery');
   };
 
+  const loadSlackSchedule = async () => {
+    if (!user) return;
+    setSlackScheduleLoading(true);
+    try {
+      const res = await fetch(`/api/deliveries/slack-settings?userId=${encodeURIComponent(user.uid)}`, {
+        method: 'GET',
+        headers: { 'x-user-id': user.uid },
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.success) throw new Error(data?.error || 'Failed to load Slack schedule');
+      const s = data?.settings || {};
+      setSlackSchedule({
+        enabled: s.enabled === true,
+        webhookUrl: String(s.webhookUrl || ''),
+        timeLocal: String(s.timeLocal || '09:30'),
+        timezone: String(s.timezone || 'America/New_York'),
+        lastSentLocalDate: typeof s.lastSentLocalDate === 'string' ? s.lastSentLocalDate : null,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Unknown error';
+      showNotification(`Failed to load Slack schedule: ${msg}`, 'error');
+    } finally {
+      setSlackScheduleLoading(false);
+    }
+  };
+
+  const saveSlackSchedule = async () => {
+    if (!user) return;
+    setSlackScheduleSaving(true);
+    try {
+      const res = await fetch(`/api/deliveries/slack-settings?userId=${encodeURIComponent(user.uid)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': user.uid },
+        body: JSON.stringify({
+          enabled: slackSchedule.enabled,
+          webhookUrl: slackSchedule.webhookUrl,
+          timeLocal: slackSchedule.timeLocal,
+          timezone: slackSchedule.timezone,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.success) throw new Error(data?.error || 'Failed to save Slack schedule');
+      const s = data?.settings || {};
+      setSlackSchedule((prev) => ({
+        ...prev,
+        enabled: s.enabled === true,
+        webhookUrl: String(s.webhookUrl || ''),
+        timeLocal: String(s.timeLocal || prev.timeLocal),
+        timezone: String(s.timezone || prev.timezone),
+        lastSentLocalDate: typeof s.lastSentLocalDate === 'string' ? s.lastSentLocalDate : prev.lastSentLocalDate,
+      }));
+      showNotification('Saved daily Slack schedule', 'success');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Unknown error';
+      showNotification(`Failed to save Slack schedule: ${msg}`, 'error');
+    } finally {
+      setSlackScheduleSaving(false);
+    }
+  };
+
+  const loadCronStatus = async () => {
+    try {
+      const res = await fetch('/api/cron/status', { method: 'GET' });
+      const data = await res.json().catch(() => ({}));
+      setCronStatus(data || null);
+    } catch {
+      setCronStatus(null);
+    }
+  };
+
   // Filter deliveries
   const filteredDeliveries = deliveries.filter((delivery) => {
     const archived = isArchivedDelivery(delivery);
@@ -1659,6 +1746,21 @@ const DeliveriesNew: React.FC = () => {
                    <Truck className="w-4 h-4" />
                  )}
                  {sendingSlackNotification && sendingSlackType === 'out_for_delivery' ? 'Sending...' : 'Send OFD'}
+               </button>
+
+               {/* Daily Slack schedule settings */}
+               <button
+                 onClick={async () => {
+                   setShowSlackScheduleModal(true);
+                   await Promise.all([loadSlackSchedule(), loadCronStatus()]);
+                 }}
+                 className={`h-11 px-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors focus:outline-none focus:ring-2 ${
+                   currentTheme.name === 'Neon' ? 'focus:ring-cyan-400/40' : 'focus:ring-blue-500'
+                 } bg-white/10 hover:bg-white/15 text-white border border-white/10`}
+                 title="Configure daily Slack schedule"
+               >
+                 <Settings className="w-4 h-4" />
+                 Slack Schedule
                </button>
                
                {/* View Mode Toggle */}
@@ -3456,6 +3558,151 @@ const DeliveriesNew: React.FC = () => {
                       ))}
                     </div>
                   </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Slack Schedule Modal */}
+        {showSlackScheduleModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+            <div
+              className={`w-full max-w-lg rounded-2xl border shadow-2xl ${
+                currentTheme.name === 'Neon'
+                  ? 'bg-gray-900/95 border-cyan-500/30 text-white'
+                  : 'bg-white border-gray-200 text-gray-900'
+              }`}
+            >
+              <div className="p-5 border-b border-white/10 flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-lg font-bold">Daily Slack Schedule</div>
+                  <div className={`text-sm ${currentTheme.name === 'Neon' ? 'text-gray-300' : 'text-gray-600'}`}>
+                    Sends your daily delivery summary automatically at your chosen time.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowSlackScheduleModal(false)}
+                  className={`p-2 rounded-lg transition-colors ${currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4">
+                {slackScheduleLoading ? (
+                  <div className={`text-sm ${currentTheme.name === 'Neon' ? 'text-gray-300' : 'text-gray-600'}`}>Loading…</div>
+                ) : (
+                  <>
+                    <label className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={slackSchedule.enabled}
+                        onChange={(e) => setSlackSchedule((prev) => ({ ...prev, enabled: e.target.checked }))}
+                        className="h-4 w-4"
+                      />
+                      <span className="text-sm font-semibold">Enable daily Slack delivery summary</span>
+                    </label>
+
+                    <div className="space-y-2">
+                      <div className="text-sm font-semibold">Webhook URL</div>
+                      <input
+                        value={slackSchedule.webhookUrl}
+                        onChange={(e) => setSlackSchedule((prev) => ({ ...prev, webhookUrl: e.target.value }))}
+                        placeholder="https://hooks.slack.com/services/..."
+                        className={`w-full h-11 px-3 rounded-xl border bg-transparent text-sm ${
+                          currentTheme.name === 'Neon'
+                            ? 'border-cyan-500/30 focus:outline-none focus:ring-2 focus:ring-cyan-400/30'
+                            : 'border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30'
+                        }`}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <div className="text-sm font-semibold">Time (local)</div>
+                        <input
+                          value={slackSchedule.timeLocal}
+                          onChange={(e) => setSlackSchedule((prev) => ({ ...prev, timeLocal: e.target.value }))}
+                          placeholder="09:30"
+                          className={`w-full h-11 px-3 rounded-xl border bg-transparent text-sm ${
+                            currentTheme.name === 'Neon'
+                              ? 'border-cyan-500/30 focus:outline-none focus:ring-2 focus:ring-cyan-400/30'
+                              : 'border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30'
+                          }`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSlackSchedule((prev) => ({ ...prev, timeLocal: '09:30', timezone: 'America/New_York' }))
+                          }
+                          className={`text-xs font-semibold underline ${
+                            currentTheme.name === 'Neon' ? 'text-cyan-200/80 hover:text-cyan-100' : 'text-blue-600 hover:text-blue-500'
+                          }`}
+                        >
+                          Set to 9:30am EST (America/New_York)
+                        </button>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="text-sm font-semibold">Timezone</div>
+                        <input
+                          value={slackSchedule.timezone}
+                          onChange={(e) => setSlackSchedule((prev) => ({ ...prev, timezone: e.target.value }))}
+                          placeholder="America/New_York"
+                          className={`w-full h-11 px-3 rounded-xl border bg-transparent text-sm ${
+                            currentTheme.name === 'Neon'
+                              ? 'border-cyan-500/30 focus:outline-none focus:ring-2 focus:ring-cyan-400/30'
+                              : 'border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30'
+                          }`}
+                        />
+                      </div>
+                    </div>
+
+                    <div className={`text-xs ${currentTheme.name === 'Neon' ? 'text-gray-300' : 'text-gray-600'}`}>
+                      <div>
+                        <span className="font-semibold">Last sent:</span> {slackSchedule.lastSentLocalDate ? slackSchedule.lastSentLocalDate : '—'}
+                      </div>
+                      <div>
+                        <span className="font-semibold">Cron status:</span>{' '}
+                        {cronStatus?.status ? `${cronStatus.status}${cronStatus.paused ? ' (paused)' : ''}` : 'unknown'}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={handleSendSlackNotification}
+                        disabled={sendingSlackNotification}
+                        className="h-11 px-4 rounded-xl text-sm font-semibold inline-flex items-center gap-2 disabled:opacity-60 bg-purple-600 hover:bg-purple-700 text-white"
+                      >
+                        <Bell className="w-4 h-4" />
+                        Send now (test)
+                      </button>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={loadCronStatus}
+                          className={`h-11 px-4 rounded-xl text-sm font-semibold border transition-colors ${
+                            currentTheme.name === 'Neon' ? 'border-cyan-500/30 hover:bg-white/10' : 'border-gray-200 hover:bg-gray-50'
+                          }`}
+                        >
+                          Refresh status
+                        </button>
+                        <button
+                          type="button"
+                          onClick={saveSlackSchedule}
+                          disabled={slackScheduleSaving}
+                          className="h-11 px-4 rounded-xl text-sm font-semibold inline-flex items-center gap-2 disabled:opacity-60 bg-emerald-600 hover:bg-emerald-700 text-white"
+                        >
+                          {slackScheduleSaving ? 'Saving…' : 'Save'}
+                        </button>
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
             </div>

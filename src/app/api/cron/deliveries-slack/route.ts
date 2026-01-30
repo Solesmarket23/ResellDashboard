@@ -10,9 +10,15 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 function verifyCron(request: NextRequest): boolean {
-  const authHeader = request.headers.get('authorization');
+  const authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
   const cronSecret = process.env.CRON_SECRET || '';
-  return !!cronSecret && authHeader === `Bearer ${cronSecret}`;
+  const host = request.headers.get('host') || '';
+  const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
+  const isVercelCron = request.headers.get('x-vercel-cron') === '1';
+  // Prefer CRON_SECRET when set; otherwise allow Vercel Cron header (prevents random public hits).
+  if (cronSecret && authHeader === `Bearer ${cronSecret}`) return true;
+  if (isLocal) return true;
+  return isVercelCron;
 }
 
 function localParts(now: Date, timeZone: string) {
@@ -144,6 +150,9 @@ export async function GET(request: NextRequest) {
     if (!apiKey) return NextResponse.json({ success: false, error: 'Missing STOCKX_API_KEY' }, { status: 500 });
 
     const now = new Date();
+    const mode = request.nextUrl.searchParams.get('mode')?.trim() || '';
+    const minutelyEnabled = process.env.CRON_MINUTELY_ENABLED === '1' || process.env.CRON_MINUTELY_ENABLED === 'true';
+    const minutelyUserId = (process.env.CRON_MINUTELY_USER_ID || '').trim();
     let sent = 0;
     let skipped = 0;
     const errors: Array<{ userId: string; error: string }> = [];
@@ -153,7 +162,7 @@ export async function GET(request: NextRequest) {
       const data = doc.data() as any;
       const s = data?.deliveriesSlack || {};
       const webhookUrl = String(s.webhookUrl || '').trim();
-      const timeLocal = String(s.timeLocal || '21:00');
+      const timeLocal = String(s.timeLocal || '09:30');
       const timezone = String(s.timezone || 'America/New_York');
 
       if (!webhookUrl) {
@@ -171,13 +180,18 @@ export async function GET(request: NextRequest) {
 
       const [schedH, schedM] = timeLocal.split(':');
       const isDue = parts.hh > schedH || (parts.hh === schedH && parts.min >= schedM);
-      if (!isDue) {
+
+      // Optional: minutely test mode (disabled unless explicitly enabled in env).
+      // Useful to validate cron wiring without waiting until the scheduled time.
+      const isMinutelyTest = mode === 'minutely' && minutelyEnabled && (!!minutelyUserId ? userId === minutelyUserId : true);
+      if (!isDue && !isMinutelyTest) {
         skipped++;
         continue;
       }
 
       // Idempotency lock per user+localDate
-      const lockId = `${userId}__${parts.localDate}`;
+      const lockSuffix = isMinutelyTest ? `${parts.localDate}__minutely` : parts.localDate;
+      const lockId = `${userId}__${lockSuffix}`;
       const lockRef = db.collection('deliveriesSlackDailyLocks').doc(lockId);
       const acquired = await db.runTransaction(async (tx) => {
         const snap = await tx.get(lockRef);
