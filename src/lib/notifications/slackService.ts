@@ -78,6 +78,21 @@ export class SlackNotificationService {
     }
   }
 
+  private getLocalHourInTimeZone(d: Date): number {
+    try {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: this.slackTimeZone,
+        hour: '2-digit',
+        hour12: false,
+      }).formatToParts(d);
+      const h = parts.find((p) => p.type === 'hour')?.value;
+      const n = h ? Number.parseInt(h, 10) : NaN;
+      return Number.isFinite(n) ? n : d.getHours();
+    } catch {
+      return d.getHours();
+    }
+  }
+
   private toFiniteNumber(value: unknown): number | null {
     if (typeof value === 'number' && Number.isFinite(value)) return value;
     if (typeof value === 'string') {
@@ -274,38 +289,51 @@ export class SlackNotificationService {
 
     blocks.push({ type: 'divider' });
 
-    // Item breakdown: only include shipments arriving today (or out for delivery).
-    blocks.push({
-      type: 'section',
-      text: { type: 'mrkdwn', text: '*🚚 Arriving Today (breakdown)*' },
-    });
+    const now = new Date();
+    const today = this.toYmdInTimeZone(now);
+    const tomorrow = (() => {
+      const d = new Date(now);
+      d.setDate(d.getDate() + 1);
+      return this.toYmdInTimeZone(d);
+    })();
 
-    const today = this.toYmdInTimeZone(new Date());
-    const arrivingTodayAll = summary.deliveries.filter((d) => {
-      const eta = String(d.estimatedDelivery || '').trim();
-      const s = String(d.status || '').toLowerCase().trim();
-      return eta === today || s === 'out_for_delivery';
-    });
+    // Late-night behavior: after 9pm local time, include tomorrow's breakdown too.
+    const localHour = this.getLocalHourInTimeZone(now);
+    const includeTomorrowBreakdown = localHour >= 21;
 
-    // Slack hard limit: 50 blocks. Each delivery item here is one block + overhead.
-    const MAX_TODAY_ITEMS = 40;
-    const truncated = arrivingTodayAll.length > MAX_TODAY_ITEMS;
-    const arrivingToday = arrivingTodayAll.slice(0, MAX_TODAY_ITEMS);
-
-    if (truncated) {
-      blocks.push({
-        type: 'context',
-        elements: [{ type: 'mrkdwn', text: `_Showing ${MAX_TODAY_ITEMS} of ${arrivingTodayAll.length} arriving-today shipments to stay within Slack limits._` }],
-      });
-    }
-
-    if (!arrivingToday.length) {
+    const buildBreakdown = (args: { label: string; ymd: string; emptyText: string }) => {
       blocks.push({
         type: 'section',
-        text: { type: 'mrkdwn', text: '_No items arriving today._' },
+        text: { type: 'mrkdwn', text: `*${args.label} (breakdown)*` },
       });
-    } else {
-      arrivingToday.forEach((delivery) => {
+
+      const itemsAll = summary.deliveries.filter((d) => {
+        const eta = String(d.estimatedDelivery || '').trim();
+        const s = String(d.status || '').toLowerCase().trim();
+        return eta === args.ymd || (args.ymd === today && s === 'out_for_delivery');
+      });
+
+      // Slack hard limit: 50 blocks. Each delivery item here is one block + overhead.
+      const MAX_ITEMS = includeTomorrowBreakdown ? 20 : 40;
+      const truncated = itemsAll.length > MAX_ITEMS;
+      const items = itemsAll.slice(0, MAX_ITEMS);
+
+      if (truncated) {
+        blocks.push({
+          type: 'context',
+          elements: [{ type: 'mrkdwn', text: `_Showing ${MAX_ITEMS} of ${itemsAll.length} to stay within Slack limits._` }],
+        });
+      }
+
+      if (!items.length) {
+        blocks.push({
+          type: 'section',
+          text: { type: 'mrkdwn', text: args.emptyText },
+        });
+        return;
+      }
+
+      items.forEach((delivery) => {
         const eta = delivery.estimatedDelivery && delivery.estimatedDelivery !== 'TBD' ? delivery.estimatedDelivery : 'TBD';
         const money = this.formatMoneyLine({
           purchasePrice: (delivery as any).purchasePrice,
@@ -345,6 +373,21 @@ export class SlackNotificationService {
           };
         }
         blocks.push(section);
+      });
+    };
+
+    buildBreakdown({
+      label: '🚚 Arriving Today',
+      ymd: today,
+      emptyText: '_No items arriving today._',
+    });
+
+    if (includeTomorrowBreakdown) {
+      blocks.push({ type: 'divider' });
+      buildBreakdown({
+        label: '📅 Arriving Tomorrow',
+        ymd: tomorrow,
+        emptyText: '_No items arriving tomorrow._',
       });
     }
 

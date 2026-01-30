@@ -419,6 +419,22 @@ export async function POST(request: NextRequest) {
       }
     };
     const todayStrForSlack = toYmdInTimeZone(new Date(), slackTimeZone);
+    const tomorrowStrForSlack = toYmdInTimeZone(new Date(Date.now() + 24 * 60 * 60 * 1000), slackTimeZone);
+    const localHourForSlack = (() => {
+      try {
+        const parts = new Intl.DateTimeFormat('en-US', {
+          timeZone: slackTimeZone,
+          hour: '2-digit',
+          hour12: false,
+        }).formatToParts(new Date());
+        const h = parts.find((p) => p.type === 'hour')?.value;
+        const n = h ? Number.parseInt(h, 10) : NaN;
+        return Number.isFinite(n) ? n : new Date().getHours();
+      } catch {
+        return new Date().getHours();
+      }
+    })();
+    const includeTomorrowForSlack = localHourForSlack >= 21;
     // We want market prices for anything "on the way" (not just a narrow carrier-status subset).
     // Many tracking APIs return UNKNOWN/LABEL_CREATED/etc, which should still count as on-the-way.
     const marketCache = new Map<string, Promise<ReturnType<typeof fetchStockXMarketPriceDetailed>>>();
@@ -626,10 +642,13 @@ export async function POST(request: NextRequest) {
       });
       // Live StockX pricing can be expensive. We only do it for a small number of on-the-way items,
       // and we disable it entirely for very large tracked sets.
-      const arrivingTodayForSlack = estimatedDelivery === todayStrForSlack || status === 'out_for_delivery';
+      const arrivingTodayOrTomorrowForSlack =
+        estimatedDelivery === todayStrForSlack ||
+        status === 'out_for_delivery' ||
+        (includeTomorrowForSlack && estimatedDelivery === tomorrowStrForSlack);
       const shouldAttemptLiveFetch = (() => {
-        // For Slack daily summaries: focus live market fetch on items arriving today.
-        if (!arrivingTodayForSlack) return false;
+        // For Slack daily summaries: focus live market fetch on items arriving today (and late-night: tomorrow too).
+        if (!arrivingTodayOrTomorrowForSlack) return false;
         if (!onTheWay) return false;
         if (!allowAnyLiveMarketFetch) return false;
         if (remainingLiveMarketFetchBudget <= 0) return false;
@@ -678,7 +697,7 @@ export async function POST(request: NextRequest) {
           // Keep Slack fast: skip live fetch when disabled or budget exhausted.
           marketDebug.failedByReason['live_fetch_skipped_for_speed'] =
             (marketDebug.failedByReason['live_fetch_skipped_for_speed'] || 0) + 1;
-          marketStatus = arrivingTodayForSlack ? 'unavailable — live fetch skipped' : 'unavailable — not arriving today';
+          marketStatus = arrivingTodayOrTomorrowForSlack ? 'unavailable — live fetch skipped' : 'unavailable — not arriving today';
           marketDebug.items.push({
             ...itemDebugBase,
             decision: 'skipped_rate_limited',
