@@ -190,6 +190,24 @@ function pickVariantBySize(variants: any[], size: string): any | null {
     };
 
     const tryExactIn = (pool: any[]) => {
+      // Strongest match: use the cohort-aware matcher against the raw variant size.
+      // This prevents accidental wrong-size pricing if StockX returns sizes like "W5"/"USW5" etc.
+      const strictMatches = pool.filter((v: any) => {
+        const variantSize = v.variantValue || v.size || v.sizeValue || v.shoeSize || v.displaySize;
+        return stockxSizeMatchesWanted(wantedRaw, variantSize);
+      });
+      if (strictMatches.length) {
+        // Prefer variants that actually have pricing attached.
+        return (
+          strictMatches.find(
+            (v: any) =>
+              parseStockXMoneyToDollars(v.lowestAskAmount) !== null ||
+              parseStockXMoneyToDollars(v.flexLowestAskAmount) !== null ||
+              parseStockXMoneyToDollars(v.highestBidAmount) !== null ||
+              parseStockXMoneyToDollars(v.flexHighestBidAmount) !== null
+          ) || strictMatches[0]
+        );
+      }
       return pool.find((v: any) => {
         const variantSize = v.variantValue || v.size || v.sizeValue || v.shoeSize || v.displaySize;
         const candidate = normalize(variantSize);
