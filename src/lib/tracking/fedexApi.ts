@@ -402,6 +402,7 @@ export class FedExTrackingAPI {
       AR: 'in_transit', // Arrived
       AD: 'in_transit', // At destination / facility
       AA: 'in_transit',
+      AE: 'in_transit', // Arriving early (FedEx uses AE for some "arriving early" updates)
       FD: 'in_transit',
 
       // Out for delivery
@@ -431,6 +432,7 @@ export class FedExTrackingAPI {
       text.includes('in transit') ||
       text.includes('departed') ||
       text.includes('arrived') ||
+      text.includes('arriving early') ||
       text.includes('at local') ||
       text.includes('at destination') ||
       text.includes('at fedex')
