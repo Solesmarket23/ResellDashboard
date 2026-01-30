@@ -52,6 +52,7 @@ export class SlackNotificationService {
   private username: string;
   private iconEmoji: string;
   private mention: string | null;
+  private slackTimeZone: string;
 
   constructor(options: SlackNotificationOptions) {
     this.webhookUrl = options.webhookUrl;
@@ -61,6 +62,20 @@ export class SlackNotificationService {
     // Can be overridden via env so production can change without code edits.
     const envMention = (process.env.SLACK_DELIVERIES_MENTION || process.env.SLACK_MENTION || '').trim();
     this.mention = envMention || '@solesmarket23';
+    this.slackTimeZone = (process.env.SLACK_TIMEZONE || process.env.TZ || 'America/New_York').trim() || 'America/New_York';
+  }
+
+  private toYmdInTimeZone(d: Date): string {
+    try {
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: this.slackTimeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(d);
+    } catch {
+      return d.toISOString().split('T')[0];
+    }
   }
 
   private toFiniteNumber(value: unknown): number | null {
@@ -265,7 +280,7 @@ export class SlackNotificationService {
       text: { type: 'mrkdwn', text: '*🚚 Arriving Today (breakdown)*' },
     });
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = this.toYmdInTimeZone(new Date());
     const arrivingTodayAll = summary.deliveries.filter((d) => {
       const eta = String(d.estimatedDelivery || '').trim();
       const s = String(d.status || '').toLowerCase().trim();

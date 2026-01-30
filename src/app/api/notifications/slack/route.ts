@@ -403,9 +403,22 @@ export async function POST(request: NextRequest) {
 
     // Prioritize live StockX fetches for items arriving today (the Slack "daily" breakdown),
     // so we don't burn budget on far-future ETAs while today's items show "skipped".
-    const todayForSlack = new Date();
-    todayForSlack.setHours(0, 0, 0, 0);
-    const todayStrForSlack = todayForSlack.toISOString().split('T')[0];
+    const slackTimeZone =
+      (process.env.SLACK_TIMEZONE || process.env.TZ || 'America/New_York').trim() || 'America/New_York';
+    const toYmdInTimeZone = (d: Date, tz: string): string => {
+      try {
+        // en-CA produces YYYY-MM-DD which matches our ETA strings.
+        return new Intl.DateTimeFormat('en-CA', {
+          timeZone: tz,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        }).format(d);
+      } catch {
+        return d.toISOString().split('T')[0];
+      }
+    };
+    const todayStrForSlack = toYmdInTimeZone(new Date(), slackTimeZone);
     // We want market prices for anything "on the way" (not just a narrow carrier-status subset).
     // Many tracking APIs return UNKNOWN/LABEL_CREATED/etc, which should still count as on-the-way.
     const marketCache = new Map<string, Promise<ReturnType<typeof fetchStockXMarketPriceDetailed>>>();
