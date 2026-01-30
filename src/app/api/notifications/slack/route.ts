@@ -400,6 +400,12 @@ export async function POST(request: NextRequest) {
     const MAX_DELIVERIES_IN_SLACK_MESSAGE = 40; // Slack blocks max is 50; each item is ~1 block + overhead
     const allowAnyLiveMarketFetch = purchasesWithTracking.length <= 50; // disable entirely for very large tracked sets
     let remainingLiveMarketFetchBudget = MAX_LIVE_MARKET_FETCH_ITEMS;
+
+    // Prioritize live StockX fetches for items arriving today (the Slack "daily" breakdown),
+    // so we don't burn budget on far-future ETAs while today's items show "skipped".
+    const todayForSlack = new Date();
+    todayForSlack.setHours(0, 0, 0, 0);
+    const todayStrForSlack = todayForSlack.toISOString().split('T')[0];
     // We want market prices for anything "on the way" (not just a narrow carrier-status subset).
     // Many tracking APIs return UNKNOWN/LABEL_CREATED/etc, which should still count as on-the-way.
     const marketCache = new Map<string, Promise<ReturnType<typeof fetchStockXMarketPriceDetailed>>>();
@@ -607,7 +613,10 @@ export async function POST(request: NextRequest) {
       });
       // Live StockX pricing can be expensive. We only do it for a small number of on-the-way items,
       // and we disable it entirely for very large tracked sets.
+      const arrivingTodayForSlack = estimatedDelivery === todayStrForSlack || status === 'out_for_delivery';
       const shouldAttemptLiveFetch = (() => {
+        // For Slack daily summaries: focus live market fetch on items arriving today.
+        if (!arrivingTodayForSlack) return false;
         if (!onTheWay) return false;
         if (!allowAnyLiveMarketFetch) return false;
         if (remainingLiveMarketFetchBudget <= 0) return false;
@@ -656,7 +665,7 @@ export async function POST(request: NextRequest) {
           // Keep Slack fast: skip live fetch when disabled or budget exhausted.
           marketDebug.failedByReason['live_fetch_skipped_for_speed'] =
             (marketDebug.failedByReason['live_fetch_skipped_for_speed'] || 0) + 1;
-          marketStatus = 'unavailable — live fetch skipped';
+          marketStatus = arrivingTodayForSlack ? 'unavailable — live fetch skipped' : 'unavailable — not arriving today';
           marketDebug.items.push({
             ...itemDebugBase,
             decision: 'skipped_rate_limited',
