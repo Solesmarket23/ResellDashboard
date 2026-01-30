@@ -162,6 +162,19 @@ export class SlackNotificationService {
   }
 
   /**
+   * Send an Out-for-Delivery-only breakdown to Slack
+   */
+  async sendOutForDeliveryOnly(args: { deliveries: DeliverySummary['deliveries'] }): Promise<void> {
+    const blocks = this.formatOutForDeliveryOnly(args.deliveries || []);
+    const count = Array.isArray(args.deliveries) ? args.deliveries.length : 0;
+    const mention = this.mention ? `${this.mention} ` : '';
+    await this.sendMessage({
+      text: `${mention}${count} out-for-delivery item${count === 1 ? '' : 's'}`,
+      blocks,
+    });
+  }
+
+  /**
    * Send a single delivery update to Slack
    */
   async sendDeliveryUpdate(delivery: {
@@ -411,6 +424,84 @@ export class SlackNotificationService {
           text: `_Last updated: ${new Date().toLocaleString()}_`
         }
       ]
+    });
+
+    return blocks;
+  }
+
+  private formatOutForDeliveryOnly(deliveries: DeliverySummary['deliveries']): any[] {
+    const blocks: any[] = [];
+
+    if (this.mention) {
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `${this.mention}` },
+      });
+    }
+
+    blocks.push({
+      type: 'header',
+      text: { type: 'plain_text', text: '🚚 Out for Delivery', emoji: true },
+    });
+
+    const list = Array.isArray(deliveries) ? deliveries : [];
+    const only = list.filter((d) => String((d as any)?.status || '').toLowerCase().trim() === 'out_for_delivery');
+
+    if (!only.length) {
+      blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '_No items are out for delivery right now._' } });
+      return blocks;
+    }
+
+    // Slack hard limit: 50 blocks.
+    const MAX_ITEMS = 40;
+    const truncated = only.length > MAX_ITEMS;
+    const items = only.slice(0, MAX_ITEMS);
+
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*${only.length}* item${only.length === 1 ? '' : 's'} out for delivery` },
+    });
+
+    if (truncated) {
+      blocks.push({
+        type: 'context',
+        elements: [{ type: 'mrkdwn', text: `_Showing ${MAX_ITEMS} of ${only.length} to stay within Slack limits._` }],
+      });
+    }
+
+    items.forEach((delivery) => {
+      const money = this.formatMoneyLine({
+        purchasePrice: (delivery as any).purchasePrice,
+        marketPrice: (delivery as any).marketPrice,
+        estimatedProfit: (delivery as any).estimatedProfit,
+      });
+      const trackingLink = this.formatTrackingLink((delivery as any).trackingNumber, (delivery as any).carrier);
+      const links = [
+        (delivery as any).purchaseLink,
+        (delivery as any).gmailLink,
+        (delivery as any).stockxLink,
+        (delivery as any).marketLink,
+      ]
+        .filter(Boolean)
+        .join(' | ');
+      const linksLine = links ? `\n  Links: ${links}` : '';
+      const moneyLine = money.text ? `\n  ${money.text}` : '';
+
+      const section: any = {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `• *${(delivery as any).productName}* (${(delivery as any).productBrand})\n  Size: ${(delivery as any).productSize} | ${(delivery as any).carrier}: ${trackingLink}${moneyLine}${linksLine}`,
+        },
+      };
+      if (typeof (delivery as any).productImage === 'string' && (delivery as any).productImage.startsWith('https://')) {
+        section.accessory = {
+          type: 'image',
+          image_url: (delivery as any).productImage,
+          alt_text: String((delivery as any).productName || 'Product').slice(0, 200),
+        };
+      }
+      blocks.push(section);
     });
 
     return blocks;

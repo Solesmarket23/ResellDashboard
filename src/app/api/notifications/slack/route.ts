@@ -1084,6 +1084,8 @@ export async function POST(request: NextRequest) {
         ...(marketPriceNote ? { marketPriceNote } : {}),
         deliveries: deliveriesForSlack
       });
+    } else if (type === 'out_for_delivery') {
+      await slackService.sendOutForDeliveryOnly({ deliveries: deliveriesForSlack });
     }
 
     console.log(`✅ Slack notification sent successfully`);
@@ -1098,7 +1100,8 @@ export async function POST(request: NextRequest) {
         arrivingToday,
         arrivingTomorrow,
         arrivingThisWeek,
-        inTransit
+        inTransit,
+        outForDelivery: deliveries.filter((d) => d.status === 'out_for_delivery').length
       }
     });
 

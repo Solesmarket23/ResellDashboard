@@ -1294,8 +1294,7 @@ const DeliveriesNew: React.FC = () => {
     window.open(`/dashboard?section=purchases&purchaseId=${encodeURIComponent(purchaseId)}`, '_blank', 'noopener,noreferrer');
   };
 
-  // Send Slack notification
-  const handleSendSlackNotification = async () => {
+  const sendSlack = async (type: 'daily_summary' | 'out_for_delivery') => {
     if (!user) {
       showNotification('Please sign in to send notifications', 'error');
       return;
@@ -1328,7 +1327,7 @@ const DeliveriesNew: React.FC = () => {
         signal: controller.signal,
         body: JSON.stringify({
           userId: user.uid,
-          type: 'daily_summary',
+          type,
           purchases // Send purchases for localStorage users
         })
       });
@@ -1357,10 +1356,14 @@ const DeliveriesNew: React.FC = () => {
       }
 
       if (data.sent) {
-        showNotification(
-          `Sent to Slack! ${data.summary.arrivingToday} arriving today, ${data.summary.arrivingTomorrow} tomorrow`,
-          'success'
-        );
+        if (type === 'out_for_delivery') {
+          showNotification(`Sent Out for Delivery to Slack! ${data?.summary?.outForDelivery ?? 0} item(s)`, 'success');
+        } else {
+          showNotification(
+            `Sent to Slack! ${data.summary.arrivingToday} arriving today, ${data.summary.arrivingTomorrow} tomorrow`,
+            'success'
+          );
+        }
       } else {
         showNotification('No deliveries to notify about', 'info');
       }
@@ -1381,6 +1384,16 @@ const DeliveriesNew: React.FC = () => {
     } finally {
       setSendingSlackNotification(false);
     }
+  };
+
+  // Send Slack notification (daily summary)
+  const handleSendSlackNotification = async () => {
+    await sendSlack('daily_summary');
+  };
+
+  // Send Slack notification (out for delivery only)
+  const handleSendSlackOutForDelivery = async () => {
+    await sendSlack('out_for_delivery');
   };
 
   // Filter deliveries
@@ -1620,6 +1633,29 @@ const DeliveriesNew: React.FC = () => {
                    <Bell className="w-4 h-4" />
                  )}
                  {sendingSlackNotification ? 'Sending...' : 'Send to Slack'}
+               </button>
+
+               {/* Send Out-for-Delivery-only Slack Button */}
+               <button
+                 onClick={handleSendSlackOutForDelivery}
+                 disabled={
+                   sendingSlackNotification ||
+                   deliveries.filter((d) => String(d.status || '').toLowerCase().trim() === 'out_for_delivery').length === 0
+                 }
+                 className={`h-11 px-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 ${
+                   currentTheme.name === 'Neon' ? 'focus:ring-cyan-400/40' : 'focus:ring-blue-500'
+                 } bg-orange-600 hover:bg-orange-700 ${
+                   sendingSlackNotification ? 'animate-pulse' : ''
+                 }`}
+                 title="Send Out for Delivery items to Slack"
+                 aria-busy={sendingSlackNotification}
+               >
+                 {sendingSlackNotification ? (
+                   <RefreshCw className="w-4 h-4 animate-spin" />
+                 ) : (
+                   <Truck className="w-4 h-4" />
+                 )}
+                 {sendingSlackNotification ? 'Sending...' : 'Send OFD'}
                </button>
                
                {/* View Mode Toggle */}
