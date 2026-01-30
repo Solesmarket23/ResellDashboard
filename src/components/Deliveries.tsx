@@ -1715,6 +1715,23 @@ const DeliveriesNew: React.FC = () => {
     );
   }
 
+  const outForDeliveryCount = deliveries.filter((d) => String(d.status || '').toLowerCase().trim() === 'out_for_delivery').length;
+  const trackingLookupErrorCount = deliveries.filter((d) => {
+    const note = String((d as any)?.statusNote || '').toLowerCase();
+    return note.includes('tracking lookup error') || note.includes('live tracking not configured') || note.includes('fedex auth failed');
+  }).length;
+  const ofdDisabledBecauseNone = outForDeliveryCount === 0;
+  const ofdDisabledReason = sendingSlackNotification
+    ? 'Sending…'
+    : ofdDisabledBecauseNone
+      ? `Disabled: no packages are currently marked “Out for Delivery”.${trackingLookupErrorCount > 0 ? ' Tracking lookups look unhealthy right now, so statuses may be wrong.' : ''}`
+      : null;
+  const slackSummaryDisabledReason = sendingSlackNotification
+    ? 'Sending…'
+    : deliveries.length === 0
+      ? 'Disabled: no deliveries are loaded yet.'
+      : null;
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Wider layout on large screens so the table can show more columns */}
@@ -1732,47 +1749,62 @@ const DeliveriesNew: React.FC = () => {
                <UPSOAuthButton className="shrink-0" />
                
                {/* Send Slack Notification Button */}
-               <button
-                 onClick={handleSendSlackNotification}
-                 disabled={sendingSlackNotification || deliveries.length === 0}
-                 className={`h-11 px-4 min-w-[140px] inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors text-white disabled:text-white disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 ${
-                   currentTheme.name === 'Neon' ? 'focus:ring-cyan-400/40' : 'focus:ring-blue-500'
-                 } bg-purple-600 hover:bg-purple-700 ${
-                   sendingSlackNotification && sendingSlackType === 'daily_summary' ? 'animate-pulse cursor-wait' : ''
-                 }`}
-                 title="Send delivery summary to Slack"
-                 aria-busy={sendingSlackNotification && sendingSlackType === 'daily_summary'}
-               >
-                 {sendingSlackNotification && sendingSlackType === 'daily_summary' ? (
-                   <RefreshCw className="w-4 h-4 animate-spin" />
-                 ) : (
-                   <Bell className="w-4 h-4" />
+               <div className="relative group">
+                 <button
+                   onClick={handleSendSlackNotification}
+                   disabled={sendingSlackNotification || deliveries.length === 0}
+                   className={`h-11 px-4 min-w-[140px] inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors text-white disabled:text-white disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 ${
+                     currentTheme.name === 'Neon' ? 'focus:ring-cyan-400/40' : 'focus:ring-blue-500'
+                   } bg-purple-600 hover:bg-purple-700 ${
+                     sendingSlackNotification && sendingSlackType === 'daily_summary' ? 'animate-pulse cursor-wait' : ''
+                   }`}
+                   title="Send delivery summary to Slack"
+                   aria-busy={sendingSlackNotification && sendingSlackType === 'daily_summary'}
+                 >
+                   {sendingSlackNotification && sendingSlackType === 'daily_summary' ? (
+                     <RefreshCw className="w-4 h-4 animate-spin" />
+                   ) : (
+                     <Bell className="w-4 h-4" />
+                   )}
+                   {sendingSlackNotification && sendingSlackType === 'daily_summary' ? 'Sending...' : 'Send to Slack'}
+                 </button>
+                 {slackSummaryDisabledReason && (
+                   <div className="pointer-events-none absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full hidden group-hover:block">
+                     <div className="max-w-xs rounded-xl border border-white/10 bg-black/80 px-3 py-2 text-xs text-white shadow-xl">
+                       {slackSummaryDisabledReason}
+                     </div>
+                   </div>
                  )}
-                 {sendingSlackNotification && sendingSlackType === 'daily_summary' ? 'Sending...' : 'Send to Slack'}
-               </button>
+               </div>
 
                {/* Send Out-for-Delivery-only Slack Button */}
-               <button
-                 onClick={handleSendSlackOutForDelivery}
-                 disabled={
-                   sendingSlackNotification ||
-                   deliveries.filter((d) => String(d.status || '').toLowerCase().trim() === 'out_for_delivery').length === 0
-                 }
-                 className={`h-11 px-4 min-w-[120px] inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors text-white disabled:text-white disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 ${
-                   currentTheme.name === 'Neon' ? 'focus:ring-cyan-400/40' : 'focus:ring-blue-500'
-                 } bg-orange-600 hover:bg-orange-700 ${
-                   sendingSlackNotification && sendingSlackType === 'out_for_delivery' ? 'animate-pulse cursor-wait' : ''
-                 }`}
-                 title="Send Out for Delivery items to Slack"
-                 aria-busy={sendingSlackNotification && sendingSlackType === 'out_for_delivery'}
-               >
-                 {sendingSlackNotification && sendingSlackType === 'out_for_delivery' ? (
-                   <RefreshCw className="w-4 h-4 animate-spin" />
-                 ) : (
-                   <Truck className="w-4 h-4" />
+               <div className="relative group">
+                 <button
+                   onClick={handleSendSlackOutForDelivery}
+                   disabled={sendingSlackNotification || ofdDisabledBecauseNone}
+                   className={`h-11 px-4 min-w-[120px] inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors text-white disabled:text-white disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 ${
+                     currentTheme.name === 'Neon' ? 'focus:ring-cyan-400/40' : 'focus:ring-blue-500'
+                   } bg-orange-600 hover:bg-orange-700 ${
+                     sendingSlackNotification && sendingSlackType === 'out_for_delivery' ? 'animate-pulse cursor-wait' : ''
+                   }`}
+                   title="Send Out for Delivery items to Slack"
+                   aria-busy={sendingSlackNotification && sendingSlackType === 'out_for_delivery'}
+                 >
+                   {sendingSlackNotification && sendingSlackType === 'out_for_delivery' ? (
+                     <RefreshCw className="w-4 h-4 animate-spin" />
+                   ) : (
+                     <Truck className="w-4 h-4" />
+                   )}
+                   {sendingSlackNotification && sendingSlackType === 'out_for_delivery' ? 'Sending...' : 'Send OFD'}
+                 </button>
+                 {ofdDisabledReason && (
+                   <div className="pointer-events-none absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full hidden group-hover:block">
+                     <div className="max-w-xs rounded-xl border border-white/10 bg-black/80 px-3 py-2 text-xs text-white shadow-xl">
+                       {ofdDisabledReason}
+                     </div>
+                   </div>
                  )}
-                 {sendingSlackNotification && sendingSlackType === 'out_for_delivery' ? 'Sending...' : 'Send OFD'}
-               </button>
+               </div>
 
                {/* Daily Slack schedule settings */}
                <button
