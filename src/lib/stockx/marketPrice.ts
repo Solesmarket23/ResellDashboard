@@ -70,12 +70,18 @@ function buildSearchTerms(args: {
 function parseStockXMoneyToDollars(raw: unknown): number | null {
   if (raw === null || raw === undefined) return null;
   // StockX commonly returns cents as strings (e.g. "12345"), but sometimes dollars.
-  const n = typeof raw === 'number' ? raw : parseFloat(String(raw));
+  const rawStr = typeof raw === 'string' ? raw.trim() : String(raw).trim();
+  const n = typeof raw === 'number' ? raw : parseFloat(rawStr);
   if (!Number.isFinite(n) || n <= 0) return null;
-  // Heuristic: if it's huge, treat as cents.
-  if (n > 10_000) return n / 100;
-  // If it's an integer and >= 1000, also likely cents.
-  if (Number.isInteger(n) && n >= 1000) return n / 100;
+  // Robust cents-vs-dollars heuristic:
+  // - Many StockX endpoints return cents as an integer-like string with 5+ digits (e.g. "299300" -> $2,993.00)
+  // - High-priced items can legitimately be 4 digits in dollars (e.g. 2993 -> $2,993), so do NOT downscale those.
+  // - If the input looks like cents (5+ digits and no decimal), treat as cents.
+  const looksInteger = Number.isInteger(n);
+  const looksCentsString = typeof raw === 'string' && /^[0-9]{5,}$/.test(rawStr);
+  if (looksCentsString) return n / 100;
+  // For numeric inputs, only treat as cents when it's clearly huge.
+  if (looksInteger && n > 10_000) return n / 100;
   return n;
 }
 
