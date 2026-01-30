@@ -10,7 +10,10 @@ export type StockXMarketPriceResult = {
   variantId?: string;
   urlKey?: string;
   termUsed?: string;
-  askSource?: 'standard' | 'flex';
+  // Source used to compute `price`. Prefer sell-side (highest bid) when present, otherwise buy-side (lowest ask).
+  priceSource?: 'bid_standard' | 'bid_flex' | 'ask_standard' | 'ask_flex';
+  bidStd?: number | null;
+  bidFlex?: number | null;
   askStd?: number | null;
   askFlex?: number | null;
   reason:
@@ -298,12 +301,37 @@ function lowestAskFromVariant(variant: any): number | null {
   return std ?? flex ?? null;
 }
 
-function askDebugFromVariant(variant: any): { price: number | null; askSource?: 'standard' | 'flex'; askStd: number | null; askFlex: number | null } {
+function priceDebugFromVariant(variant: any): {
+  price: number | null;
+  priceSource?: StockXMarketPriceResult['priceSource'];
+  bidStd: number | null;
+  bidFlex: number | null;
+  askStd: number | null;
+  askFlex: number | null;
+} {
+  const bidStd = parseStockXMoneyToDollars(
+    (variant as any)?.highestBidAmount ??
+      (variant as any)?.highestBid ??
+      (variant as any)?.highestBidCents ??
+      (variant as any)?.highestBidAmountCents
+  );
+  const bidFlex = parseStockXMoneyToDollars(
+    (variant as any)?.flexHighestBidAmount ??
+      (variant as any)?.flexHighestBid ??
+      (variant as any)?.flexHighestBidCents ??
+      (variant as any)?.flexHighestBidAmountCents
+  );
   const askStd = parseStockXMoneyToDollars(variant?.lowestAskAmount);
   const askFlex = parseStockXMoneyToDollars(variant?.flexLowestAskAmount);
-  if (askStd !== null) return { price: askStd, askSource: 'standard', askStd, askFlex };
-  if (askFlex !== null) return { price: askFlex, askSource: 'flex', askStd, askFlex };
-  return { price: null, askStd, askFlex };
+
+  // Prefer sell-side (highest bid) for profit calculations / "market" value.
+  if (bidStd !== null) return { price: bidStd, priceSource: 'bid_standard', bidStd, bidFlex, askStd, askFlex };
+  if (bidFlex !== null) return { price: bidFlex, priceSource: 'bid_flex', bidStd, bidFlex, askStd, askFlex };
+
+  // Fall back to buy-side (lowest ask) if no bids exist.
+  if (askStd !== null) return { price: askStd, priceSource: 'ask_standard', bidStd, bidFlex, askStd, askFlex };
+  if (askFlex !== null) return { price: askFlex, priceSource: 'ask_flex', bidStd, bidFlex, askStd, askFlex };
+  return { price: null, bidStd, bidFlex, askStd, askFlex };
 }
 
 export async function fetchStockXMarketPriceDetailed(args: {
@@ -379,8 +407,8 @@ export async function fetchStockXMarketPriceDetailed(args: {
         // Continue through non-direct flow below (variants list + pick by size).
         // NOTE: We'll keep productId, but ignore the variantId to avoid wrong-size pricing.
       } else {
-      const ask = askDebugFromVariant(variantData);
-      const price = ask.price;
+      const priceInfo = priceDebugFromVariant(variantData);
+      const price = priceInfo.price;
       if (price === null) {
         return {
           price: null,
@@ -393,9 +421,11 @@ export async function fetchStockXMarketPriceDetailed(args: {
       }
       return {
         price,
-        askSource: ask.askSource,
-        askStd: ask.askStd,
-        askFlex: ask.askFlex,
+        priceSource: priceInfo.priceSource,
+        bidStd: priceInfo.bidStd,
+        bidFlex: priceInfo.bidFlex,
+        askStd: priceInfo.askStd,
+        askFlex: priceInfo.askFlex,
         reason: 'ok',
         details: 'direct_variant_market_data',
         productId: directProductId,
@@ -476,10 +506,23 @@ export async function fetchStockXMarketPriceDetailed(args: {
       const arr = Array.isArray(marketData) ? marketData : [];
       const variant = pickVariantBySize(arr, args.size);
       if (!variant) return { price: null, reason: 'no_variant', stage: 'market', productId, variantId, urlKey: urlKey || undefined, termUsed: termUsed || undefined };
-      const ask = askDebugFromVariant(variant);
-      const price = ask.price;
+      const priceInfo = priceDebugFromVariant(variant);
+      const price = priceInfo.price;
       if (price === null) return { price: null, reason: 'no_price', stage: 'market', productId, variantId, urlKey: urlKey || undefined, termUsed: termUsed || undefined };
-      return { price, askSource: ask.askSource, askStd: ask.askStd, askFlex: ask.askFlex, reason: 'ok', details: 'fallback_product_market_data', productId, variantId, urlKey: urlKey || undefined, termUsed: termUsed || undefined };
+      return {
+        price,
+        priceSource: priceInfo.priceSource,
+        bidStd: priceInfo.bidStd,
+        bidFlex: priceInfo.bidFlex,
+        askStd: priceInfo.askStd,
+        askFlex: priceInfo.askFlex,
+        reason: 'ok',
+        details: 'fallback_product_market_data',
+        productId,
+        variantId,
+        urlKey: urlKey || undefined,
+        termUsed: termUsed || undefined,
+      };
     }
 
     const vmData = await vmRes.json().catch(() => null);
@@ -487,10 +530,22 @@ export async function fetchStockXMarketPriceDetailed(args: {
       ? vmData.find((item: any) => String(item?.variantId) === String(variantId))
       : vmData;
     if (!variantData) return { price: null, reason: 'no_variant', stage: 'market', productId, variantId, urlKey: urlKey || undefined, termUsed: termUsed || undefined };
-    const ask = askDebugFromVariant(variantData);
-    const price = ask.price;
+    const priceInfo = priceDebugFromVariant(variantData);
+    const price = priceInfo.price;
     if (price === null) return { price: null, reason: 'no_price', stage: 'market', productId, variantId, urlKey: urlKey || undefined, termUsed: termUsed || undefined };
-    return { price, askSource: ask.askSource, askStd: ask.askStd, askFlex: ask.askFlex, reason: 'ok', productId, variantId, urlKey: urlKey || undefined, termUsed: termUsed || undefined };
+    return {
+      price,
+      priceSource: priceInfo.priceSource,
+      bidStd: priceInfo.bidStd,
+      bidFlex: priceInfo.bidFlex,
+      askStd: priceInfo.askStd,
+      askFlex: priceInfo.askFlex,
+      reason: 'ok',
+      productId,
+      variantId,
+      urlKey: urlKey || undefined,
+      termUsed: termUsed || undefined,
+    };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     // Best-effort: never throw to callers (Slack notifications, etc.)
