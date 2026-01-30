@@ -152,7 +152,7 @@ export class SlackNotificationService {
     const profitText = profitToday !== null ? `$${profitToday.toFixed(2)}` : 'unknown';
     const subject = `${summary.arrivingToday} item${summary.arrivingToday === 1 ? '' : 's'} arriving today for a ${profitText} projected profit`;
     const mention = this.mention ? `${this.mention} ` : '';
-
+    
     await this.sendMessage({
       // Slack push notification previews use this top-level `text`.
       // Keep it concise and informational.
@@ -165,11 +165,17 @@ export class SlackNotificationService {
    * Send an Out-for-Delivery-only breakdown to Slack
    */
   async sendOutForDeliveryOnly(args: { deliveries: DeliverySummary['deliveries'] }): Promise<void> {
-    const blocks = this.formatOutForDeliveryOnly(args.deliveries || []);
     const count = Array.isArray(args.deliveries) ? args.deliveries.length : 0;
+    const list = Array.isArray(args.deliveries) ? args.deliveries : [];
+    const ofd = list.filter((d) => String((d as any)?.status || '').toLowerCase().trim() === 'out_for_delivery');
+    const totalProfit = ofd.reduce((sum, d: any) => {
+      const n = typeof d?.estimatedProfit === 'number' ? d.estimatedProfit : parseFloat(String(d?.estimatedProfit ?? ''));
+      return Number.isFinite(n) ? sum + n : sum;
+    }, 0);
+    const blocks = this.formatOutForDeliveryOnly(list);
     const mention = this.mention ? `${this.mention} ` : '';
     await this.sendMessage({
-      text: `${mention}${count} out-for-delivery item${count === 1 ? '' : 's'}`,
+      text: `${mention}${ofd.length} out-for-delivery item${ofd.length === 1 ? '' : 's'} — est. profit $${totalProfit.toFixed(2)}`,
       blocks,
     });
   }
@@ -339,7 +345,7 @@ export class SlackNotificationService {
           type: 'context',
           elements: [{ type: 'mrkdwn', text: `_Showing ${MAX_ITEMS} of ${itemsAll.length} to stay within Slack limits._` }],
         });
-      }
+        }
 
       if (!items.length) {
         blocks.push({
@@ -379,7 +385,7 @@ export class SlackNotificationService {
           .filter(Boolean)
           .join(' | ');
         const linksLine = links ? `\n  Links: ${links}` : '';
-
+        
         const section: any = {
           type: 'section',
           text: {
@@ -452,6 +458,11 @@ export class SlackNotificationService {
       return blocks;
     }
 
+    const totalProfit = only.reduce((sum, d: any) => {
+      const n = typeof d?.estimatedProfit === 'number' ? d.estimatedProfit : parseFloat(String(d?.estimatedProfit ?? ''));
+      return Number.isFinite(n) ? sum + n : sum;
+    }, 0);
+
     // Slack hard limit: 50 blocks.
     const MAX_ITEMS = 40;
     const truncated = only.length > MAX_ITEMS;
@@ -459,7 +470,7 @@ export class SlackNotificationService {
 
     blocks.push({
       type: 'section',
-      text: { type: 'mrkdwn', text: `*${only.length}* item${only.length === 1 ? '' : 's'} out for delivery` },
+      text: { type: 'mrkdwn', text: `*${only.length}* item${only.length === 1 ? '' : 's'} out for delivery\n*Total est. profit:* $${totalProfit.toFixed(2)}` },
     });
 
     if (truncated) {
@@ -518,17 +529,17 @@ export class SlackNotificationService {
         const timeoutId = setTimeout(() => controller.abort(), 12_000);
         try {
           return await fetch(this.webhookUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
             signal: controller.signal,
-            body: JSON.stringify({
-              username: this.username,
-              icon_emoji: this.iconEmoji,
-              ...payload
-            })
-          });
+        body: JSON.stringify({
+          username: this.username,
+          icon_emoji: this.iconEmoji,
+          ...payload
+        })
+      });
         } finally {
           clearTimeout(timeoutId);
         }
