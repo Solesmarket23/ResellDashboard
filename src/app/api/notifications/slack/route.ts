@@ -396,9 +396,9 @@ export async function POST(request: NextRequest) {
     }
     const stockxSem = new Semaphore(3);
     // Guardrails to keep Slack sends fast and within Slack's block limits.
-    const MAX_LIVE_MARKET_FETCH_ITEMS = 12; // cap expensive live StockX lookups per request
+    const MAX_LIVE_MARKET_FETCH_ITEMS = 50; // cap expensive live StockX lookups per request
     const MAX_DELIVERIES_IN_SLACK_MESSAGE = 40; // Slack blocks max is 50; each item is ~1 block + overhead
-    const allowAnyLiveMarketFetch = purchasesWithTracking.length <= 25; // disable entirely for very large tracked sets
+    const allowAnyLiveMarketFetch = purchasesWithTracking.length <= 50; // disable entirely for very large tracked sets
     let remainingLiveMarketFetchBudget = MAX_LIVE_MARKET_FETCH_ITEMS;
     // We want market prices for anything "on the way" (not just a narrow carrier-status subset).
     // Many tracking APIs return UNKNOWN/LABEL_CREATED/etc, which should still count as on-the-way.
