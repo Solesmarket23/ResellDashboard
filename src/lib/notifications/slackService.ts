@@ -49,11 +49,16 @@ export class SlackNotificationService {
   private webhookUrl: string;
   private username: string;
   private iconEmoji: string;
+  private mention: string | null;
 
   constructor(options: SlackNotificationOptions) {
     this.webhookUrl = options.webhookUrl;
     this.username = options.username || 'Delivery Bot';
     this.iconEmoji = options.iconEmoji || ':package:';
+    // Optional mention string to prepend to summaries (e.g. "@solesmarket23" or "<!here>" or "<@U123...>").
+    // Can be overridden via env so production can change without code edits.
+    const envMention = (process.env.SLACK_DELIVERIES_MENTION || process.env.SLACK_MENTION || '').trim();
+    this.mention = envMention || '@solesmarket23';
   }
 
   private toFiniteNumber(value: unknown): number | null {
@@ -111,11 +116,12 @@ export class SlackNotificationService {
         : null;
     const profitText = profitToday !== null ? `$${profitToday.toFixed(2)}` : 'unknown';
     const subject = `${summary.arrivingToday} item${summary.arrivingToday === 1 ? '' : 's'} arriving today for a ${profitText} projected profit`;
+    const mention = this.mention ? `${this.mention} ` : '';
 
     await this.sendMessage({
       // Slack push notification previews use this top-level `text`.
       // Keep it concise and informational.
-      text: subject,
+      text: `${mention}${subject}`,
       blocks: message
     });
   }
@@ -170,6 +176,14 @@ export class SlackNotificationService {
    */
   private formatDeliverySummary(summary: DeliverySummary): any[] {
     const blocks: any[] = [];
+
+    // Mention (first line) so Slack notifies the user/channel if supported by workspace settings.
+    if (this.mention) {
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `${this.mention}` },
+      });
+    }
 
     // Header
     blocks.push({
