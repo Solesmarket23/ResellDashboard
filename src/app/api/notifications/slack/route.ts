@@ -560,6 +560,7 @@ export async function POST(request: NextRequest) {
       let purchasePrice: number | undefined;
       let marketPrice: number | undefined;
       let estimatedProfit: number | undefined;
+      let marketStatus: string | undefined;
 
       // Get purchase price (total amount paid) - check all possible field names
       // Priority order: total_amount (Gmail parsed) > totalAmount > totalPayment > price
@@ -596,6 +597,14 @@ export async function POST(request: NextRequest) {
         marketPrice = undefined;
       }
       const cachedMarketPrice = marketPrice;
+
+      // Always attach a StockX link (even if we can't fetch a market price). This ensures Slack has "StockX Search".
+      (purchase as any).__stockxLink = buildStockXSlackLink({
+        urlKey,
+        styleId,
+        productName,
+        size: productSizeLookup,
+      });
       // Live StockX pricing can be expensive. We only do it for a small number of on-the-way items,
       // and we disable it entirely for very large tracked sets.
       const shouldAttemptLiveFetch = (() => {
@@ -647,6 +656,7 @@ export async function POST(request: NextRequest) {
           // Keep Slack fast: skip live fetch when disabled or budget exhausted.
           marketDebug.failedByReason['live_fetch_skipped_for_speed'] =
             (marketDebug.failedByReason['live_fetch_skipped_for_speed'] || 0) + 1;
+          marketStatus = 'unavailable — live fetch skipped';
           marketDebug.items.push({
             ...itemDebugBase,
             decision: 'skipped_rate_limited',
@@ -658,6 +668,7 @@ export async function POST(request: NextRequest) {
         if (!auth) {
           console.log(`⚠️ Missing STOCKX_API_KEY, skipping price fetch`);
           marketDebug.failedByReason['missing_api_key'] = (marketDebug.failedByReason['missing_api_key'] || 0) + 1;
+          marketStatus = 'unavailable — missing StockX API key';
           marketDebug.items.push({
             ...itemDebugBase,
             decision: 'fetched_failed',
@@ -669,6 +680,7 @@ export async function POST(request: NextRequest) {
             marketDebug.skippedNoAuth++;
             marketDebug.failedByReason['missing_stockx_tokens'] =
               (marketDebug.failedByReason['missing_stockx_tokens'] || 0) + 1;
+            marketStatus = 'unavailable — StockX not connected';
             // User-requested behavior: do NOT fall back to cached; keep as unknown so we can verify live fetch coverage.
             marketDebug.items.push({
               ...itemDebugBase,
@@ -697,6 +709,7 @@ export async function POST(request: NextRequest) {
             if (result.price) {
               marketPrice = result.price;
               marketDebug.fetchedOk++;
+              marketStatus = undefined;
               console.log(`✅ Real-time price fetched: ${productName}${styleId ? ` (StyleId: ${styleId})` : ''} = $${marketPrice}`);
               const stockxUrlKey = (result as any).urlKey as string | undefined;
               const termUsed = (result as any).termUsed as string | undefined;
@@ -750,6 +763,8 @@ export async function POST(request: NextRequest) {
               }
             } else {
               marketDebug.failedByReason[result.reason] = (marketDebug.failedByReason[result.reason] || 0) + 1;
+              // Short, user-facing reason for why this item didn't get a market price.
+              marketStatus = `unavailable — ${result.reason.replace(/_/g, ' ')}`;
               if (typeof result.httpStatus === 'number') {
                 const key = `${result.stage || 'unknown'}:${result.httpStatus}`;
                 marketDebug.failedHttpStatuses[key] = (marketDebug.failedHttpStatuses[key] || 0) + 1;
@@ -805,9 +820,11 @@ export async function POST(request: NextRequest) {
           result: { details: cachedMarketSource || 'cached_unknown_field' },
         });
         marketDebug.cachedUsed++;
+        marketStatus = undefined;
       }
       if (marketPrice !== undefined && (!Number.isFinite(marketPrice) || marketPrice <= 0)) {
         marketPrice = undefined;
+        if (!marketStatus) marketStatus = 'unavailable';
       }
 
       // Calculate estimated profit: Market Price - Purchase Price
@@ -835,6 +852,7 @@ export async function POST(request: NextRequest) {
         purchasePrice,
         marketPrice,
         estimatedProfit,
+        ...(marketPrice === undefined && marketStatus ? { marketStatus } : {}),
         purchaseLink: purchaseId ? `<${baseUrl}/dashboard?section=purchases&purchaseId=${encodeURIComponent(purchaseId)}|Purchase>` : undefined,
         gmailLink,
         stockxLink: (purchase as any).__stockxLink as string | undefined,

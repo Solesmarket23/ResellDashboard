@@ -29,6 +29,8 @@ export interface DeliverySummary {
     purchasePrice?: number;
     marketPrice?: number;
     estimatedProfit?: number;
+    // When marketPrice is missing, this can explain why (e.g. "unavailable — StockX not connected").
+    marketStatus?: string;
     purchaseLink?: string;
     // Legacy (kept for backward compatibility if any callers still provide it)
     marketLink?: string;
@@ -293,7 +295,18 @@ export class SlackNotificationService {
           marketPrice: (delivery as any).marketPrice,
           estimatedProfit: (delivery as any).estimatedProfit,
         });
-        const moneyLine = money.text ? `\n  ${money.text}` : '';
+        const hasMarket = this.toFiniteNumber((delivery as any).marketPrice) !== null;
+        const marketStatus = typeof (delivery as any).marketStatus === 'string' ? (delivery as any).marketStatus.trim() : '';
+        const moneyWithMarketStatus =
+          money.text && !hasMarket && marketStatus
+            ? `${money.text} | Market: (${marketStatus})`
+            : money.text;
+        const moneyLine =
+          moneyWithMarketStatus
+            ? `\n  ${moneyWithMarketStatus}`
+            : marketStatus && !hasMarket
+              ? `\n  Market: (${marketStatus})`
+              : '';
         const trackingLink = this.formatTrackingLink(delivery.trackingNumber, delivery.carrier);
         const links = [delivery.purchaseLink, (delivery as any).gmailLink, (delivery as any).stockxLink, delivery.marketLink]
           .filter(Boolean)
