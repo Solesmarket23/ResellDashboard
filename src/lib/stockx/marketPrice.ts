@@ -134,6 +134,10 @@ export async function getStockXAccessToken(auth: StockXAuth): Promise<{ accessTo
 function pickVariantBySize(variants: any[], size: string): any | null {
   if (!Array.isArray(variants) || variants.length === 0) return null;
   const wantedRaw = String(size || '').trim();
+  const wantedUpper = wantedRaw.toUpperCase();
+  const wantsWomen = /\bW\b/.test(wantedUpper) || wantedUpper.includes('USW') || wantedUpper.includes("WOMEN");
+  const wantsMen = /\bM\b/.test(wantedUpper) || wantedUpper.includes('USM') || wantedUpper.includes("MEN");
+  const wantsYouth = /\bY\b/.test(wantedUpper);
   const canonicalize = (s: unknown) => {
     const raw = String(s ?? '')
       .trim()
@@ -166,6 +170,49 @@ function pickVariantBySize(variants: any[], size: string): any | null {
   const wanted = normalize(wantedRaw);
   const isLetterSize = (t: string) => ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'].includes(t);
   if (wanted && wanted !== 'UNKNOWN') {
+    // If the input size is explicitly Women's / Men's / Youth, prefer matching that cohort first.
+    // This avoids common mismatches like US W 8 matching a Men's USM8 variant.
+    const cohortFiltered = (cohort: 'W' | 'M' | 'Y') => {
+      return variants.filter((v: any) => {
+        const variantSize = v.variantValue || v.size || v.sizeValue || v.shoeSize || v.displaySize;
+        const raw = String(variantSize ?? '').toUpperCase().replace(/\s+/g, '');
+        if (!raw) return false;
+        if (cohort === 'W') return raw.includes('USW') || raw.startsWith('W');
+        if (cohort === 'M') return raw.includes('USM') || raw.startsWith('M');
+        if (cohort === 'Y') return raw.includes('Y');
+        return false;
+      });
+    };
+
+    const tryExactIn = (pool: any[]) => {
+      return pool.find((v: any) => {
+        const variantSize = v.variantValue || v.size || v.sizeValue || v.shoeSize || v.displaySize;
+        const candidate = normalize(variantSize);
+        if (!candidate) return false;
+        if (candidate === wanted) return true;
+        // Handle common StockX variants like "USM8.5" / "USW8.5" etc.
+        if (candidate === `USM${wanted}` || candidate === `USW${wanted}`) return true;
+        if (isLetterSize(wanted)) {
+          // Letter sizes must match exactly (avoid XS matching XXS, etc.)
+          return candidate === `US${wanted}` || candidate === `USM${wanted}` || candidate === `USW${wanted}`;
+        }
+        // Numeric/other short tokens: allow end-match (e.g. "USM8.5" ends with "8.5")
+        if (wanted.length <= 6 && candidate.endsWith(wanted)) return true;
+        return false;
+      });
+    };
+
+    if (wantsWomen) {
+      const v = tryExactIn(cohortFiltered('W'));
+      if (v) return v;
+    } else if (wantsMen) {
+      const v = tryExactIn(cohortFiltered('M'));
+      if (v) return v;
+    } else if (wantsYouth) {
+      const v = tryExactIn(cohortFiltered('Y'));
+      if (v) return v;
+    }
+
     const exact = variants.find((v: any) => {
       const variantSize = v.variantValue || v.size || v.sizeValue || v.shoeSize || v.displaySize;
       const candidate = normalize(variantSize);
@@ -191,6 +238,15 @@ function pickVariantBySize(variants: any[], size: string): any | null {
 }
 
 function stockxSizeMatchesWanted(wantedRaw: string, actualRaw: unknown): boolean {
+  const wantedUpper = String(wantedRaw ?? '').toUpperCase();
+  const wantsWomen = /\bW\b/.test(wantedUpper) || wantedUpper.includes('USW') || wantedUpper.includes('WOMEN');
+  const wantsMen = /\bM\b/.test(wantedUpper) || wantedUpper.includes('USM') || wantedUpper.includes('MEN');
+  const wantsYouth = /\bY\b/.test(wantedUpper);
+  const actualUpper = String(actualRaw ?? '').toUpperCase().replace(/\s+/g, '');
+  if (wantsWomen && !(actualUpper.includes('USW') || actualUpper.startsWith('W'))) return false;
+  if (wantsMen && !(actualUpper.includes('USM') || actualUpper.startsWith('M'))) return false;
+  if (wantsYouth && !actualUpper.includes('Y')) return false;
+
   const canonicalize = (s: unknown) => {
     const raw = String(s ?? '')
       .trim()
