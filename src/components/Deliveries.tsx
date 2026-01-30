@@ -1719,10 +1719,10 @@ const DeliveriesNew: React.FC = () => {
                <button
                  onClick={handleSendSlackNotification}
                  disabled={sendingSlackNotification || deliveries.length === 0}
-                 className={`h-11 px-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 ${
+                 className={`h-11 px-4 min-w-[140px] inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors text-white disabled:text-white disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 ${
                    currentTheme.name === 'Neon' ? 'focus:ring-cyan-400/40' : 'focus:ring-blue-500'
                  } bg-purple-600 hover:bg-purple-700 ${
-                   sendingSlackNotification && sendingSlackType === 'daily_summary' ? 'animate-pulse' : ''
+                   sendingSlackNotification && sendingSlackType === 'daily_summary' ? 'animate-pulse cursor-wait' : ''
                  }`}
                  title="Send delivery summary to Slack"
                  aria-busy={sendingSlackNotification && sendingSlackType === 'daily_summary'}
@@ -1742,10 +1742,10 @@ const DeliveriesNew: React.FC = () => {
                    sendingSlackNotification ||
                    deliveries.filter((d) => String(d.status || '').toLowerCase().trim() === 'out_for_delivery').length === 0
                  }
-                 className={`h-11 px-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 ${
+                 className={`h-11 px-4 min-w-[120px] inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors text-white disabled:text-white disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 ${
                    currentTheme.name === 'Neon' ? 'focus:ring-cyan-400/40' : 'focus:ring-blue-500'
                  } bg-orange-600 hover:bg-orange-700 ${
-                   sendingSlackNotification && sendingSlackType === 'out_for_delivery' ? 'animate-pulse' : ''
+                   sendingSlackNotification && sendingSlackType === 'out_for_delivery' ? 'animate-pulse cursor-wait' : ''
                  }`}
                  title="Send Out for Delivery items to Slack"
                  aria-busy={sendingSlackNotification && sendingSlackType === 'out_for_delivery'}
