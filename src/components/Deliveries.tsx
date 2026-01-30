@@ -266,6 +266,7 @@ const DeliveriesNew: React.FC = () => {
   });
   const [sendingSlackNotification, setSendingSlackNotification] = useState(false);
   const [sendingSlackType, setSendingSlackType] = useState<'daily_summary' | 'out_for_delivery' | null>(null);
+  const slackSendTimedOutRef = useRef(false);
   const [showSlackScheduleModal, setShowSlackScheduleModal] = useState(false);
   const [slackScheduleLoading, setSlackScheduleLoading] = useState(false);
   const [slackScheduleSaving, setSlackScheduleSaving] = useState(false);
@@ -1322,6 +1323,7 @@ const DeliveriesNew: React.FC = () => {
     try {
       setSendingSlackNotification(true);
       setSendingSlackType(type);
+      slackSendTimedOutRef.current = false;
       console.log('📨 Sending Slack notification...');
 
       // Get purchases from localStorage for site password users
@@ -1340,7 +1342,18 @@ const DeliveriesNew: React.FC = () => {
       // Hard client-side timeout so the UI never gets stuck "Sending..." forever.
       // Daily summary does more work (tracking + market pricing), OFD is smaller/faster.
       const timeoutMs = type === 'daily_summary' ? 90_000 : 45_000;
-      timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+      timeoutId = window.setTimeout(() => {
+        slackSendTimedOutRef.current = true;
+        try {
+          controller.abort();
+        } catch {
+          // ignore
+        }
+        // Force-reset UI even if fetch doesn't reject properly in this environment.
+        setSendingSlackNotification(false);
+        setSendingSlackType(null);
+        showNotification('Slack send timed out — try again', 'error');
+      }, timeoutMs);
 
       const res = await fetch('/api/notifications/slack', {
         method: 'POST',
@@ -1393,12 +1406,15 @@ const DeliveriesNew: React.FC = () => {
       
       const name = String((e as any)?.name || '');
       if (name === 'AbortError' || name.toLowerCase().includes('abort')) {
-        showNotification(
-          sendingSlackType === 'daily_summary'
-            ? 'Slack send timed out — try again (daily summary can take longer)'
-            : 'Slack send timed out — try again',
-          'error'
-        );
+        // If our watchdog already fired, don't double-toast.
+        if (!slackSendTimedOutRef.current) {
+          showNotification(
+            type === 'daily_summary'
+              ? 'Slack send timed out — try again (daily summary can take longer)'
+              : 'Slack send timed out — try again',
+            'error'
+          );
+        }
         return;
       }
 
