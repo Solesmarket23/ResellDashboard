@@ -10,8 +10,9 @@ export type StockXMarketPriceResult = {
   variantId?: string;
   urlKey?: string;
   termUsed?: string;
-  // Source used to compute `price`. Prefer sell-side (highest bid) when present, otherwise buy-side (lowest ask).
-  priceSource?: 'bid_standard' | 'bid_flex' | 'ask_standard' | 'ask_flex';
+  // Source used to compute `price`. For this app, treat "Market" as the buy-side price (Lowest Ask),
+  // and fall back only when ask is unavailable.
+  priceSource?: 'ask_standard' | 'ask_flex' | 'bid_standard' | 'bid_flex';
   bidStd?: number | null;
   bidFlex?: number | null;
   askStd?: number | null;
@@ -324,13 +325,13 @@ function priceDebugFromVariant(variant: any): {
   const askStd = parseStockXMoneyToDollars(variant?.lowestAskAmount);
   const askFlex = parseStockXMoneyToDollars(variant?.flexLowestAskAmount);
 
-  // Prefer sell-side (highest bid) for profit calculations / "market" value.
-  if (bidStd !== null) return { price: bidStd, priceSource: 'bid_standard', bidStd, bidFlex, askStd, askFlex };
-  if (bidFlex !== null) return { price: bidFlex, priceSource: 'bid_flex', bidStd, bidFlex, askStd, askFlex };
-
-  // Fall back to buy-side (lowest ask) if no bids exist.
+  // Treat "Market" as buy-side (Lowest Ask).
   if (askStd !== null) return { price: askStd, priceSource: 'ask_standard', bidStd, bidFlex, askStd, askFlex };
   if (askFlex !== null) return { price: askFlex, priceSource: 'ask_flex', bidStd, bidFlex, askStd, askFlex };
+
+  // Fall back to sell-side (Highest Bid) only if ask is missing.
+  if (bidStd !== null) return { price: bidStd, priceSource: 'bid_standard', bidStd, bidFlex, askStd, askFlex };
+  if (bidFlex !== null) return { price: bidFlex, priceSource: 'bid_flex', bidStd, bidFlex, askStd, askFlex };
   return { price: null, bidStd, bidFlex, askStd, askFlex };
 }
 
