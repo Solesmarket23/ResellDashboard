@@ -177,9 +177,10 @@ function pickVariantBySize(variants: any[], size: string): any | null {
         const variantSize = v.variantValue || v.size || v.sizeValue || v.shoeSize || v.displaySize;
         const raw = String(variantSize ?? '').toUpperCase().replace(/\s+/g, '');
         if (!raw) return false;
-        if (cohort === 'W') return raw.includes('USW') || raw.startsWith('W');
+        // Women's sizes can appear as "USW8", "W8", or "8W" depending on endpoint.
+        if (cohort === 'W') return raw.includes('USW') || raw.startsWith('W') || raw.endsWith('W') || raw.includes('WOMEN');
         if (cohort === 'M') return raw.includes('USM') || raw.startsWith('M');
-        if (cohort === 'Y') return raw.includes('Y');
+        if (cohort === 'Y') return raw.includes('Y') || raw.endsWith('Y');
         return false;
       });
     };
@@ -243,9 +244,9 @@ function stockxSizeMatchesWanted(wantedRaw: string, actualRaw: unknown): boolean
   const wantsMen = /\bM\b/.test(wantedUpper) || wantedUpper.includes('USM') || wantedUpper.includes('MEN');
   const wantsYouth = /\bY\b/.test(wantedUpper);
   const actualUpper = String(actualRaw ?? '').toUpperCase().replace(/\s+/g, '');
-  if (wantsWomen && !(actualUpper.includes('USW') || actualUpper.startsWith('W'))) return false;
+  if (wantsWomen && !(actualUpper.includes('USW') || actualUpper.startsWith('W') || actualUpper.endsWith('W') || actualUpper.includes('WOMEN'))) return false;
   if (wantsMen && !(actualUpper.includes('USM') || actualUpper.startsWith('M'))) return false;
-  if (wantsYouth && !actualUpper.includes('Y')) return false;
+  if (wantsYouth && !(actualUpper.includes('Y') || actualUpper.endsWith('Y'))) return false;
 
   const canonicalize = (s: unknown) => {
     const raw = String(s ?? '')

@@ -794,7 +794,9 @@ export async function POST(request: NextRequest) {
             const result = await fetchMarketWithControls({
               auth,
               productName,
-              size: productSizeLookup,
+              // Use the raw display size here so we preserve cohort hints like "US W 8" for variant matching.
+              // (The URL link can still use the simplified size token.)
+              size: productSizeDisplay,
               styleId,
               urlKey,
               productId: ids.productId,
