@@ -48,9 +48,25 @@ function normalizeStockXSizeForLookup(raw: unknown): string {
   const s = String(raw ?? '').trim();
   if (!s) return 'Unknown';
   if (s.toLowerCase() === 'unknown') return 'Unknown';
-  // If numeric size is present: "US M 8.5" -> "8.5", "US 6.5Y" -> "6.5"
+  const upper = s.toUpperCase();
+  const isWomen =
+    /\bW\b/.test(upper) ||
+    upper.includes('USW') ||
+    upper.includes('WOMEN') ||
+    /(\d+(?:\.\d+)?)W\b/.test(upper);
+  const isYouth =
+    /\bY\b/.test(upper) ||
+    upper.includes('YOUTH') ||
+    /(\d+(?:\.\d+)?)Y\b/.test(upper);
+
+  // If numeric size is present: "US M 8.5" -> "8.5", "US W 6.5" -> "6.5W", "US 6.5Y" -> "6.5Y"
   const m = s.match(/(\d+(?:\.\d+)?)/);
-  if (m) return m[1];
+  if (m) {
+    const num = m[1];
+    if (isYouth) return `${num}Y`;
+    if (isWomen) return `${num}W`;
+    return num;
+  }
   // Apparel sizes: normalize to a simple token (S/M/L/XL/XXL/XXXL/XS) when possible.
   const letter = s.match(/\b(XXXL|XXL|XL|XS|S|M|L)\b/i)?.[1];
   if (letter) return letter.toUpperCase();
