@@ -117,6 +117,22 @@ function normalizeTrackingError(error: unknown): string | null {
     return 'Live tracking not configured';
   }
 
+  // FedEx auth / permission failures (most common cause of "everything is unknown")
+  if (
+    lower.includes('fedex authentication failed') ||
+    lower.includes('fedex oauth failed') ||
+    lower.includes('oauth/token') ||
+    lower.includes('invalid_client') ||
+    lower.includes('unauthorized') ||
+    lower.includes('forbidden') ||
+    lower.includes(' 401 ') ||
+    lower.includes(' 403 ') ||
+    lower.includes('fedex api error: 401') ||
+    lower.includes('fedex api error: 403')
+  ) {
+    return 'FedEx auth failed — check FEDEX_API_KEY / FEDEX_SECRET_KEY (Vercel env)';
+  }
+
   if (lower.includes('timeout') || lower.includes('timed out')) {
     return 'Tracking lookup timed out — try again';
   }
