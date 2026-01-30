@@ -31,6 +31,9 @@ export interface DeliverySummary {
     estimatedProfit?: number;
     // When marketPrice is missing, this can explain why (e.g. "unavailable — StockX not connected").
     marketStatus?: string;
+    // Optional: show both StockX sides for clarity (Buy = Lowest Ask, Sell = Highest Bid)
+    stockxLowestAsk?: number;
+    stockxHighestBid?: number;
     purchaseLink?: string;
     // Legacy (kept for backward compatibility if any callers still provide it)
     marketLink?: string;
@@ -340,6 +343,8 @@ export class SlackNotificationService {
           marketPrice: (delivery as any).marketPrice,
           estimatedProfit: (delivery as any).estimatedProfit,
         });
+        const ask = this.toFiniteNumber((delivery as any).stockxLowestAsk);
+        const bid = this.toFiniteNumber((delivery as any).stockxHighestBid);
         const hasMarket = this.toFiniteNumber((delivery as any).marketPrice) !== null;
         const marketStatus = typeof (delivery as any).marketStatus === 'string' ? (delivery as any).marketStatus.trim() : '';
         const moneyWithMarketStatus =
@@ -352,6 +357,10 @@ export class SlackNotificationService {
             : marketStatus && !hasMarket
               ? `\n  Market: (${marketStatus})`
               : '';
+        const twoSidedLine =
+          ask !== null || bid !== null
+            ? `\n  Buy (Ask): ${ask !== null ? `$${ask.toFixed(2)}` : '—'} | Sell (Bid): ${bid !== null ? `$${bid.toFixed(2)}` : '—'}`
+            : '';
         const trackingLink = this.formatTrackingLink(delivery.trackingNumber, delivery.carrier);
         const links = [delivery.purchaseLink, (delivery as any).gmailLink, (delivery as any).stockxLink, delivery.marketLink]
           .filter(Boolean)
@@ -362,7 +371,7 @@ export class SlackNotificationService {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `• *${delivery.productName}* (${delivery.productBrand})\n  Size: ${delivery.productSize} | ETA: ${eta}\n  ${delivery.carrier}: ${trackingLink}${moneyLine}${linksLine}`,
+            text: `• *${delivery.productName}* (${delivery.productBrand})\n  Size: ${delivery.productSize} | ETA: ${eta}\n  ${delivery.carrier}: ${trackingLink}${moneyLine}${twoSidedLine}${linksLine}`,
           },
         };
         if (typeof (delivery as any).productImage === 'string' && (delivery as any).productImage.startsWith('https://')) {

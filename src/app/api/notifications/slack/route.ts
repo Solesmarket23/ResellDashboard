@@ -649,6 +649,8 @@ export async function POST(request: NextRequest) {
       let marketPrice: number | undefined;
       let estimatedProfit: number | undefined;
       let marketStatus: string | undefined;
+      let stockxLowestAsk: number | undefined;
+      let stockxHighestBid: number | undefined;
 
       // Get purchase price (total amount paid) - check all possible field names
       // Priority order: total_amount (Gmail parsed) > totalAmount > totalPayment > price
@@ -806,6 +808,12 @@ export async function POST(request: NextRequest) {
               marketPrice = result.price;
               marketDebug.fetchedOk++;
               marketStatus = undefined;
+              const askStd = typeof (result as any).askStd === 'number' ? (result as any).askStd : null;
+              const askFlex = typeof (result as any).askFlex === 'number' ? (result as any).askFlex : null;
+              const bidStd = typeof (result as any).bidStd === 'number' ? (result as any).bidStd : null;
+              const bidFlex = typeof (result as any).bidFlex === 'number' ? (result as any).bidFlex : null;
+              stockxLowestAsk = (askStd ?? askFlex ?? undefined) as any;
+              stockxHighestBid = (bidStd ?? bidFlex ?? undefined) as any;
               console.log(`✅ Real-time price fetched: ${productName}${styleId ? ` (StyleId: ${styleId})` : ''} = $${marketPrice}`);
               const stockxUrlKey = (result as any).urlKey as string | undefined;
               const termUsed = (result as any).termUsed as string | undefined;
@@ -861,6 +869,12 @@ export async function POST(request: NextRequest) {
               marketDebug.failedByReason[result.reason] = (marketDebug.failedByReason[result.reason] || 0) + 1;
               // Short, user-facing reason for why this item didn't get a market price.
               marketStatus = `unavailable — ${result.reason.replace(/_/g, ' ')}`;
+              const askStd = typeof (result as any).askStd === 'number' ? (result as any).askStd : null;
+              const askFlex = typeof (result as any).askFlex === 'number' ? (result as any).askFlex : null;
+              const bidStd = typeof (result as any).bidStd === 'number' ? (result as any).bidStd : null;
+              const bidFlex = typeof (result as any).bidFlex === 'number' ? (result as any).bidFlex : null;
+              stockxLowestAsk = (askStd ?? askFlex ?? undefined) as any;
+              stockxHighestBid = (bidStd ?? bidFlex ?? undefined) as any;
               if (typeof result.httpStatus === 'number') {
                 const key = `${result.stage || 'unknown'}:${result.httpStatus}`;
                 marketDebug.failedHttpStatuses[key] = (marketDebug.failedHttpStatuses[key] || 0) + 1;
@@ -948,6 +962,8 @@ export async function POST(request: NextRequest) {
         purchasePrice,
         marketPrice,
         estimatedProfit,
+        ...(typeof stockxLowestAsk === 'number' && Number.isFinite(stockxLowestAsk) ? { stockxLowestAsk } : {}),
+        ...(typeof stockxHighestBid === 'number' && Number.isFinite(stockxHighestBid) ? { stockxHighestBid } : {}),
         ...(marketPrice === undefined && marketStatus ? { marketStatus } : {}),
         purchaseLink: purchaseId ? `<${baseUrl}/dashboard?section=purchases&purchaseId=${encodeURIComponent(purchaseId)}|Purchase>` : undefined,
         gmailLink,
