@@ -301,8 +301,22 @@ function stockxSizeMatchesWanted(wantedRaw: string, actualRaw: unknown): boolean
   if (!actual) return false;
   const isLetterSize = (t: string) => ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'].includes(t);
   if (actual === wanted) return true;
+  // Cohort-aware common forms: "USW8", "W8", "8W", etc.
+  if (wantsWomen) {
+    if (actual === `USW${wanted}` || actual === `W${wanted}` || actual === `${wanted}W`) return true;
+  }
+  if (wantsMen) {
+    if (actual === `USM${wanted}` || actual === `M${wanted}` || actual === `${wanted}M`) return true;
+  }
+  if (wantsYouth) {
+    if (actual === `USY${wanted}` || actual === `Y${wanted}` || actual === `${wanted}Y`) return true;
+  }
   if (actual === `US${wanted}` || actual === `USM${wanted}` || actual === `USW${wanted}`) return true;
   if (isLetterSize(wanted)) return false; // do not allow substring matches for letter sizes
+  // If StockX uses suffix cohort letters (e.g. "8W"), allow stripping trailing cohort to match numeric wanted.
+  if (wantsWomen && /^[0-9.]+W$/.test(actual) && actual.slice(0, -1) === wanted) return true;
+  if (wantsMen && /^[0-9.]+M$/.test(actual) && actual.slice(0, -1) === wanted) return true;
+  if (wantsYouth && /^[0-9.]+Y$/.test(actual) && actual.slice(0, -1) === wanted) return true;
   return actual.endsWith(wanted);
 }
 
