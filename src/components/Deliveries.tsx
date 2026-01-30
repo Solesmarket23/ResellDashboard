@@ -1318,6 +1318,7 @@ const DeliveriesNew: React.FC = () => {
       return;
     }
 
+    let timeoutId: number | null = null;
     try {
       setSendingSlackNotification(true);
       setSendingSlackType(type);
@@ -1336,9 +1337,10 @@ const DeliveriesNew: React.FC = () => {
       }
 
       const controller = new AbortController();
-      // Slack summary can do live tracking + optional market-price fetches; give it a bit more time.
-      // (We also cap work server-side, but this keeps the UX resilient on slower connections.)
-      const timeout = window.setTimeout(() => controller.abort(), 90_000);
+      // Hard client-side timeout so the UI never gets stuck "Sending..." forever.
+      // Daily summary does more work (tracking + market pricing), OFD is smaller/faster.
+      const timeoutMs = type === 'daily_summary' ? 90_000 : 45_000;
+      timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
       const res = await fetch('/api/notifications/slack', {
         method: 'POST',
@@ -1350,7 +1352,6 @@ const DeliveriesNew: React.FC = () => {
           purchases // Send purchases for localStorage users
         })
       });
-      window.clearTimeout(timeout);
 
       const data = await res.json();
 
@@ -1390,8 +1391,14 @@ const DeliveriesNew: React.FC = () => {
       console.error('Failed to send Slack notification:', e);
       const errorMsg = e instanceof Error ? e.message : 'Unknown error';
       
-      if (String((e as any)?.name || '').toLowerCase().includes('abort')) {
-        showNotification('Slack send timed out — try again (or reduce the number of tracked items)', 'error');
+      const name = String((e as any)?.name || '');
+      if (name === 'AbortError' || name.toLowerCase().includes('abort')) {
+        showNotification(
+          sendingSlackType === 'daily_summary'
+            ? 'Slack send timed out — try again (daily summary can take longer)'
+            : 'Slack send timed out — try again',
+          'error'
+        );
         return;
       }
 
@@ -1401,6 +1408,9 @@ const DeliveriesNew: React.FC = () => {
         showNotification(`Failed to send notification: ${errorMsg}`, 'error');
       }
     } finally {
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
       setSendingSlackNotification(false);
       setSendingSlackType(null);
     }
