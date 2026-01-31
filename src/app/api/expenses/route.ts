@@ -117,18 +117,16 @@ export async function GET(request: NextRequest) {
       return yyyyMmDd(dt);
     })();
 
-    let q = col(userId).orderBy('date', 'desc').orderBy('createdAtMs', 'desc').limit(500);
+    // Avoid requiring a composite Firestore index:
+    // `where(date range) + orderBy(date) + orderBy(createdAtMs)` triggers FAILED_PRECONDITION unless an index exists.
+    // We only order by `date` in Firestore, then do a stable in-memory tie-break by `createdAtMs`.
+    let q = col(userId).orderBy('date', 'desc').limit(500);
     if (start && endExclusive) {
-      q = col(userId)
-        .where('date', '>=', start)
-        .where('date', '<', endExclusive)
-        .orderBy('date', 'desc')
-        .orderBy('createdAtMs', 'desc')
-        .limit(500);
+      q = col(userId).where('date', '>=', start).where('date', '<', endExclusive).orderBy('date', 'desc').limit(500);
     }
 
     const snap = await q.get();
-    const expenses: Expense[] = snap.docs
+    let expenses: Expense[] = snap.docs
       .map((d) => {
         const data = d.data() as any;
         return {
@@ -145,6 +143,13 @@ export async function GET(request: NextRequest) {
         };
       })
       .filter((e) => e.amount > 0 && !!e.date);
+
+    // Stable sort: newest date first, then newest createdAtMs first (matches previous query intent).
+    expenses = expenses.sort((a, b) => {
+      const dateCmp = String(b.date).localeCompare(String(a.date));
+      if (dateCmp !== 0) return dateCmp;
+      return (b.createdAtMs || 0) - (a.createdAtMs || 0);
+    });
 
     return NextResponse.json({ success: true, expenses });
   } catch (error: any) {
