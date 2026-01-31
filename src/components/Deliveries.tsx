@@ -1407,6 +1407,15 @@ const DeliveriesNew: React.FC = () => {
         throw new Error(data.error || 'Failed to send notification');
       }
 
+      if (data?.slackDateDebug) {
+        console.log('🕒 Slack slackDateDebug:', data.slackDateDebug);
+        try {
+          (window as any).__lastSlackDateDebug = data.slackDateDebug;
+        } catch {
+          // ignore
+        }
+      }
+
       if (data?.marketPriceDebug) {
         console.log('📊 Slack marketPriceDebug:', data.marketPriceDebug);
         try {

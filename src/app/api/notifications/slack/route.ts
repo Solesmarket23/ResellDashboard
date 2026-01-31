@@ -268,6 +268,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
     }
 
+    const isUtcishTz = (tz: string): boolean => {
+      const t = String(tz || '').trim().toUpperCase();
+      return t === 'UTC' || t === 'GMT' || t === 'ETC/UTC' || t === 'ETC/GMT';
+    };
+    const sanitizeIanaTz = (tz: string): string | null => {
+      const s = String(tz || '').trim();
+      if (!s) return null;
+      if (isUtcishTz(s)) return null;
+      try {
+        // Throws RangeError if invalid
+        new Intl.DateTimeFormat('en-US', { timeZone: s }).format(new Date());
+        return s;
+      } catch {
+        return null;
+      }
+    };
+
     // Create Slack service (prefer per-user Deliveries Slack settings; fallback to env)
     let slackService: SlackNotificationService | null = null;
     let userSlackTimezone: string | null = null;
@@ -276,7 +293,7 @@ export async function POST(request: NextRequest) {
       const snap = await db.collection('users').doc(userId).get();
       const data = snap.exists ? (snap.data() as any) : null;
       const webhookUrl = String(data?.deliveriesSlack?.webhookUrl || '').trim();
-      const tz = String(data?.deliveriesSlack?.timezone || '').trim();
+      const tz = sanitizeIanaTz(String(data?.deliveriesSlack?.timezone || '').trim());
       if (tz) userSlackTimezone = tz;
       if (webhookUrl) {
         slackService = new SlackNotificationService({
@@ -431,13 +448,9 @@ export async function POST(request: NextRequest) {
     // IMPORTANT: Do NOT use process.env.TZ (often UTC).
     // Prefer user's Deliveries Slack timezone. If no user tz is set, default to ET.
     // We allow SLACK_TIMEZONE, but treat UTC-ish values as unsafe defaults for "today/tomorrow" bucketing.
-    const envSlackTz = String(process.env.SLACK_TIMEZONE || '').trim();
-    const envLooksUtc =
-      envSlackTz.toUpperCase() === 'UTC' ||
-      envSlackTz.toUpperCase() === 'GMT' ||
-      envSlackTz.toUpperCase() === 'ETC/UTC' ||
-      envSlackTz.toUpperCase() === 'ETC/GMT';
-    const slackTimeZone = String(userSlackTimezone || (envSlackTz && !envLooksUtc ? envSlackTz : '') || 'America/New_York').trim() || 'America/New_York';
+    const envSlackTz = sanitizeIanaTz(String(process.env.SLACK_TIMEZONE || '').trim());
+    const slackTimeZone =
+      String(userSlackTimezone || envSlackTz || 'America/New_York').trim() || 'America/New_York';
     const toYmdInTimeZone = (d: Date, tz: string): string => {
       try {
         // en-CA produces YYYY-MM-DD which matches our ETA strings.
@@ -476,6 +489,13 @@ export async function POST(request: NextRequest) {
     const todayStrForSlack = toYmdInTimeZone(businessNowForSlack, slackTimeZone);
     const tomorrowStrForSlack = toYmdInTimeZone(new Date(businessNowForSlack.getTime() + 24 * 60 * 60 * 1000), slackTimeZone);
     const includeTomorrowForSlack = localHourForSlack >= 21;
+    const slackDateDebug = {
+      slackTimeZone,
+      localHourForSlack,
+      businessCutoverApplied: localHourForSlack < 6,
+      todayStrForSlack,
+      tomorrowStrForSlack,
+    };
 
     const parsePurchasePrice = (purchase: any): number | null => {
       const pick = (v: any): number | null => {
@@ -1119,6 +1139,7 @@ export async function POST(request: NextRequest) {
       message: 'Notification sent',
       sent: true,
       marketPriceDebug: marketDebug,
+      slackDateDebug,
       summary: {
         totalDeliveries: deliveries.length,
         arrivingToday,

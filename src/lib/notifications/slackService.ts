@@ -67,16 +67,26 @@ export class SlackNotificationService {
     // Can be overridden via env so production can change without code edits.
     const envMention = (process.env.SLACK_DELIVERIES_MENTION || process.env.SLACK_MENTION || '').trim();
     this.mention = typeof options.mention === 'string' ? options.mention : (options.mention === null ? null : (envMention || '@solesmarket23'));
+    const isUtcishTz = (tz: string): boolean => {
+      const t = String(tz || '').trim().toUpperCase();
+      return t === 'UTC' || t === 'GMT' || t === 'ETC/UTC' || t === 'ETC/GMT';
+    };
+    const sanitizeIanaTz = (tz: string): string | null => {
+      const s = String(tz || '').trim();
+      if (!s) return null;
+      if (isUtcishTz(s)) return null;
+      try {
+        new Intl.DateTimeFormat('en-US', { timeZone: s }).format(new Date());
+        return s;
+      } catch {
+        return null;
+      }
+    };
+
     // IMPORTANT: Do NOT use process.env.TZ here (often UTC in serverless).
-    // Prefer explicit per-user setting; otherwise default to ET. Allow SLACK_TIMEZONE but avoid UTC-ish defaults.
-    const envSlackTz = String(process.env.SLACK_TIMEZONE || '').trim();
-    const envLooksUtc =
-      envSlackTz.toUpperCase() === 'UTC' ||
-      envSlackTz.toUpperCase() === 'GMT' ||
-      envSlackTz.toUpperCase() === 'ETC/UTC' ||
-      envSlackTz.toUpperCase() === 'ETC/GMT';
-    const fallbackTz = envSlackTz && !envLooksUtc ? envSlackTz : 'America/New_York';
-    this.slackTimeZone = String(options.timezone || fallbackTz).trim() || 'America/New_York';
+    // Prefer explicit per-user setting; otherwise default to ET.
+    const fallbackTz = sanitizeIanaTz(process.env.SLACK_TIMEZONE || '') || 'America/New_York';
+    this.slackTimeZone = sanitizeIanaTz(options.timezone || '') || fallbackTz;
   }
 
   private toYmdInTimeZone(d: Date): string {
