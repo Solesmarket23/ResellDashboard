@@ -2367,11 +2367,11 @@ const DeliveriesNew: React.FC = () => {
                     <span className="text-white font-semibold">{stat.label}</span>
                   </div>
                   {showStatsSkeleton ? (
-                    <div className="mt-2">
+                    <div className="mt-2 flex justify-center">
                       <div className="h-7 w-14 rounded bg-white/15 animate-pulse" />
                     </div>
                   ) : (
-                    <p className="text-2xl font-bold text-white mt-1">
+                    <p className="text-2xl font-bold text-white mt-1 text-center w-full">
                       {hasDeliveries ? stat.getValue() : (cachedStatValues?.[statId] ?? 0)}
                     </p>
                   )}
