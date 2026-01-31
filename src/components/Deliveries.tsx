@@ -1756,16 +1756,14 @@ const DeliveriesNew: React.FC = () => {
     return note.includes('tracking lookup error') || note.includes('live tracking not configured') || note.includes('fedex auth failed');
   }).length;
   const ofdDisabledBecauseNone = outForDeliveryCount === 0;
-  const ofdDisabledReason = sendingSlackNotification
-    ? `Sending Out for Delivery items to Slack… (times out after ~45s)`
-    : ofdDisabledBecauseNone
-      ? `Disabled: no packages are currently marked “Out for Delivery”.${trackingLookupErrorCount > 0 ? ' Tracking lookups look unhealthy right now, so statuses may be wrong.' : ''}`
-      : null;
-  const slackSummaryDisabledReason = sendingSlackNotification
-    ? `Sending daily summary to Slack… (times out after ~90s)`
-    : deliveries.length === 0
-      ? 'Disabled: no deliveries are loaded yet.'
-      : null;
+  // Tooltips should explain *why disabled*; during sending we already show spinner + "Sending..." on the button,
+  // and a hover tooltip can "stick" because the button becomes disabled under the cursor.
+  const ofdDisabledReason = !sendingSlackNotification && ofdDisabledBecauseNone
+    ? `Disabled: no packages are currently marked “Out for Delivery”.${trackingLookupErrorCount > 0 ? ' Tracking lookups look unhealthy right now, so statuses may be wrong.' : ''}`
+    : null;
+  const slackSummaryDisabledReason = !sendingSlackNotification && deliveries.length === 0
+    ? 'Disabled: no deliveries are loaded yet.'
+    : null;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
