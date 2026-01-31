@@ -16,6 +16,20 @@ export class SessionManager {
   private initializeActivityTracking() {
     if (typeof window === 'undefined') return;
 
+    // Seed lastActivity on startup so reopening the app doesn't immediately invalidate the session.
+    // (Previously, lastActivity was only set after the first user interaction event.)
+    try {
+      const existing = localStorage.getItem('lastActivity');
+      if (!existing) {
+        localStorage.setItem('lastActivity', this.lastActivityTime.toString());
+      } else {
+        const parsed = Number.parseInt(existing, 10);
+        if (Number.isFinite(parsed)) this.lastActivityTime = parsed;
+      }
+    } catch {
+      // Ignore storage failures; session validity will fall back to in-memory time.
+    }
+
     // Track user activity
     const activityEvents = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
     
@@ -64,7 +78,16 @@ export class SessionManager {
     const rememberMe = localStorage.getItem('rememberMe') === 'true';
     const lastActivity = localStorage.getItem('lastActivity');
     
-    if (!lastActivity) return false;
+    // If there's no stored activity yet, don't force sign-out — treat as valid and seed now.
+    if (!lastActivity) {
+      this.lastActivityTime = Date.now();
+      try {
+        localStorage.setItem('lastActivity', this.lastActivityTime.toString());
+      } catch {
+        // ignore
+      }
+      return true;
+    }
     
     const lastActivityTime = parseInt(lastActivity, 10);
     const now = Date.now();
