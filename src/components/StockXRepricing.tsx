@@ -3875,23 +3875,16 @@ export default function StockXRepricing() {
           <button
             onClick={() => fetchListings(true)}
             disabled={loading}
-            className={`flex items-center space-x-2 ${
+            className={`grid grid-cols-[44px_1fr] items-center ${
               isNeon
                 ? 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 shadow-lg hover:shadow-indigo-500/25'
                 : 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 shadow-lg hover:shadow-indigo-500/25'
-            } disabled:opacity-50 text-white px-6 py-3 rounded-lg font-medium transition-all duration-200`}
+            } disabled:opacity-50 text-white pl-4 pr-6 py-3 rounded-lg font-medium transition-all duration-200`}
           >
-            {loading ? (
-              <>
-                <Loader className="w-4 h-4 animate-spin" />
-                Loading...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="w-4 h-4" />
-                Refresh Prices
-              </>
-            )}
+            <span className="flex items-center justify-center">
+              {loading ? <Loader className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            </span>
+            <span className="text-left">{loading ? 'Loading...' : 'Refresh Prices'}</span>
           </button>
         </div>
       </div>
