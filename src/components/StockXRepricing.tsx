@@ -136,8 +136,8 @@ export default function StockXRepricing() {
   // Default matches `vercel.json` (currently */5).
   const cronCadenceMinutes = (() => {
     const raw = process.env.NEXT_PUBLIC_AUTO_REPRICE_CRON_MINUTES;
-    const n = raw ? Number(raw) : 5;
-    return Number.isFinite(n) && n > 0 ? n : 5;
+    const n = raw ? Number(raw) : 1;
+    return Number.isFinite(n) && n > 0 ? n : 1;
   })();
   
   // StockX Auth Hook for automatic token refresh

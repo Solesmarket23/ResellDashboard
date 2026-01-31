@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { refreshStockXTokens } from '@/lib/stockx/tokenRefresh';
+import { createHash } from 'crypto';
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
@@ -182,24 +183,9 @@ export async function GET(request: NextRequest) {
       }
       
       for (const userDoc of usersSnapshot.docs) {
-        const userData = userDoc.data();
-
-        // Check if enough time has passed based on user's interval preference (unless forced)
-        const repricingConfig = userData.stockxAutoRepricingConfig || {};
-        const intervalMinutes = repricingConfig.intervalMinutes || 5; // Default: 5 minutes
-        const lastRepricedAt = userData.lastRepricedAt;
-        
-        if (!force && lastRepricedAt) {
-          const lastRepricedTime = new Date(lastRepricedAt).getTime();
-          const now = Date.now();
-          const minutesSinceLastReprice = (now - lastRepricedTime) / (1000 * 60);
-          
-          if (minutesSinceLastReprice < intervalMinutes) {
-            console.log(`⏭️ Skipping user ${userDoc.id}: Only ${Math.floor(minutesSinceLastReprice)} minutes since last reprice (interval: ${intervalMinutes} minutes)`);
-            continue;
-          }
-        }
-        
+        // We no longer pre-skip based on interval here.
+        // Reason: a sale can create a new listingId for the "next unit" and we want to reprice it ASAP.
+        // We'll decide to run (or skip) per-user AFTER we fetch active listings and detect changes.
         activeUsers.push(userDoc.id);
       }
     }
@@ -342,12 +328,56 @@ export async function GET(request: NextRequest) {
         const listingsData = await listingsResponse.json();
         const listings = listingsData.listings || listingsData.data || [];
 
+        const nowIso = new Date().toISOString();
+        const lastRepricedAt = userData.lastRepricedAt;
+        const lastRepricedTime = lastRepricedAt ? new Date(lastRepricedAt).getTime() : 0;
+        const intervalMinutes = Number(repricingConfig.intervalMinutes) || 5; // user-configured cadence
+        const minutesSinceLastReprice = lastRepricedTime ? (Date.now() - lastRepricedTime) / (1000 * 60) : Infinity;
+
+        // Detect inventory changes (sale/relist) via listingId hash.
+        const activeListingIds = (Array.isArray(listings) ? listings : [])
+          .map((l: any) => String(l?.listingId || '').trim())
+          .filter(Boolean)
+          .sort();
+        const listingIdsHash = createHash('sha256').update(activeListingIds.join('|')).digest('hex');
+        const prevHash = String(userData.stockxLastActiveListingIdsHash || '').trim();
+        const listingsChanged = !!prevHash && prevHash !== listingIdsHash;
+
+        const shouldRunReprice = force || listingsChanged || minutesSinceLastReprice >= intervalMinutes;
+
         if (listings.length === 0) {
+          // Still record the "seen" hash so we can detect future relists quickly.
+          await adminDb.collection('users').doc(userId).set(
+            {
+              stockxLastActiveListingIdsHash: listingIdsHash,
+              stockxLastActiveListingsSeenAt: nowIso,
+              stockxLastActiveListingsCount: 0,
+              updatedAt: nowIso,
+            },
+            { merge: true }
+          );
           console.log(`⏭️ No active listings for user ${userId}`);
           continue;
         }
 
         console.log(`📦 Found ${listings.length} active listings for user ${userId}`);
+
+        if (!shouldRunReprice) {
+          // Skip repricing this minute, but persist snapshot so we can detect sales/new listingIds.
+          await adminDb.collection('users').doc(userId).set(
+            {
+              stockxLastActiveListingIdsHash: listingIdsHash,
+              stockxLastActiveListingsSeenAt: nowIso,
+              stockxLastActiveListingsCount: listings.length,
+              updatedAt: nowIso,
+            },
+            { merge: true }
+          );
+          console.log(
+            `⏭️ Skipping user ${userId}: interval not met (${Math.floor(minutesSinceLastReprice)}m < ${intervalMinutes}m) and no listingId changes`
+          );
+          continue;
+        }
 
         // Load saved settings for each listing from Firebase
         const settingsSnapshot = await adminDb.collection('stockxPricingSettings')
@@ -380,7 +410,6 @@ export async function GET(request: NextRequest) {
 
         // Backfill templates and apply templates to new listings (no per-listing settings yet)
         try {
-          const nowIso = new Date().toISOString();
           const batch = adminDb.batch();
           let writes = 0;
 
@@ -674,12 +703,17 @@ export async function GET(request: NextRequest) {
         totalListingsRepriced += successCount;
         console.log(`✅ Successfully repriced ${successCount} listings for user ${userId}`);
 
-        // Update lastRepricedAt timestamp only for LIVE runs
-        if (!dryRun) {
-          await adminDb.collection('users').doc(userId).update({
-            lastRepricedAt: new Date().toISOString()
-          });
-        }
+        // Persist snapshot + lastRepricedAt only for LIVE runs
+        await adminDb.collection('users').doc(userId).set(
+          {
+            ...(dryRun ? {} : { lastRepricedAt: nowIso }),
+            stockxLastActiveListingIdsHash: listingIdsHash,
+            stockxLastActiveListingsSeenAt: nowIso,
+            stockxLastActiveListingsCount: listings.length,
+            updatedAt: nowIso,
+          },
+          { merge: true }
+        );
 
         // Log the repricing action
         await adminDb.collection('repricing_logs').add({
@@ -688,10 +722,11 @@ export async function GET(request: NextRequest) {
           listingsProcessed: listings.length,
           listingsRepriced: successCount,
           strategy: repricingConfig.strategy,
-          intervalMinutes: repricingConfig.intervalMinutes || 5,
+          intervalMinutes,
           automated: true,
           dryRun,
-          forced: force
+          forced: force,
+          listingsChanged,
         });
 
         // Add a small delay between users to avoid overwhelming the API
