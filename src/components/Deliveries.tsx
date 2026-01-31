@@ -183,8 +183,20 @@ const DeliveriesNew: React.FC = () => {
   }, [shouldShowStatsSkeleton]);
 
   const [searchTerm, setSearchTerm] = useState('');
+  const wasDeliveriesReload = (): boolean => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const nav = performance.getEntriesByType('navigation')?.[0] as any;
+      if (nav?.type) return nav.type === 'reload';
+      // Legacy fallback
+      return (performance as any)?.navigation?.type === 1;
+    } catch {
+      return false;
+    }
+  };
   const [presetNeedsTracking, setPresetNeedsTracking] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
+    if (wasDeliveriesReload()) return false;
     // New format
     const saved = localStorage.getItem('deliveriesPresetNeedsTracking');
     if (saved === 'true') return true;
@@ -195,6 +207,7 @@ const DeliveriesNew: React.FC = () => {
   });
   const [presetInvalidTracking, setPresetInvalidTracking] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
+    if (wasDeliveriesReload()) return false;
     // New format
     const saved = localStorage.getItem('deliveriesPresetInvalidTracking');
     if (saved === 'true') return true;
@@ -205,11 +218,29 @@ const DeliveriesNew: React.FC = () => {
   });
   const [presetArchived, setPresetArchived] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
+    if (wasDeliveriesReload()) return false;
     const saved = localStorage.getItem('deliveriesPresetArchived');
     if (saved === 'true') return true;
     if (saved === 'false') return false;
     return false;
   });
+
+  // Reset preset toggles on a true browser reload (refresh).
+  useEffect(() => {
+    if (!wasDeliveriesReload()) return;
+    try {
+      localStorage.removeItem('deliveriesPresetNeedsTracking');
+      localStorage.removeItem('deliveriesPresetInvalidTracking');
+      localStorage.removeItem('deliveriesPresetArchived');
+      // Back-compat: old single-select preset key
+      localStorage.removeItem('deliveriesPresetFilter');
+    } catch {
+      // ignore
+    }
+    setPresetNeedsTracking(false);
+    setPresetInvalidTracking(false);
+    setPresetArchived(false);
+  }, []);
   const [statusFilter, setStatusFilter] = useState<string>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('deliveriesStatusFilter');
