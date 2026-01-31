@@ -24,10 +24,18 @@ type TaskPriority = 'low' | 'med' | 'high';
 type TaskCategory = 'stockx' | 'shipping' | 'expenses' | 'repricing' | 'admin' | 'other';
 type TaskRecurrence = 'once' | 'daily' | 'weekly';
 
+type TaskFollowUp = {
+  id: string;
+  date: string; // YYYY-MM-DD
+  text: string;
+  createdAtMs: number;
+};
+
 type Task = {
   id: string;
   title: string;
   notes?: string;
+  followUps?: TaskFollowUp[];
   status: TaskStatus;
   priority: TaskPriority;
   category: TaskCategory;
@@ -129,11 +137,19 @@ export default function Tasks() {
   const isNeon = currentTheme.name === 'Neon';
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
-  const [showDone, setShowDone] = useState(false);
+  // User-requested: keep completed tasks visible by default (can still be hidden).
+  const [showDone, setShowDone] = useState(true);
   const [filter, setFilter] = useState<'open' | 'today' | 'overdue' | 'high' | 'all'>('open');
 
   const [toast, setToast] = useState<{ message: string; type: NotificationType } | null>(null);
   const toastTimerRef = useRef<number | null>(null);
+
+  const [justCompletedId, setJustCompletedId] = useState<string | null>(null);
+  const justCompletedTimerRef = useRef<number | null>(null);
+
+  const [followUpOpenForId, setFollowUpOpenForId] = useState<string | null>(null);
+  const [followUpDate, setFollowUpDate] = useState<string>(() => todayKey());
+  const [followUpText, setFollowUpText] = useState<string>('');
 
   const [newTitle, setNewTitle] = useState('');
   const [newCategory, setNewCategory] = useState<TaskCategory>('repricing');
@@ -211,22 +227,33 @@ export default function Tasks() {
   }, [tasks, today]);
 
   const displayed = useMemo(() => {
-    let list = showDone ? tasks : tasks.filter((t) => t.status !== 'done');
-    if (filter === 'open') list = list.filter((t) => t.status === 'open');
-    if (filter === 'today') list = list.filter((t) => t.status === 'open' && t.dueDate === today);
-    if (filter === 'overdue') list = list.filter((t) => t.status === 'open' && !!t.dueDate && t.dueDate < today);
-    if (filter === 'high') list = list.filter((t) => t.status === 'open' && t.priority === 'high');
-    // 'all' = no extra filter
-    // Sort: open first, then priority high->low, then due date, then recency
+    const open = tasks.filter((t) => t.status === 'open');
+    const done = tasks.filter((t) => t.status === 'done');
+
+    // Filters apply to OPEN tasks; completed tasks are shown in a separate section (if enabled).
+    let openList = open;
+    if (filter === 'today') openList = openList.filter((t) => t.dueDate === today);
+    if (filter === 'overdue') openList = openList.filter((t) => !!t.dueDate && t.dueDate < today);
+    if (filter === 'high') openList = openList.filter((t) => t.priority === 'high');
+    // 'open' and 'all' both show open tasks; 'all' additionally surfaces completed via showDone toggle.
+
+    // Sort: open = priority high->low, then due date, then recency
     const priRank: Record<TaskPriority, number> = { high: 0, med: 1, low: 2 };
-    return [...list].sort((a, b) => {
-      if (a.status !== b.status) return a.status === 'open' ? -1 : 1;
+    const openSorted = [...openList].sort((a, b) => {
       if (priRank[a.priority] !== priRank[b.priority]) return priRank[a.priority] - priRank[b.priority];
       const aDue = a.dueDate || '9999-99-99';
       const bDue = b.dueDate || '9999-99-99';
       if (aDue !== bDue) return aDue < bDue ? -1 : 1;
       return (b.createdAtMs || 0) - (a.createdAtMs || 0);
     });
+
+    const doneSorted = [...done].sort((a, b) => {
+      const aTs = (a.completedAtMs || a.updatedAtMs || 0);
+      const bTs = (b.completedAtMs || b.updatedAtMs || 0);
+      return bTs - aTs;
+    });
+
+    return showDone ? [...openSorted, ...doneSorted] : openSorted;
   }, [tasks, showDone, filter, today]);
 
   const createTask = async (payload: {
@@ -288,8 +315,19 @@ export default function Tasks() {
   const toggleTask = async (id: string, next: TaskStatus) => {
     const userId = resolveUserId();
     if (!userId) return showToast('Missing user session. Refresh and try again.', 'error');
+    const now = Date.now();
     // Optimistic
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, status: next } : t)));
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === id ? { ...t, status: next, completedAtMs: next === 'done' ? now : undefined, updatedAtMs: now } : t
+      )
+    );
+
+    if (next === 'done') {
+      setJustCompletedId(id);
+      if (justCompletedTimerRef.current) window.clearTimeout(justCompletedTimerRef.current);
+      justCompletedTimerRef.current = window.setTimeout(() => setJustCompletedId(null), 650);
+    }
     try {
       const res = await fetch('/api/tasks', {
         method: 'POST',
@@ -305,6 +343,58 @@ export default function Tasks() {
     } catch (e: any) {
       console.error('Toggle task error:', e);
       showToast(e?.message || 'Failed to update task', 'error');
+      await fetchTasks();
+    }
+  };
+
+  const addFollowUp = async (taskId: string) => {
+    const userId = resolveUserId();
+    if (!userId) return showToast('Missing user session. Refresh and try again.', 'error');
+    const text = followUpText.trim();
+    if (!text) return showToast('Enter a note', 'warning');
+    const date = (followUpDate || '').trim() || todayKey();
+
+    const optimistic: TaskFollowUp = {
+      id: `tmp-${Date.now()}`,
+      date,
+      text,
+      createdAtMs: Date.now(),
+    };
+
+    // Optimistic add
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === taskId ? { ...t, followUps: [...(t.followUps || []), optimistic], updatedAtMs: Date.now() } : t
+      )
+    );
+
+    try {
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+        body: JSON.stringify({ action: 'add_follow_up', id: taskId, text, date }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) throw new Error(data?.error || 'Failed to add note');
+
+      const serverFu = data?.followUp as TaskFollowUp | undefined;
+      if (serverFu?.id) {
+        // Replace optimistic placeholder
+        setTasks((prev) =>
+          prev.map((t) => {
+            if (t.id !== taskId) return t;
+            const next = (t.followUps || []).map((fu) => (fu.id === optimistic.id ? serverFu : fu));
+            return { ...t, followUps: next, updatedAtMs: Date.now() };
+          })
+        );
+      }
+
+      setFollowUpText('');
+      setFollowUpOpenForId(null);
+      showToast('Note added', 'success');
+    } catch (e: any) {
+      console.error('Add follow-up error:', e);
+      showToast(e?.message || 'Failed to add note', 'error');
       await fetchTasks();
     }
   };
@@ -637,8 +727,22 @@ export default function Tasks() {
                 const overdue = !isDone && t.dueDate && t.dueDate < today;
                 const dueToday = !isDone && t.dueDate === today;
                 const recurrence: TaskRecurrence = (t.recurrence === 'daily' || t.recurrence === 'weekly') ? t.recurrence : 'once';
+                const isJustCompleted = justCompletedId === t.id;
+                const followUps = Array.isArray(t.followUps) ? [...t.followUps] : [];
+                followUps.sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0));
                 return (
-                  <div key={t.id} className={`px-5 py-4 flex items-start gap-4 ${isDone ? (isNeon ? 'opacity-60' : 'opacity-70') : ''}`}>
+                  <div
+                    key={t.id}
+                    className={`px-5 py-4 flex items-start gap-4 transition-all duration-300 ${
+                      isDone ? (isNeon ? 'opacity-60' : 'opacity-70') : ''
+                    } ${
+                      isJustCompleted
+                        ? isNeon
+                          ? 'bg-emerald-500/10 ring-1 ring-emerald-500/25'
+                          : 'bg-emerald-50 ring-1 ring-emerald-200'
+                        : ''
+                    }`}
+                  >
                     <button
                       onClick={() => toggleTask(t.id, isDone ? 'open' : 'done')}
                       className={`mt-0.5 transition-colors ${isNeon ? 'text-white/80 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}
@@ -693,6 +797,96 @@ export default function Tasks() {
 
                       {t.notes && (
                         <div className={`mt-1 text-xs ${currentTheme.colors.textSecondary}`}>{t.notes}</div>
+                      )}
+
+                      {/* Follow-up notes */}
+                      {followUps.length > 0 && (
+                        <div className="mt-2 space-y-1.5">
+                          {followUps.slice(0, 6).map((fu) => (
+                            <div
+                              key={fu.id}
+                              className={`text-xs rounded-xl border px-3 py-2 ${
+                                isNeon ? 'border-white/10 bg-white/5 text-white/80' : 'border-gray-200 bg-gray-50 text-gray-700'
+                              }`}
+                            >
+                              <div className={`font-bold ${isNeon ? 'text-white/80' : 'text-gray-800'}`}>{fu.date}</div>
+                              <div className={`mt-0.5 ${isNeon ? 'text-white/70' : 'text-gray-700'}`}>{fu.text}</div>
+                            </div>
+                          ))}
+                          {followUps.length > 6 && (
+                            <div className={`text-[11px] ${currentTheme.colors.textSecondary}`}>Showing latest 6 notes.</div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Add follow-up composer (open tasks only) */}
+                      {!isDone && (
+                        <div className="mt-3">
+                          {followUpOpenForId !== t.id ? (
+                            <button
+                              onClick={() => {
+                                setFollowUpOpenForId(t.id);
+                                setFollowUpDate(todayKey());
+                                setFollowUpText('');
+                              }}
+                              className={`${cls.ghostBtn} px-3 py-2 text-xs font-bold`}
+                              title="Add follow-up note"
+                            >
+                              <Plus className="w-4 h-4" />
+                              Add note
+                            </button>
+                          ) : (
+                            <div
+                              className={`rounded-2xl border p-3 transition-all duration-200 ${
+                                isNeon ? 'border-white/10 bg-black/20' : 'border-gray-200 bg-white'
+                              }`}
+                            >
+                              <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                                <div className="sm:col-span-4">
+                                  <input
+                                    type="date"
+                                    value={followUpDate}
+                                    onChange={(e) => setFollowUpDate(e.target.value)}
+                                    className={`${cls.input} px-3 py-2`}
+                                  />
+                                </div>
+                                <div className="sm:col-span-8">
+                                  <input
+                                    value={followUpText}
+                                    onChange={(e) => setFollowUpText(e.target.value)}
+                                    placeholder="Add a progress note…"
+                                    className={`${cls.input} px-3 py-2`}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                                        e.preventDefault();
+                                        void addFollowUp(t.id);
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                              <div className="mt-2 flex items-center gap-2">
+                                <button
+                                  onClick={() => void addFollowUp(t.id)}
+                                  className={`${cls.primaryBtn} px-3 py-2 text-xs`}
+                                  title="Save note"
+                                >
+                                  Save note
+                                </button>
+                                <button
+                                  onClick={() => setFollowUpOpenForId(null)}
+                                  className={`${cls.ghostBtn} px-3 py-2 text-xs`}
+                                  title="Cancel"
+                                >
+                                  Cancel
+                                </button>
+                                <div className={`text-[11px] ${currentTheme.colors.textSecondary}`}>
+                                  Tip: press Ctrl/Cmd+Enter to save.
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
 

@@ -12,10 +12,18 @@ type TaskPriority = 'low' | 'med' | 'high';
 type TaskCategory = 'stockx' | 'shipping' | 'expenses' | 'repricing' | 'admin' | 'other';
 type TaskRecurrence = 'once' | 'daily' | 'weekly';
 
+type TaskFollowUp = {
+  id: string;
+  date: string; // YYYY-MM-DD (user-selected)
+  text: string;
+  createdAtMs: number;
+};
+
 type Task = {
   id: string;
   title: string;
   notes?: string;
+  followUps?: TaskFollowUp[];
   status: TaskStatus;
   priority: TaskPriority;
   category: TaskCategory;
@@ -53,6 +61,10 @@ function normalizeDueDate(raw: any): string | undefined {
   // Very light validation (YYYY-MM-DD)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return undefined;
   return s;
+}
+
+function normalizeFollowUpDate(raw: any): string | undefined {
+  return normalizeDueDate(raw);
 }
 
 function normalizeRecurrence(raw: any): TaskRecurrence {
@@ -98,10 +110,22 @@ export async function GET(request: NextRequest) {
     const tasks: Task[] = snap.docs
       .map((d) => {
         const data = d.data() as any;
+        const followUps: TaskFollowUp[] | undefined = Array.isArray(data.followUps)
+          ? data.followUps
+              .map((fu: any) => ({
+                id: String(fu?.id || '').trim(),
+                date: typeof fu?.date === 'string' ? fu.date : '',
+                text: typeof fu?.text === 'string' ? fu.text : '',
+                createdAtMs: typeof fu?.createdAtMs === 'number' ? fu.createdAtMs : 0,
+              }))
+              .filter((fu: TaskFollowUp) => !!fu.id && !!fu.date && !!fu.text)
+          : undefined;
+
         return {
           id: d.id,
           title: String(data.title || ''),
           notes: typeof data.notes === 'string' ? data.notes : undefined,
+          followUps,
           status: (data.status === 'done' ? 'done' : 'open') as TaskStatus,
           priority: (data.priority === 'high' || data.priority === 'med' ? data.priority : 'low') as TaskPriority,
           category: (typeof data.category === 'string' ? data.category : 'other') as TaskCategory,
@@ -155,6 +179,7 @@ export async function POST(request: NextRequest) {
         {
           title,
           notes: notes || null,
+          followUps: [],
           status: 'open',
           priority,
           category,
@@ -200,6 +225,7 @@ export async function POST(request: NextRequest) {
           {
             title,
             notes: notes || null,
+            followUps: [],
             status: 'open',
             priority,
             category,
@@ -257,6 +283,7 @@ export async function POST(request: NextRequest) {
               {
                 title: String(data.title || '').trim(),
                 notes: typeof data.notes === 'string' ? data.notes : null,
+                followUps: [],
                 status: 'open',
                 priority: data.priority === 'high' || data.priority === 'med' || data.priority === 'low' ? data.priority : 'med',
                 category: typeof data.category === 'string' ? data.category : 'other',
@@ -275,6 +302,40 @@ export async function POST(request: NextRequest) {
         }
       });
       return NextResponse.json({ success: true });
+    }
+
+    if (action === 'add_follow_up') {
+      const id = String(body?.id || '').trim();
+      const text = String(body?.text || '').trim();
+      const date = normalizeFollowUpDate(body?.date) || todayKey();
+      if (!id) return NextResponse.json({ success: false, error: 'id is required' }, { status: 400 });
+      if (!text) return NextResponse.json({ success: false, error: 'text is required' }, { status: 400 });
+
+      const now = Date.now();
+      const followUpId = (globalThis.crypto as any)?.randomUUID?.() || `${now}-${Math.random().toString(16).slice(2)}`;
+      const db = getAdminDb();
+      const ref = tasksCol(userId).doc(id);
+
+      const followUp: TaskFollowUp = { id: followUpId, date, text, createdAtMs: now };
+
+      await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) throw new Error('Task not found');
+        const data = snap.data() as any;
+        const prev: TaskFollowUp[] = Array.isArray(data.followUps) ? data.followUps : [];
+        const next = [...prev, followUp].slice(-50);
+        tx.set(
+          ref,
+          {
+            followUps: next,
+            updatedAtMs: now,
+            _serverUpdatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      });
+
+      return NextResponse.json({ success: true, followUp });
     }
 
     if (action === 'update') {
