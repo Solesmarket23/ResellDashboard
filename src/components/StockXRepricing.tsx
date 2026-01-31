@@ -255,9 +255,6 @@ export default function StockXRepricing() {
     brokenImageByListingIdRef.current = brokenImageByListingId;
   }, [brokenImageByListingId]);
 
-  const [purchaseImageDebug, setPurchaseImageDebug] = useState<any | null>(null);
-  const [showPurchaseImageDebug, setShowPurchaseImageDebug] = useState(false);
-
   // iOS Safari can "diagonal scroll" (horizontal + vertical) inside nested scroll containers.
   // Lock touch gestures in the listings table to either horizontal (scroll the table) OR vertical (scroll the page),
   // based on the initial dominant direction.
@@ -3293,12 +3290,11 @@ export default function StockXRepricing() {
           // Without a userId, the server can't read purchases. Skip this fallback.
           console.warn('⚠️ Purchases image fallback skipped: missing userId');
         } else {
-        const res = await fetch('/api/purchases/image-map?debug=1', {
+        const res = await fetch('/api/purchases/image-map', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-user-id': effectiveUserId },
           body: JSON.stringify({
             userId: effectiveUserId,
-            debug: true,
             keys: toLookup.map((k) => ({
               styleId: k.styleId || '',
               productName: k.productName || '',
@@ -3319,16 +3315,9 @@ export default function StockXRepricing() {
           } catch {
             // ignore
           }
-          if (data?.debug) {
-            console.log('🖼️ purchases/image-map debug:', data.debug);
-            setPurchaseImageDebug({ ...data.debug, _fetchedAt: new Date().toISOString() });
-          } else {
-            console.log('🖼️ purchases/image-map returned', Object.keys(images).length, 'images');
-            setPurchaseImageDebug({ wantedKeys: toLookup.length, foundKeys: Object.keys(images).length, _fetchedAt: new Date().toISOString() });
-          }
+          console.log('🖼️ purchases/image-map returned', Object.keys(images).length, 'images');
         } else if (!res.ok) {
           console.warn('⚠️ Purchases image-map failed:', data?.error || `HTTP ${res.status}`);
-          setPurchaseImageDebug({ error: data?.error || `HTTP ${res.status}`, _fetchedAt: new Date().toISOString() });
         }
         }
       }
@@ -3371,80 +3360,6 @@ export default function StockXRepricing() {
       console.warn('Failed to enrich product images:', e);
     }
   }, []);
-
-  const resetImageCaches = useCallback(async () => {
-    setBulkActionMessage('🧼 Resetting images…');
-    setTimeout(() => setBulkActionMessage(null), 5000);
-    setShowPurchaseImageDebug(true);
-
-    try {
-      localStorage.removeItem(PRODUCT_IMAGE_CACHE_KEY);
-      localStorage.removeItem(PURCHASE_IMAGE_CACHE_KEY);
-    } catch {}
-
-    // Also clear imageUrl hydration from the listings cache so we don't keep resurrecting a broken URL.
-    try {
-      const raw = localStorage.getItem(LISTINGS_CACHE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        const cachedListings = Array.isArray(parsed?.listings) ? parsed.listings : null;
-        if (cachedListings) {
-          const nextListings = cachedListings.map((l: any) => {
-            if (!l) return l;
-            const { imageUrl, ...rest } = l;
-            return rest;
-          });
-          localStorage.setItem(
-            LISTINGS_CACHE_KEY,
-            JSON.stringify({ cachedAt: typeof parsed?.cachedAt === 'number' ? parsed.cachedAt : Date.now(), listings: nextListings })
-          );
-        }
-      }
-    } catch {}
-
-    setBrokenImageByListingId({});
-    brokenImageByListingIdRef.current = {};
-    brokenProductIdRef.current = {};
-
-    // Force current-page listings to re-enrich first (most visible “it worked” signal).
-    const pageIds = new Set((paginatedListings || []).map((l) => l.listingId));
-    if (pageIds.size > 0) {
-      setListings((prev) => prev.map((l) => (pageIds.has(l.listingId) ? { ...l, imageUrl: null } : l)));
-    }
-
-    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-    // Re-run enrichment in batches so we don't get stuck behind the 60/80 caps.
-    const snapshot = (listings || []) as any as Listing[];
-    const needsAll = snapshot.filter(
-      (l) => !l.imageUrl || brokenImageByListingIdRef.current[String((l as any)?.listingId || '').trim()]
-    );
-    const prioritized = [
-      // current page first
-      ...((paginatedListings || []) as any as Listing[]).map((l) => ({ ...(l as any), imageUrl: null })),
-      ...needsAll.map((l) => ({ ...(l as any), imageUrl: null })),
-    ];
-    const seen = new Set<string>();
-    const unique = prioritized.filter((l: any) => {
-      const id = String(l?.listingId || '').trim();
-      if (!id) return false;
-      if (seen.has(id)) return false;
-      seen.add(id);
-      return true;
-    });
-
-    const batchSize = 80; // matches purchases lookup cap
-    for (let i = 0; i < unique.length; i += batchSize) {
-      const batch = unique.slice(i, i + batchSize);
-      // eslint-disable-next-line no-await-in-loop
-      await enrichProductImagesForListings(batch);
-      // eslint-disable-next-line no-await-in-loop
-      await sleep(150);
-    }
-
-    setBulkActionMessage('✅ Reset images complete');
-    setTimeout(() => setBulkActionMessage(null), 5000);
-  }, [enrichProductImagesForListings, listings, paginatedListings]);
 
   const buildStockXProductUrl = (listing: Listing): string | null => {
     // Prefer StockX-provided `urlKey` slug when available (most accurate).
@@ -3940,79 +3855,8 @@ export default function StockXRepricing() {
               </>
             )}
           </button>
-          <button
-            onClick={() => void resetImageCaches()}
-            disabled={loading}
-            className={`flex items-center space-x-2 ${
-              isNeon
-                ? 'bg-white/5 hover:bg-white/10 border border-white/10'
-                : 'bg-white hover:bg-gray-50 border border-gray-200'
-            } disabled:opacity-50 ${isNeon ? 'text-white/90' : 'text-gray-900'} px-5 py-3 rounded-lg font-medium transition-all duration-200`}
-            title="Clear image caches and re-try image enrichment"
-          >
-            <RefreshCw className="w-4 h-4" />
-            <span>Reset images</span>
-          </button>
-          <button
-            onClick={() => setShowPurchaseImageDebug((v) => !v)}
-            className={`flex items-center space-x-2 px-5 py-3 rounded-lg font-medium transition-all duration-200 ${
-              isNeon ? 'bg-white/5 hover:bg-white/10 border border-white/10 text-white/90' : 'bg-white hover:bg-gray-50 border border-gray-200 text-gray-900'
-            }`}
-            title="Show last purchases image-map debug"
-          >
-            <Wrench className="w-4 h-4" />
-            <span>Image debug</span>
-          </button>
         </div>
       </div>
-
-      {showPurchaseImageDebug && (
-        <div className={`rounded-xl border p-4 ${
-          isNeon ? 'bg-black/20 border-white/10' : 'bg-white border-gray-200'
-        }`}>
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className={`text-sm font-semibold ${isNeon ? 'text-white' : 'text-gray-900'}`}>Image fallback debug</div>
-              <div className={`text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-                Last call to <span className="font-mono">/api/purchases/image-map</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={async () => {
-                  try {
-                    if (!purchaseImageDebug) return;
-                    await navigator.clipboard.writeText(JSON.stringify(purchaseImageDebug, null, 2));
-                    setBulkActionMessage('📋 Copied image debug');
-                    setTimeout(() => setBulkActionMessage(null), 4000);
-                  } catch {
-                    setBulkActionMessage('❌ Failed to copy debug');
-                    setTimeout(() => setBulkActionMessage(null), 4000);
-                  }
-                }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${
-                  isNeon ? 'bg-white/5 border-white/10 hover:bg-white/10 text-white/80' : 'bg-gray-50 border-gray-200 hover:bg-gray-100 text-gray-800'
-                }`}
-              >
-                Copy
-              </button>
-              <button
-                onClick={() => setShowPurchaseImageDebug(false)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${
-                  isNeon ? 'bg-white/5 border-white/10 hover:bg-white/10 text-white/80' : 'bg-gray-50 border-gray-200 hover:bg-gray-100 text-gray-800'
-                }`}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-          <pre className={`mt-3 max-h-64 overflow-auto rounded-lg p-3 text-xs whitespace-pre-wrap ${
-            isNeon ? 'bg-black/30 border border-white/10 text-gray-200' : 'bg-gray-50 border border-gray-200 text-gray-800'
-          }`}>
-            {purchaseImageDebug ? JSON.stringify(purchaseImageDebug, null, 2) : 'No debug captured yet. Click “Reset images” to run the fallback.'}
-          </pre>
-        </div>
-      )}
 
       {/* Auto-Repricing Interval Settings */}
       <div className={`rounded-xl border ${
