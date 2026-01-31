@@ -568,6 +568,7 @@ export default function Tasks() {
 
           <div className="mt-4 grid grid-cols-1 lg:grid-cols-12 gap-3">
             <div className="lg:col-span-5">
+              <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary}`}>Task</div>
               <input
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
@@ -592,6 +593,7 @@ export default function Tasks() {
             </div>
 
             <div className="lg:col-span-2">
+              <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary}`}>Category</div>
               <select
                 value={newCategory}
                 onChange={(e) => setNewCategory(e.target.value as TaskCategory)}
@@ -607,6 +609,7 @@ export default function Tasks() {
             </div>
 
             <div className="lg:col-span-2">
+              <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary}`}>Priority</div>
               <select
                 value={newPriority}
                 onChange={(e) => setNewPriority(e.target.value as TaskPriority)}
@@ -619,6 +622,7 @@ export default function Tasks() {
             </div>
 
             <div className="lg:col-span-2">
+              <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary}`}>Due date</div>
               <input
                 type="date"
                 value={newDue}
@@ -628,6 +632,7 @@ export default function Tasks() {
             </div>
 
             <div className="lg:col-span-2">
+              <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary}`}>Recurrence</div>
               <select
                 value={newRecurrence}
                 onChange={(e) => setNewRecurrence(e.target.value as TaskRecurrence)}
