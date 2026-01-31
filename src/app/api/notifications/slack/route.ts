@@ -1046,10 +1046,14 @@ export async function POST(request: NextRequest) {
     // Calculate summary stats
     // Use the SAME timezone + business-day bucketing as the breakdown (todayStrForSlack/tomorrowStrForSlack).
     // These are computed above using `slackTimeZone` and the 12am–6am cutover.
-    const arrivingToday = deliveries.filter((d) => d.estimatedDelivery === todayStrForSlack || d.status === 'out_for_delivery').length;
-    const arrivingTomorrow = deliveries.filter((d) => d.estimatedDelivery === tomorrowStrForSlack).length;
+    // Match Deliveries UI behavior: don't count delivered/cancelled/returned items as "arriving".
+    const activeDeliveries = deliveries.filter((d) => isOnTheWayStatus(d.status));
+    const arrivingToday = activeDeliveries.filter(
+      (d) => d.estimatedDelivery === todayStrForSlack || d.status === 'out_for_delivery'
+    ).length;
+    const arrivingTomorrow = activeDeliveries.filter((d) => d.estimatedDelivery === tomorrowStrForSlack).length;
     const weekEndStrForSlack = toYmdInTimeZone(new Date(businessNowForSlack.getTime() + 7 * 24 * 60 * 60 * 1000), slackTimeZone);
-    const arrivingThisWeek = deliveries.filter((d) => {
+    const arrivingThisWeek = activeDeliveries.filter((d) => {
       const eta = String(d.estimatedDelivery || '').trim();
       if (!eta || eta === 'TBD') return false;
       // strictly after tomorrow, up to 7 days out
@@ -1063,8 +1067,10 @@ export async function POST(request: NextRequest) {
       return finite.reduce((sum, v) => sum + v, 0);
     };
 
-    const todayItems = deliveries.filter((d) => d.estimatedDelivery === todayStrForSlack || d.status === 'out_for_delivery');
-    const tomorrowItems = deliveries.filter((d) => d.estimatedDelivery === tomorrowStrForSlack);
+    const todayItems = activeDeliveries.filter(
+      (d) => d.estimatedDelivery === todayStrForSlack || d.status === 'out_for_delivery'
+    );
+    const tomorrowItems = activeDeliveries.filter((d) => d.estimatedDelivery === tomorrowStrForSlack);
     const projectedProfitToday = sumFiniteOrNull(todayItems.map(d => d.estimatedProfit));
     const projectedProfitTomorrow = sumFiniteOrNull(tomorrowItems.map(d => d.estimatedProfit));
 
