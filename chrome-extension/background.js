@@ -13,6 +13,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 // Handle messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('📨 Background received message:', request);
+  const tabId = sender?.tab?.id;
   
   if (request.action === 'fetchMarketData') {
     // Proxy API requests to avoid CORS issues
@@ -26,6 +27,48 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({success: false, error: error.message});
       });
     return true; // Will respond asynchronously
+  }
+
+  if (request.action === 'navigateTo' && typeof request.url === 'string') {
+    if (!tabId) {
+      sendResponse({ success: false, error: 'No sender tabId' });
+      return;
+    }
+    try {
+      console.log('🧭 Background navigating tab', { tabId, url: request.url });
+      chrome.tabs.update(tabId, { url: request.url }, () => {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          console.error('❌ Background navigateTo error:', err);
+          sendResponse({ success: false, error: err.message || String(err) });
+        } else {
+          console.log('✅ Background navigateTo success', { tabId });
+          sendResponse({ success: true });
+        }
+      });
+    } catch (e) {
+      console.error('❌ Background navigateTo exception:', e);
+      sendResponse({ success: false, error: e?.message || String(e) });
+    }
+    return true;
+  }
+
+  if (request.action === 'openTab' && typeof request.url === 'string') {
+    try {
+      chrome.tabs.create({ url: request.url, active: true }, (tab) => {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          console.error('❌ Background openTab error:', err);
+          sendResponse({ success: false, error: err.message || String(err) });
+        } else {
+          sendResponse({ success: true, tabId: tab?.id || null });
+        }
+      });
+    } catch (e) {
+      console.error('❌ Background openTab exception:', e);
+      sendResponse({ success: false, error: e?.message || String(e) });
+    }
+    return true;
   }
 });
 
