@@ -107,6 +107,30 @@ function formatDueLabel(dueDate: string): string {
   return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+function formatFullDateWithOrdinal(yyyyMmDdStr: string): string {
+  // yyyyMmDdStr is YYYY-MM-DD
+  const [y, m, d] = String(yyyyMmDdStr || '')
+    .split('-')
+    .map((x) => Number.parseInt(x, 10));
+  if (!y || !m || !d) return yyyyMmDdStr;
+
+  const suffix = (() => {
+    const mod100 = d % 100;
+    if (mod100 >= 11 && mod100 <= 13) return 'th';
+    const mod10 = d % 10;
+    if (mod10 === 1) return 'st';
+    if (mod10 === 2) return 'nd';
+    if (mod10 === 3) return 'rd';
+    return 'th';
+  })();
+
+  const dt = new Date(y, m - 1, d);
+  const base = dt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  // base is like "January 2026" or "January 30, 2026" depending on options. Build explicitly:
+  const month = dt.toLocaleDateString('en-US', { month: 'long' });
+  return `${month} ${d}${suffix}, ${y}`;
+}
+
 function priorityColor(priority: TaskPriority, isNeon: boolean): string {
   if (priority === 'high') return isNeon ? 'text-red-300 border-red-500/30 bg-red-500/10' : 'text-red-700 border-red-200 bg-red-50';
   if (priority === 'med') return isNeon ? 'text-amber-300 border-amber-500/30 bg-amber-500/10' : 'text-amber-700 border-amber-200 bg-amber-50';
@@ -834,7 +858,7 @@ export default function Tasks() {
                                 isNeon ? 'border-white/10 bg-white/5 text-white/80' : 'border-gray-200 bg-gray-50 text-gray-700'
                               }`}
                             >
-                              <div className={`font-bold ${isNeon ? 'text-white/80' : 'text-gray-800'}`}>{fu.date}</div>
+                              <div className={`font-bold ${isNeon ? 'text-white/80' : 'text-gray-800'}`}>{formatFullDateWithOrdinal(fu.date)}</div>
                               <div className={`mt-0.5 ${isNeon ? 'text-white/70' : 'text-gray-700'}`}>{fu.text}</div>
                             </div>
                           ))}
@@ -992,7 +1016,7 @@ export default function Tasks() {
                                   isNeon ? 'border-white/10 bg-white/5 text-white/80' : 'border-gray-200 bg-gray-50 text-gray-700'
                                 }`}
                               >
-                                <div className={`font-bold ${isNeon ? 'text-white/80' : 'text-gray-800'}`}>{fu.date}</div>
+                                <div className={`font-bold ${isNeon ? 'text-white/80' : 'text-gray-800'}`}>{formatFullDateWithOrdinal(fu.date)}</div>
                                 <div className={`mt-0.5 ${isNeon ? 'text-white/70' : 'text-gray-700'}`}>{fu.text}</div>
                               </div>
                             ))}
