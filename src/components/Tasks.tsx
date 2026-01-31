@@ -226,35 +226,40 @@ export default function Tasks() {
     return tasks.filter((t) => t.status === 'open' && t.dueDate && t.dueDate < today).length;
   }, [tasks, today]);
 
-  const displayed = useMemo(() => {
-    const open = tasks.filter((t) => t.status === 'open');
-    const done = tasks.filter((t) => t.status === 'done');
+  const openDisplayed = useMemo(() => {
+    // Keep a just-completed task in the open list briefly so the user sees feedback before it moves.
+    const open = tasks.filter((t) => t.status === 'open' || (justCompletedId && t.id === justCompletedId));
 
-    // Filters apply to OPEN tasks; completed tasks are shown in a separate section (if enabled).
     let openList = open;
-    if (filter === 'today') openList = openList.filter((t) => t.dueDate === today);
-    if (filter === 'overdue') openList = openList.filter((t) => !!t.dueDate && t.dueDate < today);
-    if (filter === 'high') openList = openList.filter((t) => t.priority === 'high');
-    // 'open' and 'all' both show open tasks; 'all' additionally surfaces completed via showDone toggle.
+    if (filter === 'today') openList = openList.filter((t) => t.status === 'open' && t.dueDate === today);
+    if (filter === 'overdue')
+      openList = openList.filter((t) => t.status === 'open' && !!t.dueDate && t.dueDate < today);
+    if (filter === 'high') openList = openList.filter((t) => t.status === 'open' && t.priority === 'high');
+    // 'open' and 'all' both show open tasks here; completed are shown separately via showDone.
 
-    // Sort: open = priority high->low, then due date, then recency
     const priRank: Record<TaskPriority, number> = { high: 0, med: 1, low: 2 };
-    const openSorted = [...openList].sort((a, b) => {
+    return [...openList].sort((a, b) => {
+      // Pin just-completed item to the top for the brief animation window.
+      if (justCompletedId) {
+        if (a.id === justCompletedId && b.id !== justCompletedId) return -1;
+        if (b.id === justCompletedId && a.id !== justCompletedId) return 1;
+      }
       if (priRank[a.priority] !== priRank[b.priority]) return priRank[a.priority] - priRank[b.priority];
       const aDue = a.dueDate || '9999-99-99';
       const bDue = b.dueDate || '9999-99-99';
       if (aDue !== bDue) return aDue < bDue ? -1 : 1;
       return (b.createdAtMs || 0) - (a.createdAtMs || 0);
     });
+  }, [tasks, filter, today, justCompletedId]);
 
-    const doneSorted = [...done].sort((a, b) => {
-      const aTs = (a.completedAtMs || a.updatedAtMs || 0);
-      const bTs = (b.completedAtMs || b.updatedAtMs || 0);
+  const doneDisplayed = useMemo(() => {
+    const done = tasks.filter((t) => t.status === 'done' && (!justCompletedId || t.id !== justCompletedId));
+    return [...done].sort((a, b) => {
+      const aTs = a.completedAtMs || a.updatedAtMs || 0;
+      const bTs = b.completedAtMs || b.updatedAtMs || 0;
       return bTs - aTs;
     });
-
-    return showDone ? [...openSorted, ...doneSorted] : openSorted;
-  }, [tasks, showDone, filter, today]);
+  }, [tasks, justCompletedId]);
 
   const createTask = async (payload: {
     title: string;
@@ -324,6 +329,8 @@ export default function Tasks() {
     );
 
     if (next === 'done') {
+      // Ensure the user sees completed tasks (even if they previously hid them).
+      setShowDone(true);
       setJustCompletedId(id);
       if (justCompletedTimerRef.current) window.clearTimeout(justCompletedTimerRef.current);
       justCompletedTimerRef.current = window.setTimeout(() => setJustCompletedId(null), 650);
@@ -714,11 +721,11 @@ export default function Tasks() {
           <div className={`px-5 py-4 border-b ${isNeon ? 'border-white/10' : 'border-gray-200'} flex items-center justify-between`}>
             <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>Your list</div>
             <div className={`text-xs ${currentTheme.colors.textSecondary}`}>
-              {loading ? 'Loading…' : `${displayed.length} shown`}
+              {loading ? 'Loading…' : `${openDisplayed.length + (showDone ? doneDisplayed.length : 0)} shown`}
             </div>
           </div>
 
-          {displayed.length === 0 ? (
+          {openDisplayed.length === 0 && (!showDone || doneDisplayed.length === 0) ? (
             <div className="p-8 text-center">
               <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>No tasks yet</div>
               <div className={`mt-1 text-sm ${currentTheme.colors.textSecondary}`}>
@@ -727,7 +734,7 @@ export default function Tasks() {
             </div>
           ) : (
             <div className="divide-y divide-gray-200/10">
-              {displayed.map((t) => {
+              {openDisplayed.map((t) => {
                 const isDone = t.status === 'done';
                 const overdue = !isDone && t.dueDate && t.dueDate < today;
                 const dueToday = !isDone && t.dueDate === today;
@@ -750,7 +757,9 @@ export default function Tasks() {
                   >
                     <button
                       onClick={() => toggleTask(t.id, isDone ? 'open' : 'done')}
-                      className={`mt-0.5 transition-colors ${isNeon ? 'text-white/80 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}
+                      className={`mt-0.5 transition-all duration-300 ${
+                        isNeon ? 'text-white/80 hover:text-white' : 'text-gray-600 hover:text-gray-900'
+                      } ${isJustCompleted ? 'scale-110' : ''}`}
                       title={isDone ? 'Mark as open' : 'Mark as done'}
                     >
                       {isDone ? <CheckCircle2 className="w-5 h-5" /> : <Circle className="w-5 h-5" />}
@@ -919,6 +928,93 @@ export default function Tasks() {
                   </div>
                 );
               })}
+
+              {showDone && doneDisplayed.length > 0 && (
+                <div className={`px-5 py-3 ${isNeon ? 'bg-white/5' : 'bg-gray-50'} flex items-center justify-between`}>
+                  <div className={`text-xs font-bold ${currentTheme.colors.textSecondary}`}>Completed</div>
+                  <div className={`text-xs ${currentTheme.colors.textSecondary}`}>{doneDisplayed.length}</div>
+                </div>
+              )}
+
+              {showDone &&
+                doneDisplayed.map((t) => {
+                  const isDone = t.status === 'done';
+                  const recurrence: TaskRecurrence =
+                    t.recurrence === 'daily' || t.recurrence === 'weekly' ? t.recurrence : 'once';
+                  const followUps = Array.isArray(t.followUps) ? [...t.followUps] : [];
+                  followUps.sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0));
+                  return (
+                    <div key={t.id} className={`px-5 py-4 flex items-start gap-4 ${isNeon ? 'opacity-60' : 'opacity-70'}`}>
+                      <button
+                        onClick={() => toggleTask(t.id, 'open')}
+                        className={`mt-0.5 transition-colors ${isNeon ? 'text-white/80 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}
+                        title="Mark as open"
+                      >
+                        {isDone ? <CheckCircle2 className="w-5 h-5" /> : <Circle className="w-5 h-5" />}
+                      </button>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className={`text-sm font-bold ${currentTheme.colors.textPrimary} line-through`}>{t.title}</div>
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold border ${categoryColor(t.category, isNeon)}`}>
+                            <Tag className="w-3 h-3" />
+                            {t.category}
+                          </span>
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold border ${priorityColor(t.priority, isNeon)}`}>
+                            <Flag className="w-3 h-3" />
+                            {t.priority}
+                          </span>
+                          {recurrence !== 'once' && (
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold border ${isNeon ? 'text-cyan-300 border-cyan-500/30 bg-cyan-500/10' : 'text-blue-700 border-blue-200 bg-blue-50'}`}>
+                              <Repeat className="w-3 h-3" />
+                              {recurrence === 'daily' ? 'Daily' : 'Weekly'}
+                            </span>
+                          )}
+                        </div>
+                        {t.notes && <div className={`mt-1 text-xs ${currentTheme.colors.textSecondary}`}>{t.notes}</div>}
+                        {followUps.length > 0 && (
+                          <div className="mt-2 space-y-1.5">
+                            {followUps.slice(0, 3).map((fu) => (
+                              <div
+                                key={fu.id}
+                                className={`text-xs rounded-xl border px-3 py-2 ${
+                                  isNeon ? 'border-white/10 bg-white/5 text-white/80' : 'border-gray-200 bg-gray-50 text-gray-700'
+                                }`}
+                              >
+                                <div className={`font-bold ${isNeon ? 'text-white/80' : 'text-gray-800'}`}>{fu.date}</div>
+                                <div className={`mt-0.5 ${isNeon ? 'text-white/70' : 'text-gray-700'}`}>{fu.text}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {t.relatedSection && (
+                          <button
+                            onClick={() => jumpToSection(t.relatedSection!)}
+                            className={`${cls.ghostBtn} px-3 py-2 text-xs font-bold`}
+                            title="Open related page"
+                          >
+                            Open
+                            <ArrowRight className="w-4 h-4" />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => deleteTask(t.id)}
+                          className={`p-2 rounded-xl transition-all ${
+                            isNeon
+                              ? 'hover:bg-red-500/15 text-gray-300 hover:text-red-300 border border-white/10'
+                              : 'hover:bg-red-50 text-gray-600 hover:text-red-700 border border-gray-200'
+                          }`}
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
           )}
         </div>
