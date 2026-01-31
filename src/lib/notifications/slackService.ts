@@ -316,15 +316,22 @@ export class SlackNotificationService {
     blocks.push({ type: 'divider' });
 
     const now = new Date();
-    const today = this.toYmdInTimeZone(now);
-    const tomorrow = (() => {
+    const localHour = this.getLocalHourInTimeZone(now);
+    // "Business day" cutover: between midnight and 6am local time, treat it as still "yesterday"
+    // so late-night sends don't label tomorrow's packages as "Arriving Today".
+    const businessNow = (() => {
       const d = new Date(now);
+      if (localHour < 6) d.setDate(d.getDate() - 1);
+      return d;
+    })();
+    const today = this.toYmdInTimeZone(businessNow);
+    const tomorrow = (() => {
+      const d = new Date(businessNow);
       d.setDate(d.getDate() + 1);
       return this.toYmdInTimeZone(d);
     })();
 
     // Late-night behavior: after 9pm local time, include tomorrow's breakdown too.
-    const localHour = this.getLocalHourInTimeZone(now);
     const includeTomorrowBreakdown = localHour >= 21;
 
     const buildBreakdown = (args: { label: string; ymd: string; emptyText: string }) => {

@@ -443,8 +443,16 @@ export async function POST(request: NextRequest) {
         return d.toISOString().split('T')[0];
       }
     };
-    const todayStrForSlack = toYmdInTimeZone(new Date(), slackTimeZone);
-    const tomorrowStrForSlack = toYmdInTimeZone(new Date(Date.now() + 24 * 60 * 60 * 1000), slackTimeZone);
+    const nowForSlack = new Date();
+    // "Business day" cutover: between midnight and 6am local time, treat it as still "yesterday"
+    // so late-night sends don't label tomorrow's packages as "Arriving Today".
+    const businessNowForSlack = (() => {
+      const d = new Date(nowForSlack);
+      if (localHourForSlack < 6) d.setDate(d.getDate() - 1);
+      return d;
+    })();
+    const todayStrForSlack = toYmdInTimeZone(businessNowForSlack, slackTimeZone);
+    const tomorrowStrForSlack = toYmdInTimeZone(new Date(businessNowForSlack.getTime() + 24 * 60 * 60 * 1000), slackTimeZone);
     const localHourForSlack = (() => {
       try {
         const parts = new Intl.DateTimeFormat('en-US', {
