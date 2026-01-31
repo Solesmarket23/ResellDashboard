@@ -158,7 +158,9 @@ function SelectWithChevron(props: React.SelectHTMLAttributes<HTMLSelectElement> 
   const { className, children, ...rest } = props;
   return (
     <div className="relative">
-      <select {...rest} className={`${className} appearance-none pr-10`} />
+      <select {...rest} className={`${className} appearance-none pr-10`}>
+        {children}
+      </select>
       <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 opacity-80" />
     </div>
   );
@@ -687,7 +689,9 @@ export default function Tasks() {
               </SelectWithChevron>
             </div>
 
-            <div className="lg:col-span-1">
+            <div className="lg:col-span-1 flex flex-col">
+              {/* Keep vertical rhythm aligned with other labeled inputs */}
+              <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary} opacity-0`}>Add</div>
               <button
                 onClick={() => {
                   const title = newTitle.trim();
@@ -701,7 +705,7 @@ export default function Tasks() {
                     relatedSection: newLink || undefined,
                   });
                 }}
-                className={`w-full h-12 justify-center px-4 text-sm ${cls.primaryBtn}`}
+                className={`w-full h-11 justify-center px-4 text-sm ${cls.primaryBtn}`}
                 title="Add"
               >
                 <Plus className="w-4 h-4" />
