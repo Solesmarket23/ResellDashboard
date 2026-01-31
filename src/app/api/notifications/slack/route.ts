@@ -428,8 +428,16 @@ export async function POST(request: NextRequest) {
 
     // Prioritize live StockX fetches for items arriving today (the Slack "daily" breakdown),
     // so we don't burn budget on far-future ETAs while today's items show "skipped".
-    // IMPORTANT: Do NOT use process.env.TZ (often UTC). Prefer user's Deliveries Slack timezone, then SLACK_TIMEZONE, then ET.
-    const slackTimeZone = (userSlackTimezone || process.env.SLACK_TIMEZONE || 'America/New_York').trim() || 'America/New_York';
+    // IMPORTANT: Do NOT use process.env.TZ (often UTC).
+    // Prefer user's Deliveries Slack timezone. If no user tz is set, default to ET.
+    // We allow SLACK_TIMEZONE, but treat UTC-ish values as unsafe defaults for "today/tomorrow" bucketing.
+    const envSlackTz = String(process.env.SLACK_TIMEZONE || '').trim();
+    const envLooksUtc =
+      envSlackTz.toUpperCase() === 'UTC' ||
+      envSlackTz.toUpperCase() === 'GMT' ||
+      envSlackTz.toUpperCase() === 'ETC/UTC' ||
+      envSlackTz.toUpperCase() === 'ETC/GMT';
+    const slackTimeZone = String(userSlackTimezone || (envSlackTz && !envLooksUtc ? envSlackTz : '') || 'America/New_York').trim() || 'America/New_York';
     const toYmdInTimeZone = (d: Date, tz: string): string => {
       try {
         // en-CA produces YYYY-MM-DD which matches our ETA strings.
