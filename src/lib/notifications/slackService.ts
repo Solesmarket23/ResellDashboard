@@ -48,6 +48,8 @@ export interface SlackNotificationOptions {
   username?: string;
   iconEmoji?: string;
   channel?: string;
+  timezone?: string; // IANA timezone override (e.g. "America/New_York")
+  mention?: string | null; // override mention (otherwise env default)
 }
 
 export class SlackNotificationService {
@@ -64,8 +66,10 @@ export class SlackNotificationService {
     // Optional mention string to prepend to summaries (e.g. "@solesmarket23" or "<!here>" or "<@U123...>").
     // Can be overridden via env so production can change without code edits.
     const envMention = (process.env.SLACK_DELIVERIES_MENTION || process.env.SLACK_MENTION || '').trim();
-    this.mention = envMention || '@solesmarket23';
-    this.slackTimeZone = (process.env.SLACK_TIMEZONE || process.env.TZ || 'America/New_York').trim() || 'America/New_York';
+    this.mention = typeof options.mention === 'string' ? options.mention : (options.mention === null ? null : (envMention || '@solesmarket23'));
+    // IMPORTANT: Do NOT use process.env.TZ here (often UTC in serverless). Prefer per-user setting or SLACK_TIMEZONE.
+    const envTz = (process.env.SLACK_TIMEZONE || 'America/New_York').trim() || 'America/New_York';
+    this.slackTimeZone = String(options.timezone || envTz).trim() || 'America/New_York';
   }
 
   private toYmdInTimeZone(d: Date): string {

@@ -456,7 +456,8 @@ export async function GET(request: NextRequest) {
         const slack = new SlackNotificationService({
           webhookUrl,
           username: 'Delivery Tracker',
-          iconEmoji: ':package:'
+          iconEmoji: ':package:',
+          timezone
         });
         await slack.sendDeliverySummary({
           totalDeliveries: deliveries.length,

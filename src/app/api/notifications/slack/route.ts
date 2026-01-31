@@ -66,7 +66,7 @@ function normalizeStockXSizeForLookup(raw: unknown): string {
     if (isYouth) return `${num}Y`;
     if (isWomen) return `${num}W`;
     return num;
-  }
+    }
   // Apparel sizes: normalize to a simple token (S/M/L/XL/XXL/XXXL/XS) when possible.
   const letter = s.match(/\b(XXXL|XXL|XL|XS|S|M|L)\b/i)?.[1];
   if (letter) return letter.toUpperCase();
@@ -81,9 +81,9 @@ function pickFirstString(...candidates: unknown[]): string | null {
       if (s) return s;
     }
   }
-  return null;
-}
-
+      return null;
+    }
+    
 function pickProductImageUrl(purchase: any): string | undefined {
   const raw = pickFirstString(
     purchase?.productImage,
@@ -119,9 +119,9 @@ function buildGmailEmailUrl(args: { emailId?: unknown; orderNumber?: unknown; tr
   if (trackingNumber) {
     return `https://mail.google.com/mail/#search/${encodeURIComponent(`"${trackingNumber}"`)}`;
   }
-  return null;
-}
-
+      return null;
+    }
+    
 function buildStockXSlackLink(args: {
   urlKey?: string | null;
   styleId?: string | null;
@@ -185,8 +185,8 @@ function extractStockXUrlKeyFromLink(raw: unknown): string | null {
   // Accept both raw slugs and URLs
   if (!input.startsWith('http://') && !input.startsWith('https://')) {
     if (/^[a-z0-9]+(?:-[a-z0-9]+)+$/i.test(input)) return input;
-  }
-
+    }
+    
   return tryParse(input);
 }
 
@@ -207,9 +207,9 @@ function extractStockXUrlKeyFromPurchase(purchase: any): string | null {
     const key = extractStockXUrlKeyFromLink(c);
     if (key) return key;
   }
-  return null;
-}
-
+      return null;
+    }
+    
 function extractStockXIdsFromPurchase(purchase: any): { productId?: string; variantId?: string } {
   const pid =
     purchase?.stockxProductId ||
@@ -237,8 +237,8 @@ async function getStockXAuthForUser(request: NextRequest, userId: string): Promi
   const refreshTokenCookie = request.cookies.get('stockx_refresh_token')?.value;
   if (accessToken || refreshTokenCookie) {
     return { apiKey, accessToken, refreshToken: refreshTokenCookie };
-  }
-
+    }
+    
   // Fallback: use user's stored refresh token (same approach as cron), so Slack can fetch prices even when cookies are missing.
   try {
     const db = getAdminDb();
@@ -270,13 +270,21 @@ export async function POST(request: NextRequest) {
 
     // Create Slack service (prefer per-user Deliveries Slack settings; fallback to env)
     let slackService: SlackNotificationService | null = null;
+    let userSlackTimezone: string | null = null;
     try {
       const db = getAdminDb();
       const snap = await db.collection('users').doc(userId).get();
       const data = snap.exists ? (snap.data() as any) : null;
       const webhookUrl = String(data?.deliveriesSlack?.webhookUrl || '').trim();
+      const tz = String(data?.deliveriesSlack?.timezone || '').trim();
+      if (tz) userSlackTimezone = tz;
       if (webhookUrl) {
-        slackService = new SlackNotificationService({ webhookUrl, username: 'Delivery Tracker', iconEmoji: ':package:' });
+        slackService = new SlackNotificationService({
+          webhookUrl,
+          username: 'Delivery Tracker',
+          iconEmoji: ':package:',
+          timezone: userSlackTimezone || undefined,
+        });
       }
     } catch {
       // ignore and fall back to env
@@ -420,8 +428,8 @@ export async function POST(request: NextRequest) {
 
     // Prioritize live StockX fetches for items arriving today (the Slack "daily" breakdown),
     // so we don't burn budget on far-future ETAs while today's items show "skipped".
-    const slackTimeZone =
-      (process.env.SLACK_TIMEZONE || process.env.TZ || 'America/New_York').trim() || 'America/New_York';
+    // IMPORTANT: Do NOT use process.env.TZ (often UTC). Prefer user's Deliveries Slack timezone, then SLACK_TIMEZONE, then ET.
+    const slackTimeZone = (userSlackTimezone || process.env.SLACK_TIMEZONE || 'America/New_York').trim() || 'America/New_York';
     const toYmdInTimeZone = (d: Date, tz: string): string => {
       try {
         // en-CA produces YYYY-MM-DD which matches our ETA strings.
@@ -830,7 +838,7 @@ export async function POST(request: NextRequest) {
               const bidFlex = typeof (result as any).bidFlex === 'number' ? (result as any).bidFlex : null;
               stockxLowestAsk = (askStd ?? askFlex ?? undefined) as any;
               stockxHighestBid = (bidStd ?? bidFlex ?? undefined) as any;
-              console.log(`✅ Real-time price fetched: ${productName}${styleId ? ` (StyleId: ${styleId})` : ''} = $${marketPrice}`);
+          console.log(`✅ Real-time price fetched: ${productName}${styleId ? ` (StyleId: ${styleId})` : ''} = $${marketPrice}`);
               const stockxUrlKey = (result as any).urlKey as string | undefined;
               const termUsed = (result as any).termUsed as string | undefined;
               const searchTerm = termUsed || styleId || productName;
