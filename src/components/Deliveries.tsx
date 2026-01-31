@@ -1758,7 +1758,7 @@ const DeliveriesNew: React.FC = () => {
                    } bg-purple-600 hover:bg-purple-700 ${
                      sendingSlackNotification && sendingSlackType === 'daily_summary' ? 'animate-pulse cursor-wait' : ''
                    }`}
-                   title="Send delivery summary to Slack"
+                   title={undefined}
                    aria-busy={sendingSlackNotification && sendingSlackType === 'daily_summary'}
                  >
                    {sendingSlackNotification && sendingSlackType === 'daily_summary' ? (
@@ -1769,8 +1769,8 @@ const DeliveriesNew: React.FC = () => {
                    {sendingSlackNotification && sendingSlackType === 'daily_summary' ? 'Sending...' : 'Send to Slack'}
                  </button>
                  {slackSummaryDisabledReason && (
-                   <div className="pointer-events-none absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full hidden group-hover:block">
-                     <div className="max-w-xs rounded-xl border border-white/10 bg-black/80 px-3 py-2 text-xs text-white shadow-xl">
+                   <div className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden group-hover:block z-50">
+                     <div className="max-w-xs whitespace-normal text-left rounded-xl border border-white/10 bg-black/80 px-3 py-2 text-xs text-white shadow-xl">
                        {slackSummaryDisabledReason}
                      </div>
                    </div>
@@ -1787,7 +1787,7 @@ const DeliveriesNew: React.FC = () => {
                    } bg-orange-600 hover:bg-orange-700 ${
                      sendingSlackNotification && sendingSlackType === 'out_for_delivery' ? 'animate-pulse cursor-wait' : ''
                    }`}
-                   title="Send Out for Delivery items to Slack"
+                   title={undefined}
                    aria-busy={sendingSlackNotification && sendingSlackType === 'out_for_delivery'}
                  >
                    {sendingSlackNotification && sendingSlackType === 'out_for_delivery' ? (
@@ -1798,8 +1798,8 @@ const DeliveriesNew: React.FC = () => {
                    {sendingSlackNotification && sendingSlackType === 'out_for_delivery' ? 'Sending...' : 'Send OFD'}
                  </button>
                  {ofdDisabledReason && (
-                   <div className="pointer-events-none absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full hidden group-hover:block">
-                     <div className="max-w-xs rounded-xl border border-white/10 bg-black/80 px-3 py-2 text-xs text-white shadow-xl">
+                   <div className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden group-hover:block z-50">
+                     <div className="max-w-xs whitespace-normal text-left rounded-xl border border-white/10 bg-black/80 px-3 py-2 text-xs text-white shadow-xl">
                        {ofdDisabledReason}
                      </div>
                    </div>
