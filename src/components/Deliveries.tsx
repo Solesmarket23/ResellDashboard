@@ -183,6 +183,10 @@ const DeliveriesNew: React.FC = () => {
   }, [shouldShowStatsSkeleton]);
 
   const [searchTerm, setSearchTerm] = useState('');
+  const dropdownMenuMotion = (open: boolean) =>
+    `origin-top transition-all duration-150 ease-out transform ${
+      open ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto' : 'opacity-0 scale-95 -translate-y-1 pointer-events-none'
+    }`;
   const wasDeliveriesReload = (): boolean => {
     if (typeof window === 'undefined') return false;
     try {
@@ -1985,50 +1989,50 @@ const DeliveriesNew: React.FC = () => {
                     <ChevronDown className={`w-4 h-4 opacity-80 transition-transform ${modalCarrierOpen ? 'rotate-180' : ''}`} />
                   </button>
 
-                  {modalCarrierOpen ? (
-                    <div
-                      className={`absolute left-0 right-0 mt-2 rounded-xl border shadow-xl overflow-hidden z-50 ${
-                        currentTheme.name === 'Neon'
-                          ? 'bg-gray-900/95 border-cyan-500/30 text-white'
-                          : 'bg-white border-gray-200 text-gray-900'
-                      }`}
-                      role="listbox"
-                    >
-                      {[
-                        { value: 'AUTO', label: 'Auto-detect' },
-                        { value: 'UPS', label: 'UPS' },
-                        { value: 'FedEx', label: 'FedEx' },
-                        { value: 'USPS', label: 'USPS' },
-                        { value: 'DHL', label: 'DHL' },
-                      ].map((opt) => {
-                        const selected = newTracking.carrier === opt.value;
-                        return (
-                          <button
-                            key={opt.value}
-                            type="button"
-                            onClick={() => {
-                              setNewTracking((prev) => ({ ...prev, carrier: opt.value }));
-                              setModalCarrierOpen(false);
-                            }}
-                            className={`w-full px-3 py-2 text-left text-sm font-semibold inline-flex items-center gap-2 transition-colors ${
-                              currentTheme.name === 'Neon'
-                                ? selected
-                                  ? 'bg-cyan-500/15 text-white'
-                                  : 'hover:bg-white/10 text-white'
-                                : selected
-                                  ? 'bg-blue-50 text-blue-900'
-                                  : 'hover:bg-gray-100 text-gray-900'
-                            }`}
-                            role="option"
-                            aria-selected={selected}
-                          >
-                            <span className={`w-4 inline-flex justify-center ${selected ? 'opacity-100' : 'opacity-0'}`}>✓</span>
-                            {opt.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : null}
+                  <div
+                    className={`absolute left-0 right-0 mt-2 rounded-xl border shadow-xl overflow-hidden z-50 ${dropdownMenuMotion(modalCarrierOpen)} ${
+                      currentTheme.name === 'Neon'
+                        ? 'bg-gray-900/95 border-cyan-500/30 text-white'
+                        : 'bg-white border-gray-200 text-gray-900'
+                    }`}
+                    role="listbox"
+                    aria-hidden={!modalCarrierOpen}
+                  >
+                    {[
+                      { value: 'AUTO', label: 'Auto-detect' },
+                      { value: 'UPS', label: 'UPS' },
+                      { value: 'FedEx', label: 'FedEx' },
+                      { value: 'USPS', label: 'USPS' },
+                      { value: 'DHL', label: 'DHL' },
+                    ].map((opt) => {
+                      const selected = newTracking.carrier === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          tabIndex={modalCarrierOpen ? 0 : -1}
+                          onClick={() => {
+                            setNewTracking((prev) => ({ ...prev, carrier: opt.value }));
+                            setModalCarrierOpen(false);
+                          }}
+                          className={`w-full px-3 py-2 text-left text-sm font-semibold inline-flex items-center gap-2 transition-colors ${
+                            currentTheme.name === 'Neon'
+                              ? selected
+                                ? 'bg-cyan-500/15 text-white'
+                                : 'hover:bg-white/10 text-white'
+                              : selected
+                                ? 'bg-blue-50 text-blue-900'
+                                : 'hover:bg-gray-100 text-gray-900'
+                          }`}
+                          role="option"
+                          aria-selected={selected}
+                        >
+                          <span className={`w-4 inline-flex justify-center ${selected ? 'opacity-100' : 'opacity-0'}`}>✓</span>
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2529,36 +2533,36 @@ const DeliveriesNew: React.FC = () => {
                   }`}
                 />
               </button>
-              {statusOpen && (
-                <div
-                  role="listbox"
-                  className={`absolute z-50 mt-2 w-full rounded-xl border p-1 shadow-xl ${
-                    currentTheme.name === 'Neon'
-                      ? 'bg-gray-900/95 border-cyan-500/30 text-white'
-                      : 'bg-white border-gray-200 text-gray-900'
-                  }`}
-                >
-                  {statusOptions.map((opt) => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => {
-                        setStatusFilter(opt.value);
-                        setStatusOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                        opt.value === statusFilter
-                          ? currentTheme.name === 'Neon'
-                            ? 'bg-white/10'
-                            : 'bg-gray-100'
-                          : ''
-                      } ${currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <div
+                role="listbox"
+                aria-hidden={!statusOpen}
+                className={`absolute z-50 mt-2 w-full rounded-xl border p-1 shadow-xl ${dropdownMenuMotion(statusOpen)} ${
+                  currentTheme.name === 'Neon'
+                    ? 'bg-gray-900/95 border-cyan-500/30 text-white'
+                    : 'bg-white border-gray-200 text-gray-900'
+                }`}
+              >
+                {statusOptions.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    tabIndex={statusOpen ? 0 : -1}
+                    onClick={() => {
+                      setStatusFilter(opt.value);
+                      setStatusOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                      opt.value === statusFilter
+                        ? currentTheme.name === 'Neon'
+                          ? 'bg-white/10'
+                          : 'bg-gray-100'
+                        : ''
+                    } ${currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
             
             <div ref={carrierRef} className="relative">
@@ -2587,36 +2591,36 @@ const DeliveriesNew: React.FC = () => {
                   }`}
                 />
               </button>
-              {carrierOpen && (
-                <div
-                  role="listbox"
-                  className={`absolute z-50 mt-2 w-full rounded-xl border p-1 shadow-xl ${
-                    currentTheme.name === 'Neon'
-                      ? 'bg-gray-900/95 border-cyan-500/30 text-white'
-                      : 'bg-white border-gray-200 text-gray-900'
-                  }`}
-                >
-                  {carrierOptions.map((opt) => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => {
-                        setCarrierFilter(opt.value);
-                        setCarrierOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                        opt.value === carrierFilter
-                          ? currentTheme.name === 'Neon'
-                            ? 'bg-white/10'
-                            : 'bg-gray-100'
-                          : ''
-                      } ${currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <div
+                role="listbox"
+                aria-hidden={!carrierOpen}
+                className={`absolute z-50 mt-2 w-full rounded-xl border p-1 shadow-xl ${dropdownMenuMotion(carrierOpen)} ${
+                  currentTheme.name === 'Neon'
+                    ? 'bg-gray-900/95 border-cyan-500/30 text-white'
+                    : 'bg-white border-gray-200 text-gray-900'
+                }`}
+              >
+                {carrierOptions.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    tabIndex={carrierOpen ? 0 : -1}
+                    onClick={() => {
+                      setCarrierFilter(opt.value);
+                      setCarrierOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                      opt.value === carrierFilter
+                        ? currentTheme.name === 'Neon'
+                          ? 'bg-white/10'
+                          : 'bg-gray-100'
+                        : ''
+                    } ${currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
             
             {(statusFilter !== 'all' ||
