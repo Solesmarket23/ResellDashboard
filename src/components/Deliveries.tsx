@@ -1753,12 +1753,12 @@ const DeliveriesNew: React.FC = () => {
   }).length;
   const ofdDisabledBecauseNone = outForDeliveryCount === 0;
   const ofdDisabledReason = sendingSlackNotification
-    ? 'Sending…'
+    ? `Sending Out for Delivery items to Slack… (times out after ~45s)`
     : ofdDisabledBecauseNone
       ? `Disabled: no packages are currently marked “Out for Delivery”.${trackingLookupErrorCount > 0 ? ' Tracking lookups look unhealthy right now, so statuses may be wrong.' : ''}`
       : null;
   const slackSummaryDisabledReason = sendingSlackNotification
-    ? 'Sending…'
+    ? `Sending daily summary to Slack… (times out after ~90s)`
     : deliveries.length === 0
       ? 'Disabled: no deliveries are loaded yet.'
       : null;
