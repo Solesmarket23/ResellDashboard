@@ -1044,34 +1044,18 @@ export async function POST(request: NextRequest) {
     const deliveriesForSlack = deliveriesSortedForSlack.slice(0, MAX_DELIVERIES_IN_SLACK_MESSAGE);
 
     // Calculate summary stats
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayStr = today.toISOString().split('T')[0];
-    
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = tomorrow.toISOString().split('T')[0];
-    
-    const weekEnd = new Date(today);
-    weekEnd.setDate(weekEnd.getDate() + 7);
-
-    const arrivingToday = deliveries.filter(d => 
-      d.estimatedDelivery === todayStr || d.status === 'out_for_delivery'
-    ).length;
-
-    const arrivingTomorrow = deliveries.filter(d => 
-      d.estimatedDelivery === tomorrowStr
-    ).length;
-
-    const arrivingThisWeek = deliveries.filter(d => {
-      if (!d.estimatedDelivery || d.estimatedDelivery === 'TBD') return false;
-      const deliveryDate = new Date(d.estimatedDelivery);
-      return deliveryDate > tomorrow && deliveryDate <= weekEnd;
+    // Use the SAME timezone + business-day bucketing as the breakdown (todayStrForSlack/tomorrowStrForSlack).
+    // These are computed above using `slackTimeZone` and the 12am–6am cutover.
+    const arrivingToday = deliveries.filter((d) => d.estimatedDelivery === todayStrForSlack || d.status === 'out_for_delivery').length;
+    const arrivingTomorrow = deliveries.filter((d) => d.estimatedDelivery === tomorrowStrForSlack).length;
+    const weekEndStrForSlack = toYmdInTimeZone(new Date(businessNowForSlack.getTime() + 7 * 24 * 60 * 60 * 1000), slackTimeZone);
+    const arrivingThisWeek = deliveries.filter((d) => {
+      const eta = String(d.estimatedDelivery || '').trim();
+      if (!eta || eta === 'TBD') return false;
+      // strictly after tomorrow, up to 7 days out
+      return eta > tomorrowStrForSlack && eta <= weekEndStrForSlack;
     }).length;
-
-    const inTransit = deliveries.filter(d => 
-      d.status === 'in_transit' || d.status === 'shipped' || d.status === 'out_for_delivery'
-    ).length;
+    const inTransit = deliveries.filter((d) => d.status === 'in_transit' || d.status === 'shipped' || d.status === 'out_for_delivery').length;
 
     const sumFiniteOrNull = (values: Array<number | undefined>): number | null => {
       const finite = values.filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
@@ -1079,8 +1063,8 @@ export async function POST(request: NextRequest) {
       return finite.reduce((sum, v) => sum + v, 0);
     };
 
-    const todayItems = deliveries.filter(d => d.estimatedDelivery === todayStr || d.status === 'out_for_delivery');
-    const tomorrowItems = deliveries.filter(d => d.estimatedDelivery === tomorrowStr);
+    const todayItems = deliveries.filter((d) => d.estimatedDelivery === todayStrForSlack || d.status === 'out_for_delivery');
+    const tomorrowItems = deliveries.filter((d) => d.estimatedDelivery === tomorrowStrForSlack);
     const projectedProfitToday = sumFiniteOrNull(todayItems.map(d => d.estimatedProfit));
     const projectedProfitTomorrow = sumFiniteOrNull(tomorrowItems.map(d => d.estimatedProfit));
 
