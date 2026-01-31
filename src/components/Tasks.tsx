@@ -14,6 +14,7 @@ import {
   CalendarDays,
   ArrowRight,
   Repeat,
+  ChevronDown,
 } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
@@ -127,6 +128,16 @@ function categoryColor(category: TaskCategory, isNeon: boolean): string {
     default:
       return isNeon ? 'text-gray-300 border-white/15 bg-white/5' : 'text-gray-700 border-gray-200 bg-gray-50';
   }
+}
+
+function SelectWithChevron(props: React.SelectHTMLAttributes<HTMLSelectElement> & { className: string }) {
+  const { className, children, ...rest } = props;
+  return (
+    <div className="relative">
+      <select {...rest} className={`${className} appearance-none pr-10`} />
+      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 opacity-80" />
+    </div>
+  );
 }
 
 export default function Tasks() {
@@ -601,7 +612,7 @@ export default function Tasks() {
 
             <div className="lg:col-span-2">
               <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary}`}>Category</div>
-              <select
+              <SelectWithChevron
                 value={newCategory}
                 onChange={(e) => setNewCategory(e.target.value as TaskCategory)}
                 className={`${cls.input} px-3 py-3`}
@@ -612,12 +623,12 @@ export default function Tasks() {
                 <option value="expenses">Expenses</option>
                 <option value="admin">Admin</option>
                 <option value="other">Other</option>
-              </select>
+              </SelectWithChevron>
             </div>
 
             <div className="lg:col-span-2">
               <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary}`}>Priority</div>
-              <select
+              <SelectWithChevron
                 value={newPriority}
                 onChange={(e) => setNewPriority(e.target.value as TaskPriority)}
                 className={`${cls.input} px-3 py-3`}
@@ -625,7 +636,7 @@ export default function Tasks() {
                 <option value="high">High</option>
                 <option value="med">Medium</option>
                 <option value="low">Low</option>
-              </select>
+              </SelectWithChevron>
             </div>
 
             <div className="lg:col-span-2">
@@ -640,7 +651,7 @@ export default function Tasks() {
 
             <div className="lg:col-span-2">
               <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary}`}>Recurrence</div>
-              <select
+              <SelectWithChevron
                 value={newRecurrence}
                 onChange={(e) => setNewRecurrence(e.target.value as TaskRecurrence)}
                 className={`${cls.input} px-3 py-3`}
@@ -649,7 +660,7 @@ export default function Tasks() {
                 <option value="once">One-time</option>
                 <option value="daily">Recurring: daily</option>
                 <option value="weekly">Recurring: weekly</option>
-              </select>
+              </SelectWithChevron>
             </div>
 
             <div className="lg:col-span-1">
@@ -666,7 +677,7 @@ export default function Tasks() {
                     relatedSection: newLink || undefined,
                   });
                 }}
-                className={`w-full justify-center px-4 py-3 text-sm ${cls.primaryBtn}`}
+                className={`w-full h-12 justify-center px-4 text-sm ${cls.primaryBtn}`}
                 title="Add"
               >
                 <Plus className="w-4 h-4" />
