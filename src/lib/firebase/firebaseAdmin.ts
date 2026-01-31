@@ -1,12 +1,13 @@
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
+import { initializeApp, getApps, getApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
 
-// Initialize Firebase Admin for server-side operations
-const initializeFirebaseAdmin = () => {
+// Initialize Firebase Admin for server-side operations (shared app)
+const ensureAdminApp = () => {
   try {
     // Check if already initialized
     if (getApps().length > 0) {
-      return getFirestore();
+      return getApp();
     }
 
     // Initialize with service account (prefer server vars, fall back to NEXT_PUBLIC for projectId)
@@ -36,7 +37,7 @@ const initializeFirebaseAdmin = () => {
     });
 
     console.log('✅ Firebase Admin initialized successfully');
-    return getFirestore();
+    return getApp();
   } catch (error) {
     console.error('❌ Firebase Admin initialization failed:', error);
     throw error;
@@ -47,9 +48,20 @@ const initializeFirebaseAdmin = () => {
 let adminDb: ReturnType<typeof getFirestore>;
 export const getAdminDb = () => {
   if (!adminDb) {
-    adminDb = initializeFirebaseAdmin();
+    const app = ensureAdminApp();
+    adminDb = getFirestore(app);
   }
   return adminDb;
+};
+
+// Get Auth instance with lazy initialization
+let adminAuth: ReturnType<typeof getAuth>;
+export const getAdminAuth = () => {
+  if (!adminAuth) {
+    const app = ensureAdminApp();
+    adminAuth = getAuth(app);
+  }
+  return adminAuth;
 };
 
 export const addAdminDocument = async (collection: string, data: any) => {

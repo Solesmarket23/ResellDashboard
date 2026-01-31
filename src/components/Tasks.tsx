@@ -15,6 +15,9 @@ import {
   ArrowRight,
   Repeat,
   ChevronDown,
+  Pencil,
+  Save,
+  X,
 } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
@@ -171,6 +174,9 @@ export default function Tasks() {
   const { currentTheme } = useTheme();
   const { user } = useAuth();
 
+  const [tasksLimit, setTasksLimit] = useState(250);
+  const [taskSearchQuery, setTaskSearchQuery] = useState('');
+
   const isNeon = currentTheme.name === 'Neon';
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
@@ -188,6 +194,17 @@ export default function Tasks() {
   const [followUpDate, setFollowUpDate] = useState<string>(() => todayKey());
   const [followUpText, setFollowUpText] = useState<string>('');
 
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<{
+    title: string;
+    category: TaskCategory;
+    priority: TaskPriority;
+    dueDate: string;
+    recurrence: TaskRecurrence;
+    relatedSection: string;
+    notes: string;
+  } | null>(null);
+
   const [newTitle, setNewTitle] = useState('');
   const [newCategory, setNewCategory] = useState<TaskCategory>('repricing');
   const [newPriority, setNewPriority] = useState<TaskPriority>('med');
@@ -198,6 +215,20 @@ export default function Tasks() {
   const resolveUserId = () => {
     const siteUserId = (typeof window !== 'undefined' ? window.localStorage.getItem('siteUserId') : '') || '';
     return (user?.uid || siteUserId || '').trim();
+  };
+
+  const getAuthHeaders = async (extra?: Record<string, string>) => {
+    const headers: Record<string, string> = { ...(extra || {}) };
+    const userId = resolveUserId();
+    if (userId) headers['x-user-id'] = userId; // dev fallback; server ignores in prod if auth/cookies exist
+    if (user) {
+      try {
+        headers['Authorization'] = `Bearer ${await user.getIdToken()}`;
+      } catch {
+        // ignore
+      }
+    }
+    return headers;
   };
 
   const showToast = (message: string, type: NotificationType = 'success') => {
@@ -235,7 +266,9 @@ export default function Tasks() {
     }
     setLoading(true);
     try {
-      const res = await fetch('/api/tasks', { headers: { 'x-user-id': userId } });
+      const qp = new URLSearchParams();
+      qp.set('limit', String(tasksLimit));
+      const res = await fetch(`/api/tasks?${qp.toString()}`, { headers: await getAuthHeaders() });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) throw new Error(data?.error || 'Failed to load tasks');
       setTasks(Array.isArray(data.tasks) ? data.tasks : []);
@@ -250,7 +283,26 @@ export default function Tasks() {
   useEffect(() => {
     void fetchTasks();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.uid]);
+  }, [user?.uid, tasksLimit]);
+
+  const searchedTasks = useMemo(() => {
+    const q = taskSearchQuery.trim().toLowerCase();
+    if (!q) return tasks;
+    return tasks.filter((t) => {
+      const hay = [
+        t.title,
+        t.notes,
+        t.category,
+        t.priority,
+        t.dueDate,
+        t.recurrence,
+        ...(Array.isArray(t.followUps) ? t.followUps.flatMap((fu) => [fu.date, fu.text]) : []),
+      ]
+        .filter(Boolean)
+        .map((v) => String(v).toLowerCase());
+      return hay.some((v) => v.includes(q));
+    });
+  }, [tasks, taskSearchQuery]);
 
   const openCount = useMemo(() => tasks.filter((t) => t.status === 'open').length, [tasks]);
   const doneCount = useMemo(() => tasks.filter((t) => t.status === 'done').length, [tasks]);
@@ -265,13 +317,17 @@ export default function Tasks() {
 
   const openDisplayed = useMemo(() => {
     // Keep a just-completed task in the open list briefly so the user sees feedback before it moves.
-    const open = tasks.filter((t) => t.status === 'open' || (justCompletedId && t.id === justCompletedId));
+    const open = searchedTasks.filter((t) => t.status === 'open' || (justCompletedId && t.id === justCompletedId));
 
     let openList = open;
-    if (filter === 'today') openList = openList.filter((t) => t.status === 'open' && t.dueDate === today);
+    if (filter === 'today')
+      openList = openList.filter((t) => (justCompletedId && t.id === justCompletedId) || (t.status === 'open' && t.dueDate === today));
     if (filter === 'overdue')
-      openList = openList.filter((t) => t.status === 'open' && !!t.dueDate && t.dueDate < today);
-    if (filter === 'high') openList = openList.filter((t) => t.status === 'open' && t.priority === 'high');
+      openList = openList.filter(
+        (t) => (justCompletedId && t.id === justCompletedId) || (t.status === 'open' && !!t.dueDate && t.dueDate < today)
+      );
+    if (filter === 'high')
+      openList = openList.filter((t) => (justCompletedId && t.id === justCompletedId) || (t.status === 'open' && t.priority === 'high'));
     // 'open' and 'all' both show open tasks here; completed are shown separately via showDone.
 
     const priRank: Record<TaskPriority, number> = { high: 0, med: 1, low: 2 };
@@ -287,16 +343,19 @@ export default function Tasks() {
       if (aDue !== bDue) return aDue < bDue ? -1 : 1;
       return (b.createdAtMs || 0) - (a.createdAtMs || 0);
     });
-  }, [tasks, filter, today, justCompletedId]);
+  }, [searchedTasks, filter, today, justCompletedId]);
 
   const doneDisplayed = useMemo(() => {
-    const done = tasks.filter((t) => t.status === 'done' && (!justCompletedId || t.id !== justCompletedId));
+    const done = searchedTasks.filter((t) => t.status === 'done' && (!justCompletedId || t.id !== justCompletedId));
     return [...done].sort((a, b) => {
       const aTs = a.completedAtMs || a.updatedAtMs || 0;
       const bTs = b.completedAtMs || b.updatedAtMs || 0;
       return bTs - aTs;
     });
-  }, [tasks, justCompletedId]);
+  }, [searchedTasks, justCompletedId]);
+
+  const [doneLimit, setDoneLimit] = useState(20);
+  const doneDisplayedLimited = useMemo(() => doneDisplayed.slice(0, doneLimit), [doneDisplayed, doneLimit]);
 
   const createTask = async (payload: {
     title: string;
@@ -312,7 +371,7 @@ export default function Tasks() {
     try {
       const res = await fetch('/api/tasks', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ action: 'create', ...payload }),
       });
       const data = await res.json().catch(() => null);
@@ -334,7 +393,7 @@ export default function Tasks() {
     try {
       const res = await fetch('/api/tasks', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           action: 'create_bulk',
           tasks: TEMPLATES.map((t) => ({
@@ -375,14 +434,15 @@ export default function Tasks() {
     try {
       const res = await fetch('/api/tasks', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ action: 'toggle', id, status: next }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) throw new Error(data?.error || 'Failed to update task');
       if (next === 'done') {
-        // For recurring tasks, the API will create the next occurrence. Refresh so it shows up immediately.
-        void fetchTasks();
+        // For recurring tasks, the API will create the next occurrence.
+        // Wait until the completion animation finishes so the row doesn't "jump" mid-feedback.
+        window.setTimeout(() => void fetchTasks(), 700);
       }
     } catch (e: any) {
       console.error('Toggle task error:', e);
@@ -415,7 +475,7 @@ export default function Tasks() {
     try {
       const res = await fetch('/api/tasks', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ action: 'add_follow_up', id: taskId, text, date }),
       });
       const data = await res.json().catch(() => null);
@@ -453,7 +513,7 @@ export default function Tasks() {
     try {
       const res = await fetch('/api/tasks', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ action: 'delete', id }),
       });
       const data = await res.json().catch(() => null);
@@ -462,6 +522,77 @@ export default function Tasks() {
     } catch (e: any) {
       console.error('Delete task error:', e);
       showToast(e?.message || 'Failed to delete task', 'error');
+      await fetchTasks();
+    }
+  };
+
+  const startEdit = (t: Task) => {
+    setEditingTaskId(t.id);
+    setEditDraft({
+      title: t.title || '',
+      category: (t.category as TaskCategory) || 'other',
+      priority: (t.priority as TaskPriority) || 'med',
+      dueDate: t.dueDate || '',
+      recurrence: (t.recurrence as TaskRecurrence) || 'once',
+      relatedSection: t.relatedSection || '',
+      notes: t.notes || '',
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditingTaskId(null);
+    setEditDraft(null);
+  };
+
+  const saveEdit = async () => {
+    if (!editingTaskId || !editDraft) return;
+    const userId = resolveUserId();
+    if (!userId) return showToast('Missing user session. Refresh and try again.', 'error');
+
+    const payload = {
+      action: 'update',
+      id: editingTaskId,
+      title: editDraft.title.trim(),
+      category: editDraft.category,
+      priority: editDraft.priority,
+      dueDate: editDraft.dueDate || null,
+      recurrence: editDraft.recurrence,
+      relatedSection: editDraft.relatedSection.trim(),
+      notes: editDraft.notes,
+    };
+
+    // Optimistic
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === editingTaskId
+          ? {
+              ...t,
+              title: payload.title || t.title,
+              category: payload.category as any,
+              priority: payload.priority as any,
+              dueDate: payload.dueDate || undefined,
+              recurrence: payload.recurrence as any,
+              relatedSection: payload.relatedSection || undefined,
+              notes: payload.notes || undefined,
+              updatedAtMs: Date.now(),
+            }
+          : t
+      )
+    );
+
+    try {
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) throw new Error(data?.error || 'Failed to update task');
+      showToast('Saved', 'success');
+      cancelEdit();
+    } catch (e: any) {
+      console.error('Update task error:', e);
+      showToast(e?.message || 'Failed to update task', 'error');
       await fetchTasks();
     }
   };
@@ -544,6 +675,43 @@ export default function Tasks() {
               {x.label}
             </button>
           ))}
+        </div>
+
+        {/* Search + scaling */}
+        <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex-1">
+            <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary}`}>Search</div>
+            <div className="relative">
+              <input
+                value={taskSearchQuery}
+                onChange={(e) => setTaskSearchQuery(e.target.value)}
+                placeholder="Search title, notes, follow-ups…"
+                className={`${cls.input} px-4 py-3`}
+              />
+              {taskSearchQuery && (
+                <button
+                  onClick={() => setTaskSearchQuery('')}
+                  className={`absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold ${
+                    isNeon ? 'text-white/70 hover:text-white' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                  title="Clear search"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="sm:w-[220px]">
+            <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary}`}>Load</div>
+            <button
+              onClick={() => setTasksLimit((v) => Math.min(1000, v + 250))}
+              disabled={tasksLimit >= 1000}
+              className={`${cls.ghostBtn} w-full px-3 py-3 text-sm justify-center disabled:opacity-60 disabled:cursor-not-allowed`}
+              title="Load more tasks"
+            >
+              Load more ({tasksLimit})
+            </button>
+          </div>
         </div>
 
         {/* Stats + Quick actions */}
@@ -760,7 +928,7 @@ export default function Tasks() {
           <div className={`px-5 py-4 border-b ${isNeon ? 'border-white/10' : 'border-gray-200'} flex items-center justify-between`}>
             <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary}`}>Your list</div>
             <div className={`text-xs ${currentTheme.colors.textSecondary}`}>
-              {loading ? 'Loading…' : `${openDisplayed.length + (showDone ? doneDisplayed.length : 0)} shown`}
+              {loading ? 'Loading…' : `${openDisplayed.length + (showDone ? doneDisplayedLimited.length : 0)} shown`}
             </div>
           </div>
 
@@ -806,9 +974,17 @@ export default function Tasks() {
 
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <div className={`text-sm font-bold ${currentTheme.colors.textPrimary} ${isDone ? 'line-through' : ''}`}>
-                          {t.title}
-                        </div>
+                        {editingTaskId === t.id && editDraft ? (
+                          <input
+                            value={editDraft.title}
+                            onChange={(e) => setEditDraft({ ...editDraft, title: e.target.value })}
+                            className={`${cls.input} px-3 py-2 text-sm font-bold`}
+                          />
+                        ) : (
+                          <div className={`text-sm font-bold ${currentTheme.colors.textPrimary} ${isDone ? 'line-through' : ''}`}>
+                            {t.title}
+                          </div>
+                        )}
 
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold border ${categoryColor(t.category, isNeon)}`}>
                           <Tag className="w-3 h-3" />
@@ -850,6 +1026,77 @@ export default function Tasks() {
 
                       {t.notes && (
                         <div className={`mt-1 text-xs ${currentTheme.colors.textSecondary}`}>{t.notes}</div>
+                      )}
+
+                      {editingTaskId === t.id && editDraft && (
+                        <div className="mt-3 grid grid-cols-1 lg:grid-cols-12 gap-2">
+                          <div className="lg:col-span-3">
+                            <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary}`}>Category</div>
+                            <SelectWithChevron
+                              value={editDraft.category}
+                              onChange={(e) => setEditDraft({ ...editDraft, category: e.target.value as TaskCategory })}
+                              className={`${cls.input} px-3 py-2`}
+                            >
+                              <option value="repricing">Repricing</option>
+                              <option value="stockx">StockX</option>
+                              <option value="shipping">Shipping</option>
+                              <option value="expenses">Expenses</option>
+                              <option value="admin">Admin</option>
+                              <option value="other">Other</option>
+                            </SelectWithChevron>
+                          </div>
+                          <div className="lg:col-span-3">
+                            <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary}`}>Priority</div>
+                            <SelectWithChevron
+                              value={editDraft.priority}
+                              onChange={(e) => setEditDraft({ ...editDraft, priority: e.target.value as TaskPriority })}
+                              className={`${cls.input} px-3 py-2`}
+                            >
+                              <option value="high">High</option>
+                              <option value="med">Medium</option>
+                              <option value="low">Low</option>
+                            </SelectWithChevron>
+                          </div>
+                          <div className="lg:col-span-3">
+                            <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary}`}>Due date</div>
+                            <input
+                              type="date"
+                              value={editDraft.dueDate}
+                              onChange={(e) => setEditDraft({ ...editDraft, dueDate: e.target.value })}
+                              className={`${cls.input} px-3 py-2`}
+                            />
+                          </div>
+                          <div className="lg:col-span-3">
+                            <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary}`}>Recurrence</div>
+                            <SelectWithChevron
+                              value={editDraft.recurrence}
+                              onChange={(e) => setEditDraft({ ...editDraft, recurrence: e.target.value as TaskRecurrence })}
+                              className={`${cls.input} px-3 py-2`}
+                            >
+                              <option value="once">One-time</option>
+                              <option value="daily">Recurring: daily</option>
+                              <option value="weekly">Recurring: weekly</option>
+                            </SelectWithChevron>
+                          </div>
+                          <div className="lg:col-span-4">
+                            <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary}`}>Related section</div>
+                            <input
+                              value={editDraft.relatedSection}
+                              onChange={(e) => setEditDraft({ ...editDraft, relatedSection: e.target.value })}
+                              placeholder="e.g. purchases, deliveries..."
+                              className={`${cls.input} px-3 py-2`}
+                            />
+                          </div>
+                          <div className="lg:col-span-8">
+                            <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary}`}>Notes</div>
+                            <input
+                              value={editDraft.notes}
+                              onChange={(e) => setEditDraft({ ...editDraft, notes: e.target.value })}
+                              placeholder="Optional notes..."
+                              className={`${cls.input} px-3 py-2`}
+                            />
+                          </div>
+                        </div>
                       )}
 
                       {/* Follow-up notes */}
@@ -944,6 +1191,31 @@ export default function Tasks() {
                     </div>
 
                     <div className="flex items-center gap-2">
+                      {editingTaskId === t.id ? (
+                        <>
+                          <button
+                            onClick={() => void saveEdit()}
+                            className={`${cls.ghostBtn} px-3 py-2 text-xs font-bold`}
+                            title="Save"
+                          >
+                            <Save className="w-4 h-4" />
+                            Save
+                          </button>
+                          <button onClick={cancelEdit} className={`${cls.ghostBtn} px-3 py-2 text-xs font-bold`} title="Cancel">
+                            <X className="w-4 h-4" />
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => startEdit(t)}
+                          className={`${cls.ghostBtn} px-3 py-2 text-xs font-bold`}
+                          title="Edit"
+                        >
+                          <Pencil className="w-4 h-4" />
+                          Edit
+                        </button>
+                      )}
                       {t.relatedSection && (
                         <button
                           onClick={() => jumpToSection(t.relatedSection!)}
@@ -971,12 +1243,14 @@ export default function Tasks() {
               {showDone && doneDisplayed.length > 0 && (
                 <div className={`px-5 py-3 ${isNeon ? 'bg-white/5' : 'bg-gray-50'} flex items-center justify-between`}>
                   <div className={`text-xs font-bold ${currentTheme.colors.textSecondary}`}>Completed</div>
-                  <div className={`text-xs ${currentTheme.colors.textSecondary}`}>{doneDisplayed.length}</div>
+                  <div className={`text-xs ${currentTheme.colors.textSecondary}`}>
+                    {doneDisplayed.length}
+                  </div>
                 </div>
               )}
 
               {showDone &&
-                doneDisplayed.map((t) => {
+                doneDisplayedLimited.map((t) => {
                   const isDone = t.status === 'done';
                   const recurrence: TaskRecurrence =
                     t.recurrence === 'daily' || t.recurrence === 'weekly' ? t.recurrence : 'once';
@@ -1054,6 +1328,30 @@ export default function Tasks() {
                     </div>
                   );
                 })}
+
+              {showDone && doneDisplayed.length > doneLimit && (
+                <div className={`px-5 py-4 ${isNeon ? 'bg-white/5' : 'bg-gray-50'} flex items-center justify-center`}>
+                  <button
+                    onClick={() => setDoneLimit((v) => Math.min(doneDisplayed.length, v + 20))}
+                    className={`${cls.ghostBtn} px-3 py-2 text-xs font-bold`}
+                    title="Show more completed"
+                  >
+                    Show more completed
+                  </button>
+                </div>
+              )}
+
+              {showDone && doneDisplayed.length > 20 && doneLimit > 20 && (
+                <div className={`px-5 pb-4 ${isNeon ? 'bg-white/5' : 'bg-gray-50'} flex items-center justify-center`}>
+                  <button
+                    onClick={() => setDoneLimit(20)}
+                    className={`${cls.ghostBtn} px-3 py-2 text-xs font-bold`}
+                    title="Collapse completed"
+                  >
+                    Show fewer
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

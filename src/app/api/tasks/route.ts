@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { getAdminDb } from '@/lib/firebase/firebaseAdmin';
+import { getAdminAuth, getAdminDb } from '@/lib/firebase/firebaseAdmin';
 import { FieldValue } from 'firebase-admin/firestore';
 
 export const runtime = 'nodejs';
@@ -23,6 +23,7 @@ type Task = {
   id: string;
   title: string;
   notes?: string;
+  // Preview only (latest N follow-ups) so tasks stay fast and doc size stays safe.
   followUps?: TaskFollowUp[];
   status: TaskStatus;
   priority: TaskPriority;
@@ -35,23 +36,44 @@ type Task = {
   completedAtMs?: number;
 };
 
-function resolveUserId(request: NextRequest): string {
-  const qpUserId = request.nextUrl.searchParams.get('userId')?.trim() || '';
-  const headerUserId = request.headers.get('x-user-id')?.trim() || '';
-  const cookieStore = cookies();
-  const cookieUserId =
-    (cookieStore.get('userId')?.value ||
-      cookieStore.get('siteUserId')?.value ||
-      cookieStore.get('site-user-id')?.value ||
-      '')
-      .trim();
+async function resolveUserId(request: NextRequest): Promise<string> {
+  // 1) Prefer Firebase auth token (secure, for real signed-in users)
+  const authHeader = request.headers.get('authorization') || request.headers.get('Authorization') || '';
+  const m = authHeader.match(/^Bearer\s+(.+)$/i);
+  if (m?.[1]) {
+    try {
+      const decoded = await getAdminAuth().verifyIdToken(m[1].trim());
+      const uid = String(decoded?.uid || '').trim();
+      if (uid) return uid;
+    } catch {
+      // fall through to site password cookie mode
+    }
+  }
 
-  return (qpUserId || headerUserId || cookieUserId).trim();
+  // 2) Site-password mode: require cookies issued by /api/auth/verify
+  const cookieStore = cookies();
+  const siteAuth = String(cookieStore.get('site-auth')?.value || '').trim();
+  const siteUserId = String(cookieStore.get('site-user-id')?.value || cookieStore.get('siteUserId')?.value || '').trim();
+  if (siteAuth === 'authenticated' && siteUserId) return siteUserId;
+
+  // 3) Development escape hatch (prevents breaking local dev flows)
+  if (process.env.NODE_ENV !== 'production') {
+    const qpUserId = request.nextUrl.searchParams.get('userId')?.trim() || '';
+    const headerUserId = request.headers.get('x-user-id')?.trim() || '';
+    const cookieUserId = String(cookieStore.get('userId')?.value || '').trim();
+    return (qpUserId || headerUserId || cookieUserId).trim();
+  }
+
+  return '';
 }
 
 function tasksCol(userId: string) {
   const db = getAdminDb();
   return db.collection('userTasks').doc(userId).collection('tasks');
+}
+
+function taskFollowUpsCol(userId: string, taskId: string) {
+  return tasksCol(userId).doc(taskId).collection('followUps');
 }
 
 function normalizeDueDate(raw: any): string | undefined {
@@ -98,20 +120,32 @@ function nextDueDateForRecurrence(currentDue: string, recurrence: TaskRecurrence
 
 export async function GET(request: NextRequest) {
   try {
-    const userId = resolveUserId(request);
+    const userId = await resolveUserId(request);
     if (!userId) {
       return NextResponse.json(
-        { success: false, error: 'Missing userId (query param, x-user-id header, or cookies)' },
-        { status: 400 }
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
       );
     }
 
-    const snap = await tasksCol(userId).orderBy('createdAtMs', 'desc').limit(250).get();
+    const limitRaw = request.nextUrl.searchParams.get('limit');
+    const limit = (() => {
+      const n = limitRaw ? Number.parseInt(limitRaw, 10) : 250;
+      if (!Number.isFinite(n)) return 250;
+      return Math.max(1, Math.min(1000, n));
+    })();
+
+    const snap = await tasksCol(userId).orderBy('createdAtMs', 'desc').limit(limit).get();
     const tasks: Task[] = snap.docs
       .map((d) => {
         const data = d.data() as any;
-        const followUps: TaskFollowUp[] | undefined = Array.isArray(data.followUps)
-          ? data.followUps
+        const followUpsRaw = Array.isArray(data.followUpsPreview)
+          ? data.followUpsPreview
+          : Array.isArray(data.followUps)
+            ? data.followUps
+            : null;
+        const followUps: TaskFollowUp[] | undefined = Array.isArray(followUpsRaw)
+          ? followUpsRaw
               .map((fu: any) => ({
                 id: String(fu?.id || '').trim(),
                 date: typeof fu?.date === 'string' ? fu.date : '',
@@ -148,11 +182,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const userId = resolveUserId(request);
+    const userId = await resolveUserId(request);
     if (!userId) {
       return NextResponse.json(
-        { success: false, error: 'Missing userId (query param, x-user-id header, or cookies)' },
-        { status: 400 }
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
       );
     }
 
@@ -179,7 +213,7 @@ export async function POST(request: NextRequest) {
         {
           title,
           notes: notes || null,
-          followUps: [],
+          followUpsPreview: [],
           status: 'open',
           priority,
           category,
@@ -225,7 +259,7 @@ export async function POST(request: NextRequest) {
           {
             title,
             notes: notes || null,
-            followUps: [],
+            followUpsPreview: [],
             status: 'open',
             priority,
             category,
@@ -283,7 +317,7 @@ export async function POST(request: NextRequest) {
               {
                 title: String(data.title || '').trim(),
                 notes: typeof data.notes === 'string' ? data.notes : null,
-                followUps: [],
+                followUpsPreview: [],
                 status: 'open',
                 priority: data.priority === 'high' || data.priority === 'med' || data.priority === 'low' ? data.priority : 'med',
                 category: typeof data.category === 'string' ? data.category : 'other',
@@ -315,6 +349,7 @@ export async function POST(request: NextRequest) {
       const followUpId = (globalThis.crypto as any)?.randomUUID?.() || `${now}-${Math.random().toString(16).slice(2)}`;
       const db = getAdminDb();
       const ref = tasksCol(userId).doc(id);
+      const fuRef = taskFollowUpsCol(userId, id).doc(followUpId);
 
       const followUp: TaskFollowUp = { id: followUpId, date, text, createdAtMs: now };
 
@@ -322,12 +357,31 @@ export async function POST(request: NextRequest) {
         const snap = await tx.get(ref);
         if (!snap.exists) throw new Error('Task not found');
         const data = snap.data() as any;
-        const prev: TaskFollowUp[] = Array.isArray(data.followUps) ? data.followUps : [];
-        const next = [...prev, followUp].slice(-50);
+        // Write the full follow-up entry to a subcollection (scales better than an ever-growing array).
+        tx.set(
+          fuRef,
+          {
+            date,
+            text,
+            createdAtMs: now,
+            _serverUpdatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        // Keep a small preview array on the task doc for fast rendering (latest 6).
+        const prevPreview: any[] = Array.isArray(data.followUpsPreview)
+          ? data.followUpsPreview
+          : Array.isArray(data.followUps)
+            ? data.followUps
+            : [];
+        const nextPreview = [...prevPreview, followUp]
+          .filter((fu: any) => fu && fu.date && fu.text)
+          .slice(-6);
         tx.set(
           ref,
           {
-            followUps: next,
+            followUpsPreview: nextPreview,
             updatedAtMs: now,
             _serverUpdatedAt: FieldValue.serverTimestamp(),
           },
@@ -336,6 +390,24 @@ export async function POST(request: NextRequest) {
       });
 
       return NextResponse.json({ success: true, followUp });
+    }
+
+    if (action === 'list_follow_ups') {
+      const id = String(body?.id || '').trim();
+      if (!id) return NextResponse.json({ success: false, error: 'id is required' }, { status: 400 });
+      const snap = await taskFollowUpsCol(userId, id).orderBy('createdAtMs', 'desc').limit(50).get();
+      const followUps = snap.docs
+        .map((d) => {
+          const data = d.data() as any;
+          return {
+            id: d.id,
+            date: typeof data.date === 'string' ? data.date : '',
+            text: typeof data.text === 'string' ? data.text : '',
+            createdAtMs: typeof data.createdAtMs === 'number' ? data.createdAtMs : 0,
+          } as TaskFollowUp;
+        })
+        .filter((fu) => !!fu.id && !!fu.date && !!fu.text);
+      return NextResponse.json({ success: true, followUps });
     }
 
     if (action === 'update') {
