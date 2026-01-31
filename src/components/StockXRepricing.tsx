@@ -246,6 +246,7 @@ export default function StockXRepricing() {
   const [sortColumn, setSortColumn] = useState<'product' | 'size' | 'price' | 'market' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [searchQuery, setSearchQuery] = useState('');
+  const [showNeedsBuyBoxOnly, setShowNeedsBuyBoxOnly] = useState(false);
 
   // Track images that failed to load so we can avoid re-hydrating a broken StockX CDN URL forever.
   const [brokenImageByListingId, setBrokenImageByListingId] = useState<Record<string, true>>({});
@@ -402,8 +403,9 @@ export default function StockXRepricing() {
   
   const filteredListings = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return listings;
-    return listings.filter(l => {
+    const base = !q
+      ? listings
+      : listings.filter(l => {
       const fields = [
         l.productName,
         l.size,
@@ -417,7 +419,23 @@ export default function StockXRepricing() {
         .map(v => String(v).toLowerCase());
       return fields.some(v => v.includes(q));
     });
-  }, [listings, searchQuery]);
+
+    if (!showNeedsBuyBoxOnly) return base;
+    return base.filter((l) => {
+      const status = String(l.status || '').toUpperCase().trim();
+      if (status && status !== 'ACTIVE') return false;
+      const ask = getTrueAsk(l);
+      if (ask === null) return false;
+      const cur = typeof l.currentPrice === 'number' && Number.isFinite(l.currentPrice) ? l.currentPrice : NaN;
+      if (!Number.isFinite(cur) || cur <= 0) return false;
+      // "Not winning buy box" proxy: you're not at the lowest ask price.
+      // (If tied at the lowest ask, StockX can still rotate queue position; we can't reliably detect that here.)
+      if (cur > ask) return true;
+      // Also flag cases where your Min blocks you from matching/undercutting the buy box.
+      if (typeof l.minPrice === 'number' && Number.isFinite(l.minPrice) && l.minPrice > ask) return true;
+      return false;
+    });
+  }, [listings, searchQuery, showNeedsBuyBoxOnly, getTrueAsk]);
 
   // UX: richer, self-explanatory pricing rules (grouped + described)
   const pricingRuleOptions = useMemo<NeonDropdownOption[]>(
@@ -450,6 +468,26 @@ export default function StockXRepricing() {
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery]);
+
+  // Reset paging when toggling the buy box filter
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [showNeedsBuyBoxOnly]);
+
+  const needsBuyBoxCount = useMemo(() => {
+    const statusActiveOrUnknown = (l: Listing) => {
+      const status = String(l.status || '').toUpperCase().trim();
+      return !status || status === 'ACTIVE';
+    };
+    return listings.filter((l) => {
+      if (!statusActiveOrUnknown(l)) return false;
+      const ask = getTrueAsk(l);
+      if (ask === null) return false;
+      const cur = typeof l.currentPrice === 'number' && Number.isFinite(l.currentPrice) ? l.currentPrice : NaN;
+      if (!Number.isFinite(cur) || cur <= 0) return false;
+      return cur > ask || (typeof l.minPrice === 'number' && Number.isFinite(l.minPrice) && l.minPrice > ask);
+    }).length;
+  }, [listings, getTrueAsk]);
 
   // Sorting logic
   const sortedListings = [...filteredListings].sort((a, b) => {
@@ -4201,6 +4239,28 @@ export default function StockXRepricing() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
+              )}
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setShowNeedsBuyBoxOnly((v) => !v)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                  showNeedsBuyBoxOnly
+                    ? isNeon
+                      ? 'bg-orange-500/20 border-orange-500/30 text-orange-200'
+                      : 'bg-orange-50 border-orange-200 text-orange-800'
+                    : isNeon
+                      ? 'bg-white/5 border-white/10 text-white/80 hover:bg-white/10'
+                      : 'bg-white border-gray-200 text-gray-800 hover:bg-gray-50'
+                }`}
+                title="Show only listings not at the lowest ask (buy box)"
+              >
+                Needs buy box ({needsBuyBoxCount})
+              </button>
+              {showNeedsBuyBoxOnly && (
+                <div className={`text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                  Showing listings where your ask is above the lowest ask (or Min blocks matching it).
+                </div>
               )}
             </div>
             {/* Reserve space to prevent layout shift while typing */}
