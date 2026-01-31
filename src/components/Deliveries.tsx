@@ -2355,7 +2355,7 @@ const DeliveriesNew: React.FC = () => {
                     setTrackingSort(null);
                     setStatusFilter(mapped.statusFilter);
                   }}
-                  className={`bg-white/10 backdrop-blur-sm rounded-lg p-4 text-left transition-all duration-200 ${
+                  className={`bg-white/10 backdrop-blur-sm rounded-lg p-4 text-left transition-all duration-200 flex flex-col ${
                     mapped ? 'cursor-pointer hover:bg-white/15' : 'cursor-default'
                   } ${isActive ? 'ring-2 ring-blue-500/80 shadow-lg shadow-blue-500/20' : ''} ${
                     showStatsSkeleton ? 'shadow-xl shadow-black/30 ring-1 ring-white/10' : ''
@@ -2375,11 +2375,16 @@ const DeliveriesNew: React.FC = () => {
                       {hasDeliveries ? stat.getValue() : (cachedStatValues?.[statId] ?? 0)}
                     </p>
                   )}
-                  {isActive ? (
-                    <p className="text-xs text-blue-200 mt-2 font-semibold">
-                      Table filtered
-                    </p>
-                  ) : null}
+                  {/* Reserve footer space so the active card doesn't appear taller */}
+                  <div className="mt-2 h-4">
+                    {mapped ? (
+                      <p
+                        className={`text-xs font-semibold ${isActive ? 'text-blue-200' : 'text-blue-200/0'}`}
+                      >
+                        Table filtered
+                      </p>
+                    ) : null}
+                  </div>
                 </button>
               );
             })}
