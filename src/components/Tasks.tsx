@@ -157,14 +157,79 @@ function categoryColor(category: TaskCategory, isNeon: boolean): string {
   }
 }
 
-function SelectWithChevron(props: React.SelectHTMLAttributes<HTMLSelectElement> & { className: string }) {
-  const { className, children, ...rest } = props;
+function NeonSelect<T extends string>(props: {
+  value: T;
+  onChange: (value: T) => void;
+  options: Array<{ value: T; label: string }>;
+  buttonClassName: string;
+  menuClassName: string;
+  isNeon: boolean;
+}) {
+  const { value, onChange, options, buttonClassName, menuClassName, isNeon } = props;
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  const selectedLabel = options.find((o) => o.value === value)?.label || String(value);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      const el = rootRef.current;
+      if (!el) return;
+      if (e.target instanceof Node && el.contains(e.target)) return;
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
   return (
-    <div className="relative">
-      <select {...rest} className={`${className} appearance-none pr-10`}>
-        {children}
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 opacity-80" />
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`${buttonClassName} pr-10 text-left`}
+        aria-expanded={open}
+      >
+        <span className="truncate">{selectedLabel}</span>
+        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 opacity-80" />
+      </button>
+
+      {open && (
+        <div
+          className={`absolute z-50 mt-2 w-full rounded-xl border shadow-xl ${
+            isNeon ? 'bg-gray-900/95 border-white/15' : 'bg-white border-gray-200'
+          } ${menuClassName}`}
+        >
+          <div className="py-1">
+            {options.map((o) => {
+              const active = o.value === value;
+              return (
+                <button
+                  key={o.value}
+                  type="button"
+                  onClick={() => {
+                    onChange(o.value);
+                    setOpen(false);
+                  }}
+                  className={`w-full px-3 py-2 text-sm font-semibold flex items-center gap-2 transition-colors ${
+                    active
+                      ? isNeon
+                        ? 'bg-cyan-500/10 text-cyan-200'
+                        : 'bg-blue-50 text-blue-800'
+                      : isNeon
+                        ? 'text-white/80 hover:bg-white/10'
+                        : 'text-gray-800 hover:bg-gray-50'
+                  }`}
+                >
+                  <span className={`w-4 ${active ? 'opacity-100' : 'opacity-0'}`}>✓</span>
+                  <span className="truncate">{o.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -257,6 +322,39 @@ export default function Tasks() {
     }`;
     return { primaryBtn, secondaryBtn, ghostBtn, card, input };
   }, [currentTheme, isNeon]);
+
+  const categoryOptions = useMemo(
+    () =>
+      [
+        { value: 'repricing', label: 'Repricing' },
+        { value: 'stockx', label: 'StockX' },
+        { value: 'shipping', label: 'Shipping' },
+        { value: 'expenses', label: 'Expenses' },
+        { value: 'admin', label: 'Admin' },
+        { value: 'other', label: 'Other' },
+      ] as Array<{ value: TaskCategory; label: string }>,
+    []
+  );
+
+  const priorityOptions = useMemo(
+    () =>
+      [
+        { value: 'high', label: 'High' },
+        { value: 'med', label: 'Medium' },
+        { value: 'low', label: 'Low' },
+      ] as Array<{ value: TaskPriority; label: string }>,
+    []
+  );
+
+  const recurrenceOptions = useMemo(
+    () =>
+      [
+        { value: 'once', label: 'One-time' },
+        { value: 'daily', label: 'Recurring: daily' },
+        { value: 'weekly', label: 'Recurring: weekly' },
+      ] as Array<{ value: TaskRecurrence; label: string }>,
+    []
+  );
 
   const fetchTasks = async () => {
     const userId = resolveUserId();
@@ -806,31 +904,26 @@ export default function Tasks() {
 
             <div className="lg:col-span-2">
               <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary}`}>Category</div>
-              <SelectWithChevron
+              <NeonSelect
                 value={newCategory}
-                onChange={(e) => setNewCategory(e.target.value as TaskCategory)}
-                className={`${cls.input} px-3 py-3`}
-              >
-                <option value="repricing">Repricing</option>
-                <option value="stockx">StockX</option>
-                <option value="shipping">Shipping</option>
-                <option value="expenses">Expenses</option>
-                <option value="admin">Admin</option>
-                <option value="other">Other</option>
-              </SelectWithChevron>
+                onChange={setNewCategory}
+                options={categoryOptions}
+                isNeon={isNeon}
+                buttonClassName={`${cls.input} px-3 py-3 relative`}
+                menuClassName=""
+              />
             </div>
 
             <div className="lg:col-span-2">
               <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary}`}>Priority</div>
-              <SelectWithChevron
+              <NeonSelect
                 value={newPriority}
-                onChange={(e) => setNewPriority(e.target.value as TaskPriority)}
-                className={`${cls.input} px-3 py-3`}
-              >
-                <option value="high">High</option>
-                <option value="med">Medium</option>
-                <option value="low">Low</option>
-              </SelectWithChevron>
+                onChange={setNewPriority}
+                options={priorityOptions}
+                isNeon={isNeon}
+                buttonClassName={`${cls.input} px-3 py-3 relative`}
+                menuClassName=""
+              />
             </div>
 
             <div className="lg:col-span-2">
@@ -845,16 +938,14 @@ export default function Tasks() {
 
             <div className="lg:col-span-2">
               <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary}`}>Recurrence</div>
-              <SelectWithChevron
+              <NeonSelect
                 value={newRecurrence}
-                onChange={(e) => setNewRecurrence(e.target.value as TaskRecurrence)}
-                className={`${cls.input} px-3 py-3`}
-                title="Recurrence"
-              >
-                <option value="once">One-time</option>
-                <option value="daily">Recurring: daily</option>
-                <option value="weekly">Recurring: weekly</option>
-              </SelectWithChevron>
+                onChange={setNewRecurrence}
+                options={recurrenceOptions}
+                isNeon={isNeon}
+                buttonClassName={`${cls.input} px-3 py-3 relative`}
+                menuClassName=""
+              />
             </div>
 
             <div className="lg:col-span-1 flex flex-col">
@@ -873,7 +964,7 @@ export default function Tasks() {
                     relatedSection: newLink || undefined,
                   });
                 }}
-                className={`w-full h-11 justify-center px-4 text-sm ${cls.primaryBtn}`}
+                className={`w-full h-10 justify-center px-4 text-sm ${cls.primaryBtn}`}
                 title="Add"
               >
                 <Plus className="w-4 h-4" />
@@ -1032,30 +1123,25 @@ export default function Tasks() {
                         <div className="mt-3 grid grid-cols-1 lg:grid-cols-12 gap-2">
                           <div className="lg:col-span-3">
                             <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary}`}>Category</div>
-                            <SelectWithChevron
+                            <NeonSelect
                               value={editDraft.category}
-                              onChange={(e) => setEditDraft({ ...editDraft, category: e.target.value as TaskCategory })}
-                              className={`${cls.input} px-3 py-2`}
-                            >
-                              <option value="repricing">Repricing</option>
-                              <option value="stockx">StockX</option>
-                              <option value="shipping">Shipping</option>
-                              <option value="expenses">Expenses</option>
-                              <option value="admin">Admin</option>
-                              <option value="other">Other</option>
-                            </SelectWithChevron>
+                              onChange={(v) => setEditDraft({ ...editDraft, category: v })}
+                              options={categoryOptions}
+                              isNeon={isNeon}
+                              buttonClassName={`${cls.input} px-3 py-2 relative`}
+                              menuClassName=""
+                            />
                           </div>
                           <div className="lg:col-span-3">
                             <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary}`}>Priority</div>
-                            <SelectWithChevron
+                            <NeonSelect
                               value={editDraft.priority}
-                              onChange={(e) => setEditDraft({ ...editDraft, priority: e.target.value as TaskPriority })}
-                              className={`${cls.input} px-3 py-2`}
-                            >
-                              <option value="high">High</option>
-                              <option value="med">Medium</option>
-                              <option value="low">Low</option>
-                            </SelectWithChevron>
+                              onChange={(v) => setEditDraft({ ...editDraft, priority: v })}
+                              options={priorityOptions}
+                              isNeon={isNeon}
+                              buttonClassName={`${cls.input} px-3 py-2 relative`}
+                              menuClassName=""
+                            />
                           </div>
                           <div className="lg:col-span-3">
                             <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary}`}>Due date</div>
@@ -1068,15 +1154,14 @@ export default function Tasks() {
                           </div>
                           <div className="lg:col-span-3">
                             <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary}`}>Recurrence</div>
-                            <SelectWithChevron
+                            <NeonSelect
                               value={editDraft.recurrence}
-                              onChange={(e) => setEditDraft({ ...editDraft, recurrence: e.target.value as TaskRecurrence })}
-                              className={`${cls.input} px-3 py-2`}
-                            >
-                              <option value="once">One-time</option>
-                              <option value="daily">Recurring: daily</option>
-                              <option value="weekly">Recurring: weekly</option>
-                            </SelectWithChevron>
+                              onChange={(v) => setEditDraft({ ...editDraft, recurrence: v })}
+                              options={recurrenceOptions}
+                              isNeon={isNeon}
+                              buttonClassName={`${cls.input} px-3 py-2 relative`}
+                              menuClassName=""
+                            />
                           </div>
                           <div className="lg:col-span-4">
                             <div className={`text-[11px] font-bold ${currentTheme.colors.textSecondary}`}>Related section</div>
