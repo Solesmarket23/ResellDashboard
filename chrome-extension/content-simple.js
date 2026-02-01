@@ -3842,9 +3842,77 @@ async function runPendingOfferRequestIfPresent() {
 
     console.log('🟦 StockX Helper: running pending offer request on buy flow page', { slug, sizeKey, bid: resolvedReq.bid, req: resolvedReq });
 
+    const reqMode = String(resolvedReq?.mode || 'auto').toLowerCase(); // 'auto' | 'manual'
+    const shouldAutoClose = reqMode !== 'manual' && resolvedReq?.autoClose !== false;
+
+    async function cleanupPending() {
+      try {
+        const last = await getLastBidReturn();
+        const effectiveId = extId || String(last?.id || '');
+        if (effectiveId) await deletePendingOfferRequestById(effectiveId);
+        else await clearPendingOfferRequest();
+        try { await clearLastBidReturnIfMatches(effectiveId); } catch {}
+      } catch {}
+    }
+
+    async function waitForBidSuccessSignal(timeoutMs = 15000) {
+      try {
+        const start = Date.now();
+        const re = /(bid|offer)\s+(placed|confirmed)|you're\s+all\s+set|thank\s+you|success|order\s+confirmed/i;
+        while (Date.now() - start < timeoutMs) {
+          try {
+            // URL-based success (StockX sometimes routes away from /buy after confirm)
+            if (!location.pathname.startsWith('/buy/')) return { ok: true, reason: 'url_changed' };
+            const u = new URL(location.href);
+            if (u.searchParams.get('defaultBid') !== 'true') return { ok: true, reason: 'defaultBid_removed' };
+          } catch {}
+
+          try {
+            const txt = (document.body?.innerText || '').slice(0, 20000);
+            if (re.test(txt)) return { ok: true, reason: 'success_text' };
+          } catch {}
+
+          try {
+            // If Confirm button is gone, we may be on a receipt/success view
+            const stillHasConfirm = !!findConfirmBidButton(document);
+            if (!stillHasConfirm) {
+              const reviewBtn = findOfferSubmitButton(document);
+              if (!reviewBtn) return { ok: true, reason: 'buttons_gone' };
+            }
+          } catch {}
+
+          await new Promise((r) => setTimeout(r, 250));
+        }
+        return { ok: false, reason: 'timeout' };
+      } catch {
+        return { ok: false, reason: 'error' };
+      }
+    }
+
+    // Manual mode should NEVER auto-confirm/auto-close. We only prefill and then stop.
+    const manualMode = reqMode === 'manual';
+
     // If we're already on the review screen, just click Confirm Bid.
     const confirmNow = findConfirmBidButton(document);
     if (confirmNow) {
+      if (manualMode) {
+        console.log('🟦 StockX Helper: manual mode — Confirm Bid is present, not clicking or closing.');
+        try {
+          confirmNow.scrollIntoView?.({ block: 'center', inline: 'center' });
+          confirmNow.style.outline = '3px solid rgba(99,102,241,0.95)';
+          confirmNow.style.outlineOffset = '3px';
+          setTimeout(() => {
+            try {
+              confirmNow.style.outline = '';
+              confirmNow.style.outlineOffset = '';
+            } catch {}
+          }, 2500);
+        } catch {}
+        // Clear pending so we don't auto-run again on reload.
+        await cleanupPending();
+        return;
+      }
+
       console.log('🟦 StockX Helper: Confirm Bid button found, clicking...');
       try {
         confirmNow.scrollIntoView?.({ block: 'center', inline: 'center' });
@@ -3852,19 +3920,25 @@ async function runPendingOfferRequestIfPresent() {
       try {
         confirmNow.click();
       } catch {}
-      const last = await getLastBidReturn();
-      const effectiveId = extId || String(last?.id || '');
-      if (effectiveId) await deletePendingOfferRequestById(effectiveId);
-      else await clearPendingOfferRequest();
-      // Return to the originating page so the user can place more bids.
-      try {
-        const openerTabId = Number(resolvedReq?.openerTabId || last?.openerTabId);
-        const returnUrl = String(resolvedReq?.returnUrl || last?.returnUrl || '');
-        if (openerTabId || returnUrl) {
-          chrome.runtime?.sendMessage?.({ action: 'closeSelfAndFocus', openerTabId, returnUrl }, () => void chrome.runtime.lastError);
-        }
-      } catch {}
-      try { await clearLastBidReturnIfMatches(effectiveId); } catch {}
+
+      // Only close/return AFTER we see a success signal (prevents exiting too early).
+      const signal = await waitForBidSuccessSignal(18000);
+      console.log('🟦 StockX Helper: confirm flow success signal', signal);
+      if (signal.ok) {
+        const last = await getLastBidReturn();
+        // cleanup + return
+        await cleanupPending();
+        try {
+          const openerTabId = Number(resolvedReq?.openerTabId || last?.openerTabId);
+          const returnUrl = String(resolvedReq?.returnUrl || last?.returnUrl || '');
+          if (shouldAutoClose && (openerTabId || returnUrl)) {
+            chrome.runtime?.sendMessage?.({ action: 'closeSelfAndFocus', openerTabId, returnUrl }, () => void chrome.runtime.lastError);
+          }
+        } catch {}
+      } else {
+        // Don't close if we couldn't verify success.
+        console.warn('⚠️ StockX Helper: could not verify bid success; leaving tab open.');
+      }
       return;
     }
 
@@ -3905,6 +3979,28 @@ async function runPendingOfferRequestIfPresent() {
       await Promise.race([p, new Promise((r) => setTimeout(r, 250))]);
     } catch {}
 
+    if (manualMode) {
+      console.log('🟦 StockX Helper: manual mode — bid prefilled; not auto-submitting or closing.');
+      // Try to highlight the Review button for UX, but don't click it.
+      try {
+        const review = document.querySelector('button[data-testid="checkout-confirm-button"]') || findOfferSubmitButton(document);
+        if (review) {
+          review.scrollIntoView?.({ block: 'center', inline: 'center' });
+          review.style.outline = '3px solid rgba(99,102,241,0.95)';
+          review.style.outlineOffset = '3px';
+          setTimeout(() => {
+            try {
+              review.style.outline = '';
+              review.style.outlineOffset = '';
+            } catch {}
+          }, 2500);
+        }
+      } catch {}
+      // Clear pending so it doesn't auto-run again.
+      await cleanupPending();
+      return;
+    }
+
     // Click Review Bid then Confirm Bid
     const reviewBtn = await waitForElementFast(
       () => {
@@ -3940,26 +4036,22 @@ async function runPendingOfferRequestIfPresent() {
       confirmBtn.click();
     } catch {}
 
-    // Cleanup + return to opener/listing page so user can keep bidding.
-    try {
+    // Only close/return AFTER we see a success signal (prevents exiting too early).
+    const signal = await waitForBidSuccessSignal(18000);
+    console.log('🟦 StockX Helper: confirm flow success signal', signal);
+    if (signal.ok) {
       const last = await getLastBidReturn();
-      const effectiveId = extId || String(last?.id || '');
-      if (effectiveId) await deletePendingOfferRequestById(effectiveId);
-      else await clearPendingOfferRequest();
-    } catch {}
-    try {
-      const last = await getLastBidReturn();
-      const openerTabId = Number(resolvedReq?.openerTabId || last?.openerTabId);
-      const returnUrl = String(resolvedReq?.returnUrl || last?.returnUrl || '');
-      if (openerTabId || returnUrl) {
-        chrome.runtime?.sendMessage?.({ action: 'closeSelfAndFocus', openerTabId, returnUrl }, () => void chrome.runtime.lastError);
-      }
-    } catch {}
-    try {
-      const last = await getLastBidReturn();
-      const effectiveId = extId || String(last?.id || '');
-      await clearLastBidReturnIfMatches(effectiveId);
-    } catch {}
+      await cleanupPending();
+      try {
+        const openerTabId = Number(resolvedReq?.openerTabId || last?.openerTabId);
+        const returnUrl = String(resolvedReq?.returnUrl || last?.returnUrl || '');
+        if (shouldAutoClose && (openerTabId || returnUrl)) {
+          chrome.runtime?.sendMessage?.({ action: 'closeSelfAndFocus', openerTabId, returnUrl }, () => void chrome.runtime.lastError);
+        }
+      } catch {}
+    } else {
+      console.warn('⚠️ StockX Helper: could not verify bid success; leaving tab open.');
+    }
   } catch (e) {
     console.warn('⚠️ runPendingOfferRequestIfPresent failed:', e);
   }
@@ -3970,7 +4062,7 @@ async function openBidInNewTab({ slug, sizeKey, bid }) {
     const id = `extBid_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     // Store where we came from so the bid tab can return focus back after confirming.
     const returnUrl = String(location.href || '');
-    const ok = await savePendingOfferRequestById(id, { slug, size: sizeKey, bid, returnUrl });
+    const ok = await savePendingOfferRequestById(id, { slug, size: sizeKey, bid, returnUrl, mode: 'auto', autoClose: true });
     if (!ok) return { ok: false, error: 'Failed to save bid request' };
     const url = `${location.origin}/buy/${slug}?size=${encodeURIComponent(sizeKey)}&defaultBid=true&extBidId=${encodeURIComponent(id)}`;
     const res = await new Promise((resolve) => {
@@ -3979,9 +4071,28 @@ async function openBidInNewTab({ slug, sizeKey, bid }) {
     if (!res?.success) return { ok: false, error: res?.error || 'Failed to open tab' };
     try {
       if (res?.openerTabId) {
-        await savePendingOfferRequestById(id, { slug, size: sizeKey, bid, returnUrl, openerTabId: res.openerTabId, openerUrl: res.openerUrl || '' });
+        await savePendingOfferRequestById(id, {
+          slug,
+          size: sizeKey,
+          bid,
+          returnUrl,
+          openerTabId: res.openerTabId,
+          openerUrl: res.openerUrl || '',
+          mode: 'auto',
+          autoClose: true
+        });
         // Also persist a "last return target" in case StockX navigates and drops extBidId from the URL.
-        await setLastBidReturn({ id, slug, size: sizeKey, bid, returnUrl, openerTabId: res.openerTabId, openerUrl: res.openerUrl || '' });
+        await setLastBidReturn({
+          id,
+          slug,
+          size: sizeKey,
+          bid,
+          returnUrl,
+          openerTabId: res.openerTabId,
+          openerUrl: res.openerUrl || '',
+          mode: 'auto',
+          autoClose: true
+        });
       }
     } catch {}
     return { ok: true, tabId: res.tabId || null };
@@ -4094,7 +4205,7 @@ async function placeBidViaUi({ size, bid }) {
       if (slug && sizeKey) {
         const offerUrl = `${location.origin}/buy/${slug}?size=${encodeURIComponent(sizeKey)}&defaultBid=true`;
         // Save pending request so the offer page can auto-fill and submit.
-        const saved = await savePendingOfferRequest({ slug, size: sizeKey, bid, returnUrl: oldUrl });
+        const saved = await savePendingOfferRequest({ slug, size: sizeKey, bid, returnUrl: oldUrl, mode: 'manual', autoClose: false });
         console.log('🟪 StockX Helper: pending request save result', { saved, offerUrl });
         if (!saved) return { ok: false, error: 'Could not save pending offer request (storage unavailable).' };
         const nav = await navigateToOfferUrlRobust(offerUrl, { timeoutMs: 9000 });
@@ -4118,7 +4229,7 @@ async function placeBidViaUi({ size, bid }) {
         const slug = getProductSlugFromUrl();
         const sizeKey = normalizeSizeKey(size || getSelectedSizeBestEffort());
         console.log('🟪 StockX Helper: using CTA href navigation', { slug, sizeKey, url });
-        const saved = await savePendingOfferRequest({ slug, size: sizeKey, bid, returnUrl: oldUrl });
+        const saved = await savePendingOfferRequest({ slug, size: sizeKey, bid, returnUrl: oldUrl, mode: 'manual', autoClose: false });
         console.log('🟪 StockX Helper: pending request save result', { saved });
         if (!saved) return { ok: false, error: 'Could not save pending offer request (storage unavailable).' };
         const nav = await navigateToOfferUrlRobust(url, { timeoutMs: 9000 });
