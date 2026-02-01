@@ -984,10 +984,10 @@ function stockxSizeParamFromLabel(sizeLabel) {
       if (wm?.[1]) return `${wm[1]}W`;
     } catch {}
 
-    // Apparel alpha sizes: keep the "US" prefix (matches common StockX UI and works in ?size= encoding).
+    // Apparel alpha sizes: StockX expects the raw token in the URL (e.g. ?size=XS, not ?size=US+XS).
     try {
       const a = s.match(/\b(?:US|UK|EU)\s*(XXXS|XXS|XS|S|M|L|XL|XXL|XXXL)\b(?!\s*\d)/i);
-      if (a?.[1]) return `US ${String(a[1]).toUpperCase()}`.trim();
+      if (a?.[1]) return String(a[1]).toUpperCase();
     } catch {}
 
     const kids = s.match(/\b(\d{1,2}(?:\.\d)?)\s*(K|Y|C|T)\b/i);
