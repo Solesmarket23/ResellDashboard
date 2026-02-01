@@ -7695,7 +7695,8 @@ function ensureListingBidWidget() {
                   stage: String(s?.stage || ''),
                   total: Number(s?.total || 0),
                   completed: Number(s?.completed || 0),
-                  resultCount: r && typeof r === 'object' ? Object.keys(r).length : 0
+                  resultCount: r && typeof r === 'object' ? Object.keys(r).length : 0,
+                  canResume: !!s?.canResume && String(s?.stage || '').toLowerCase() === 'stopped'
                 });
               } catch {
                 snap = '';
@@ -7706,6 +7707,7 @@ function ensureListingBidWidget() {
                 state.stage = String(s.stage || state.stage || '');
                 state.total = Number(s.total || state.total || 0);
                 state.current = Number(s.completed || state.current || 0);
+                state.canResume = !!s.canResume && String(s.stage || '').toLowerCase() === 'stopped';
               }
               if (r && typeof r === 'object') {
                 // Convert map(url->result) into the existing state.results shape.
@@ -7892,6 +7894,13 @@ function ensureListingBidWidget() {
          </div>`
       : '';
 
+  const canResume = !!state.canResume && !!state.scanId;
+  const resumeBtnHtml = canResume
+    ? `<button data-role="resume" style="width:96px; background:#f59e0b; border:1px solid rgba(245,158,11,0.95); color:#3b1d00; padding:8px 10px; border-radius:10px; cursor:pointer; font-weight:1000;">
+         Resume
+       </button>`
+    : '';
+
   widget.innerHTML = `
     <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
       <div data-role="drag-handle" style="display:flex; align-items:center; gap:8px; cursor:move; user-select:none;">
@@ -7914,6 +7923,7 @@ function ensureListingBidWidget() {
       <button data-role="stop" style="width:90px; background:#ef4444; border:1px solid rgba(239,68,68,0.95); color:#450a0a; padding:8px 10px; border-radius:10px; cursor:pointer; font-weight:1000;">
         Stop
       </button>
+      ${resumeBtnHtml}
       <button data-role="clear" style="width:90px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.10); color:white; padding:8px 10px; border-radius:10px; cursor:pointer; font-weight:800;">
         Clear
       </button>
@@ -8488,6 +8498,29 @@ function ensureListingBidWidget() {
           state.stage = 'stopped';
         }
         ensureListingBidWidget();
+      });
+    } catch (e) {
+      state.stage = `error: ${e?.message || String(e)}`;
+      ensureListingBidWidget();
+    }
+  });
+
+  const resumeBtn = widget.querySelector('[data-role="resume"]');
+  resumeBtn?.addEventListener('click', () => {
+    try {
+      const sid = String(state.scanId || '').trim();
+      if (!sid) return;
+      state.stage = 'resuming';
+      ensureListingBidWidget();
+      runtimeSendMessageSafe({ action: 'resumeListingBidScan', scanId: sid }, (resp) => {
+        try {
+          if (!resp?.success) {
+            state.stage = `error: ${resp?.error || 'failed to resume'}`;
+          } else {
+            state.stage = 'resuming';
+          }
+          ensureListingBidWidget();
+        } catch {}
       });
     } catch (e) {
       state.stage = `error: ${e?.message || String(e)}`;
