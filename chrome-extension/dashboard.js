@@ -190,6 +190,25 @@ function renderResults(listEl, resultsMap) {
     return;
   }
 
+  const renderSalesViewLine = (r) => {
+    try {
+      const v = safeStr(r?.salesView || '');
+      const dbg = r?.marketDataViewSwitchDebug && typeof r.marketDataViewSwitchDebug === 'object' ? r.marketDataViewSwitchDebug : null;
+      if (!v && !dbg) return '';
+      const base = v ? `salesView: ${v}` : 'salesView: —';
+      if (!dbg) return `<div class="sub mono" style="opacity:.75;">${escapeHtml(base)}</div>`;
+      const bits = [
+        `chevron=${dbg.clickedChevron ? 'yes' : 'no'}`,
+        `menu=${dbg.openedMenu ? 'yes' : 'no'}`,
+        `sellerBtn=${dbg.clickedSeller ? 'yes' : 'no'}`,
+        dbg.error ? `err=${safeStr(dbg.error)}` : ''
+      ].filter(Boolean);
+      return `<div class="sub mono" style="opacity:.75;">${escapeHtml(base)} • ${escapeHtml(bits.join(' '))}</div>`;
+    } catch {
+      return '';
+    }
+  };
+
   listEl.innerHTML = entries
     .map((r) => {
       const title = escapeHtml(r?.title || r?.slug || r?.url || '—');
@@ -221,6 +240,7 @@ function renderResults(listEl, resultsMap) {
         </div>
         <div class="sub mono" style="opacity:.75; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${url || '—'}</div>
         <div class="sub">${msg}</div>
+        ${renderSalesViewLine(r)}
       </div>`;
     })
     .join('');
