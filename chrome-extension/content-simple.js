@@ -3920,6 +3920,67 @@ async function runPendingOfferRequestIfPresent() {
       }
     }
 
+    async function waitForManualConfirmBidClick(timeoutMs = 10 * 60 * 1000) {
+      try {
+        // If user already clicked in this session, reuse it.
+        if (typeof window.__stockxManualConfirmClickedAt === 'number' && Date.now() - window.__stockxManualConfirmClickedAt < 60 * 60 * 1000) {
+          return true;
+        }
+
+        const isConfirmBtn = (target) => {
+          try {
+            const btn = target?.closest?.('button,[role="button"]') || null;
+            if (!btn) return false;
+            const txt = safeText(btn).trim().toLowerCase();
+            const aria = String(btn.getAttribute?.('aria-label') || '').trim().toLowerCase();
+            return txt === 'confirm bid' || /confirm\s+bid/.test(txt) || /confirm\s+bid/.test(aria);
+          } catch {
+            return false;
+          }
+        };
+
+        return await new Promise((resolve) => {
+          const start = Date.now();
+          let done = false;
+          let timer = null;
+
+          const finish = (v) => {
+            if (done) return;
+            done = true;
+            try {
+              if (timer) clearInterval(timer);
+            } catch {}
+            try {
+              document.removeEventListener('pointerup', onEvent, true);
+              document.removeEventListener('click', onEvent, true);
+            } catch {}
+            resolve(!!v);
+          };
+
+          const onEvent = (e) => {
+            try {
+              if (!isConfirmBtn(e?.target)) return;
+              window.__stockxManualConfirmClickedAt = Date.now();
+              finish(true);
+            } catch {
+              finish(true);
+            }
+          };
+
+          try {
+            document.addEventListener('pointerup', onEvent, true);
+            document.addEventListener('click', onEvent, true);
+          } catch {}
+
+          timer = setInterval(() => {
+            if (Date.now() - start > timeoutMs) finish(false);
+          }, 250);
+        });
+      } catch {
+        return false;
+      }
+    }
+
     // Manual mode should NEVER auto-confirm/auto-close. We only prefill and then stop.
     const manualMode = reqMode === 'manual';
 
@@ -3945,6 +4006,8 @@ async function runPendingOfferRequestIfPresent() {
           window.__stockxManualConfirmWatcherRunning = true;
           (async () => {
             try {
+              const clicked = await waitForManualConfirmBidClick(10 * 60 * 1000);
+              if (!clicked) return;
               const signal = await waitForBidSuccessSignal(60000);
               console.log('🟦 StockX Helper: manual confirm success signal', signal);
               if (!signal.ok) return;
@@ -4110,6 +4173,8 @@ async function runPendingOfferRequestIfPresent() {
           window.__stockxManualConfirmWatcherRunning = true;
           (async () => {
             try {
+              const clicked = await waitForManualConfirmBidClick(10 * 60 * 1000);
+              if (!clicked) return;
               const signal = await waitForBidSuccessSignal(60000);
               console.log('🟦 StockX Helper: manual confirm success signal', signal);
               if (!signal.ok) return;
