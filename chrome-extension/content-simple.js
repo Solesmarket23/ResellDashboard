@@ -816,6 +816,17 @@ function normalizeSizeKey(size) {
   const s = String(size || '').trim().toUpperCase().replace(/\s+/g, ' ');
   if (!s) return '';
 
+  // Apparel alpha sizing (common on StockX apparel): "US XXL", "US XL", "US M", etc.
+  // Normalize to just the alpha token so table joins/dedupes work consistently.
+  try {
+    const mAlpha = s.match(/\b(?:US|UK|EU)\s*(XXXS|XXS|XS|S|M|L|XL|XXL|XXXL)\b/i);
+    if (mAlpha?.[1]) return String(mAlpha[1]).toUpperCase();
+  } catch {}
+  try {
+    const mAlpha2 = s.match(/^(XXXS|XXS|XS|S|M|L|XL|XXL|XXXL)$/i);
+    if (mAlpha2?.[1]) return String(mAlpha2[1]).toUpperCase();
+  } catch {}
+
   // Kids / youth / toddler sizing: preserve suffix so it doesn't collide with adult sizes.
   // Examples: "6Y", "US 6 YOUTH", "US Y 6", "10K", "3C", "5T"
   try {
@@ -972,6 +983,13 @@ function stockxSizeParamFromLabel(sizeLabel) {
         null;
       if (wm?.[1]) return `${wm[1]}W`;
     } catch {}
+
+    // Apparel alpha sizes: keep the "US" prefix (matches common StockX UI and works in ?size= encoding).
+    try {
+      const a = s.match(/\b(?:US|UK|EU)\s*(XXXS|XXS|XS|S|M|L|XL|XXL|XXXL)\b(?!\s*\d)/i);
+      if (a?.[1]) return `US ${String(a[1]).toUpperCase()}`.trim();
+    } catch {}
+
     const kids = s.match(/\b(\d{1,2}(?:\.\d)?)\s*(K|Y|C|T)\b/i);
     if (kids?.[1] && kids?.[2]) return `${kids[1]}${String(kids[2]).toUpperCase()}`;
     return normalizeSizeKey(s);
@@ -1262,6 +1280,10 @@ function parseSizeFromText(text) {
     return `${region} ${rest}`.trim();
   }
 
+  // Apparel alpha sizes like "US XL", "US M", etc.
+  const mAlpha = s.match(/\b(?:US|UK|EU)\s*(XXXS|XXS|XS|S|M|L|XL|XXL|XXXL)\b(?!\s*\d)/i);
+  if (mAlpha?.[1]) return `US ${String(mAlpha[1]).toUpperCase()}`.trim();
+
   const m2 = s.match(/\b(?:MEN|WOMEN|M|W)\s*(\d{1,2}(?:\.\d)?)\b/i);
   if (m2?.[0]) return m2[0].toUpperCase().replace(/\s+/g, ' ');
 
@@ -1300,6 +1322,11 @@ function parseSizeFromTextStrict(text) {
       const rest = String(m1[2]).toUpperCase().replace(/\s+/g, ' ').trim();
       return `${region} ${rest}`.trim();
     }
+
+    // Apparel alpha sizes like "US XL", "US M", etc.
+    const mAlpha = s.match(/\b(?:US|UK|EU)\s*(XXXS|XXS|XS|S|M|L|XL|XXL|XXXL)\b(?!\s*\d)/i);
+    if (mAlpha?.[1]) return `US ${String(mAlpha[1]).toUpperCase()}`.trim();
+
     const m2 = s.match(/\b(?:MEN|WOMEN|M|W)\s*(\d{1,2}(?:\.\d)?)\b/i);
     if (m2?.[0]) return m2[0].toUpperCase().replace(/\s+/g, ' ');
 
