@@ -5576,6 +5576,27 @@ function isVisibleElBestEffort(el) {
   }
 }
 
+function isVisibleElStrict(el) {
+  try {
+    if (!el) return false;
+    const b = el.getBoundingClientRect?.();
+    if (!b || b.width <= 0 || b.height <= 0) return false;
+    const cs = window.getComputedStyle?.(el);
+    if (cs) {
+      const disp = String(cs.display || '');
+      const vis = String(cs.visibility || '');
+      const op = Number(cs.opacity);
+      if (disp === 'none') return false;
+      if (vis === 'hidden') return false;
+      if (Number.isFinite(op) && op <= 0.01) return false;
+    }
+    // If it's offscreen, it's still "visible" for our purposes (we can scroll it into view).
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function isEnabledBtnBestEffort(btn) {
   try {
     if (!btn) return false;
@@ -5639,7 +5660,7 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
         // Only trust explicit control presence, not text (the SELLER button itself contains "Seller View").
         // If "switch to BUYER" is visible, we are currently in SELLER view.
         const toBuyer = scope.querySelector?.('[data-testid="AllInViewSwitchToBUYER"]') || document.querySelector('[data-testid="AllInViewSwitchToBUYER"]');
-        return isVisibleElBestEffort(toBuyer);
+        return isVisibleElStrict(toBuyer);
       } catch {
         return false;
       }
@@ -5648,7 +5669,7 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
     const toBuyerVisible = () => {
       try {
         const toBuyer = scope.querySelector?.('[data-testid="AllInViewSwitchToBUYER"]') || document.querySelector('[data-testid="AllInViewSwitchToBUYER"]');
-        return isVisibleElBestEffort(toBuyer);
+        return isVisibleElStrict(toBuyer);
       } catch {
         return false;
       }
@@ -5657,7 +5678,7 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
     const toSellerVisible = () => {
       try {
         const toSeller = scope.querySelector?.('[data-testid="AllInViewSwitchToSELLER"]') || document.querySelector('[data-testid="AllInViewSwitchToSELLER"]');
-        return isVisibleElBestEffort(toSeller);
+        return isVisibleElStrict(toSeller);
       } catch {
         return false;
       }
@@ -5674,7 +5695,7 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
       try {
         // If "switch to SELLER" is visible, we are currently in BUYER view.
         const toSeller = scope.querySelector?.('[data-testid="AllInViewSwitchToSELLER"]') || document.querySelector('[data-testid="AllInViewSwitchToSELLER"]');
-        if (isVisibleElBestEffort(toSeller)) return true;
+        if (isVisibleElStrict(toSeller)) return true;
       } catch {}
       return false;
     };
@@ -5689,7 +5710,7 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
     const findSellerBtn = () => {
       try {
         const b = scope.querySelector?.('[data-testid="AllInViewSwitchToSELLER"]') || document.querySelector('[data-testid="AllInViewSwitchToSELLER"]');
-        return isVisibleElBestEffort(b) ? b : null;
+        return isVisibleElStrict(b) ? b : null;
       } catch {
         return null;
       }
@@ -5710,7 +5731,7 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
           scope.querySelector?.('[data-testid="AllInCollapseButton"]') ||
           document.querySelector('[data-testid="AllInCollapseButton"]') ||
           null;
-        if (!isVisibleElBestEffort(btn)) return false;
+        if (!isVisibleElStrict(btn)) return false;
         clickElBestEffort(btn);
         debug.clickedAllInCollapse = true;
         return true;
