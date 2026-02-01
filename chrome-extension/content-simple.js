@@ -7894,12 +7894,9 @@ function ensureListingBidWidget() {
          </div>`
       : '';
 
-  const canResume = !!state.canResume && !!state.scanId;
-  const resumeBtnHtml = canResume
-    ? `<button data-role="resume" style="width:96px; background:#f59e0b; border:1px solid rgba(245,158,11,0.95); color:#3b1d00; padding:8px 10px; border-radius:10px; cursor:pointer; font-weight:1000;">
-         Resume
-       </button>`
-    : '';
+  const resumeBtnHtml = `<button data-role="resume" style="width:96px; background:#f59e0b; border:1px solid rgba(245,158,11,0.95); color:#3b1d00; padding:8px 10px; border-radius:10px; cursor:pointer; font-weight:1000;">
+    Resume
+  </button>`;
 
   widget.innerHTML = `
     <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
@@ -8466,6 +8463,7 @@ function ensureListingBidWidget() {
   } catch {}
 
   const stopBtn = widget.querySelector('[data-role="stop"]');
+  const resumeBtn = widget.querySelector('[data-role="resume"]');
   try {
     const s = String(state.stage || '').toLowerCase();
     const isDone = s === 'done' || s.startsWith('done ') || s === 'stopped';
@@ -8476,6 +8474,12 @@ function ensureListingBidWidget() {
       stopBtn.disabled = !canStop;
       stopBtn.style.opacity = canStop ? '1' : '0.35';
       stopBtn.style.cursor = canStop ? 'pointer' : 'not-allowed';
+    }
+    const canResumeNow = !!state.scanId && s === 'stopped' && !!state.canResume && !state.pendingStop;
+    if (resumeBtn) {
+      resumeBtn.disabled = !canResumeNow;
+      resumeBtn.style.opacity = canResumeNow ? '1' : '0.35';
+      resumeBtn.style.cursor = canResumeNow ? 'pointer' : 'not-allowed';
     }
   } catch {}
 
@@ -8505,7 +8509,6 @@ function ensureListingBidWidget() {
     }
   });
 
-  const resumeBtn = widget.querySelector('[data-role="resume"]');
   resumeBtn?.addEventListener('click', () => {
     try {
       const sid = String(state.scanId || '').trim();

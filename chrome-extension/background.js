@@ -473,10 +473,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === 'resumeListingBidScan') {
     const scanId = String(request.scanId || '');
-    if (!tabId) {
-      sendResponse({ success: false, error: 'No sender tabId' });
-      return;
-    }
     if (!scanId) {
       sendResponse({ success: false, error: 'Missing scanId' });
       return;
@@ -502,6 +498,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           return sendResponse({ success: false, error: 'This scan was not resumable (non-sequential). Start a new scan in sequential mode.' });
         }
 
+        const startUrl = String(s.startUrl || resume?.startUrl || '');
+        const preferredOrigin = Number(request.originTabId) || Number(s.originTabId) || 0;
+        const allowCreateOriginTab = request.allowCreateOriginTab !== false;
+
         // Block if another scan is currently active.
         try {
           const activeIdKey = 'stockxActiveListingScanId';
@@ -512,89 +512,133 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               return sendResponse({ success: false, error: `Another scan is active (${active}). Stop it first.` });
             }
 
-            // Re-create in-memory scan entry so stop/cancel works.
-            try {
-              if (!globalThis.__stockxActiveScans) globalThis.__stockxActiveScans = new Map();
-              globalThis.__stockxActiveScans.set(scanId, {
-                cancelled: false,
-                originTabId: tabId,
-                startUrl: String(s.startUrl || resume?.startUrl || ''),
-                activeTabIds: new Set(),
-                keepUserFocus: !!s.keepUserFocus
-              });
-            } catch {}
-
-            // Mark active and update originTabId in persisted state.
-            try {
-              chrome.storage?.local?.set?.({ stockxActiveListingScanId: scanId, stockxLastListingScanId: scanId }, () => {
-                void chrome.runtime.lastError;
-              });
-            } catch {}
-            try {
-              setScanState(scanId, { stage: 'resuming', cancelled: false, success: false, originTabId: tabId });
-            } catch {}
-
-            // Dispatch the resume runner.
-            (async () => {
-              try {
-                if (kind === 'paginated') {
-                  const startUrl = String(resume?.startUrl || s.startUrl || '');
-                  const maxPages = Number(resume?.maxPages || s.total / (resume?.perPage || 48) || 1) || 1;
-                  const perPage = Number(resume?.perPage || 48) || 48;
-                  const collectOpts = resume?.collectOpts && typeof resume.collectOpts === 'object' ? resume.collectOpts : {};
-                  const startPage = Number(resume?.startPage || 1) || 1;
-                  const currentPage = Number(resume?.currentPage || startPage) || startPage;
-                  const pageUrls = Array.isArray(resume?.pageUrls) ? resume.pageUrls : null;
-                  const nextIdx = Number.isFinite(Number(resume?.nextIdx)) ? Number(resume.nextIdx) : 0;
-                  const inFlightIdx = Number.isFinite(Number(resume?.inFlightIdx)) ? Number(resume.inFlightIdx) : null;
-                  const effectiveIdx = inFlightIdx != null ? inFlightIdx : nextIdx;
-
-                  // Resume by continuing the loop from the saved page; if we have pageUrls, scan from effectiveIdx.
-                  // Otherwise we will recollect page URLs after navigating.
-                  await runListingBidScanPaginatedResume({
-                    originTabId: tabId,
-                    scanId,
-                    startUrl,
-                    maxPages,
-                    perPage,
-                    collectOpts,
-                    startPage,
-                    currentPage,
-                    pageUrls,
-                    startIdx: Math.max(0, effectiveIdx),
-                    completed: Number(s.completed || 0)
+            const ensureOriginTab = (cb) => {
+              // Prefer the saved origin StockX tab; if missing and allowed, open a new one to startUrl.
+              const useExisting = (tId) => {
+                try {
+                  chrome.tabs.get(tId, (t) => {
+                    const err = chrome.runtime.lastError;
+                    if (err || !t?.id) return cb(null);
+                    cb(t.id);
                   });
-                } else {
-                  const urls = Array.isArray(resume?.urls) ? resume.urls : [];
-                  if (!urls.length) throw new Error('No URLs saved to resume');
-                  const nextIdx = Number.isFinite(Number(resume?.nextIdx)) ? Number(resume.nextIdx) : 0;
-                  const inFlightIdx = Number.isFinite(Number(resume?.inFlightIdx)) ? Number(resume.inFlightIdx) : null;
-                  const startIdx = Math.max(0, inFlightIdx != null ? inFlightIdx : nextIdx);
-                  await runListingBidScanFromIndex({
-                    originTabId: tabId,
-                    scanId,
-                    urls,
-                    startIdx,
-                    completed: Number(s.completed || 0)
-                  });
+                } catch {
+                  cb(null);
                 }
-              } catch (e) {
+              };
+              if (Number.isFinite(preferredOrigin) && preferredOrigin > 0) return useExisting(preferredOrigin);
+              // Fall back to sender tab if it's a StockX tab.
+              if (Number.isFinite(tabId) && tabId > 0) {
                 try {
-                  sendToTab(tabId, { action: 'listingBidScanDone', scanId, success: false, cancelled: false, error: e?.message || String(e) });
-                } catch {}
-                try {
-                  setScanState(scanId, { stage: 'stopped', cancelled: true, success: false, error: e?.message || String(e), finishedAt: Date.now() });
-                } catch {}
-                try {
-                  chrome.storage?.local?.remove?.(['stockxActiveListingScanId'], () => void chrome.runtime.lastError);
-                } catch {}
-                try {
-                  globalThis.__stockxActiveScans?.delete?.(scanId);
-                } catch {}
+                  chrome.tabs.get(tabId, (t) => {
+                    const err = chrome.runtime.lastError;
+                    if (!err && t?.url && String(t.url).includes('stockx.com')) return cb(t.id);
+                    cb(null);
+                  });
+                } catch {
+                  // ignore
+                }
               }
-            })();
+              if (!allowCreateOriginTab || !startUrl) return cb(null);
+              try {
+                chrome.tabs.create({ url: startUrl, active: true }, (t) => {
+                  const err = chrome.runtime.lastError;
+                  if (err || !t?.id) return cb(null);
+                  cb(t.id);
+                });
+              } catch {
+                cb(null);
+              }
+            };
 
-            sendResponse({ success: true });
+            ensureOriginTab((originTabId) => {
+              if (!originTabId) {
+                return sendResponse({
+                  success: false,
+                  error: 'Could not find the original StockX tab to resume. Go back to the listing page and click Resume there.'
+                });
+              }
+
+              // Re-create in-memory scan entry so stop/cancel works.
+              try {
+                if (!globalThis.__stockxActiveScans) globalThis.__stockxActiveScans = new Map();
+                globalThis.__stockxActiveScans.set(scanId, {
+                  cancelled: false,
+                  originTabId,
+                  startUrl,
+                  activeTabIds: new Set(),
+                  keepUserFocus: !!s.keepUserFocus
+                });
+              } catch {}
+
+              // Mark active and update originTabId in persisted state.
+              try {
+                chrome.storage?.local?.set?.({ stockxActiveListingScanId: scanId, stockxLastListingScanId: scanId }, () => {
+                  void chrome.runtime.lastError;
+                });
+              } catch {}
+              try {
+                setScanState(scanId, { stage: 'resuming', cancelled: false, success: false, originTabId });
+              } catch {}
+
+              // Dispatch the resume runner.
+              (async () => {
+                try {
+                  if (kind === 'paginated') {
+                    const maxPages = Number(resume?.maxPages || 1) || 1;
+                    const perPage = Number(resume?.perPage || 48) || 48;
+                    const collectOpts = resume?.collectOpts && typeof resume.collectOpts === 'object' ? resume.collectOpts : {};
+                    const startPage = Number(resume?.startPage || 1) || 1;
+                    const currentPage = Number(resume?.currentPage || startPage) || startPage;
+                    const pageUrls = Array.isArray(resume?.pageUrls) ? resume.pageUrls : null;
+                    const nextIdx = Number.isFinite(Number(resume?.nextIdx)) ? Number(resume.nextIdx) : 0;
+                    const inFlightIdx = Number.isFinite(Number(resume?.inFlightIdx)) ? Number(resume.inFlightIdx) : null;
+                    const effectiveIdx = inFlightIdx != null ? inFlightIdx : nextIdx;
+
+                    await runListingBidScanPaginatedResume({
+                      originTabId,
+                      scanId,
+                      startUrl,
+                      maxPages,
+                      perPage,
+                      collectOpts,
+                      startPage,
+                      currentPage,
+                      pageUrls,
+                      startIdx: Math.max(0, effectiveIdx),
+                      completed: Number(s.completed || 0)
+                    });
+                  } else {
+                    const urls = Array.isArray(resume?.urls) ? resume.urls : [];
+                    if (!urls.length) throw new Error('No URLs saved to resume');
+                    const nextIdx = Number.isFinite(Number(resume?.nextIdx)) ? Number(resume.nextIdx) : 0;
+                    const inFlightIdx = Number.isFinite(Number(resume?.inFlightIdx)) ? Number(resume.inFlightIdx) : null;
+                    const startIdx = Math.max(0, inFlightIdx != null ? inFlightIdx : nextIdx);
+                    await runListingBidScanFromIndex({
+                      originTabId,
+                      scanId,
+                      urls,
+                      startIdx,
+                      completed: Number(s.completed || 0)
+                    });
+                  }
+                } catch (e) {
+                  try {
+                    sendToTab(originTabId, { action: 'listingBidScanDone', scanId, success: false, cancelled: false, error: e?.message || String(e) });
+                  } catch {}
+                  try {
+                    setScanState(scanId, { stage: 'stopped', cancelled: true, success: false, error: e?.message || String(e), finishedAt: Date.now() });
+                  } catch {}
+                  try {
+                    chrome.storage?.local?.remove?.(['stockxActiveListingScanId'], () => void chrome.runtime.lastError);
+                  } catch {}
+                  try {
+                    globalThis.__stockxActiveScans?.delete?.(scanId);
+                  } catch {}
+                }
+              })();
+
+              sendResponse({ success: true });
+            });
           });
         } catch (e) {
           sendResponse({ success: false, error: e?.message || String(e) });

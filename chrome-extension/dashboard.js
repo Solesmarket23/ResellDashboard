@@ -315,6 +315,17 @@ async function refresh() {
   $('stopBtn').disabled = !ids.active;
   $('stopBtn').style.opacity = ids.active ? '1' : '0.35';
 
+  // Resume button: enabled only when no active scan is running and selected scan is stopped+resumable.
+  try {
+    const resumeBtn = $('resumeBtn');
+    const canResume = !!(scanId && state?.canResume && safeStr(state?.stage || '').toLowerCase() === 'stopped');
+    const enabled = !!scanId && !ids.active && canResume;
+    if (resumeBtn) {
+      resumeBtn.disabled = !enabled;
+      resumeBtn.style.opacity = enabled ? '1' : '0.35';
+    }
+  } catch {}
+
   // Disable clear while a scan is active and selected.
   const isSelectedActive = !!(ids.active && scanId && ids.active === scanId);
   $('clearThisBtn').disabled = isSelectedActive || !scanId;
@@ -389,6 +400,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       const ids = await getScanIds();
       if (!ids.active) return;
       chrome.runtime.sendMessage({ action: 'stopListingBidScan', scanId: ids.active }, () => {
+        void chrome.runtime.lastError;
+        refresh();
+      });
+    } catch {}
+  });
+
+  $('resumeBtn')?.addEventListener('click', async () => {
+    try {
+      const id = safeStr($('scanSelect')?.value || '');
+      if (!id) return;
+      setToast('Resuming…');
+      chrome.runtime.sendMessage({ action: 'resumeListingBidScan', scanId: id }, () => {
         void chrome.runtime.lastError;
         refresh();
       });
