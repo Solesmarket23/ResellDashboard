@@ -5645,6 +5645,8 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
     clickedSeller: false,
     clickedChevron: false,
     clickedAllInCollapse: false,
+    allInCollapseFound: false,
+    allInCollapseVisible: false,
     sellerBtnFound: false,
     sellerBtnVisible: false,
     sellerBtnEnabled: false,
@@ -5759,8 +5761,18 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
           scope.querySelector?.('[data-testid="AllInCollapseButton"]') ||
           document.querySelector('[data-testid="AllInCollapseButton"]') ||
           null;
-        if (!isVisibleElStrict(btn)) return false;
+        debug.allInCollapseFound = !!btn;
+        debug.allInCollapseVisible = isVisibleElStrict(btn) || isVisibleElBestEffort(btn);
+        if (!btn) return false;
+        // Be tolerant here: even if StockX considers it "invisible" via styles, we can often scroll/click it.
+        try {
+          btn.scrollIntoView?.({ block: 'center', inline: 'center' });
+        } catch {}
+        // Prefer pointer click, then fallback to clickElBestEffort.
         clickElPointerBestEffort(btn);
+        try {
+          clickElBestEffort(btn);
+        } catch {}
         debug.clickedAllInCollapse = true;
         return true;
       } catch {
@@ -5785,7 +5797,23 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
     const openMenu = () => {
       try {
         // Best: click the explicit all-in collapse/expand button.
-        if (clickAllInCollapseButton()) return true;
+        if (clickAllInCollapseButton()) {
+          // Wait for the tile buttons to actually render.
+          try {
+            waitForElement(() => {
+              const s =
+                scope.querySelector?.('[data-testid="AllInViewSwitchToSELLER"]') ||
+                document.querySelector('[data-testid="AllInViewSwitchToSELLER"]') ||
+                null;
+              const b =
+                scope.querySelector?.('[data-testid="AllInViewSwitchToBUYER"]') ||
+                document.querySelector('[data-testid="AllInViewSwitchToBUYER"]') ||
+                null;
+              return isVisibleElStrict(s) || isVisibleElStrict(b) ? true : null;
+            }, 2500).catch(() => {});
+          } catch {}
+          return true;
+        }
 
         // Best: click the known chevron trigger first; otherwise fall back to heuristics.
         const chevron = findChevronTriggerBtn();

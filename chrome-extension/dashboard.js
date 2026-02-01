@@ -200,6 +200,8 @@ function renderResults(listEl, resultsMap) {
       if (!dbg) return `<div class="sub mono" style="opacity:.75;">${escapeHtml(base)}</div>`;
       const bits = [
         `allIn=${dbg.clickedAllInCollapse ? 'yes' : 'no'}`,
+        typeof dbg.allInCollapseFound === 'boolean' ? `allInFound=${dbg.allInCollapseFound ? 'yes' : 'no'}` : '',
+        typeof dbg.allInCollapseVisible === 'boolean' ? `allInVis=${dbg.allInCollapseVisible ? 'yes' : 'no'}` : '',
         `chevron=${dbg.clickedChevron ? 'yes' : 'no'}`,
         `menu=${dbg.openedMenu ? 'yes' : 'no'}`,
         `sellerBtn=${dbg.clickedSeller ? 'yes' : 'no'}`,
