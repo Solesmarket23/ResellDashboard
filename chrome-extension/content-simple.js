@@ -6732,15 +6732,38 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
     const excludeRecentReleaseDays = Number(settings?.excludeRecentReleaseDays);
     let sizeAll = null;
 
-    // Optional: exclude products that released within the last N days (default 30).
-    // Best-effort, only applies when we can detect a release date.
+    // Release date exclusions (best-effort; only applies when we can detect a release date).
     try {
-      if (Number.isFinite(excludeRecentReleaseDays) && excludeRecentReleaseDays > 0) {
-        const rel = extractReleaseDateBestEffort();
-        const d = rel?.date instanceof Date ? rel.date : null;
-        if (d && Number.isFinite(d.getTime())) {
-          const now = Date.now();
-          const ageMs = now - d.getTime();
+      const rel = extractReleaseDateBestEffort();
+      const d = rel?.date instanceof Date ? rel.date : null;
+      if (d && Number.isFinite(d.getTime())) {
+        const now = Date.now();
+        const ageMs = now - d.getTime();
+
+        // Always exclude products with a release date in the future.
+        // Example: today 02/01/2026, release date 02/05/2026 => exclude.
+        if (ageMs < 0) {
+          return {
+            success: true,
+            slug,
+            title,
+            releaseDate: d.toISOString().slice(0, 10),
+            releaseDateSource: rel?.source || 'unknown',
+            releaseFutureExcluded: true,
+            opportunities: [],
+            viableSizeCount: 0,
+            eliminatedByAsk: 0,
+            sizeOptionsCount: 0,
+            salesRows: 0,
+            asksRows: 0,
+            bidsRows: 0,
+            foundMarketDataButton: false,
+            openedMarketData: false
+          };
+        }
+
+        // Optional: exclude products that released within the last N days (default 30).
+        if (Number.isFinite(excludeRecentReleaseDays) && excludeRecentReleaseDays > 0) {
           const maxMs = excludeRecentReleaseDays * 24 * 60 * 60 * 1000;
           if (ageMs >= 0 && ageMs <= maxMs) {
             return {
@@ -7659,6 +7682,10 @@ function ensureListingBidWidget() {
     const bestAlreadyBid = !!(bestKey && bidHistory[bestKey]);
     const explainEmpty = () => {
       if (r?.success === false) return `Scan failed: ${String(r.error || 'unknown error')}`;
+      if (r?.releaseFutureExcluded) {
+        const rd = String(r?.releaseDate || '');
+        return `Excluded: release date is in the future${rd ? ` (${rd})` : ''}.`;
+      }
       if (r?.releaseExcluded) {
         const ds = Number(r?.releaseExcludedDays) || 0;
         const rd = String(r?.releaseDate || '');
