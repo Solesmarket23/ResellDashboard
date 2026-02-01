@@ -4001,10 +4001,7 @@ async function runPendingOfferRequestIfPresent() {
     }
 
     // Wait for bid input
-    const bidInput = await waitForElement(
-      () => document.querySelector('input[data-testid="bid-input"]') || findOfferAmountInput(document),
-      20000
-    );
+    const bidInput = await waitForElement(() => getOfferBidInput(document) || findOfferAmountInput(document), 20000);
     if (!bidInput) {
       console.warn('⚠️ StockX Helper: bid input not found on offer page');
       return;
@@ -4012,7 +4009,7 @@ async function runPendingOfferRequestIfPresent() {
 
     // Set bid
     try {
-      setInputValueReactSafe(bidInput, String(resolvedReq.bid || '').trim());
+      await setOfferBidAndStabilize(bidInput, String(resolvedReq.bid || '').trim());
     } catch {}
 
     // Set expiration=7
@@ -4353,11 +4350,11 @@ async function placeBidViaUi({ size, bid }) {
   }
 
   // Fill offer/bid price input (modal or routed buy flow)
-  let bidInput = findOfferAmountInput(root);
+  let bidInput = getOfferBidInput(root) || findOfferAmountInput(root);
   if (!bidInput && (urlChanged || !dialog)) {
     // Give SPA route a moment to render offer form
     bidInput = await waitForElement(
-      () => findOfferAmountInput(document) || document.querySelector('input[data-testid="bid-input"]'),
+      () => getOfferBidInput(document) || findOfferAmountInput(document) || document.querySelector('input[data-testid="bid-input"]'),
       15000
     );
   }
@@ -4372,7 +4369,7 @@ async function placeBidViaUi({ size, bid }) {
   if (!bidStr || !/^\d+(\.\d+)?$/.test(bidStr)) return { ok: false, error: 'Invalid bid amount.' };
 
   try {
-    setInputValueReactSafe(bidInput, bidStr);
+    await setOfferBidAndStabilize(bidInput, bidStr);
   } catch (e) {
     return { ok: false, error: `Failed to set bid value: ${String(e?.message || e)}` };
   }
@@ -6026,15 +6023,34 @@ function computeProfitCheck({ avg30d, allInTotal, minProfit }) {
   return { profit, ok: profit >= mp };
 }
 
+function getOfferBidInput(root = document) {
+  try {
+    const scope = root || document;
+    const inp =
+      scope.querySelector('input[data-testid="bid-input"]') ||
+      scope.querySelector('input[placeholder*="enter bid" i]') ||
+      scope.querySelector('input[aria-label*="bid" i]') ||
+      scope.querySelector('input[name*="bid" i]') ||
+      scope.querySelector('input[inputmode="decimal"]') ||
+      scope.querySelector('input[type="number"]') ||
+      null;
+    if (!inp) return null;
+    if (String(inp.tagName || '').toUpperCase() !== 'INPUT') return null;
+    return inp;
+  } catch {
+    return null;
+  }
+}
+
 function setInputValueReactSafe(input, value) {
   try {
     if (!input) return false;
+    // Never operate on non-input elements (prevents accidental clicks on Pricing Options tiles).
+    if (String(input.tagName || '').toUpperCase() !== 'INPUT') return false;
     const v = String(value ?? '');
-    // Click first to ensure StockX toggles into "Name Your Price" mode (avoids pricing tile controlling the input).
     try {
-      clickElBestEffort(input);
-    } catch {}
-    try {
+      // Use native click/focus (don't use clickElBestEffort here; it can be too aggressive).
+      input.click?.();
       input.focus?.();
     } catch {}
 
@@ -6062,9 +6078,29 @@ function setInputValueReactSafe(input, value) {
   }
 }
 
+async function setOfferBidAndStabilize(input, value, { attempts = 12, delayMs = 90 } = {}) {
+  try {
+    const wanted = String(value ?? '').trim();
+    if (!wanted) return false;
+    const ok = setInputValueReactSafe(input, wanted);
+    if (!ok) return false;
+    // Some StockX pages will momentarily re-render and revert to a "Better Bid" tile price.
+    // Re-apply the intended value a few times until it sticks.
+    for (let i = 0; i < attempts; i++) {
+      await new Promise((r) => setTimeout(r, delayMs));
+      const cur = String(input?.value ?? '').trim();
+      if (cur === wanted) return true;
+      setInputValueReactSafe(input, wanted);
+    }
+    return String(input?.value ?? '').trim() === wanted;
+  } catch {
+    return false;
+  }
+}
+
 async function setOfferAmountAndWaitTotal({ root, input, amount }) {
   try {
-    setInputValueReactSafe(input, String(amount));
+    await setOfferBidAndStabilize(input, String(amount));
   } catch {}
   await new Promise((r) => setTimeout(r, 250));
   const total = findAllInTotal(root);
