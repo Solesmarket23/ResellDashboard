@@ -5563,6 +5563,96 @@ async function ensureMarketDataTabOpen(labelLower) {
   }
 }
 
+function isVisibleElBestEffort(el) {
+  try {
+    if (!el) return false;
+    const r = el.getClientRects?.();
+    if (r && r.length > 0) return true;
+    const b = el.getBoundingClientRect?.();
+    return !!(b && b.width > 0 && b.height > 0);
+  } catch {
+    return false;
+  }
+}
+
+async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs = 6500 } = {}) {
+  const debug = { tried: false, openedMenu: false, clickedSeller: false, inferred: '', error: '' };
+  try {
+    debug.tried = true;
+    const scope = dialog || document;
+
+    const isSellerAlready = () => {
+      try {
+        // Heuristic: if "switch to BUYER" is visible, we are currently in SELLER view.
+        const toBuyer = document.querySelector('[data-testid="AllInViewSwitchToBUYER"]');
+        if (isVisibleElBestEffort(toBuyer)) return true;
+      } catch {}
+      try {
+        const txt = safeText(scope).toLowerCase();
+        if (txt.includes('seller view')) return true;
+      } catch {}
+      return false;
+    };
+
+    if (isSellerAlready()) {
+      debug.inferred = 'already';
+      return { ok: true, salesView: 'seller', debug };
+    }
+
+    const findSellerBtn = () => {
+      try {
+        const b = document.querySelector('[data-testid="AllInViewSwitchToSELLER"]');
+        return isVisibleElBestEffort(b) ? b : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const openMenu = () => {
+      try {
+        // Best: an element that looks like a "view switch" trigger.
+        const candidates = Array.from(scope.querySelectorAll('button,[role="button"],a')).filter(isVisibleElBestEffort);
+        const trigger =
+          candidates.find((el) => /buyer\s+view|seller\s+view/i.test(safeText(el))) ||
+          candidates.find((el) => String(el.getAttribute?.('aria-haspopup') || '').toLowerCase() === 'menu') ||
+          candidates.find((el) => el.querySelector?.('svg') && /view/i.test(safeText(el)));
+        if (!trigger) return false;
+        clickElBestEffort(trigger);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (isSellerAlready()) {
+        debug.inferred = 'after_switch';
+        return { ok: true, salesView: 'seller', debug };
+      }
+      const sellerBtn = findSellerBtn();
+      if (sellerBtn) {
+        clickElBestEffort(sellerBtn);
+        debug.clickedSeller = true;
+        await new Promise((r) => setTimeout(r, 450));
+        continue;
+      }
+      // Seller option not visible yet → open the chevron/menu.
+      if (!debug.openedMenu) {
+        debug.openedMenu = openMenu();
+        await new Promise((r) => setTimeout(r, 350));
+      } else {
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    }
+
+    return { ok: false, salesView: 'buyer', debug: { ...debug, error: 'timeout' } };
+  } catch (e) {
+    debug.error = e?.message || String(e);
+    return { ok: false, salesView: 'buyer', debug };
+  }
+}
+
 async function readMarketDataTablesOnce(
   { maxAsks = 250, maxBids = 250, maxSales = 450, openTimeoutMs = 9000, onStage, onAttempt } = {}
 ) {
@@ -5591,6 +5681,8 @@ async function readMarketDataTablesOnce(
       openedMarketData: false,
       openDebug,
       tabDebug: null,
+      salesView: 'unknown',
+      viewSwitchDebug: null,
       asks: [],
       bids: [],
       sales: []
@@ -5599,6 +5691,12 @@ async function readMarketDataTablesOnce(
 
   // If Market Data rendered without a role=dialog (rare), still proceed with a doc-scoped tab lookup.
   const tabScope = dialog && (dialog.getAttribute?.('role') === 'dialog' || dialog.getAttribute?.('aria-modal') === 'true') ? dialog : document;
+
+  // Prefer Seller View for Sales entries so Avg30d reflects the "ask price needed to win each sale".
+  onStage?.('market data', 'seller view');
+  const sellerRes = await ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs: 6500 });
+  const salesView = sellerRes?.salesView || 'unknown';
+  const viewSwitchDebug = sellerRes?.debug || null;
 
   const getActiveTabLabel = () => {
     try {
@@ -5820,7 +5918,7 @@ async function readMarketDataTablesOnce(
     await closeMarketDataDialog(getMarketDataDialog() || dialog);
   } catch {}
 
-  return { dialog, foundMarketDataButton, openedMarketData: true, openDebug, tabDebug, asks, bids, sales };
+  return { dialog, foundMarketDataButton, openedMarketData: true, openDebug, tabDebug, salesView, viewSwitchDebug, asks, bids, sales };
 }
 
 async function ensureMarketDataSalesOpen() {
@@ -5912,6 +6010,9 @@ async function scanAllSizesForSales({ statusEl, days = 30 }) {
       }
 
       const dialog = await ensureMarketDataSalesOpen();
+      try {
+        await ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs: 5500 });
+      } catch {}
       const sales = parseMarketDataSalesTable(250);
       await closeMarketDataDialog(dialog);
 
@@ -7175,6 +7276,7 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
       slug,
       title,
       feeSum,
+      salesView: md?.salesView || 'unknown',
       salesRows: Array.isArray(sales) ? sales.length : 0,
       asksRows: Array.isArray(asks) ? asks.length : 0,
       bidsRows: Array.isArray(bids) ? bids.length : 0,
@@ -7188,6 +7290,7 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
       openedMarketData: !!md.openedMarketData,
       marketDataOpenDebug: md.openDebug || null,
       marketDataTabDebug: md.tabDebug || null,
+      marketDataViewSwitchDebug: md.viewSwitchDebug || null,
       sizeAll,
       sizeOptionsCount,
       viableSizeCount,
