@@ -5582,6 +5582,7 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
     openedMenu: false,
     clickedSeller: false,
     clickedChevron: false,
+    clickedAllInCollapse: false,
     inferred: '',
     error: ''
   };
@@ -5625,6 +5626,22 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
       }
     };
 
+    const clickAllInCollapseButton = () => {
+      try {
+        // StockX currently hides the view switch options behind the "Expand Disclaimer" chevron.
+        const btn =
+          scope.querySelector?.('[data-testid="AllInCollapseButton"]') ||
+          document.querySelector('[data-testid="AllInCollapseButton"]') ||
+          null;
+        if (!isVisibleElBestEffort(btn)) return false;
+        clickElBestEffort(btn);
+        debug.clickedAllInCollapse = true;
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
     const findChevronTriggerBtn = () => {
       try {
         // Your snippet chevron SVG path:
@@ -5641,6 +5658,9 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
 
     const openMenu = () => {
       try {
+        // Best: click the explicit all-in collapse/expand button.
+        if (clickAllInCollapseButton()) return true;
+
         // Best: click the known chevron trigger first; otherwise fall back to heuristics.
         const chevron = findChevronTriggerBtn();
         if (chevron) {
@@ -5677,7 +5697,7 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
       // Seller option not visible yet → open the chevron/menu.
       if (!debug.openedMenu) {
         debug.openedMenu = openMenu();
-        await new Promise((r) => setTimeout(r, 350));
+        await new Promise((r) => setTimeout(r, 450));
       } else {
         // If we're still in BUYER view and can't see the option, keep trying to open the menu.
         if (isBuyerAlready()) {
