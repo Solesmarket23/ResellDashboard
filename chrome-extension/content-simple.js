@@ -3373,8 +3373,11 @@ function extractMarketDataFromDomLabels() {
       return null;
     };
 
-    const highestBid = getValueNearLabel(/highest\s+bid/i) ?? getValueNearLabel(/^\s*bid\s*$/i);
-    const lowestAsk = getValueNearLabel(/lowest\s+ask/i) ?? getValueNearLabel(/^\s*ask\s*$/i);
+    // IMPORTANT: only match the explicit "Highest Bid" / "Lowest Ask" labels.
+    // StockX's "Pricing Options" tiles contain text like "Good Bid" / "Better Bid" and can
+    // otherwise get misinterpreted as the label "Bid", causing wrong values (e.g. $179).
+    const highestBid = getValueNearLabel(/highest\s+bid/i);
+    const lowestAsk = getValueNearLabel(/lowest\s+ask/i);
     const lastSale = getValueNearLabel(/last\s+sale/i);
     const averagePrice = getValueNearLabel(/average\s+sale\s*price/i) ?? getValueNearLabel(/\bavg\b/i);
 
