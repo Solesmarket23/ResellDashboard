@@ -5634,15 +5634,20 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
     debug.tried = true;
     const scope = dialog || document;
 
+    const isSellerConfirmed = () => {
+      try {
+        // Only trust explicit control presence, not text (the SELLER button itself contains "Seller View").
+        // If "switch to BUYER" is visible, we are currently in SELLER view.
+        const toBuyer = scope.querySelector?.('[data-testid="AllInViewSwitchToBUYER"]') || document.querySelector('[data-testid="AllInViewSwitchToBUYER"]');
+        return isVisibleElBestEffort(toBuyer);
+      } catch {
+        return false;
+      }
+    };
+
     const isSellerAlready = () => {
       try {
-        // Heuristic: if "switch to BUYER" is visible, we are currently in SELLER view.
-        const toBuyer = scope.querySelector?.('[data-testid="AllInViewSwitchToBUYER"]') || document.querySelector('[data-testid="AllInViewSwitchToBUYER"]');
-        if (isVisibleElBestEffort(toBuyer)) return true;
-      } catch {}
-      try {
-        const txt = safeText(scope).toLowerCase();
-        if (txt.includes('seller view')) return true;
+        return isSellerConfirmed();
       } catch {}
       return false;
     };
@@ -5735,7 +5740,7 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
 
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
-      if (isSellerAlready()) {
+      if (isSellerConfirmed()) {
         debug.inferred = 'after_switch';
         return { ok: true, salesView: 'seller', debug };
       }

@@ -202,6 +202,9 @@ function renderResults(listEl, resultsMap) {
         `chevron=${dbg.clickedChevron ? 'yes' : 'no'}`,
         `menu=${dbg.openedMenu ? 'yes' : 'no'}`,
         `sellerBtn=${dbg.clickedSeller ? 'yes' : 'no'}`,
+        dbg.sellerBtnFound ? `found=${dbg.sellerBtnFound ? 'yes' : 'no'}` : '',
+        typeof dbg.sellerBtnVisible === 'boolean' ? `visible=${dbg.sellerBtnVisible ? 'yes' : 'no'}` : '',
+        typeof dbg.sellerBtnEnabled === 'boolean' ? `enabled=${dbg.sellerBtnEnabled ? 'yes' : 'no'}` : '',
         dbg.error ? `err=${safeStr(dbg.error)}` : ''
       ].filter(Boolean);
       return `<div class="sub mono" style="opacity:.75;">${escapeHtml(base)} • ${escapeHtml(bits.join(' '))}</div>`;
