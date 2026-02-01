@@ -1138,6 +1138,8 @@ function defaultScanSettings() {
     excludeRecentReleaseDays: 30,
     excludeSponsored: true,
     skipOneSize: false,
+    excludeUrlSubstrings: [],
+    excludeTitleKeywords: [],
     includeCategories: ['sneakers', 'streetwear', 'collectibles', 'electronics', 'trading-cards', 'handbags', 'watches']
   };
 }
@@ -1163,6 +1165,47 @@ function getScanSettingsCached() {
     return c && typeof c === 'object' ? { ...defaultScanSettings(), ...c } : defaultScanSettings();
   } catch {
     return defaultScanSettings();
+  }
+}
+
+function computeUserExclusionBestEffort({ url, slug, title, settings }) {
+  try {
+    const urlNeedles = Array.isArray(settings?.excludeUrlSubstrings) ? settings.excludeUrlSubstrings : [];
+    const titleNeedles = Array.isArray(settings?.excludeTitleKeywords) ? settings.excludeTitleKeywords : [];
+    const safeLower = (v) => String(v || '').toLowerCase();
+    const uLower = safeLower(url);
+    const slugLower = safeLower(slug);
+    const titleLower = safeLower(title);
+
+    let pathLower = '';
+    try {
+      const u = new URL(String(url || location.href || ''));
+      pathLower = safeLower(u.pathname + (u.search || ''));
+    } catch {
+      pathLower = '';
+    }
+
+    for (const raw of urlNeedles) {
+      const needle = String(raw || '').trim();
+      const n = needle.toLowerCase();
+      if (!n) continue;
+      if (uLower.includes(n) || pathLower.includes(n) || (slugLower && (slugLower === n || slugLower.includes(n)))) {
+        return { excluded: true, type: 'url', needle };
+      }
+    }
+
+    for (const raw of titleNeedles) {
+      const needle = String(raw || '').trim();
+      const n = needle.toLowerCase();
+      if (!n) continue;
+      if (titleLower.includes(n) || (slugLower && slugLower.includes(n))) {
+        return { excluded: true, type: 'title', needle };
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
   }
 }
 
@@ -6825,6 +6868,32 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
     const minRoiPct = Number(settings?.minRoiPct);
     const excludeRecentReleaseDays = Number(settings?.excludeRecentReleaseDays);
     let sizeAll = null;
+
+    // User-configured exclusions (fast path; skip all Market Data work).
+    try {
+      const ex = computeUserExclusionBestEffort({ url: location.href, slug, title, settings });
+      if (ex?.excluded) {
+        return {
+          success: true,
+          slug,
+          title,
+          userExcluded: true,
+          userExcludedType: ex.type || 'unknown',
+          userExcludedNeedle: ex.needle || '',
+          opportunities: [],
+          viableSizeCount: 0,
+          eliminatedByAsk: 0,
+          eliminatedByAvg30d: 0,
+          eliminatedByRoi: 0,
+          sizeOptionsCount: 0,
+          salesRows: 0,
+          asksRows: 0,
+          bidsRows: 0,
+          foundMarketDataButton: false,
+          openedMarketData: false
+        };
+      }
+    } catch {}
 
     // Release date exclusions (best-effort; only applies when we can detect a release date).
     try {

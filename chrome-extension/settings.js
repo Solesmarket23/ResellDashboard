@@ -9,6 +9,8 @@ function defaultSettings() {
     excludeRecentReleaseDays: 30,
     excludeSponsored: true,
     skipOneSize: false,
+    excludeUrlSubstrings: [],
+    excludeTitleKeywords: [],
     includeCategories: ['sneakers', 'streetwear', 'collectibles', 'electronics', 'trading-cards', 'handbags', 'watches']
   };
 }
@@ -58,6 +60,37 @@ function setToast(msg) {
   el.textContent = msg || '';
 }
 
+function parseLineList(v) {
+  try {
+    const raw = String(v == null ? '' : v);
+    const parts = raw
+      .split(/\r?\n|,/g)
+      .map((s) => String(s || '').trim())
+      .filter(Boolean);
+    // De-dupe, keep order
+    const seen = new Set();
+    const out = [];
+    for (const p of parts) {
+      const k = p.toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(p);
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+function formatLineList(arr) {
+  try {
+    const a = Array.isArray(arr) ? arr : [];
+    return a.map((x) => String(x || '').trim()).filter(Boolean).join('\n');
+  } catch {
+    return '';
+  }
+}
+
 function readForm() {
   const minSales30d = clampInt(document.getElementById('minSales30d')?.value, { min: 0, max: 999 });
   const minProfit = clampInt(document.getElementById('minProfit')?.value, { min: 0, max: 9999 });
@@ -66,6 +99,8 @@ function readForm() {
   const excludeRecentReleaseDays = clampInt(document.getElementById('excludeRecentReleaseDays')?.value, { min: 0, max: 3650 });
   const excludeSponsored = !!document.getElementById('excludeSponsored')?.checked;
   const skipOneSize = !!document.getElementById('skipOneSize')?.checked;
+  const excludeUrlSubstrings = parseLineList(document.getElementById('excludeUrlSubstrings')?.value);
+  const excludeTitleKeywords = parseLineList(document.getElementById('excludeTitleKeywords')?.value);
 
   const includeCategories = Array.from(document.querySelectorAll('input[data-cat]'))
     .filter((el) => el.checked)
@@ -80,6 +115,8 @@ function readForm() {
     excludeRecentReleaseDays: excludeRecentReleaseDays ?? defaultSettings().excludeRecentReleaseDays,
     excludeSponsored,
     skipOneSize,
+    excludeUrlSubstrings,
+    excludeTitleKeywords,
     includeCategories: includeCategories.length ? includeCategories : defaultSettings().includeCategories
   };
 }
@@ -92,6 +129,8 @@ function writeForm(s) {
   document.getElementById('excludeRecentReleaseDays').value = String(s.excludeRecentReleaseDays ?? '');
   document.getElementById('excludeSponsored').checked = !!s.excludeSponsored;
   document.getElementById('skipOneSize').checked = !!s.skipOneSize;
+  document.getElementById('excludeUrlSubstrings').value = formatLineList(s.excludeUrlSubstrings);
+  document.getElementById('excludeTitleKeywords').value = formatLineList(s.excludeTitleKeywords);
 
   const set = new Set(Array.isArray(s.includeCategories) ? s.includeCategories : []);
   Array.from(document.querySelectorAll('input[data-cat]')).forEach((el) => {

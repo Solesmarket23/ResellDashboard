@@ -36,6 +36,7 @@ function setToast(msg) {
 function groupErrorReason(r) {
   try {
     if (!r) return 'unknown';
+    if (r.userExcluded) return 'excluded: user rule';
     if (r.releaseExcluded) return 'excluded: recent release';
     if (r.success === false) return 'scan failed';
     const e = safeStr(r.error || '').toLowerCase();
@@ -144,7 +145,7 @@ function renderResults(listEl, resultsMap) {
       const url = escapeHtml(r?.url || '');
       const ok = r?.success !== false;
       const opps = Array.isArray(r?.opportunities) ? r.opportunities : [];
-      const badge = r?.releaseExcluded
+      const badge = r?.userExcluded || r?.releaseExcluded
         ? `<span class="pill">excluded</span>`
         : opps.length
           ? `<span class="pill">opps ${opps.length}</span>`
@@ -152,7 +153,9 @@ function renderResults(listEl, resultsMap) {
             ? `<span class="pill">none</span>`
             : `<span class="pill">error</span>`;
       const msg = escapeHtml(
-        r?.releaseExcluded
+        r?.userExcluded
+          ? `Excluded by rule: ${(safeStr(r?.userExcludedNeedle || 'rule') || 'rule')}`
+          : r?.releaseExcluded
           ? `Released: ${safeStr(r?.releaseDate || '—')} (excluded)`
           : r?.success === false
             ? safeStr(r?.error || 'scan failed')

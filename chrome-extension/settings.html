@@ -40,7 +40,8 @@
         color: rgba(255, 255, 255, 0.82);
       }
       input[type='number'],
-      input[type='text'] {
+      input[type='text'],
+      textarea {
         width: 100%;
         padding: 9px 10px;
         border-radius: 10px;
@@ -48,6 +49,13 @@
         background: rgba(255, 255, 255, 0.06);
         color: rgba(255, 255, 255, 0.92);
         outline: none;
+      }
+      textarea {
+        min-height: 92px;
+        resize: vertical;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+        font-size: 12px;
+        line-height: 1.35;
       }
       .muted {
         font-size: 12px;
@@ -152,6 +160,30 @@
               <input id="skipOneSize" type="checkbox" />
               Skip “ONE SIZE” items
             </label>
+          </div>
+        </div>
+        <div class="row">
+          <label for="excludeUrlSubstrings">Exclude by URL (one per line)</label>
+          <div>
+            <textarea id="excludeUrlSubstrings" placeholder="Examples:
+fear-of-god-essentials
+/ugg-lowmel-black-womens
+?size=US+XS"></textarea>
+            <div class="muted" style="margin-top:6px;">
+              Case-insensitive substring match against the full product URL. Best for exact products (slug) and edge cases.
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <label for="excludeTitleKeywords">Exclude by title keywords (one per line)</label>
+          <div>
+            <textarea id="excludeTitleKeywords" placeholder="Examples:
+kids
+(grade school)
+bundle"></textarea>
+            <div class="muted" style="margin-top:6px;">
+              Case-insensitive substring match against the product page title (<code>&lt;h1&gt;</code>). Best for broad rules.
+            </div>
           </div>
         </div>
         <div class="row">
