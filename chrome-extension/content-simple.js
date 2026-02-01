@@ -3556,14 +3556,27 @@ function findOfferCta() {
   // StockX sometimes uses "Make Offer" (anchor) instead of a bid button.
   const byText = (re) => {
     const els = Array.from(document.querySelectorAll('a,button,[role="button"]'));
-    return els.find((el) => re.test(safeText(el)));
+    const isBadPricingTile = (t) => {
+      const s = String(t || '').trim();
+      if (!s) return true;
+      // Avoid "Pricing Options" tiles like "Good Bid" / "Better Bid" which can overwrite the input value.
+      if (/(good|better)\s+bid/i.test(s)) return true;
+      if (/buy\s+now/i.test(s)) return true;
+      return false;
+    };
+    return els.find((el) => {
+      const t = safeText(el);
+      if (isBadPricingTile(t)) return false;
+      return re.test(t);
+    });
   };
 
   return (
     document.querySelector('a[href*="/buy/"][href*="defaultBid=true"]') ||
     byText(/make\s+offer/i) ||
     byText(/place\s+bid/i) ||
-    byText(/\bbid\b/i) ||
+    // Some pages show a simple "Bid" CTA; match exact text but avoid "Good/Better Bid" tiles.
+    byText(/^\s*bid\s*$/i) ||
     null
   );
 }
@@ -4228,6 +4241,7 @@ async function placeBidViaUi({ size, bid }) {
   // If we're already on the offer page/modal (bid input exists), don't click a CTA again.
   const alreadyOnOfferFlow =
     isOfferFlowUrl() ||
+    isBuyFlowPath() ||
     !!document.querySelector('input[data-testid="bid-input"]') ||
     !!document.querySelector('select[data-testid="expiration-select-list"]') ||
     !!document.querySelector('button[data-testid="checkout-confirm-button"]') ||
