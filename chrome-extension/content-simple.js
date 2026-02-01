@@ -5733,6 +5733,24 @@ async function readMarketDataTablesOnce(
   // If Market Data rendered without a role=dialog (rare), still proceed with a doc-scoped tab lookup.
   const tabScope = dialog && (dialog.getAttribute?.('role') === 'dialog' || dialog.getAttribute?.('aria-modal') === 'true') ? dialog : document;
 
+  // Important: the Buyer/Seller view switch UI often only appears on the Sales tab.
+  // Force Sales tab first, then switch to Seller View.
+  try {
+    const scope = tabScope || document;
+    const salesTab =
+      findTabButtonByLabel(scope, 'sales') ||
+      Array.from(scope.querySelectorAll?.('[role="tab"],button,a,[role="button"]') || []).find(
+        (el) => safeText(el).trim().toLowerCase() === 'sales'
+      ) ||
+      null;
+    if (salesTab) {
+      onStage?.('market data', 'sales tab');
+      clickElBestEffort(salesTab);
+      // Give StockX time to render the Sales tab panel + the view switch UI.
+      await new Promise((r) => setTimeout(r, 750));
+    }
+  } catch {}
+
   // Prefer Seller View for Sales entries so Avg30d reflects the "ask price needed to win each sale".
   onStage?.('market data', 'seller view');
   const sellerRes = await ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs: 6500 });
