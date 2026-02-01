@@ -4157,12 +4157,14 @@ async function placeBidViaUi({ size, bid }) {
   }
 
   // Try to choose size (best-effort). Many sites use a button or select; we attempt both patterns.
-  if (size) {
+  const requestedSizeKey = normalizeSizeKey(size || '');
+  const currentSizeKey = normalizeSizeKey(getSelectedSizeBestEffort());
+  if (requestedSizeKey && (!currentSizeKey || requestedSizeKey !== currentSizeKey)) {
     const normalized = String(size).trim().toUpperCase();
     // Click a size dropdown/button then choose an option containing the size text.
     const sizeControl =
-      dialog.querySelector('button[aria-haspopup="listbox"], [role="combobox"], select') ||
-      Array.from(dialog.querySelectorAll('button,[role="button"]')).find((b) => /size/i.test(safeText(b)));
+      root.querySelector('button[aria-haspopup="listbox"], [role="combobox"], select') ||
+      Array.from(root.querySelectorAll('button,[role="button"]')).find((b) => /size/i.test(safeText(b)));
     if (sizeControl) {
       try {
         sizeControl.click?.();
@@ -4289,25 +4291,21 @@ async function placeBidViaUi({ size, bid }) {
   if (!confirmBtn) {
     return { ok: false, error: 'Review Bid clicked, but Confirm Bid button never appeared.' };
   }
+  // IMPORTANT: For manual "Place Bid" we STOP here.
+  // We do NOT auto-click "Confirm Bid" (user may want to verify totals), and we do NOT auto-return.
   try {
-    // No second confirm popup; we already confirmed the intent above.
-    confirmBtn.click();
-  } catch {
-    return { ok: false, error: 'Failed to click Confirm Bid.' };
-  }
-
-  // After confirming, return the user to where they started so they can place more bids quickly.
-  try {
-    if (oldUrl && typeof oldUrl === 'string' && !oldUrl.includes('/buy/')) {
-      setTimeout(() => {
-        try {
-          if (location.pathname.startsWith('/buy/')) location.href = oldUrl;
-        } catch {}
-      }, 3500);
-    }
+    confirmBtn.scrollIntoView?.({ block: 'center', inline: 'center' });
+    confirmBtn.style.outline = '3px solid rgba(99,102,241,0.95)';
+    confirmBtn.style.outlineOffset = '3px';
+    setTimeout(() => {
+      try {
+        confirmBtn.style.outline = '';
+        confirmBtn.style.outlineOffset = '';
+      } catch {}
+    }, 2500);
   } catch {}
 
-  return { ok: true };
+  return { ok: true, awaitingConfirm: true };
   } finally {
     try {
       window.__stockxOfferInFlight = false;
@@ -4629,8 +4627,9 @@ function renderProductWidget({ marketData, recentSales }) {
 
     const res = await placeBidViaUi({ size, bid });
     if (statusEl) {
-      if (res?.pendingNavigation) statusEl.textContent = 'Opening offer page… (will auto-fill and submit there)';
-      else statusEl.textContent = res.ok ? 'Offer submitted (or awaiting site confirmation).' : `Bid failed: ${res.error}`;
+      if (res?.pendingNavigation) statusEl.textContent = 'Opening offer page… (will auto-fill there)';
+      else if (res?.awaitingConfirm) statusEl.textContent = 'Review step complete — click “Confirm Bid” on the page to finalize.';
+      else statusEl.textContent = res.ok ? 'Bid flow complete.' : `Bid failed: ${res.error}`;
     }
 
     try {
