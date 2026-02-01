@@ -4012,10 +4012,7 @@ async function runPendingOfferRequestIfPresent() {
 
     // Set bid
     try {
-      bidInput.focus();
-      bidInput.value = String(resolvedReq.bid || '').trim();
-      bidInput.dispatchEvent(new Event('input', { bubbles: true }));
-      bidInput.dispatchEvent(new Event('change', { bubbles: true }));
+      setInputValueReactSafe(bidInput, String(resolvedReq.bid || '').trim());
     } catch {}
 
     // Set expiration=7
@@ -4375,10 +4372,7 @@ async function placeBidViaUi({ size, bid }) {
   if (!bidStr || !/^\d+(\.\d+)?$/.test(bidStr)) return { ok: false, error: 'Invalid bid amount.' };
 
   try {
-    bidInput.focus();
-    bidInput.value = bidStr;
-    bidInput.dispatchEvent(new Event('input', { bubbles: true }));
-    bidInput.dispatchEvent(new Event('change', { bubbles: true }));
+    setInputValueReactSafe(bidInput, bidStr);
   } catch (e) {
     return { ok: false, error: `Failed to set bid value: ${String(e?.message || e)}` };
   }
@@ -6032,12 +6026,45 @@ function computeProfitCheck({ avg30d, allInTotal, minProfit }) {
   return { profit, ok: profit >= mp };
 }
 
+function setInputValueReactSafe(input, value) {
+  try {
+    if (!input) return false;
+    const v = String(value ?? '');
+    // Click first to ensure StockX toggles into "Name Your Price" mode (avoids pricing tile controlling the input).
+    try {
+      clickElBestEffort(input);
+    } catch {}
+    try {
+      input.focus?.();
+    } catch {}
+
+    // React-controlled inputs require the native setter to update internal state.
+    try {
+      const proto = Object.getPrototypeOf(input);
+      const desc = Object.getOwnPropertyDescriptor(proto, 'value') || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+      const setter = desc?.set;
+      if (setter) setter.call(input, v);
+      else input.value = v;
+    } catch {
+      try {
+        input.value = v;
+      } catch {}
+    }
+
+    try {
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    } catch {}
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function setOfferAmountAndWaitTotal({ root, input, amount }) {
   try {
-    input.focus();
-    input.value = String(amount);
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
+    setInputValueReactSafe(input, String(amount));
   } catch {}
   await new Promise((r) => setTimeout(r, 250));
   const total = findAllInTotal(root);
