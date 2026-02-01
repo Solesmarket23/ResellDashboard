@@ -4032,24 +4032,82 @@ async function runPendingOfferRequestIfPresent() {
     } catch {}
 
     if (manualMode) {
-      console.log('🟦 StockX Helper: manual mode — bid prefilled; not auto-submitting or closing.');
-      // Try to highlight the Review button for UX, but don't click it.
+      console.log('🟦 StockX Helper: manual mode — bid prefilled; auto-clicking Review Bid, then pausing at Confirm.');
+
+      // Click Review Bid automatically (but NEVER click Confirm in manual mode).
       try {
-        const review = document.querySelector('button[data-testid="checkout-confirm-button"]') || findOfferSubmitButton(document);
-        if (review) {
-          review.scrollIntoView?.({ block: 'center', inline: 'center' });
-          review.style.outline = '3px solid rgba(99,102,241,0.95)';
-          review.style.outlineOffset = '3px';
-          setTimeout(() => {
+        const key = `manualReviewClicked::${String(resolvedReq?.id || '')}::${location.pathname}::${location.search}`;
+        if (window.__stockxManualReviewClickedKey !== key) {
+          window.__stockxManualReviewClickedKey = key;
+          const reviewBtn =
+            document.querySelector('button[data-testid="checkout-confirm-button"]') ||
+            findOfferSubmitButton(document);
+          if (reviewBtn && !(reviewBtn.disabled || reviewBtn.getAttribute?.('aria-disabled') === 'true')) {
             try {
-              review.style.outline = '';
-              review.style.outlineOffset = '';
+              reviewBtn.scrollIntoView?.({ block: 'center', inline: 'center' });
             } catch {}
-          }, 2500);
+            try {
+              reviewBtn.click();
+            } catch {}
+          }
         }
       } catch {}
-      // Clear pending so it doesn't auto-run again.
-      await cleanupPending();
+
+      // Wait for Confirm Bid button to appear, highlight it, and start the watcher that returns after success.
+      const confirmBtn = await waitForElementFast(() => findConfirmBidButton(document), { timeoutMs: 15000, pollMs: 40 });
+      if (confirmBtn) {
+        try {
+          confirmBtn.scrollIntoView?.({ block: 'center', inline: 'center' });
+          confirmBtn.style.outline = '3px solid rgba(99,102,241,0.95)';
+          confirmBtn.style.outlineOffset = '3px';
+          setTimeout(() => {
+            try {
+              confirmBtn.style.outline = '';
+              confirmBtn.style.outlineOffset = '';
+            } catch {}
+          }, 2500);
+        } catch {}
+
+        // Start watcher if not already running (same logic as the confirmNow manual branch).
+        if (!window.__stockxManualConfirmWatcherRunning) {
+          window.__stockxManualConfirmWatcherRunning = true;
+          (async () => {
+            try {
+              const signal = await waitForBidSuccessSignal(60000);
+              console.log('🟦 StockX Helper: manual confirm success signal', signal);
+              if (!signal.ok) return;
+
+              const last = await getLastBidReturn();
+              const openerTabId = Number(resolvedReq?.openerTabId || last?.openerTabId || 0);
+              const returnUrl = String(resolvedReq?.returnUrl || last?.returnUrl || '');
+
+              await cleanupPending();
+
+              // For manual bids (same tab), prefer returning by navigating back to returnUrl.
+              if (returnUrl) {
+                try {
+                  if (location.href !== returnUrl) window.location.assign(returnUrl);
+                } catch {}
+                return;
+              }
+
+              if (openerTabId) {
+                try {
+                  chrome.runtime?.sendMessage?.({ action: 'closeSelfAndFocus', openerTabId, returnUrl }, () => void chrome.runtime.lastError);
+                } catch {}
+              }
+            } catch (e) {
+              console.warn('⚠️ StockX Helper: manual confirm watcher failed', e);
+            } finally {
+              try {
+                window.__stockxManualConfirmWatcherRunning = false;
+              } catch {}
+            }
+          })();
+        }
+      } else {
+        console.warn('⚠️ StockX Helper: manual mode — Review clicked but Confirm Bid did not appear yet.');
+      }
       return;
     }
 
