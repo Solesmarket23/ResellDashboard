@@ -71,10 +71,11 @@ function flattenOpportunities(resultsMap, limit = 80) {
         title,
         sizeLabel: safeStr(o?.sizeLabel || ''),
         sizeParam: safeStr(o?.sizeParam || ''),
-        bid: o?.highestBid ?? null,
+        bid: (o?.suggestedBid ?? o?.highestBid) ?? null,
         ask: o?.lowestAsk ?? null,
         profit: o?.profit ?? null,
         avg30d: o?.avg30d ?? null,
+        roiPct: o?.roiPct ?? null,
         low60d: o?.lowestSold2mo ?? null
       });
     }
@@ -109,6 +110,7 @@ function renderOpps(listEl, resultsMap) {
       const ask = o.ask == null ? '—' : escapeHtml(String(o.ask));
       const profit = o.profit == null ? '—' : escapeHtml(String(o.profit));
       const avg = o.avg30d == null ? '—' : escapeHtml(String(o.avg30d));
+      const roi = o.roiPct == null ? '—' : escapeHtml(String(o.roiPct)) + '%';
       const low = o.low60d == null ? '—' : escapeHtml(String(o.low60d));
       const openUrl = escapeHtml(withSizeParam(o.url, o.sizeParam));
       return `<div class="item">
@@ -116,7 +118,7 @@ function renderOpps(listEl, resultsMap) {
           <div class="title">${title}</div>
           <button class="btn-secondary" data-open="${openUrl}" style="padding:6px 10px; border-radius:10px; font-weight:900;">Open</button>
         </div>
-        <div class="sub mono">size ${size} • bid ${bid} • ask ${ask} • profit ${profit} • avg30d ${avg} • low60d ${low}</div>
+        <div class="sub mono">size ${size} • bid ${bid} • ask ${ask} • profit ${profit} • roi ${roi} • avg30d ${avg} • low60d ${low}</div>
       </div>`;
     })
     .join('');

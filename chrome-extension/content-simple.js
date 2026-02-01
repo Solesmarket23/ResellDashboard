@@ -1115,6 +1115,7 @@ function defaultScanSettings() {
   return {
     minSales30d: 4,
     minProfit: 15,
+    minRoiPct: 0,
     feeSum: 21,
     excludeRecentReleaseDays: 30,
     excludeSponsored: true,
@@ -6729,6 +6730,7 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
     const feeSum = Number(settings?.feeSum);
     const minProfit = Number(settings?.minProfit);
     const minSales30d = Number(settings?.minSales30d);
+    const minRoiPct = Number(settings?.minRoiPct);
     const excludeRecentReleaseDays = Number(settings?.excludeRecentReleaseDays);
     let sizeAll = null;
 
@@ -6914,6 +6916,7 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
     const opportunities = [];
     let eliminatedByAsk = 0;
     let eliminatedByAvg30d = 0;
+    let eliminatedByRoi = 0;
     const viableSizeKeys = new Set();
 
     for (const [sizeKey, hb] of hbBySizeKey.entries()) {
@@ -6945,6 +6948,21 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
         continue;
       }
 
+      // Optional ROI gate: ROI = profit / all-in, must be >= minRoiPct.
+      let roi = null;
+      try {
+        roi = allIn > 0 ? profit / allIn : null;
+      } catch {
+        roi = null;
+      }
+      if (Number.isFinite(minRoiPct) && minRoiPct > 0) {
+        const minRoi = minRoiPct / 100;
+        if (!Number.isFinite(roi) || roi < minRoi) {
+          eliminatedByRoi += 1;
+          continue;
+        }
+      }
+
       const maxBid = Math.floor(ask - feeSum - minProfit);
       if (!Number.isFinite(maxBid) || maxBid <= 0) continue;
       if (suggestedBid > maxBid) {
@@ -6961,6 +6979,7 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
         maxBid,
         lowestAsk: Math.floor(ask),
         profit: Math.floor(profit),
+        roiPct: Number.isFinite(roi) ? Math.round(roi * 1000) / 10 : null,
         lowestSold2mo: (() => {
           const v = Number(lowestSold2moByKey.get(sizeKey));
           return Number.isFinite(v) ? Math.floor(v) : null;
@@ -7013,6 +7032,7 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
       viableSizeCount,
       eliminatedByAsk,
       eliminatedByAvg30d,
+      eliminatedByRoi,
       opportunities
     };
   } catch (e) {
@@ -7700,6 +7720,7 @@ function ensureListingBidWidget() {
       const viableSizeCount = Number(r?.viableSizeCount) || 0;
       const eliminatedByAsk = Number(r?.eliminatedByAsk) || 0;
       const eliminatedByAvg30d = Number(r?.eliminatedByAvg30d) || 0;
+      const eliminatedByRoi = Number(r?.eliminatedByRoi) || 0;
       if (!foundBtn && !opened)
         return 'Could not find a Market Data button on this page (StockX UI variant not detected).';
       if (!opened && asksRows === 0 && bidsRows === 0 && salesRows === 0)
@@ -7711,7 +7732,7 @@ function ensureListingBidWidget() {
       // Size menu is often unavailable in background tabs; we primarily rely on Bids table instead.
       if (sizeOptionsCount === 0) return 'Size menu not readable in background tab (OK) — using Bids table instead.';
       if (viableSizeCount === 0)
-        return `No sizes met your rules (filtered profit ${eliminatedByAsk}, avg30d ${eliminatedByAvg30d}).`;
+        return `No sizes met your rules (filtered profit ${eliminatedByAsk}, avg30d ${eliminatedByAvg30d}, roi ${eliminatedByRoi}).`;
       if (salesRows === 0)
         return opened ? 'Could not parse Sales rows (0) — Market Data opened but Sales didn’t load/parse.' : 'Could not read Sales table (Market Data didn’t load).';
       return 'No sizes met your rules.';

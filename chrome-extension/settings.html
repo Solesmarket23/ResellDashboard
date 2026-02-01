@@ -120,11 +120,18 @@
           <input id="minProfit" type="number" min="0" step="1" />
         </div>
         <div class="row">
+          <label for="minRoiPct">Min ROI (%) (0 = off)</label>
+          <input id="minRoiPct" type="number" min="0" step="0.1" />
+        </div>
+        <div class="row">
           <label for="feeSum">Flat fees (shipping + processing)</label>
           <input id="feeSum" type="number" min="0" step="1" />
         </div>
         <div class="muted">
           Profit rule: <code>lowestAsk - highestBid - feeSum</code> must be ≥ <code>minProfit</code>.
+        </div>
+        <div class="muted" style="margin-top:6px;">
+          ROI rule: <code>profit / allIn</code> must be ≥ <code>minRoiPct</code>, where <code>allIn = (highestBid+1) + feeSum</code>.
         </div>
       </div>
 

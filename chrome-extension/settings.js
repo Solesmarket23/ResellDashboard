@@ -4,6 +4,7 @@ function defaultSettings() {
   return {
     minSales30d: 4,
     minProfit: 15,
+    minRoiPct: 0,
     feeSum: 21,
     excludeRecentReleaseDays: 30,
     excludeSponsored: true,
@@ -14,6 +15,12 @@ function defaultSettings() {
 
 function clampInt(v, { min = 0, max = 9999 } = {}) {
   const n = Math.floor(Number(v));
+  if (!Number.isFinite(n)) return null;
+  return Math.max(min, Math.min(max, n));
+}
+
+function clampFloat(v, { min = 0, max = 9999 } = {}) {
+  const n = Number(v);
   if (!Number.isFinite(n)) return null;
   return Math.max(min, Math.min(max, n));
 }
@@ -54,6 +61,7 @@ function setToast(msg) {
 function readForm() {
   const minSales30d = clampInt(document.getElementById('minSales30d')?.value, { min: 0, max: 999 });
   const minProfit = clampInt(document.getElementById('minProfit')?.value, { min: 0, max: 9999 });
+  const minRoiPct = clampFloat(document.getElementById('minRoiPct')?.value, { min: 0, max: 999 });
   const feeSum = clampInt(document.getElementById('feeSum')?.value, { min: 0, max: 9999 });
   const excludeRecentReleaseDays = clampInt(document.getElementById('excludeRecentReleaseDays')?.value, { min: 0, max: 3650 });
   const excludeSponsored = !!document.getElementById('excludeSponsored')?.checked;
@@ -67,6 +75,7 @@ function readForm() {
   return {
     minSales30d: minSales30d ?? defaultSettings().minSales30d,
     minProfit: minProfit ?? defaultSettings().minProfit,
+    minRoiPct: minRoiPct ?? defaultSettings().minRoiPct,
     feeSum: feeSum ?? defaultSettings().feeSum,
     excludeRecentReleaseDays: excludeRecentReleaseDays ?? defaultSettings().excludeRecentReleaseDays,
     excludeSponsored,
@@ -78,6 +87,7 @@ function readForm() {
 function writeForm(s) {
   document.getElementById('minSales30d').value = String(s.minSales30d ?? '');
   document.getElementById('minProfit').value = String(s.minProfit ?? '');
+  document.getElementById('minRoiPct').value = String(s.minRoiPct ?? '');
   document.getElementById('feeSum').value = String(s.feeSum ?? '');
   document.getElementById('excludeRecentReleaseDays').value = String(s.excludeRecentReleaseDays ?? '');
   document.getElementById('excludeSponsored').checked = !!s.excludeSponsored;
