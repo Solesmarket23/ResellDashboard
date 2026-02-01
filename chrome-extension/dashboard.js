@@ -23,6 +23,57 @@ function fmtPct(done, total) {
   return `${Math.max(0, Math.min(100, Math.round((d / t) * 100)))}%`;
 }
 
+function fmtDurationMs(ms) {
+  const x = Number(ms);
+  if (!Number.isFinite(x) || x < 0) return '—';
+  const totalSec = Math.floor(x / 1000);
+  const s = totalSec % 60;
+  const totalMin = Math.floor(totalSec / 60);
+  const m = totalMin % 60;
+  const h = Math.floor(totalMin / 60);
+  const pad2 = (n) => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${pad2(m)}:${pad2(s)}` : `${m}:${pad2(s)}`;
+}
+
+function computeElapsedMeta({ scanId, ids, state, history }) {
+  try {
+    const startedAtState = Number(state?.startedAt || 0);
+    const finishedAtState = Number(state?.finishedAt || 0);
+    let startedAt = startedAtState;
+    let finishedAt = finishedAtState;
+
+    // Fallback to history timestamps if state is missing them.
+    if ((!startedAt || !Number.isFinite(startedAt)) && Array.isArray(history)) {
+      const h = history.find((x) => safeStr(x?.scanId || '') === safeStr(scanId));
+      const hs = Number(h?.startedAt || 0);
+      const hf = Number(h?.finishedAt || 0);
+      if (Number.isFinite(hs) && hs > 0) startedAt = hs;
+      if (Number.isFinite(hf) && hf > 0) finishedAt = hf;
+    }
+
+    const isActiveSelected = !!(ids?.active && scanId && ids.active === scanId);
+    const isRunning = isActiveSelected && !finishedAt;
+    return { startedAt, finishedAt, isRunning };
+  } catch {
+    return { startedAt: 0, finishedAt: 0, isRunning: false };
+  }
+}
+
+function updateElapsedUi(meta) {
+  try {
+    const el = $('elapsed');
+    if (!el) return;
+    const startedAt = Number(meta?.startedAt || 0);
+    const finishedAt = Number(meta?.finishedAt || 0);
+    if (!Number.isFinite(startedAt) || startedAt <= 0) {
+      el.textContent = '—';
+      return;
+    }
+    const end = Number.isFinite(finishedAt) && finishedAt > 0 ? finishedAt : Date.now();
+    el.textContent = fmtDurationMs(Math.max(0, end - startedAt));
+  } catch {}
+}
+
 function escapeHtml(s) {
   return safeStr(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -298,6 +349,13 @@ async function refresh() {
   $('stage').textContent = safeStr(state?.stage || '—');
   $('currentUrl').textContent = safeStr(state?.currentUrl || state?.startUrl || '—');
 
+  // Elapsed time (ticks locally; no extra storage reads needed).
+  try {
+    const meta = computeElapsedMeta({ scanId, ids, state, history });
+    window.__stockxDashElapsedMeta = meta;
+    updateElapsedUi(meta);
+  } catch {}
+
   // Keep-focus toggle only applies to the active scan.
   try {
     const t = $('keepFocusToggle');
@@ -395,6 +453,15 @@ async function clearAllScans() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  // Local ticking for elapsed display (avoid spamming refresh/storage reads).
+  try {
+    setInterval(() => {
+      try {
+        updateElapsedUi(window.__stockxDashElapsedMeta || null);
+      } catch {}
+    }, 1000);
+  } catch {}
+
   $('refreshBtn')?.addEventListener('click', () => refresh());
   $('scanSelect')?.addEventListener('change', () => refresh());
 
