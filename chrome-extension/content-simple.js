@@ -815,7 +815,26 @@ function getSelectedSizeFromUrl() {
 function normalizeSizeKey(size) {
   const s = String(size || '').trim().toUpperCase().replace(/\s+/g, ' ');
   if (!s) return '';
-  // Prefer numeric part for matching (e.g. "US 9.5" -> "9.5")
+
+  // Kids / youth / toddler sizing: preserve suffix so it doesn't collide with adult sizes.
+  // Examples: "6Y", "US 6 YOUTH", "US Y 6", "10K", "3C", "5T"
+  try {
+    const kids = s.match(/\b(\d{1,2}(?:\.\d)?)\s*(K|Y|C|T)\b/i);
+    if (kids?.[1] && kids?.[2]) return `${kids[1]}${String(kids[2]).toUpperCase()}`;
+  } catch {}
+  try {
+    const kids2 = s.match(/\b(?:US|UK|EU)\s*(K|Y|C|T)\s*(\d{1,2}(?:\.\d)?)\b/i);
+    if (kids2?.[1] && kids2?.[2]) return `${kids2[2]}${String(kids2[1]).toUpperCase()}`;
+  } catch {}
+  try {
+    // StockX sometimes renders "US 6 Youth" (no trailing "Y").
+    if (/\bYOUTH\b/i.test(s) || /\bGS\b/i.test(s) || /\bGRADE\s*SCHOOL\b/i.test(s)) {
+      const m = s.match(/\b(\d{1,2}(?:\.\d)?)\b/);
+      if (m?.[1]) return `${m[1]}Y`;
+    }
+  } catch {}
+
+  // Adult: numeric part for matching (e.g. "US 9.5" -> "9.5")
   const m = s.match(/(\d{1,2}(?:\.\d)?)/);
   return m?.[1] ? m[1] : s;
 }
@@ -961,6 +980,228 @@ function withSizeParam(url, sizeParam) {
     return url;
   }
 }
+
+// --- Bid history (dedupe) ---
+async function loadBidHistoryMap() {
+  try {
+    if (!chrome?.storage?.local) return {};
+    const res = await new Promise((resolve) => chrome.storage.local.get(['stockxBidHistory'], resolve));
+    const map = res?.stockxBidHistory;
+    return map && typeof map === 'object' ? map : {};
+  } catch {
+    return {};
+  }
+}
+
+async function saveBidHistoryMap(map) {
+  try {
+    if (!chrome?.storage?.local) return false;
+    await new Promise((resolve) => chrome.storage.local.set({ stockxBidHistory: map }, resolve));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function bidHistoryKey({ slug, sizeParam }) {
+  const s = String(slug || '').trim();
+  const sp = String(sizeParam || '').trim();
+  if (!s || !sp) return '';
+  return `${s}::${sp}`;
+}
+
+async function markBidPlaced({ slug, url, sizeLabel, sizeParam, bid, ask }) {
+  try {
+    const key = bidHistoryKey({ slug, sizeParam });
+    if (!key) return false;
+    const map = await loadBidHistoryMap();
+    map[key] = {
+      key,
+      slug: String(slug || ''),
+      url: String(url || ''),
+      sizeLabel: String(sizeLabel || ''),
+      sizeParam: String(sizeParam || ''),
+      bid: Number.isFinite(Number(bid)) ? Math.round(Number(bid)) : null,
+      ask: Number.isFinite(Number(ask)) ? Math.round(Number(ask)) : null,
+      placedAt: Date.now()
+    };
+    await saveBidHistoryMap(map);
+    try {
+      window.__stockxBidHistoryCache = map;
+    } catch {}
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function clearBidHistory() {
+  try {
+    if (!chrome?.storage?.local) return false;
+    await new Promise((resolve) => chrome.storage.local.remove(['stockxBidHistory'], resolve));
+    try {
+      window.__stockxBidHistoryCache = {};
+    } catch {}
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// --- Scan settings (persisted) ---
+const STOCKX_SCAN_SETTINGS_KEY = 'stockxScanSettings';
+const STOCKX_LISTING_WIDGET_POS_KEY = 'stockxListingWidgetPos';
+
+function openExtensionSettingsTab() {
+  try {
+    if (!chrome?.runtime?.sendMessage) return false;
+    const url = chrome?.runtime?.getURL ? chrome.runtime.getURL('settings.html') : '';
+    if (!url) return false;
+    chrome.runtime.sendMessage({ action: 'openTab', url }, () => void chrome.runtime.lastError);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function openExtensionDashboardTab() {
+  try {
+    if (!chrome?.runtime?.sendMessage) return false;
+    const url = chrome?.runtime?.getURL ? chrome.runtime.getURL('dashboard.html') : '';
+    if (!url) return false;
+    chrome.runtime.sendMessage({ action: 'openTab', url }, () => void chrome.runtime.lastError);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function openUrlInNewTabBestEffort(url) {
+  try {
+    const target = String(url || '').trim();
+    if (!target) return false;
+    if (chrome?.runtime?.sendMessage) {
+      chrome.runtime.sendMessage({ action: 'openTab', url: target }, () => {
+        // If message fails (no receiver / context), fall back.
+        const err = chrome.runtime?.lastError;
+        if (err) {
+          try {
+            window.open(target, '_blank', 'noopener,noreferrer');
+          } catch {}
+        }
+      });
+      return true;
+    }
+  } catch {}
+  try {
+    window.open(String(url || ''), '_blank', 'noopener,noreferrer');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function defaultScanSettings() {
+  return {
+    minSales30d: 4,
+    minProfit: 15,
+    feeSum: 21,
+    excludeRecentReleaseDays: 30,
+    excludeSponsored: true,
+    skipOneSize: false,
+    includeCategories: ['sneakers', 'streetwear', 'collectibles', 'electronics', 'trading-cards', 'handbags', 'watches']
+  };
+}
+
+async function loadScanSettings() {
+  try {
+    if (!chrome?.storage?.local) return defaultScanSettings();
+    const res = await new Promise((resolve) => chrome.storage.local.get([STOCKX_SCAN_SETTINGS_KEY], resolve));
+    const cur = res?.[STOCKX_SCAN_SETTINGS_KEY] && typeof res[STOCKX_SCAN_SETTINGS_KEY] === 'object' ? res[STOCKX_SCAN_SETTINGS_KEY] : null;
+    const merged = { ...defaultScanSettings(), ...(cur || {}) };
+    try {
+      window.__stockxScanSettingsCache = merged;
+    } catch {}
+    return merged;
+  } catch {
+    return defaultScanSettings();
+  }
+}
+
+function getScanSettingsCached() {
+  try {
+    const c = window.__stockxScanSettingsCache;
+    return c && typeof c === 'object' ? { ...defaultScanSettings(), ...c } : defaultScanSettings();
+  } catch {
+    return defaultScanSettings();
+  }
+}
+
+async function loadListingWidgetPos() {
+  try {
+    if (!chrome?.storage?.local) return null;
+    const res = await new Promise((resolve) => chrome.storage.local.get([STOCKX_LISTING_WIDGET_POS_KEY], resolve));
+    const cur = res?.[STOCKX_LISTING_WIDGET_POS_KEY];
+    const left = Number(cur?.left);
+    const top = Number(cur?.top);
+    if (!Number.isFinite(left) || !Number.isFinite(top)) return null;
+    const pos = { left: Math.round(left), top: Math.round(top) };
+    try {
+      window.__stockxListingWidgetPosCache = pos;
+    } catch {}
+    return pos;
+  } catch {
+    return null;
+  }
+}
+
+async function saveListingWidgetPos(pos) {
+  try {
+    if (!chrome?.storage?.local) return false;
+    const left = Number(pos?.left);
+    const top = Number(pos?.top);
+    if (!Number.isFinite(left) || !Number.isFinite(top)) return false;
+    const next = { left: Math.round(left), top: Math.round(top) };
+    await new Promise((resolve) => chrome.storage.local.set({ [STOCKX_LISTING_WIDGET_POS_KEY]: next }, resolve));
+    try {
+      window.__stockxListingWidgetPosCache = next;
+    } catch {}
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getListingWidgetPosCached() {
+  try {
+    const c = window.__stockxListingWidgetPosCache;
+    const left = Number(c?.left);
+    const top = Number(c?.top);
+    if (!Number.isFinite(left) || !Number.isFinite(top)) return null;
+    return { left: Math.round(left), top: Math.round(top) };
+  } catch {
+    return null;
+  }
+}
+
+try {
+  if (chrome?.storage?.onChanged?.addListener) {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      try {
+        if (areaName !== 'local') return;
+        const ch = changes?.[STOCKX_SCAN_SETTINGS_KEY];
+        if (!ch) return;
+        const next = { ...defaultScanSettings(), ...(ch.newValue || {}) };
+        window.__stockxScanSettingsCache = next;
+        // Redraw listing widget if present so toggles/labels reflect the latest settings.
+        try {
+          const w = document.getElementById('stockx-bid-opps-widget');
+          if (w && typeof ensureListingBidWidget === 'function') ensureListingBidWidget();
+        } catch {}
+      } catch {}
+    });
+  }
+} catch {}
 
 function parseDateFromText(text) {
   const s = String(text || '').replace(/\s+/g, ' ').trim();
@@ -1262,6 +1503,108 @@ function deepWalk(rootOrRoots, onValue, maxNodes = 150000) {
     } else if (isPlainObject(cur)) {
       for (const v of Object.values(cur)) stack.push(v);
     }
+  }
+}
+
+function parseDateFromUnknown(v) {
+  try {
+    if (v == null) return null;
+    if (v instanceof Date && Number.isFinite(v.getTime())) return v;
+    if (typeof v === 'number' && Number.isFinite(v)) {
+      // seconds or ms
+      const ms = v < 2_000_000_000 ? v * 1000 : v;
+      const d = new Date(ms);
+      return Number.isFinite(d.getTime()) ? d : null;
+    }
+    const s = String(v).trim();
+    if (!s) return null;
+    // Common: YYYY-MM-DD
+    const m = s.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);
+    if (m) {
+      const d = new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00.000Z`);
+      return Number.isFinite(d.getTime()) ? d : null;
+    }
+
+    // Common: MM/DD/YYYY (or M/D/YYYY). StockX often uses this in the product details.
+    const m2 = s.match(/\b(\d{1,2})\/(\d{1,2})\/(20\d{2})\b/);
+    if (m2) {
+      const mm = Math.max(1, Math.min(12, Number(m2[1])));
+      const dd = Math.max(1, Math.min(31, Number(m2[2])));
+      const yy = Number(m2[3]);
+      const d = new Date(Date.UTC(yy, mm - 1, dd, 0, 0, 0, 0));
+      return Number.isFinite(d.getTime()) ? d : null;
+    }
+
+    const ms = Date.parse(s);
+    if (Number.isFinite(ms)) {
+      const d = new Date(ms);
+      return Number.isFinite(d.getTime()) ? d : null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function extractReleaseDateBestEffort() {
+  try {
+    // 1) DOM: look for "Release Date" label near a date value.
+    try {
+      const nodes = Array.from(document.querySelectorAll('div,span,p,li,dt,dd')).slice(0, 7000);
+      const label = nodes.find((n) => /^release\s+date$/i.test(safeText(n).trim()));
+      if (label) {
+        const container = label.closest('li,div,section,dl') || label.parentElement;
+        // Prefer an adjacent/nearby node that is just a date (common StockX markup: <p>07/03/2025</p><span>Release Date</span>)
+        let txt = '';
+        try {
+          const prev = label.previousElementSibling;
+          const prevTxt = safeText(prev).trim();
+          if (/^\d{1,2}\/\d{1,2}\/20\d{2}$/.test(prevTxt) || /^\b20\d{2}-\d{2}-\d{2}\b$/.test(prevTxt)) {
+            txt = prevTxt;
+          }
+        } catch {}
+        if (!txt) txt = safeText(container || label);
+
+        const d = parseDateFromUnknown(txt);
+        if (d) return { date: d, source: 'dom_release_date', raw: txt.slice(0, 120) };
+      }
+    } catch {}
+
+    // 2) __NEXT_DATA__: scan for likely release date fields.
+    try {
+      const next = getNextData();
+      if (next) {
+        const roots = getNextDataSearchRoots(next);
+        let best = null;
+        deepWalk(
+          roots,
+          (v) => {
+            try {
+              if (!isPlainObject(v)) return;
+              for (const [k, val] of Object.entries(v)) {
+                const key = String(k || '');
+                if (!key) continue;
+                if (!/release.*date|launch.*date|drop.*date/i.test(key)) continue;
+                const d = parseDateFromUnknown(val);
+                if (!d) continue;
+                // Prefer the earliest reasonable date <= now if multiple are present.
+                const t = d.getTime();
+                if (!Number.isFinite(t)) continue;
+                if (!best || t < best.date.getTime()) {
+                  best = { date: d, source: `next_data:${key}`, raw: String(val).slice(0, 120) };
+                }
+              }
+            } catch {}
+          },
+          120000
+        );
+        if (best) return best;
+      }
+    } catch {}
+
+    return null;
+  } catch {
+    return null;
   }
 }
 
@@ -2525,32 +2868,55 @@ async function openMarketDataDialogBestEffort(timeoutMs = 14000, opts = {}) {
       } catch {}
     };
 
-    const findViewMarketDataBtn = () => {
-      // Prefer StockX's Chakra button variant: <button class="chakra-button ...">View Market Data</button>
-      const chakraButtons = Array.from(document.querySelectorAll('button.chakra-button'));
-      const exactChakra = chakraButtons.find((el) => safeText(el).trim().toLowerCase() === 'view market data');
-      if (exactChakra) return exactChakra;
+    const findMarketDataTriggerBtn = () => {
+      const textMatches = (t) => {
+        const s = String(t || '').trim().toLowerCase();
+        if (!s) return false;
+        if (s === 'market data') return true;
+        if (s === 'view market data') return true;
+        if (s === 'view all market data') return true;
+        return /(view\s+)?(all\s+)?market\s+data/.test(s);
+      };
+
+      const attrMatches = (el) => {
+        try {
+          const aria = String(el?.getAttribute?.('aria-label') || '').toLowerCase();
+          const testid = String(el?.getAttribute?.('data-testid') || '').toLowerCase();
+          if (aria.includes('market data')) return true;
+          if (testid.includes('market') && testid.includes('data')) return true;
+        } catch {}
+        return false;
+      };
+
+      // Prefer StockX's Chakra button variant when present.
+      try {
+        const chakraButtons = Array.from(document.querySelectorAll('button.chakra-button'));
+        const b1 = chakraButtons.find((el) => textMatches(safeText(el)));
+        if (b1) return b1;
+      } catch {}
 
       // Prefer within the trade box (near "Last Sale:") to avoid matching header/footer UI.
       try {
-        const nodes = Array.from(document.querySelectorAll('div,section,p,span')).slice(0, 6000);
+        const nodes = Array.from(document.querySelectorAll('div,section,p,span')).slice(0, 7000);
         const lastSaleNode = nodes.find((n) => /^last\s+sale\s*:/i.test(safeText(n)));
         const tradeBox = lastSaleNode?.closest('section,div') || null;
         if (tradeBox) {
           const btnInTradeBox = Array.from(tradeBox.querySelectorAll('button, a, [role="button"]')).find(
-            (el) => safeText(el).trim().toLowerCase() === 'view market data'
+            (el) => textMatches(safeText(el)) || attrMatches(el)
           );
           if (btnInTradeBox) return btnInTradeBox;
         }
       } catch {}
 
-      // Fallback: any button/a/role=button with exact text
-      const candidates = Array.from(document.querySelectorAll('button, a, [role="button"]'));
-      const exact = candidates.find((el) => safeText(el).trim().toLowerCase() === 'view market data');
-      if (exact) return exact;
+      // Fallback: any button/a/role=button that looks like the trigger.
+      try {
+        const candidates = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+        const b2 = candidates.find((el) => textMatches(safeText(el)) || attrMatches(el));
+        if (b2) return b2;
+      } catch {}
 
-      // Last fallback: regex match
-      return findButtonByText(/view\s+market\s+data/i);
+      // Last fallback: regex match by visible text.
+      return findButtonByText(/(view\s+)?(all\s+)?market\s+data/i);
     };
 
     const start = Date.now();
@@ -2572,7 +2938,7 @@ async function openMarketDataDialogBestEffort(timeoutMs = 14000, opts = {}) {
       }
 
       try {
-        const btn = findViewMarketDataBtn();
+        const btn = findMarketDataTriggerBtn();
         try {
           opts?.onAttempt?.(attempts, !!btn);
         } catch {}
@@ -3126,6 +3492,50 @@ function waitForElement(getEl, timeoutMs = 10000) {
   });
 }
 
+function waitForElementFast(getEl, { timeoutMs = 10000, pollMs = 50 } = {}) {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    let done = false;
+    let pollTimer = null;
+    let obs = null;
+
+    const finish = (v) => {
+      if (done) return;
+      done = true;
+      try {
+        if (pollTimer) clearInterval(pollTimer);
+      } catch {}
+      try {
+        obs?.disconnect?.();
+      } catch {}
+      resolve(v || null);
+    };
+
+    const check = () => {
+      try {
+        const el = getEl();
+        if (el) return finish(el);
+      } catch {}
+      if (Date.now() - start > timeoutMs) return finish(null);
+    };
+
+    // Immediate check
+    check();
+    if (done) return;
+
+    // MutationObserver (fast path)
+    try {
+      obs = new MutationObserver(() => check());
+      obs.observe(document.documentElement || document.body, { childList: true, subtree: true, attributes: true });
+    } catch {}
+
+    // Poll fallback (safety net)
+    try {
+      pollTimer = setInterval(check, Math.max(16, Number(pollMs) || 50));
+    } catch {}
+  });
+}
+
 function waitForUrlChange(oldUrl, timeoutMs = 10000) {
   return new Promise((resolve) => {
     const start = Date.now();
@@ -3263,6 +3673,44 @@ async function savePendingOfferRequestById(id, req) {
   }
 }
 
+const STOCKX_LAST_BID_RETURN_KEY = 'stockxLastBidReturn';
+
+async function setLastBidReturn(payload) {
+  try {
+    if (!chrome?.storage?.local) return false;
+    const p = payload && typeof payload === 'object' ? payload : null;
+    if (!p) return false;
+    await new Promise((resolve) => chrome.storage.local.set({ [STOCKX_LAST_BID_RETURN_KEY]: { ...p, savedAt: Date.now() } }, resolve));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function getLastBidReturn() {
+  try {
+    if (!chrome?.storage?.local) return null;
+    const res = await new Promise((resolve) => chrome.storage.local.get([STOCKX_LAST_BID_RETURN_KEY], resolve));
+    const v = res?.[STOCKX_LAST_BID_RETURN_KEY];
+    return v && typeof v === 'object' ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+async function clearLastBidReturnIfMatches(id) {
+  try {
+    if (!chrome?.storage?.local) return false;
+    const cur = await getLastBidReturn();
+    if (!cur) return true;
+    if (id && String(cur?.id || '') !== String(id || '')) return true;
+    await new Promise((resolve) => chrome.storage.local.remove([STOCKX_LAST_BID_RETURN_KEY], resolve));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function loadPendingOfferRequestById(id) {
   try {
     if (!chrome?.storage?.local) return null;
@@ -3285,6 +3733,9 @@ async function deletePendingOfferRequestById(id) {
     delete map[id];
     await new Promise((resolve) => chrome.storage.local.set({ stockxPendingOfferRequests: map }, resolve));
     console.log('🟦 StockX Helper: deleted pending offer request (by id)', { id });
+    try {
+      await clearLastBidReturnIfMatches(id);
+    } catch {}
     return true;
   } catch {
     return false;
@@ -3347,33 +3798,49 @@ async function runPendingOfferRequestIfPresent() {
     if (!isBuyFlowPath()) return;
     console.log('🟦 StockX Helper: buy flow page detected', { url: location.href });
     const extId = getExtBidIdFromUrl();
-    const req = extId ? await loadPendingOfferRequestById(extId) : await loadPendingOfferRequest();
-    if (!req) {
+    const req = (() => {
+      // 1) Prefer explicit extBidId.
+      // 2) Fallback to "last bid return" if StockX dropped the query param during navigation.
+      // 3) Finally fallback to the legacy single pending request.
+      return (async () => {
+        if (extId) return await loadPendingOfferRequestById(extId);
+        const last = await getLastBidReturn();
+        const lastId = String(last?.id || '');
+        if (lastId) {
+          const byId = await loadPendingOfferRequestById(lastId);
+          if (byId) return byId;
+        }
+        return await loadPendingOfferRequest();
+      })();
+    })();
+    const resolvedReq = await req;
+    if (!resolvedReq) {
       console.log('🟦 StockX Helper: no pending offer request found in storage');
       return;
     }
 
     // Ignore stale requests (>10 min)
-    if (typeof req.createdAt === 'number' && Date.now() - req.createdAt > 10 * 60 * 1000) {
+    if (typeof resolvedReq.createdAt === 'number' && Date.now() - resolvedReq.createdAt > 10 * 60 * 1000) {
       if (extId) await deletePendingOfferRequestById(extId);
       else await clearPendingOfferRequest();
+      try { await clearLastBidReturnIfMatches(extId || String((await getLastBidReturn())?.id || '')); } catch {}
       return;
     }
 
     const slug = getOfferSlugFromUrl();
     const sizeKey = normalizeSizeKey(getSelectedSizeFromUrl());
 
-    const reqSlug = String(req.slug || '').trim();
-    const reqSize = normalizeSizeKey(req.size);
+    const reqSlug = String(resolvedReq.slug || '').trim();
+    const reqSize = normalizeSizeKey(resolvedReq.size);
     if (!reqSlug || !slug || reqSlug !== slug) return;
     if (reqSize && sizeKey && !sizeKeyMatches(reqSize, sizeKey)) return;
 
     // Avoid running twice on the same page load.
-    const pageKey = `${req.id}::${location.pathname}::${location.search}`;
+    const pageKey = `${resolvedReq.id}::${location.pathname}::${location.search}`;
     if (window.__stockxOfferAutoRanForPageKey === pageKey) return;
     window.__stockxOfferAutoRanForPageKey = pageKey;
 
-    console.log('🟦 StockX Helper: running pending offer request on buy flow page', { slug, sizeKey, bid: req.bid, req });
+    console.log('🟦 StockX Helper: running pending offer request on buy flow page', { slug, sizeKey, bid: resolvedReq.bid, req: resolvedReq });
 
     // If we're already on the review screen, just click Confirm Bid.
     const confirmNow = findConfirmBidButton(document);
@@ -3385,8 +3852,19 @@ async function runPendingOfferRequestIfPresent() {
       try {
         confirmNow.click();
       } catch {}
-      if (extId) await deletePendingOfferRequestById(extId);
+      const last = await getLastBidReturn();
+      const effectiveId = extId || String(last?.id || '');
+      if (effectiveId) await deletePendingOfferRequestById(effectiveId);
       else await clearPendingOfferRequest();
+      // Return to the originating page so the user can place more bids.
+      try {
+        const openerTabId = Number(resolvedReq?.openerTabId || last?.openerTabId);
+        const returnUrl = String(resolvedReq?.returnUrl || last?.returnUrl || '');
+        if (openerTabId || returnUrl) {
+          chrome.runtime?.sendMessage?.({ action: 'closeSelfAndFocus', openerTabId, returnUrl }, () => void chrome.runtime.lastError);
+        }
+      } catch {}
+      try { await clearLastBidReturnIfMatches(effectiveId); } catch {}
       return;
     }
 
@@ -3403,7 +3881,7 @@ async function runPendingOfferRequestIfPresent() {
     // Set bid
     try {
       bidInput.focus();
-      bidInput.value = String(req.bid || '').trim();
+      bidInput.value = String(resolvedReq.bid || '').trim();
       bidInput.dispatchEvent(new Event('input', { bubbles: true }));
       bidInput.dispatchEvent(new Event('change', { bubbles: true }));
     } catch {}
@@ -3421,12 +3899,20 @@ async function runPendingOfferRequestIfPresent() {
     } catch {}
 
     // Capture fees automatically (zero extra steps)
-    await waitForAndCaptureFees({ root: document, timeoutMs: 8000 });
+    // Don't block on this — it can take a few seconds and makes the flow feel slow.
+    try {
+      const p = waitForAndCaptureFees({ root: document, timeoutMs: 8000 });
+      await Promise.race([p, new Promise((r) => setTimeout(r, 250))]);
+    } catch {}
 
     // Click Review Bid then Confirm Bid
-    const reviewBtn = await waitForElement(
-      () => document.querySelector('button[data-testid="checkout-confirm-button"]') || findOfferSubmitButton(document),
-      15000
+    const reviewBtn = await waitForElementFast(
+      () => {
+        const b = document.querySelector('button[data-testid="checkout-confirm-button"]') || findOfferSubmitButton(document);
+        if (b && (b.disabled || b.getAttribute?.('aria-disabled') === 'true')) return null;
+        return b;
+      },
+      { timeoutMs: 15000, pollMs: 40 }
     );
     if (!reviewBtn) {
       console.warn('⚠️ StockX Helper: Review Bid button not found');
@@ -3437,8 +3923,43 @@ async function runPendingOfferRequestIfPresent() {
       reviewBtn.click();
     } catch {}
 
-    // Do NOT clear pending here; Review may navigate. We'll pick it up on the next /buy/ page and click Confirm.
-    await updatePendingOfferRequest({ stage: 'review_clicked' });
+    // Record stage for debugging.
+    try {
+      await updatePendingOfferRequest({ stage: 'review_clicked' });
+    } catch {}
+
+    // Step 2: Confirm Bid (often appears after review, sometimes without a full navigation).
+    const confirmBtn = await waitForElementFast(() => findConfirmBidButton(document), { timeoutMs: 12000, pollMs: 40 });
+    if (!confirmBtn) {
+      // If review navigates, the next /buy/ page load will hit the confirmNow branch.
+      console.warn('⚠️ StockX Helper: Confirm Bid button did not appear yet (may navigate).');
+      return;
+    }
+    try {
+      console.log('🟦 StockX Helper: clicking Confirm Bid...');
+      confirmBtn.click();
+    } catch {}
+
+    // Cleanup + return to opener/listing page so user can keep bidding.
+    try {
+      const last = await getLastBidReturn();
+      const effectiveId = extId || String(last?.id || '');
+      if (effectiveId) await deletePendingOfferRequestById(effectiveId);
+      else await clearPendingOfferRequest();
+    } catch {}
+    try {
+      const last = await getLastBidReturn();
+      const openerTabId = Number(resolvedReq?.openerTabId || last?.openerTabId);
+      const returnUrl = String(resolvedReq?.returnUrl || last?.returnUrl || '');
+      if (openerTabId || returnUrl) {
+        chrome.runtime?.sendMessage?.({ action: 'closeSelfAndFocus', openerTabId, returnUrl }, () => void chrome.runtime.lastError);
+      }
+    } catch {}
+    try {
+      const last = await getLastBidReturn();
+      const effectiveId = extId || String(last?.id || '');
+      await clearLastBidReturnIfMatches(effectiveId);
+    } catch {}
   } catch (e) {
     console.warn('⚠️ runPendingOfferRequestIfPresent failed:', e);
   }
@@ -3447,13 +3968,22 @@ async function runPendingOfferRequestIfPresent() {
 async function openBidInNewTab({ slug, sizeKey, bid }) {
   try {
     const id = `extBid_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-    const ok = await savePendingOfferRequestById(id, { slug, size: sizeKey, bid });
+    // Store where we came from so the bid tab can return focus back after confirming.
+    const returnUrl = String(location.href || '');
+    const ok = await savePendingOfferRequestById(id, { slug, size: sizeKey, bid, returnUrl });
     if (!ok) return { ok: false, error: 'Failed to save bid request' };
     const url = `${location.origin}/buy/${slug}?size=${encodeURIComponent(sizeKey)}&defaultBid=true&extBidId=${encodeURIComponent(id)}`;
     const res = await new Promise((resolve) => {
       chrome.runtime.sendMessage({ action: 'openTab', url }, (resp) => resolve(resp));
     });
     if (!res?.success) return { ok: false, error: res?.error || 'Failed to open tab' };
+    try {
+      if (res?.openerTabId) {
+        await savePendingOfferRequestById(id, { slug, size: sizeKey, bid, returnUrl, openerTabId: res.openerTabId, openerUrl: res.openerUrl || '' });
+        // Also persist a "last return target" in case StockX navigates and drops extBidId from the URL.
+        await setLastBidReturn({ id, slug, size: sizeKey, bid, returnUrl, openerTabId: res.openerTabId, openerUrl: res.openerUrl || '' });
+      }
+    } catch {}
     return { ok: true, tabId: res.tabId || null };
   } catch (e) {
     return { ok: false, error: e?.message || String(e) };
@@ -3564,7 +4094,7 @@ async function placeBidViaUi({ size, bid }) {
       if (slug && sizeKey) {
         const offerUrl = `${location.origin}/buy/${slug}?size=${encodeURIComponent(sizeKey)}&defaultBid=true`;
         // Save pending request so the offer page can auto-fill and submit.
-        const saved = await savePendingOfferRequest({ slug, size: sizeKey, bid });
+        const saved = await savePendingOfferRequest({ slug, size: sizeKey, bid, returnUrl: oldUrl });
         console.log('🟪 StockX Helper: pending request save result', { saved, offerUrl });
         if (!saved) return { ok: false, error: 'Could not save pending offer request (storage unavailable).' };
         const nav = await navigateToOfferUrlRobust(offerUrl, { timeoutMs: 9000 });
@@ -3588,7 +4118,7 @@ async function placeBidViaUi({ size, bid }) {
         const slug = getProductSlugFromUrl();
         const sizeKey = normalizeSizeKey(size || getSelectedSizeBestEffort());
         console.log('🟪 StockX Helper: using CTA href navigation', { slug, sizeKey, url });
-        const saved = await savePendingOfferRequest({ slug, size: sizeKey, bid });
+        const saved = await savePendingOfferRequest({ slug, size: sizeKey, bid, returnUrl: oldUrl });
         console.log('🟪 StockX Helper: pending request save result', { saved });
         if (!saved) return { ok: false, error: 'Could not save pending offer request (storage unavailable).' };
         const nav = await navigateToOfferUrlRobust(url, { timeoutMs: 9000 });
@@ -3698,7 +4228,11 @@ async function placeBidViaUi({ size, bid }) {
 
   // Zero extra steps: once the offer flow is open, wait for Shipping/Processing/etc to render and cache them.
   // This powers all size calculations going forward.
-  await waitForAndCaptureFees({ root, timeoutMs: 8000 });
+  // Don't block the bid flow on fee rendering; it can be slow. Capture in the background.
+  try {
+    const p = waitForAndCaptureFees({ root, timeoutMs: 8000 });
+    await Promise.race([p, new Promise((r) => setTimeout(r, 250))]);
+  } catch {}
 
   // Profit guardrail (30d): only enforce when the selected size has >=4 sales in last 30 days.
   const selectedSizeKey = normalizeSizeKey(size || getSelectedSizeBestEffort());
@@ -3751,7 +4285,7 @@ async function placeBidViaUi({ size, bid }) {
   }
 
   // Step 2: Confirm Bid (some flows require a second click)
-  const confirmBtn = await waitForElement(() => findConfirmBidButton(document), 8000);
+  const confirmBtn = await waitForElementFast(() => findConfirmBidButton(document), { timeoutMs: 8000, pollMs: 40 });
   if (!confirmBtn) {
     return { ok: false, error: 'Review Bid clicked, but Confirm Bid button never appeared.' };
   }
@@ -3761,6 +4295,17 @@ async function placeBidViaUi({ size, bid }) {
   } catch {
     return { ok: false, error: 'Failed to click Confirm Bid.' };
   }
+
+  // After confirming, return the user to where they started so they can place more bids quickly.
+  try {
+    if (oldUrl && typeof oldUrl === 'string' && !oldUrl.includes('/buy/')) {
+      setTimeout(() => {
+        try {
+          if (location.pathname.startsWith('/buy/')) location.href = oldUrl;
+        } catch {}
+      }, 3500);
+    }
+  } catch {}
 
   return { ok: true };
   } finally {
@@ -3820,8 +4365,11 @@ function renderProductWidget({ marketData, recentSales }) {
 
   widget.innerHTML = `
     <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px;">
-      <div style="font-weight:800; color:#c7d2fe;">StockX Helper</div>
-      <button data-role="close" style="background:none;border:none;color:rgba(255,255,255,0.8);cursor:pointer;font-size:18px;">×</button>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <div style="font-weight:800; color:#c7d2fe;">StockX Helper</div>
+        <button title="Settings" data-role="open-settings" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:rgba(255,255,255,0.9); cursor:pointer; padding:4px 8px; border-radius:10px; font-weight:900; font-size:12px;">⚙</button>
+      </div>
+      <button data-role="close" title="Close" style="background:none;border:none;color:rgba(255,255,255,0.8);cursor:pointer;font-size:18px;">×</button>
     </div>
 
     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-bottom:10px;">
@@ -3901,6 +4449,13 @@ function renderProductWidget({ marketData, recentSales }) {
     <div data-role="status" style="margin-top:8px; font-size:11px; color:rgba(255,255,255,0.7);"></div>
   `;
 
+  widget.querySelector('[data-role="open-settings"]')?.addEventListener('click', (e) => {
+    try {
+      e.preventDefault();
+      e.stopPropagation();
+      openExtensionSettingsTab();
+    } catch {}
+  });
   widget.querySelector('[data-role="close"]')?.addEventListener('click', () => widget.remove());
   widget.querySelector('[data-role="debug"]')?.addEventListener('click', (e) => {
     e.preventDefault();
@@ -4622,13 +5177,16 @@ async function readMarketDataTablesOnce(
   { maxAsks = 250, maxBids = 250, maxSales = 450, openTimeoutMs = 9000, onStage, onAttempt } = {}
 ) {
   const foundMarketDataButton =
-    !!Array.from(document.querySelectorAll('button.chakra-button')).find(
-      (b) => safeText(b).trim().toLowerCase() === 'view market data'
+    !!Array.from(document.querySelectorAll('button.chakra-button')).find((b) =>
+      /(view\s+)?(all\s+)?market\s+data/i.test(safeText(b).trim())
     ) ||
-    !!Array.from(document.querySelectorAll('button, a, [role="button"]')).find(
-      (b) => safeText(b).trim().toLowerCase() === 'view market data'
-    ) ||
-    !!findButtonByText(/view\s+market\s+data/i);
+    !!Array.from(document.querySelectorAll('button, a, [role="button"]')).find((b) => {
+      const t = safeText(b).trim();
+      const aria = String(b?.getAttribute?.('aria-label') || '');
+      const testid = String(b?.getAttribute?.('data-testid') || '');
+      return /(view\s+)?(all\s+)?market\s+data/i.test(t) || /market\s+data/i.test(aria) || (/market/i.test(testid) && /data/i.test(testid));
+    }) ||
+    !!findButtonByText(/(view\s+)?(all\s+)?market\s+data/i);
 
   const openDebug = { debugVersion: 2, foundMarketDataButton, attempts: 0, foundButton: false, clicked: false, opened: false, openedVia: '' };
   onStage?.('market data', 'opening');
@@ -5840,13 +6398,47 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
 
     const slug = getProductSlugFromUrl() || '';
     const title = safeText(document.querySelector('h1')) || '';
-    // Listing-scan opportunity rules:
-    // - require >=4 sales in last 30d (per size)
-    // - require >=$15 profit assuming a flat $21 fee (shipping + processing)
-    // Profit check: lowestAsk - (highestBid + feeSum) >= minProfit
-    const feeSum = 21;
-    const minProfit = 15;
+    // Listing-scan opportunity rules are configurable in extension settings.
+    const settings = await loadScanSettings();
+    const feeSum = Number(settings?.feeSum);
+    const minProfit = Number(settings?.minProfit);
+    const minSales30d = Number(settings?.minSales30d);
+    const excludeRecentReleaseDays = Number(settings?.excludeRecentReleaseDays);
     let sizeAll = null;
+
+    // Optional: exclude products that released within the last N days (default 30).
+    // Best-effort, only applies when we can detect a release date.
+    try {
+      if (Number.isFinite(excludeRecentReleaseDays) && excludeRecentReleaseDays > 0) {
+        const rel = extractReleaseDateBestEffort();
+        const d = rel?.date instanceof Date ? rel.date : null;
+        if (d && Number.isFinite(d.getTime())) {
+          const now = Date.now();
+          const ageMs = now - d.getTime();
+          const maxMs = excludeRecentReleaseDays * 24 * 60 * 60 * 1000;
+          if (ageMs >= 0 && ageMs <= maxMs) {
+            return {
+              success: true,
+              slug,
+              title,
+              releaseDate: d.toISOString().slice(0, 10),
+              releaseDateSource: rel?.source || 'unknown',
+              releaseExcluded: true,
+              releaseExcludedDays: Math.round(excludeRecentReleaseDays),
+              opportunities: [],
+              viableSizeCount: 0,
+              eliminatedByAsk: 0,
+              sizeOptionsCount: 0,
+              salesRows: 0,
+              asksRows: 0,
+              bidsRows: 0,
+              foundMarketDataButton: false,
+              openedMarketData: false
+            };
+          }
+        }
+      }
+    } catch {}
 
     // 1) Optional: size dropdown scrape (can be flaky in background tabs, and unnecessary for listing scans)
     let sizeOptions = [];
@@ -5941,6 +6533,22 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
       if (!prev || (Number(s.count) || 0) > (Number(prev.count) || 0)) statsByKey.set(k, s);
     }
 
+    // KPI: lowest sold price in last ~2 months (~60 days) per size (only shown for profitable opportunities).
+    const lowestSold2moByKey = new Map(); // sizeKey -> number
+    try {
+      const cutoff = Date.now() - 60 * 24 * 60 * 60 * 1000;
+      for (const s of Array.isArray(sales) ? sales : []) {
+        const d = getSaleLocalDateBestEffort(s);
+        if (!d || d.getTime() < cutoff) continue;
+        const k = normalizeSizeKey(s?.size);
+        if (!k) continue;
+        const price = typeof s?.price === 'number' ? s.price : toNumberMaybe(s?.price);
+        if (!isPlausibleUsd(price)) continue;
+        const prev = lowestSold2moByKey.get(k);
+        if (!Number.isFinite(prev) || price < prev) lowestSold2moByKey.set(k, price);
+      }
+    } catch {}
+
     // Build a label map from market rows (often cleaner than sales labels).
     const labelByKey = new Map();
     for (const a of Array.isArray(asks) ? asks : []) {
@@ -5956,6 +6564,7 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
 
     const opportunities = [];
     let eliminatedByAsk = 0;
+    let eliminatedByAvg30d = 0;
     const viableSizeKeys = new Set();
 
     for (const [sizeKey, hb] of hbBySizeKey.entries()) {
@@ -5964,7 +6573,7 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
 
       const stat = statsByKey.get(sizeKey);
       const salesCount = Number(stat?.count) || 0;
-      if (salesCount < 4) continue;
+      if (Number.isFinite(minSales30d) && minSales30d >= 0 && salesCount < minSales30d) continue;
 
       const ask = Number(askBySizeKey.get(sizeKey));
       if (!Number.isFinite(ask) || ask <= 0) continue;
@@ -5975,6 +6584,15 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
       const profit = ask - (highestBid + feeSum);
       if (profit < minProfit) {
         eliminatedByAsk += 1;
+        continue;
+      }
+
+      // New rule: "all-in cost" must be at or below Avg30d sale price.
+      // all-in cost = highestBid + feeSum
+      const avg30d = Number(stat?.avg);
+      const allIn = highestBid + feeSum;
+      if (!Number.isFinite(avg30d) || avg30d <= 0 || allIn > avg30d) {
+        eliminatedByAvg30d += 1;
         continue;
       }
 
@@ -5989,7 +6607,12 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
         suggestedBid,
         maxBid,
         lowestAsk: Math.floor(ask),
-        avg30d: Number.isFinite(Number(stat?.avg)) ? Math.round(Number(stat.avg)) : null,
+        profit: Math.floor(profit),
+        lowestSold2mo: (() => {
+          const v = Number(lowestSold2moByKey.get(sizeKey));
+          return Number.isFinite(v) ? Math.floor(v) : null;
+        })(),
+        avg30d: Number.isFinite(avg30d) ? Math.round(avg30d) : null,
         sales30d: salesCount,
         edge: maxBid - highestBid
       });
@@ -6036,6 +6659,7 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
       sizeOptionsCount,
       viableSizeCount,
       eliminatedByAsk,
+      eliminatedByAvg30d,
       opportunities
     };
   } catch (e) {
@@ -6047,6 +6671,31 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
 try {
   if (chrome?.runtime?.onMessage?.addListener) {
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      if (request?.action === 'collectListingProductUrls') {
+        try {
+          const maxItems = Number.isFinite(Number(request?.maxItems)) ? Math.max(1, Math.min(48, Number(request.maxItems))) : 48;
+          const opts = request?.opts && typeof request.opts === 'object' ? request.opts : {};
+          const urls = collectListingProductUrls(maxItems, opts);
+          sendResponse({
+            success: true,
+            url: location.href,
+            page: (() => {
+              try {
+                const u = new URL(location.href);
+                const p = Number(u.searchParams.get('page') || '1');
+                return Number.isFinite(p) && p > 0 ? p : 1;
+              } catch {
+                return 1;
+              }
+            })(),
+            urls
+          });
+        } catch (e) {
+          sendResponse({ success: false, error: e?.message || String(e), urls: [] });
+        }
+        return true;
+      }
+
       if (request?.action === 'scanProductBidOpportunities') {
         // Hard cap per product so background scans never "hang" on a single shoe.
         const task = scanThisProductForBidOpportunities({ mode: request?.mode });
@@ -6070,6 +6719,62 @@ try {
       }
     });
   }
+} catch {}
+
+// --- Global safety: handle "Extension context invalidated" gracefully ---
+// This happens when the extension reloads/updates while a StockX tab is still open.
+// Any further chrome.runtime calls from that old content-script context can throw.
+try {
+  const handleInvalidated = () => {
+    try {
+      const state = window.__stockxListingBidScanState;
+      if (state && typeof state === 'object') {
+        state.scanId = '';
+        state.pendingStop = false;
+        state.stage = 'error: Extension context invalidated — reload extension and hard refresh this tab.';
+      }
+    } catch {}
+    try {
+      const w = document.getElementById('stockx-bid-opps-widget');
+      if (w && typeof ensureListingBidWidget === 'function') ensureListingBidWidget();
+    } catch {}
+    try {
+      const w2 = document.getElementById('stockx-price-tracker-widget');
+      if (w2) {
+        const status = w2.querySelector?.('[data-role="status"]');
+        if (status) status.textContent = 'Extension updated — hard refresh this StockX tab to re-enable scanning.';
+      }
+    } catch {}
+  };
+
+  window.addEventListener(
+    'error',
+    (e) => {
+      const msg = String(e?.message || '');
+      if (/Extension context invalidated/i.test(msg)) {
+        try {
+          e.preventDefault?.();
+          e.stopImmediatePropagation?.();
+        } catch {}
+        handleInvalidated();
+      }
+    },
+    true
+  );
+
+  window.addEventListener(
+    'unhandledrejection',
+    (e) => {
+      const msg = String(e?.reason?.message || e?.reason || '');
+      if (/Extension context invalidated/i.test(msg)) {
+        try {
+          e.preventDefault?.();
+        } catch {}
+        handleInvalidated();
+      }
+    },
+    true
+  );
 } catch {}
 
 // --- Listing-page "Bid Opportunities" widget ---
@@ -6200,6 +6905,13 @@ function collectListingProductUrls(max = 48, opts = {}) {
   const urls = [];
   const seen = new Set();
   const anchors = Array.from(document.querySelectorAll('a[href^="/"]'));
+  const isSearch = (() => {
+    try {
+      return String(location.pathname || '').toLowerCase().startsWith('/search');
+    } catch {
+      return false;
+    }
+  })();
 
   const looksLikeProductCardLink = (a) => {
     try {
@@ -6216,18 +6928,34 @@ function collectListingProductUrls(max = 48, opts = {}) {
     try {
       const onlySneakers = !!opts.onlySneakers;
       const skipOneSize = !!opts.skipOneSize;
-      if (!onlySneakers && !skipOneSize) return false;
+      const includeCategories = Array.isArray(opts.includeCategories) ? opts.includeCategories : [];
+      if (!onlySneakers && !skipOneSize && includeCategories.length === 0) return false;
 
       const card = a.closest('article,li,[role="listitem"],div') || a;
       const t = safeText(card).toLowerCase();
+
+      if (opts.excludeSponsored) {
+        if (t.includes('sponsored')) return true;
+      }
 
       if (skipOneSize) {
         if (t.includes('one size')) return true;
       }
 
-      if (onlySneakers) {
-        const nonSneakerSignals = ['collectibles', 'electronics', 'trading cards', 'handbags', 'watches', 'streetwear'];
-        if (nonSneakerSignals.some((w) => t.includes(w))) return true;
+      // Category allowlist (best-effort). If we can detect a category and it's not allowed, skip it.
+      const allowed = onlySneakers ? ['sneakers'] : includeCategories;
+      if (allowed && allowed.length) {
+        const signals = [
+          { key: 'sneakers', words: ['sneakers'] },
+          { key: 'streetwear', words: ['streetwear'] },
+          { key: 'collectibles', words: ['collectibles'] },
+          { key: 'electronics', words: ['electronics'] },
+          { key: 'trading-cards', words: ['trading cards', 'trading-cards'] },
+          { key: 'handbags', words: ['handbags'] },
+          { key: 'watches', words: ['watches'] }
+        ];
+        const detected = signals.find((s) => s.words.some((w) => t.includes(w)))?.key || '';
+        if (detected && !allowed.includes(detected)) return true;
       }
 
       return false;
@@ -6235,6 +6963,58 @@ function collectListingProductUrls(max = 48, opts = {}) {
       return false;
     }
   };
+
+  // Search-page fallback: users reported every even "row" is sponsored on some search grids.
+  // If excludeSponsored is enabled and we can identify product-card containers, we skip every even card (2,4,6...)
+  // *only* when we don't see explicit "Sponsored" text anywhere.
+  try {
+    if (isSearch && opts.excludeSponsored) {
+      const cards = Array.from(
+        document.querySelectorAll('article,[role="listitem"],li,[data-testid*="product" i],[data-testid*="tile" i]')
+      ).slice(0, 400);
+      const cardAnchors = [];
+      let sponsoredTextSeen = false;
+      for (const c of cards) {
+        const t = safeText(c).toLowerCase();
+        if (t.includes('sponsored')) sponsoredTextSeen = true;
+        const as = Array.from(c.querySelectorAll('a[href^="/"]'));
+        const a = as.find((x) => {
+          try {
+            const u = new URL(x.getAttribute('href') || '', location.origin);
+            return isLikelyProductPathForListing(u.pathname);
+          } catch {
+            return false;
+          }
+        });
+        if (a) cardAnchors.push(a);
+        if (cardAnchors.length >= max * 3) break;
+      }
+
+      if (!sponsoredTextSeen && cardAnchors.length >= 20) {
+        for (let i = 0; i < cardAnchors.length && urls.length < max; i++) {
+          // Skip even rows: 2,4,6... => i is 1,3,5... (0-based odd)
+          if (i % 2 === 1) continue;
+          const a = cardAnchors[i];
+          const href = a.getAttribute('href') || '';
+          let u = null;
+          try {
+            u = new URL(href, location.origin);
+          } catch {
+            continue;
+          }
+          if (!isLikelyProductPathForListing(u.pathname)) continue;
+          if (String(u.searchParams.get('sponsored') || '').toLowerCase() === 'true') continue;
+          if (!looksLikeProductCardLink(a)) continue;
+          if (shouldSkipByCardText(a)) continue;
+          const normalized = `${u.origin}${u.pathname}`;
+          if (seen.has(normalized)) continue;
+          seen.add(normalized);
+          urls.push(normalized);
+        }
+        if (urls.length) return urls;
+      }
+    }
+  } catch {}
 
   for (const a of anchors) {
     const href = a.getAttribute('href') || '';
@@ -6245,12 +7025,22 @@ function collectListingProductUrls(max = 48, opts = {}) {
       continue;
     }
     if (!isLikelyProductPathForListing(u.pathname)) continue;
+    if (opts.excludeSponsored && String(u.searchParams.get('sponsored') || '').toLowerCase() === 'true') continue;
     if (!looksLikeProductCardLink(a)) continue;
     if (shouldSkipByCardText(a)) continue;
     // Ignore links that are clearly not product cards (e.g. header/footer)
     const txt = safeText(a);
     if (txt && txt.length > 80) continue;
-    const key = u.toString();
+    // Normalize sponsored / tracking / size params to a canonical product URL.
+    // Listing scans will force Size=All, so keeping ?size=... is unnecessary and can cause flakiness.
+    const normalized = (() => {
+      try {
+        return `${u.origin}${u.pathname}`;
+      } catch {
+        return u.toString();
+      }
+    })();
+    const key = normalized;
     if (seen.has(key)) continue;
     seen.add(key);
     urls.push(key);
@@ -6263,10 +7053,15 @@ function formatOppRow(opp, { slug, url } = {}) {
   const size = String(opp.sizeLabel || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const hb = Number(opp.highestBid);
   const ask = Number(opp.lowestAsk);
-  const profit = Number.isFinite(ask) && Number.isFinite(hb) ? Math.floor(ask - hb - 21) : null;
+  const profit =
+    Number.isFinite(Number(opp.profit)) ? Math.floor(Number(opp.profit)) :
+    Number.isFinite(ask) && Number.isFinite(hb) ? Math.floor(ask - hb - 21) :
+    null;
   const bidTxt = Number.isFinite(hb) ? hb : '—';
   const askTxt = Number.isFinite(ask) ? ask : '—';
   const profitTxt = profit == null ? '—' : `${profit >= 0 ? '+' : ''}${profit}`;
+  const low2mo = Number(opp.lowestSold2mo);
+  const low2moTxt = Number.isFinite(low2mo) ? String(Math.round(low2mo)) : '—';
 
   const sizeParam = String(opp.sizeParam || stockxSizeParamFromLabel(opp.sizeLabel) || '').trim();
   const canOpen = !!(url && sizeParam);
@@ -6277,12 +7072,35 @@ function formatOppRow(opp, { slug, url } = {}) {
        </button>`
     : '';
 
-  return `<div style="display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:12px;">
-    <div style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:800;">${size}</div>
-    <div style="display:flex; align-items:center; gap:10px; white-space:nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;">
+  return `<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; font-size:12px; min-width:0;">
+    <div title="${size}" style="
+      flex: 1;
+      min-width: 84px;
+      font-weight: 800;
+      line-height: 1.15;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      white-space: normal;
+      word-break: break-word;
+    ">${size}</div>
+    <div style="
+      display:flex;
+      align-items:center;
+      justify-content:flex-end;
+      flex-wrap:wrap;
+      row-gap:6px;
+      column-gap:10px;
+      white-space:normal;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      flex: 0 0 auto;
+      max-width: 240px;
+    ">
       <span>Bid ${bidTxt}</span>
       <span>Ask ${askTxt}</span>
       <span>Profit ${profitTxt}</span>
+      <span>Low60d ${low2moTxt}</span>
       ${openBtn}
     </div>
   </div>`;
@@ -6303,11 +7121,45 @@ function ensureListingBidWidget() {
       stage: '',
       results: {},
       maxItems: 48,
+      maxPages: 5,
       concurrency: 1,
       onlySneakers: false,
       skipOneSize: false,
+      biddingMode: false,
+      showNonProfitable: false,
+      debugClicks: false,
       pendingStop: false
     });
+
+  // Load saved widget position once (async), then re-render.
+  try {
+    if (!window.__stockxListingWidgetPosLoaded && !window.__stockxListingWidgetPosLoading) {
+      window.__stockxListingWidgetPosLoading = true;
+      loadListingWidgetPos().then(() => {
+        try {
+          window.__stockxListingWidgetPosLoaded = true;
+          window.__stockxListingWidgetPosLoading = false;
+          ensureListingBidWidget();
+        } catch {}
+      });
+    }
+  } catch {}
+
+  // Best-effort load bid history into a cache for UI rendering.
+  try {
+    if (!window.__stockxBidHistoryLoading) {
+      window.__stockxBidHistoryLoading = true;
+      loadBidHistoryMap().then((m) => {
+        try {
+          window.__stockxBidHistoryCache = m || {};
+        } catch {}
+        try {
+          window.__stockxBidHistoryLoading = false;
+          ensureListingBidWidget();
+        } catch {}
+      });
+    }
+  } catch {}
 
   const runtimeSendMessageSafe = (msg, cb) => {
     try {
@@ -6362,6 +7214,28 @@ function ensureListingBidWidget() {
               void chrome.runtime.lastError;
               const s = res?.[stateKey];
               const r = res?.[resultsKey];
+              // Avoid re-rendering while the user is interacting with the widget; otherwise the DOM
+              // can be replaced mid-click and inputs/buttons feel "unclickable".
+              const hovering = !!window.__stockxListingWidgetHovering;
+              const widgetEl = document.getElementById('stockx-bid-opps-widget');
+              const focusedInside = !!(widgetEl && document.activeElement && widgetEl.contains(document.activeElement));
+              const interactingUntil = Number(window.__stockxListingWidgetInteractingUntil || 0);
+              const interacting = Date.now() < interactingUntil;
+
+              // Track a lightweight snapshot so we only re-render when something actually changed.
+              let snap = '';
+              try {
+                snap = JSON.stringify({
+                  scanId: String(s?.scanId || sid),
+                  stage: String(s?.stage || ''),
+                  total: Number(s?.total || 0),
+                  completed: Number(s?.completed || 0),
+                  resultCount: r && typeof r === 'object' ? Object.keys(r).length : 0
+                });
+              } catch {
+                snap = '';
+              }
+              const lastSnap = String(window.__stockxListingWidgetLastSnap || '');
               if (s && typeof s === 'object') {
                 state.scanId = String(s.scanId || sid);
                 state.stage = String(s.stage || state.stage || '');
@@ -6377,7 +7251,11 @@ function ensureListingBidWidget() {
               }
               // Avoid infinite recursion: only redraw if widget exists
               const w = document.getElementById('stockx-bid-opps-widget');
-              if (w) ensureListingBidWidget();
+              if (!w) return;
+              if (hovering || focusedInside || interacting) return;
+              if (snap && snap === lastSnap) return;
+              window.__stockxListingWidgetLastSnap = snap;
+              ensureListingBidWidget();
             });
           });
         } catch {}
@@ -6387,13 +7265,17 @@ function ensureListingBidWidget() {
 
   const widget = existing || document.createElement('div');
   widget.id = 'stockx-bid-opps-widget';
+  const savedPos = getListingWidgetPosCached();
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const safeLeft = savedPos ? clamp(savedPos.left, 8, Math.max(8, window.innerWidth - 60)) : null;
+  const safeTop = savedPos ? clamp(savedPos.top, 8, Math.max(8, window.innerHeight - 60)) : null;
   widget.style.cssText = `
     position: fixed;
-    bottom: 16px;
-    left: 16px;
+    ${savedPos ? `top: ${safeTop}px; left: ${safeLeft}px; bottom: auto;` : `bottom: 16px; left: 16px;`}
     width: 360px;
     max-height: 70vh;
-    overflow: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
     background: rgba(17, 24, 39, 0.95);
     color: #fff;
     padding: 12px;
@@ -6402,62 +7284,136 @@ function ensureListingBidWidget() {
     box-shadow: 0 12px 30px rgba(0,0,0,0.35);
     border: 1px solid rgba(34,197,94,0.25);
     font-family: Arial, sans-serif;
+    pointer-events: auto;
+    user-select: auto;
   `;
 
+  // While the cursor is over the widget, pause background-driven rerenders so clicks work reliably.
+  try {
+    widget.onmouseenter = () => {
+      window.__stockxListingWidgetHovering = true;
+    };
+    widget.onmouseleave = () => {
+      window.__stockxListingWidgetHovering = false;
+    };
+    const markInteracting = () => {
+      // Give the user a small window where we never re-render the widget,
+      // otherwise clicks/toggles can get canceled mid-flight.
+      window.__stockxListingWidgetInteractingUntil = Date.now() + 2000;
+    };
+    widget.addEventListener('mousedown', markInteracting, { capture: true });
+    widget.addEventListener('pointerdown', markInteracting, { capture: true });
+    widget.addEventListener('touchstart', markInteracting, { capture: true, passive: true });
+    widget.addEventListener('keydown', markInteracting, { capture: true });
+    widget.addEventListener('focusin', markInteracting, { capture: true });
+  } catch {}
+
   const resultEntries = Object.values(state.results || {});
+  const profitableEntries = resultEntries.filter((r) => Array.isArray(r?.opportunities) && r.opportunities.length > 0);
+  const otherEntries = resultEntries.filter((r) => !(Array.isArray(r?.opportunities) && r.opportunities.length > 0));
+  const bidHistory = (() => {
+    try {
+      const m = window.__stockxBidHistoryCache;
+      return m && typeof m === 'object' ? m : {};
+    } catch {
+      return {};
+    }
+  })();
+  const renderEntry = (r) => {
+    const title = String(r.title || r.slug || r.url || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const url = String(r.url || '');
+    const slug = String(r.slug || '');
+    const best = Array.isArray(r.opportunities) ? r.opportunities[0] : null;
+    const opps = Array.isArray(r.opportunities) ? r.opportunities.slice(0, 3) : [];
+    const bestKey = best ? bidHistoryKey({ slug, sizeParam: best.sizeParam || stockxSizeParamFromLabel(best.sizeLabel) }) : '';
+    const bestAlreadyBid = !!(bestKey && bidHistory[bestKey]);
+    const explainEmpty = () => {
+      if (r?.success === false) return `Scan failed: ${String(r.error || 'unknown error')}`;
+      if (r?.releaseExcluded) {
+        const ds = Number(r?.releaseExcludedDays) || 0;
+        const rd = String(r?.releaseDate || '');
+        return `Excluded: released within last ${ds || 30} days${rd ? ` (release: ${rd})` : ''}.`;
+      }
+      const salesRows = Number(r?.salesRows) || 0;
+      const asksRows = Number(r?.asksRows) || 0;
+      const bidsRows = Number(r?.bidsRows) || 0;
+      const foundBtn = !!r?.foundMarketDataButton;
+      const opened = !!r?.openedMarketData;
+      const sizeOptionsCount = Number(r?.sizeOptionsCount) || 0;
+      const viableSizeCount = Number(r?.viableSizeCount) || 0;
+      const eliminatedByAsk = Number(r?.eliminatedByAsk) || 0;
+      const eliminatedByAvg30d = Number(r?.eliminatedByAvg30d) || 0;
+      if (!foundBtn && !opened)
+        return 'Could not find a Market Data button on this page (StockX UI variant not detected).';
+      if (!opened && asksRows === 0 && bidsRows === 0 && salesRows === 0)
+        return 'Tried to click “Market Data” but modal didn’t open (StockX blocked automation).';
+      if (opened && asksRows === 0) return 'Could not parse Asks rows (0) — Market Data opened but UI/markup may have changed.';
+      if (!opened && asksRows === 0) return 'Could not read Asks table (Market Data didn’t open).';
+      if (opened && bidsRows === 0) return 'Could not parse Bids rows (0) — Market Data opened but UI/markup may have changed.';
+      if (!opened && bidsRows === 0) return 'Could not read Bids table (Market Data didn’t open).';
+      // Size menu is often unavailable in background tabs; we primarily rely on Bids table instead.
+      if (sizeOptionsCount === 0) return 'Size menu not readable in background tab (OK) — using Bids table instead.';
+      if (viableSizeCount === 0)
+        return `No sizes met your rules (filtered profit ${eliminatedByAsk}, avg30d ${eliminatedByAvg30d}).`;
+      if (salesRows === 0)
+        return opened ? 'Could not parse Sales rows (0) — Market Data opened but Sales didn’t load/parse.' : 'Could not read Sales table (Market Data didn’t load).';
+      return 'No sizes met your rules.';
+    };
+    const oppHtml = opps.length
+      ? opps
+          .map((o) => {
+            const sp = String(o?.sizeParam || stockxSizeParamFromLabel(o?.sizeLabel) || '').trim();
+            const k = bidHistoryKey({ slug, sizeParam: sp });
+            const already = !!(k && bidHistory[k]);
+            const badge = already
+              ? `<span style="margin-left:8px; font-size:10px; font-weight:900; padding:2px 6px; border-radius:999px; background:rgba(34,197,94,0.20); border:1px solid rgba(34,197,94,0.35); color:#bbf7d0;">BIDDED</span>`
+              : '';
+            return `${formatOppRow(o, { slug, url })}${badge}`;
+          })
+          .join('')
+      : `<div style="opacity:.65; font-size:12px;">${explainEmpty()}</div>`;
+    return `
+      <div style="border-top:1px solid rgba(255,255,255,0.08); padding-top:10px; margin-top:10px;">
+        <div style="font-weight:800; font-size:13px; margin-bottom:6px;">${title}</div>
+        ${oppHtml}
+        <div style="display:flex; gap:8px; margin-top:8px;">
+          <button data-role="open-bid" data-slug="${slug}" data-sizeparam="${best ? String(best.sizeParam || '') : ''}" data-size="${best ? String(best.sizeLabel || '') : ''}" data-bid="${best ? String(best.suggestedBid || '') : ''}" ${best && !bestAlreadyBid ? '' : 'disabled'}
+            style="flex:1; background:${best ? '#22c55e' : 'rgba(255,255,255,0.06)'}; border:1px solid rgba(255,255,255,0.10); color:${best ? '#052e14' : 'rgba(255,255,255,0.7)'}; padding:7px 8px; border-radius:10px; cursor:${best ? 'pointer' : 'not-allowed'}; font-weight:900;">
+            ${bestAlreadyBid ? 'Bidded' : 'Bid best'}
+          </button>
+        </div>
+        <div style="margin-top:6px; font-size:11px; color:rgba(255,255,255,0.55);">
+          <a href="#" data-role="why" data-url="${url}" data-slug="${slug}" style="color:#93c5fd; text-decoration:underline;">why?</a>
+        </div>
+      </div>
+    `;
+  };
+
   const itemsHtml =
     resultEntries.length === 0
       ? `<div style="opacity:.75; font-size:12px;">No results yet. Click Scan to check the first items on this page.</div>`
-      : resultEntries
-          .map((r) => {
-            const title = String(r.title || r.slug || r.url || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            const url = String(r.url || '');
-            const slug = String(r.slug || '');
-            const best = Array.isArray(r.opportunities) ? r.opportunities[0] : null;
-            const opps = Array.isArray(r.opportunities) ? r.opportunities.slice(0, 3) : [];
-            const explainEmpty = () => {
-              if (r?.success === false) return `Scan failed: ${String(r.error || 'unknown error')}`;
-              const salesRows = Number(r?.salesRows) || 0;
-              const asksRows = Number(r?.asksRows) || 0;
-              const bidsRows = Number(r?.bidsRows) || 0;
-              const foundBtn = !!r?.foundMarketDataButton;
-              const opened = !!r?.openedMarketData;
-              const sizeOptionsCount = Number(r?.sizeOptionsCount) || 0;
-              const viableSizeCount = Number(r?.viableSizeCount) || 0;
-              const eliminatedByAsk = Number(r?.eliminatedByAsk) || 0;
-              if (!foundBtn) return 'Could not find “View Market Data” button on page (page not fully loaded).';
-              if (!opened && asksRows === 0 && bidsRows === 0 && salesRows === 0)
-                return 'Tried to click “View Market Data” but modal didn’t open (StockX blocked automation).';
-              if (opened && asksRows === 0) return 'Could not parse Asks rows (0) — Market Data opened but UI/markup may have changed.';
-              if (!opened && asksRows === 0) return 'Could not read Asks table (Market Data didn’t open).';
-              if (opened && bidsRows === 0) return 'Could not parse Bids rows (0) — Market Data opened but UI/markup may have changed.';
-              if (!opened && bidsRows === 0) return 'Could not read Bids table (Market Data didn’t open).';
-              // Size menu is often unavailable in background tabs; we primarily rely on Bids table instead.
-              if (sizeOptionsCount === 0) return 'Size menu not readable in background tab (OK) — using Bids table instead.';
-              if (viableSizeCount === 0) return `All sizes failed ask-vs-bid profit check (filtered ${eliminatedByAsk}).`;
-              if (salesRows === 0) return opened ? 'Could not parse Sales rows (0) — Market Data opened but Sales didn’t load/parse.' : 'Could not read Sales table (Market Data didn’t load).';
-              return 'No sizes met ≥4 sales (30d) AND ≥$15 profit rules.';
-            };
-            const oppHtml = opps.length
-              ? opps.map((o) => formatOppRow(o, { slug, url })).join('')
-              : `<div style="opacity:.65; font-size:12px;">${explainEmpty()}</div>`;
-            return `
-              <div style="border-top:1px solid rgba(255,255,255,0.08); padding-top:10px; margin-top:10px;">
-                <div style="font-weight:800; font-size:13px; margin-bottom:6px;">${title}</div>
-                ${oppHtml}
-                <div style="display:flex; gap:8px; margin-top:8px;">
-                  <button data-role="open-bid" data-slug="${slug}" data-sizeparam="${best ? String(best.sizeParam || '') : ''}" data-size="${best ? String(best.sizeLabel || '') : ''}" data-bid="${best ? String(best.suggestedBid || '') : ''}" ${best ? '' : 'disabled'}
-                    style="flex:1; background:${best ? '#22c55e' : 'rgba(255,255,255,0.06)'}; border:1px solid rgba(255,255,255,0.10); color:${best ? '#052e14' : 'rgba(255,255,255,0.7)'}; padding:7px 8px; border-radius:10px; cursor:${best ? 'pointer' : 'not-allowed'}; font-weight:900;">
-                    Bid best
-                  </button>
-                </div>
-                <div style="margin-top:6px; font-size:11px; color:rgba(255,255,255,0.55);">
-                  <a href="#" data-role="why" data-url="${url}" data-slug="${slug}" style="color:#93c5fd; text-decoration:underline;">why?</a>
-                </div>
-              </div>
-            `;
-          })
-          .join('');
+      : (() => {
+          const top = profitableEntries.length
+            ? profitableEntries.map(renderEntry).join('')
+            : `<div style="opacity:.75; font-size:12px;">No profitable opportunities found (with current settings).</div>`;
+
+          const showOthers = !!state.showNonProfitable;
+          const others =
+            showOthers && otherEntries.length
+              ? `<details style="margin-top:10px;">
+                   <summary style="cursor:pointer; font-weight:900; font-size:12px; color:rgba(255,255,255,0.85);">
+                     No opportunities / skipped (${otherEntries.length})
+                   </summary>
+                   <div style="margin-top:8px;">${otherEntries.map(renderEntry).join('')}</div>
+                 </details>`
+              : otherEntries.length
+                ? `<div style="margin-top:10px; opacity:.65; font-size:12px;">
+                     Hidden: ${otherEntries.length} items had no opportunities (toggle “Show skipped” to view).
+                   </div>`
+                : '';
+
+          return `${top}${others}`;
+        })();
 
   const stageLine =
     state.stage && state.total
@@ -6468,12 +7424,22 @@ function ensureListingBidWidget() {
 
   widget.innerHTML = `
     <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
-      <div style="font-weight:900; color:#bbf7d0;">Bid opportunities (page)</div>
-      <button data-role="close" style="background:none;border:none;color:rgba(255,255,255,0.75);cursor:pointer;font-size:18px;">×</button>
+      <div data-role="drag-handle" style="display:flex; align-items:center; gap:8px; cursor:move; user-select:none;">
+        <div style="font-weight:900; color:#bbf7d0;">Bid opportunities (page)</div>
+        <span style="opacity:.55; font-size:11px; font-weight:800;">drag</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button title="Dashboard" data-role="open-dashboard" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.10); color:rgba(255,255,255,0.85); cursor:pointer; padding:4px 8px; border-radius:10px; font-weight:900; font-size:12px;">📈</button>
+        <button title="Settings" data-role="open-settings" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.10); color:rgba(255,255,255,0.85); cursor:pointer; padding:4px 8px; border-radius:10px; font-weight:900; font-size:12px;">⚙</button>
+        <button data-role="close" title="Close" style="background:none;border:none;color:rgba(255,255,255,0.75);cursor:pointer;font-size:18px;">×</button>
+      </div>
     </div>
     <div style="display:flex; gap:8px; margin-top:10px;">
       <button data-role="scan" style="flex:1; background:#22c55e; border:1px solid rgba(34,197,94,0.9); color:#052e14; padding:8px 10px; border-radius:10px; cursor:pointer; font-weight:900;">
         Scan this page
+      </button>
+      <button data-role="scan-pages" style="width:120px; background:#10b981; border:1px solid rgba(16,185,129,0.9); color:#052e14; padding:8px 10px; border-radius:10px; cursor:pointer; font-weight:900;">
+        Scan pages
       </button>
       <button data-role="stop" style="width:90px; background:#ef4444; border:1px solid rgba(239,68,68,0.95); color:#450a0a; padding:8px 10px; border-radius:10px; cursor:pointer; font-weight:1000;">
         Stop
@@ -6487,6 +7453,12 @@ function ensureListingBidWidget() {
       <input data-role="max-items" inputmode="numeric" value="${String(state.maxItems || 48)}"
         style="width:64px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:white; padding:6px 8px; border-radius:8px;" />
       <span style="opacity:.6;">(max 48)</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px; margin-top:6px; font-size:12px; color:rgba(255,255,255,0.8);">
+      <span style="opacity:.8;">Pages:</span>
+      <input data-role="max-pages" inputmode="numeric" value="${String(state.maxPages || 5)}"
+        style="width:64px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:white; padding:6px 8px; border-radius:8px;" />
+      <span style="opacity:.6;">(scan next pages via ?page=)</span>
     </div>
     <div style="display:flex; align-items:center; gap:8px; margin-top:6px; font-size:12px; color:rgba(255,255,255,0.8);">
       <span style="opacity:.8;">Tabs at once:</span>
@@ -6506,13 +7478,512 @@ function ensureListingBidWidget() {
         Skip “ONE SIZE” items
       </label>
     </div>
+    <div style="display:flex; align-items:center; gap:10px; margin-top:6px; font-size:12px; color:rgba(255,255,255,0.82);">
+      <label style="display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none;">
+        <input type="checkbox" data-role="bidding-mode" ${state.biddingMode ? 'checked' : ''} />
+        Bidding mode (auto-skip already bidded sizes)
+      </label>
+      <label style="display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none; margin-left:6px;">
+        <input type="checkbox" data-role="show-skipped" ${state.showNonProfitable ? 'checked' : ''} />
+        Show skipped
+      </label>
+      <label title="Logs what received your click + what element is on top (Console)" style="display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none; margin-left:6px; opacity:.85;">
+        <input type="checkbox" data-role="debug-clicks" ${state.debugClicks ? 'checked' : ''} />
+        Debug
+      </label>
+      <button data-role="bid-all" style="margin-left:auto; background:#22c55e; border:1px solid rgba(34,197,94,0.9); color:#052e14; padding:6px 10px; border-radius:10px; cursor:pointer; font-weight:900;">
+        Bid all
+      </button>
+      <button data-role="clear-bids" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.10); color:white; padding:6px 10px; border-radius:10px; cursor:pointer; font-weight:800;">
+        Clear bids
+      </button>
+    </div>
     ${stageLine}
     <div style="margin-top:10px;">${itemsHtml}</div>
   `;
 
   if (!existing) document.body.appendChild(widget);
 
+  // Prevent StockX's page-level click handlers from reacting to interactions inside our widget.
+  // Some pages attach listeners that can cause tiny scroll adjustments on any click.
+  try {
+    if (!widget.__stockxStopPropInstalled) {
+      widget.__stockxStopPropInstalled = true;
+      const stop = (e) => {
+        try { e.stopPropagation(); } catch {}
+      };
+      ['click', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart', 'touchend'].forEach((t) => {
+        try { widget.addEventListener(t, stop, false); } catch {}
+      });
+    }
+  } catch {}
+
+  // Delegate primary actions so they still work even if StockX cancels the normal "click" event.
+  // Using pointerup in capture phase makes actions reliably fire on the first press.
+  try {
+    if (!widget.__stockxDelegatedActionsInstalled) {
+      widget.__stockxDelegatedActionsInstalled = true;
+      const ACTION_ROLES = new Set([
+        'open-dashboard',
+        'open-settings',
+        'close',
+        'scan',
+        'scan-pages',
+        'stop',
+        'clear',
+        'open-size',
+        'open-bid',
+        'bid-all',
+        'clear-bids',
+        'why'
+      ]);
+
+      // Swallow click events for action roles so per-element click handlers don't double-run.
+      // This also prevents StockX from seeing these clicks.
+      try {
+        widget.addEventListener(
+          'click',
+          (e) => {
+            try {
+              const role = e?.target?.closest?.('[data-role]')?.getAttribute?.('data-role') || '';
+              if (!role || !ACTION_ROLES.has(role)) return;
+              e.preventDefault?.();
+              e.stopPropagation?.();
+            } catch {}
+          },
+          { capture: true }
+        );
+      } catch {}
+
+      widget.addEventListener(
+        'pointerup',
+        (e) => {
+          try {
+            const roleEl = e?.target?.closest?.('[data-role]');
+            const role = roleEl?.getAttribute?.('data-role') || '';
+            if (!role || !ACTION_ROLES.has(role)) return;
+
+            e.preventDefault?.();
+            e.stopPropagation?.();
+
+            if (role === 'open-dashboard') return void openExtensionDashboardTab();
+            if (role === 'open-settings') return void openExtensionSettingsTab();
+            if (role === 'close') return void widget.remove();
+
+            if (role === 'open-size') {
+              const url = roleEl.getAttribute('data-url') || '';
+              const sp = roleEl.getAttribute('data-sizeparam') || '';
+              const target = withSizeParam(url, sp);
+              if (!target) return;
+              return void openUrlInNewTabBestEffort(target);
+            }
+
+            if (role === 'open-bid') {
+              const slug = roleEl.getAttribute('data-slug') || '';
+              const sizeLabel = roleEl.getAttribute('data-size') || '';
+              const sizeParam = roleEl.getAttribute('data-sizeparam') || '';
+              const bid = Number(roleEl.getAttribute('data-bid') || '');
+              if (!slug || !sizeLabel || !Number.isFinite(bid) || bid <= 0) return;
+              const sizeKey = String(sizeParam || stockxSizeParamFromLabel(sizeLabel) || normalizeSizeKey(sizeLabel) || '').trim();
+              if (!sizeKey) return;
+              // Mark as bidded so we don't rebid this (slug,size) later
+              markBidPlaced({
+                slug,
+                url: `${location.origin}/${slug}`,
+                sizeLabel,
+                sizeParam: sizeKey,
+                bid: Math.round(bid),
+                ask: null
+              }).catch(() => {});
+              // Open bid tab + auto-run
+              openBidInNewTab({ slug, sizeKey, bid: Math.round(bid) }).then((res) => {
+                try {
+                  if (!res?.ok) state.stage = `Bid tab failed: ${res?.error || 'unknown error'}`;
+                  else state.stage = `Opened bid tab for ${sizeLabel}`;
+                  ensureListingBidWidget();
+                } catch {}
+              });
+              return;
+            }
+
+            if (role === 'why') {
+              const url = roleEl.getAttribute('data-url') || '';
+              const slug = roleEl.getAttribute('data-slug') || '';
+              const vals = Object.values(state.results || {});
+              const entry =
+                (url ? vals.find((x) => String(x?.url || '') === url) : null) ||
+                (slug ? vals.find((x) => String(x?.slug || '') === slug) : null) ||
+                null;
+              try {
+                const payload = entry
+                  ? {
+                      scanId: entry.scanId || null,
+                      savedAt: entry.savedAt || null,
+                      url: entry.url,
+                      slug: entry.slug,
+                      title: entry.title,
+                      success: entry.success,
+                      error: entry.error,
+                      sizeOptionsCount: entry.sizeOptionsCount,
+                      asksRows: entry.asksRows,
+                      bidsRows: entry.bidsRows,
+                      salesRows: entry.salesRows,
+                      viableSizeCount: entry.viableSizeCount,
+                      eliminatedByAsk: entry.eliminatedByAsk,
+                      marketDataOpenDebug: entry.marketDataOpenDebug || null,
+                      marketDataTabDebug: entry.marketDataTabDebug || null,
+                      marketDataSample: entry.marketDataSample || null,
+                      nextDataVariantDebug: entry.nextDataVariantDebug || null,
+                      sizeAll: entry.sizeAll || null,
+                      opportunities: (entry.opportunities || []).slice(0, 5)
+                    }
+                  : null;
+                const text = payload ? JSON.stringify(payload, null, 2) : 'No debug info found for this item.';
+                showCopyableDebugModal(text);
+              } catch {}
+              return;
+            }
+
+            if (role === 'clear-bids') {
+              clearBidHistory()
+                .then(() => ensureListingBidWidget())
+                .catch(() => {});
+              return;
+            }
+
+            if (role === 'bid-all') {
+              (async () => {
+                try {
+                  const vals = Object.values(state.results || {});
+                  const allOpps = [];
+                  for (const r of vals) {
+                    const slug = String(r?.slug || '');
+                    const url = String(r?.url || '');
+                    const opps = Array.isArray(r?.opportunities) ? r.opportunities : [];
+                    for (const o of opps) {
+                      const sizeLabel = String(o?.sizeLabel || '').trim();
+                      const sizeParam = String(o?.sizeParam || stockxSizeParamFromLabel(sizeLabel) || '').trim();
+                      const bid = Number(o?.suggestedBid);
+                      const ask = Number(o?.lowestAsk);
+                      if (!slug || !url || !sizeParam || !Number.isFinite(bid) || bid <= 0) continue;
+                      allOpps.push({
+                        slug,
+                        url,
+                        sizeLabel,
+                        sizeParam,
+                        bid: Math.round(bid),
+                        ask: Number.isFinite(ask) ? Math.round(ask) : null
+                      });
+                    }
+                  }
+                  // De-dupe by (slug,sizeParam)
+                  const uniq = new Map();
+                  for (const x of allOpps) {
+                    const k = bidHistoryKey({ slug: x.slug, sizeParam: x.sizeParam });
+                    if (!k) continue;
+                    if (!uniq.has(k)) uniq.set(k, x);
+                  }
+                  const toBid = Array.from(uniq.values());
+                  if (!toBid.length) {
+                    state.stage = 'No opportunities to bid';
+                    ensureListingBidWidget();
+                    return;
+                  }
+
+                  state.stage = `bidding ${toBid.length}…`;
+                  ensureListingBidWidget();
+
+                  const history = await loadBidHistoryMap();
+                  for (let i = 0; i < toBid.length; i++) {
+                    const x = toBid[i];
+                    const k = bidHistoryKey({ slug: x.slug, sizeParam: x.sizeParam });
+                    if (state.biddingMode && k && history[k]) continue;
+
+                    state.stage = `bidding ${i + 1}/${toBid.length}…`;
+                    ensureListingBidWidget();
+
+                    // Mark first to prevent double-bids if the flow navigates/reloads
+                    await markBidPlaced(x);
+                    history[k] = { ...(history[k] || {}), ...x, placedAt: Date.now() };
+
+                    const res = await openBidInNewTab({ slug: x.slug, sizeKey: x.sizeParam, bid: x.bid });
+                    if (!res?.ok) {
+                      // If opening failed, clear the mark so it can retry later
+                      try {
+                        delete history[k];
+                        await saveBidHistoryMap(history);
+                      } catch {}
+                    }
+                    // Don't spam tabs instantly
+                    await new Promise((r) => setTimeout(r, 900));
+                  }
+
+                  state.stage = 'done (bidding)';
+                  ensureListingBidWidget();
+                } catch (err) {
+                  state.stage = `error: ${err?.message || String(err)}`;
+                  ensureListingBidWidget();
+                }
+              })();
+              return;
+            }
+
+            if (role === 'clear') {
+              try {
+                state.scanId = '';
+                state.total = 0;
+                state.current = 0;
+                state.stage = '';
+                state.results = {};
+              } catch {}
+              ensureListingBidWidget();
+              return;
+            }
+
+            if (role === 'stop') {
+              try {
+                // If scanId isn't set yet, remember the user's intent and stop as soon as we get it.
+                if (!state.scanId) {
+                  state.pendingStop = true;
+                  state.stage = 'stopping';
+                  ensureListingBidWidget();
+                  return;
+                }
+                state.pendingStop = false;
+                state.stage = 'stopping';
+                ensureListingBidWidget();
+                runtimeSendMessageSafe({ action: 'stopListingBidScan', scanId: state.scanId }, (resp) => {
+                  try {
+                    if (!resp?.success) state.stage = `error: ${resp?.error || 'failed to stop'}`;
+                    else state.stage = 'stopped';
+                    ensureListingBidWidget();
+                  } catch {}
+                });
+              } catch (err) {
+                state.stage = `error: ${err?.message || String(err)}`;
+                ensureListingBidWidget();
+              }
+              return;
+            }
+
+            if (role === 'scan') {
+              try {
+                const maxItems = Math.max(1, Math.min(48, Number(state.maxItems || 48)));
+                const concurrency = Math.max(1, Math.min(5, Number(state.concurrency || 1)));
+                const settings = getScanSettingsCached();
+                const urls = collectListingProductUrls(maxItems, {
+                  onlySneakers: !!state.onlySneakers,
+                  skipOneSize: !!state.skipOneSize || !!settings.skipOneSize,
+                  excludeSponsored: !!settings.excludeSponsored,
+                  includeCategories: Array.isArray(settings.includeCategories) ? settings.includeCategories : []
+                });
+                if (!urls.length) {
+                  state.stage = 'No products detected';
+                  state.total = 0;
+                  state.current = 0;
+                  ensureListingBidWidget();
+                  return;
+                }
+                state.results = {};
+                state.stage = 'starting';
+                state.total = urls.length;
+                state.current = 0;
+                state.pendingStop = false;
+                ensureListingBidWidget();
+                runtimeSendMessageSafe({ action: 'startListingBidScan', urls, maxItems: urls.length, concurrency }, (resp) => {
+                  const ok = resp?.success;
+                  if (!ok) {
+                    state.stage = `error: ${resp?.error || 'failed to start'}`;
+                    ensureListingBidWidget();
+                    return;
+                  }
+                  state.scanId = resp.scanId;
+                  state.total = resp.total || urls.length;
+                  state.stage = 'queued';
+                  state.current = 0;
+                  if (state.pendingStop) {
+                    const sid = state.scanId;
+                    state.stage = 'stopping';
+                    ensureListingBidWidget();
+                    runtimeSendMessageSafe({ action: 'stopListingBidScan', scanId: sid }, () => {});
+                  }
+                  ensureListingBidWidget();
+                });
+              } catch (err) {
+                state.stage = `error: ${err?.message || String(err)}`;
+                ensureListingBidWidget();
+              }
+              return;
+            }
+
+            if (role === 'scan-pages') {
+              try {
+                const maxPages = Math.max(1, Math.min(200, Number(state.maxPages || 1)));
+                const perPage = 48;
+                const settings = getScanSettingsCached();
+                const collectOpts = {
+                  onlySneakers: !!state.onlySneakers,
+                  skipOneSize: !!state.skipOneSize || !!settings.skipOneSize,
+                  excludeSponsored: !!settings.excludeSponsored,
+                  includeCategories: Array.isArray(settings.includeCategories) ? settings.includeCategories : []
+                };
+
+                state.results = {};
+                state.stage = `starting (pages x${maxPages})`;
+                state.total = maxPages * perPage;
+                state.current = 0;
+                state.pendingStop = false;
+                ensureListingBidWidget();
+
+                runtimeSendMessageSafe(
+                  { action: 'startListingBidScanPaginated', startUrl: location.href, maxPages, perPage, collectOpts, allowBackground: false },
+                  (resp) => {
+                    const ok = resp?.success;
+                    if (!ok) {
+                      state.stage = `error: ${resp?.error || 'failed to start'}`;
+                      ensureListingBidWidget();
+                      return;
+                    }
+                    state.scanId = resp.scanId;
+                    state.total = resp.total || maxPages * perPage;
+                    state.stage = 'queued';
+                    state.current = 0;
+                    if (state.pendingStop) {
+                      const sid = state.scanId;
+                      state.stage = 'stopping';
+                      ensureListingBidWidget();
+                      runtimeSendMessageSafe({ action: 'stopListingBidScan', scanId: sid }, () => {});
+                    }
+                    ensureListingBidWidget();
+                  }
+                );
+              } catch (err) {
+                state.stage = `error: ${err?.message || String(err)}`;
+                ensureListingBidWidget();
+              }
+              return;
+            }
+          } catch {}
+        },
+        { capture: true }
+      );
+    }
+  } catch {}
+
+  widget.querySelector('[data-role="open-settings"]')?.addEventListener('click', (e) => {
+    try {
+      e.preventDefault();
+      e.stopPropagation();
+      openExtensionSettingsTab();
+    } catch {}
+  });
+  widget.querySelector('[data-role="open-dashboard"]')?.addEventListener('click', (e) => {
+    try {
+      e.preventDefault();
+      e.stopPropagation();
+      openExtensionDashboardTab();
+    } catch {}
+  });
   widget.querySelector('[data-role="close"]')?.addEventListener('click', () => widget.remove());
+
+  // Click debug: if clicks never reach the widget, this won't fire (useful for diagnosing pointer-event blocking).
+  try {
+    if (!widget.__stockxClickDebugInstalled) {
+      widget.__stockxClickDebugInstalled = true;
+      widget.addEventListener(
+        'pointerdown',
+        (ev) => {
+          try {
+            window.__stockxListingWidgetInteractingUntil = Date.now() + 2000;
+          } catch {}
+          try {
+            if (state.debugClicks && ev && typeof ev.clientX === 'number') {
+              const topEl = document.elementFromPoint?.(ev.clientX, ev.clientY);
+              const target = ev.target;
+              const role = target?.closest?.('[data-role]')?.getAttribute?.('data-role') || '';
+              console.log('🖱️ widget pointerdown', {
+                role,
+                targetTag: String(target?.tagName || ''),
+                targetText: safeText(target).slice(0, 80),
+                topTag: String(topEl?.tagName || ''),
+                topText: safeText(topEl).slice(0, 80)
+              });
+            }
+          } catch {}
+        },
+        { capture: true }
+      );
+    }
+  } catch {}
+
+  // Drag-to-move (header only). Persists to chrome.storage.local.
+  try {
+    const handle = widget.querySelector('[data-role="drag-handle"]');
+    if (handle && !handle.__stockxDragInstalled) {
+      handle.__stockxDragInstalled = true;
+      let dragging = false;
+      let startX = 0;
+      let startY = 0;
+      let startLeft = 0;
+      let startTop = 0;
+      let w = 0;
+      let h = 0;
+
+      const onMove = (ev) => {
+        try {
+          if (!dragging) return;
+          const dx = ev.clientX - startX;
+          const dy = ev.clientY - startY;
+          const maxLeft = Math.max(8, window.innerWidth - w - 8);
+          const maxTop = Math.max(8, window.innerHeight - h - 8);
+          const nextLeft = clamp(startLeft + dx, 8, maxLeft);
+          const nextTop = clamp(startTop + dy, 8, maxTop);
+          widget.style.left = `${Math.round(nextLeft)}px`;
+          widget.style.top = `${Math.round(nextTop)}px`;
+          widget.style.bottom = 'auto';
+          try {
+            window.__stockxListingWidgetPosCache = { left: Math.round(nextLeft), top: Math.round(nextTop) };
+          } catch {}
+        } catch {}
+      };
+
+      const onUp = async () => {
+        try {
+          if (!dragging) return;
+          dragging = false;
+          const pos = getListingWidgetPosCached();
+          if (pos) await saveListingWidgetPos(pos);
+        } catch {}
+        try {
+          window.removeEventListener('pointermove', onMove, true);
+          window.removeEventListener('pointerup', onUp, true);
+          window.removeEventListener('pointercancel', onUp, true);
+        } catch {}
+      };
+
+      handle.addEventListener('pointerdown', (ev) => {
+        try {
+          if (ev.button != null && ev.button !== 0) return;
+          const r = widget.getBoundingClientRect();
+          w = r.width;
+          h = r.height;
+          startX = ev.clientX;
+          startY = ev.clientY;
+          startLeft = r.left;
+          startTop = r.top;
+          dragging = true;
+          widget.style.bottom = 'auto';
+          widget.style.left = `${Math.round(startLeft)}px`;
+          widget.style.top = `${Math.round(startTop)}px`;
+          ev.preventDefault();
+          try { handle.setPointerCapture?.(ev.pointerId); } catch {}
+          window.addEventListener('pointermove', onMove, true);
+          window.addEventListener('pointerup', onUp, true);
+          window.addEventListener('pointercancel', onUp, true);
+        } catch {}
+      });
+    }
+  } catch {}
 
   const stopBtn = widget.querySelector('[data-role="stop"]');
   try {
@@ -6578,6 +8049,13 @@ function ensureListingBidWidget() {
     state.concurrency = n;
   });
 
+  const maxPagesEl = widget.querySelector('[data-role="max-pages"]');
+  maxPagesEl?.addEventListener('input', () => {
+    const n = Math.max(1, Math.min(200, Number(String(maxPagesEl.value || '').trim())));
+    if (!Number.isFinite(n)) return;
+    state.maxPages = n;
+  });
+
   const onlySneakersEl = widget.querySelector('[data-role="only-sneakers"]');
   onlySneakersEl?.addEventListener('change', () => {
     try {
@@ -6592,11 +8070,118 @@ function ensureListingBidWidget() {
     } catch {}
   });
 
+  const biddingModeEl = widget.querySelector('[data-role="bidding-mode"]');
+  biddingModeEl?.addEventListener('change', () => {
+    try {
+      state.biddingMode = !!biddingModeEl.checked;
+    } catch {}
+  });
+
+  const showSkippedEl = widget.querySelector('[data-role="show-skipped"]');
+  showSkippedEl?.addEventListener('change', () => {
+    try {
+      state.showNonProfitable = !!showSkippedEl.checked;
+      // Defer rerender to avoid "clunky" clicks where the DOM is replaced mid-toggle.
+      setTimeout(() => {
+        try { ensureListingBidWidget(); } catch {}
+      }, 0);
+    } catch {}
+  });
+
+  const debugClicksEl = widget.querySelector('[data-role="debug-clicks"]');
+  debugClicksEl?.addEventListener('change', () => {
+    try {
+      state.debugClicks = !!debugClicksEl.checked;
+    } catch {}
+  });
+
+  widget.querySelector('[data-role="clear-bids"]')?.addEventListener('click', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    await clearBidHistory();
+    ensureListingBidWidget();
+  });
+
+  widget.querySelector('[data-role="bid-all"]')?.addEventListener('click', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      const vals = Object.values(state.results || {});
+      const allOpps = [];
+      for (const r of vals) {
+        const slug = String(r?.slug || '');
+        const url = String(r?.url || '');
+        const opps = Array.isArray(r?.opportunities) ? r.opportunities : [];
+        for (const o of opps) {
+          const sizeLabel = String(o?.sizeLabel || '').trim();
+          const sizeParam = String(o?.sizeParam || stockxSizeParamFromLabel(sizeLabel) || '').trim();
+          const bid = Number(o?.suggestedBid);
+          const ask = Number(o?.lowestAsk);
+          if (!slug || !url || !sizeParam || !Number.isFinite(bid) || bid <= 0) continue;
+          allOpps.push({ slug, url, sizeLabel, sizeParam, bid: Math.round(bid), ask: Number.isFinite(ask) ? Math.round(ask) : null });
+        }
+      }
+      // De-dupe by (slug,sizeParam)
+      const uniq = new Map();
+      for (const x of allOpps) {
+        const k = bidHistoryKey({ slug: x.slug, sizeParam: x.sizeParam });
+        if (!k) continue;
+        if (!uniq.has(k)) uniq.set(k, x);
+      }
+      const toBid = Array.from(uniq.values());
+      if (!toBid.length) {
+        state.stage = 'No opportunities to bid';
+        ensureListingBidWidget();
+        return;
+      }
+
+      state.stage = `bidding ${toBid.length}…`;
+      ensureListingBidWidget();
+
+      const history = await loadBidHistoryMap();
+      for (let i = 0; i < toBid.length; i++) {
+        const x = toBid[i];
+        const k = bidHistoryKey({ slug: x.slug, sizeParam: x.sizeParam });
+        if (state.biddingMode && k && history[k]) continue;
+
+        state.stage = `bidding ${i + 1}/${toBid.length}…`;
+        ensureListingBidWidget();
+
+        // Mark first to prevent double-bids if the flow navigates/reloads
+        await markBidPlaced(x);
+        history[k] = { ...(history[k] || {}), ...x, placedAt: Date.now() };
+
+        const res = await openBidInNewTab({ slug: x.slug, sizeKey: x.sizeParam, bid: x.bid });
+        if (!res?.ok) {
+          // If opening failed, clear the mark so it can retry later
+          try {
+            delete history[k];
+            await saveBidHistoryMap(history);
+          } catch {}
+        }
+        // Don't spam tabs instantly
+        await new Promise((r) => setTimeout(r, 900));
+      }
+
+      state.stage = 'done (bidding)';
+      ensureListingBidWidget();
+    } catch (err) {
+      state.stage = `error: ${err?.message || String(err)}`;
+      ensureListingBidWidget();
+    }
+  });
+
   widget.querySelector('[data-role="scan"]')?.addEventListener('click', () => {
     try {
       const maxItems = Math.max(1, Math.min(48, Number(state.maxItems || 48)));
       const concurrency = Math.max(1, Math.min(5, Number(state.concurrency || 1)));
-      const urls = collectListingProductUrls(maxItems, { onlySneakers: !!state.onlySneakers, skipOneSize: !!state.skipOneSize });
+      const settings = getScanSettingsCached();
+      const urls = collectListingProductUrls(maxItems, {
+        onlySneakers: !!state.onlySneakers,
+        skipOneSize: !!state.skipOneSize || !!settings.skipOneSize,
+        excludeSponsored: !!settings.excludeSponsored,
+        includeCategories: Array.isArray(settings.includeCategories) ? settings.includeCategories : []
+      });
       if (!urls.length) {
         state.stage = 'No products detected';
         state.total = 0;
@@ -6636,15 +8221,65 @@ function ensureListingBidWidget() {
     }
   });
 
+  widget.querySelector('[data-role="scan-pages"]')?.addEventListener('click', () => {
+    try {
+      const maxPages = Math.max(1, Math.min(200, Number(state.maxPages || 1)));
+      const perPage = 48;
+      const settings = getScanSettingsCached();
+      const collectOpts = {
+        onlySneakers: !!state.onlySneakers,
+        skipOneSize: !!state.skipOneSize || !!settings.skipOneSize,
+        excludeSponsored: !!settings.excludeSponsored,
+        includeCategories: Array.isArray(settings.includeCategories) ? settings.includeCategories : []
+      };
+
+      // Reset UI state
+      state.results = {};
+      state.stage = `starting (pages x${maxPages})`;
+      state.total = maxPages * perPage;
+      state.current = 0;
+      state.pendingStop = false;
+      ensureListingBidWidget();
+
+      runtimeSendMessageSafe(
+        { action: 'startListingBidScanPaginated', startUrl: location.href, maxPages, perPage, collectOpts, allowBackground: false },
+        (resp) => {
+          const ok = resp?.success;
+          if (!ok) {
+            state.stage = `error: ${resp?.error || 'failed to start'}`;
+            ensureListingBidWidget();
+            return;
+          }
+          state.scanId = resp.scanId;
+          state.total = resp.total || maxPages * perPage;
+          state.stage = 'queued';
+          state.current = 0;
+          if (state.pendingStop) {
+            const sid = state.scanId;
+            state.stage = 'stopping';
+            ensureListingBidWidget();
+            runtimeSendMessageSafe({ action: 'stopListingBidScan', scanId: sid }, () => {});
+          }
+          ensureListingBidWidget();
+        }
+      );
+    } catch (e) {
+      state.stage = `error: ${e?.message || String(e)}`;
+      ensureListingBidWidget();
+    }
+  });
+
   // Row buttons
   widget.querySelectorAll('[data-role="open-size"]').forEach((btn) => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
       try {
+        try { e?.preventDefault?.(); } catch {}
+        try { e?.stopPropagation?.(); } catch {}
         const url = btn.getAttribute('data-url') || '';
         const sp = btn.getAttribute('data-sizeparam') || '';
         const target = withSizeParam(url, sp);
         if (!target) return;
-        chrome.runtime.sendMessage({ action: 'openTab', url: target });
+        openUrlInNewTabBestEffort(target);
       } catch {}
     });
   });
@@ -6657,6 +8292,15 @@ function ensureListingBidWidget() {
       if (!slug || !sizeLabel || !Number.isFinite(bid) || bid <= 0) return;
       const sizeKey = String(sizeParam || stockxSizeParamFromLabel(sizeLabel) || normalizeSizeKey(sizeLabel) || '').trim();
       if (!sizeKey) return;
+      // Mark as bidded so we don't rebid this (slug,size) later
+      await markBidPlaced({
+        slug,
+        url: `${location.origin}/${slug}`,
+        sizeLabel,
+        sizeParam: sizeKey,
+        bid: Math.round(bid),
+        ask: null
+      });
       // Reuse the existing helper flow to open /buy/... and auto-run the bid.
       const res = await openBidInNewTab({ slug, sizeKey, bid: Math.round(bid) });
       try {

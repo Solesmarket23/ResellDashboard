@@ -2,6 +2,7 @@
 document.addEventListener('DOMContentLoaded', function() {
   const statusText = document.getElementById('statusText');
   const refreshBtn = document.getElementById('refreshBtn');
+  const dashboardBtn = document.getElementById('dashboardBtn');
   const settingsBtn = document.getElementById('settingsBtn');
   const helpBtn = document.getElementById('helpBtn');
 
@@ -11,12 +12,28 @@ document.addEventListener('DOMContentLoaded', function() {
   refreshBtn.addEventListener('click', function() {
     refreshCurrentPage();
   });
+  refreshBtn.addEventListener('pointerup', function() {
+    refreshCurrentPage();
+  });
+
+  dashboardBtn.addEventListener('click', function() {
+    openDashboard();
+  });
+  dashboardBtn.addEventListener('pointerup', function() {
+    openDashboard();
+  });
 
   settingsBtn.addEventListener('click', function() {
     openSettings();
   });
+  settingsBtn.addEventListener('pointerup', function() {
+    openSettings();
+  });
 
   helpBtn.addEventListener('click', function() {
+    openHelp();
+  });
+  helpBtn.addEventListener('pointerup', function() {
     openHelp();
   });
 
@@ -80,6 +97,12 @@ document.addEventListener('DOMContentLoaded', function() {
   function openSettings() {
     chrome.tabs.create({
       url: chrome.runtime.getURL('settings.html')
+    });
+  }
+
+  function openDashboard() {
+    chrome.tabs.create({
+      url: chrome.runtime.getURL('dashboard.html')
     });
   }
 

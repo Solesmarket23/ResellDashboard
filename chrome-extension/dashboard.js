@@ -1,0 +1,486 @@
+const ACTIVE_ID_KEY = 'stockxActiveListingScanId';
+const LAST_ID_KEY = 'stockxLastListingScanId';
+const HISTORY_KEY = 'stockxScanHistory';
+const SCAN_COUNTER_KEY = 'stockxScanCounter';
+
+function $(id) {
+  return document.getElementById(id);
+}
+
+function safeStr(v) {
+  return String(v == null ? '' : v);
+}
+
+function fmtInt(n) {
+  const x = Number(n);
+  return Number.isFinite(x) ? String(Math.round(x)) : '—';
+}
+
+function fmtPct(done, total) {
+  const d = Number(done);
+  const t = Number(total);
+  if (!Number.isFinite(d) || !Number.isFinite(t) || t <= 0) return '—';
+  return `${Math.max(0, Math.min(100, Math.round((d / t) * 100)))}%`;
+}
+
+function escapeHtml(s) {
+  return safeStr(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function setToast(msg) {
+  const el = $('toast');
+  if (!el) return;
+  el.textContent = msg ? safeStr(msg) : '';
+}
+
+function groupErrorReason(r) {
+  try {
+    if (!r) return 'unknown';
+    if (r.releaseExcluded) return 'excluded: recent release';
+    if (r.success === false) return 'scan failed';
+    const e = safeStr(r.error || '').toLowerCase();
+    if (e.includes('timeout')) return 'timeout';
+    if (e.includes('market data') && e.includes('open')) return 'market data did not open';
+    if (e.includes('parse')) return 'parse error';
+    if (safeStr(r.marketDataOpenDebug?.openedVia || '').includes('already')) return 'market data already open';
+    return e ? e.slice(0, 50) : 'no opportunities';
+  } catch {
+    return 'unknown';
+  }
+}
+
+function computeOppCount(resultsMap) {
+  let c = 0;
+  for (const v of Object.values(resultsMap || {})) {
+    const opps = Array.isArray(v?.opportunities) ? v.opportunities : [];
+    c += opps.length;
+  }
+  return c;
+}
+
+function flattenOpportunities(resultsMap, limit = 80) {
+  const out = [];
+  for (const v of Object.values(resultsMap || {})) {
+    const url = safeStr(v?.url || '');
+    const title = safeStr(v?.title || v?.slug || url || '—');
+    const opps = Array.isArray(v?.opportunities) ? v.opportunities : [];
+    for (const o of opps) {
+      out.push({
+        savedAt: Number(v?.savedAt || 0),
+        url,
+        title,
+        sizeLabel: safeStr(o?.sizeLabel || ''),
+        sizeParam: safeStr(o?.sizeParam || ''),
+        bid: o?.highestBid ?? null,
+        ask: o?.lowestAsk ?? null,
+        profit: o?.profit ?? null,
+        avg30d: o?.avg30d ?? null,
+        low60d: o?.lowestSold2mo ?? null
+      });
+    }
+  }
+  out.sort((a, b) => Number(b?.profit || 0) - Number(a?.profit || 0) || Number(b?.savedAt || 0) - Number(a?.savedAt || 0));
+  return out.slice(0, limit);
+}
+
+function withSizeParam(url, sizeParam) {
+  try {
+    const u = new URL(String(url || ''));
+    const sp = safeStr(sizeParam);
+    if (sp) u.searchParams.set('size', sp);
+    return u.toString();
+  } catch {
+    return safeStr(url || '');
+  }
+}
+
+function renderOpps(listEl, resultsMap) {
+  if (!listEl) return;
+  const opps = flattenOpportunities(resultsMap, 120);
+  if (!opps.length) {
+    listEl.innerHTML = `<div class="muted">No opportunities yet.</div>`;
+    return;
+  }
+  listEl.innerHTML = opps
+    .map((o) => {
+      const title = escapeHtml(o.title);
+      const size = escapeHtml(o.sizeLabel || '—');
+      const bid = o.bid == null ? '—' : escapeHtml(String(o.bid));
+      const ask = o.ask == null ? '—' : escapeHtml(String(o.ask));
+      const profit = o.profit == null ? '—' : escapeHtml(String(o.profit));
+      const avg = o.avg30d == null ? '—' : escapeHtml(String(o.avg30d));
+      const low = o.low60d == null ? '—' : escapeHtml(String(o.low60d));
+      const openUrl = escapeHtml(withSizeParam(o.url, o.sizeParam));
+      return `<div class="item">
+        <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
+          <div class="title">${title}</div>
+          <button class="btn-secondary" data-open="${openUrl}" style="padding:6px 10px; border-radius:10px; font-weight:900;">Open</button>
+        </div>
+        <div class="sub mono">size ${size} • bid ${bid} • ask ${ask} • profit ${profit} • avg30d ${avg} • low60d ${low}</div>
+      </div>`;
+    })
+    .join('');
+}
+
+function latestEntries(resultsMap, limit = 20) {
+  const arr = Object.values(resultsMap || {}).filter((x) => x && typeof x === 'object');
+  arr.sort((a, b) => Number(b?.savedAt || 0) - Number(a?.savedAt || 0));
+  return arr.slice(0, limit);
+}
+
+function renderResults(listEl, resultsMap) {
+  if (!listEl) return;
+  const entries = latestEntries(resultsMap, 24);
+  if (!entries.length) {
+    listEl.innerHTML = `<div class="muted">No results yet.</div>`;
+    return;
+  }
+
+  listEl.innerHTML = entries
+    .map((r) => {
+      const title = escapeHtml(r?.title || r?.slug || r?.url || '—');
+      const url = escapeHtml(r?.url || '');
+      const ok = r?.success !== false;
+      const opps = Array.isArray(r?.opportunities) ? r.opportunities : [];
+      const badge = r?.releaseExcluded
+        ? `<span class="pill">excluded</span>`
+        : opps.length
+          ? `<span class="pill">opps ${opps.length}</span>`
+          : ok
+            ? `<span class="pill">none</span>`
+            : `<span class="pill">error</span>`;
+      const msg = escapeHtml(
+        r?.releaseExcluded
+          ? `Released: ${safeStr(r?.releaseDate || '—')} (excluded)`
+          : r?.success === false
+            ? safeStr(r?.error || 'scan failed')
+            : opps.length
+              ? `Best: ${safeStr(opps[0]?.sizeLabel || '')} bid ${safeStr(opps[0]?.highestBid ?? '—')} ask ${safeStr(opps[0]?.lowestAsk ?? '—')} profit ${safeStr(opps[0]?.profit ?? '—')}`
+              : 'No opportunities'
+      );
+      return `<div class="item">
+        <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
+          <div class="title">${title}</div>
+          ${badge}
+        </div>
+        <div class="sub mono" style="opacity:.75; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${url || '—'}</div>
+        <div class="sub">${msg}</div>
+      </div>`;
+    })
+    .join('');
+}
+
+function renderErrors(listEl, resultsMap) {
+  if (!listEl) return;
+  const entries = Object.values(resultsMap || {}).filter((x) => x && typeof x === 'object');
+  const buckets = new Map();
+  for (const r of entries) {
+    const key = groupErrorReason(r);
+    const cur = buckets.get(key) || { key, count: 0, latestAt: 0 };
+    cur.count += 1;
+    cur.latestAt = Math.max(cur.latestAt, Number(r?.savedAt || 0));
+    buckets.set(key, cur);
+  }
+  const rows = Array.from(buckets.values()).filter((b) => b.key !== 'no opportunities');
+  rows.sort((a, b) => b.count - a.count || b.latestAt - a.latestAt);
+  const top = rows.slice(0, 10);
+  if (!top.length) {
+    listEl.innerHTML = `<div class="muted">No errors detected.</div>`;
+    return;
+  }
+  listEl.innerHTML = top
+    .map((b) => `<div class="item"><div style="display:flex; justify-content:space-between; gap:10px;">
+        <div class="title">${escapeHtml(b.key)}</div>
+        <span class="pill">${b.count}</span>
+      </div></div>`)
+    .join('');
+}
+
+async function getScanIds() {
+  return await new Promise((resolve) => {
+    try {
+      chrome.storage.local.get([ACTIVE_ID_KEY, LAST_ID_KEY], (res) => {
+        void chrome.runtime.lastError;
+        const active = safeStr(res?.[ACTIVE_ID_KEY] || '');
+        const last = safeStr(res?.[LAST_ID_KEY] || '');
+        resolve({ active, last });
+      });
+    } catch {
+      resolve({ active: '', last: '' });
+    }
+  });
+}
+
+async function getHistory() {
+  return await new Promise((resolve) => {
+    try {
+      chrome.storage.local.get([HISTORY_KEY], (res) => {
+        void chrome.runtime.lastError;
+        const h = Array.isArray(res?.[HISTORY_KEY]) ? res[HISTORY_KEY] : [];
+        resolve(h);
+      });
+    } catch {
+      resolve([]);
+    }
+  });
+}
+
+function renderScanSelect(selectEl, history, { activeId, selectedId }) {
+  if (!selectEl) return;
+  const list = Array.isArray(history) ? history : [];
+  const sorted = [...list].sort((a, b) => Number(b?.scanNumber || 0) - Number(a?.scanNumber || 0) || Number(b?.startedAt || 0) - Number(a?.startedAt || 0));
+  const opts = [];
+  // active marker
+  for (const h of sorted) {
+    const id = safeStr(h?.scanId || '');
+    if (!id) continue;
+    const num = Number(h?.scanNumber || 0);
+    const name = safeStr(h?.scanName || (num ? `Scan ${num}` : 'Scan'));
+    const mode = safeStr(h?.mode || '');
+    const activeMark = activeId && id === activeId ? ' (active)' : '';
+    opts.push({ id, label: `${name}${mode ? ` • ${mode}` : ''}${activeMark}` });
+  }
+  // Fallback if history empty
+  if (!opts.length && selectedId) {
+    opts.push({ id: selectedId, label: selectedId });
+  }
+  selectEl.innerHTML = opts.map((o) => `<option value="${escapeHtml(o.id)}">${escapeHtml(o.label)}</option>`).join('');
+  const want = selectedId && opts.some((o) => o.id === selectedId) ? selectedId : (activeId && opts.some((o) => o.id === activeId) ? activeId : (opts[0]?.id || ''));
+  if (want) selectEl.value = want;
+}
+
+async function getScanData(scanId) {
+  if (!scanId) return { state: null, results: {} };
+  const stateKey = `stockxListingScanState:${scanId}`;
+  const resultsKey = `stockxListingScanResults:${scanId}`;
+  return await new Promise((resolve) => {
+    try {
+      chrome.storage.local.get([stateKey, resultsKey], (res) => {
+        void chrome.runtime.lastError;
+        const s = res?.[stateKey] && typeof res[stateKey] === 'object' ? res[stateKey] : null;
+        const r = res?.[resultsKey] && typeof res[resultsKey] === 'object' ? res[resultsKey] : {};
+        resolve({ state: s, results: r });
+      });
+    } catch {
+      resolve({ state: null, results: {} });
+    }
+  });
+}
+
+async function refresh() {
+  const ids = await getScanIds();
+  const history = await getHistory();
+  const selected = safeStr($('scanSelect')?.value || '');
+  const scanId = selected || ids.active || ids.last;
+  const hasActive = !!ids.active;
+
+  $('subtitle').textContent = scanId
+    ? `${hasActive && ids.active === scanId ? 'Active scan' : 'Selected scan'}: ${scanId}`
+    : 'No scan found yet. Start a scan from StockX and this page will update live.';
+
+  // Populate scan dropdown
+  renderScanSelect($('scanSelect'), history, { activeId: ids.active, selectedId: scanId });
+
+  $('kpiScanId').textContent = scanId ? scanId.slice(-8) : '—';
+
+  const { state, results } = await getScanData(scanId);
+  const completed = Number(state?.completed || 0);
+  const total = Number(state?.total || 0);
+  $('kpiProgress').textContent = scanId ? `${fmtPct(completed, total)} (${fmtInt(completed)}/${fmtInt(total)})` : '—';
+  $('kpiScanned').textContent = scanId ? fmtInt(Object.keys(results || {}).length) : '—';
+  $('kpiOpps').textContent = scanId ? fmtInt(computeOppCount(results)) : '—';
+
+  $('stage').textContent = safeStr(state?.stage || '—');
+  $('currentUrl').textContent = safeStr(state?.currentUrl || state?.startUrl || '—');
+
+  // Keep-focus toggle only applies to the active scan.
+  try {
+    const t = $('keepFocusToggle');
+    const isActive = !!(ids.active && scanId && ids.active === scanId);
+    if (t) {
+      t.disabled = !isActive;
+      t.style.opacity = isActive ? '1' : '0.35';
+      if (isActive) t.checked = !!state?.keepUserFocus;
+      else t.checked = false;
+    }
+  } catch {}
+
+  renderErrors($('errorsList'), results);
+  renderResults($('resultsList'), results);
+  renderOpps($('oppsList'), results);
+
+  // Stop button only meaningful if we have an active scan.
+  $('stopBtn').disabled = !ids.active;
+  $('stopBtn').style.opacity = ids.active ? '1' : '0.35';
+
+  // Disable clear while a scan is active and selected.
+  const isSelectedActive = !!(ids.active && scanId && ids.active === scanId);
+  $('clearThisBtn').disabled = isSelectedActive || !scanId;
+  $('clearThisBtn').style.opacity = isSelectedActive || !scanId ? '0.35' : '1';
+}
+
+async function clearOneScan(scanId) {
+  const id = safeStr(scanId);
+  if (!id) return false;
+  const stateKey = `stockxListingScanState:${id}`;
+  const resultsKey = `stockxListingScanResults:${id}`;
+  return await new Promise((resolve) => {
+    try {
+      chrome.storage.local.get([HISTORY_KEY, ACTIVE_ID_KEY, LAST_ID_KEY], (res) => {
+        void chrome.runtime.lastError;
+        const active = safeStr(res?.[ACTIVE_ID_KEY] || '');
+        const last = safeStr(res?.[LAST_ID_KEY] || '');
+        if (active && active === id) return resolve(false);
+        const hist = Array.isArray(res?.[HISTORY_KEY]) ? res[HISTORY_KEY] : [];
+        const nextHist = hist.filter((h) => safeStr(h?.scanId || '') !== id);
+        const patch = { [HISTORY_KEY]: nextHist };
+        if (last === id) patch[LAST_ID_KEY] = nextHist[0]?.scanId || '';
+        chrome.storage.local.set(patch, () => {
+          void chrome.runtime.lastError;
+          chrome.storage.local.remove([stateKey, resultsKey], () => {
+            void chrome.runtime.lastError;
+            resolve(true);
+          });
+        });
+      });
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+async function clearAllScans() {
+  return await new Promise((resolve) => {
+    try {
+      chrome.storage.local.get([HISTORY_KEY, ACTIVE_ID_KEY], (res) => {
+        void chrome.runtime.lastError;
+        const active = safeStr(res?.[ACTIVE_ID_KEY] || '');
+        if (active) return resolve({ ok: false, reason: `active_scan:${active}` });
+        const hist = Array.isArray(res?.[HISTORY_KEY]) ? res[HISTORY_KEY] : [];
+        const keysToRemove = [];
+        for (const h of hist) {
+          const id = safeStr(h?.scanId || '');
+          if (!id) continue;
+          keysToRemove.push(`stockxListingScanState:${id}`);
+          keysToRemove.push(`stockxListingScanResults:${id}`);
+        }
+        keysToRemove.push(HISTORY_KEY);
+        keysToRemove.push(LAST_ID_KEY);
+        keysToRemove.push(SCAN_COUNTER_KEY);
+        chrome.storage.local.remove(keysToRemove, () => {
+          void chrome.runtime.lastError;
+          resolve({ ok: true });
+        });
+      });
+    } catch {
+      resolve({ ok: false, reason: 'exception' });
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  $('refreshBtn')?.addEventListener('click', () => refresh());
+  $('scanSelect')?.addEventListener('change', () => refresh());
+
+  $('stopBtn')?.addEventListener('click', async () => {
+    try {
+      const ids = await getScanIds();
+      if (!ids.active) return;
+      chrome.runtime.sendMessage({ action: 'stopListingBidScan', scanId: ids.active }, () => {
+        void chrome.runtime.lastError;
+        refresh();
+      });
+    } catch {}
+  });
+
+  $('keepFocusToggle')?.addEventListener('change', async (e) => {
+    try {
+      const ids = await getScanIds();
+      if (!ids.active) return;
+      const keep = !!e?.target?.checked;
+      setToast(keep ? 'Background mode enabled (scan will not steal focus).' : 'Foreground mode enabled (more reliable).');
+      chrome.runtime.sendMessage({ action: 'setListingScanFocusMode', scanId: ids.active, keepUserFocus: keep }, () => {
+        void chrome.runtime.lastError;
+        refresh();
+      });
+    } catch {}
+  });
+
+  $('clearThisBtn')?.addEventListener('click', async () => {
+    try {
+      const id = safeStr($('scanSelect')?.value || '');
+      if (!id) return;
+      const ok = await clearOneScan(id);
+      if (!ok) return;
+      await refresh();
+    } catch {}
+  });
+
+  $('clearAllBtn')?.addEventListener('click', async () => {
+    try {
+      const ok = window.confirm('Clear ALL scan history/results? This cannot be undone.');
+      if (!ok) return;
+      setToast('Clearing…');
+      const res = await clearAllScans();
+      if (!res?.ok) {
+        if (String(res?.reason || '').startsWith('active_scan:')) {
+          const activeId = String(res.reason.split(':')[1] || '');
+          setToast('Cannot clear while a scan is active. Stop the scan first.');
+          const stopOk = window.confirm(`A scan is still active (${activeId.slice(-8)}). Stop it now, then clear all?`);
+          if (!stopOk) return;
+          chrome.runtime.sendMessage({ action: 'stopListingBidScan', scanId: activeId }, async () => {
+            void chrome.runtime.lastError;
+            // Give stop a moment to persist, then retry clear.
+            setTimeout(async () => {
+              try {
+                setToast('Clearing…');
+                const res2 = await clearAllScans();
+                if (!res2?.ok) {
+                  setToast('Clear failed (still active). Try again in a moment.');
+                  return;
+                }
+                setToast('Cleared all scan history/results.');
+                await refresh();
+              } catch {}
+            }, 700);
+          });
+          return;
+        }
+        setToast('Clear failed.');
+        return;
+      }
+      setToast('Cleared all scan history/results.');
+      await refresh();
+    } catch {}
+  });
+
+  // Delegated open buttons in Opportunities list
+  document.addEventListener('click', (e) => {
+    try {
+      const btn = e?.target?.closest?.('button[data-open]');
+      if (!btn) return;
+      const url = safeStr(btn.getAttribute('data-open') || '');
+      if (!url) return;
+      chrome.tabs.create({ url }, () => void chrome.runtime.lastError);
+    } catch {}
+  });
+
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local') return;
+      const keys = Object.keys(changes || {});
+      // Refresh on scan id changes, state changes, or results changes.
+      if (
+        keys.includes(ACTIVE_ID_KEY) ||
+        keys.includes(LAST_ID_KEY) ||
+        keys.includes(HISTORY_KEY) ||
+        keys.some((k) => k.startsWith('stockxListingScanState:') || k.startsWith('stockxListingScanResults:'))
+      ) {
+        refresh();
+      }
+    });
+  } catch {}
+
+  await refresh();
+});
+

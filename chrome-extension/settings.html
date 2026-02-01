@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>StockX Scanner Settings</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        margin: 0;
+        padding: 18px;
+        background: #0b1220;
+        color: rgba(255, 255, 255, 0.92);
+      }
+      .wrap {
+        max-width: 720px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0 0 14px;
+        color: #bbf7d0;
+      }
+      .card {
+        background: rgba(17, 24, 39, 0.92);
+        border: 1px solid rgba(99, 102, 241, 0.28);
+        border-radius: 12px;
+        padding: 14px;
+        margin-bottom: 12px;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 240px 1fr;
+        gap: 12px;
+        align-items: center;
+        margin: 10px 0;
+      }
+      label {
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.82);
+      }
+      input[type='number'],
+      input[type='text'] {
+        width: 100%;
+        padding: 9px 10px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.06);
+        color: rgba(255, 255, 255, 0.92);
+        outline: none;
+      }
+      .muted {
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.6);
+        line-height: 1.35;
+      }
+      .checks {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .checks label {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        cursor: pointer;
+        user-select: none;
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 10px;
+      }
+      button {
+        appearance: none;
+        border: 0;
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-weight: 900;
+        cursor: pointer;
+      }
+      .btn-primary {
+        background: #22c55e;
+        color: #052e14;
+        border: 1px solid rgba(34, 197, 94, 0.9);
+      }
+      .btn-secondary {
+        background: rgba(255, 255, 255, 0.06);
+        color: rgba(255, 255, 255, 0.92);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+      }
+      .toast {
+        margin-top: 10px;
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.75);
+      }
+      @media (max-width: 640px) {
+        .row {
+          grid-template-columns: 1fr;
+          gap: 6px;
+        }
+        .checks {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>StockX Scanner Settings</h1>
+
+      <div class="card">
+        <div class="row">
+          <label for="minSales30d">Min sales (last 30 days) per size</label>
+          <input id="minSales30d" type="number" min="0" step="1" />
+        </div>
+        <div class="row">
+          <label for="minProfit">Min profit (USD)</label>
+          <input id="minProfit" type="number" min="0" step="1" />
+        </div>
+        <div class="row">
+          <label for="feeSum">Flat fees (shipping + processing)</label>
+          <input id="feeSum" type="number" min="0" step="1" />
+        </div>
+        <div class="muted">
+          Profit rule: <code>lowestAsk - highestBid - feeSum</code> must be ≥ <code>minProfit</code>.
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row">
+          <label>Scan filters</label>
+          <div>
+            <div class="row" style="grid-template-columns: 1fr; gap:6px; margin:0 0 10px;">
+              <label for="excludeRecentReleaseDays">Exclude products released in the last N days (0 = off)</label>
+              <input id="excludeRecentReleaseDays" type="number" min="0" step="1" />
+              <div class="muted">Best-effort: uses product release date if StockX exposes it (Next.js data / “Release Date” section).</div>
+            </div>
+            <label style="display:flex; gap:8px; align-items:center; cursor:pointer; user-select:none;">
+              <input id="excludeSponsored" type="checkbox" />
+              Exclude sponsored listings
+            </label>
+            <label style="display:flex; gap:8px; align-items:center; cursor:pointer; user-select:none; margin-top:8px;">
+              <input id="skipOneSize" type="checkbox" />
+              Skip “ONE SIZE” items
+            </label>
+          </div>
+        </div>
+        <div class="row">
+          <label>Categories to include (best-effort)</label>
+          <div class="checks">
+            <label><input type="checkbox" data-cat="sneakers" /> Sneakers</label>
+            <label><input type="checkbox" data-cat="streetwear" /> Streetwear</label>
+            <label><input type="checkbox" data-cat="collectibles" /> Collectibles</label>
+            <label><input type="checkbox" data-cat="electronics" /> Electronics</label>
+            <label><input type="checkbox" data-cat="trading-cards" /> Trading Cards</label>
+            <label><input type="checkbox" data-cat="handbags" /> Handbags</label>
+            <label><input type="checkbox" data-cat="watches" /> Watches</label>
+          </div>
+          <div class="muted" style="margin-top:8px;">
+            Category filtering uses text heuristics from the listing card; if a card doesn’t expose its category text, it may still pass.
+          </div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="saveBtn" class="btn-primary">Save</button>
+        <button id="resetBtn" class="btn-secondary">Reset defaults</button>
+      </div>
+      <div id="toast" class="toast"></div>
+    </div>
+
+    <script src="settings.js"></script>
+  </body>
+</html>
+
