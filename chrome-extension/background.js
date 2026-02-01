@@ -5,6 +5,25 @@ chrome.runtime.onInstalled.addListener(() => {
 
 const SCAN_HISTORY_KEY = 'stockxScanHistory';
 const SCAN_COUNTER_KEY = 'stockxScanCounter';
+const SCAN_RESUME_KEY_PREFIX = 'stockxListingScanResume:'; // stores large resume payload (urls/config) once per scan
+
+function getScanStateCache() {
+  try {
+    if (!globalThis.__stockxScanStateCache) globalThis.__stockxScanStateCache = new Map();
+    return globalThis.__stockxScanStateCache;
+  } catch {
+    return null;
+  }
+}
+
+function getScanResultsCache() {
+  try {
+    if (!globalThis.__stockxScanResultsCache) globalThis.__stockxScanResultsCache = new Map();
+    return globalThis.__stockxScanResultsCache;
+  } catch {
+    return null;
+  }
+}
 
 function storageGet(keys) {
   return new Promise((resolve) => {
@@ -30,6 +49,42 @@ function storageSet(obj) {
       resolve(false);
     }
   });
+}
+
+function setScanResume(scanId, payload) {
+  try {
+    if (!scanId) return;
+    const key = `${SCAN_RESUME_KEY_PREFIX}${scanId}`;
+    chrome.storage?.local?.set?.({ [key]: payload }, () => void chrome.runtime.lastError);
+  } catch {}
+}
+
+async function getScanResume(scanId) {
+  try {
+    const id = String(scanId || '');
+    if (!id) return null;
+    const key = `${SCAN_RESUME_KEY_PREFIX}${id}`;
+    const res = await storageGet([key]);
+    const v = res?.[key];
+    return v && typeof v === 'object' ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+async function updateScanResume(scanId, patch) {
+  try {
+    const id = String(scanId || '');
+    if (!id) return false;
+    const key = `${SCAN_RESUME_KEY_PREFIX}${id}`;
+    const res = await storageGet([key]);
+    const cur = res?.[key] && typeof res[key] === 'object' ? res[key] : {};
+    const next = { ...cur, ...(patch || {}) };
+    await storageSet({ [key]: next });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function allocateNextScanNumber() {
@@ -279,6 +334,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     // Initialize persisted scan state so the listing UI can poll (even if messages are missed).
     try {
+      // Store large resume payload once (urls list). Cursor is stored on scan state and updated frequently.
+      setScanResume(scanId, { kind: 'listing', urls: trimmed });
       chrome.storage?.local?.set?.(
         {
           stockxLastListingScanId: scanId,
@@ -299,7 +356,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             mode: 'listing',
             resume: {
               kind: 'listing',
-              urls: trimmed,
               nextIdx: 0,
               inFlightIdx: null
             },
@@ -382,6 +438,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     // Initialize persisted scan state/results.
     try {
+      setScanResume(scanId, { kind: 'paginated', startUrl, maxPages, perPage, collectOpts });
       chrome.storage?.local?.set?.(
         {
           [`stockxListingScanState:${scanId}`]: {
@@ -401,10 +458,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             startUrl,
             resume: {
               kind: 'paginated',
-              startUrl,
-              maxPages,
-              perPage,
-              collectOpts,
               startPage: null,
               currentPage: null,
               pageUrls: null,
@@ -498,7 +551,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           return sendResponse({ success: false, error: 'This scan was not resumable (non-sequential). Start a new scan in sequential mode.' });
         }
 
-        const startUrl = String(s.startUrl || resume?.startUrl || '');
+        const startUrl = String(s.startUrl || '');
         const preferredOrigin = Number(request.originTabId) || Number(s.originTabId) || 0;
         const allowCreateOriginTab = request.allowCreateOriginTab !== false;
 
@@ -583,13 +636,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               // Dispatch the resume runner.
               (async () => {
                 try {
+                  // Load large resume payload (urls/config). Fall back to old embedded data for backward compatibility.
+                  const resumePayload = (await getScanResume(scanId)) || null;
                   if (kind === 'paginated') {
-                    const maxPages = Number(resume?.maxPages || 1) || 1;
-                    const perPage = Number(resume?.perPage || 48) || 48;
-                    const collectOpts = resume?.collectOpts && typeof resume.collectOpts === 'object' ? resume.collectOpts : {};
+                    const maxPages = Number(resumePayload?.maxPages || resume?.maxPages || 1) || 1;
+                    const perPage = Number(resumePayload?.perPage || resume?.perPage || 48) || 48;
+                    const collectOpts = (resumePayload?.collectOpts && typeof resumePayload.collectOpts === 'object')
+                      ? resumePayload.collectOpts
+                      : (resume?.collectOpts && typeof resume.collectOpts === 'object' ? resume.collectOpts : {});
+                    const effectiveStartUrl = String(resumePayload?.startUrl || s.startUrl || '');
                     const startPage = Number(resume?.startPage || 1) || 1;
                     const currentPage = Number(resume?.currentPage || startPage) || startPage;
-                    const pageUrls = Array.isArray(resume?.pageUrls) ? resume.pageUrls : null;
+                    const pageUrls = Array.isArray(resume?.pageUrls) ? resume.pageUrls : (Array.isArray(resumePayload?.lastPageUrls) && Number(resumePayload?.lastPage) === Number(resume?.currentPage) ? resumePayload.lastPageUrls : null);
                     const nextIdx = Number.isFinite(Number(resume?.nextIdx)) ? Number(resume.nextIdx) : 0;
                     const inFlightIdx = Number.isFinite(Number(resume?.inFlightIdx)) ? Number(resume.inFlightIdx) : null;
                     const effectiveIdx = inFlightIdx != null ? inFlightIdx : nextIdx;
@@ -597,7 +655,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     await runListingBidScanPaginatedResume({
                       originTabId,
                       scanId,
-                      startUrl,
+                      startUrl: effectiveStartUrl,
                       maxPages,
                       perPage,
                       collectOpts,
@@ -608,7 +666,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                       completed: Number(s.completed || 0)
                     });
                   } else {
-                    const urls = Array.isArray(resume?.urls) ? resume.urls : [];
+                    const urls = Array.isArray(resumePayload?.urls) ? resumePayload.urls : (Array.isArray(resume?.urls) ? resume.urls : []);
                     if (!urls.length) throw new Error('No URLs saved to resume');
                     const nextIdx = Number.isFinite(Number(resume?.nextIdx)) ? Number(resume.nextIdx) : 0;
                     const inFlightIdx = Number.isFinite(Number(resume?.inFlightIdx)) ? Number(resume.inFlightIdx) : null;
@@ -723,7 +781,7 @@ async function runListingBidScanFromIndex({ originTabId, scanId, urls, startIdx,
   let done = Math.max(0, Number(completed) || 0);
 
   sendToTab(originTabId, { action: 'listingBidScanProgress', scanId, stage: `resuming (${nextIdx}/${total})`, current: done, total });
-  setScanState(scanId, { stage: `resuming (${nextIdx}/${total})`, total, completed: done, cancelled: false, canResume: true, resume: { kind: 'listing', urls, nextIdx, inFlightIdx: null } });
+  setScanState(scanId, { stage: `resuming (${nextIdx}/${total})`, total, completed: done, cancelled: false, canResume: true, resume: { kind: 'listing', nextIdx, inFlightIdx: null } });
 
   // Force sequential for deterministic resume.
   const concurrency = 1;
@@ -735,14 +793,14 @@ async function runListingBidScanFromIndex({ originTabId, scanId, urls, startIdx,
     const url = urls[i];
 
     // Persist resume cursor before opening.
-    setScanState(scanId, { stage: 'opening', total, completed: done, currentUrl: url, canResume: true, resume: { kind: 'listing', urls, nextIdx, inFlightIdx: i } });
+    setScanState(scanId, { stage: 'opening', total, completed: done, currentUrl: url, canResume: true, resume: { kind: 'listing', nextIdx, inFlightIdx: i } });
 
     const tab = await createInactiveTab(url, scanId);
     if (!tab?.id) {
       done += 1;
       sendToTab(originTabId, { action: 'listingBidScanResult', scanId, success: false, url, error: 'Failed to open tab' });
       setScanResult(scanId, url, { url, success: false, error: 'Failed to open tab' });
-      setScanState(scanId, { stage: 'scanned', total, completed: done, currentUrl: url, canResume: true, resume: { kind: 'listing', urls, nextIdx, inFlightIdx: null } });
+      setScanState(scanId, { stage: 'scanned', total, completed: done, currentUrl: url, canResume: true, resume: { kind: 'listing', nextIdx, inFlightIdx: null } });
       continue;
     }
     trackScanTab(scanId, tab.id);
@@ -754,7 +812,7 @@ async function runListingBidScanFromIndex({ originTabId, scanId, urls, startIdx,
       done += 1;
       sendToTab(originTabId, { action: 'listingBidScanResult', scanId, success: false, url, error: 'Tab load timed out' });
       setScanResult(scanId, url, { url, success: false, error: 'Tab load timed out' });
-      setScanState(scanId, { stage: 'scanned', total, completed: done, currentUrl: url, canResume: true, resume: { kind: 'listing', urls, nextIdx, inFlightIdx: null } });
+      setScanState(scanId, { stage: 'scanned', total, completed: done, currentUrl: url, canResume: true, resume: { kind: 'listing', nextIdx, inFlightIdx: null } });
       continue;
     }
 
@@ -773,7 +831,7 @@ async function runListingBidScanFromIndex({ originTabId, scanId, urls, startIdx,
     }
 
     sendToTab(originTabId, { action: 'listingBidScanProgress', scanId, stage: 'scanning', current: done, total, url });
-    setScanState(scanId, { stage: 'scanning', total, completed: done, currentUrl: url, canResume: true, resume: { kind: 'listing', urls, nextIdx, inFlightIdx: i } });
+    setScanState(scanId, { stage: 'scanning', total, completed: done, currentUrl: url, canResume: true, resume: { kind: 'listing', nextIdx, inFlightIdx: i } });
 
     const resp = await requestScanFromTab(tab.id, { action: 'scanProductBidOpportunities', scanId, url, mode: 'listing' }, 120000);
 
@@ -783,7 +841,7 @@ async function runListingBidScanFromIndex({ originTabId, scanId, urls, startIdx,
     done += 1;
     sendToTab(originTabId, { action: 'listingBidScanResult', scanId, url, ...(resp || { success: false, error: 'No response' }) });
     setScanResult(scanId, url, { url, ...(resp || { success: false, error: 'No response' }) });
-    setScanState(scanId, { stage: 'scanned', total, completed: done, currentUrl: url, canResume: true, resume: { kind: 'listing', urls, nextIdx, inFlightIdx: null } });
+    setScanState(scanId, { stage: 'scanned', total, completed: done, currentUrl: url, canResume: true, resume: { kind: 'listing', nextIdx, inFlightIdx: null } });
 
     if (!getScanEntry(scanId)?.keepUserFocus) {
       await activateTab(originTabId);
@@ -792,7 +850,7 @@ async function runListingBidScanFromIndex({ originTabId, scanId, urls, startIdx,
 
   if (isScanCancelled(scanId)) {
     sendToTab(originTabId, { action: 'listingBidScanDone', scanId, success: false, cancelled: true, total });
-    setScanState(scanId, { stage: 'stopped', total, completed: done, cancelled: true, success: false, finishedAt: Date.now(), canResume: true, resume: { kind: 'listing', urls, nextIdx, inFlightIdx: null } });
+    setScanState(scanId, { stage: 'stopped', total, completed: done, cancelled: true, success: false, finishedAt: Date.now(), canResume: true, resume: { kind: 'listing', nextIdx, inFlightIdx: null } });
     try { await patchScanHistory(scanId, { finishedAt: Date.now(), success: false, cancelled: true, completed: done }); } catch {}
   } else {
     sendToTab(originTabId, { action: 'listingBidScanDone', scanId, success: true, cancelled: false, total });
@@ -848,15 +906,24 @@ async function runListingBidScanPaginatedResume({
     await new Promise((r) => setTimeout(r, 1600));
     if (isScanCancelled(scanId)) break;
 
-    // Determine URLs for this page: use saved pageUrls for the first page only, otherwise recollect.
+    // Determine URLs for this page: use saved pageUrls for the first page only, otherwise recollect (with retries).
     let urls = [];
     if (pageNum === startP && Array.isArray(pageUrls) && pageUrls.length) {
       urls = pageUrls;
     } else {
-      const collected = await requestUrlsFromOriginTab(originTabId, { perPage, opts }, 25000);
-      urls = Array.isArray(collected?.urls) ? collected.urls : [];
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const collected = await requestUrlsFromOriginTab(originTabId, { perPage, opts }, 25000);
+        urls = Array.isArray(collected?.urls) ? collected.urls : [];
+        if (urls.length) break;
+        await new Promise((r) => setTimeout(r, 1200 + attempt * 700));
+      }
     }
     if (!urls.length) break;
+
+    // Persist this page's urls once for exact resume.
+    try {
+      await updateScanResume(scanId, { kind: 'paginated', startUrl, maxPages, perPage, collectOpts: opts || {}, lastPage: pageNum, lastPageUrls: urls });
+    } catch {}
 
     let idx = pageNum === startP ? Math.max(0, Number(startIdx) || 0) : 0;
     for (; idx < urls.length; idx++) {
@@ -870,7 +937,7 @@ async function runListingBidScanPaginatedResume({
         currentPage: pageNum,
         currentUrl: url,
         canResume: true,
-        resume: { kind: 'paginated', startUrl, maxPages, perPage, collectOpts: opts, startPage: sp, currentPage: pageNum, pageUrls: urls, nextIdx: idx + 1, inFlightIdx: idx }
+        resume: { kind: 'paginated', startPage: sp, currentPage: pageNum, nextIdx: idx + 1, inFlightIdx: idx }
       });
 
       const tab = await createInactiveTab(url, scanId);
@@ -919,7 +986,7 @@ async function runListingBidScanPaginatedResume({
         currentPage: pageNum,
         currentUrl: url,
         canResume: true,
-        resume: { kind: 'paginated', startUrl, maxPages, perPage, collectOpts: opts, startPage: sp, currentPage: pageNum, pageUrls: urls, nextIdx: idx + 1, inFlightIdx: null }
+        resume: { kind: 'paginated', startPage: sp, currentPage: pageNum, nextIdx: idx + 1, inFlightIdx: null }
       });
 
       if (!getScanEntry(scanId)?.keepUserFocus) {
@@ -950,10 +1017,22 @@ function setScanState(scanId, patch) {
   try {
     if (!scanId) return;
     const key = `stockxListingScanState:${scanId}`;
+    const cache = getScanStateCache();
+    const cached = cache?.get?.(scanId) || null;
+    if (cached) {
+      const next = { ...cached, ...(patch || {}), updatedAt: Date.now() };
+      cache.set(scanId, next);
+      chrome.storage?.local?.set?.({ [key]: next }, () => void chrome.runtime.lastError);
+      return;
+    }
+    // First write after service-worker restart: hydrate once from storage then cache.
     chrome.storage?.local?.get?.([key], (res) => {
       void chrome.runtime.lastError;
       const cur = res?.[key] && typeof res[key] === 'object' ? res[key] : { scanId };
-      const next = { ...cur, ...patch, updatedAt: Date.now() };
+      const next = { ...cur, ...(patch || {}), updatedAt: Date.now() };
+      try {
+        cache?.set?.(scanId, next);
+      } catch {}
       chrome.storage?.local?.set?.({ [key]: next }, () => void chrome.runtime.lastError);
     });
   } catch {}
@@ -963,12 +1042,45 @@ function setScanResult(scanId, url, result) {
   try {
     if (!scanId || !url) return;
     const key = `stockxListingScanResults:${scanId}`;
+    const cache = getScanResultsCache();
+    const entry = cache?.get?.(scanId) || null;
+    const upsert = (data) => {
+      // Include a timestamp so the UI/debug can verify what is actually persisted.
+      data[url] = { scanId, ...(result || {}), savedAt: Date.now() };
+      if (!cache) {
+        chrome.storage?.local?.set?.({ [key]: data }, () => void chrome.runtime.lastError);
+        return;
+      }
+      const curEntry = cache.get(scanId) || { data: {}, dirty: false, timer: null };
+      curEntry.data = data;
+      curEntry.dirty = true;
+      if (!curEntry.timer) {
+        curEntry.timer = setTimeout(() => {
+          try {
+            const e = cache.get(scanId);
+            if (!e || !e.dirty) return;
+            e.dirty = false;
+            e.timer = null;
+            chrome.storage?.local?.set?.({ [key]: e.data }, () => void chrome.runtime.lastError);
+          } catch {}
+        }, 700);
+      }
+      cache.set(scanId, curEntry);
+    };
+
+    if (entry && entry.data) {
+      upsert(entry.data);
+      return;
+    }
+
+    // First result write: hydrate once, then batch flush thereafter.
     chrome.storage?.local?.get?.([key], (res) => {
       void chrome.runtime.lastError;
       const cur = res?.[key] && typeof res[key] === 'object' ? res[key] : {};
-      // Include a timestamp so the UI/debug can verify what is actually persisted.
-      cur[url] = { scanId, ...result, savedAt: Date.now() };
-      chrome.storage?.local?.set?.({ [key]: cur }, () => void chrome.runtime.lastError);
+      try {
+        cache?.set?.(scanId, { data: cur, dirty: false, timer: null });
+      } catch {}
+      upsert(cur);
     });
     // Also update the global opportunities index (best-effort).
     try {
@@ -1275,12 +1387,24 @@ async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPa
     sendToTab(originTabId, { action: 'listingBidScanProgress', scanId, stage: `page ${pageNum} (collecting)`, current: completed, total, url: pageUrl });
     setScanState(scanId, { stage: `page ${pageNum} collecting`, total, completed, currentPage: pageNum, currentUrl: pageUrl });
 
-    const collected = await requestUrlsFromOriginTab(originTabId, { perPage, opts }, 25000);
-    const urls = Array.isArray(collected?.urls) ? collected.urls : [];
+    let urls = [];
+    // Collect retries: StockX sometimes returns an empty grid for a moment (SPA/hydration).
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const collected = await requestUrlsFromOriginTab(originTabId, { perPage, opts }, 25000);
+      urls = Array.isArray(collected?.urls) ? collected.urls : [];
+      if (urls.length) break;
+      await new Promise((r) => setTimeout(r, 1200 + attempt * 700));
+    }
     if (!urls.length) {
-      // No products detected -> stop.
+      // Ended early: mark as stopped so it can be resumed.
+      setScanState(scanId, { stage: `stopped (no urls on page ${pageNum})`, cancelled: true, success: false, canResume: true, finishedAt: Date.now() });
       break;
     }
+
+    // Store current page URLs once for exact resume. Avoid putting this array into scan state (expensive).
+    try {
+      await updateScanResume(scanId, { kind: 'paginated', startUrl, maxPages, perPage, collectOpts: opts || {}, lastPage: pageNum, lastPageUrls: urls });
+    } catch {}
 
     // Scan these URLs sequentially by reusing the existing scan runner logic in-page.
     for (let i = 0; i < urls.length; i++) {
@@ -1293,13 +1417,8 @@ async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPa
           canResume: true,
           resume: {
             kind: 'paginated',
-            startUrl,
-            maxPages,
-            perPage,
-            collectOpts: opts || {},
             startPage,
             currentPage: pageNum,
-            pageUrls: urls,
             nextIdx: i + 1,
             inFlightIdx: i
           }
@@ -1375,13 +1494,8 @@ async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPa
         canResume: true,
         resume: {
           kind: 'paginated',
-          startUrl,
-          maxPages,
-          perPage,
-          collectOpts: opts || {},
           startPage,
           currentPage: pageNum,
-          pageUrls: urls,
           nextIdx: i + 1,
           inFlightIdx: null
         }
@@ -1436,7 +1550,7 @@ async function runListingBidScan({ originTabId, scanId, urls }) {
     try {
       setScanState(scanId, {
         canResume: concurrency === 1,
-        resume: { kind: 'listing', urls, nextIdx: i + 1, inFlightIdx: i }
+        resume: { kind: 'listing', nextIdx: i + 1, inFlightIdx: i }
       });
     } catch {}
     sendToTab(originTabId, {
@@ -1507,7 +1621,7 @@ async function runListingBidScan({ originTabId, scanId, urls }) {
       completed,
       currentUrl: url,
       canResume: concurrency === 1,
-      resume: { kind: 'listing', urls, nextIdx, inFlightIdx: null }
+      resume: { kind: 'listing', nextIdx, inFlightIdx: null }
     });
 
     // Return user to the listing tab during sequential scans.
@@ -1534,7 +1648,7 @@ async function runListingBidScan({ originTabId, scanId, urls }) {
       success: false,
       finishedAt: Date.now(),
       canResume: concurrency === 1,
-      resume: { kind: 'listing', urls, nextIdx, inFlightIdx: null }
+      resume: { kind: 'listing', nextIdx, inFlightIdx: null }
     });
     try { await patchScanHistory(scanId, { finishedAt: Date.now(), success: false, cancelled: true, completed }); } catch {}
   } else {
