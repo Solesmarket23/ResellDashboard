@@ -962,6 +962,16 @@ function stockxSizeParamFromLabel(sizeLabel) {
     const s = String(sizeLabel || '').replace(/\s+/g, ' ').trim();
     if (!s) return '';
     if (/one\s*size/i.test(s)) return '';
+    // Women's sizes: StockX expects `?size=5W` etc.
+    // Some labels include both conversions like "US M 4 / US W 5" — prefer the W value.
+    try {
+      const wm =
+        s.match(/\bUS\s*W(?:OMEN'?S)?\s*(\d{1,2}(?:\.\d)?)\b/i) ||
+        s.match(/\bWOMEN'?S?\s*(\d{1,2}(?:\.\d)?)\b/i) ||
+        s.match(/\bW\s*(\d{1,2}(?:\.\d)?)\b/i) ||
+        null;
+      if (wm?.[1]) return `${wm[1]}W`;
+    } catch {}
     const kids = s.match(/\b(\d{1,2}(?:\.\d)?)\s*(K|Y|C|T)\b/i);
     if (kids?.[1] && kids?.[2]) return `${kids[1]}${String(kids[2]).toUpperCase()}`;
     return normalizeSizeKey(s);
