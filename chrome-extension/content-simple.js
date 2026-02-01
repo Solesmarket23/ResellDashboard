@@ -5576,6 +5576,47 @@ function isVisibleElBestEffort(el) {
   }
 }
 
+function isEnabledBtnBestEffort(btn) {
+  try {
+    if (!btn) return false;
+    if (btn.disabled) return false;
+    const ariaDisabled = String(btn.getAttribute?.('aria-disabled') || '').toLowerCase();
+    if (ariaDisabled === 'true') return false;
+    return true;
+  } catch {
+    return true;
+  }
+}
+
+function clickElPointerBestEffort(el) {
+  try {
+    if (!el) return false;
+    try {
+      el.scrollIntoView?.({ block: 'center', inline: 'center' });
+    } catch {}
+    const opts = { bubbles: true, cancelable: true, composed: true, view: window };
+    try {
+      el.dispatchEvent(new PointerEvent('pointerdown', { ...opts, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+      el.dispatchEvent(new PointerEvent('pointerup', { ...opts, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+    } catch {
+      // Some pages disable PointerEvent in certain contexts; fall back to mouse.
+      try {
+        el.dispatchEvent(new MouseEvent('mousedown', opts));
+        el.dispatchEvent(new MouseEvent('mouseup', opts));
+      } catch {}
+    }
+    try {
+      el.dispatchEvent(new MouseEvent('click', opts));
+    } catch {}
+    try {
+      el.click?.();
+    } catch {}
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs = 6500 } = {}) {
   const debug = {
     tried: false,
@@ -5583,6 +5624,9 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
     clickedSeller: false,
     clickedChevron: false,
     clickedAllInCollapse: false,
+    sellerBtnFound: false,
+    sellerBtnVisible: false,
+    sellerBtnEnabled: false,
     inferred: '',
     error: ''
   };
@@ -5621,6 +5665,14 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
       try {
         const b = scope.querySelector?.('[data-testid="AllInViewSwitchToSELLER"]') || document.querySelector('[data-testid="AllInViewSwitchToSELLER"]');
         return isVisibleElBestEffort(b) ? b : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const findSellerBtnAny = () => {
+      try {
+        return scope.querySelector?.('[data-testid="AllInViewSwitchToSELLER"]') || document.querySelector('[data-testid="AllInViewSwitchToSELLER"]') || null;
       } catch {
         return null;
       }
@@ -5687,11 +5739,24 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
         debug.inferred = 'after_switch';
         return { ok: true, salesView: 'seller', debug };
       }
+
+      const sellerBtnAny = findSellerBtnAny();
+      debug.sellerBtnFound = !!sellerBtnAny;
+      debug.sellerBtnVisible = isVisibleElBestEffort(sellerBtnAny);
+      debug.sellerBtnEnabled = isEnabledBtnBestEffort(sellerBtnAny);
+
+      // If the button exists but isn't visible yet, try expanding and give layout time.
+      if (sellerBtnAny && !debug.sellerBtnVisible) {
+        try { sellerBtnAny.scrollIntoView?.({ block: 'center', inline: 'center' }); } catch {}
+        await new Promise((r) => setTimeout(r, 350));
+      }
+
       const sellerBtn = findSellerBtn();
-      if (sellerBtn) {
-        clickElBestEffort(sellerBtn);
+      if (sellerBtn && isEnabledBtnBestEffort(sellerBtn)) {
+        // Pointer-based click tends to be more reliable on StockX than a plain .click()
+        clickElPointerBestEffort(sellerBtn);
         debug.clickedSeller = true;
-        // Temporary: give StockX time to apply the view switch before we proceed to parsing.
+        // Give StockX time to apply the view switch before we proceed to parsing.
         await new Promise((r) => setTimeout(r, 900));
         // Verify switch: when Seller view is active, the "switch to BUYER" control becomes visible.
         try {
@@ -5705,6 +5770,7 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
         } catch {}
         continue;
       }
+
       // Seller option not visible yet → open the chevron/menu.
       if (!debug.openedMenu) {
         debug.openedMenu = openMenu();

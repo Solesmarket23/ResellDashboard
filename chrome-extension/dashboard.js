@@ -198,6 +198,7 @@ function renderResults(listEl, resultsMap) {
       const base = v ? `salesView: ${v}` : 'salesView: —';
       if (!dbg) return `<div class="sub mono" style="opacity:.75;">${escapeHtml(base)}</div>`;
       const bits = [
+        `allIn=${dbg.clickedAllInCollapse ? 'yes' : 'no'}`,
         `chevron=${dbg.clickedChevron ? 'yes' : 'no'}`,
         `menu=${dbg.openedMenu ? 'yes' : 'no'}`,
         `sellerBtn=${dbg.clickedSeller ? 'yes' : 'no'}`,
