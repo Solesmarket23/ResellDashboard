@@ -6730,19 +6730,19 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
       const ask = Number(askBySizeKey.get(sizeKey));
       if (!Number.isFinite(ask) || ask <= 0) continue;
 
-      // Use highest bid as the cost basis (per user rule), not HB+1.
       const highestBid = Math.floor(hbNum);
-      const suggestedBid = highestBid;
-      const profit = ask - (highestBid + feeSum);
+      // Bid we actually place should be $1 above the current highest bid.
+      const suggestedBid = highestBid + 1;
+      const profit = ask - (suggestedBid + feeSum);
       if (profit < minProfit) {
         eliminatedByAsk += 1;
         continue;
       }
 
       // New rule: "all-in cost" must be at or below Avg30d sale price.
-      // all-in cost = highestBid + feeSum
+      // all-in cost = suggestedBid + feeSum
       const avg30d = Number(stat?.avg);
-      const allIn = highestBid + feeSum;
+      const allIn = suggestedBid + feeSum;
       if (!Number.isFinite(avg30d) || avg30d <= 0 || allIn > avg30d) {
         eliminatedByAvg30d += 1;
         continue;
@@ -6750,6 +6750,10 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
 
       const maxBid = Math.floor(ask - feeSum - minProfit);
       if (!Number.isFinite(maxBid) || maxBid <= 0) continue;
+      if (suggestedBid > maxBid) {
+        eliminatedByAsk += 1;
+        continue;
+      }
       viableSizeKeys.add(sizeKey);
 
       opportunities.push({
@@ -6766,7 +6770,7 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
         })(),
         avg30d: Number.isFinite(avg30d) ? Math.round(avg30d) : null,
         sales30d: salesCount,
-        edge: maxBid - highestBid
+        edge: maxBid - suggestedBid
       });
     }
     const viableSizeCount = viableSizeKeys.size;
