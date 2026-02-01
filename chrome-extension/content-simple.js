@@ -5709,8 +5709,30 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
 
     const findSellerBtn = () => {
       try {
-        const b = scope.querySelector?.('[data-testid="AllInViewSwitchToSELLER"]') || document.querySelector('[data-testid="AllInViewSwitchToSELLER"]');
-        return isVisibleElStrict(b) ? b : null;
+        // StockX sometimes renders multiple instances (hidden + visible). Prefer the visible, enabled button.
+        const all = Array.from(scope.querySelectorAll?.('[data-testid="AllInViewSwitchToSELLER"]') || []);
+        const allDoc = all.length ? all : Array.from(document.querySelectorAll?.('[data-testid="AllInViewSwitchToSELLER"]') || []);
+
+        const candidates = allDoc
+          .map((el) => el?.closest?.('button,[role="button"],a') || el)
+          .filter(Boolean);
+
+        const strictVis = candidates.find((el) => isVisibleElStrict(el) && isEnabledBtnBestEffort(el));
+        if (strictVis) return strictVis;
+
+        // Fallback: Seller View tile often contains a selector-label span. Click its nearest button.
+        const labels = Array.from(scope.querySelectorAll?.('[data-testid="selector-label"]') || []).filter(Boolean);
+        const sellerLabel = labels.find((el) => safeText(el).trim().toLowerCase() === 'seller view');
+        const sellerBtnFromLabel = sellerLabel?.closest?.('button,[role="button"],a') || null;
+        if (sellerBtnFromLabel && isVisibleElStrict(sellerBtnFromLabel) && isEnabledBtnBestEffort(sellerBtnFromLabel)) return sellerBtnFromLabel;
+
+        // Last resort: any visible clickable with exact "Seller View" text.
+        const clickables = Array.from(scope.querySelectorAll?.('button,[role="button"],a,div') || []);
+        const sellerLoose = clickables
+          .filter((el) => safeText(el).trim().toLowerCase() === 'seller view')
+          .map((el) => el?.closest?.('button,[role="button"],a') || el)
+          .find((el) => isVisibleElStrict(el) && isEnabledBtnBestEffort(el));
+        return sellerLoose || null;
       } catch {
         return null;
       }
@@ -5718,7 +5740,13 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
 
     const findSellerBtnAny = () => {
       try {
-        return scope.querySelector?.('[data-testid="AllInViewSwitchToSELLER"]') || document.querySelector('[data-testid="AllInViewSwitchToSELLER"]') || null;
+        // Return any instance (for debug), even if hidden.
+        return (
+          (scope.querySelector?.('[data-testid="AllInViewSwitchToSELLER"]') ||
+            document.querySelector('[data-testid="AllInViewSwitchToSELLER"]') ||
+            scope.querySelector?.('[data-testid="selector-label"]') ||
+            null)
+        );
       } catch {
         return null;
       }
@@ -5732,7 +5760,7 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
           document.querySelector('[data-testid="AllInCollapseButton"]') ||
           null;
         if (!isVisibleElStrict(btn)) return false;
-        clickElBestEffort(btn);
+        clickElPointerBestEffort(btn);
         debug.clickedAllInCollapse = true;
         return true;
       } catch {
@@ -5790,7 +5818,7 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
 
       const sellerBtnAny = findSellerBtnAny();
       debug.sellerBtnFound = !!sellerBtnAny;
-      debug.sellerBtnVisible = isVisibleElBestEffort(sellerBtnAny);
+      debug.sellerBtnVisible = isVisibleElStrict(sellerBtnAny?.closest?.('button,[role="button"],a') || sellerBtnAny);
       debug.sellerBtnEnabled = isEnabledBtnBestEffort(sellerBtnAny);
       debug.toBuyerVisible = toBuyerVisible();
       debug.toSellerVisible = toSellerVisible();
@@ -5815,7 +5843,7 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
               scope.querySelector?.('[data-testid="AllInViewSwitchToBUYER"]') ||
               document.querySelector('[data-testid="AllInViewSwitchToBUYER"]') ||
               null;
-            return isVisibleElBestEffort(toBuyer) ? true : null;
+            return isVisibleElStrict(toBuyer) ? true : null;
           }, 2500);
         } catch {}
         continue;
