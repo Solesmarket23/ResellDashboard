@@ -5,6 +5,7 @@
   "description": "Shows average market prices on StockX product pages",
   "permissions": [
     "activeTab",
+    "tabs",
     "storage",
     "scripting"
   ],

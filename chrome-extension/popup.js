@@ -23,9 +23,29 @@ document.addEventListener('DOMContentLoaded', function() {
   function checkCurrentPageStatus() {
     chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
       const currentTab = tabs[0];
+      const url = String(currentTab?.url || '');
+
+      // Hard guarantee: do not show the popup on the StockX homepage.
+      // (Even if background popup overrides haven't fired yet.)
+      try {
+        const u = new URL(url);
+        const host = String(u.hostname || '').toLowerCase();
+        const isStockx = host === 'stockx.com' || host.endsWith('.stockx.com');
+        const isHomepage = (u.pathname || '/') === '/' || (u.pathname || '') === '';
+        if (isStockx && isHomepage) {
+          // Some Chrome builds can ignore an immediate close; do a microtask+timeout.
+          Promise.resolve().then(() => {
+            try { window.close(); } catch {}
+            setTimeout(() => {
+              try { window.close(); } catch {}
+            }, 25);
+          });
+          return;
+        }
+      } catch {}
       
-      if (currentTab.url.includes('stockx.com')) {
-        if (isProductPage(currentTab.url)) {
+      if (url.includes('stockx.com')) {
+        if (isProductPage(url)) {
           statusText.textContent = '✅ On StockX product page - Extension active';
           statusText.style.color = '#059669';
           refreshBtn.disabled = false;

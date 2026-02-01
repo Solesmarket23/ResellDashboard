@@ -753,7 +753,10 @@ function isStockXProductPage() {
 
     // Exclude common non-product routes
     const path = window.location.pathname.toLowerCase();
+    // Explicitly exclude the homepage
+    if (path === '/' || path === '') return false;
     const excludedPrefixes = [
+      '/category',
       '/search',
       '/sell',
       '/buy',
@@ -768,6 +771,13 @@ function isStockXProductPage() {
       '/signup'
     ];
     if (excludedPrefixes.some((p) => path.startsWith(p))) return false;
+
+    // Product pages are typically a single slug segment: /<slug>
+    const parts = path.split('/').filter(Boolean);
+    if (parts.length !== 1) return false;
+    const slug = parts[0];
+    if (!slug || slug.length < 6) return false;
+    if (!/^[a-z0-9-]+$/.test(slug)) return false;
 
     // Heuristic: most product pages have an H1 and at least one buy/bid CTA.
     const h1 = document.querySelector('h1');
@@ -904,6 +914,54 @@ function parsePriceFromText(text) {
   return Number.isFinite(n) ? n : null;
 }
 
+function parseBestUsdFromText(text) {
+  // Some Market Data rows include multiple numbers (e.g. Quantity + $Price).
+  // For bids/asks we want the *price*, which is usually the largest plausible USD number in the row.
+  try {
+    const s = String(text || '');
+    const matches = Array.from(s.matchAll(/\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)/g));
+    const nums = matches
+      .map((m) => {
+        const raw = m?.[1];
+        if (!raw) return null;
+        const n = Number(String(raw).replace(/,/g, ''));
+        return Number.isFinite(n) ? n : null;
+      })
+      .filter((n) => typeof n === 'number' && Number.isFinite(n));
+    const plausible = nums.filter((n) => isPlausibleUsd(n));
+    if (plausible.length) return Math.max(...plausible);
+    // Fallback to the first parsed number (existing behavior)
+    return parsePriceFromText(s);
+  } catch {
+    return parsePriceFromText(text);
+  }
+}
+
+function stockxSizeParamFromLabel(sizeLabel) {
+  // Convert a label like "US M 9.5" or "10K" into StockX's ?size= value.
+  try {
+    const s = String(sizeLabel || '').replace(/\s+/g, ' ').trim();
+    if (!s) return '';
+    if (/one\s*size/i.test(s)) return '';
+    const kids = s.match(/\b(\d{1,2}(?:\.\d)?)\s*(K|Y|C|T)\b/i);
+    if (kids?.[1] && kids?.[2]) return `${kids[1]}${String(kids[2]).toUpperCase()}`;
+    return normalizeSizeKey(s);
+  } catch {
+    return '';
+  }
+}
+
+function withSizeParam(url, sizeParam) {
+  try {
+    const u = new URL(String(url || ''), location.origin);
+    const sp = String(sizeParam || '').trim();
+    if (sp) u.searchParams.set('size', sp);
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
 function parseDateFromText(text) {
   const s = String(text || '').replace(/\s+/g, ' ').trim();
   // Common formats on StockX UI: "Jan 2, 2026" or "1/2/26"
@@ -942,13 +1000,31 @@ function parseDateFromText(text) {
 function parseSizeFromText(text) {
   const s = String(text || '').replace(/\s+/g, ' ').trim();
   // Prefer explicit size formats to avoid matching random counts like "0", "1", "18" from other UI.
-  const m1 = s.match(/\b(?:US|UK|EU)\s*([MW]?\s*\d{1,2}(?:\.\d)?)\b/i);
-  if (m1?.[0]) return m1[0].toUpperCase().replace(/\s+/g, ' ');
+  // NOTE: StockX Market Data rows can concatenate quantity + size like "6US M 8$271" (no word boundary before "US"),
+  // so do not rely on \b before region token. Instead capture the region token explicitly.
+  // Also allow the token to be preceded by digits (quantity), e.g. "5US M 8$271".
+  const m1 = s.match(/(US|UK|EU)\s*([MW]?\s*\d{1,2}(?:\.\d)?)\b/i);
+  if (m1?.[1] && m1?.[2]) {
+    const region = String(m1[1]).toUpperCase();
+    const rest = String(m1[2]).toUpperCase().replace(/\s+/g, ' ').trim();
+    return `${region} ${rest}`.trim();
+  }
 
   const m2 = s.match(/\b(?:MEN|WOMEN|M|W)\s*(\d{1,2}(?:\.\d)?)\b/i);
   if (m2?.[0]) return m2[0].toUpperCase().replace(/\s+/g, ' ');
 
+  // Kids / youth / toddler sizing (common on StockX): "10K", "6Y", "3C"
+  // Note: digits+letter is NOT a word boundary between them, so we must match the suffix explicitly.
+  const mKids = s.match(/\b(\d{1,2}(?:\.\d)?)\s*(K|Y|C|T)\b/i);
+  if (mKids?.[1] && mKids?.[2]) return `${mKids[1]}${String(mKids[2]).toUpperCase()}`;
+
+  // Sometimes displayed as "US K 10" / "US Y 6"
+  const mKids2 = s.match(/\b(?:US|UK|EU)\s*(K|Y|C|T)\s*(\d{1,2}(?:\.\d)?)\b/i);
+  if (mKids2?.[1] && mKids2?.[2]) return `${mKids2[2]}${String(mKids2[1]).toUpperCase()}`;
+
   // Fallback: plain numeric size, but constrain to realistic shoe size range and avoid common non-size contexts.
+  // NOTE: In Market Data tables, the first column is often Quantity, so we avoid treating "5" / "11" etc as sizes.
+  // Callers that need stricter behavior should use parseSizeFromTextStrict().
   const m3 = s.match(/\b(\d{1,2}(?:\.\d)?)\b/);
   if (!m3?.[1]) return null;
   const n = Number(m3[1]);
@@ -957,6 +1033,34 @@ function parseSizeFromText(text) {
   const lowered = s.toLowerCase();
   if (/\b(sales|sold|reviews|results|items|views|followers)\b/i.test(lowered)) return null;
   return String(n);
+}
+
+function parseSizeFromTextStrict(text) {
+  // Strict size parse: do NOT accept plain numeric fallbacks.
+  // Use this when parsing Market Data tables so Quantity doesn't get misread as size.
+  try {
+    const s = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!s) return null;
+
+    const m1 = s.match(/(US|UK|EU)\s*([MW]?\s*\d{1,2}(?:\.\d)?)\b/i);
+    if (m1?.[1] && m1?.[2]) {
+      const region = String(m1[1]).toUpperCase();
+      const rest = String(m1[2]).toUpperCase().replace(/\s+/g, ' ').trim();
+      return `${region} ${rest}`.trim();
+    }
+    const m2 = s.match(/\b(?:MEN|WOMEN|M|W)\s*(\d{1,2}(?:\.\d)?)\b/i);
+    if (m2?.[0]) return m2[0].toUpperCase().replace(/\s+/g, ' ');
+
+    const mKids = s.match(/\b(\d{1,2}(?:\.\d)?)\s*(K|Y|C|T)\b/i);
+    if (mKids?.[1] && mKids?.[2]) return `${mKids[1]}${String(mKids[2]).toUpperCase()}`;
+
+    const mKids2 = s.match(/\b(?:US|UK|EU)\s*(K|Y|C|T)\s*(\d{1,2}(?:\.\d)?)\b/i);
+    if (mKids2?.[1] && mKids2?.[2]) return `${mKids2[2]}${String(mKids2[1]).toUpperCase()}`;
+
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 function toNumberMaybe(v) {
@@ -1481,6 +1585,93 @@ function extractVariantMarketFromNextDataByJoin(size) {
   }
 }
 
+function extractVariantBidAskFromNextDataAll() {
+  // Background tabs often fail to render Market Data Bids/Asks (virtualized + throttled).
+  // This fallback extracts per-variant market values from __NEXT_DATA__ without opening the modal.
+  try {
+    const next = getNextData();
+    if (!next) return { asks: [], bids: [], debug: { ok: false, reason: 'no_next_data' } };
+    const roots = getNextDataSearchRoots(next);
+
+    // We intentionally do NOT require a full "market candidate" (which expects multiple fields).
+    // For bids/asks we accept whichever side is present, per size.
+    const bestBidBySizeKey = new Map(); // sizeKey -> { sizeLabel, bid }
+    const bestAskBySizeKey = new Map(); // sizeKey -> { sizeLabel, ask }
+    let seenSizeObjects = 0;
+    let seenBid = 0;
+    let seenAsk = 0;
+
+    deepWalk(roots, (v) => {
+      try {
+        if (!isPlainObject(v)) return;
+
+        const sizeRaw =
+          (typeof v.size === 'string' && v.size) ||
+          (typeof v.shoeSize === 'string' && v.shoeSize) ||
+          (typeof v.localizedSize === 'string' && v.localizedSize) ||
+          (typeof v.sizeLabel === 'string' && v.sizeLabel) ||
+          (typeof v.displaySize === 'string' && v.displaySize) ||
+          (typeof v.size === 'number' ? String(v.size) : '') ||
+          '';
+        if (!sizeRaw) return;
+        const sizeKey = normalizeSizeKey(sizeRaw);
+        if (!sizeKey) return;
+        const sizeLabel = String(sizeRaw).replace(/\s+/g, ' ').trim() || sizeKey;
+        seenSizeObjects += 1;
+
+        const marketObj =
+          (isPlainObject(v.market) && v.market) ||
+          (isPlainObject(v.marketData) && v.marketData) ||
+          (isPlainObject(v.market_data) && v.market_data) ||
+          v;
+
+        const hb =
+          getValueByKeyIncludes(marketObj, ['highest', 'bid']) ??
+          getValueByKeyIncludes(marketObj, ['highestbid']) ??
+          getValueByKeyIncludes(marketObj, ['bid']) ??
+          null;
+        const la =
+          getValueByKeyIncludes(marketObj, ['lowest', 'ask']) ??
+          getValueByKeyIncludes(marketObj, ['lowestask']) ??
+          getValueByKeyIncludes(marketObj, ['ask']) ??
+          null;
+
+        const hbNum = toNumberMaybe(hb);
+        const laNum = toNumberMaybe(la);
+
+        if (isPlausibleUsd(hbNum)) {
+          seenBid += 1;
+          const cur = bestBidBySizeKey.get(sizeKey);
+          if (!cur || hbNum > Number(cur.bid || 0)) bestBidBySizeKey.set(sizeKey, { sizeLabel, bid: hbNum });
+        }
+        if (isPlausibleUsd(laNum)) {
+          seenAsk += 1;
+          const cur = bestAskBySizeKey.get(sizeKey);
+          if (!cur || laNum < Number(cur.ask || Infinity)) bestAskBySizeKey.set(sizeKey, { sizeLabel, ask: laNum });
+        }
+      } catch {}
+    }, 220000);
+
+    const bids = Array.from(bestBidBySizeKey.values()).map((x) => ({ size: x.sizeLabel, bid: x.bid, raw: 'next_data' }));
+    const asks = Array.from(bestAskBySizeKey.values()).map((x) => ({ size: x.sizeLabel, ask: x.ask, raw: 'next_data' }));
+
+    return {
+      bids,
+      asks,
+      debug: {
+        ok: true,
+        seenSizeObjects,
+        seenBid,
+        seenAsk,
+        bids: bids.length,
+        asks: asks.length
+      }
+    };
+  } catch (e) {
+    return { asks: [], bids: [], debug: { ok: false, reason: e?.message || String(e) } };
+  }
+}
+
 function extractVariantMarketFromNextDataForSize(size) {
   try {
     const wanted = normalizeSizeKey(size);
@@ -1665,6 +1856,7 @@ function parseMarketDataSalesTable(max = 25) {
             if (t.includes('all sales')) score += 2;
             if (t.includes('sale price')) score += 1;
             if (t.includes('date')) score += 1;
+            // Some categories (collectibles/accessories) don't have a size column.
             if (t.includes('size')) score += 1;
             if (isVisibleEl(d)) score += 1;
             return { d, score };
@@ -1764,7 +1956,8 @@ function parseMarketDataSalesTable(max = 25) {
 
     const parseTable = (table) => {
       const headerText = safeText(table.querySelector('thead') || table);
-      if (!/sale\s*price/i.test(headerText) || !/\bdate\b/i.test(headerText) || !/\bsize\b/i.test(headerText)) return [];
+      // Size column is optional for non-sized items.
+      if (!/sale\s*price/i.test(headerText) || !/\bdate\b/i.test(headerText)) return [];
       // Map column indices by header labels (StockX sometimes has an extra first icon column)
       const ths = Array.from(table.querySelectorAll('thead th'));
       const colIndex = { date: -1, size: -1, price: -1 };
@@ -1785,12 +1978,14 @@ function parseMarketDataSalesTable(max = 25) {
         const tds = Array.from(tr.querySelectorAll('td,th'));
         if (tds.length < 3) continue;
         // Fallback if headers weren't detected (older markup): assume last 3 are date/size/price
-        const dateIdx = colIndex.date !== -1 ? colIndex.date : Math.max(0, tds.length - 3);
-        const sizeIdx = colIndex.size !== -1 ? colIndex.size : Math.max(0, tds.length - 2);
+        // If "Size" column doesn't exist, assume last 2 are date/price.
+        const dateIdx =
+          colIndex.date !== -1 ? colIndex.date : colIndex.size === -1 ? Math.max(0, tds.length - 2) : Math.max(0, tds.length - 3);
+        const sizeIdx = colIndex.size !== -1 ? colIndex.size : -1;
         const priceIdx = colIndex.price !== -1 ? colIndex.price : Math.max(0, tds.length - 1);
 
         // First try the mapped indices, then fall back to per-row detection.
-        const quick = parseRowCells([tds[dateIdx], tds[sizeIdx], tds[priceIdx]].filter(Boolean));
+        const quick = parseRowCells([tds[dateIdx], sizeIdx >= 0 ? tds[sizeIdx] : null, tds[priceIdx]].filter(Boolean));
         const parsed = quick || parseRowCells(tds);
         if (!parsed) continue;
         out.push(parsed);
@@ -1802,7 +1997,7 @@ function parseMarketDataSalesTable(max = 25) {
     const parseGenericRows = (root) => {
       // Generic fallback: scan visible row-like elements within a root that contains the sales headers.
       const rootText = safeText(root);
-      if (!/sale\s*price/i.test(rootText) || !/\bdate\b/i.test(rootText) || !/\bsize\b/i.test(rootText)) return [];
+      if (!/sale\s*price/i.test(rootText) || !/\bdate\b/i.test(rootText)) return [];
 
       const candidates = Array.from(root.querySelectorAll('tr,[role="row"],li,div')).slice(0, 2500);
       const out = [];
@@ -1847,7 +2042,7 @@ function parseMarketDataSalesTable(max = 25) {
   }
 }
 
-function parseMarketDataAsksTable(max = 100) {
+function parseMarketDataAsksTable(max = 100, opts = {}) {
   try {
     const isVisibleEl = (el) => {
       try {
@@ -1861,23 +2056,103 @@ function parseMarketDataAsksTable(max = 100) {
       }
     };
 
-    // Find the active market modal on the Asks tab
-    const dialogs = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]'));
-    const dialog = dialogs.find((d) => {
-      if (!isVisibleEl(d)) return false;
-      const tab = d.querySelector('[role="tab"][aria-selected="true"]');
-      if (safeText(tab).trim().toLowerCase() !== 'asks') return false;
-      return safeText(d).toLowerCase().includes('all asks');
-    });
-    const root = dialog || document;
+    const dialogs = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]')).filter(isVisibleEl);
+    const dialog = getMarketDataDialog() || dialogs[0] || null;
 
-    const vma = root.querySelector('[data-component="ViewMarketActivity"]') || root;
-    const table = vma.querySelector('table') || null;
-    if (!table) return [];
+    const panel = (() => {
+      try {
+        // If caller provided an explicit root panel, trust it.
+        if (opts?.root && typeof opts.root.querySelector === 'function') return opts.root;
+        if (!dialog) return null;
 
-    const headerText = safeText(table.querySelector('thead') || table).toLowerCase();
-    // Expect at least Size + Ask/Price
-    if (!headerText.includes('size') || !(headerText.includes('ask') || headerText.includes('price'))) return [];
+        // Prefer the panel for the expected tab label (avoids selection lag).
+        const expected = String(opts?.expectedTabLabel || '').trim().toLowerCase();
+        const tabForExpected = expected ? findTabButtonByLabel(dialog, expected) : null;
+        const ctlFromExpected = tabForExpected?.getAttribute?.('aria-controls') || '';
+        if (ctlFromExpected) {
+          const el = document.getElementById(ctlFromExpected);
+          if (el) return el;
+        }
+
+        // Fall back to the selected tab's panel.
+        const selected = dialog.querySelector?.('[role="tab"][aria-selected="true"]') || null;
+        const ctl = selected?.getAttribute?.('aria-controls') || '';
+        if (ctl) {
+          const el = document.getElementById(ctl);
+          if (el) return el;
+        }
+        const panels = Array.from(dialog.querySelectorAll?.('[role="tabpanel"]') || []);
+        const vis = panels.find(isVisibleEl);
+        return vis || null;
+      } catch {
+        return null;
+      }
+    })();
+
+    // IMPORTANT: StockX sometimes lags aria-selected / aria-controls updates.
+    // If we scope too narrowly to the "panel", we can miss the actual table even when it's rendered.
+    // So try panel first, then dialog, then other visible dialogs, then document.
+    const roots = (() => {
+      const list = [];
+      const push = (x) => {
+        try {
+          if (!x) return;
+          if (list.includes(x)) return;
+          list.push(x);
+        } catch {}
+      };
+      push(opts?.root);
+      push(panel);
+      push(dialog);
+      for (const d of dialogs) push(d);
+      push(document);
+      return list;
+    })();
+    let table = null;
+    for (const root of roots) {
+      const vma = root.querySelector?.('[data-component="ViewMarketActivity"]') || root;
+      const t = vma?.querySelector?.('table') || null;
+      if (!t) continue;
+      const headerText = safeText(t.querySelector('thead') || t).toLowerCase();
+      // Some pages show "Ask Price" + "Quantity" + "Size"
+      const ok = headerText.includes('ask') && (headerText.includes('size') || headerText.includes('quantity'));
+      if (ok) {
+        table = t;
+        break;
+      }
+    }
+    const parseGeneric = (root) => {
+      try {
+        // Virtualized / div-based UI fallback inside the Market Data modal.
+        const candidates = Array.from(root.querySelectorAll('tr,[role="row"],li,div')).slice(0, 4000);
+        const out = [];
+        for (const el of candidates) {
+          const txt = safeText(el);
+          if (!txt || txt.length > 260) continue;
+          // StockX sometimes renders prices without a "$" glyph (or not in the same text node),
+          // so rely on numeric parsing + plausibility instead of requiring "$".
+          if (!/\d/.test(txt)) continue;
+          const price = parseBestUsdFromText(txt);
+          if (!isPlausibleUsd(price)) continue;
+          // Some categories have no size column; treat as "ONE SIZE".
+          const size = parseSizeFromText(txt) || 'ONE SIZE';
+          out.push({ size, ask: price, raw: txt });
+          if (out.length >= max) break;
+        }
+        return out;
+      } catch {
+        return [];
+      }
+    };
+
+    if (!table) {
+      // Virtualized / div-based fallback
+      for (const root of roots) {
+        const generic = parseGeneric(root);
+        if (generic.length) return generic;
+      }
+      return [];
+    }
 
     const rows = Array.from(table.querySelectorAll('tbody tr'));
     const out = [];
@@ -1886,10 +2161,143 @@ function parseMarketDataAsksTable(max = 100) {
       if (tds.length < 2) continue;
       const txt = safeText(tr);
       if (!txt) continue;
-      const price = parsePriceFromText(txt);
+      // Prefer the best plausible USD in the row (avoids Quantity being misread as price).
+      const price = parseBestUsdFromText(txt);
       if (!isPlausibleUsd(price)) continue;
-      const size = safeText(tds.find((td) => /US\b/i.test(safeText(td)) || !!parseSizeFromText(safeText(td))) || tds[0]);
-      out.push({ size: size || '', ask: price, raw: txt });
+      // Prefer a strict size cell (US/UK/EU/etc). Do NOT accept a bare number from Quantity.
+      const cell =
+        tds.find((td) => /\b(?:US|UK|EU)\b/i.test(safeText(td))) ||
+        tds.find((td) => !!parseSizeFromTextStrict(safeText(td))) ||
+        null;
+      const size = parseSizeFromTextStrict(safeText(cell || '')) || parseSizeFromTextStrict(txt) || 'ONE SIZE';
+      out.push({ size, ask: price, raw: txt });
+      if (out.length >= max) break;
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+function parseMarketDataBidsTable(max = 100, opts = {}) {
+  try {
+    const isVisibleEl = (el) => {
+      try {
+        if (!el) return false;
+        const r = el.getClientRects?.();
+        if (r && r.length > 0) return true;
+        const b = el.getBoundingClientRect?.();
+        return !!(b && b.width > 0 && b.height > 0);
+      } catch {
+        return false;
+      }
+    };
+
+    const dialogs = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]')).filter(isVisibleEl);
+    const dialog = getMarketDataDialog() || dialogs[0] || null;
+    const panel = (() => {
+      try {
+        // If caller provided an explicit root panel, trust it.
+        if (opts?.root && typeof opts.root.querySelector === 'function') return opts.root;
+        if (!dialog) return null;
+
+        // Prefer the panel for the expected tab label (avoids selection lag).
+        const expected = String(opts?.expectedTabLabel || '').trim().toLowerCase();
+        const tabForExpected = expected ? findTabButtonByLabel(dialog, expected) : null;
+        const ctlFromExpected = tabForExpected?.getAttribute?.('aria-controls') || '';
+        if (ctlFromExpected) {
+          const el = document.getElementById(ctlFromExpected);
+          if (el) return el;
+        }
+
+        // Fall back to the selected tab's panel.
+        const selected = dialog.querySelector?.('[role="tab"][aria-selected="true"]') || null;
+        const ctl = selected?.getAttribute?.('aria-controls') || '';
+        if (ctl) {
+          const el = document.getElementById(ctl);
+          if (el) return el;
+        }
+        const panels = Array.from(dialog.querySelectorAll?.('[role="tabpanel"]') || []);
+        const vis = panels.find(isVisibleEl);
+        return vis || null;
+      } catch {
+        return null;
+      }
+    })();
+
+    const roots = (() => {
+      const list = [];
+      const push = (x) => {
+        try {
+          if (!x) return;
+          if (list.includes(x)) return;
+          list.push(x);
+        } catch {}
+      };
+      push(opts?.root);
+      push(panel);
+      push(dialog);
+      for (const d of dialogs) push(d);
+      push(document);
+      return list;
+    })();
+    let table = null;
+    for (const root of roots) {
+      const vma = root.querySelector?.('[data-component="ViewMarketActivity"]') || root;
+      const t = vma?.querySelector?.('table') || null;
+      if (!t) continue;
+      const headerText = safeText(t.querySelector('thead') || t).toLowerCase();
+      const ok = headerText.includes('bid') && (headerText.includes('size') || headerText.includes('quantity'));
+      if (ok) {
+        table = t;
+        break;
+      }
+    }
+    const parseGeneric = (root) => {
+      try {
+        // Virtualized / div-based UI fallback inside the Market Data modal.
+        const candidates = Array.from(root.querySelectorAll('tr,[role="row"],li,div')).slice(0, 4000);
+        const out = [];
+        for (const el of candidates) {
+          const txt = safeText(el);
+          if (!txt || txt.length > 260) continue;
+          if (!/\d/.test(txt)) continue;
+          const price = parseBestUsdFromText(txt);
+          if (!isPlausibleUsd(price)) continue;
+          const size = parseSizeFromText(txt) || 'ONE SIZE';
+          out.push({ size, bid: price, raw: txt });
+          if (out.length >= max) break;
+        }
+        return out;
+      } catch {
+        return [];
+      }
+    };
+
+    if (!table) {
+      // Virtualized / div-based fallback
+      for (const root of roots) {
+        const generic = parseGeneric(root);
+        if (generic.length) return generic;
+      }
+      return [];
+    }
+
+    const rows = Array.from(table.querySelectorAll('tbody tr'));
+    const out = [];
+    for (const tr of rows) {
+      const tds = Array.from(tr.querySelectorAll('td,th'));
+      if (tds.length < 2) continue;
+      const txt = safeText(tr);
+      if (!txt) continue;
+      const price = parseBestUsdFromText(txt);
+      if (!isPlausibleUsd(price)) continue;
+      const cell =
+        tds.find((td) => /\b(?:US|UK|EU)\b/i.test(safeText(td))) ||
+        tds.find((td) => !!parseSizeFromTextStrict(safeText(td))) ||
+        null;
+      const size = parseSizeFromTextStrict(safeText(cell || '')) || parseSizeFromTextStrict(txt) || 'ONE SIZE';
+      out.push({ size, bid: price, raw: txt });
       if (out.length >= max) break;
     }
     return out;
@@ -1928,6 +2336,356 @@ function maybeOpenMarketDataOnce() {
       return;
     }
   } catch {}
+}
+
+async function openMarketDataDialogBestEffort(timeoutMs = 14000, opts = {}) {
+  try {
+    const isVisibleEl = (el) => {
+      try {
+        if (!el) return false;
+        const r = el.getClientRects?.();
+        if (r && r.length > 0) return true;
+        const b = el.getBoundingClientRect?.();
+        return !!(b && b.width > 0 && b.height > 0);
+      } catch {
+        return false;
+      }
+    };
+
+    const hasMarketTabs = (root) => {
+      try {
+        const scope = root || document;
+        const tabs = Array.from(scope.querySelectorAll('[role="tab"]'));
+        const labels = tabs.map((t) => safeText(t).trim().toLowerCase()).filter(Boolean);
+        return labels.includes('asks') || labels.includes('bids') || labels.includes('sales');
+      } catch {
+        return false;
+      }
+    };
+
+    const looksLikeMarketDialog = (d) => {
+      try {
+        if (!d) return false;
+        if (hasMarketTabs(d)) return true;
+        if (d.querySelector?.('[data-component="ViewMarketActivity"]')) return true;
+        const t = safeText(d).toLowerCase();
+        if (t.includes('sale price') && t.includes('size') && t.includes('date')) return true;
+        return false;
+      } catch {
+        return false;
+      }
+    };
+
+    const closeInterferingDialogsBestEffort = () => {
+      try {
+        const dialogs = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]')).filter(isVisibleEl);
+        for (const d of dialogs) {
+          if (looksLikeMarketDialog(d)) continue;
+          const txt = safeText(d).toLowerCase();
+          // Common app prompts: "Open ___ App", "Get the app", etc.
+          const likelyAppPrompt =
+            txt.includes('open') && txt.includes('app') ||
+            txt.includes('get the app') ||
+            txt.includes('continue in app');
+
+          // Try explicit close buttons first
+          const closeBtn =
+            d.querySelector?.('button[aria-label="Close"]') ||
+            d.querySelector?.('[data-testid*="close" i]') ||
+            null;
+          if (closeBtn) {
+            clickElBestEffort(closeBtn);
+            continue;
+          }
+
+          // Then try common dismiss actions
+          const dismiss = Array.from(d.querySelectorAll('button,a,[role="button"]')).find((el) => {
+            const t = safeText(el).trim().toLowerCase();
+            return (
+              t === 'not now' ||
+              t === 'no thanks' ||
+              t === 'dismiss' ||
+              t === 'close' ||
+              t === 'cancel' ||
+              t.includes('continue in browser') ||
+              t.includes('stay on') ||
+              t.includes('use web')
+            );
+          });
+          if (dismiss) {
+            clickElBestEffort(dismiss);
+            continue;
+          }
+
+          // As a last resort, try Escape (works for many lightweight modals)
+          try {
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+            document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape', bubbles: true, cancelable: true }));
+          } catch {}
+
+          // If it looks like an app prompt, we already tried our best; do not click random things.
+          if (likelyAppPrompt) continue;
+        }
+      } catch {}
+    };
+
+    const isMarketDataActuallyOpen = () => {
+      try {
+        const dialog = document.querySelector('[role="dialog"], [aria-modal="true"]');
+        if (dialog) {
+          const tabs = Array.from(dialog.querySelectorAll('[role="tab"]')).map((t) => safeText(t).trim().toLowerCase());
+          const hasTabs = tabs.includes('asks') || tabs.includes('bids') || tabs.includes('sales');
+          const hasRows = (dialog.querySelectorAll?.('[data-component="ViewMarketActivity"] tbody tr')?.length || 0) > 0;
+          if (hasTabs || hasRows) return dialog;
+        }
+      } catch {}
+      try {
+        const vma = document.querySelector('[data-component="ViewMarketActivity"]');
+        if (!vma) return null;
+        // Only treat as open if visible and has market-like structure.
+        const r = vma.getClientRects?.();
+        const visible = r && r.length > 0;
+        const rows = vma.querySelectorAll?.('tbody tr')?.length || 0;
+        const tabs = Array.from(document.querySelectorAll('[role="tab"]')).map((t) => safeText(t).trim().toLowerCase());
+        const hasTabs = tabs.includes('asks') || tabs.includes('bids') || tabs.includes('sales');
+        if (visible && (rows > 0 || hasTabs)) return vma;
+      } catch {}
+      return null;
+    };
+
+    // If a dialog is already open, only treat it as Market Data if it *actually* looks like Market Data.
+    // StockX often shows other dialogs (cookie consent, login prompts, app prompts, etc.) that would break tab parsing.
+    closeInterferingDialogsBestEffort();
+    const alreadyOpen = isMarketDataActuallyOpen();
+    if (alreadyOpen) {
+      try {
+        if (opts?.debug) {
+          opts.debug.opened = true;
+          opts.debug.openedVia = 'already_open_market';
+        }
+      } catch {}
+      return alreadyOpen;
+    }
+
+    const dialogExisting = document.querySelector('[role="dialog"], [aria-modal="true"]');
+    if (dialogExisting) {
+      // Best-effort close of unrelated dialogs so the "View Market Data" CTA is clickable.
+      try {
+        const closeBtn = dialogExisting.querySelector?.('button[aria-label="Close"]') || null;
+        if (closeBtn) clickElBestEffort(closeBtn);
+      } catch {}
+      try {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape', bubbles: true, cancelable: true }));
+      } catch {}
+      // Continue; do NOT treat this dialog as Market Data.
+    }
+
+    // IMPORTANT: Some pages include a ViewMarketActivity node even when the modal isn't open yet.
+    // Only treat it as "already open" if it's visible AND looks like the actual Market Data UI.
+    const vmaExisting = document.querySelector('[data-component="ViewMarketActivity"]');
+    if (vmaExisting && isVisibleEl(vmaExisting)) {
+      const rows = vmaExisting.querySelectorAll?.('tbody tr')?.length || 0;
+      if (rows > 0 || hasMarketTabs(document)) {
+        try {
+          if (opts?.debug) {
+            opts.debug.opened = true;
+            opts.debug.openedVia = 'already_open_vma';
+          }
+        } catch {}
+        return vmaExisting;
+      }
+    }
+
+    const isSizePanelOpen = () => {
+      try {
+        const t = String(document.body?.innerText || '');
+        // The grid variant uses this heading.
+        if (t.includes('Size and Conversions')) return true;
+      } catch {}
+      try {
+        const trigger = document.querySelector('#menu-button-pdp-size-selector');
+        const expanded = String(trigger?.getAttribute?.('aria-expanded') || '') === 'true';
+        if (expanded) return true;
+      } catch {}
+      return false;
+    };
+
+    const closeAnyOpenMenus = () => {
+      try {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape', bubbles: true, cancelable: true }));
+      } catch {}
+      // If the size selector grid is open, Escape sometimes won't close it; click the trigger to collapse.
+      try {
+        if (isSizePanelOpen()) {
+          const trigger = document.querySelector('#menu-button-pdp-size-selector');
+          if (trigger) clickElBestEffort(trigger);
+        }
+      } catch {}
+    };
+
+    const findViewMarketDataBtn = () => {
+      // Prefer StockX's Chakra button variant: <button class="chakra-button ...">View Market Data</button>
+      const chakraButtons = Array.from(document.querySelectorAll('button.chakra-button'));
+      const exactChakra = chakraButtons.find((el) => safeText(el).trim().toLowerCase() === 'view market data');
+      if (exactChakra) return exactChakra;
+
+      // Prefer within the trade box (near "Last Sale:") to avoid matching header/footer UI.
+      try {
+        const nodes = Array.from(document.querySelectorAll('div,section,p,span')).slice(0, 6000);
+        const lastSaleNode = nodes.find((n) => /^last\s+sale\s*:/i.test(safeText(n)));
+        const tradeBox = lastSaleNode?.closest('section,div') || null;
+        if (tradeBox) {
+          const btnInTradeBox = Array.from(tradeBox.querySelectorAll('button, a, [role="button"]')).find(
+            (el) => safeText(el).trim().toLowerCase() === 'view market data'
+          );
+          if (btnInTradeBox) return btnInTradeBox;
+        }
+      } catch {}
+
+      // Fallback: any button/a/role=button with exact text
+      const candidates = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+      const exact = candidates.find((el) => safeText(el).trim().toLowerCase() === 'view market data');
+      if (exact) return exact;
+
+      // Last fallback: regex match
+      return findButtonByText(/view\s+market\s+data/i);
+    };
+
+    const start = Date.now();
+    let attempts = 0;
+    while (Date.now() - start < timeoutMs) {
+      attempts += 1;
+      closeAnyOpenMenus();
+
+      // If something else opened Market Data (race), stop early.
+      const already = isMarketDataActuallyOpen();
+      if (already) {
+        try {
+          if (opts?.debug) {
+            opts.debug.opened = true;
+            opts.debug.openedVia = 'already_open_detected';
+          }
+        } catch {}
+        return already;
+      }
+
+      try {
+        const btn = findViewMarketDataBtn();
+        try {
+          opts?.onAttempt?.(attempts, !!btn);
+        } catch {}
+        try {
+          if (opts?.debug) {
+            opts.debug.attempts = attempts;
+            opts.debug.foundButton = !!btn;
+            if (btn) {
+              const r = btn.getBoundingClientRect?.();
+              opts.debug.button = {
+                tag: String(btn.tagName || ''),
+                text: safeText(btn).slice(0, 120),
+                href: String(btn.getAttribute?.('href') || ''),
+                rect: r ? { x: r.x, y: r.y, w: r.width, h: r.height } : null
+              };
+            }
+          }
+        } catch {}
+        if (btn) {
+          // Temporarily disable our overlays so they can't steal the click.
+          const overlays = [
+            document.getElementById('stockx-global-stop-scan'),
+            document.getElementById('stockx-ext-scan-status')
+          ].filter(Boolean);
+          const prevPe = overlays.map((el) => el.style.pointerEvents);
+          try {
+            overlays.forEach((el) => (el.style.pointerEvents = 'none'));
+          } catch {}
+
+          // Ensure the size panel isn't blocking the trade box before clicking.
+          closeAnyOpenMenus();
+          try {
+            // More reliable than scrollIntoView alone when a sticky banner is present.
+            const r = btn.getBoundingClientRect?.();
+            if (r) window.scrollTo({ top: window.scrollY + r.top - window.innerHeight * 0.35, behavior: 'instant' });
+            btn.scrollIntoView?.({ block: 'center', inline: 'center' });
+          } catch {}
+          try { btn.focus?.(); } catch {}
+          try {
+            if (opts?.debug && btn.getBoundingClientRect) {
+              const r2 = btn.getBoundingClientRect();
+              const cx = Math.round(r2.left + r2.width / 2);
+              const cy = Math.round(r2.top + r2.height / 2);
+              const topEl = document.elementFromPoint?.(cx, cy);
+              opts.debug.elementFromPoint = {
+                cx,
+                cy,
+                tag: String(topEl?.tagName || ''),
+                text: safeText(topEl).slice(0, 80)
+              };
+              // If something is on top of the button, try clicking the closest matching button from that element.
+              if (topEl && topEl !== btn && !btn.contains(topEl)) {
+                const maybeBtn = topEl.closest?.('button,a,[role="button"]');
+                if (maybeBtn && safeText(maybeBtn).trim().toLowerCase() === 'view market data') {
+                  // Click the element that actually receives the pointer.
+                  try { maybeBtn.focus?.(); } catch {}
+                  try { maybeBtn.click?.(); } catch {}
+                }
+              }
+            }
+          } catch {}
+          // Try a real mouse click sequence (some UIs ignore programmatic .click())
+          try {
+            // Pointer events first (more "realistic" in some UIs)
+            try {
+              btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, view: window }));
+              btn.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, view: window }));
+            } catch {}
+            btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+            btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+            btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+            // Keyboard fallback
+            try {
+              btn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+              btn.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true, cancelable: true }));
+            } catch {}
+          } catch {
+            try { btn.click(); } catch {}
+          }
+          try {
+            if (opts?.debug) opts.debug.clicked = true;
+          } catch {}
+
+          // Restore overlay pointer events
+          try {
+            overlays.forEach((el, i) => (el.style.pointerEvents = prevPe[i] || ''));
+          } catch {}
+        }
+      } catch {}
+
+      const dialog = await waitForElement(() => isMarketDataActuallyOpen(), 2500);
+      if (dialog) {
+        try {
+          if (opts?.debug) {
+            opts.debug.opened = true;
+            opts.debug.openedVia = 'click';
+          }
+        } catch {}
+        return dialog;
+      }
+
+      await new Promise((r) => setTimeout(r, 350));
+    }
+    try {
+      if (opts?.debug) {
+        opts.debug.opened = false;
+        opts.debug.openedVia = 'timeout';
+      }
+    } catch {}
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 function extractRecentSalesBestEffort(maxToParse = 200) {
@@ -2318,7 +3076,11 @@ function computePrefillBidBestEffort({ sizeKey }) {
 function getPreferredSize() {
   try {
     const v = localStorage.getItem('stockxExtensionPreferredSize');
-    return v ? String(v) : '';
+    const s = v ? String(v).trim() : '';
+    if (!s) return '';
+    // Ignore incomplete/non-specific values like "US M" with no numeric size.
+    if (!/[0-9]/.test(s) && s.toLowerCase() !== 'all') return '';
+    return s;
   } catch {
     return '';
   }
@@ -2326,7 +3088,13 @@ function getPreferredSize() {
 
 function setPreferredSize(size) {
   try {
-    localStorage.setItem('stockxExtensionPreferredSize', String(size || ''));
+    const s = String(size || '').trim();
+    // Avoid persisting incomplete values like "US M" / "US W" (no numeric size).
+    if (/^us\s*[mw]$/i.test(s) || /^us$/i.test(s)) {
+      localStorage.setItem('stockxExtensionPreferredSize', '');
+      return;
+    }
+    localStorage.setItem('stockxExtensionPreferredSize', s);
   } catch {}
 }
 
@@ -3009,12 +3777,14 @@ function renderProductWidget({ marketData, recentSales }) {
   const feeBd = getCachedFeeBreakdown();
   // If we have scan results, use them (multi-size). Otherwise targets only reflect current size sales.
   const scan = loadSizeScanResults();
-  const scanSales = scan?.results
-    ? scan.results.map((r) => ({ sizeLabel: r.sizeLabel, count: r.count, avg: r.avg }))
-    : null;
-  const allTargets = scanSales
-    ? computeSizeTargetsLastNDays({ recentSales: scanSales.map((r) => ({ size: r.sizeLabel, price: r.avg, date: new Date().toISOString().slice(0, 10) })), days: 30, minSales: 4, minProfit: 15, feeSum })
+  const allTargetsRaw = scan?.results
+    ? computeTargetsFromScanResults({ scanResults: scan.results, feeSum, minSales: 4, minProfit: 15 })
     : computeSizeTargetsLastNDays({ recentSales, days: 30, minSales: 4, minProfit: 15, feeSum });
+  // If we only have current-size targets, attach highest bid so Bid button can use HB+1.
+  const hb = Number(marketData?.highestBid);
+  const allTargets = (!scan?.results && Number.isFinite(hb) && hb > 0)
+    ? (allTargetsRaw || []).map((t) => ({ ...t, highestBid: hb }))
+    : allTargetsRaw;
   const eligibleTargets = allTargets.filter((t) => t.eligible && Number.isFinite(t.maxAllInBid) && t.maxAllInBid > 0);
   const profitTarget = findProfitTargetForSize({ scanner: eligibleTargets, selectedSizeKey });
   const existing = document.getElementById('stockx-price-tracker-widget');
@@ -3514,6 +4284,13 @@ function renderBidTargetsHtml(targets, { limit = 80, feeSum = null } = {}) {
         const count = Number.isFinite(s.count) ? s.count : 0;
         const safeSize = String(s.sizeLabel || '').replace(/"/g, '&quot;');
         const eligible = !!s.eligible;
+        const hb = Number.isFinite(Number(s.highestBid)) ? Math.round(Number(s.highestBid)) : null;
+        const suggestedBid =
+          Number.isFinite(Number(s.suggestedBid)) ? Math.round(Number(s.suggestedBid)) :
+          (hb != null ? hb + 1 : null);
+        const canBid =
+          (typeof s.canBid === 'boolean') ? s.canBid :
+          (eligible && suggestedBid != null && maxBid != null && suggestedBid <= maxBid);
         return `
           <div data-role="target-row" data-size="${safeSize}"
             style="width:100%; display:flex; justify-content:space-between; gap:10px; padding:7px 8px; border-radius:8px; border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.04); color:white;">
@@ -3523,15 +4300,15 @@ function renderBidTargetsHtml(targets, { limit = 80, feeSum = null } = {}) {
             </div>
             <div style="text-align:right; white-space:nowrap;">
               <div style="font-weight:900;">max bid ${maxBid != null ? `$${maxBid}` : '—'}</div>
-              <div style="opacity:.75; font-size:11px;">all-in ${maxAllIn != null ? `$${maxAllIn}` : '—'} • avg ${avg != null ? `$${avg}` : '—'}</div>
+              <div style="opacity:.75; font-size:11px;">all-in ${maxAllIn != null ? `$${maxAllIn}` : '—'} • avg ${avg != null ? `$${avg}` : '—'}${hb != null ? ` • HB $${hb}` : ''}</div>
               <div style="margin-top:6px; display:flex; justify-content:flex-end; gap:8px;">
                 <button data-role="target-select" data-size="${safeSize}"
                   style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.10); color:white; padding:4px 8px; border-radius:8px; cursor:pointer; font-weight:800;">
                   Select
                 </button>
-                <button data-role="target-bid" data-size="${safeSize}" data-bid="${maxBid != null ? String(maxBid) : ''}" ${eligible && maxBid != null ? '' : 'disabled'}
-                  style="background:${eligible && maxBid != null ? '#22c55e' : 'rgba(255,255,255,0.06)'}; border:1px solid rgba(255,255,255,0.10); color:${eligible && maxBid != null ? '#052e14' : 'rgba(255,255,255,0.7)'}; padding:4px 10px; border-radius:8px; cursor:${eligible && maxBid != null ? 'pointer' : 'not-allowed'}; font-weight:900;">
-                  Bid
+                <button data-role="target-bid" data-size="${safeSize}" data-bid="${suggestedBid != null ? String(suggestedBid) : ''}" ${canBid ? '' : 'disabled'}
+                  style="background:${canBid ? '#22c55e' : 'rgba(255,255,255,0.06)'}; border:1px solid rgba(255,255,255,0.10); color:${canBid ? '#052e14' : 'rgba(255,255,255,0.7)'}; padding:4px 10px; border-radius:8px; cursor:${canBid ? 'pointer' : 'not-allowed'}; font-weight:900;">
+                  Bid ${suggestedBid != null ? `$${suggestedBid}` : ''}
                 </button>
               </div>
             </div>
@@ -3642,6 +4419,77 @@ async function getAvailableSizesFromPicker() {
   }
 }
 
+async function getSizeOptionsFromMenu() {
+  try {
+    const menu = await openSizeMenu();
+    if (!menu) return [];
+    const items = Array.from(menu.querySelectorAll('[role="menuitemradio"]'));
+    const out = items
+      .map((it) => {
+        const labelEl = it.querySelector('[data-testid="selector-label"]');
+        const secondaryEl = it.querySelector('[data-testid="selector-secondary-label"]');
+        const sizeLabel = safeText(labelEl || it).replace(/\s+/g, ' ').trim();
+        const secondaryText = safeText(secondaryEl).trim();
+        const secondaryPrice = parsePriceFromText(secondaryText);
+        return {
+          sizeLabel,
+          highestBid: isPlausibleUsd(secondaryPrice) ? secondaryPrice : null
+        };
+      })
+      .filter((o) => o.sizeLabel && o.sizeLabel.toLowerCase() !== 'all' && /\d/.test(o.sizeLabel));
+    closeSizeMenu();
+    // dedupe by label
+    const seen = new Set();
+    const deduped = [];
+    for (const o of out) {
+      const k = o.sizeLabel;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      deduped.push(o);
+    }
+    return deduped;
+  } catch {
+    try { closeSizeMenu(); } catch {}
+    return [];
+  }
+}
+
+function computeTargetsFromScanResults({ scanResults, feeSum, minSales = 4, minProfit = 15 }) {
+  try {
+    const out = [];
+    for (const r of scanResults || []) {
+      const count = Number(r.count) || 0;
+      const avg = Number(r.avg);
+      const highestBid = Number(r.highestBid);
+      const eligible = count >= minSales && Number.isFinite(avg) && avg > 0;
+      const maxAllInBid = eligible ? Math.floor(avg - minProfit) : null;
+      const maxBid = eligible && Number.isFinite(feeSum) ? Math.floor(maxAllInBid - feeSum) : (eligible ? null : null);
+
+      // Suggest bid = highestBid + 1 when we have it
+      const suggestedBid = Number.isFinite(highestBid) && highestBid > 0 ? Math.floor(highestBid + 1) : null;
+      const canBid = eligible && Number.isFinite(maxBid) && Number.isFinite(suggestedBid) && suggestedBid <= maxBid;
+
+      out.push({
+        sizeLabel: r.sizeLabel || '',
+        count,
+        avg: Number.isFinite(avg) ? avg : null,
+        highestBid: Number.isFinite(highestBid) ? highestBid : null,
+        eligible,
+        maxAllInBid: Number.isFinite(maxAllInBid) ? maxAllInBid : null,
+        maxBid: Number.isFinite(maxBid) ? maxBid : null,
+        suggestedBid,
+        canBid
+      });
+    }
+
+    // best to worst = highest maxBid first
+    out.sort((a, b) => (b.maxBid ?? -Infinity) - (a.maxBid ?? -Infinity));
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 async function selectSizeFromMenu(sizeLabel) {
   try {
     const wanted = String(sizeLabel || '').trim().toLowerCase();
@@ -3668,21 +4516,384 @@ async function selectSizeFromMenu(sizeLabel) {
   }
 }
 
+function getMarketDataDialog() {
+  try {
+    const isVisibleEl = (el) => {
+      try {
+        if (!el) return false;
+        const r = el.getClientRects?.();
+        if (r && r.length > 0) return true;
+        const b = el.getBoundingClientRect?.();
+        return !!(b && b.width > 0 && b.height > 0);
+      } catch {
+        return false;
+      }
+    };
+
+    const dialogs = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]'));
+    if (!dialogs.length) return null;
+
+    // Prefer the dialog that actually looks like the Market Data modal.
+    // IMPORTANT: Do NOT fall back to "any dialog" — StockX often shows unrelated modals (e.g. "Open App")
+    // that would break tab detection and cause bids/asks parsing to read 0.
+    const scored = dialogs
+      .map((d) => {
+        let score = 0;
+        const tabs = Array.from(d.querySelectorAll('[role="tab"]')).map((t) => safeText(t).trim().toLowerCase());
+        const hasTabs = tabs.includes('asks') || tabs.includes('bids') || tabs.includes('sales');
+        if (hasTabs) score += 5;
+        if (d.querySelector?.('[data-component="ViewMarketActivity"]')) score += 2;
+        if ((d.querySelectorAll?.('[data-component="ViewMarketActivity"] tbody tr')?.length || 0) > 0) score += 2;
+        const t = safeText(d).toLowerCase();
+        if (t.includes('sale price') || t.includes('all sales')) score += 1;
+        if (isVisibleEl(d)) score += 1;
+        return { d, score };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    // Only return a dialog if it clears a minimum score threshold.
+    // Score>=5 implies it has Market tabs; Score>=3 implies market-ish structure.
+    if (Number(scored[0]?.score || 0) >= 3) return scored[0].d;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function findTabButtonByLabel(dialog, labelLower) {
+  try {
+    const scope = dialog || document;
+    const tabs = Array.from(scope.querySelectorAll('[role="tab"]'));
+    return tabs.find((b) => safeText(b).trim().toLowerCase() === labelLower) || null;
+  } catch {
+    return null;
+  }
+}
+
+function clickElBestEffort(el) {
+  try {
+    if (!el) return false;
+    try {
+      el.scrollIntoView?.({ block: 'center', inline: 'center' });
+    } catch {}
+    try {
+      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+      el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+      el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      return true;
+    } catch {
+      try {
+        el.click();
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  } catch {
+    return false;
+  }
+}
+
+async function ensureMarketDataTabOpen(labelLower) {
+  try {
+    // Ensure modal is open
+    const dialog = (await openMarketDataDialogBestEffort(16000)) || getMarketDataDialog();
+    if (!dialog) return null;
+
+    // Click requested tab by text (ids are randomized)
+    const tabBtn = findTabButtonByLabel(dialog, labelLower);
+    if (tabBtn && tabBtn.getAttribute('aria-selected') !== 'true') {
+      clickElBestEffort(tabBtn);
+    }
+
+    // Wait for at least some rows to appear under ViewMarketActivity.
+    await waitForElement(
+      () => (document.querySelectorAll('[data-component="ViewMarketActivity"] tbody tr').length ? true : null),
+      9000
+    );
+
+    return dialog;
+  } catch {
+    return null;
+  }
+}
+
+async function readMarketDataTablesOnce(
+  { maxAsks = 250, maxBids = 250, maxSales = 450, openTimeoutMs = 9000, onStage, onAttempt } = {}
+) {
+  const foundMarketDataButton =
+    !!Array.from(document.querySelectorAll('button.chakra-button')).find(
+      (b) => safeText(b).trim().toLowerCase() === 'view market data'
+    ) ||
+    !!Array.from(document.querySelectorAll('button, a, [role="button"]')).find(
+      (b) => safeText(b).trim().toLowerCase() === 'view market data'
+    ) ||
+    !!findButtonByText(/view\s+market\s+data/i);
+
+  const openDebug = { debugVersion: 2, foundMarketDataButton, attempts: 0, foundButton: false, clicked: false, opened: false, openedVia: '' };
+  onStage?.('market data', 'opening');
+  const opened = await openMarketDataDialogBestEffort(openTimeoutMs, { debug: openDebug, onAttempt });
+  // Prefer the handle returned by openMarketDataDialogBestEffort; getMarketDataDialog() can be null
+  // (or could otherwise pick up an unrelated modal).
+  const dialog = opened || getMarketDataDialog();
+  if (!opened) {
+    return {
+      dialog: null,
+      foundMarketDataButton,
+      openedMarketData: false,
+      openDebug,
+      tabDebug: null,
+      asks: [],
+      bids: [],
+      sales: []
+    };
+  }
+
+  // If Market Data rendered without a role=dialog (rare), still proceed with a doc-scoped tab lookup.
+  const tabScope = dialog && (dialog.getAttribute?.('role') === 'dialog' || dialog.getAttribute?.('aria-modal') === 'true') ? dialog : document;
+
+  const getActiveTabLabel = () => {
+    try {
+      const activeInDialog = tabScope.querySelector?.('[role="tab"][aria-selected="true"]') || null;
+      const labelInDialog = safeText(activeInDialog).trim().toLowerCase();
+      if (labelInDialog) return labelInDialog;
+    } catch {}
+    try {
+      const activeInDoc = document.querySelector?.('[role="tab"][aria-selected="true"]') || null;
+      const labelInDoc = safeText(activeInDoc).trim().toLowerCase();
+      if (labelInDoc) return labelInDoc;
+    } catch {}
+    return '';
+  };
+
+  const findTabBtn = (labelLower) => {
+    try {
+      const inDialog = findTabButtonByLabel(tabScope, labelLower);
+      if (inDialog) return inDialog;
+    } catch {}
+    try {
+      return findTabButtonByLabel(document, labelLower);
+    } catch {
+      return null;
+    }
+  };
+
+  const isVisibleEl = (el) => {
+    try {
+      if (!el) return false;
+      const r = el.getClientRects?.();
+      if (r && r.length > 0) return true;
+      const b = el.getBoundingClientRect?.();
+      return !!(b && b.width > 0 && b.height > 0);
+    } catch {
+      return false;
+    }
+  };
+
+  const getTabPanelFor = (labelLower) => {
+    try {
+      const scope = tabScope || document;
+      const tab = findTabBtn(labelLower) || scope.querySelector?.('[role="tab"][aria-selected="true"]') || null;
+      const ctl = tab?.getAttribute?.('aria-controls') || '';
+      if (ctl) {
+        const panel = document.getElementById(ctl);
+        if (panel) return panel;
+      }
+      const panels = Array.from(scope.querySelectorAll?.('[role="tabpanel"]') || []);
+      const vis = panels.find(isVisibleEl);
+      if (vis) return vis;
+      return scope.querySelector?.('[data-component="ViewMarketActivity"]') || scope;
+    } catch {
+      return tabScope || document;
+    }
+  };
+
+  const lastClickByTab = {};
+
+  const waitForTabReady = async (labelLower, timeoutMs = 6500) => {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const activeLabel = getActiveTabLabel();
+      if (activeLabel !== labelLower) {
+        const tabBtn = findTabBtn(labelLower);
+        const last = Number(lastClickByTab[labelLower] || 0);
+        if (tabBtn && Date.now() - last > 850) {
+          clickElBestEffort(tabBtn);
+          lastClickByTab[labelLower] = Date.now();
+        }
+      }
+      const panel = getTabPanelFor(labelLower);
+      const sampleText = safeText(panel).toLowerCase().slice(0, 2500);
+      // Do NOT require a price to exist (some items have 0 rows). Just detect that the correct tab UI is present.
+      const ok =
+        labelLower === 'asks'
+          ? (sampleText.includes('ask') && (sampleText.includes('size') || sampleText.includes('quantity') || sampleText.includes('ask price')))
+          : labelLower === 'bids'
+            ? (sampleText.includes('bid') && (sampleText.includes('size') || sampleText.includes('quantity') || sampleText.includes('bid price')))
+            : (sampleText.includes('date') && (sampleText.includes('sale price') || sampleText.includes('sale')));
+      // If aria-selected is exposed, require it; otherwise accept ok by panel content.
+      const activeNow = getActiveTabLabel();
+      const activeOk = activeNow ? activeNow === labelLower : true;
+      if (ok && activeOk) return true;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    return false;
+  };
+
+  const waitForRowsToSettle = async (timeoutMs = 4500) => {
+    try {
+      const start = Date.now();
+      let last = -1;
+      let stableTicks = 0;
+      while (Date.now() - start < timeoutMs) {
+        const root = tabScope.querySelector('[data-component="ViewMarketActivity"]') || tabScope;
+        const rows = root.querySelectorAll('tbody tr');
+        const n = rows ? rows.length : 0;
+        if (n > 0) {
+          if (n === last) stableTicks += 1;
+          else stableTicks = 0;
+          last = n;
+          // Require two stable polls (helps avoid parsing mid-render)
+          if (stableTicks >= 2) return true;
+        }
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  // Capture the currently active tab first (common when the modal is already open), then the remaining tabs.
+  const active = getActiveTabLabel();
+  const allTabs = ['sales', 'bids', 'asks'];
+  const order = active && allTabs.includes(active) ? [active, ...allTabs.filter((t) => t !== active)] : ['sales', 'bids', 'asks'];
+
+  const out = { asks: [], bids: [], sales: [] };
+  const tabDebug = { activeAtStart: active, order, waits: {}, parsed: {} };
+
+  const findClickableTabLikeEl = (labelLower) => {
+    // StockX tab markup changes frequently; fall back to any clickable with matching label text.
+    const scope = tabScope || document;
+    const candidates = Array.from(scope.querySelectorAll('[role="tab"],button,a,[role="button"]'));
+    const exact = candidates.find((el) => safeText(el).trim().toLowerCase() === labelLower);
+    if (exact) return exact;
+    const loose = candidates.find((el) => safeText(el).trim().toLowerCase().includes(labelLower));
+    return loose || null;
+  };
+
+  const tryActivateTab = async (labelLower) => {
+    try {
+      const activeLabel = getActiveTabLabel();
+      if (activeLabel === labelLower) return true;
+      const tabBtn = findTabBtn(labelLower) || findClickableTabLikeEl(labelLower);
+      const last = Number(lastClickByTab[labelLower] || 0);
+      if (tabBtn && Date.now() - last > 850) {
+        clickElBestEffort(tabBtn);
+        lastClickByTab[labelLower] = Date.now();
+      }
+      // Give StockX a beat to transition/render the panel before parsing.
+      await new Promise((r) => setTimeout(r, 650));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const parseForTab = (labelLower) => {
+    if (labelLower === 'sales') return parseMarketDataSalesTable(maxSales);
+    if (labelLower === 'bids') return parseMarketDataBidsTable(maxBids, { expectedTabLabel: 'bids', root: getTabPanelFor('bids') });
+    if (labelLower === 'asks') return parseMarketDataAsksTable(maxAsks, { expectedTabLabel: 'asks', root: getTabPanelFor('asks') });
+    return [];
+  };
+
+  const waitForTabDataBestEffort = async (labelLower, timeoutMs = 8500) => {
+    // Poll until the parser can see rows, but avoid parsing mid-transition.
+    const start = Date.now();
+    let lastLen = -1;
+    let stable = 0;
+    while (Date.now() - start < timeoutMs) {
+      await tryActivateTab(labelLower);
+      await waitForTabReady(labelLower, 2200);
+      await new Promise((r) => setTimeout(r, 350));
+      const rows = parseForTab(labelLower);
+      const len = Array.isArray(rows) ? rows.length : 0;
+      if (len > 0) return { ok: true, rows };
+      if (len === lastLen) stable += 1;
+      else stable = 0;
+      lastLen = len;
+
+      // Some StockX tabs lazy-render rows in a virtualized scroller. Nudge-scroll to force render.
+      try {
+        if (labelLower === 'asks' || labelLower === 'bids') {
+          const panel = getTabPanelFor(labelLower);
+          const scrollers = Array.from(panel?.querySelectorAll?.('*') || []).filter((el) => {
+            try {
+              if (!el) return false;
+              const sh = el.scrollHeight || 0;
+              const ch = el.clientHeight || 0;
+              if (sh <= ch + 10) return false;
+              const cs = window.getComputedStyle?.(el);
+              const oy = String(cs?.overflowY || '');
+              return oy === 'auto' || oy === 'scroll';
+            } catch {
+              return false;
+            }
+          });
+          const scroller = scrollers[0] || panel;
+          if (scroller && typeof scroller.scrollTop === 'number') {
+            scroller.scrollTop = Math.min((scroller.scrollTop || 0) + 420, (scroller.scrollHeight || 0));
+            await new Promise((r) => setTimeout(r, 350));
+            scroller.scrollTop = Math.max((scroller.scrollTop || 0) - 210, 0);
+          }
+        }
+      } catch {}
+
+      await new Promise((r) => setTimeout(r, stable >= 2 ? 650 : 450));
+    }
+    return { ok: false, rows: [] };
+  };
+
+  for (const tab of order) {
+    onStage?.('market data', tab);
+    const res = await waitForTabDataBestEffort(tab, tab === 'sales' ? 9000 : 7500);
+    tabDebug.waits[tab] = !!res.ok;
+    if (tab === 'sales') out.sales = res.rows;
+    else if (tab === 'bids') out.bids = res.rows;
+    else if (tab === 'asks') out.asks = res.rows;
+    tabDebug.parsed[tab] = tab === 'sales' ? out.sales.length : tab === 'bids' ? out.bids.length : out.asks.length;
+  }
+
+  const sales = out.sales;
+  const bids = out.bids;
+  const asks = out.asks;
+
+  try {
+    await closeMarketDataDialog(getMarketDataDialog() || dialog);
+  } catch {}
+
+  return { dialog, foundMarketDataButton, openedMarketData: true, openDebug, tabDebug, asks, bids, sales };
+}
+
 async function ensureMarketDataSalesOpen() {
   try {
-    // Open market data
-    maybeOpenMarketDataOnce();
-    // Ensure dialog exists
-    const dialog = await waitForElement(() => document.querySelector('[role="dialog"], [aria-modal="true"]'), 6000);
-    if (!dialog) return null;
-    // Ensure Sales tab selected
-    const salesTab = Array.from(dialog.querySelectorAll('[role="tab"]')).find((b) => safeText(b).trim().toLowerCase() === 'sales');
-    if (salesTab && salesTab.getAttribute('aria-selected') !== 'true') {
-      try { salesTab.click(); } catch {}
-    }
-    // Wait for rows
-    await waitForElement(() => document.querySelectorAll('[data-component="ViewMarketActivity"] tbody tr').length ? true : null, 8000);
-    return dialog;
+    return await ensureMarketDataTabOpen('sales');
+  } catch {
+    return null;
+  }
+}
+
+async function ensureMarketDataAsksOpen() {
+  try {
+    return await ensureMarketDataTabOpen('asks');
+  } catch {
+    return null;
+  }
+}
+
+async function ensureMarketDataBidsOpen() {
+  try {
+    return await ensureMarketDataTabOpen('bids');
   } catch {
     return null;
   }
@@ -3730,7 +4941,8 @@ async function scanAllSizesForSales({ statusEl, days = 30 }) {
   if (window.__stockxScanInProgress) return;
   window.__stockxScanInProgress = true;
   try {
-    const sizes = await getAvailableSizesFromPicker();
+    const options = await getSizeOptionsFromMenu();
+    const sizes = options.map((o) => o.sizeLabel);
     if (!sizes.length) {
       if (statusEl) statusEl.textContent = 'Could not read size list. Open the size dropdown once, then click Scan sizes again.';
       return;
@@ -3741,6 +4953,7 @@ async function scanAllSizesForSales({ statusEl, days = 30 }) {
     const results = [];
     for (let i = 0; i < sizes.length; i++) {
       const s = sizes[i];
+      const opt = options.find((o) => o.sizeLabel === s);
       if (statusEl) statusEl.textContent = `Scanning size ${s} (${i + 1}/${sizes.length})…`;
       const didSelect = await selectSizeFromMenu(s);
       if (!didSelect) {
@@ -3758,7 +4971,8 @@ async function scanAllSizesForSales({ statusEl, days = 30 }) {
       results.push({
         sizeLabel: s,
         count: stats.count,
-        avg: stats.avg
+        avg: stats.avg,
+        highestBid: opt?.highestBid ?? null
       });
       // brief pause to avoid hammering
       await new Promise((r) => setTimeout(r, 600));
@@ -4128,6 +5342,18 @@ function updateProductWidgetInPlace({ marketData, recentSales }) {
   if (!widget) return false;
 
   try {
+    // During scans we switch the Market Data modal between tabs (Sales/Bids/Asks).
+    // When Sales tab is not visible, sales parsing can return an empty array, which makes the UI "blink".
+    // Keep the last-good recentSales in that case (same page), so the list stays stable.
+    try {
+      const last = window.__stockxHelperLastRecentSales;
+      const hasIncoming = hasRealRecentSalesRows(recentSales);
+      const hasLast = hasRealRecentSalesRows(last);
+      if (!hasIncoming && hasLast) {
+        recentSales = last;
+      }
+    } catch {}
+
     // If the selected size changed, reset sticky cache to force a clean recalculation.
     const currentSizeKey = getSelectedSizeBestEffort();
     const prevSizeKey = String(window.__stockxHelperLastSizeKey || '');
@@ -4250,19 +5476,16 @@ function ensureProductHelperOnce(reason) {
     window.__stockxHelperLastSizeKey = currentSizeKey;
 
     const strictOk = isStockXProductPage();
-    const looseOk = isProductPage(); // existing loose heuristic
-
-    if (!strictOk && !looseOk) {
+    if (!strictOk) {
       console.log('🟨 StockX Helper: not a product page (yet)', {
         reason,
         strictOk,
-        looseOk,
         url
       });
       return false;
     }
 
-    console.log('🟩 StockX Helper: rendering widget', { reason, strictOk, looseOk, url, slug: getProductSlugFromUrl() });
+    console.log('🟩 StockX Helper: rendering widget', { reason, strictOk, url, slug: getProductSlugFromUrl() });
     const marketData = extractMarketDataBestEffort();
     // Parse more than we display so month averages/counts are correct (e.g. all January rows).
     const recentSales = extractRecentSalesBestEffort(200);
@@ -4346,12 +5569,22 @@ function handleStockxUrlChange(reason) {
     } catch {}
 
     console.log('🧭 StockX navigation detected:', { reason, url });
+
+    const isScanTab = (() => {
+      try {
+        const u = new URL(location.href);
+        return u.searchParams.get('extScan') === '1';
+      } catch {
+        return false;
+      }
+    })();
+
     // Restart watchers (product helper + buying tracker)
     try {
-      startProductHelperWatcher();
+      if (!isScanTab) startProductHelperWatcher();
     } catch {}
     try {
-      startBuyingTrackingWatcher();
+      if (!isScanTab) startBuyingTrackingWatcher();
     } catch {}
   } catch {}
 }
@@ -4392,6 +5625,1303 @@ function installUrlChangeHooks() {
   }
 }
 
+// --- Background-driven scanner API (used for listing-page bid opportunity scans) ---
+function isExtScanTab() {
+  try {
+    if (window.__stockxIsScanTab) return true;
+  } catch {}
+  try {
+    const u = new URL(location.href);
+    return u.searchParams.get('extScan') === '1';
+  } catch {
+    return false;
+  }
+}
+
+function setExtScanStage(stage, detail) {
+  try {
+    if (!isExtScanTab()) return;
+    const s = String(stage || '');
+    const d = detail ? ` — ${String(detail)}` : '';
+    window.__stockxExtScanStage = { stage: s, detail: String(detail || ''), ts: Date.now() };
+    document.title = `SCAN: ${s}${d}`.slice(0, 80);
+  } catch {}
+}
+
+function ensureExtScanStatusOverlay() {
+  try {
+    if (!isExtScanTab()) return;
+    const id = 'stockx-ext-scan-status';
+    let el = document.getElementById(id);
+    if (!el) {
+      el = document.createElement('div');
+      el.id = id;
+      el.style.cssText = `
+        position: fixed;
+        top: 16px;
+        left: 16px;
+        z-index: 2147483647;
+        background: rgba(17, 24, 39, 0.92);
+        color: rgba(255,255,255,0.9);
+        border: 1px solid rgba(99,102,241,0.35);
+        padding: 8px 10px;
+        border-radius: 10px;
+        font-family: Arial, sans-serif;
+        font-size: 12px;
+        max-width: 320px;
+        pointer-events: none;
+      `;
+      document.body.appendChild(el);
+    }
+    const startedAt = window.__stockxExtScanStartedAt || Date.now();
+    window.__stockxExtScanStartedAt = startedAt;
+    const stage = window.__stockxExtScanStage?.stage || 'starting';
+    const detail = window.__stockxExtScanStage?.detail ? ` • ${window.__stockxExtScanStage.detail}` : '';
+    const secs = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+    el.textContent = `Scan running: ${stage}${detail} • ${secs}s`;
+  } catch {}
+}
+
+async function ensureSizeAllSelectedBestEffort(timeoutMs = 8000) {
+  // In scan tabs StockX may remember a previously selected size (e.g. "US Men's 4.5").
+  // For consistent Market Data behavior we can force the PDP size selector to "All".
+  try {
+    const start = Date.now();
+    const getSelectedSizeText = () => {
+      try {
+        const btn = document.querySelector('#menu-button-pdp-size-selector');
+        if (!btn) return '';
+        // StockX uses a nested <p> for the selected size label.
+        const p =
+          btn.querySelector('[data-testid="selector-label"]') ||
+          btn.querySelector('p.chakra-text.css-1s7f4ol') ||
+          btn.querySelector('p.chakra-text') ||
+          null;
+        const t = safeText(p || btn);
+        // Usually looks like: "Size: US Men's 4.5" or just "All"
+        // Prefer the last token if it includes "Size:" prefix.
+        const m = t.match(/\bSize:\s*(.+)\s*$/i);
+        return (m?.[1] ? m[1] : t).trim();
+      } catch {
+        return '';
+      }
+    };
+
+    // If already on All, done.
+    {
+      const lbl = getSelectedSizeText();
+      if (lbl.trim().toLowerCase() === 'all') {
+        return { ok: true, reason: 'already_all' };
+      }
+    }
+
+    const closePanel = () => {
+      try {
+        // Escape
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape', bubbles: true, cancelable: true }));
+      } catch {}
+      try {
+        const trigger = document.querySelector('#menu-button-pdp-size-selector');
+        // If aria-expanded is true, clicking collapses.
+        if (trigger && String(trigger.getAttribute('aria-expanded') || '') === 'true') clickElBestEffort(trigger);
+      } catch {}
+    };
+
+    while (Date.now() - start < timeoutMs) {
+      // If we became "All" after a previous attempt, exit early.
+      if (getSelectedSizeText().trim().toLowerCase() === 'all') {
+        closePanel();
+        return { ok: true, reason: 'selected_all' };
+      }
+
+      // Open the size menu
+      const trigger = document.querySelector('#menu-button-pdp-size-selector');
+      if (!trigger) {
+        await new Promise((r) => setTimeout(r, 300));
+        continue;
+      }
+      clickElBestEffort(trigger);
+
+      // StockX has (at least) two size selector UIs:
+      // (A) Chakra Menu: #menu-list-pdp-size-selector with menuitemradio entries.
+      // (B) "Size and Conversions" panel/grid (no menu-list id), with an "All" tile.
+
+      // A) Menu root
+      const menu = await waitForElement(
+        () => document.querySelector('#menu-list-pdp-size-selector') || null,
+        1800
+      );
+      if (menu) {
+        const items = Array.from(menu.querySelectorAll('[role="menuitemradio"]'));
+        const allItem =
+          items.find((it) => safeText(it.querySelector('[data-testid="selector-label"]') || it).trim().toLowerCase() === 'all') ||
+          null;
+        if (allItem) {
+          clickElBestEffort(allItem);
+        } else {
+          // fall through to grid attempt
+        }
+      } else {
+        // B) Grid/panel attempt: find a visible container mentioning "Size and Conversions"
+        try {
+          const nodes = Array.from(document.querySelectorAll('div,section,aside')).slice(0, 3000);
+          const panel = nodes.find((n) => {
+            const t = safeText(n).toLowerCase();
+            return t.includes('size and conversions') && t.includes('all');
+          });
+          if (panel) {
+            // Try to click an "All" tile/button within the panel.
+            const clickables = Array.from(
+              panel.querySelectorAll('button,[role="button"],[role="option"],[role="gridcell"],[tabindex]')
+            );
+            const allEl =
+              clickables.find((el) => safeText(el).trim().toLowerCase() === 'all') ||
+              clickables.find((el) => /^all\b/i.test(safeText(el).trim())) ||
+              null;
+            if (allEl) {
+              clickElBestEffort(allEl);
+            } else {
+              // last-resort: click any element with "All" text
+              const anyAll = Array.from(panel.querySelectorAll('*')).find((el) => safeText(el).trim().toLowerCase() === 'all');
+              if (anyAll) clickElBestEffort(anyAll);
+            }
+          }
+        } catch {}
+      }
+
+      // Give StockX time to apply selection
+      await new Promise((r) => setTimeout(r, 800));
+      // Always close any open size UI so it doesn't block "View Market Data"
+      closePanel();
+
+      const label = getSelectedSizeText();
+      if (label.trim().toLowerCase() === 'all') return { ok: true, reason: 'selected_all' };
+    }
+
+    // Don't block the scan if we can't force "All" — proceed anyway.
+    try {
+      closePanel();
+    } catch {}
+    return { ok: false, reason: `timeout (selected=${getSelectedSizeText() || 'unknown'})` };
+  } catch (e) {
+    return { ok: false, reason: e?.message || String(e) };
+  }
+}
+
+async function withTimeout(promise, ms, label) {
+  let t = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((resolve) => {
+        t = setTimeout(() => resolve({ success: false, error: `Timeout${label ? ` (${label})` : ''}` }), ms);
+      })
+    ]);
+  } finally {
+    if (t) clearTimeout(t);
+  }
+}
+
+async function scanThisProductForBidOpportunities({ mode } = {}) {
+  try {
+    if (isExtScanTab()) {
+      setExtScanStage('init');
+      ensureExtScanStatusOverlay();
+      // Keep overlay refreshed
+      if (!window.__stockxExtScanOverlayInterval) {
+        window.__stockxExtScanOverlayInterval = setInterval(() => ensureExtScanStatusOverlay(), 500);
+      }
+    }
+
+    // Wait briefly for hydration to ensure the size menu trigger exists.
+    setExtScanStage('hydrating');
+    await new Promise((r) => setTimeout(r, 2200));
+
+    const slug = getProductSlugFromUrl() || '';
+    const title = safeText(document.querySelector('h1')) || '';
+    // Listing-scan opportunity rules:
+    // - require >=4 sales in last 30d (per size)
+    // - require >=$15 profit assuming a flat $21 fee (shipping + processing)
+    // Profit check: lowestAsk - (highestBid + feeSum) >= minProfit
+    const feeSum = 21;
+    const minProfit = 15;
+    let sizeAll = null;
+
+    // 1) Optional: size dropdown scrape (can be flaky in background tabs, and unnecessary for listing scans)
+    let sizeOptions = [];
+    let sizeOptionsCount = 0;
+    if (String(mode || '').toLowerCase() !== 'listing') {
+      try {
+        sizeOptions = await getSizeOptionsFromMenu(); // [{ sizeLabel, highestBid }]
+        sizeOptionsCount = Array.isArray(sizeOptions) ? sizeOptions.length : 0;
+      } catch {
+        sizeOptions = [];
+        sizeOptionsCount = 0;
+      }
+    }
+
+    // For listing scans specifically, force Size=All so Market Data reflects the full grid.
+    if (String(mode || '').toLowerCase() === 'listing') {
+      setExtScanStage('size', 'selecting All');
+      sizeAll = await ensureSizeAllSelectedBestEffort(12000);
+      setExtScanStage('size', sizeAll?.ok ? `All (${sizeAll.reason})` : `failed (${sizeAll?.reason || 'unknown'})`);
+    }
+
+    // 2) Open Market Data ONCE and scrape Sales + Bids + Asks by switching tabs.
+    setExtScanStage('market data', 'opening + reading tables');
+    const md = await readMarketDataTablesOnce({
+      maxAsks: 250,
+      maxBids: 250,
+      maxSales: 450,
+      openTimeoutMs: 9000,
+      onAttempt: (n, found) => setExtScanStage('market data', `opening (attempt ${n}${found ? ', found button' : ''})`),
+      onStage: (s, d) => setExtScanStage(s, d)
+    });
+    let asks = md.asks || [];
+    let bids = md.bids || [];
+    const sales = md.sales || [];
+
+    // Fallback: in background tabs, Bids/Asks often render as empty even when Sales loads fine.
+    // Use Next.js data to recover per-size bid/ask values.
+    let nextDataVariantDebug = null;
+    if ((Array.isArray(asks) && asks.length === 0) || (Array.isArray(bids) && bids.length === 0)) {
+      const fb = extractVariantBidAskFromNextDataAll();
+      nextDataVariantDebug = fb?.debug || null;
+      if (Array.isArray(asks) && asks.length === 0 && Array.isArray(fb?.asks) && fb.asks.length) asks = fb.asks;
+      if (Array.isArray(bids) && bids.length === 0 && Array.isArray(fb?.bids) && fb.bids.length) bids = fb.bids;
+    }
+    setExtScanStage('market data', `rows: sales ${sales.length}, bids ${bids.length}, asks ${asks.length}`);
+
+    const askBySizeKey = new Map();
+    for (const a of Array.isArray(asks) ? asks : []) {
+      const key = normalizeSizeKey(a.size);
+      const ask = Number(a.ask);
+      if (!key || !Number.isFinite(ask) || ask <= 0) continue;
+      const prev = askBySizeKey.get(key);
+      if (!prev || ask < prev) askBySizeKey.set(key, ask);
+    }
+
+    const bidBySizeKey = new Map();
+    for (const b of Array.isArray(bids) ? bids : []) {
+      const key = normalizeSizeKey(b.size);
+      const bid = Number(b.bid);
+      if (!key || !Number.isFinite(bid) || bid <= 0) continue;
+      const prev = bidBySizeKey.get(key);
+      if (!prev || bid > prev) bidBySizeKey.set(key, bid);
+    }
+
+    // 3) Merge HB sources (size menu + bids table), preferring the higher HB if both exist.
+    const hbBySizeKey = new Map();
+    const optionsByKey = new Map(); // kept for debugging/explainEmpty
+    for (const opt of Array.isArray(sizeOptions) ? sizeOptions : []) {
+      const k = normalizeSizeKey(opt.sizeLabel);
+      if (!k) continue;
+      // Prefer the first seen (deduped upstream) or higher bid if duplicated
+      const prev = optionsByKey.get(k);
+      if (!prev || (Number(opt.highestBid) || 0) > (Number(prev.highestBid) || 0)) optionsByKey.set(k, opt);
+    }
+    for (const [k, opt] of optionsByKey.entries()) {
+      const hb = Number(opt?.highestBid);
+      if (Number.isFinite(hb) && hb > 0) hbBySizeKey.set(k, hb);
+    }
+    for (const [k, hb] of bidBySizeKey.entries()) {
+      const cur = Number(hbBySizeKey.get(k) || 0);
+      if (!cur || hb > cur) hbBySizeKey.set(k, hb);
+    }
+
+    // 4) Sales gating: each size must have >=4 sales in the last 30 days.
+    const stats30 = computeSizeStatsLastNDays({ recentSales: sales, days: 30 });
+    const statsByKey = new Map(); // sizeKey -> { sizeLabel, count, avg }
+    for (const s of Array.isArray(stats30) ? stats30 : []) {
+      const k = normalizeSizeKey(s?.sizeLabel);
+      if (!k) continue;
+      const prev = statsByKey.get(k);
+      // Prefer the highest-count label; tie-break by avg.
+      if (!prev || (Number(s.count) || 0) > (Number(prev.count) || 0)) statsByKey.set(k, s);
+    }
+
+    // Build a label map from market rows (often cleaner than sales labels).
+    const labelByKey = new Map();
+    for (const a of Array.isArray(asks) ? asks : []) {
+      const k = normalizeSizeKey(a?.size);
+      const lbl = String(a?.size || '').trim();
+      if (k && lbl && !labelByKey.has(k)) labelByKey.set(k, lbl);
+    }
+    for (const b of Array.isArray(bids) ? bids : []) {
+      const k = normalizeSizeKey(b?.size);
+      const lbl = String(b?.size || '').trim();
+      if (k && lbl && !labelByKey.has(k)) labelByKey.set(k, lbl);
+    }
+
+    const opportunities = [];
+    let eliminatedByAsk = 0;
+    const viableSizeKeys = new Set();
+
+    for (const [sizeKey, hb] of hbBySizeKey.entries()) {
+      const hbNum = Number(hb);
+      if (!Number.isFinite(hbNum) || hbNum <= 0) continue;
+
+      const stat = statsByKey.get(sizeKey);
+      const salesCount = Number(stat?.count) || 0;
+      if (salesCount < 4) continue;
+
+      const ask = Number(askBySizeKey.get(sizeKey));
+      if (!Number.isFinite(ask) || ask <= 0) continue;
+
+      // Use highest bid as the cost basis (per user rule), not HB+1.
+      const highestBid = Math.floor(hbNum);
+      const suggestedBid = highestBid;
+      const profit = ask - (highestBid + feeSum);
+      if (profit < minProfit) {
+        eliminatedByAsk += 1;
+        continue;
+      }
+
+      const maxBid = Math.floor(ask - feeSum - minProfit);
+      if (!Number.isFinite(maxBid) || maxBid <= 0) continue;
+      viableSizeKeys.add(sizeKey);
+
+      opportunities.push({
+        sizeLabel: labelByKey.get(sizeKey) || stat?.sizeLabel || sizeKey,
+        sizeParam: stockxSizeParamFromLabel(labelByKey.get(sizeKey) || stat?.sizeLabel || sizeKey),
+        highestBid,
+        suggestedBid,
+        maxBid,
+        lowestAsk: Math.floor(ask),
+        avg30d: Number.isFinite(Number(stat?.avg)) ? Math.round(Number(stat.avg)) : null,
+        sales30d: salesCount,
+        edge: maxBid - highestBid
+      });
+    }
+    const viableSizeCount = viableSizeKeys.size;
+
+    opportunities.sort((a, b) => (b.edge || 0) - (a.edge || 0));
+
+    // Persist a compact snapshot of Market Data so the listing widget can show *current* parsed data
+    // (and we don't confuse it with older cached results).
+    const compactRows = (rows, pick) => {
+      try {
+        const base = Array.isArray(rows) ? rows : [];
+        return base.slice(0, 25).map((r) => {
+          const out = {};
+          for (const k of pick) out[k] = r?.[k];
+          if (typeof r?.raw === 'string') out.raw = r.raw.slice(0, 180);
+          return out;
+        });
+      } catch {
+        return [];
+      }
+    };
+
+    return {
+      success: true,
+      slug,
+      title,
+      feeSum,
+      salesRows: Array.isArray(sales) ? sales.length : 0,
+      asksRows: Array.isArray(asks) ? asks.length : 0,
+      bidsRows: Array.isArray(bids) ? bids.length : 0,
+      marketDataSample: {
+        asks: compactRows(asks, ['size', 'ask']),
+        bids: compactRows(bids, ['size', 'bid']),
+        sales: compactRows(sales, ['date', 'size', 'price'])
+      },
+      nextDataVariantDebug,
+      foundMarketDataButton: !!md.foundMarketDataButton,
+      openedMarketData: !!md.openedMarketData,
+      marketDataOpenDebug: md.openDebug || null,
+      marketDataTabDebug: md.tabDebug || null,
+      sizeAll,
+      sizeOptionsCount,
+      viableSizeCount,
+      eliminatedByAsk,
+      opportunities
+    };
+  } catch (e) {
+    setExtScanStage('error', e?.message || String(e));
+    return { success: false, error: e?.message || String(e) };
+  }
+}
+
+try {
+  if (chrome?.runtime?.onMessage?.addListener) {
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      if (request?.action === 'scanProductBidOpportunities') {
+        // Hard cap per product so background scans never "hang" on a single shoe.
+        const task = scanThisProductForBidOpportunities({ mode: request?.mode });
+        withTimeout(task, 45000, 'product scan').then((res) => sendResponse(res));
+        return true;
+      }
+
+      // Progress/results from background listing scans (only meaningful on listing pages).
+      if (request?.action === 'listingBidScanProgress' || request?.action === 'listingBidScanResult' || request?.action === 'listingBidScanDone') {
+        try {
+          window.__stockxListingBidScanLastMsg = request;
+          // If the listing widget exists, update it immediately.
+          try {
+            if (typeof window.__stockxListingBidScanHandleMsg === 'function') {
+              window.__stockxListingBidScanHandleMsg(request);
+            }
+          } catch {}
+        } catch {}
+        // no response expected
+        return;
+      }
+    });
+  }
+} catch {}
+
+// --- Listing-page "Bid Opportunities" widget ---
+function isStockxHomepage() {
+  try {
+    if (!location.hostname.includes('stockx.com')) return false;
+    const p = (location.pathname || '/').toLowerCase();
+    return p === '/' || p === '';
+  } catch {
+    return false;
+  }
+}
+
+function isStockxListingPage() {
+  try {
+    if (!location.hostname.includes('stockx.com')) return false;
+    if (isStockxHomepage()) return false;
+    if (isBuyingOrderDetailPage()) return false;
+    if (isBuyFlowPath()) return false;
+    const path = (location.pathname || '/').toLowerCase();
+
+    // Favorites page: treat as a listing page (it contains product cards we can scan).
+    if (path === '/favorites' || path.startsWith('/favorites/')) return true;
+
+    // Product pages should not show this widget (URL-based: product pages are usually /<slug>)
+    // Important: do NOT rely on DOM-based product detection here (can be false during hydration).
+    const parts = path.split('/').filter(Boolean);
+    const isProductLikePath =
+      parts.length === 1 &&
+      parts[0].length >= 6 &&
+      /^[a-z0-9-]+$/.test(parts[0]) &&
+      ![
+        'favorites',
+        'search',
+        'sell',
+        'buy',
+        'buying',
+        'selling',
+        'help',
+        'settings',
+        'about',
+        'professional-tools',
+        'accounts',
+        'login',
+        'signup',
+        'profile',
+        'brands',
+        'news',
+        'category',
+        'categories'
+      ].includes(parts[0]);
+    if (isProductLikePath) return false;
+
+    // Exclude common non-listing routes
+    const excludedPrefixes = ['/help', '/settings', '/about', '/professional-tools', '/accounts', '/login', '/signup'];
+    if (excludedPrefixes.some((p) => path.startsWith(p))) return false;
+    // Listing pages we explicitly support
+    if (path.startsWith('/category/')) return true;
+    if (path.startsWith('/search')) return true;
+    // Top-level category routes (StockX uses these in nav)
+    if (
+      path === '/sneakers' ||
+      path.startsWith('/sneakers/') ||
+      path === '/streetwear' ||
+      path.startsWith('/streetwear/') ||
+      path === '/collectibles' ||
+      path.startsWith('/collectibles/') ||
+      path === '/electronics' ||
+      path.startsWith('/electronics/') ||
+      path === '/trading-cards' ||
+      path.startsWith('/trading-cards/') ||
+      path === '/handbags' ||
+      path.startsWith('/handbags/') ||
+      path === '/watches' ||
+      path.startsWith('/watches/')
+    ) {
+      return true;
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function isLikelyProductPathForListing(pathname) {
+  const p = String(pathname || '').toLowerCase();
+  if (!p.startsWith('/')) return false;
+  if (p === '/' || p === '') return false;
+  const excluded = [
+    '/favorites',
+    '/profile',
+    '/brands',
+    '/news',
+    '/search',
+    '/sell',
+    '/buy',
+    '/buying',
+    '/selling',
+    '/help',
+    '/settings',
+    '/about',
+    '/professional-tools',
+    '/accounts',
+    '/login',
+    '/signup',
+    '/sneakers',
+    '/streetwear',
+    '/collectibles',
+    '/electronics',
+    '/trading-cards',
+    '/handbags',
+    '/watches',
+    '/category',
+    '/categories'
+  ];
+  if (excluded.some((x) => p === x || p.startsWith(`${x}/`))) return false;
+  // Most product pages are /<slug> (single segment)
+  const parts = p.split('/').filter(Boolean);
+  if (parts.length !== 1) return false;
+  const slug = parts[0];
+  if (!slug || slug.length < 6) return false;
+  if (!/^[a-z0-9-]+$/.test(slug)) return false;
+  return true;
+}
+
+function collectListingProductUrls(max = 48, opts = {}) {
+  const urls = [];
+  const seen = new Set();
+  const anchors = Array.from(document.querySelectorAll('a[href^="/"]'));
+
+  const looksLikeProductCardLink = (a) => {
+    try {
+      if (a.querySelector?.('img')) return true;
+      const card = a.closest('article,li,[role="listitem"]') || null;
+      if (card && card.querySelector?.('img')) return true;
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  const shouldSkipByCardText = (a) => {
+    try {
+      const onlySneakers = !!opts.onlySneakers;
+      const skipOneSize = !!opts.skipOneSize;
+      if (!onlySneakers && !skipOneSize) return false;
+
+      const card = a.closest('article,li,[role="listitem"],div') || a;
+      const t = safeText(card).toLowerCase();
+
+      if (skipOneSize) {
+        if (t.includes('one size')) return true;
+      }
+
+      if (onlySneakers) {
+        const nonSneakerSignals = ['collectibles', 'electronics', 'trading cards', 'handbags', 'watches', 'streetwear'];
+        if (nonSneakerSignals.some((w) => t.includes(w))) return true;
+      }
+
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  for (const a of anchors) {
+    const href = a.getAttribute('href') || '';
+    let u = null;
+    try {
+      u = new URL(href, location.origin);
+    } catch {
+      continue;
+    }
+    if (!isLikelyProductPathForListing(u.pathname)) continue;
+    if (!looksLikeProductCardLink(a)) continue;
+    if (shouldSkipByCardText(a)) continue;
+    // Ignore links that are clearly not product cards (e.g. header/footer)
+    const txt = safeText(a);
+    if (txt && txt.length > 80) continue;
+    const key = u.toString();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    urls.push(key);
+    if (urls.length >= max) break;
+  }
+  return urls;
+}
+
+function formatOppRow(opp, { slug, url } = {}) {
+  const size = String(opp.sizeLabel || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const hb = Number(opp.highestBid);
+  const ask = Number(opp.lowestAsk);
+  const profit = Number.isFinite(ask) && Number.isFinite(hb) ? Math.floor(ask - hb - 21) : null;
+  const bidTxt = Number.isFinite(hb) ? hb : '—';
+  const askTxt = Number.isFinite(ask) ? ask : '—';
+  const profitTxt = profit == null ? '—' : `${profit >= 0 ? '+' : ''}${profit}`;
+
+  const sizeParam = String(opp.sizeParam || stockxSizeParamFromLabel(opp.sizeLabel) || '').trim();
+  const canOpen = !!(url && sizeParam);
+  const openBtn = canOpen
+    ? `<button data-role="open-size" data-url="${String(url)}" data-sizeparam="${sizeParam}"
+         style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.10); color:white; padding:4px 8px; border-radius:8px; cursor:pointer; font-weight:800; font-size:11px;">
+         Open
+       </button>`
+    : '';
+
+  return `<div style="display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:12px;">
+    <div style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:800;">${size}</div>
+    <div style="display:flex; align-items:center; gap:10px; white-space:nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;">
+      <span>Bid ${bidTxt}</span>
+      <span>Ask ${askTxt}</span>
+      <span>Profit ${profitTxt}</span>
+      ${openBtn}
+    </div>
+  </div>`;
+}
+
+function ensureListingBidWidget() {
+  const existing = document.getElementById('stockx-bid-opps-widget');
+  if (!isStockxListingPage()) {
+    if (existing) existing.remove();
+    return;
+  }
+
+  const state = (window.__stockxListingBidScanState =
+    window.__stockxListingBidScanState || {
+      scanId: '',
+      total: 0,
+      current: 0,
+      stage: '',
+      results: {},
+      maxItems: 48,
+      concurrency: 1,
+      onlySneakers: false,
+      skipOneSize: false,
+      pendingStop: false
+    });
+
+  const runtimeSendMessageSafe = (msg, cb) => {
+    try {
+      if (!chrome?.runtime?.sendMessage) {
+        state.stage = 'error: chrome.runtime not available (refresh the page)';
+        ensureListingBidWidget();
+        return false;
+      }
+      chrome.runtime.sendMessage(msg, (resp) => {
+        const err = chrome.runtime?.lastError;
+        if (err) {
+          const m = err.message || String(err);
+          if (/Extension context invalidated/i.test(m)) {
+            state.stage = 'error: Extension updated — refresh this StockX tab, then retry Scan.';
+          } else {
+            state.stage = `error: ${m}`;
+          }
+          ensureListingBidWidget();
+          return;
+        }
+        cb?.(resp);
+      });
+      return true;
+    } catch (e) {
+      const m = e?.message || String(e);
+      state.stage = /Extension context invalidated/i.test(m)
+        ? 'error: Extension updated — refresh this StockX tab, then retry Scan.'
+        : `error: ${m}`;
+      ensureListingBidWidget();
+      return false;
+    }
+  };
+
+  // Global stop overlay should work from any StockX tab, not just the listing widget tab.
+  // We mount it here too (idempotent) so it appears quickly after any rerender.
+  try {
+    ensureGlobalStopOverlay();
+  } catch {}
+
+  // Poll persisted scan state/results so the UI updates even if runtime messages are missed.
+  try {
+    if (!window.__stockxListingScanStoragePoll) {
+      window.__stockxListingScanStoragePoll = setInterval(() => {
+        try {
+          chrome?.storage?.local?.get?.(['stockxActiveListingScanId', 'stockxLastListingScanId'], (ids) => {
+            void chrome.runtime.lastError;
+            const sid = String(ids?.stockxActiveListingScanId || state.scanId || ids?.stockxLastListingScanId || '');
+            if (!sid) return;
+            const stateKey = `stockxListingScanState:${sid}`;
+            const resultsKey = `stockxListingScanResults:${sid}`;
+            chrome.storage.local.get([stateKey, resultsKey], (res) => {
+              void chrome.runtime.lastError;
+              const s = res?.[stateKey];
+              const r = res?.[resultsKey];
+              if (s && typeof s === 'object') {
+                state.scanId = String(s.scanId || sid);
+                state.stage = String(s.stage || state.stage || '');
+                state.total = Number(s.total || state.total || 0);
+                state.current = Number(s.completed || state.current || 0);
+              }
+              if (r && typeof r === 'object') {
+                // Convert map(url->result) into the existing state.results shape.
+                state.results = {};
+                for (const [url, val] of Object.entries(r)) {
+                  state.results[url] = val;
+                }
+              }
+              // Avoid infinite recursion: only redraw if widget exists
+              const w = document.getElementById('stockx-bid-opps-widget');
+              if (w) ensureListingBidWidget();
+            });
+          });
+        } catch {}
+      }, 1200);
+    }
+  } catch {}
+
+  const widget = existing || document.createElement('div');
+  widget.id = 'stockx-bid-opps-widget';
+  widget.style.cssText = `
+    position: fixed;
+    bottom: 16px;
+    left: 16px;
+    width: 360px;
+    max-height: 70vh;
+    overflow: auto;
+    background: rgba(17, 24, 39, 0.95);
+    color: #fff;
+    padding: 12px;
+    border-radius: 12px;
+    z-index: 2147483647;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+    border: 1px solid rgba(34,197,94,0.25);
+    font-family: Arial, sans-serif;
+  `;
+
+  const resultEntries = Object.values(state.results || {});
+  const itemsHtml =
+    resultEntries.length === 0
+      ? `<div style="opacity:.75; font-size:12px;">No results yet. Click Scan to check the first items on this page.</div>`
+      : resultEntries
+          .map((r) => {
+            const title = String(r.title || r.slug || r.url || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const url = String(r.url || '');
+            const slug = String(r.slug || '');
+            const best = Array.isArray(r.opportunities) ? r.opportunities[0] : null;
+            const opps = Array.isArray(r.opportunities) ? r.opportunities.slice(0, 3) : [];
+            const explainEmpty = () => {
+              if (r?.success === false) return `Scan failed: ${String(r.error || 'unknown error')}`;
+              const salesRows = Number(r?.salesRows) || 0;
+              const asksRows = Number(r?.asksRows) || 0;
+              const bidsRows = Number(r?.bidsRows) || 0;
+              const foundBtn = !!r?.foundMarketDataButton;
+              const opened = !!r?.openedMarketData;
+              const sizeOptionsCount = Number(r?.sizeOptionsCount) || 0;
+              const viableSizeCount = Number(r?.viableSizeCount) || 0;
+              const eliminatedByAsk = Number(r?.eliminatedByAsk) || 0;
+              if (!foundBtn) return 'Could not find “View Market Data” button on page (page not fully loaded).';
+              if (!opened && asksRows === 0 && bidsRows === 0 && salesRows === 0)
+                return 'Tried to click “View Market Data” but modal didn’t open (StockX blocked automation).';
+              if (opened && asksRows === 0) return 'Could not parse Asks rows (0) — Market Data opened but UI/markup may have changed.';
+              if (!opened && asksRows === 0) return 'Could not read Asks table (Market Data didn’t open).';
+              if (opened && bidsRows === 0) return 'Could not parse Bids rows (0) — Market Data opened but UI/markup may have changed.';
+              if (!opened && bidsRows === 0) return 'Could not read Bids table (Market Data didn’t open).';
+              // Size menu is often unavailable in background tabs; we primarily rely on Bids table instead.
+              if (sizeOptionsCount === 0) return 'Size menu not readable in background tab (OK) — using Bids table instead.';
+              if (viableSizeCount === 0) return `All sizes failed ask-vs-bid profit check (filtered ${eliminatedByAsk}).`;
+              if (salesRows === 0) return opened ? 'Could not parse Sales rows (0) — Market Data opened but Sales didn’t load/parse.' : 'Could not read Sales table (Market Data didn’t load).';
+              return 'No sizes met ≥4 sales (30d) AND ≥$15 profit rules.';
+            };
+            const oppHtml = opps.length
+              ? opps.map((o) => formatOppRow(o, { slug, url })).join('')
+              : `<div style="opacity:.65; font-size:12px;">${explainEmpty()}</div>`;
+            return `
+              <div style="border-top:1px solid rgba(255,255,255,0.08); padding-top:10px; margin-top:10px;">
+                <div style="font-weight:800; font-size:13px; margin-bottom:6px;">${title}</div>
+                ${oppHtml}
+                <div style="display:flex; gap:8px; margin-top:8px;">
+                  <button data-role="open-bid" data-slug="${slug}" data-sizeparam="${best ? String(best.sizeParam || '') : ''}" data-size="${best ? String(best.sizeLabel || '') : ''}" data-bid="${best ? String(best.suggestedBid || '') : ''}" ${best ? '' : 'disabled'}
+                    style="flex:1; background:${best ? '#22c55e' : 'rgba(255,255,255,0.06)'}; border:1px solid rgba(255,255,255,0.10); color:${best ? '#052e14' : 'rgba(255,255,255,0.7)'}; padding:7px 8px; border-radius:10px; cursor:${best ? 'pointer' : 'not-allowed'}; font-weight:900;">
+                    Bid best
+                  </button>
+                </div>
+                <div style="margin-top:6px; font-size:11px; color:rgba(255,255,255,0.55);">
+                  <a href="#" data-role="why" data-url="${url}" data-slug="${slug}" style="color:#93c5fd; text-decoration:underline;">why?</a>
+                </div>
+              </div>
+            `;
+          })
+          .join('');
+
+  const stageLine =
+    state.stage && state.total
+      ? `<div style="margin-top:6px; font-size:11px; color:rgba(255,255,255,0.7);">
+           ${state.stage} ${state.current || 0}/${state.total}
+         </div>`
+      : '';
+
+  widget.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+      <div style="font-weight:900; color:#bbf7d0;">Bid opportunities (page)</div>
+      <button data-role="close" style="background:none;border:none;color:rgba(255,255,255,0.75);cursor:pointer;font-size:18px;">×</button>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:10px;">
+      <button data-role="scan" style="flex:1; background:#22c55e; border:1px solid rgba(34,197,94,0.9); color:#052e14; padding:8px 10px; border-radius:10px; cursor:pointer; font-weight:900;">
+        Scan this page
+      </button>
+      <button data-role="stop" style="width:90px; background:#ef4444; border:1px solid rgba(239,68,68,0.95); color:#450a0a; padding:8px 10px; border-radius:10px; cursor:pointer; font-weight:1000;">
+        Stop
+      </button>
+      <button data-role="clear" style="width:90px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.10); color:white; padding:8px 10px; border-radius:10px; cursor:pointer; font-weight:800;">
+        Clear
+      </button>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px; margin-top:8px; font-size:12px; color:rgba(255,255,255,0.8);">
+      <span style="opacity:.8;">Items to scan:</span>
+      <input data-role="max-items" inputmode="numeric" value="${String(state.maxItems || 48)}"
+        style="width:64px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:white; padding:6px 8px; border-radius:8px;" />
+      <span style="opacity:.6;">(max 48)</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px; margin-top:6px; font-size:12px; color:rgba(255,255,255,0.8);">
+      <span style="opacity:.8;">Tabs at once:</span>
+      <input data-role="concurrency" inputmode="numeric" value="${String(state.concurrency || 1)}"
+        style="width:64px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:white; padding:6px 8px; border-radius:8px;" />
+      <span style="opacity:.6;">(1–5)</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:10px; margin-top:8px; font-size:12px; color:rgba(255,255,255,0.82);">
+      <label style="display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none;">
+        <input type="checkbox" data-role="only-sneakers" ${state.onlySneakers ? 'checked' : ''} />
+        Only sneakers (skip collectibles/electronics/etc)
+      </label>
+    </div>
+    <div style="display:flex; align-items:center; gap:10px; margin-top:6px; font-size:12px; color:rgba(255,255,255,0.82);">
+      <label style="display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none;">
+        <input type="checkbox" data-role="skip-one-size" ${state.skipOneSize ? 'checked' : ''} />
+        Skip “ONE SIZE” items
+      </label>
+    </div>
+    ${stageLine}
+    <div style="margin-top:10px;">${itemsHtml}</div>
+  `;
+
+  if (!existing) document.body.appendChild(widget);
+
+  widget.querySelector('[data-role="close"]')?.addEventListener('click', () => widget.remove());
+
+  const stopBtn = widget.querySelector('[data-role="stop"]');
+  try {
+    const s = String(state.stage || '').toLowerCase();
+    const isDone = s === 'done' || s.startsWith('done ') || s === 'stopped';
+    const isError = s.startsWith('error:');
+    const isRunning = !!state.scanId && !isDone && !isError;
+    const canStop = isRunning || state.pendingStop || s === 'starting' || s === 'queued' || s === 'opening' || s === 'scanning' || s === 'scanned';
+    if (stopBtn) {
+      stopBtn.disabled = !canStop;
+      stopBtn.style.opacity = canStop ? '1' : '0.35';
+      stopBtn.style.cursor = canStop ? 'pointer' : 'not-allowed';
+    }
+  } catch {}
+
+  stopBtn?.addEventListener('click', () => {
+    try {
+      // If scanId isn't set yet, remember the user's intent and stop as soon as we get it.
+      if (!state.scanId) {
+        state.pendingStop = true;
+        state.stage = 'stopping';
+        ensureListingBidWidget();
+        return;
+      }
+      state.pendingStop = false;
+      state.stage = 'stopping';
+      ensureListingBidWidget();
+      runtimeSendMessageSafe({ action: 'stopListingBidScan', scanId: state.scanId }, (resp) => {
+        if (!resp?.success) {
+          state.stage = `error: ${resp?.error || 'failed to stop'}`;
+        } else {
+          state.stage = 'stopped';
+        }
+        ensureListingBidWidget();
+      });
+    } catch (e) {
+      state.stage = `error: ${e?.message || String(e)}`;
+      ensureListingBidWidget();
+    }
+  });
+  widget.querySelector('[data-role="clear"]')?.addEventListener('click', () => {
+    try {
+      state.scanId = '';
+      state.total = 0;
+      state.current = 0;
+      state.stage = '';
+      state.results = {};
+    } catch {}
+    ensureListingBidWidget();
+  });
+
+  const maxEl = widget.querySelector('[data-role="max-items"]');
+  maxEl?.addEventListener('input', () => {
+    const n = Math.max(1, Math.min(48, Number(String(maxEl.value || '').trim())));
+    if (!Number.isFinite(n)) return;
+    state.maxItems = n;
+  });
+
+  const concEl = widget.querySelector('[data-role="concurrency"]');
+  concEl?.addEventListener('input', () => {
+    const n = Math.max(1, Math.min(5, Number(String(concEl.value || '').trim())));
+    if (!Number.isFinite(n)) return;
+    state.concurrency = n;
+  });
+
+  const onlySneakersEl = widget.querySelector('[data-role="only-sneakers"]');
+  onlySneakersEl?.addEventListener('change', () => {
+    try {
+      state.onlySneakers = !!onlySneakersEl.checked;
+    } catch {}
+  });
+
+  const skipOneSizeEl = widget.querySelector('[data-role="skip-one-size"]');
+  skipOneSizeEl?.addEventListener('change', () => {
+    try {
+      state.skipOneSize = !!skipOneSizeEl.checked;
+    } catch {}
+  });
+
+  widget.querySelector('[data-role="scan"]')?.addEventListener('click', () => {
+    try {
+      const maxItems = Math.max(1, Math.min(48, Number(state.maxItems || 48)));
+      const concurrency = Math.max(1, Math.min(5, Number(state.concurrency || 1)));
+      const urls = collectListingProductUrls(maxItems, { onlySneakers: !!state.onlySneakers, skipOneSize: !!state.skipOneSize });
+      if (!urls.length) {
+        state.stage = 'No products detected';
+        state.total = 0;
+        state.current = 0;
+        ensureListingBidWidget();
+        return;
+      }
+      state.results = {};
+      state.stage = 'starting';
+      state.total = urls.length;
+      state.current = 0;
+      state.pendingStop = false;
+      ensureListingBidWidget();
+      runtimeSendMessageSafe({ action: 'startListingBidScan', urls, maxItems: urls.length, concurrency }, (resp) => {
+        const ok = resp?.success;
+        if (!ok) {
+          state.stage = `error: ${resp?.error || 'failed to start'}`;
+          ensureListingBidWidget();
+          return;
+        }
+        state.scanId = resp.scanId;
+        state.total = resp.total || urls.length;
+        state.stage = 'queued';
+        state.current = 0;
+        // If the user clicked Stop before we got the scanId, stop immediately now.
+        if (state.pendingStop) {
+          const sid = state.scanId;
+          state.stage = 'stopping';
+          ensureListingBidWidget();
+          runtimeSendMessageSafe({ action: 'stopListingBidScan', scanId: sid }, () => {});
+        }
+        ensureListingBidWidget();
+      });
+    } catch (e) {
+      state.stage = `error: ${e?.message || String(e)}`;
+      ensureListingBidWidget();
+    }
+  });
+
+  // Row buttons
+  widget.querySelectorAll('[data-role="open-size"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      try {
+        const url = btn.getAttribute('data-url') || '';
+        const sp = btn.getAttribute('data-sizeparam') || '';
+        const target = withSizeParam(url, sp);
+        if (!target) return;
+        chrome.runtime.sendMessage({ action: 'openTab', url: target });
+      } catch {}
+    });
+  });
+  widget.querySelectorAll('[data-role="open-bid"]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const slug = btn.getAttribute('data-slug') || '';
+      const sizeLabel = btn.getAttribute('data-size') || '';
+      const sizeParam = btn.getAttribute('data-sizeparam') || '';
+      const bid = Number(btn.getAttribute('data-bid') || '');
+      if (!slug || !sizeLabel || !Number.isFinite(bid) || bid <= 0) return;
+      const sizeKey = String(sizeParam || stockxSizeParamFromLabel(sizeLabel) || normalizeSizeKey(sizeLabel) || '').trim();
+      if (!sizeKey) return;
+      // Reuse the existing helper flow to open /buy/... and auto-run the bid.
+      const res = await openBidInNewTab({ slug, sizeKey, bid: Math.round(bid) });
+      try {
+        if (!res?.ok) state.stage = `Bid tab failed: ${res?.error || 'unknown error'}`;
+        else state.stage = `Opened bid tab for ${sizeLabel}`;
+        ensureListingBidWidget();
+      } catch {}
+    });
+  });
+
+  widget.querySelectorAll('[data-role="why"]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const url = btn.getAttribute('data-url') || '';
+      const slug = btn.getAttribute('data-slug') || '';
+      const vals = Object.values(state.results || {});
+      const entry =
+        (url ? vals.find((x) => String(x?.url || '') === url) : null) ||
+        (slug ? vals.find((x) => String(x?.slug || '') === slug) : null) ||
+        null;
+      try {
+        console.log('🧪 Bid scan debug:', entry);
+      } catch {}
+      try {
+        const payload = entry
+          ? {
+              scanId: entry.scanId || null,
+              savedAt: entry.savedAt || null,
+              url: entry.url,
+              slug: entry.slug,
+              title: entry.title,
+              success: entry.success,
+              error: entry.error,
+              sizeOptionsCount: entry.sizeOptionsCount,
+              asksRows: entry.asksRows,
+              bidsRows: entry.bidsRows,
+              salesRows: entry.salesRows,
+              viableSizeCount: entry.viableSizeCount,
+              eliminatedByAsk: entry.eliminatedByAsk,
+              marketDataOpenDebug: entry.marketDataOpenDebug || null,
+              marketDataTabDebug: entry.marketDataTabDebug || null,
+              marketDataSample: entry.marketDataSample || null,
+              nextDataVariantDebug: entry.nextDataVariantDebug || null,
+              sizeAll: entry.sizeAll || null,
+              opportunities: (entry.opportunities || []).slice(0, 5)
+            }
+          : null;
+
+        const text = payload ? JSON.stringify(payload, null, 2) : 'No debug info found for this item.';
+        showCopyableDebugModal(text);
+      } catch {}
+    });
+  });
+
+  // Expose message handler for background progress
+  try {
+    window.__stockxListingBidScanHandleMsg = (msg) => {
+      if (!msg) return;
+      // Only update the active scan
+      if (state.scanId && msg.scanId && state.scanId !== msg.scanId) return;
+      if (msg.action === 'listingBidScanProgress') {
+        state.stage = msg.stage || state.stage;
+        state.current = msg.current || state.current;
+        state.total = msg.total || state.total;
+        ensureListingBidWidget();
+      } else if (msg.action === 'listingBidScanResult') {
+        const r = msg;
+        const key = r.slug || r.url || `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+        state.results[key] = r;
+        ensureListingBidWidget();
+      } else if (msg.action === 'listingBidScanDone') {
+        if (msg.cancelled) state.stage = 'stopped';
+        else state.stage = msg.success ? 'done' : `done (error: ${msg.error || 'unknown'})`;
+        ensureListingBidWidget();
+      }
+    };
+  } catch {}
+}
+
+function showCopyableDebugModal(text) {
+  try {
+    const id = 'stockx-bid-debug-modal';
+    const existing = document.getElementById(id);
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = id;
+    overlay.style.cssText = `
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.55);
+      z-index: 2147483647;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      font-family: Arial, sans-serif;
+    `;
+
+    const card = document.createElement('div');
+    card.style.cssText = `
+      width: min(900px, 96vw);
+      max-height: 85vh;
+      background: rgba(17, 24, 39, 0.98);
+      color: rgba(255,255,255,0.92);
+      border: 1px solid rgba(99,102,241,0.35);
+      border-radius: 12px;
+      box-shadow: 0 18px 40px rgba(0,0,0,0.45);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    `;
+
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:10px;';
+    header.innerHTML = `
+      <div style="font-weight:900; color:#c7d2fe;">Debug info</div>
+      <button data-role="close" style="background:none;border:none;color:rgba(255,255,255,0.75);cursor:pointer;font-size:18px;">×</button>
+    `;
+
+    const ta = document.createElement('textarea');
+    ta.value = String(text || '');
+    ta.readOnly = true;
+    ta.spellcheck = false;
+    ta.style.cssText = `
+      width: 100%;
+      flex: 1;
+      min-height: 240px;
+      background: rgba(255,255,255,0.06);
+      color: rgba(255,255,255,0.92);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px;
+      padding: 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      line-height: 1.4;
+      resize: vertical;
+    `;
+
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex; gap:8px; justify-content:flex-end; align-items:center;';
+    actions.innerHTML = `
+      <div data-role="status" style="margin-right:auto; font-size:11px; color:rgba(255,255,255,0.65);"></div>
+      <button data-role="select" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.10); color:white; padding:8px 10px; border-radius:10px; cursor:pointer; font-weight:900;">Select</button>
+      <button data-role="copy" style="background:#22c55e; border:1px solid rgba(34,197,94,0.9); color:#052e14; padding:8px 10px; border-radius:10px; cursor:pointer; font-weight:1000;">Copy</button>
+    `;
+
+    card.appendChild(header);
+    card.appendChild(ta);
+    card.appendChild(actions);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+
+    const close = () => {
+      try { overlay.remove(); } catch {}
+    };
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close();
+    });
+    header.querySelector('[data-role="close"]')?.addEventListener('click', close);
+
+    const statusEl = actions.querySelector('[data-role="status"]');
+    const setStatus = (s) => {
+      if (statusEl) statusEl.textContent = String(s || '');
+    };
+
+    actions.querySelector('[data-role="select"]')?.addEventListener('click', () => {
+      try {
+        ta.focus();
+        ta.select();
+        setStatus('Selected');
+      } catch {}
+    });
+
+    actions.querySelector('[data-role="copy"]')?.addEventListener('click', async () => {
+      try {
+        const v = ta.value || '';
+        if (navigator?.clipboard?.writeText) {
+          await navigator.clipboard.writeText(v);
+          setStatus('Copied to clipboard');
+          return;
+        }
+      } catch {}
+      // Fallback
+      try {
+        ta.focus();
+        ta.select();
+        const ok = document.execCommand('copy');
+        setStatus(ok ? 'Copied to clipboard' : 'Copy failed (try Select then Cmd+C)');
+      } catch {
+        setStatus('Copy failed (try Select then Cmd+C)');
+      }
+    });
+
+    // Auto-select for convenience
+    try {
+      ta.focus();
+      ta.select();
+    } catch {}
+  } catch {}
+}
+
+function ensureGlobalStopOverlay() {
+  try {
+    if (!location.hostname.includes('stockx.com')) return;
+    const id = 'stockx-global-stop-scan';
+
+    const upsert = (activeScanId) => {
+      const existingNow = document.getElementById(id);
+      if (!activeScanId) {
+        if (existingNow) existingNow.remove();
+        return;
+      }
+      const el = existingNow || document.createElement('div');
+      el.id = id;
+      el.style.cssText = `
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        z-index: 2147483647;
+        font-family: Arial, sans-serif;
+        pointer-events: auto;
+      `;
+      el.innerHTML = `
+        <button data-role="stop-scan" style="
+          background:#ef4444;
+          border:1px solid rgba(239,68,68,0.95);
+          color:#450a0a;
+          padding:10px 12px;
+          border-radius:9999px;
+          cursor:pointer;
+          font-weight:1000;
+          box-shadow: 0 10px 22px rgba(0,0,0,0.25);
+        ">Stop scan</button>
+      `;
+      if (!existingNow) document.body.appendChild(el);
+      el.querySelector('[data-role="stop-scan"]')?.addEventListener('click', () => {
+        try {
+          if (!chrome?.runtime?.sendMessage) return;
+          chrome.runtime.sendMessage({ action: 'stopListingBidScan', scanId: activeScanId }, () => {
+            void chrome.runtime.lastError;
+          });
+        } catch {}
+      });
+    };
+
+    // Poll storage for an active scan id (set by background). This keeps the overlay working in any tab.
+    if (window.__stockxGlobalStopOverlayPollInstalled) return;
+    window.__stockxGlobalStopOverlayPollInstalled = true;
+    const tick = () => {
+      try {
+        chrome?.storage?.local?.get?.(['stockxActiveListingScanId'], (res) => {
+          void chrome.runtime.lastError;
+          const sid = String(res?.stockxActiveListingScanId || '');
+          upsert(sid || '');
+        });
+      } catch {}
+    };
+    tick();
+    setInterval(tick, 1000);
+  } catch {}
+}
+
 // Add a visible indicator that the extension is loaded
 const indicator = document.createElement('div');
 indicator.id = 'stockx-extension-loaded';
@@ -4421,6 +6951,19 @@ setTimeout(() => {
 function isProductPage() {
   const url = window.location.href;
   const isStockX = url.includes('stockx.com');
+  // Explicitly exclude homepage (it has h1/buttons and can falsely match)
+  try {
+    const u = new URL(url);
+    if ((u.hostname || '').includes('stockx.com') && ((u.pathname || '/') === '/' || (u.pathname || '') === '')) {
+      return false;
+    }
+    // Also exclude category/listing style routes
+    const path = String(u.pathname || '/').toLowerCase();
+    if (path.startsWith('/category/')) return false;
+    // And require product pages to be a single slug segment
+    const parts = path.split('/').filter(Boolean);
+    if (parts.length !== 1) return false;
+  } catch {}
   const isNotSearchPage = !url.includes('/search') && !url.includes('/sell') && !url.includes('/buy');
   const hasProductIndicators = document.querySelector('h1') || document.querySelector('button');
   
@@ -4479,16 +7022,52 @@ function init() {
   // Ensure we detect SPA navigations and query-param size changes reliably.
   installUrlChangeHooks();
 
+  // If this tab was opened by the listing scanner, run in scan-only mode (no big widgets).
+  const isScanTab = (() => {
+    try {
+      const u = new URL(location.href);
+      const yes = u.searchParams.get('extScan') === '1';
+      if (yes) {
+        try { window.__stockxIsScanTab = true; } catch {}
+      }
+      return yes || !!window.__stockxIsScanTab;
+    } catch {
+      return !!window.__stockxIsScanTab;
+    }
+  })();
+
+  // Clean URL in scan tabs (keep scan-only behavior via window.__stockxIsScanTab).
+  try {
+    if (isScanTab) {
+      const u = new URL(location.href);
+      if (u.searchParams.has('extScan') || u.searchParams.has('extScanId')) {
+        u.searchParams.delete('extScan');
+        u.searchParams.delete('extScanId');
+        history.replaceState({}, '', u.toString());
+      }
+    }
+  } catch {}
+
   // If we landed on /buy/...defaultBid=true due to a pending request, run it automatically.
   try {
-    runPendingOfferRequestIfPresent();
+    if (!isScanTab) runPendingOfferRequestIfPresent();
   } catch {}
   
   // If this is a buying order page, run tracking watcher (independent of product widget).
-  startBuyingTrackingWatcher();
+  if (!isScanTab) startBuyingTrackingWatcher();
 
   // Product helper widget (recent sales + bid automation) – render best-effort and keep retrying during hydration.
-  startProductHelperWatcher();
+  if (!isScanTab) startProductHelperWatcher();
+
+  // Listing-page scanner widget (category/search pages)
+  try {
+    if (!isScanTab) ensureListingBidWidget();
+  } catch {}
+
+  // Global red stop overlay for listing scans (must work on ANY StockX tab)
+  try {
+    ensureGlobalStopOverlay();
+  } catch {}
 }
 
 // Initialize
@@ -4524,5 +7103,15 @@ new MutationObserver(() => {
   // Also restart product helper watcher on any SPA navigation.
   try {
     startProductHelperWatcher();
+  } catch {}
+
+  // Listing widget may need to show/hide on route changes
+  try {
+    ensureListingBidWidget();
+  } catch {}
+
+  // Global stop overlay should also survive SPA navigations
+  try {
+    ensureGlobalStopOverlay();
   } catch {}
 }).observe(document, { subtree: true, childList: true });
