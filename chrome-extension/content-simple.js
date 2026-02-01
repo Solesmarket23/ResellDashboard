@@ -3798,22 +3798,26 @@ async function runPendingOfferRequestIfPresent() {
     if (!isBuyFlowPath()) return;
     console.log('🟦 StockX Helper: buy flow page detected', { url: location.href });
     const extId = getExtBidIdFromUrl();
-    const req = (() => {
-      // 1) Prefer explicit extBidId.
-      // 2) Fallback to "last bid return" if StockX dropped the query param during navigation.
-      // 3) Finally fallback to the legacy single pending request.
-      return (async () => {
-        if (extId) return await loadPendingOfferRequestById(extId);
-        const last = await getLastBidReturn();
-        const lastId = String(last?.id || '');
-        if (lastId) {
-          const byId = await loadPendingOfferRequestById(lastId);
-          if (byId) return byId;
-        }
-        return await loadPendingOfferRequest();
-      })();
+    // IMPORTANT: request selection order matters.
+    // If the user is doing a manual bid (same tab), we store it in the legacy single key.
+    // We MUST prefer that over the lastBidReturn fallback (which may reference a previous auto-bid).
+    const resolvedReq = await (async () => {
+      // 1) Prefer explicit extBidId (auto bid tabs)
+      if (extId) return await loadPendingOfferRequestById(extId);
+
+      // 2) Prefer legacy single request (manual flow)
+      const legacy = await loadPendingOfferRequest();
+      if (legacy) return legacy;
+
+      // 3) Fallback to "last bid return" if StockX dropped extBidId during navigation
+      const last = await getLastBidReturn();
+      const lastId = String(last?.id || '');
+      if (lastId) {
+        const byId = await loadPendingOfferRequestById(lastId);
+        if (byId) return byId;
+      }
+      return null;
     })();
-    const resolvedReq = await req;
     if (!resolvedReq) {
       console.log('🟦 StockX Helper: no pending offer request found in storage');
       return;
@@ -3908,8 +3912,46 @@ async function runPendingOfferRequestIfPresent() {
             } catch {}
           }, 2500);
         } catch {}
-        // Clear pending so we don't auto-run again on reload.
-        await cleanupPending();
+        // Manual mode: DO NOT navigate away from this page.
+        // Instead, wait for the user to click Confirm Bid, then detect success and return/cleanup.
+        if (!window.__stockxManualConfirmWatcherRunning) {
+          window.__stockxManualConfirmWatcherRunning = true;
+          (async () => {
+            try {
+              const signal = await waitForBidSuccessSignal(60000);
+              console.log('🟦 StockX Helper: manual confirm success signal', signal);
+              if (!signal.ok) return;
+
+              // Success observed => cleanup and return to the prior page (same tab) or focus opener if present.
+              const last = await getLastBidReturn();
+              const openerTabId = Number(resolvedReq?.openerTabId || last?.openerTabId || 0);
+              const returnUrl = String(resolvedReq?.returnUrl || last?.returnUrl || '');
+
+              await cleanupPending();
+
+              // For manual bids (same tab), prefer returning by navigating back to returnUrl.
+              if (returnUrl) {
+                try {
+                  if (location.href !== returnUrl) window.location.assign(returnUrl);
+                } catch {}
+                return;
+              }
+
+              // If we have an openerTabId (rare for manual), use closeSelfAndFocus.
+              if (openerTabId) {
+                try {
+                  chrome.runtime?.sendMessage?.({ action: 'closeSelfAndFocus', openerTabId, returnUrl }, () => void chrome.runtime.lastError);
+                } catch {}
+              }
+            } catch (e) {
+              console.warn('⚠️ StockX Helper: manual confirm watcher failed', e);
+            } finally {
+              try {
+                window.__stockxManualConfirmWatcherRunning = false;
+              } catch {}
+            }
+          })();
+        }
         return;
       }
 
