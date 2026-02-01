@@ -193,9 +193,10 @@ function renderResults(listEl, resultsMap) {
   const renderSalesViewLine = (r) => {
     try {
       const v = safeStr(r?.salesView || '');
+      const confirmed = typeof r?.sellerViewConfirmed === 'boolean' ? r.sellerViewConfirmed : null;
       const dbg = r?.marketDataViewSwitchDebug && typeof r.marketDataViewSwitchDebug === 'object' ? r.marketDataViewSwitchDebug : null;
       if (!v && !dbg) return '';
-      const base = v ? `salesView: ${v}` : 'salesView: —';
+      const base = `${v ? `salesView: ${v}` : 'salesView: —'}${confirmed === null ? '' : ` (confirmed=${confirmed ? 'yes' : 'no'})`}`;
       if (!dbg) return `<div class="sub mono" style="opacity:.75;">${escapeHtml(base)}</div>`;
       const bits = [
         `allIn=${dbg.clickedAllInCollapse ? 'yes' : 'no'}`,

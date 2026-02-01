@@ -5645,6 +5645,24 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
       }
     };
 
+    const toBuyerVisible = () => {
+      try {
+        const toBuyer = scope.querySelector?.('[data-testid="AllInViewSwitchToBUYER"]') || document.querySelector('[data-testid="AllInViewSwitchToBUYER"]');
+        return isVisibleElBestEffort(toBuyer);
+      } catch {
+        return false;
+      }
+    };
+
+    const toSellerVisible = () => {
+      try {
+        const toSeller = scope.querySelector?.('[data-testid="AllInViewSwitchToSELLER"]') || document.querySelector('[data-testid="AllInViewSwitchToSELLER"]');
+        return isVisibleElBestEffort(toSeller);
+      } catch {
+        return false;
+      }
+    };
+
     const isSellerAlready = () => {
       try {
         return isSellerConfirmed();
@@ -5663,6 +5681,8 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
 
     if (isSellerAlready()) {
       debug.inferred = 'already';
+      debug.toBuyerVisible = toBuyerVisible();
+      debug.toSellerVisible = toSellerVisible();
       return { ok: true, salesView: 'seller', debug };
     }
 
@@ -5742,6 +5762,8 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
     while (Date.now() - start < timeoutMs) {
       if (isSellerConfirmed()) {
         debug.inferred = 'after_switch';
+        debug.toBuyerVisible = toBuyerVisible();
+        debug.toSellerVisible = toSellerVisible();
         return { ok: true, salesView: 'seller', debug };
       }
 
@@ -5749,6 +5771,8 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
       debug.sellerBtnFound = !!sellerBtnAny;
       debug.sellerBtnVisible = isVisibleElBestEffort(sellerBtnAny);
       debug.sellerBtnEnabled = isEnabledBtnBestEffort(sellerBtnAny);
+      debug.toBuyerVisible = toBuyerVisible();
+      debug.toSellerVisible = toSellerVisible();
 
       // If the button exists but isn't visible yet, try expanding and give layout time.
       if (sellerBtnAny && !debug.sellerBtnVisible) {
