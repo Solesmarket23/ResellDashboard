@@ -5577,7 +5577,14 @@ function isVisibleElBestEffort(el) {
 }
 
 async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs = 6500 } = {}) {
-  const debug = { tried: false, openedMenu: false, clickedSeller: false, inferred: '', error: '' };
+  const debug = {
+    tried: false,
+    openedMenu: false,
+    clickedSeller: false,
+    clickedChevron: false,
+    inferred: '',
+    error: ''
+  };
   try {
     debug.tried = true;
     const scope = dialog || document;
@@ -5585,12 +5592,21 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
     const isSellerAlready = () => {
       try {
         // Heuristic: if "switch to BUYER" is visible, we are currently in SELLER view.
-        const toBuyer = document.querySelector('[data-testid="AllInViewSwitchToBUYER"]');
+        const toBuyer = scope.querySelector?.('[data-testid="AllInViewSwitchToBUYER"]') || document.querySelector('[data-testid="AllInViewSwitchToBUYER"]');
         if (isVisibleElBestEffort(toBuyer)) return true;
       } catch {}
       try {
         const txt = safeText(scope).toLowerCase();
         if (txt.includes('seller view')) return true;
+      } catch {}
+      return false;
+    };
+
+    const isBuyerAlready = () => {
+      try {
+        // If "switch to SELLER" is visible, we are currently in BUYER view.
+        const toSeller = scope.querySelector?.('[data-testid="AllInViewSwitchToSELLER"]') || document.querySelector('[data-testid="AllInViewSwitchToSELLER"]');
+        if (isVisibleElBestEffort(toSeller)) return true;
       } catch {}
       return false;
     };
@@ -5602,8 +5618,22 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
 
     const findSellerBtn = () => {
       try {
-        const b = document.querySelector('[data-testid="AllInViewSwitchToSELLER"]');
+        const b = scope.querySelector?.('[data-testid="AllInViewSwitchToSELLER"]') || document.querySelector('[data-testid="AllInViewSwitchToSELLER"]');
         return isVisibleElBestEffort(b) ? b : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const findChevronTriggerBtn = () => {
+      try {
+        // Your snippet chevron SVG path:
+        const CHEVRON_D = 'M40.2 35.7999L25 19.6L9.79999 35.7999L7.09999 33.2999L25 14.2L42.9 33.2999L40.2 35.7999Z';
+        const paths = Array.from(scope.querySelectorAll?.('svg path') || []);
+        const match = paths.find((p) => String(p.getAttribute?.('d') || '') === CHEVRON_D);
+        const svg = match?.closest?.('svg') || null;
+        const btn = svg?.closest?.('button,[role="button"],a') || null;
+        return isVisibleElBestEffort(btn) ? btn : null;
       } catch {
         return null;
       }
@@ -5611,12 +5641,18 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
 
     const openMenu = () => {
       try {
-        // Best: an element that looks like a "view switch" trigger.
+        // Best: click the known chevron trigger first; otherwise fall back to heuristics.
+        const chevron = findChevronTriggerBtn();
+        if (chevron) {
+          debug.clickedChevron = true;
+          clickElBestEffort(chevron);
+          return true;
+        }
+
         const candidates = Array.from(scope.querySelectorAll('button,[role="button"],a')).filter(isVisibleElBestEffort);
         const trigger =
           candidates.find((el) => /buyer\s+view|seller\s+view/i.test(safeText(el))) ||
-          candidates.find((el) => String(el.getAttribute?.('aria-haspopup') || '').toLowerCase() === 'menu') ||
-          candidates.find((el) => el.querySelector?.('svg') && /view/i.test(safeText(el)));
+          candidates.find((el) => String(el.getAttribute?.('aria-haspopup') || '').toLowerCase() === 'menu');
         if (!trigger) return false;
         clickElBestEffort(trigger);
         return true;
@@ -5643,6 +5679,10 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
         debug.openedMenu = openMenu();
         await new Promise((r) => setTimeout(r, 350));
       } else {
+        // If we're still in BUYER view and can't see the option, keep trying to open the menu.
+        if (isBuyerAlready()) {
+          openMenu();
+        }
         await new Promise((r) => setTimeout(r, 300));
       }
     }
