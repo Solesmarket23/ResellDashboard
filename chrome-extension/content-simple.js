@@ -5691,13 +5691,25 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
       if (sellerBtn) {
         clickElBestEffort(sellerBtn);
         debug.clickedSeller = true;
-        await new Promise((r) => setTimeout(r, 450));
+        // Temporary: give StockX time to apply the view switch before we proceed to parsing.
+        await new Promise((r) => setTimeout(r, 900));
+        // Verify switch: when Seller view is active, the "switch to BUYER" control becomes visible.
+        try {
+          await waitForElement(() => {
+            const toBuyer =
+              scope.querySelector?.('[data-testid="AllInViewSwitchToBUYER"]') ||
+              document.querySelector('[data-testid="AllInViewSwitchToBUYER"]') ||
+              null;
+            return isVisibleElBestEffort(toBuyer) ? true : null;
+          }, 2500);
+        } catch {}
         continue;
       }
       // Seller option not visible yet → open the chevron/menu.
       if (!debug.openedMenu) {
         debug.openedMenu = openMenu();
-        await new Promise((r) => setTimeout(r, 450));
+        // Temporary: give the expanded section time to render the view switch options.
+        await new Promise((r) => setTimeout(r, 750));
       } else {
         // If we're still in BUYER view and can't see the option, keep trying to open the menu.
         if (isBuyerAlready()) {
