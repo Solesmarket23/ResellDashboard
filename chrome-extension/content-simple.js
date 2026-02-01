@@ -4049,22 +4049,48 @@ async function runPendingOfferRequestIfPresent() {
         const key = `manualReviewClicked::${String(resolvedReq?.id || '')}::${location.pathname}::${location.search}`;
         if (window.__stockxManualReviewClickedKey !== key) {
           window.__stockxManualReviewClickedKey = key;
-          const reviewBtn =
-            document.querySelector('button[data-testid="checkout-confirm-button"]') ||
-            findOfferSubmitButton(document);
-          if (reviewBtn && !(reviewBtn.disabled || reviewBtn.getAttribute?.('aria-disabled') === 'true')) {
+
+          const findEnabledReviewBtn = () => {
+            const b = document.querySelector('button[data-testid="checkout-confirm-button"]') || findOfferSubmitButton(document);
+            if (!b) return null;
+            if (b.disabled || b.getAttribute?.('aria-disabled') === 'true') return null;
+            // Avoid accidentally clicking pricing tiles etc.
+            const t = safeText(b).toLowerCase();
+            if (t.includes('better bid') || t.includes('good bid')) return null;
+            return b;
+          };
+
+          const reviewBtn = await waitForElementFast(() => findEnabledReviewBtn(), { timeoutMs: 12000, pollMs: 60 });
+          if (reviewBtn) {
+            // Give StockX a beat to apply the input state before clicking (prevents no-op clicks).
+            await new Promise((r) => setTimeout(r, 220));
             try {
               reviewBtn.scrollIntoView?.({ block: 'center', inline: 'center' });
             } catch {}
             try {
               reviewBtn.click();
             } catch {}
+          } else {
+            console.warn('⚠️ StockX Helper: manual mode — Review Bid button not enabled yet.');
           }
         }
       } catch {}
 
       // Wait for Confirm Bid button to appear, highlight it, and start the watcher that returns after success.
-      const confirmBtn = await waitForElementFast(() => findConfirmBidButton(document), { timeoutMs: 15000, pollMs: 40 });
+      let confirmBtn = await waitForElementFast(() => findConfirmBidButton(document), { timeoutMs: 8000, pollMs: 40 });
+      if (!confirmBtn) {
+        // Retry clicking Review once if the first click didn't transition.
+        try {
+          const reviewBtn2 =
+            document.querySelector('button[data-testid="checkout-confirm-button"]') ||
+            findOfferSubmitButton(document);
+          if (reviewBtn2 && !(reviewBtn2.disabled || reviewBtn2.getAttribute?.('aria-disabled') === 'true')) {
+            await new Promise((r) => setTimeout(r, 300));
+            try { reviewBtn2.click(); } catch {}
+          }
+        } catch {}
+        confirmBtn = await waitForElementFast(() => findConfirmBidButton(document), { timeoutMs: 12000, pollMs: 40 });
+      }
       if (confirmBtn) {
         try {
           confirmBtn.scrollIntoView?.({ block: 'center', inline: 'center' });
