@@ -5788,6 +5788,7 @@ async function readMarketDataTablesOnce(
   const sellerRes = await ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs: 6500 });
   const salesView = sellerRes?.salesView || 'unknown';
   const viewSwitchDebug = sellerRes?.debug || null;
+  const sellerConfirmed = salesView === 'seller';
 
   const getActiveTabLabel = () => {
     try {
@@ -5995,7 +5996,7 @@ async function readMarketDataTablesOnce(
     onStage?.('market data', tab);
     const res = await waitForTabDataBestEffort(tab, tab === 'sales' ? 9000 : 7500);
     tabDebug.waits[tab] = !!res.ok;
-    if (tab === 'sales') out.sales = res.rows;
+    if (tab === 'sales') out.sales = sellerConfirmed ? res.rows : [];
     else if (tab === 'bids') out.bids = res.rows;
     else if (tab === 'asks') out.asks = res.rows;
     tabDebug.parsed[tab] = tab === 'sales' ? out.sales.length : tab === 'bids' ? out.bids.length : out.asks.length;
@@ -6009,7 +6010,19 @@ async function readMarketDataTablesOnce(
     await closeMarketDataDialog(getMarketDataDialog() || dialog);
   } catch {}
 
-  return { dialog, foundMarketDataButton, openedMarketData: true, openDebug, tabDebug, salesView, viewSwitchDebug, asks, bids, sales };
+  return {
+    dialog,
+    foundMarketDataButton,
+    openedMarketData: true,
+    openDebug,
+    tabDebug,
+    salesView,
+    sellerViewConfirmed: sellerConfirmed,
+    viewSwitchDebug,
+    asks,
+    bids,
+    sales
+  };
 }
 
 async function ensureMarketDataSalesOpen() {
@@ -7373,6 +7386,7 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
       title,
       feeSum,
       salesView: md?.salesView || 'unknown',
+      sellerViewConfirmed: !!md?.sellerViewConfirmed,
       salesRows: Array.isArray(sales) ? sales.length : 0,
       asksRows: Array.isArray(asks) ? asks.length : 0,
       bidsRows: Array.isArray(bids) ? bids.length : 0,
