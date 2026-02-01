@@ -132,6 +132,10 @@
           <input id="minRoiPct" type="number" min="0" step="0.1" />
         </div>
         <div class="row">
+          <label for="avg30dCushionPct">Avg30d cushion (%)</label>
+          <input id="avg30dCushionPct" type="number" min="0" max="95" step="0.1" />
+        </div>
+        <div class="row">
           <label for="feeSum">Flat fees (shipping + processing)</label>
           <input id="feeSum" type="number" min="0" step="1" />
         </div>
@@ -140,6 +144,9 @@
         </div>
         <div class="muted" style="margin-top:6px;">
           ROI rule: <code>profit / allIn</code> must be ≥ <code>minRoiPct</code>, where <code>allIn = (highestBid+1) + feeSum</code>.
+        </div>
+        <div class="muted" style="margin-top:6px;">
+          Avg30d cushion rule: require <code>allIn ≤ avg30d × (1 - cushion)</code>. Example: cushion 15% ⇒ <code>allIn ≤ avg30d × 0.85</code>.
         </div>
       </div>
 

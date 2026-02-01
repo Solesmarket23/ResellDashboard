@@ -1134,6 +1134,7 @@ function defaultScanSettings() {
     minSales30d: 4,
     minProfit: 15,
     minRoiPct: 0,
+    avg30dCushionPct: 15,
     feeSum: 21,
     excludeRecentReleaseDays: 30,
     excludeSponsored: true,
@@ -6967,6 +6968,7 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
     const minProfit = Number(settings?.minProfit);
     const minSales30d = Number(settings?.minSales30d);
     const minRoiPct = Number(settings?.minRoiPct);
+    const avg30dCushionPct = Number(settings?.avg30dCushionPct);
     const excludeRecentReleaseDays = Number(settings?.excludeRecentReleaseDays);
     let sizeAll = null;
 
@@ -7205,7 +7207,9 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
       // all-in cost = suggestedBid + feeSum
       const avg30d = Number(stat?.avg);
       const allIn = suggestedBid + feeSum;
-      if (!Number.isFinite(avg30d) || avg30d <= 0 || allIn > avg30d) {
+      const cushion = Number.isFinite(avg30dCushionPct) ? Math.max(0, Math.min(95, avg30dCushionPct)) / 100 : 0;
+      const maxAllInByAvg30d = Number.isFinite(avg30d) && avg30d > 0 ? avg30d * (1 - cushion) : null;
+      if (!Number.isFinite(maxAllInByAvg30d) || maxAllInByAvg30d <= 0 || allIn > maxAllInByAvg30d) {
         eliminatedByAvg30d += 1;
         continue;
       }
@@ -7247,6 +7251,8 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
           return Number.isFinite(v) ? Math.floor(v) : null;
         })(),
         avg30d: Number.isFinite(avg30d) ? Math.round(avg30d) : null,
+        avg30dCushionPct: Number.isFinite(avg30dCushionPct) ? Math.round(avg30dCushionPct * 10) / 10 : null,
+        maxAllInByAvg30d: Number.isFinite(maxAllInByAvg30d) ? Math.floor(maxAllInByAvg30d) : null,
         sales30d: salesCount,
         edge: maxBid - suggestedBid
       });
