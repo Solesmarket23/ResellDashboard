@@ -226,8 +226,40 @@ function withSizeParam(url, sizeParam) {
   }
 }
 
+const DASH_LAST_OPEN_KEY = 'stockxDashLastOpenUrl';
+
+function getDashLastOpenUrl() {
+  try {
+    return safeStr(localStorage.getItem(DASH_LAST_OPEN_KEY) || '');
+  } catch {
+    return '';
+  }
+}
+
+function setDashLastOpenUrl(url) {
+  try {
+    localStorage.setItem(DASH_LAST_OPEN_KEY, safeStr(url));
+  } catch {}
+}
+
+function applySelectedHighlightInDom(openUrl) {
+  try {
+    const key = safeStr(openUrl);
+    document.querySelectorAll?.('.item.item-selected')?.forEach?.((el) => {
+      try {
+        el.classList.remove('item-selected');
+      } catch {}
+    });
+    if (!key) return;
+    const btn = document.querySelector?.(`button[data-open-key="${CSS.escape(key)}"]`) || null;
+    const row = btn?.closest?.('.item') || null;
+    if (row) row.classList.add('item-selected');
+  } catch {}
+}
+
 function renderOpps(listEl, resultsMap) {
   if (!listEl) return;
+  const selectedOpen = getDashLastOpenUrl();
   const opps = flattenOpportunities(resultsMap, 120);
   if (!opps.length) {
     listEl.innerHTML = `<div class="muted">No opportunities yet.</div>`;
@@ -247,11 +279,13 @@ function renderOpps(listEl, resultsMap) {
       const avg = o.avg30d == null ? '—' : escapeHtml(String(o.avg30d));
       const roi = o.roiPct == null ? '—' : escapeHtml(String(o.roiPct)) + '%';
       const low = o.low60d == null ? '—' : escapeHtml(String(o.low60d));
-      const openUrl = escapeHtml(withSizeParam(o.url, o.sizeParam));
-      return `<div class="item">
+      const openPlain = withSizeParam(o.url, o.sizeParam);
+      const openUrl = escapeHtml(openPlain);
+      const isSel = selectedOpen && selectedOpen === openPlain;
+      return `<div class="item${isSel ? ' item-selected' : ''}">
         <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
           <div class="title">${title}</div>
-          <button class="btn-secondary" data-open="${openUrl}" style="padding:6px 10px; border-radius:10px; font-weight:900;">Open</button>
+          <button class="btn-secondary" data-open="${openUrl}" data-open-key="${openUrl}" style="padding:6px 10px; border-radius:10px; font-weight:900;">Open</button>
         </div>
         <div class="sub mono">${
           isXpress
@@ -792,6 +826,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!btn) return;
       const url = safeStr(btn.getAttribute('data-open') || '');
       if (!url) return;
+      setDashLastOpenUrl(url);
+      applySelectedHighlightInDom(url);
       chrome.tabs.create({ url }, () => void chrome.runtime.lastError);
     } catch {}
   });
