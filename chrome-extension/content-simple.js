@@ -1000,6 +1000,38 @@ function stockxSizeParamFromLabel(sizeLabel) {
   }
 }
 
+function stockxSizeParamFromLabelWithContext(sizeLabel, ctx = {}) {
+  // Context-aware wrapper around stockxSizeParamFromLabel for cases where StockX expects women's params (e.g. 9W)
+  // but Market Data labels are shown as "US M 8" on women's products.
+  try {
+    const raw = String(sizeLabel || '').replace(/\s+/g, ' ').trim();
+    if (!raw) return '';
+    const base = stockxSizeParamFromLabel(raw);
+    if (base && /\bW$/i.test(base)) return base;
+
+    const title = String(ctx?.title || '').toLowerCase();
+    const slug = String(ctx?.slug || '').toLowerCase();
+    const url = String(ctx?.url || '').toLowerCase();
+    const isWomens = title.includes("women") || title.includes("women's") || title.includes('(women') || slug.includes('womens') || url.includes('womens');
+
+    if (isWomens) {
+      const m = raw.match(/\bUS\s*M\s*(\d{1,2}(?:\.\d)?)\b/i);
+      if (m?.[1]) {
+        const n = Number(m[1]);
+        if (Number.isFinite(n) && n > 0) {
+          const w = n + 1; // StockX commonly maps womens param as +1 from mens label on womens products
+          const wStr = String(w).endsWith('.0') ? String(Math.round(w)) : String(w);
+          return `${wStr}W`;
+        }
+      }
+    }
+
+    return base || '';
+  } catch {
+    return stockxSizeParamFromLabel(sizeLabel);
+  }
+}
+
 function withSizeParam(url, sizeParam) {
   try {
     const u = new URL(String(url || ''), location.origin);
@@ -7648,7 +7680,7 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
 
       opportunities.push({
         sizeLabel: labelByKey.get(sizeKey) || stat?.sizeLabel || sizeKey,
-        sizeParam: stockxSizeParamFromLabel(labelByKey.get(sizeKey) || stat?.sizeLabel || sizeKey),
+        sizeParam: stockxSizeParamFromLabelWithContext(labelByKey.get(sizeKey) || stat?.sizeLabel || sizeKey, { title, slug, url: location.href }),
         highestBid,
         suggestedBid,
         maxBid,
@@ -7900,7 +7932,7 @@ async function scanThisProductForXpressDeals({ mode } = {}) {
         const candidate = {
           kind: 'xpress',
           sizeLabel: labelByKey.get(sizeKey) || stat?.sizeLabel || sizeKey,
-          sizeParam: stockxSizeParamFromLabel(labelByKey.get(sizeKey) || stat?.sizeLabel || sizeKey),
+          sizeParam: stockxSizeParamFromLabelWithContext(labelByKey.get(sizeKey) || stat?.sizeLabel || sizeKey, { title, slug, url: location.href }),
           lowestAsk: buyNow,
           avg30d: Math.round(avg30d),
           discountPct,
