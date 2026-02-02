@@ -177,6 +177,30 @@ async function copyTextToClipboardBestEffort(text) {
   }
 }
 
+function downloadTextFile(filename, text, mime = 'text/plain;charset=utf-8') {
+  try {
+    const data = safeStr(text);
+    const name = safeStr(filename) || 'download.txt';
+    const blob = new Blob([data], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      try {
+        URL.revokeObjectURL(url);
+        a.remove();
+      } catch {}
+    }, 800);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function buildOpportunitiesCsv(resultsMap) {
   const rows = flattenOpportunities(resultsMap, 2000);
   const header = ['title', 'size', 'mode', 'bid', 'ask', 'buyNow', 'profit', 'roiPct', 'avg30d', 'discountPct', 'edge', 'url'];
@@ -666,10 +690,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!scanId) return;
       const { results } = await getScanData(scanId);
       const csv = buildOpportunitiesCsv(results || {});
-      const ok = await copyTextToClipboardBestEffort(csv);
-      setToast(ok ? 'Copied opportunities CSV to clipboard.' : 'Copy failed.');
+      const file = `stockx-opportunities-${scanId.slice(-8) || 'scan'}.csv`;
+      const ok = downloadTextFile(file, csv, 'text/csv;charset=utf-8');
+      setToast(ok ? `Downloaded ${file}` : 'Download failed.');
     } catch {
-      setToast('Copy failed.');
+      setToast('Download failed.');
     }
   });
 
