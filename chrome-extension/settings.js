@@ -6,6 +6,7 @@ function defaultSettings() {
     minProfit: 15,
     minRoiPct: 0,
     avg30dCushionPct: 15,
+    xpressMinDiscountPct: 30,
     feeSum: 21,
     excludeRecentReleaseDays: 30,
     excludeSponsored: true,
@@ -97,6 +98,7 @@ function readForm() {
   const minProfit = clampInt(document.getElementById('minProfit')?.value, { min: 0, max: 9999 });
   const minRoiPct = clampFloat(document.getElementById('minRoiPct')?.value, { min: 0, max: 999 });
   const avg30dCushionPct = clampFloat(document.getElementById('avg30dCushionPct')?.value, { min: 0, max: 95 });
+  const xpressMinDiscountPct = clampFloat(document.getElementById('xpressMinDiscountPct')?.value, { min: 0, max: 95 });
   const feeSum = clampInt(document.getElementById('feeSum')?.value, { min: 0, max: 9999 });
   const excludeRecentReleaseDays = clampInt(document.getElementById('excludeRecentReleaseDays')?.value, { min: 0, max: 3650 });
   const excludeSponsored = !!document.getElementById('excludeSponsored')?.checked;
@@ -114,6 +116,7 @@ function readForm() {
     minProfit: minProfit ?? defaultSettings().minProfit,
     minRoiPct: minRoiPct ?? defaultSettings().minRoiPct,
     avg30dCushionPct: avg30dCushionPct ?? defaultSettings().avg30dCushionPct,
+    xpressMinDiscountPct: xpressMinDiscountPct ?? defaultSettings().xpressMinDiscountPct,
     feeSum: feeSum ?? defaultSettings().feeSum,
     excludeRecentReleaseDays: excludeRecentReleaseDays ?? defaultSettings().excludeRecentReleaseDays,
     excludeSponsored,
@@ -129,6 +132,7 @@ function writeForm(s) {
   document.getElementById('minProfit').value = String(s.minProfit ?? '');
   document.getElementById('minRoiPct').value = String(s.minRoiPct ?? '');
   document.getElementById('avg30dCushionPct').value = String(s.avg30dCushionPct ?? '');
+  document.getElementById('xpressMinDiscountPct').value = String(s.xpressMinDiscountPct ?? '');
   document.getElementById('feeSum').value = String(s.feeSum ?? '');
   document.getElementById('excludeRecentReleaseDays').value = String(s.excludeRecentReleaseDays ?? '');
   document.getElementById('excludeSponsored').checked = !!s.excludeSponsored;

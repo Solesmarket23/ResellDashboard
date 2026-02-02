@@ -1135,6 +1135,7 @@ function defaultScanSettings() {
     minProfit: 15,
     minRoiPct: 0,
     avg30dCushionPct: 15,
+    xpressMinDiscountPct: 30,
     feeSum: 21,
     excludeRecentReleaseDays: 30,
     excludeSponsored: true,
@@ -2253,8 +2254,9 @@ function extractRecentSalesFromDom(max = 8) {
   }
 }
 
-function parseMarketDataSalesTable(max = 25) {
+function parseMarketDataSalesTable(max = 25, opts = {}) {
   try {
+    const includeXpress = !!opts?.includeXpress;
     const isVisibleEl = (el) => {
       try {
         if (!el) return false;
@@ -2313,8 +2315,8 @@ function parseMarketDataSalesTable(max = 25) {
         const cells = Array.from(tds || []);
         if (cells.length < 3) return null;
 
-        // Skip Xpress Ship rows
-        if (cells.some((c) => c.querySelector?.('[data-testid="XpressShipTooltipIcon"]'))) return null;
+        // Skip Xpress Ship rows (unless includeXpress enabled)
+        if (!includeXpress && cells.some((c) => c.querySelector?.('[data-testid="XpressShipTooltipIcon"]'))) return null;
 
         // Find date cell
         const dateCell = cells.find((td) => parseDateFromText(safeText(td)));
@@ -2396,9 +2398,8 @@ function parseMarketDataSalesTable(max = 25) {
       const rows = Array.from(table.querySelectorAll('tbody tr'));
       const out = [];
       for (const tr of rows) {
-        // Exclude Xpress Ship rows (they include a tooltip icon in the first column).
-        // Example: <svg data-testid="XpressShipTooltipIcon" ...>
-        if (tr.querySelector?.('[data-testid="XpressShipTooltipIcon"]')) continue;
+        // Exclude Xpress Ship rows (unless includeXpress enabled)
+        if (!includeXpress && tr.querySelector?.('[data-testid="XpressShipTooltipIcon"]')) continue;
 
         const tds = Array.from(tr.querySelectorAll('td,th'));
         if (tds.length < 3) continue;
@@ -2428,8 +2429,8 @@ function parseMarketDataSalesTable(max = 25) {
       const out = [];
       for (const el of candidates) {
         if (!isVisibleEl(el)) continue;
-        // Skip Xpress Ship rows
-        if (el.querySelector?.('[data-testid="XpressShipTooltipIcon"]')) continue;
+        // Skip Xpress Ship rows (unless includeXpress enabled)
+        if (!includeXpress && el.querySelector?.('[data-testid="XpressShipTooltipIcon"]')) continue;
         const txt = safeText(el);
         if (!txt || txt.length > 140) continue;
         if (!/\$/.test(txt)) continue;
@@ -6006,7 +6007,7 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
 }
 
 async function readMarketDataTablesOnce(
-  { maxAsks = 250, maxBids = 250, maxSales = 450, openTimeoutMs = 9000, onStage, onAttempt } = {}
+  { maxAsks = 250, maxBids = 250, maxSales = 450, includeXpressSales = false, openTimeoutMs = 9000, onStage, onAttempt } = {}
 ) {
   const foundMarketDataButton =
     !!Array.from(document.querySelectorAll('button.chakra-button')).find((b) =>
@@ -6240,7 +6241,7 @@ async function readMarketDataTablesOnce(
   };
 
   const parseForTab = (labelLower) => {
-    if (labelLower === 'sales') return parseMarketDataSalesTable(maxSales);
+    if (labelLower === 'sales') return parseMarketDataSalesTable(maxSales, { includeXpress: !!includeXpressSales });
     if (labelLower === 'bids') return parseMarketDataBidsTable(maxBids, { expectedTabLabel: 'bids', root: getTabPanelFor('bids') });
     if (labelLower === 'asks') return parseMarketDataAsksTable(maxAsks, { expectedTabLabel: 'asks', root: getTabPanelFor('asks') });
     return [];
@@ -7718,6 +7719,156 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
   }
 }
 
+async function scanThisProductForXpressDeals({ mode } = {}) {
+  try {
+    if (isExtScanTab()) {
+      setExtScanStage('init');
+      ensureExtScanStatusOverlay();
+      if (!window.__stockxExtScanOverlayInterval) {
+        window.__stockxExtScanOverlayInterval = setInterval(() => ensureExtScanStatusOverlay(), 500);
+      }
+    }
+
+    setExtScanStage('hydrating');
+    await new Promise((r) => setTimeout(r, 2200));
+
+    const slug = getProductSlugFromUrl() || '';
+    const title = safeText(document.querySelector('h1')) || '';
+    const settings = await loadScanSettings();
+    const minSales30d = Number(settings?.minSales30d);
+    const xpressMinDiscountPct = Number(settings?.xpressMinDiscountPct);
+    let sizeAll = null;
+
+    // User-configured exclusions (fast path).
+    try {
+      const ex = computeUserExclusionBestEffort({ url: location.href, slug, title, settings });
+      if (ex?.excluded) {
+        return {
+          success: true,
+          mode: 'xpress',
+          slug,
+          title,
+          userExcluded: true,
+          userExcludedType: ex.type || 'unknown',
+          userExcludedNeedle: ex.needle || '',
+          opportunities: [],
+          viableSizeCount: 0,
+          sizeOptionsCount: 0,
+          salesRows: 0,
+          asksRows: 0,
+          bidsRows: 0,
+          foundMarketDataButton: false,
+          openedMarketData: false
+        };
+      }
+    } catch {}
+
+    // For listing scans, force Size=All so Market Data reflects the full grid.
+    if (String(mode || '').toLowerCase() === 'listing') {
+      setExtScanStage('size', 'selecting All');
+      sizeAll = await ensureSizeAllSelectedBestEffort(12000);
+      setExtScanStage('size', sizeAll?.ok ? `All (${sizeAll.reason})` : `failed (${sizeAll?.reason || 'unknown'})`);
+    }
+
+    setExtScanStage('market data', 'opening + reading tables');
+    const md = await readMarketDataTablesOnce({
+      maxAsks: 250,
+      maxBids: 10,
+      maxSales: 450,
+      includeXpressSales: true, // IMPORTANT: include all sales in this mode
+      openTimeoutMs: 9000,
+      onAttempt: (n, found) => setExtScanStage('market data', `opening (attempt ${n}${found ? ', found button' : ''})`),
+      onStage: (s, d) => setExtScanStage(s, d)
+    });
+
+    const asks = md.asks || [];
+    const sales = md.sales || [];
+    setExtScanStage('market data', `rows: sales ${sales.length}, asks ${asks.length}`);
+
+    const askBySizeKey = new Map();
+    for (const a of Array.isArray(asks) ? asks : []) {
+      const key = normalizeSizeKey(a.size);
+      const ask = Number(a.ask);
+      if (!key || !Number.isFinite(ask) || ask <= 0) continue;
+      const prev = askBySizeKey.get(key);
+      if (!prev || ask < prev) askBySizeKey.set(key, ask);
+    }
+
+    // Avg30d (Seller View) per size
+    const stats30 = computeSizeStatsLastNDays({ recentSales: sales, days: 30 });
+    const statsByKey = new Map();
+    for (const s of Array.isArray(stats30) ? stats30 : []) {
+      const k = normalizeSizeKey(s?.sizeLabel);
+      if (!k) continue;
+      const prev = statsByKey.get(k);
+      if (!prev || (Number(s.count) || 0) > (Number(prev.count) || 0)) statsByKey.set(k, s);
+    }
+
+    const labelByKey = new Map();
+    for (const a of Array.isArray(asks) ? asks : []) {
+      const k = normalizeSizeKey(a?.size);
+      const lbl = String(a?.size || '').trim();
+      if (k && lbl && !labelByKey.has(k)) labelByKey.set(k, lbl);
+    }
+
+    const opportunities = [];
+    const minDisc = Number.isFinite(xpressMinDiscountPct) ? Math.max(0, Math.min(95, xpressMinDiscountPct)) : 30;
+
+    for (const [sizeKey, ask] of askBySizeKey.entries()) {
+      const stat = statsByKey.get(sizeKey);
+      const salesCount = Number(stat?.count) || 0;
+      if (Number.isFinite(minSales30d) && minSales30d >= 0 && salesCount < minSales30d) continue;
+
+      const avg30d = Number(stat?.avg);
+      if (!Number.isFinite(avg30d) || avg30d <= 0) continue;
+      const buyNow = Math.floor(Number(ask));
+      if (!Number.isFinite(buyNow) || buyNow <= 0) continue;
+
+      const discount = 1 - buyNow / avg30d;
+      const discountPct = Number.isFinite(discount) ? Math.round(discount * 1000) / 10 : null;
+      if (!Number.isFinite(discountPct) || discountPct < minDisc) continue;
+
+      opportunities.push({
+        kind: 'xpress',
+        sizeLabel: labelByKey.get(sizeKey) || stat?.sizeLabel || sizeKey,
+        sizeParam: stockxSizeParamFromLabel(labelByKey.get(sizeKey) || stat?.sizeLabel || sizeKey),
+        lowestAsk: buyNow,
+        avg30d: Math.round(avg30d),
+        discountPct,
+        edge: Math.round(avg30d - buyNow),
+        sales30d: salesCount
+      });
+    }
+
+    opportunities.sort((a, b) => Number(b.discountPct || 0) - Number(a.discountPct || 0) || Number(b.edge || 0) - Number(a.edge || 0));
+
+    return {
+      success: true,
+      mode: 'xpress',
+      slug,
+      title,
+      salesView: md?.salesView || 'unknown',
+      sellerViewConfirmed: !!md?.sellerViewConfirmed,
+      xpressMinDiscountPct: minDisc,
+      salesRows: Array.isArray(sales) ? sales.length : 0,
+      asksRows: Array.isArray(asks) ? asks.length : 0,
+      bidsRows: 0,
+      foundMarketDataButton: !!md.foundMarketDataButton,
+      openedMarketData: !!md.openedMarketData,
+      marketDataOpenDebug: md.openDebug || null,
+      marketDataTabDebug: md.tabDebug || null,
+      marketDataViewSwitchDebug: md.viewSwitchDebug || null,
+      sizeAll,
+      sizeOptionsCount: 0,
+      viableSizeCount: opportunities.length,
+      opportunities
+    };
+  } catch (e) {
+    setExtScanStage('error', e?.message || String(e));
+    return { success: false, mode: 'xpress', error: e?.message || String(e) };
+  }
+}
+
 try {
   if (chrome?.runtime?.onMessage?.addListener) {
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -7750,6 +7901,12 @@ try {
         // Hard cap per product so background scans never "hang" on a single shoe.
         const task = scanThisProductForBidOpportunities({ mode: request?.mode });
         withTimeout(task, 45000, 'product scan').then((res) => sendResponse(res));
+        return true;
+      }
+
+      if (request?.action === 'scanProductXpressDeals') {
+        const task = scanThisProductForXpressDeals({ mode: request?.mode });
+        withTimeout(task, 45000, 'xpress scan').then((res) => sendResponse(res));
         return true;
       }
 
@@ -8502,6 +8659,9 @@ function ensureListingBidWidget() {
       <button data-role="scan-pages" style="width:120px; background:#10b981; border:1px solid rgba(16,185,129,0.9); color:#052e14; padding:8px 10px; border-radius:10px; cursor:pointer; font-weight:900;">
         Scan pages
       </button>
+      <button data-role="scan-xpress" style="width:140px; background:#38bdf8; border:1px solid rgba(56,189,248,0.95); color:#082f49; padding:8px 10px; border-radius:10px; cursor:pointer; font-weight:1000;">
+        Xpress deals
+      </button>
       <button data-role="stop" style="width:90px; background:#ef4444; border:1px solid rgba(239,68,68,0.95); color:#450a0a; padding:8px 10px; border-radius:10px; cursor:pointer; font-weight:1000;">
         Stop
       </button>
@@ -8591,6 +8751,7 @@ function ensureListingBidWidget() {
         'close',
         'scan',
         'scan-pages',
+        'scan-xpress',
         'stop',
         'clear',
         'open-size',
@@ -8899,6 +9060,63 @@ function ensureListingBidWidget() {
 
                 runtimeSendMessageSafe(
                   { action: 'startListingBidScanPaginated', startUrl: location.href, maxPages, perPage, collectOpts, allowBackground: false },
+                  (resp) => {
+                    const ok = resp?.success;
+                    if (!ok) {
+                      state.stage = `error: ${resp?.error || 'failed to start'}`;
+                      ensureListingBidWidget();
+                      return;
+                    }
+                    state.scanId = resp.scanId;
+                    state.total = resp.total || maxPages * perPage;
+                    state.stage = 'queued';
+                    state.current = 0;
+                    if (state.pendingStop) {
+                      const sid = state.scanId;
+                      state.stage = 'stopping';
+                      ensureListingBidWidget();
+                      runtimeSendMessageSafe({ action: 'stopListingBidScan', scanId: sid }, () => {});
+                    }
+                    ensureListingBidWidget();
+                  }
+                );
+              } catch (err) {
+                state.stage = `error: ${err?.message || String(err)}`;
+                ensureListingBidWidget();
+              }
+              return;
+            }
+
+            if (role === 'scan-xpress') {
+              try {
+                const maxPages = Math.max(1, Math.min(200, Number(state.maxPages || 1)));
+                const perPage = 48;
+                const settings = getScanSettingsCached();
+                const collectOpts = {
+                  onlySneakers: !!state.onlySneakers,
+                  skipOneSize: !!state.skipOneSize || !!settings.skipOneSize,
+                  excludeSponsored: !!settings.excludeSponsored,
+                  includeCategories: Array.isArray(settings.includeCategories) ? settings.includeCategories : []
+                };
+
+                state.results = {};
+                state.stage = `starting (xpress deals x${maxPages}p)`;
+                state.total = maxPages * perPage;
+                state.current = 0;
+                state.pendingStop = false;
+                ensureListingBidWidget();
+
+                runtimeSendMessageSafe(
+                  {
+                    action: 'startListingBidScanPaginated',
+                    startUrl: location.href,
+                    maxPages,
+                    perPage,
+                    collectOpts,
+                    allowBackground: false,
+                    scanMode: 'xpress',
+                    scanName: 'Xpress Deals'
+                  },
                   (resp) => {
                     const ok = resp?.success;
                     if (!ok) {

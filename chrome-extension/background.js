@@ -307,6 +307,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Assign a friendly scan number for the dashboard (Scan 1, Scan 2...)
     allocateNextScanNumber().then((scanNumber) => {
     const startUrl = String(sender?.tab?.url || '');
+    const scanMode = String(request?.scanMode || 'listing').toLowerCase(); // 'listing' | 'xpress'
+    const scanName = typeof request?.scanName === 'string' && request.scanName.trim() ? request.scanName.trim() : `Scan ${scanNumber}`;
     const urls = Array.isArray(request.urls) ? request.urls.filter((u) => typeof u === 'string') : [];
     const maxItems = Number.isFinite(Number(request.maxItems)) ? Math.max(1, Math.min(48, Number(request.maxItems))) : 12;
     const concurrencyRaw = Number(request.concurrency);
@@ -322,7 +324,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Track scan so we can cancel it.
     try {
       if (!globalThis.__stockxActiveScans) globalThis.__stockxActiveScans = new Map();
-      globalThis.__stockxActiveScans.set(scanId, { cancelled: false, originTabId: tabId, startUrl, activeTabIds: new Set() });
+      globalThis.__stockxActiveScans.set(scanId, { cancelled: false, originTabId: tabId, startUrl, scanMode, activeTabIds: new Set() });
     } catch {}
 
     // Expose the active scan id so any StockX tab can stop it via a global Stop overlay.
@@ -342,7 +344,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           [`stockxListingScanState:${scanId}`]: {
             scanId,
             scanNumber,
-            scanName: `Scan ${scanNumber}`,
+            scanName,
             originTabId: tabId,
             startUrl,
             startedAt: Date.now(),
@@ -354,6 +356,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             concurrency,
             allowBackground,
             mode: 'listing',
+            scanMode,
             resume: {
               kind: 'listing',
               nextIdx: 0,
@@ -370,15 +373,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     upsertScanHistoryEntry({
       scanId,
       scanNumber,
-      scanName: `Scan ${scanNumber}`,
-      mode: 'listing',
+      scanName,
+      mode: scanMode,
       startedAt: Date.now(),
       originTabId: tabId,
       total: trimmed.length,
       startUrl
     }).catch(() => {});
 
-    runListingBidScan({ originTabId: tabId, scanId, urls: trimmed, concurrency }).catch((e) => {
+    runListingBidScan({ originTabId: tabId, scanId, urls: trimmed, concurrency, scanMode }).catch((e) => {
       try {
         sendToTab(tabId, {
           action: 'listingBidScanDone',
@@ -412,6 +415,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     allocateNextScanNumber().then((scanNumber) => {
     const startUrl = typeof request.startUrl === 'string' && request.startUrl ? request.startUrl : (sender?.tab?.url || '');
+    const scanMode = String(request?.scanMode || 'listing').toLowerCase(); // 'listing' | 'xpress'
+    const scanName = typeof request?.scanName === 'string' && request.scanName.trim() ? request.scanName.trim() : `Scan ${scanNumber}`;
     const perPage = Number.isFinite(Number(request.perPage)) ? Math.max(1, Math.min(48, Number(request.perPage))) : 48;
     const maxPagesRaw = Number(request.maxPages);
     const maxPages = Number.isFinite(maxPagesRaw) ? Math.max(1, Math.min(200, maxPagesRaw)) : 1;
@@ -427,7 +432,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Track scan so we can cancel it.
     try {
       if (!globalThis.__stockxActiveScans) globalThis.__stockxActiveScans = new Map();
-      globalThis.__stockxActiveScans.set(scanId, { cancelled: false, originTabId: tabId, startUrl, activeTabIds: new Set() });
+      globalThis.__stockxActiveScans.set(scanId, { cancelled: false, originTabId: tabId, startUrl, scanMode, activeTabIds: new Set() });
     } catch {}
 
     try {
@@ -444,7 +449,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           [`stockxListingScanState:${scanId}`]: {
             scanId,
             scanNumber,
-            scanName: `Scan ${scanNumber}`,
+            scanName,
             originTabId: tabId,
             startedAt: Date.now(),
             total: maxPages * perPage,
@@ -456,6 +461,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             allowBackground,
             mode: 'paginated',
             startUrl,
+            scanMode,
             resume: {
               kind: 'paginated',
               startPage: null,
@@ -474,15 +480,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     upsertScanHistoryEntry({
       scanId,
       scanNumber,
-      scanName: `Scan ${scanNumber}`,
-      mode: 'paginated',
+      scanName,
+      mode: scanMode,
       startedAt: Date.now(),
       originTabId: tabId,
       total: maxPages * perPage,
       startUrl
     }).catch(() => {});
 
-    runListingBidScanPaginated({ originTabId: tabId, scanId, startUrl, maxPages, perPage, collectOpts }).catch((e) => {
+    runListingBidScanPaginated({ originTabId: tabId, scanId, startUrl, maxPages, perPage, collectOpts, scanMode }).catch((e) => {
       try {
         sendToTab(tabId, {
           action: 'listingBidScanDone',
@@ -775,7 +781,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-async function runListingBidScanFromIndex({ originTabId, scanId, urls, startIdx, completed }) {
+async function runListingBidScanFromIndex({ originTabId, scanId, urls, startIdx, completed, scanMode }) {
   const total = Array.isArray(urls) ? urls.length : 0;
   let nextIdx = Math.max(0, Math.min(total, Number(startIdx) || 0));
   let done = Math.max(0, Number(completed) || 0);
@@ -833,7 +839,9 @@ async function runListingBidScanFromIndex({ originTabId, scanId, urls, startIdx,
     sendToTab(originTabId, { action: 'listingBidScanProgress', scanId, stage: 'scanning', current: done, total, url });
     setScanState(scanId, { stage: 'scanning', total, completed: done, currentUrl: url, canResume: true, resume: { kind: 'listing', nextIdx, inFlightIdx: i } });
 
-    const resp = await requestScanFromTab(tab.id, { action: 'scanProductBidOpportunities', scanId, url, mode: 'listing' }, 120000);
+    const effectiveMode = String(scanMode || getScanEntry(scanId)?.scanMode || 'listing').toLowerCase();
+    const action = effectiveMode === 'xpress' ? 'scanProductXpressDeals' : 'scanProductBidOpportunities';
+    const resp = await requestScanFromTab(tab.id, { action, scanId, url, mode: 'listing' }, 120000);
 
     closeTab(tab.id);
     untrackScanTab(scanId, tab.id);
@@ -877,7 +885,8 @@ async function runListingBidScanPaginatedResume({
   currentPage,
   pageUrls,
   startIdx,
-  completed
+  completed,
+  scanMode
 }) {
   const total = Math.max(1, Number(maxPages) || 1) * Math.max(1, Number(perPage) || 48);
   let done = Math.max(0, Number(completed) || 0);
@@ -972,7 +981,9 @@ async function runListingBidScanPaginatedResume({
         await new Promise((r) => setTimeout(r, 2200));
       }
 
-      const resp = await requestScanFromTab(tab.id, { action: 'scanProductBidOpportunities', scanId, url, mode: 'listing' }, 120000);
+      const effectiveMode = String(scanMode || getScanEntry(scanId)?.scanMode || 'listing').toLowerCase();
+      const action = effectiveMode === 'xpress' ? 'scanProductXpressDeals' : 'scanProductBidOpportunities';
+      const resp = await requestScanFromTab(tab.id, { action, scanId, url, mode: 'listing' }, 120000);
       closeTab(tab.id);
       untrackScanTab(scanId, tab.id);
 
@@ -1335,7 +1346,7 @@ async function navigateTabTo(tabId, url, timeoutMs = 45000) {
   });
 }
 
-async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPages, perPage, collectOpts }) {
+async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPages, perPage, collectOpts, scanMode }) {
   const total = Math.max(1, Number(maxPages) || 1) * Math.max(1, Number(perPage) || 48);
   let completed = 0;
 
@@ -1472,11 +1483,9 @@ async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPa
       sendToTab(originTabId, { action: 'listingBidScanProgress', scanId, stage: `page ${pageNum} (scanning)`, current: completed, total, url });
       setScanState(scanId, { stage: `page ${pageNum} scanning`, total, completed, currentUrl: url, currentPage: pageNum });
 
-      const resp = await requestScanFromTab(
-        tab.id,
-        { action: 'scanProductBidOpportunities', scanId, url, mode: 'listing' },
-        120000
-      );
+      const effectiveMode = String(scanMode || getScanEntry(scanId)?.scanMode || 'listing').toLowerCase();
+      const action = effectiveMode === 'xpress' ? 'scanProductXpressDeals' : 'scanProductBidOpportunities';
+      const resp = await requestScanFromTab(tab.id, { action, scanId, url, mode: 'listing' }, 120000);
 
       closeTab(tab.id);
       untrackScanTab(scanId, tab.id);
@@ -1532,6 +1541,7 @@ async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPa
 async function runListingBidScan({ originTabId, scanId, urls }) {
   const total = Array.isArray(urls) ? urls.length : 0;
   const concurrency = Math.max(1, Math.min(5, Number(arguments[0]?.concurrency) || 3));
+  const scanMode = String(arguments[0]?.scanMode || getScanEntry(scanId)?.scanMode || 'listing').toLowerCase();
   sendToTab(originTabId, { action: 'listingBidScanProgress', scanId, stage: 'start', current: 0, total });
   setScanState(scanId, { stage: 'start', total, completed: 0, cancelled: false });
 
@@ -1603,11 +1613,8 @@ async function runListingBidScan({ originTabId, scanId, urls }) {
       }
     }
 
-    const resp = await requestScanFromTab(
-      tab.id,
-      { action: 'scanProductBidOpportunities', scanId, url, mode: 'listing' },
-      120000
-    );
+    const action = scanMode === 'xpress' ? 'scanProductXpressDeals' : 'scanProductBidOpportunities';
+    const resp = await requestScanFromTab(tab.id, { action, scanId, url, mode: 'listing' }, 120000);
     closeTab(tab.id);
     untrackScanTab(scanId, tab.id);
 

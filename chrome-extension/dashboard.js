@@ -117,13 +117,18 @@ function flattenOpportunities(resultsMap, limit = 80) {
     const title = safeStr(v?.title || v?.slug || url || '—');
     const opps = Array.isArray(v?.opportunities) ? v.opportunities : [];
     for (const o of opps) {
+      const isXpress = String(o?.kind || '').toLowerCase() === 'xpress' || Number.isFinite(Number(o?.discountPct));
       out.push({
         savedAt: Number(v?.savedAt || 0),
         url,
         title,
         sizeLabel: safeStr(o?.sizeLabel || ''),
         sizeParam: safeStr(o?.sizeParam || ''),
-        bid: (o?.suggestedBid ?? o?.highestBid) ?? null,
+        kind: isXpress ? 'xpress' : 'bid',
+        buyNow: isXpress ? (o?.lowestAsk ?? null) : null,
+        discountPct: isXpress ? (o?.discountPct ?? null) : null,
+        edge: isXpress ? (o?.edge ?? null) : null,
+        bid: isXpress ? null : (o?.suggestedBid ?? o?.highestBid) ?? null,
         ask: o?.lowestAsk ?? null,
         profit: o?.profit ?? null,
         avg30d: o?.avg30d ?? null,
@@ -158,8 +163,12 @@ function renderOpps(listEl, resultsMap) {
     .map((o) => {
       const title = escapeHtml(o.title);
       const size = escapeHtml(o.sizeLabel || '—');
+      const isXpress = o.kind === 'xpress';
       const bid = o.bid == null ? '—' : escapeHtml(String(o.bid));
       const ask = o.ask == null ? '—' : escapeHtml(String(o.ask));
+      const buyNow = o.buyNow == null ? '—' : escapeHtml(String(o.buyNow));
+      const discount = o.discountPct == null ? '—' : escapeHtml(String(o.discountPct)) + '%';
+      const edge = o.edge == null ? '—' : escapeHtml(String(o.edge));
       const profit = o.profit == null ? '—' : escapeHtml(String(o.profit));
       const avg = o.avg30d == null ? '—' : escapeHtml(String(o.avg30d));
       const roi = o.roiPct == null ? '—' : escapeHtml(String(o.roiPct)) + '%';
@@ -170,7 +179,11 @@ function renderOpps(listEl, resultsMap) {
           <div class="title">${title}</div>
           <button class="btn-secondary" data-open="${openUrl}" style="padding:6px 10px; border-radius:10px; font-weight:900;">Open</button>
         </div>
-        <div class="sub mono">size ${size} • bid ${bid} • ask ${ask} • profit ${profit} • roi ${roi} • avg30d ${avg} • low60d ${low}</div>
+        <div class="sub mono">${
+          isXpress
+            ? `size ${size} • buyNow ${buyNow} • avg30d ${avg} • discount ${discount} • edge ${edge}`
+            : `size ${size} • bid ${bid} • ask ${ask} • profit ${profit} • roi ${roi} • avg30d ${avg} • low60d ${low}`
+        }</div>
       </div>`;
     })
     .join('');
