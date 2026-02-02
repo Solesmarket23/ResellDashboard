@@ -5658,6 +5658,38 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
     debug.tried = true;
     const scope = dialog || document;
 
+    const parseRgb = (c) => {
+      try {
+        const s = String(c || '').trim().toLowerCase();
+        if (!s) return null;
+        // rgb/rgba
+        const m = s.match(/rgba?\s*\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)(?:\s*,\s*([0-9.]+))?\s*\)/i);
+        if (m) return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]) };
+        // hex
+        const h = s.replace('#', '');
+        if (h.length === 6) {
+          return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    };
+
+    const colorDist = (a, b) => {
+      try {
+        if (!a || !b) return 1e9;
+        const dr = (Number(a.r) || 0) - (Number(b.r) || 0);
+        const dg = (Number(a.g) || 0) - (Number(b.g) || 0);
+        const db = (Number(a.b) || 0) - (Number(b.b) || 0);
+        return Math.sqrt(dr * dr + dg * dg + db * db);
+      } catch {
+        return 1e9;
+      }
+    };
+
+    const STOCKX_GREEN = { r: 0, g: 99, b: 64 }; // #006340-ish
+
     const getAllInBtns = () => {
       const getAll = (testid) => {
         try {
@@ -5714,9 +5746,22 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
           const bs = String(cs.boxShadow || '');
           const bw = parseFloat(String(cs.borderWidth || '0')) || 0;
           const bc = String(cs.borderColor || '');
+          const oc = String(cs.outlineColor || '');
           if (bs && bs !== 'none') s += 3;
           if (bw >= 2) s += 2;
           if (bc && bc !== 'transparent' && bc !== 'rgba(0, 0, 0, 0)') s += 1;
+
+          // Strong signal: selected tile uses green border/outline (like your screenshot).
+          const bcRgb = parseRgb(bc);
+          const ocRgb = parseRgb(oc);
+          const d1 = colorDist(bcRgb, STOCKX_GREEN);
+          const d2 = colorDist(ocRgb, STOCKX_GREEN);
+          const d = Math.min(d1, d2);
+          if (Number.isFinite(d)) {
+            if (d < 25) s += 12;
+            else if (d < 60) s += 8;
+            else if (d < 110) s += 3;
+          }
         }
         // Some Chakra buttons apply an inner wrapper; include that too.
         try {
@@ -5737,7 +5782,9 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
         const s = pickBestVisible(seller);
         const sb = selectionScore(b);
         const ss = selectionScore(s);
-        debug.detectedAllInView = sb === 0 && ss === 0 ? 'unknown' : ss >= sb ? 'seller' : 'buyer';
+        debug.buyerTileScore = sb;
+        debug.sellerTileScore = ss;
+        debug.detectedAllInView = sb === 0 && ss === 0 ? 'unknown' : ss > sb ? 'seller' : 'buyer';
         return debug.detectedAllInView;
       } catch {
         debug.detectedAllInView = 'unknown';
@@ -5908,8 +5955,15 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
         debug.clickedSeller = true;
         // Give StockX time to apply the view switch before we proceed to parsing.
         await new Promise((r) => setTimeout(r, 900));
-        // Verify switch by re-detecting selected tile.
-        try { detectAllInView(); } catch {}
+        // Verify switch by re-detecting selected tile; keep trying if still buyer.
+        try {
+          const v = detectAllInView();
+          if (v !== 'seller') {
+            // Small extra delay (StockX UI can lag)
+            await new Promise((r) => setTimeout(r, 650));
+            detectAllInView();
+          }
+        } catch {}
         continue;
       }
 
