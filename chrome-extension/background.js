@@ -893,6 +893,16 @@ async function runListingBidScanPaginatedResume({
   const opts = collectOpts && typeof collectOpts === 'object' ? collectOpts : {};
   const sp = Number(startPage) || 1;
   const startP = Number(currentPage) || sp;
+  // Use a dedicated hidden "collector" tab for pagination so the user's tab doesn't get hijacked/blanked.
+  let collectorTabId = 0;
+  try {
+    const t = await createInactiveTab(startUrl, scanId);
+    if (t?.id) {
+      collectorTabId = t.id;
+      trackScanTab(scanId, collectorTabId);
+    }
+  } catch {}
+  const collectorId = collectorTabId || originTabId;
 
   // Continue pages from currentPage through remaining range.
   for (let pageNum = startP; pageNum < sp + maxPages; pageNum++) {
@@ -910,7 +920,7 @@ async function runListingBidScanPaginatedResume({
       resume: { kind: 'paginated', startUrl, maxPages, perPage, collectOpts: opts, startPage: sp, currentPage: pageNum, pageUrls: null, nextIdx: 0, inFlightIdx: null }
     });
 
-    const nav = await navigateTabTo(originTabId, pageUrl, 60000);
+    const nav = await navigateTabTo(collectorId, pageUrl, 60000);
     if (!nav.ok) break;
     await new Promise((r) => setTimeout(r, 1600));
     if (isScanCancelled(scanId)) break;
@@ -921,7 +931,7 @@ async function runListingBidScanPaginatedResume({
       urls = pageUrls;
     } else {
       for (let attempt = 0; attempt < 3; attempt++) {
-        const collected = await requestUrlsFromOriginTab(originTabId, { perPage, opts }, 25000);
+        const collected = await requestUrlsFromOriginTab(collectorId, { perPage, opts }, 25000);
         urls = Array.isArray(collected?.urls) ? collected.urls : [];
         if (urls.length) break;
         await new Promise((r) => setTimeout(r, 1200 + attempt * 700));
@@ -1021,6 +1031,9 @@ async function runListingBidScanPaginatedResume({
   } catch {}
   try {
     chrome.storage?.local?.remove?.(['stockxActiveListingScanId'], () => void chrome.runtime.lastError);
+  } catch {}
+  try {
+    if (collectorTabId && collectorTabId !== originTabId) closeTab(collectorTabId);
   } catch {}
 }
 
@@ -1352,6 +1365,16 @@ async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPa
 
   const entry = getScanEntry(scanId);
   const opts = collectOpts && typeof collectOpts === 'object' ? collectOpts : {};
+  // Use a dedicated hidden "collector" tab for pagination & URL collection so the user's tab doesn't go white/blank mid-scan.
+  let collectorTabId = 0;
+  try {
+    const t = await createInactiveTab(startUrl, scanId);
+    if (t?.id) {
+      collectorTabId = t.id;
+      trackScanTab(scanId, collectorTabId);
+    }
+  } catch {}
+  const collectorId = collectorTabId || originTabId;
 
   const startPage = (() => {
     try {
@@ -1388,7 +1411,7 @@ async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPa
     sendToTab(originTabId, { action: 'listingBidScanProgress', scanId, stage: `page ${pageNum}/${startPage + maxPages - 1} (loading)`, current: completed, total, url: pageUrl });
     setScanState(scanId, { stage: `page ${pageNum} loading`, total, completed, currentPage: pageNum, currentUrl: pageUrl });
 
-    const nav = await navigateTabTo(originTabId, pageUrl, 60000);
+    const nav = await navigateTabTo(collectorId, pageUrl, 60000);
     if (!nav.ok) break;
 
     // Give the SPA time to hydrate and render cards
@@ -1401,7 +1424,7 @@ async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPa
     let urls = [];
     // Collect retries: StockX sometimes returns an empty grid for a moment (SPA/hydration).
     for (let attempt = 0; attempt < 3; attempt++) {
-      const collected = await requestUrlsFromOriginTab(originTabId, { perPage, opts }, 25000);
+      const collected = await requestUrlsFromOriginTab(collectorId, { perPage, opts }, 25000);
       urls = Array.isArray(collected?.urls) ? collected.urls : [];
       if (urls.length) break;
       await new Promise((r) => setTimeout(r, 1200 + attempt * 700));
@@ -1535,6 +1558,9 @@ async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPa
     chrome.storage?.local?.remove?.(['stockxActiveListingScanId'], () => {
       void chrome.runtime.lastError;
     });
+  } catch {}
+  try {
+    if (collectorTabId && collectorTabId !== originTabId) closeTab(collectorTabId);
   } catch {}
 }
 
