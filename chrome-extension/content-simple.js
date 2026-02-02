@@ -7743,7 +7743,64 @@ async function scanThisProductForXpressDeals({ mode } = {}) {
     const minProfit = Number(settings?.minProfit);
     const minRoiPct = Number(settings?.minRoiPct);
     const avg30dCushionPct = Number(settings?.avg30dCushionPct);
+    const excludeRecentReleaseDays = Number(settings?.excludeRecentReleaseDays);
     let sizeAll = null;
+
+    // Release date exclusions (best-effort; only applies when we can detect a release date).
+    try {
+      const rel = extractReleaseDateBestEffort();
+      const d = rel?.date instanceof Date ? rel.date : null;
+      if (d && Number.isFinite(d.getTime())) {
+        const now = Date.now();
+        const ageMs = now - d.getTime();
+
+        // Always exclude products with a release date in the future.
+        if (ageMs < 0) {
+          return {
+            success: true,
+            mode: 'xpress',
+            slug,
+            title,
+            releaseDate: d.toISOString().slice(0, 10),
+            releaseDateSource: rel?.source || 'unknown',
+            releaseFutureExcluded: true,
+            opportunities: [],
+            viableSizeCount: 0,
+            sizeOptionsCount: 0,
+            salesRows: 0,
+            asksRows: 0,
+            bidsRows: 0,
+            foundMarketDataButton: false,
+            openedMarketData: false
+          };
+        }
+
+        // Optional: exclude products that released within the last N days (default 30).
+        if (Number.isFinite(excludeRecentReleaseDays) && excludeRecentReleaseDays > 0) {
+          const maxMs = excludeRecentReleaseDays * 24 * 60 * 60 * 1000;
+          if (ageMs >= 0 && ageMs <= maxMs) {
+            return {
+              success: true,
+              mode: 'xpress',
+              slug,
+              title,
+              releaseDate: d.toISOString().slice(0, 10),
+              releaseDateSource: rel?.source || 'unknown',
+              releaseExcluded: true,
+              releaseExcludedDays: Math.round(excludeRecentReleaseDays),
+              opportunities: [],
+              viableSizeCount: 0,
+              sizeOptionsCount: 0,
+              salesRows: 0,
+              asksRows: 0,
+              bidsRows: 0,
+              foundMarketDataButton: false,
+              openedMarketData: false
+            };
+          }
+        }
+      }
+    } catch {}
 
     // User-configured exclusions (fast path).
     try {

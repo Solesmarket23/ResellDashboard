@@ -88,6 +88,7 @@ function groupErrorReason(r) {
   try {
     if (!r) return 'unknown';
     if (r.userExcluded) return 'excluded: user rule';
+    if (r.releaseFutureExcluded) return 'excluded: future release';
     if (r.releaseExcluded) return 'excluded: recent release';
     if (r.success === false) return 'scan failed';
     const e = safeStr(r.error || '').toLowerCase();
@@ -238,7 +239,7 @@ function renderResults(listEl, resultsMap) {
       const url = escapeHtml(r?.url || '');
       const ok = r?.success !== false;
       const opps = Array.isArray(r?.opportunities) ? r.opportunities : [];
-      const badge = r?.userExcluded || r?.releaseExcluded
+      const badge = r?.userExcluded || r?.releaseExcluded || r?.releaseFutureExcluded
         ? `<span class="pill">excluded</span>`
         : opps.length
           ? `<span class="pill">opps ${opps.length}</span>`
@@ -250,6 +251,8 @@ function renderResults(listEl, resultsMap) {
       const msg = escapeHtml(
         r?.userExcluded
           ? `Excluded by rule: ${(safeStr(r?.userExcludedNeedle || 'rule') || 'rule')}`
+          : r?.releaseFutureExcluded
+          ? `Release date: ${safeStr(r?.releaseDate || '—')} (future — excluded)`
           : r?.releaseExcluded
           ? `Released: ${safeStr(r?.releaseDate || '—')} (excluded)`
           : r?.success === false
