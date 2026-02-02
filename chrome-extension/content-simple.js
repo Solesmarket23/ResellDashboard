@@ -819,7 +819,9 @@ function normalizeSizeKey(size) {
   // Apparel alpha sizing (common on StockX apparel): "US XXL", "US XL", "US M", etc.
   // Normalize to just the alpha token so table joins/dedupes work consistently.
   try {
-    const mAlpha = s.match(/\b(?:US|UK|EU)\s*(XXXS|XXS|XS|S|M|L|XL|XXL|XXXL)\b/i);
+    // Important: do NOT treat shoe sizes like "US M 9.5" as alpha "M".
+    // Only match alpha tokens when they are not followed by a numeric size.
+    const mAlpha = s.match(/\b(?:US|UK|EU)\s*(XXXS|XXS|XS|S|M|L|XL|XXL|XXXL)\b(?!\s*\d)/i);
     if (mAlpha?.[1]) return String(mAlpha[1]).toUpperCase();
   } catch {}
   try {
@@ -7737,6 +7739,10 @@ async function scanThisProductForXpressDeals({ mode } = {}) {
     const settings = await loadScanSettings();
     const minSales30d = Number(settings?.minSales30d);
     const xpressMinDiscountPct = Number(settings?.xpressMinDiscountPct);
+    const feeSum = Number(settings?.feeSum);
+    const minProfit = Number(settings?.minProfit);
+    const minRoiPct = Number(settings?.minRoiPct);
+    const avg30dCushionPct = Number(settings?.avg30dCushionPct);
     let sizeAll = null;
 
     // User-configured exclusions (fast path).
@@ -7813,6 +7819,7 @@ async function scanThisProductForXpressDeals({ mode } = {}) {
 
     const opportunities = [];
     const minDisc = Number.isFinite(xpressMinDiscountPct) ? Math.max(0, Math.min(95, xpressMinDiscountPct)) : 30;
+    const cushion = Number.isFinite(avg30dCushionPct) ? Math.max(0, Math.min(95, avg30dCushionPct)) / 100 : 0;
     let best = null; // best (highest discount) candidate, even if it doesn't pass the threshold
 
     for (const [sizeKey, ask] of askBySizeKey.entries()) {
@@ -7828,6 +7835,11 @@ async function scanThisProductForXpressDeals({ mode } = {}) {
       const discount = 1 - buyNow / avg30d;
       const discountPct = Number.isFinite(discount) ? Math.round(discount * 1000) / 10 : null;
       if (Number.isFinite(discountPct)) {
+        const allIn = buyNow + (Number.isFinite(feeSum) ? feeSum : 0);
+        const profit = avg30d - allIn;
+        const roi = allIn > 0 ? profit / allIn : null;
+        const roiPct = Number.isFinite(roi) ? Math.round(roi * 1000) / 10 : null;
+        const maxAllInByAvg30d = avg30d * (1 - cushion);
         const candidate = {
           kind: 'xpress',
           sizeLabel: labelByKey.get(sizeKey) || stat?.sizeLabel || sizeKey,
@@ -7835,27 +7847,29 @@ async function scanThisProductForXpressDeals({ mode } = {}) {
           lowestAsk: buyNow,
           avg30d: Math.round(avg30d),
           discountPct,
+          profit: Number.isFinite(profit) ? Math.floor(profit) : null,
+          roiPct,
+          allIn: Number.isFinite(allIn) ? Math.floor(allIn) : null,
+          maxAllInByAvg30d: Number.isFinite(maxAllInByAvg30d) ? Math.floor(maxAllInByAvg30d) : null,
           edge: Math.round(avg30d - buyNow),
           sales30d: salesCount
         };
         if (!best || Number(candidate.discountPct || 0) > Number(best.discountPct || 0) || Number(candidate.edge || 0) > Number(best.edge || 0)) {
           best = candidate;
         }
+        // Apply xpress discount threshold AND your standard profit/ROI/all-in rules.
         if (discountPct < minDisc) continue;
+        if (Number.isFinite(minProfit) && profit < minProfit) continue;
+        if (Number.isFinite(minRoiPct) && minRoiPct > 0) {
+          const minRoi = minRoiPct / 100;
+          if (!Number.isFinite(roi) || roi < minRoi) continue;
+        }
+        // Reuse cushion rule (optional): require all-in <= avg30d*(1-cushion)
+        if (Number.isFinite(cushion) && cushion > 0 && allIn > maxAllInByAvg30d) continue;
+        opportunities.push(candidate);
       } else {
         continue;
       }
-
-      opportunities.push({
-        kind: 'xpress',
-        sizeLabel: labelByKey.get(sizeKey) || stat?.sizeLabel || sizeKey,
-        sizeParam: stockxSizeParamFromLabel(labelByKey.get(sizeKey) || stat?.sizeLabel || sizeKey),
-        lowestAsk: buyNow,
-        avg30d: Math.round(avg30d),
-        discountPct,
-        edge: Math.round(avg30d - buyNow),
-        sales30d: salesCount
-      });
     }
 
     opportunities.sort((a, b) => Number(b.discountPct || 0) - Number(a.discountPct || 0) || Number(b.edge || 0) - Number(a.edge || 0));

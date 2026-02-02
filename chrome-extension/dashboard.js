@@ -181,7 +181,7 @@ function renderOpps(listEl, resultsMap) {
         </div>
         <div class="sub mono">${
           isXpress
-            ? `size ${size} • buyNow ${buyNow} • avg30d ${avg} • discount ${discount} • edge ${edge}`
+            ? `size ${size} • buyNow ${buyNow} • avg30d ${avg} • profit ${profit} • roi ${roi} • discount ${discount} • edge ${edge}`
             : `size ${size} • bid ${bid} • ask ${ask} • profit ${profit} • roi ${roi} • avg30d ${avg} • low60d ${low}`
         }</div>
       </div>`;
