@@ -142,6 +142,54 @@ function flattenOpportunities(resultsMap, limit = 80) {
   return out.slice(0, limit);
 }
 
+function csvEscape(v) {
+  const s = safeStr(v);
+  if (s.includes('"') || s.includes(',') || s.includes('\n') || s.includes('\r') || s.includes('\t')) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+async function copyTextToClipboardBestEffort(text) {
+  const t = safeStr(text);
+  if (!t) return false;
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(t);
+      return true;
+    }
+  } catch {}
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = t;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return !!ok;
+  } catch {
+    return false;
+  }
+}
+
+function buildOpportunitiesCsv(resultsMap) {
+  const rows = flattenOpportunities(resultsMap, 2000);
+  const header = ['title', 'size', 'mode', 'bid', 'ask', 'buyNow', 'profit', 'roiPct', 'avg30d', 'discountPct', 'edge', 'url'];
+  const lines = [header.map(csvEscape).join(',')];
+  for (const r of rows) {
+    lines.push(
+      [r.title, r.sizeLabel, r.kind, r.bid, r.ask, r.buyNow, r.profit, r.roiPct, r.avg30d, r.discountPct, r.edge, r.url]
+        .map(csvEscape)
+        .join(',')
+    );
+  }
+  return lines.join('\n');
+}
+
 function withSizeParam(url, sizeParam) {
   try {
     const u = new URL(String(url || ''));
@@ -556,6 +604,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   $('refreshBtn')?.addEventListener('click', () => refresh());
   $('scanSelect')?.addEventListener('change', () => refresh());
+
+  $('copyOppsBtn')?.addEventListener('click', async () => {
+    try {
+      const ids = await getScanIds();
+      const scanId = safeStr($('scanSelect')?.value || '') || ids.active || ids.last;
+      if (!scanId) return;
+      const { results } = await getScanData(scanId);
+      const csv = buildOpportunitiesCsv(results || {});
+      const ok = await copyTextToClipboardBestEffort(csv);
+      setToast(ok ? 'Copied opportunities CSV to clipboard.' : 'Copy failed.');
+    } catch {
+      setToast('Copy failed.');
+    }
+  });
 
   $('stopBtn')?.addEventListener('click', async () => {
     try {
