@@ -6043,6 +6043,16 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
 async function readMarketDataTablesOnce(
   { maxAsks = 250, maxBids = 250, maxSales = 450, includeXpressSales = false, openTimeoutMs = 9000, onStage, onAttempt } = {}
 ) {
+  // Start from a clean UI state. A stale/half-open modal is a common reason scans "freeze" on Market Data.
+  try {
+    const existing = getMarketDataDialog();
+    if (existing) {
+      onStage?.('market data', 'closing stale modal');
+      await closeMarketDataDialog(existing);
+      await new Promise((r) => setTimeout(r, 450));
+    }
+  } catch {}
+
   const foundMarketDataButton =
     !!Array.from(document.querySelectorAll('button.chakra-button')).find((b) =>
       /(view\s+)?(all\s+)?market\s+data/i.test(safeText(b).trim())
@@ -6391,8 +6401,26 @@ async function closeMarketDataDialog(dialog) {
     if (!d) return;
     const closeBtn = d.querySelector('button[aria-label="Close"]');
     if (closeBtn) {
+      try { clickElPointerBestEffort(closeBtn); } catch {}
       try { closeBtn.click(); } catch {}
     }
+    // Escape fallback (common for Chakra modals)
+    try {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape', bubbles: true, cancelable: true }));
+    } catch {}
+    // Overlay fallback
+    try {
+      const overlay =
+        document.querySelector('[data-testid*="overlay" i]') ||
+        document.querySelector('[class*="overlay" i]') ||
+        null;
+      if (overlay) {
+        overlay.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+        overlay.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+        overlay.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      }
+    } catch {}
   } catch {}
 }
 

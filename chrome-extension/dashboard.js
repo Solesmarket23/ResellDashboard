@@ -95,7 +95,8 @@ function groupErrorReason(r) {
     if (e.includes('timeout')) return 'timeout';
     if (e.includes('market data') && e.includes('open')) return 'market data did not open';
     if (e.includes('parse')) return 'parse error';
-    if (safeStr(r.marketDataOpenDebug?.openedVia || '').includes('already')) return 'market data already open';
+    // Re-using an already-open modal isn't an error; don't spam a scary label.
+    if (safeStr(r.marketDataOpenDebug?.openedVia || '').includes('already')) return 'market data reused';
     return e ? e.slice(0, 50) : 'no opportunities';
   } catch {
     return 'unknown';

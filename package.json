@@ -26,6 +26,8 @@
     "save-stockx-tokens": "node scripts/save-stockx-tokens-to-firebase.js",
     "clear-stockx-tokens": "node scripts/clear-stockx-tokens.js",
     "show-vercel-env": "node scripts/show-vercel-env.js"
+    ,
+    "check:extension": "node --check chrome-extension/background.js && node --check chrome-extension/content-simple.js && node --check chrome-extension/dashboard.js && node --check chrome-extension/popup.js && node --check chrome-extension/content.js"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^0.0.48",
