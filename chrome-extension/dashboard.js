@@ -503,6 +503,18 @@ async function clearAllScans() {
   });
 }
 
+async function waitForActiveScanToClear(activeId, timeoutMs = 12000) {
+  const want = safeStr(activeId || '');
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const ids = await getScanIds();
+    if (!ids.active) return true;
+    if (want && ids.active !== want) return true; // active changed
+    await new Promise((r) => setTimeout(r, 450));
+  }
+  return false;
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   // Local ticking for elapsed display (avoid spamming refresh/storage reads).
   try {
@@ -576,19 +588,22 @@ document.addEventListener('DOMContentLoaded', async () => {
           if (!stopOk) return;
           chrome.runtime.sendMessage({ action: 'stopListingBidScan', scanId: activeId }, async () => {
             void chrome.runtime.lastError;
-            // Give stop a moment to persist, then retry clear.
-            setTimeout(async () => {
-              try {
-                setToast('Clearing…');
-                const res2 = await clearAllScans();
-                if (!res2?.ok) {
-                  setToast('Clear failed (still active). Try again in a moment.');
-                  return;
-                }
-                setToast('Cleared all scan history/results.');
-                await refresh();
-              } catch {}
-            }, 700);
+            try {
+              setToast('Stopping scan…');
+              const cleared = await waitForActiveScanToClear(activeId, 15000);
+              if (!cleared) {
+                setToast('Clear failed (still active). Try again in a moment.');
+                return;
+              }
+              setToast('Clearing…');
+              const res2 = await clearAllScans();
+              if (!res2?.ok) {
+                setToast('Clear failed.');
+                return;
+              }
+              setToast('Cleared all scan history/results.');
+              await refresh();
+            } catch {}
           });
           return;
         }
