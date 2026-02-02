@@ -6069,6 +6069,28 @@ async function readMarketDataTablesOnce(
   const viewSwitchDebug = sellerRes?.debug || null;
   const sellerConfirmed = salesView === 'seller';
 
+  // After switching views, StockX often re-renders the Sales rows. Give it time to settle before parsing.
+  try {
+    if (sellerConfirmed) {
+      onStage?.('market data', 'seller view (settling)');
+      await new Promise((r) => setTimeout(r, 900));
+      // Wait for tbody row count to stabilize (best-effort; avoids capturing a brief empty state).
+      const start = Date.now();
+      let last = -1;
+      let stable = 0;
+      while (Date.now() - start < 2500) {
+        const root = tabScope.querySelector?.('[data-component="ViewMarketActivity"]') || tabScope;
+        const rows = root?.querySelectorAll?.('tbody tr') || [];
+        const n = rows?.length || 0;
+        if (n === last) stable += 1;
+        else stable = 0;
+        last = n;
+        if (stable >= 2) break;
+        await new Promise((r) => setTimeout(r, 220));
+      }
+    }
+  } catch {}
+
   const getActiveTabLabel = () => {
     try {
       const activeInDialog = tabScope.querySelector?.('[role="tab"][aria-selected="true"]') || null;
@@ -6395,6 +6417,8 @@ async function scanAllSizesForSales({ statusEl, days = 30 }) {
       const dialog = await ensureMarketDataSalesOpen();
       try {
         await ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs: 5500 });
+        // Give the Sales table time to update to Seller View prices.
+        await new Promise((r) => setTimeout(r, 900));
       } catch {}
       const sales = parseMarketDataSalesTable(250);
       await closeMarketDataDialog(dialog);
