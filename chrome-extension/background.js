@@ -717,59 +717,69 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'stopListingBidScan') {
     const scanIdRaw = String(request.scanId || '');
     try {
-      const resolveScanId = async () => {
-        if (scanIdRaw) return scanIdRaw;
-        // Fallback: stop whatever scan is currently marked active.
+      const stopWithId = (scanId) => {
         try {
-          const ids = await new Promise((resolve) => {
-            chrome.storage?.local?.get?.(['stockxActiveListingScanId'], (res) => {
+          if (!scanId) {
+            sendResponse({ success: false, error: 'Missing scanId' });
+            return;
+          }
+          const scans = globalThis.__stockxActiveScans;
+          const entry = scans?.get(scanId);
+          if (!entry) {
+            sendResponse({ success: false, error: 'Unknown scanId (maybe already finished)' });
+            return;
+          }
+          entry.cancelled = true;
+          // Close any tabs currently opened for scanning.
+          try {
+            for (const tId of entry.activeTabIds || []) closeTab(tId);
+          } catch {}
+          sendResponse({ success: true });
+          // Notify UI immediately
+          sendToTab(entry.originTabId, { action: 'listingBidScanDone', scanId, success: false, cancelled: true, total: 0 });
+          // Restore the origin tab back to the start URL so it isn't left on a blank/intermediate page.
+          try {
+            const startUrl = String(entry.startUrl || '');
+            if (entry.originTabId && startUrl) {
+              chrome.tabs.update(entry.originTabId, { url: startUrl }, () => void chrome.runtime.lastError);
+            } else if (entry.originTabId) {
+              chrome.tabs.reload(entry.originTabId, {}, () => void chrome.runtime.lastError);
+            }
+          } catch {}
+          try {
+            chrome.storage?.local?.remove?.(['stockxActiveListingScanId'], () => {
               void chrome.runtime.lastError;
-              resolve(res || {});
             });
-          });
-          return String(ids?.stockxActiveListingScanId || '');
-        } catch {
-          return '';
+          } catch {}
+          try {
+            setScanState(scanId, { finishedAt: Date.now(), stage: 'stopped', cancelled: true, success: false });
+          } catch {}
+          try { patchScanHistory(scanId, { finishedAt: Date.now(), success: false, cancelled: true }); } catch {}
+          return;
+        } catch (e2) {
+          sendResponse({ success: false, error: e2?.message || String(e2) });
         }
       };
 
-      const scanId = await resolveScanId();
+      // If scanId wasn't provided, fall back to whatever scan is currently marked active.
+      if (!scanIdRaw) {
+        try {
+          chrome.storage?.local?.get?.(['stockxActiveListingScanId'], (ids) => {
+            void chrome.runtime.lastError;
+            stopWithId(String(ids?.stockxActiveListingScanId || ''));
+          });
+        } catch {
+          stopWithId('');
+        }
+        return true; // async sendResponse
+      }
+
+      const scanId = scanIdRaw;
       if (!scanId) {
         sendResponse({ success: false, error: 'Missing scanId' });
         return;
       }
-      const scans = globalThis.__stockxActiveScans;
-      const entry = scans?.get(scanId);
-      if (!entry) {
-        sendResponse({ success: false, error: 'Unknown scanId (maybe already finished)' });
-        return;
-      }
-      entry.cancelled = true;
-      // Close any tabs currently opened for scanning.
-      try {
-        for (const tId of entry.activeTabIds || []) closeTab(tId);
-      } catch {}
-      sendResponse({ success: true });
-      // Notify UI immediately
-      sendToTab(entry.originTabId, { action: 'listingBidScanDone', scanId, success: false, cancelled: true, total: 0 });
-      // Restore the origin tab back to the start URL so it isn't left on a blank/intermediate page.
-      try {
-        const startUrl = String(entry.startUrl || '');
-        if (entry.originTabId && startUrl) {
-          chrome.tabs.update(entry.originTabId, { url: startUrl }, () => void chrome.runtime.lastError);
-        } else if (entry.originTabId) {
-          chrome.tabs.reload(entry.originTabId, {}, () => void chrome.runtime.lastError);
-        }
-      } catch {}
-      try {
-        chrome.storage?.local?.remove?.(['stockxActiveListingScanId'], () => {
-          void chrome.runtime.lastError;
-        });
-      } catch {}
-      try {
-        setScanState(scanId, { finishedAt: Date.now(), stage: 'stopped', cancelled: true, success: false });
-      } catch {}
-      try { patchScanHistory(scanId, { finishedAt: Date.now(), success: false, cancelled: true }); } catch {}
+      stopWithId(scanId);
       return;
     } catch (e) {
       sendResponse({ success: false, error: e?.message || String(e) });
