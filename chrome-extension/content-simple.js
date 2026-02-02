@@ -8669,6 +8669,25 @@ function ensureListingBidWidget() {
          </div>`
       : '';
 
+  const quickCountsLine = (() => {
+    try {
+      const results = state.results && typeof state.results === 'object' ? state.results : {};
+      const scanned = Object.keys(results).length;
+      let opps = 0;
+      for (const v of Object.values(results)) {
+        const arr = Array.isArray(v?.opportunities) ? v.opportunities : [];
+        opps += arr.length;
+      }
+      if (!state.scanId && scanned === 0 && opps === 0) return '';
+      return `<div style="margin-top:6px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <span style="font-size:11px; font-weight:1000; padding:2px 8px; border-radius:999px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:rgba(255,255,255,0.85);">Scanned ${scanned}${state.total ? `/${state.total}` : ''}</span>
+        <span style="font-size:11px; font-weight:1000; padding:2px 8px; border-radius:999px; background:rgba(34,197,94,0.18); border:1px solid rgba(34,197,94,0.35); color:#bbf7d0;">Opps ${opps}</span>
+      </div>`;
+    } catch {
+      return '';
+    }
+  })();
+
   const resumeBtnHtml = `<button data-role="resume" style="width:96px; background:#f59e0b; border:1px solid rgba(245,158,11,0.95); color:#3b1d00; padding:8px 10px; border-radius:10px; cursor:pointer; font-weight:1000;">
     Resume
   </button>`;
@@ -8754,6 +8773,7 @@ function ensureListingBidWidget() {
       </button>
     </div>
     ${stageLine}
+    ${quickCountsLine}
     <div style="margin-top:10px;">${itemsHtml}</div>
   `;
 
