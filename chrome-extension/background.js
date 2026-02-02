@@ -882,7 +882,12 @@ async function runListingBidScanFromIndex({ originTabId, scanId, urls, startIdx,
         const effectiveMode = String(scanMode || getScanEntry(scanId)?.scanMode || 'listing').toLowerCase();
         const action = effectiveMode === 'xpress' ? 'scanProductXpressDeals' : 'scanProductBidOpportunities';
         const scanStart = Date.now();
-        const resp = await requestScanFromTab(tabId, { action, scanId, url, mode: 'listing' }, 120000);
+    const resp = await requestScanFromTab(
+      tabId,
+      { action, scanId, url, mode: 'listing' },
+      120000,
+      { scanId, heartbeatMs: 5000, heartbeatNote: `awaiting ${action}` }
+    );
         scanMs = Date.now() - scanStart;
 
         closeTab(tabId);
@@ -891,6 +896,11 @@ async function runListingBidScanFromIndex({ originTabId, scanId, urls, startIdx,
         done += 1;
         sendToTab(originTabId, { action: 'listingBidScanResult', scanId, url, ...(resp || { success: false, error: 'No response' }) });
         setScanResult(scanId, url, { url, ...(resp || { success: false, error: 'No response' }) });
+        try {
+          const ok = !!resp?.success;
+          const err = ok ? '' : String(resp?.error || resp?.message || 'unknown');
+          if (err) setScanState(scanId, { lastError: err, lastErrorAt: Date.now(), lastErrorUrl: url });
+        } catch {}
         setScanState(scanId, { stage: 'scanned', total, completed: done, currentUrl: url, canResume: true, resume: { kind: 'listing', nextIdx, inFlightIdx: null } });
         recordItemPerf(scanId, { itemMs: Date.now() - itemStart, loadMs: 0, scanMs });
 
@@ -1062,13 +1072,23 @@ async function runListingBidScanPaginatedResume({
 
       const effectiveMode = String(scanMode || getScanEntry(scanId)?.scanMode || 'listing').toLowerCase();
       const action = effectiveMode === 'xpress' ? 'scanProductXpressDeals' : 'scanProductBidOpportunities';
-      const resp = await requestScanFromTab(tab.id, { action, scanId, url, mode: 'listing' }, 120000);
+      const resp = await requestScanFromTab(
+        tab.id,
+        { action, scanId, url, mode: 'listing' },
+        120000,
+        { scanId, heartbeatMs: 5000, heartbeatNote: `awaiting ${action}` }
+      );
       closeTab(tab.id);
       untrackScanTab(scanId, tab.id);
 
       done += 1;
       sendToTab(originTabId, { action: 'listingBidScanResult', scanId, url, ...(resp || { success: false, error: 'No response' }) });
       setScanResult(scanId, url, { url, ...(resp || { success: false, error: 'No response' }) });
+      try {
+        const ok = !!resp?.success;
+        const err = ok ? '' : String(resp?.error || resp?.message || 'unknown');
+        if (err) setScanState(scanId, { lastError: err, lastErrorAt: Date.now(), lastErrorUrl: url });
+      } catch {}
       setScanState(scanId, {
         stage: `page ${pageNum} scanned`,
         total,
@@ -1439,15 +1459,35 @@ function closeTab(tabId) {
   } catch {}
 }
 
-function requestScanFromTab(tabId, payload, timeoutMs = 90000) {
+function requestScanFromTab(tabId, payload, timeoutMs = 90000, opts = {}) {
   return new Promise((resolve) => {
     let done = false;
+    let hbTimer = null;
     const finish = (res) => {
       if (done) return;
       done = true;
+      try {
+        if (hbTimer) clearInterval(hbTimer);
+      } catch {}
       resolve(res);
     };
     const timer = setTimeout(() => finish({ success: false, error: 'Scan timed out' }), timeoutMs);
+
+    // Heartbeat so the dashboard can tell the scan is still alive even while awaiting a long content-script step.
+    try {
+      const scanId = String(opts?.scanId || '');
+      const hbMs = Number(opts?.heartbeatMs || 0);
+      if (scanId && Number.isFinite(hbMs) && hbMs >= 1500) {
+        hbTimer = setInterval(() => {
+          try {
+            setScanState(scanId, {
+              heartbeatAt: Date.now(),
+              heartbeatNote: String(opts?.heartbeatNote || '').slice(0, 120) || undefined
+            });
+          } catch {}
+        }, hbMs);
+      }
+    } catch {}
 
     const trySend = (attempt) => {
       try {
@@ -1705,7 +1745,12 @@ async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPa
           const effectiveMode = String(scanMode || getScanEntry(scanId)?.scanMode || 'listing').toLowerCase();
           const action = effectiveMode === 'xpress' ? 'scanProductXpressDeals' : 'scanProductBidOpportunities';
           const scanStart = Date.now();
-          const resp = await requestScanFromTab(tabId, { action, scanId, url, mode: 'listing' }, 120000);
+          const resp = await requestScanFromTab(
+            tabId,
+            { action, scanId, url, mode: 'listing' },
+            120000,
+            { scanId, heartbeatMs: 5000, heartbeatNote: `awaiting ${action}` }
+          );
           scanMs = Date.now() - scanStart;
 
           closeTab(tabId);
@@ -1714,6 +1759,11 @@ async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPa
           completed += 1;
           sendToTab(originTabId, { action: 'listingBidScanResult', scanId, url, ...(resp || { success: false, error: 'No response' }) });
           setScanResult(scanId, url, { url, ...(resp || { success: false, error: 'No response' }) });
+          try {
+            const ok = !!resp?.success;
+            const err = ok ? '' : String(resp?.error || resp?.message || 'unknown');
+            if (err) setScanState(scanId, { lastError: err, lastErrorAt: Date.now(), lastErrorUrl: url });
+          } catch {}
           sendToTab(originTabId, { action: 'listingBidScanProgress', scanId, stage: `page ${pageNum} (scanned)`, current: completed, total });
           setScanState(scanId, {
             stage: `page ${pageNum} scanned`,
@@ -1867,7 +1917,12 @@ async function runListingBidScan({ originTabId, scanId, urls }) {
     const itemStart = Date.now();
     const action = scanMode === 'xpress' ? 'scanProductXpressDeals' : 'scanProductBidOpportunities';
     const scanStart = Date.now();
-    const resp = await requestScanFromTab(tab.id, { action, scanId, url, mode: 'listing' }, 120000);
+    const resp = await requestScanFromTab(
+      tab.id,
+      { action, scanId, url, mode: 'listing' },
+      120000,
+      { scanId, heartbeatMs: 5000, heartbeatNote: `awaiting ${action}` }
+    );
     const scanMs = Date.now() - scanStart;
     closeTab(tab.id);
     untrackScanTab(scanId, tab.id);
@@ -1875,6 +1930,11 @@ async function runListingBidScan({ originTabId, scanId, urls }) {
     completed += 1;
     sendToTab(originTabId, { action: 'listingBidScanResult', scanId, url, ...(resp || { success: false, error: 'No response' }) });
     setScanResult(scanId, url, { url, ...(resp || { success: false, error: 'No response' }) });
+    try {
+      const ok = !!resp?.success;
+      const err = ok ? '' : String(resp?.error || resp?.message || 'unknown');
+      if (err) setScanState(scanId, { lastError: err, lastErrorAt: Date.now(), lastErrorUrl: url });
+    } catch {}
     sendToTab(originTabId, { action: 'listingBidScanProgress', scanId, stage: 'scanned', current: completed, total });
     setScanState(scanId, {
       stage: 'scanned',

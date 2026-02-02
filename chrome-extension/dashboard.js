@@ -448,6 +448,51 @@ function renderPerfLine(perf) {
   }
 }
 
+function renderLastUpdateLine(state) {
+  try {
+    const s = state && typeof state === 'object' ? state : null;
+    if (!s) return '—';
+    const t = Number(s.heartbeatAt || s.updatedAt || 0);
+    if (!Number.isFinite(t) || t <= 0) return '—';
+    const age = Math.max(0, Date.now() - t);
+    return `${fmtDurationMs(age)} ago`;
+  } catch {
+    return '—';
+  }
+}
+
+function computeStallNote({ ids, scanId, state }) {
+  try {
+    const isActive = !!(ids?.active && scanId && ids.active === scanId);
+    if (!isActive) return '';
+    const stage = safeStr(state?.stage || '').toLowerCase();
+    if (!stage) return '';
+    if (stage === 'done' || stage === 'stopped') return '';
+
+    const t = Number(state?.heartbeatAt || state?.updatedAt || 0);
+    if (!Number.isFinite(t) || t <= 0) return '';
+    const ageMs = Math.max(0, Date.now() - t);
+    if (ageMs < 45000) return '';
+
+    const parts = [`Possibly stalled (no updates for ${fmtDurationMs(ageMs)})`];
+    const lastErr = safeStr(state?.lastError || '');
+    const lastErrUrl = safeStr(state?.lastErrorUrl || '');
+    if (lastErr) {
+      parts.push(`last error: ${lastErr}${lastErrUrl ? ` (${lastErrUrl})` : ''}`);
+    } else if (safeStr(state?.heartbeatNote || '')) {
+      parts.push(`last step: ${safeStr(state.heartbeatNote)}`);
+    } else if (stage.includes('scanning')) {
+      parts.push('last step: scanning (likely waiting on Market Data / content script response)');
+    } else {
+      parts.push(`last stage: ${safeStr(state?.stage || '—')}`);
+    }
+    parts.push('Check chrome://extensions → your extension → Errors if this persists.');
+    return parts.join(' • ');
+  } catch {
+    return '';
+  }
+}
+
 async function refresh() {
   const ids = await getScanIds();
   const history = await getHistory();
@@ -476,6 +521,14 @@ async function refresh() {
   try {
     const perfEl = $('perfLine');
     if (perfEl) perfEl.textContent = renderPerfLine(state?.perf || null);
+  } catch {}
+  try {
+    const lastEl = $('lastUpdate');
+    if (lastEl) lastEl.textContent = renderLastUpdateLine(state);
+  } catch {}
+  try {
+    const stallEl = $('stallNote');
+    if (stallEl) stallEl.textContent = computeStallNote({ ids, scanId, state });
   } catch {}
 
   // Elapsed time (ticks locally; no extra storage reads needed).
