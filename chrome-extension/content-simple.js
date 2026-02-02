@@ -7813,6 +7813,7 @@ async function scanThisProductForXpressDeals({ mode } = {}) {
 
     const opportunities = [];
     const minDisc = Number.isFinite(xpressMinDiscountPct) ? Math.max(0, Math.min(95, xpressMinDiscountPct)) : 30;
+    let best = null; // best (highest discount) candidate, even if it doesn't pass the threshold
 
     for (const [sizeKey, ask] of askBySizeKey.entries()) {
       const stat = statsByKey.get(sizeKey);
@@ -7826,7 +7827,24 @@ async function scanThisProductForXpressDeals({ mode } = {}) {
 
       const discount = 1 - buyNow / avg30d;
       const discountPct = Number.isFinite(discount) ? Math.round(discount * 1000) / 10 : null;
-      if (!Number.isFinite(discountPct) || discountPct < minDisc) continue;
+      if (Number.isFinite(discountPct)) {
+        const candidate = {
+          kind: 'xpress',
+          sizeLabel: labelByKey.get(sizeKey) || stat?.sizeLabel || sizeKey,
+          sizeParam: stockxSizeParamFromLabel(labelByKey.get(sizeKey) || stat?.sizeLabel || sizeKey),
+          lowestAsk: buyNow,
+          avg30d: Math.round(avg30d),
+          discountPct,
+          edge: Math.round(avg30d - buyNow),
+          sales30d: salesCount
+        };
+        if (!best || Number(candidate.discountPct || 0) > Number(best.discountPct || 0) || Number(candidate.edge || 0) > Number(best.edge || 0)) {
+          best = candidate;
+        }
+        if (discountPct < minDisc) continue;
+      } else {
+        continue;
+      }
 
       opportunities.push({
         kind: 'xpress',
@@ -7850,6 +7868,7 @@ async function scanThisProductForXpressDeals({ mode } = {}) {
       salesView: md?.salesView || 'unknown',
       sellerViewConfirmed: !!md?.sellerViewConfirmed,
       xpressMinDiscountPct: minDisc,
+      xpressBest: best || null,
       salesRows: Array.isArray(sales) ? sales.length : 0,
       asksRows: Array.isArray(asks) ? asks.length : 0,
       bidsRows: 0,

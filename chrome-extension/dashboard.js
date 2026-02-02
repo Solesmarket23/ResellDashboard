@@ -245,6 +245,8 @@ function renderResults(listEl, resultsMap) {
           : ok
             ? `<span class="pill">none</span>`
             : `<span class="pill">error</span>`;
+      const isXpress = safeStr(r?.mode || '').toLowerCase() === 'xpress' || (opps[0] && String(opps[0]?.kind || '').toLowerCase() === 'xpress');
+      const bestX = r?.xpressBest && typeof r.xpressBest === 'object' ? r.xpressBest : null;
       const msg = escapeHtml(
         r?.userExcluded
           ? `Excluded by rule: ${(safeStr(r?.userExcludedNeedle || 'rule') || 'rule')}`
@@ -252,9 +254,15 @@ function renderResults(listEl, resultsMap) {
           ? `Released: ${safeStr(r?.releaseDate || '—')} (excluded)`
           : r?.success === false
             ? safeStr(r?.error || 'scan failed')
-            : opps.length
-              ? `Best: ${safeStr(opps[0]?.sizeLabel || '')} bid ${safeStr(opps[0]?.highestBid ?? '—')} ask ${safeStr(opps[0]?.lowestAsk ?? '—')} profit ${safeStr(opps[0]?.profit ?? '—')}`
-              : 'No opportunities'
+            : isXpress
+              ? opps.length
+                ? `Deal: ${safeStr(opps[0]?.sizeLabel || '')} buyNow ${safeStr(opps[0]?.lowestAsk ?? '—')} avg30d ${safeStr(opps[0]?.avg30d ?? '—')} discount ${safeStr(opps[0]?.discountPct ?? '—')}%`
+                : bestX
+                  ? `No deals (best: ${safeStr(bestX?.sizeLabel || '')} buyNow ${safeStr(bestX?.lowestAsk ?? '—')} avg30d ${safeStr(bestX?.avg30d ?? '—')} discount ${safeStr(bestX?.discountPct ?? '—')}%)`
+                  : 'No deals (no comparable sales/asks)'
+              : opps.length
+                ? `Best: ${safeStr(opps[0]?.sizeLabel || '')} bid ${safeStr(opps[0]?.highestBid ?? '—')} ask ${safeStr(opps[0]?.lowestAsk ?? '—')} profit ${safeStr(opps[0]?.profit ?? '—')}`
+                : 'No opportunities'
       );
       return `<div class="item">
         <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
