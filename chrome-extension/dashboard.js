@@ -202,6 +202,7 @@ function renderResults(listEl, resultsMap) {
         `allIn=${dbg.clickedAllInCollapse ? 'yes' : 'no'}`,
         typeof dbg.allInCollapseFound === 'boolean' ? `allInFound=${dbg.allInCollapseFound ? 'yes' : 'no'}` : '',
         typeof dbg.allInCollapseVisible === 'boolean' ? `allInVis=${dbg.allInCollapseVisible ? 'yes' : 'no'}` : '',
+        dbg.detectedAllInView ? `detected=${safeStr(dbg.detectedAllInView)}` : '',
         `chevron=${dbg.clickedChevron ? 'yes' : 'no'}`,
         `menu=${dbg.openedMenu ? 'yes' : 'no'}`,
         `sellerBtn=${dbg.clickedSeller ? 'yes' : 'no'}`,

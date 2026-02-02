@@ -5647,6 +5647,7 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
     clickedAllInCollapse: false,
     allInCollapseFound: false,
     allInCollapseVisible: false,
+    detectedAllInView: '',
     sellerBtnFound: false,
     sellerBtnVisible: false,
     sellerBtnEnabled: false,
@@ -5657,70 +5658,117 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
     debug.tried = true;
     const scope = dialog || document;
 
-    const isSellerConfirmed = () => {
+    const getAllInBtns = () => {
+      const getAll = (testid) => {
+        try {
+          const inScope = Array.from(scope.querySelectorAll?.(`[data-testid="${testid}"]`) || []);
+          const inDoc = inScope.length ? inScope : Array.from(document.querySelectorAll?.(`[data-testid="${testid}"]`) || []);
+          return inDoc
+            .map((el) => el?.closest?.('button,[role="button"],a') || el)
+            .filter(Boolean);
+        } catch {
+          return [];
+        }
+      };
+      return {
+        buyer: getAll('AllInViewSwitchToBUYER'),
+        seller: getAll('AllInViewSwitchToSELLER')
+      };
+    };
+
+    const pickBestVisible = (els) => {
       try {
-        // Only trust explicit control presence, not text (the SELLER button itself contains "Seller View").
-        // If "switch to BUYER" is visible, we are currently in SELLER view.
-        const toBuyer = scope.querySelector?.('[data-testid="AllInViewSwitchToBUYER"]') || document.querySelector('[data-testid="AllInViewSwitchToBUYER"]');
-        return isVisibleElStrict(toBuyer);
+        const list = Array.isArray(els) ? els : [];
+        let best = null;
+        let bestArea = -1;
+        for (const el of list) {
+          if (!el) continue;
+          const r = el.getBoundingClientRect?.();
+          const area = r && r.width > 0 && r.height > 0 ? r.width * r.height : 0;
+          if (area <= 0) continue;
+          if (!isEnabledBtnBestEffort(el)) continue;
+          // Prefer strict-visible; otherwise allow loose-visible as fallback.
+          const vis = isVisibleElStrict(el) || isVisibleElBestEffort(el);
+          if (!vis) continue;
+          if (area > bestArea) {
+            bestArea = area;
+            best = el;
+          }
+        }
+        return best;
       } catch {
-        return false;
+        return null;
       }
     };
 
-    const toBuyerVisible = () => {
+    const selectionScore = (btn) => {
       try {
-        const toBuyer = scope.querySelector?.('[data-testid="AllInViewSwitchToBUYER"]') || document.querySelector('[data-testid="AllInViewSwitchToBUYER"]');
-        return isVisibleElStrict(toBuyer);
+        if (!btn) return 0;
+        let s = 0;
+        const ap = String(btn.getAttribute?.('aria-pressed') || '').toLowerCase();
+        const as = String(btn.getAttribute?.('aria-selected') || '').toLowerCase();
+        const dc = String(btn.getAttribute?.('data-selected') || btn.getAttribute?.('data-state') || '').toLowerCase();
+        if (ap === 'true' || as === 'true' || dc === 'true' || dc === 'checked' || dc === 'selected' || dc === 'on') s += 6;
+        const cs = window.getComputedStyle?.(btn);
+        if (cs) {
+          const bs = String(cs.boxShadow || '');
+          const bw = parseFloat(String(cs.borderWidth || '0')) || 0;
+          const bc = String(cs.borderColor || '');
+          if (bs && bs !== 'none') s += 3;
+          if (bw >= 2) s += 2;
+          if (bc && bc !== 'transparent' && bc !== 'rgba(0, 0, 0, 0)') s += 1;
+        }
+        // Some Chakra buttons apply an inner wrapper; include that too.
+        try {
+          const inner = btn.querySelector?.('[data-testid="selector-label"]') || null;
+          const cs2 = inner ? window.getComputedStyle?.(inner) : null;
+          if (cs2 && String(cs2.fontWeight || '') && Number(cs2.fontWeight) >= 700) s += 1;
+        } catch {}
+        return s;
       } catch {
-        return false;
+        return 0;
       }
     };
 
-    const toSellerVisible = () => {
+    const detectAllInView = () => {
       try {
-        const toSeller = scope.querySelector?.('[data-testid="AllInViewSwitchToSELLER"]') || document.querySelector('[data-testid="AllInViewSwitchToSELLER"]');
-        return isVisibleElStrict(toSeller);
+        const { buyer, seller } = getAllInBtns();
+        const b = pickBestVisible(buyer);
+        const s = pickBestVisible(seller);
+        const sb = selectionScore(b);
+        const ss = selectionScore(s);
+        debug.detectedAllInView = sb === 0 && ss === 0 ? 'unknown' : ss >= sb ? 'seller' : 'buyer';
+        return debug.detectedAllInView;
       } catch {
-        return false;
+        debug.detectedAllInView = 'unknown';
+        return 'unknown';
       }
     };
 
     const isSellerAlready = () => {
       try {
-        return isSellerConfirmed();
+        return detectAllInView() === 'seller';
       } catch {}
       return false;
     };
 
     const isBuyerAlready = () => {
       try {
-        // If "switch to SELLER" is visible, we are currently in BUYER view.
-        const toSeller = scope.querySelector?.('[data-testid="AllInViewSwitchToSELLER"]') || document.querySelector('[data-testid="AllInViewSwitchToSELLER"]');
-        if (isVisibleElStrict(toSeller)) return true;
+        return detectAllInView() === 'buyer';
       } catch {}
       return false;
     };
 
     if (isSellerAlready()) {
       debug.inferred = 'already';
-      debug.toBuyerVisible = toBuyerVisible();
-      debug.toSellerVisible = toSellerVisible();
       return { ok: true, salesView: 'seller', debug };
     }
 
     const findSellerBtn = () => {
       try {
-        // StockX sometimes renders multiple instances (hidden + visible). Prefer the visible, enabled button.
-        const all = Array.from(scope.querySelectorAll?.('[data-testid="AllInViewSwitchToSELLER"]') || []);
-        const allDoc = all.length ? all : Array.from(document.querySelectorAll?.('[data-testid="AllInViewSwitchToSELLER"]') || []);
-
-        const candidates = allDoc
-          .map((el) => el?.closest?.('button,[role="button"],a') || el)
-          .filter(Boolean);
-
-        const strictVis = candidates.find((el) => isVisibleElStrict(el) && isEnabledBtnBestEffort(el));
-        if (strictVis) return strictVis;
+        const { seller } = getAllInBtns();
+        const best = pickBestVisible(seller);
+        if (best) return best;
 
         // Fallback: Seller View tile often contains a selector-label span. Click its nearest button.
         const labels = Array.from(scope.querySelectorAll?.('[data-testid="selector-label"]') || []).filter(Boolean);
@@ -5837,10 +5885,8 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
 
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
-      if (isSellerConfirmed()) {
+      if (detectAllInView() === 'seller') {
         debug.inferred = 'after_switch';
-        debug.toBuyerVisible = toBuyerVisible();
-        debug.toSellerVisible = toSellerVisible();
         return { ok: true, salesView: 'seller', debug };
       }
 
@@ -5848,8 +5894,6 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
       debug.sellerBtnFound = !!sellerBtnAny;
       debug.sellerBtnVisible = isVisibleElStrict(sellerBtnAny?.closest?.('button,[role="button"],a') || sellerBtnAny);
       debug.sellerBtnEnabled = isEnabledBtnBestEffort(sellerBtnAny);
-      debug.toBuyerVisible = toBuyerVisible();
-      debug.toSellerVisible = toSellerVisible();
 
       // If the button exists but isn't visible yet, try expanding and give layout time.
       if (sellerBtnAny && !debug.sellerBtnVisible) {
@@ -5864,16 +5908,8 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
         debug.clickedSeller = true;
         // Give StockX time to apply the view switch before we proceed to parsing.
         await new Promise((r) => setTimeout(r, 900));
-        // Verify switch: when Seller view is active, the "switch to BUYER" control becomes visible.
-        try {
-          await waitForElement(() => {
-            const toBuyer =
-              scope.querySelector?.('[data-testid="AllInViewSwitchToBUYER"]') ||
-              document.querySelector('[data-testid="AllInViewSwitchToBUYER"]') ||
-              null;
-            return isVisibleElStrict(toBuyer) ? true : null;
-          }, 2500);
-        } catch {}
+        // Verify switch by re-detecting selected tile.
+        try { detectAllInView(); } catch {}
         continue;
       }
 
