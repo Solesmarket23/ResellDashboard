@@ -203,6 +203,8 @@ function renderResults(listEl, resultsMap) {
         typeof dbg.allInCollapseFound === 'boolean' ? `allInFound=${dbg.allInCollapseFound ? 'yes' : 'no'}` : '',
         typeof dbg.allInCollapseVisible === 'boolean' ? `allInVis=${dbg.allInCollapseVisible ? 'yes' : 'no'}` : '',
         dbg.detectedAllInView ? `detected=${safeStr(dbg.detectedAllInView)}` : '',
+        Number.isFinite(Number(dbg.buyerTileScore)) ? `bScore=${safeStr(dbg.buyerTileScore)}` : '',
+        Number.isFinite(Number(dbg.sellerTileScore)) ? `sScore=${safeStr(dbg.sellerTileScore)}` : '',
         `chevron=${dbg.clickedChevron ? 'yes' : 'no'}`,
         `menu=${dbg.openedMenu ? 'yes' : 'no'}`,
         `sellerBtn=${dbg.clickedSeller ? 'yes' : 'no'}`,

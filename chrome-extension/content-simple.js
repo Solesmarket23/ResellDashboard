@@ -5813,6 +5813,23 @@ async function ensureMarketDataSellerViewSelectedBestEffort(dialog, { timeoutMs 
 
     const findSellerBtn = () => {
       try {
+        // Best: find the visible Buyer tile, then click the Seller tile in the same container.
+        const buyerInScope = Array.from(scope.querySelectorAll?.('[data-testid="AllInViewSwitchToBUYER"]') || [])
+          .map((el) => el?.closest?.('button,[role="button"],a') || el)
+          .filter(Boolean)
+          .find((el) => isVisibleElStrict(el) || isVisibleElBestEffort(el));
+
+        if (buyerInScope) {
+          const parent = buyerInScope.parentElement;
+          if (parent) {
+            const sibs = Array.from(parent.querySelectorAll?.('[data-testid="AllInViewSwitchToSELLER"]') || [])
+              .map((el) => el?.closest?.('button,[role="button"],a') || el)
+              .filter(Boolean);
+            const sibBest = sibs.find((el) => (isVisibleElStrict(el) || isVisibleElBestEffort(el)) && isEnabledBtnBestEffort(el));
+            if (sibBest) return sibBest;
+          }
+        }
+
         const { seller } = getAllInBtns();
         const best = pickBestVisible(seller);
         if (best) return best;
