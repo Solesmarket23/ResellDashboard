@@ -715,12 +715,29 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'stopListingBidScan') {
-    const scanId = String(request.scanId || '');
-    if (!scanId) {
-      sendResponse({ success: false, error: 'Missing scanId' });
-      return;
-    }
+    const scanIdRaw = String(request.scanId || '');
     try {
+      const resolveScanId = async () => {
+        if (scanIdRaw) return scanIdRaw;
+        // Fallback: stop whatever scan is currently marked active.
+        try {
+          const ids = await new Promise((resolve) => {
+            chrome.storage?.local?.get?.(['stockxActiveListingScanId'], (res) => {
+              void chrome.runtime.lastError;
+              resolve(res || {});
+            });
+          });
+          return String(ids?.stockxActiveListingScanId || '');
+        } catch {
+          return '';
+        }
+      };
+
+      const scanId = await resolveScanId();
+      if (!scanId) {
+        sendResponse({ success: false, error: 'Missing scanId' });
+        return;
+      }
       const scans = globalThis.__stockxActiveScans;
       const entry = scans?.get(scanId);
       if (!entry) {
