@@ -374,6 +374,28 @@ async function getScanData(scanId) {
   });
 }
 
+function renderPerfLine(perf) {
+  try {
+    const p = perf && typeof perf === 'object' ? perf : null;
+    if (!p) return '—';
+    const avg = Number(p.avgItemMs || 0);
+    const last = Number(p.lastItemMs || 0);
+    const max = Number(p.maxItemMs || 0);
+    const eta = Number(p.etaMs || 0);
+    const nav = Number(p.lastPageNavMs || 0);
+    const collect = Number(p.lastCollectMs || 0);
+    const parts = [];
+    if (avg > 0) parts.push(`avg ${fmtDurationMs(avg)}`);
+    if (last > 0) parts.push(`last ${fmtDurationMs(last)}`);
+    if (max > 0) parts.push(`max ${fmtDurationMs(max)}`);
+    if (eta > 0) parts.push(`eta ${fmtDurationMs(eta)}`);
+    if (nav > 0 || collect > 0) parts.push(`page nav ${fmtDurationMs(nav)} collect ${fmtDurationMs(collect)}`);
+    return parts.length ? parts.join(' • ') : '—';
+  } catch {
+    return '—';
+  }
+}
+
 async function refresh() {
   const ids = await getScanIds();
   const history = await getHistory();
@@ -399,6 +421,10 @@ async function refresh() {
 
   $('stage').textContent = safeStr(state?.stage || '—');
   $('currentUrl').textContent = safeStr(state?.currentUrl || state?.startUrl || '—');
+  try {
+    const perfEl = $('perfLine');
+    if (perfEl) perfEl.textContent = renderPerfLine(state?.perf || null);
+  } catch {}
 
   // Elapsed time (ticks locally; no extra storage reads needed).
   try {

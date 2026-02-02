@@ -814,6 +814,7 @@ async function runListingBidScanFromIndex({ originTabId, scanId, urls, startIdx,
     const i = nextIdx;
     nextIdx += 1;
     const url = urls[i];
+    const itemStart = Date.now();
 
     // Persist resume cursor before opening.
     setScanState(scanId, { stage: 'opening', total, completed: done, currentUrl: url, canResume: true, resume: { kind: 'listing', nextIdx, inFlightIdx: i } });
@@ -858,7 +859,9 @@ async function runListingBidScanFromIndex({ originTabId, scanId, urls, startIdx,
 
     const effectiveMode = String(scanMode || getScanEntry(scanId)?.scanMode || 'listing').toLowerCase();
     const action = effectiveMode === 'xpress' ? 'scanProductXpressDeals' : 'scanProductBidOpportunities';
+    const scanStart = Date.now();
     const resp = await requestScanFromTab(tab.id, { action, scanId, url, mode: 'listing' }, 120000);
+    const scanMs = Date.now() - scanStart;
 
     closeTab(tab.id);
     untrackScanTab(scanId, tab.id);
@@ -867,6 +870,7 @@ async function runListingBidScanFromIndex({ originTabId, scanId, urls, startIdx,
     sendToTab(originTabId, { action: 'listingBidScanResult', scanId, url, ...(resp || { success: false, error: 'No response' }) });
     setScanResult(scanId, url, { url, ...(resp || { success: false, error: 'No response' }) });
     setScanState(scanId, { stage: 'scanned', total, completed: done, currentUrl: url, canResume: true, resume: { kind: 'listing', nextIdx, inFlightIdx: null } });
+    recordItemPerf(scanId, { itemMs: Date.now() - itemStart, loadMs: 0, scanMs });
 
     if (!getScanEntry(scanId)?.keepUserFocus) {
       await activateTab(originTabId);
@@ -1256,6 +1260,94 @@ function waitForTabComplete(tabId, timeoutMs = 30000) {
   });
 }
 
+function fmtMs(ms) {
+  const n = Number(ms);
+  if (!Number.isFinite(n)) return '—';
+  if (n < 1000) return `${Math.round(n)}ms`;
+  if (n < 60_000) return `${Math.round((n / 1000) * 10) / 10}s`;
+  return `${Math.round((n / 60_000) * 10) / 10}m`;
+}
+
+function ensurePerf(scanId) {
+  try {
+    const entry = getScanEntry(scanId);
+    if (!entry) return null;
+    if (!entry.perf) {
+      entry.perf = {
+        startedAt: Date.now(),
+        itemCount: 0,
+        itemSumMs: 0,
+        itemLastMs: 0,
+        itemMaxMs: 0,
+        lastPageNavMs: 0,
+        lastCollectMs: 0,
+        lastFlushAt: 0
+      };
+    }
+    return entry.perf;
+  } catch {
+    return null;
+  }
+}
+
+function recordItemPerf(scanId, { itemMs, loadMs, scanMs } = {}) {
+  try {
+    const p = ensurePerf(scanId);
+    if (!p) return;
+    const ms = Number(itemMs);
+    if (Number.isFinite(ms) && ms > 0) {
+      p.itemCount += 1;
+      p.itemSumMs += ms;
+      p.itemLastMs = ms;
+      p.itemMaxMs = Math.max(p.itemMaxMs || 0, ms);
+    }
+    const avgMs = p.itemCount ? p.itemSumMs / p.itemCount : 0;
+    const entry = getScanEntry(scanId);
+    const total = Number(entry?.total || 0);
+    const completed = Number(entry?.completed || 0);
+    const remaining = total > 0 ? Math.max(0, total - completed) : 0;
+    const etaMs = avgMs > 0 && remaining > 0 ? avgMs * remaining : 0;
+
+    try {
+      if (Number.isFinite(ms) && ms > 0) {
+        console.log(
+          `[scan:${scanId.slice(-8)}] item ${completed}/${total} total=${fmtMs(ms)} load=${fmtMs(loadMs)} scan=${fmtMs(scanMs)} avg=${fmtMs(avgMs)} eta=${fmtMs(etaMs)}`
+        );
+      }
+    } catch {}
+
+    const now = Date.now();
+    if (!p.lastFlushAt || now - p.lastFlushAt > 4000 || (completed && completed % 5 === 0)) {
+      p.lastFlushAt = now;
+      try {
+        setScanState(scanId, {
+          perf: {
+            avgItemMs: Math.round(avgMs),
+            lastItemMs: Math.round(p.itemLastMs || 0),
+            maxItemMs: Math.round(p.itemMaxMs || 0),
+            etaMs: Math.round(etaMs || 0),
+            lastPageNavMs: Math.round(p.lastPageNavMs || 0),
+            lastCollectMs: Math.round(p.lastCollectMs || 0),
+            updatedAt: now
+          }
+        });
+      } catch {}
+    }
+  } catch {}
+}
+
+function recordPagePerf(scanId, { navMs, collectMs } = {}) {
+  try {
+    const p = ensurePerf(scanId);
+    if (!p) return;
+    if (Number.isFinite(Number(navMs))) p.lastPageNavMs = Number(navMs) || 0;
+    if (Number.isFinite(Number(collectMs))) p.lastCollectMs = Number(collectMs) || 0;
+    try {
+      console.log(`[scan:${scanId.slice(-8)}] page nav=${fmtMs(navMs)} collect=${fmtMs(collectMs)}`);
+    } catch {}
+  } catch {}
+}
+
 function withScanParams(url, scanId) {
   try {
     const u = new URL(String(url || ''));
@@ -1428,7 +1520,9 @@ async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPa
     sendToTab(originTabId, { action: 'listingBidScanProgress', scanId, stage: `page ${pageNum}/${startPage + maxPages - 1} (loading)`, current: completed, total, url: pageUrl });
     setScanState(scanId, { stage: `page ${pageNum} loading`, total, completed, currentPage: pageNum, currentUrl: pageUrl });
 
+    const navStart = Date.now();
     const nav = await navigateTabTo(collectorId, pageUrl, 60000);
+    const navMs = Date.now() - navStart;
     if (!nav.ok) break;
 
     // Give the SPA time to hydrate and render cards
@@ -1440,12 +1534,15 @@ async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPa
 
     let urls = [];
     // Collect retries: StockX sometimes returns an empty grid for a moment (SPA/hydration).
+    const collectStart = Date.now();
     for (let attempt = 0; attempt < 3; attempt++) {
       const collected = await requestUrlsFromOriginTab(collectorId, { perPage, opts }, 25000);
       urls = Array.isArray(collected?.urls) ? collected.urls : [];
       if (urls.length) break;
       await new Promise((r) => setTimeout(r, 1200 + attempt * 700));
     }
+    const collectMs = Date.now() - collectStart;
+    recordPagePerf(scanId, { navMs, collectMs });
     if (!urls.length) {
       // Ended early: mark as stopped so it can be resumed.
       setScanState(scanId, { stage: `stopped (no urls on page ${pageNum})`, cancelled: true, success: false, canResume: true, finishedAt: Date.now() });
@@ -1523,9 +1620,12 @@ async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPa
       sendToTab(originTabId, { action: 'listingBidScanProgress', scanId, stage: `page ${pageNum} (scanning)`, current: completed, total, url });
       setScanState(scanId, { stage: `page ${pageNum} scanning`, total, completed, currentUrl: url, currentPage: pageNum });
 
+      const itemStart = Date.now();
       const effectiveMode = String(scanMode || getScanEntry(scanId)?.scanMode || 'listing').toLowerCase();
       const action = effectiveMode === 'xpress' ? 'scanProductXpressDeals' : 'scanProductBidOpportunities';
+      const scanStart = Date.now();
       const resp = await requestScanFromTab(tab.id, { action, scanId, url, mode: 'listing' }, 120000);
+      const scanMs = Date.now() - scanStart;
 
       closeTab(tab.id);
       untrackScanTab(scanId, tab.id);
@@ -1554,6 +1654,7 @@ async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPa
       if (!getScanEntry(scanId)?.keepUserFocus) {
         await activateTab(originTabId);
       }
+      recordItemPerf(scanId, { itemMs: Date.now() - itemStart, loadMs: 0, scanMs });
     }
   }
 
@@ -1656,8 +1757,11 @@ async function runListingBidScan({ originTabId, scanId, urls }) {
       }
     }
 
+    const itemStart = Date.now();
     const action = scanMode === 'xpress' ? 'scanProductXpressDeals' : 'scanProductBidOpportunities';
+    const scanStart = Date.now();
     const resp = await requestScanFromTab(tab.id, { action, scanId, url, mode: 'listing' }, 120000);
+    const scanMs = Date.now() - scanStart;
     closeTab(tab.id);
     untrackScanTab(scanId, tab.id);
 
@@ -1673,6 +1777,7 @@ async function runListingBidScan({ originTabId, scanId, urls }) {
       canResume: concurrency === 1,
       resume: { kind: 'listing', nextIdx, inFlightIdx: null }
     });
+    recordItemPerf(scanId, { itemMs: Date.now() - itemStart, loadMs: 0, scanMs });
 
     // Return user to the listing tab during sequential scans.
     if (concurrency === 1) {
