@@ -310,11 +310,12 @@ export default function TestPurchaseLinkingPage() {
     isVisible: boolean;
     message: string;
     type: NotificationType;
-  }>({ isVisible: false, message: '', type: 'success' });
+    durationMs?: number;
+  }>({ isVisible: false, message: '', type: 'success', durationMs: 12000 });
 
-  const showNotice = useCallback((message: string, type: NotificationType | 'info') => {
+  const showNotice = useCallback((message: string, type: NotificationType | 'info', durationMs?: number) => {
     const normalizedType: NotificationType = type === 'info' ? 'success' : type;
-    setNotification({ isVisible: true, message, type: normalizedType });
+    setNotification({ isVisible: true, message, type: normalizedType, durationMs });
   }, []);
 
   const LOCALHOST_DEFAULT_USER_ID = '20115098dd871b0a7863cd1017fa';
@@ -469,10 +470,10 @@ export default function TestPurchaseLinkingPage() {
     [purchases, selectedPurchaseId]
   );
 
-  const loadSales = useCallback(async () => {
+  const loadSales = useCallback(async (opts?: { silent?: boolean }) => {
     const u = userId.trim();
     if (!u) {
-      showNotice('❌ No userId found. Sign in (or ensure site password login).', 'error');
+      if (!opts?.silent) showNotice('❌ No userId found. Sign in (or ensure site password login).', 'error');
       return;
     }
     setLoadingSales(true);
@@ -505,18 +506,18 @@ export default function TestPurchaseLinkingPage() {
           }))
         : [];
       setSales(rows);
-      showNotice(`✅ Loaded ${rows.length} sale(s)${json?.nextCursorId ? ' (more available)' : ''}.`, 'success');
+      if (!opts?.silent) showNotice(`✅ Loaded ${rows.length} sale(s)${json?.nextCursorId ? ' (more available)' : ''}.`, 'success');
     } catch (e: any) {
-      showNotice(`❌ Failed to load sales: ${e?.message || 'Unknown error'}`, 'error');
+      if (!opts?.silent) showNotice(`❌ Failed to load sales: ${e?.message || 'Unknown error'}`, 'error');
     } finally {
       setLoadingSales(false);
     }
   }, [selectedSaleId, showNotice, userId]);
 
-  const loadPurchases = useCallback(async () => {
+  const loadPurchases = useCallback(async (opts?: { silent?: boolean }) => {
     const u = userId.trim();
     if (!u) {
-      showNotice('❌ No userId found. Sign in (or ensure site password login).', 'error');
+      if (!opts?.silent) showNotice('❌ No userId found. Sign in (or ensure site password login).', 'error');
       return;
     }
     setLoadingPurchases(true);
@@ -535,9 +536,9 @@ export default function TestPurchaseLinkingPage() {
           }))
         : [];
       setPurchases(rows);
-      showNotice(`✅ Loaded ${rows.length} purchase(s).`, 'success');
+      if (!opts?.silent) showNotice(`✅ Loaded ${rows.length} purchase(s).`, 'success');
     } catch (e: any) {
-      showNotice(`❌ Failed to load purchases: ${e?.message || 'Unknown error'}`, 'error');
+      if (!opts?.silent) showNotice(`❌ Failed to load purchases: ${e?.message || 'Unknown error'}`, 'error');
     } finally {
       setLoadingPurchases(false);
     }
@@ -980,7 +981,7 @@ export default function TestPurchaseLinkingPage() {
           );
         }
 
-        await loadSales();
+        await loadSales({ silent: true });
       } catch (e: any) {
         showNotice(`❌ StockX refresh failed: ${e?.message || 'Unknown error'}`, 'error');
       } finally {
@@ -1011,7 +1012,7 @@ export default function TestPurchaseLinkingPage() {
         if (!resp.ok || json?.success === false) throw new Error(json?.error || `Backfill failed (${resp.status})`);
         setLastSalesIdBackfill(json);
         if (json?.skipped) {
-          showNotice(`ℹ️ Identifier backfill skipped (TTL not expired).`, 'info');
+          showNotice(`ℹ️ Identifier backfill skipped (TTL not expired).`, 'info', 12000);
         } else {
           const s = json?.summary || {};
           const remaining =
@@ -1020,10 +1021,11 @@ export default function TestPurchaseLinkingPage() {
               : null;
           showNotice(
             `✅ Identifier backfill — updated=${s.updated ?? 0} failed=${s.failed ?? 0}${remaining !== null ? ` • remaining≈${remaining}` : ''}`,
-            'success'
+            'success',
+            20000
           );
         }
-        await loadSales();
+        await loadSales({ silent: true });
       } catch (e: any) {
         showNotice(`❌ Identifier backfill failed: ${e?.message || 'Unknown error'}`, 'error');
       } finally {
@@ -1261,6 +1263,7 @@ export default function TestPurchaseLinkingPage() {
         isVisible={notification.isVisible}
         message={notification.message}
         type={notification.type}
+        duration={notification.durationMs}
         onClose={() => setNotification((p) => ({ ...p, isVisible: false }))}
       />
 
