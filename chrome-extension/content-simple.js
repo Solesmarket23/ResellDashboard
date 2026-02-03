@@ -8806,15 +8806,16 @@ function ensureListingBidWidget() {
   const quickCountsPills = (() => {
     try {
       const results = state.results && typeof state.results === 'object' ? state.results : {};
-      const scanned = Object.keys(results).length;
+      // Prefer scan progress from state (more reliable across MV3 restarts), fall back to results count.
+      const scanned = Number.isFinite(Number(state.current)) && Number(state.current) > 0 ? Number(state.current) : Object.keys(results).length;
+      const total = Number.isFinite(Number(state.total)) && Number(state.total) > 0 ? Number(state.total) : 0;
       let opps = 0;
       for (const v of Object.values(results)) {
         const arr = Array.isArray(v?.opportunities) ? v.opportunities : [];
         opps += arr.length;
       }
-      if (!state.scanId && scanned === 0 && opps === 0) return '';
       return `<span style="display:inline-flex; gap:8px; align-items:center; flex-wrap:wrap;">
-        <span style="font-size:11px; font-weight:1000; padding:2px 8px; border-radius:999px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:rgba(255,255,255,0.85);">Scanned ${scanned}${state.total ? `/${state.total}` : ''}</span>
+        <span style="font-size:11px; font-weight:1000; padding:2px 8px; border-radius:999px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:rgba(255,255,255,0.85);">Scanned ${Math.max(0, scanned)}${total ? `/${total}` : ''}</span>
         <span style="font-size:11px; font-weight:1000; padding:2px 8px; border-radius:999px; background:rgba(34,197,94,0.18); border:1px solid rgba(34,197,94,0.35); color:#bbf7d0;">Opps ${opps}</span>
       </span>`;
     } catch {
