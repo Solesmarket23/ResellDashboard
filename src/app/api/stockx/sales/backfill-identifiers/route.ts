@@ -40,6 +40,38 @@ function parseMoney(value: any): number | null {
   return null;
 }
 
+function isMissingish(value: any): boolean {
+  const s = String(value ?? '').trim();
+  if (!s) return true;
+  const u = s.toUpperCase();
+  return (
+    u === 'UNKNOWN' ||
+    u === 'UNKNOWN PRODUCT' ||
+    u === 'UNKNOWN BRAND' ||
+    u === 'N/A' ||
+    u === 'NA' ||
+    u === 'NULL' ||
+    u === 'NONE' ||
+    u === 'UNAVAILABLE' ||
+    u === '-' ||
+    u === '—'
+  );
+}
+
+function normalizeSize(value: any): string {
+  const s = String(value ?? '').trim();
+  if (!s) return '';
+  const u = s
+    .toUpperCase()
+    .replace(/[()]/g, ' ')
+    .replace(/[_\-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (isMissingish(u)) return '';
+  // Common "US M 10" / "US 10" patterns
+  return u.replace(/^US\s+/i, '');
+}
+
 function getEffectiveUserId(request: NextRequest): string | null {
   const qpUserId = request.nextUrl.searchParams.get('userId')?.trim();
   if (qpUserId) return qpUserId;
@@ -152,10 +184,13 @@ async function fetchOrderDetails(orderNumber: string, apiKey: string, accessToke
 
 function hasUsefulIdentifierGaps(s: any): boolean {
   const styleId = String(s?.styleId || s?.product?.styleId || s?.product?.sku || '').trim();
-  const size = String(s?.size || s?.variant?.size || s?.variant?.variantValue || '').trim();
+  const sizeRaw = s?.size || s?.variant?.size || s?.variant?.variantValue || '';
+  const size = normalizeSize(sizeRaw);
   const orderNumber = String(s?.orderNumber || '').trim();
   if (!orderNumber) return false;
-  return !styleId || !size || !String(s?.product || '').trim() || !String(s?.brand || '').trim();
+  const product = s?.product;
+  const brand = s?.brand;
+  return isMissingish(styleId) || isMissingish(size) || isMissingish(product) || isMissingish(brand);
 }
 
 export async function POST(request: NextRequest) {
@@ -305,19 +340,62 @@ export async function POST(request: NextRequest) {
             date: details?.createdAt || details?.created || undefined,
           };
 
-          const styleId = details?.product?.styleId || details?.product?.sku || details?.sku || null;
-          const size = details?.variant?.variantValue || details?.variant?.size || details?.size || null;
-          const productName = details?.product?.productName || details?.product?.name || details?.productName || null;
-          const brand = details?.product?.brand || details?.brand || null;
-          const urlKey = details?.product?.urlKey || details?.product?.url_key || null;
-          const listingId = details?.listingId || details?.askId || null;
+          const styleId =
+            details?.product?.styleId ||
+            details?.product?.style_id ||
+            details?.product?.sku ||
+            details?.product?.skuId ||
+            details?.sku ||
+            details?.styleId ||
+            details?.style_id ||
+            details?.lineItem?.product?.styleId ||
+            details?.lineItem?.product?.sku ||
+            null;
+          const size =
+            details?.variant?.variantValue ||
+            details?.variant?.size ||
+            details?.variant?.displayValue ||
+            details?.variant?.name ||
+            details?.size ||
+            details?.variantValue ||
+            null;
+          const productName =
+            details?.product?.productName ||
+            details?.product?.name ||
+            details?.product?.title ||
+            details?.productName ||
+            details?.lineItem?.product?.productName ||
+            details?.lineItem?.product?.name ||
+            null;
+          const brand =
+            details?.product?.brand ||
+            details?.product?.brandName ||
+            details?.brand ||
+            details?.brandName ||
+            details?.lineItem?.product?.brand ||
+            null;
+          const urlKey =
+            details?.product?.urlKey ||
+            details?.product?.url_key ||
+            details?.product?.slug ||
+            details?.urlKey ||
+            details?.url_key ||
+            null;
+          const listingId = details?.listingId || details?.askId || details?.listing?.id || null;
 
-          if (styleId) patch.styleId = String(styleId);
-          if (size) patch.size = String(size);
-          if (productName) patch.product = String(productName);
-          if (brand) patch.brand = String(brand);
-          if (urlKey) patch.urlKey = String(urlKey);
-          if (listingId) patch.listingId = String(listingId);
+          const styleIdNorm = styleId ? String(styleId).trim() : '';
+          const sizeNorm = normalizeSize(size);
+          const productNorm = productName ? String(productName).trim() : '';
+          const brandNorm = brand ? String(brand).trim() : '';
+          const urlKeyNorm = urlKey ? String(urlKey).trim() : '';
+          const listingIdNorm = listingId ? String(listingId).trim() : '';
+
+          if (!isMissingish(styleIdNorm)) patch.styleId = styleIdNorm;
+          if (sizeNorm) patch.size = sizeNorm;
+          if (!isMissingish(productNorm)) patch.product = productNorm;
+          if (!isMissingish(brandNorm)) patch.brand = brandNorm;
+          if (!isMissingish(urlKeyNorm)) patch.urlKey = urlKeyNorm;
+          if (!isMissingish(listingIdNorm)) patch.listingId = listingIdNorm;
 
           if (salePrice !== null) patch.salePrice = salePrice;
           if (payout !== null) patch.payout = payout;
