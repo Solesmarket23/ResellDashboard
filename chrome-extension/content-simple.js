@@ -8488,11 +8488,24 @@ function formatOppRow(opp, { slug, url } = {}) {
 }
 
 function ensureListingBidWidget() {
+  // Debug-mode: tag NDJSON runs so we can distinguish pre/post fix in the log file.
+  try {
+    if (!window.__stockxDbgRunId) window.__stockxDbgRunId = 'focus-input-postfix1';
+  } catch {}
+
   const existing = document.getElementById('stockx-bid-opps-widget');
   if (!isStockxListingPage()) {
     if (existing) existing.remove();
     return;
   }
+
+  // If the user is interacting with the widget (typing/clicking), DO NOT re-render it.
+  // Runtime evidence showed the input becomes disconnected during focus attempts (isConnected=false),
+  // which strongly suggests the widget DOM is being replaced mid-click, causing the focus flicker.
+  try {
+    const until = Number(window.__stockxListingWidgetInteractingUntil || 0);
+    if (existing && Date.now() < until) return;
+  } catch {}
 
   const state = (window.__stockxListingBidScanState =
     window.__stockxListingBidScanState || {
