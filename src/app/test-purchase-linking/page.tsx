@@ -958,7 +958,13 @@ export default function TestPurchaseLinkingPage() {
         const resp = await fetch('/api/stockx/sales/refresh-nonfinal', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-user-id': u },
-          body: JSON.stringify({ force: opts?.force ? true : false }),
+          body: JSON.stringify({
+            force: opts?.force ? true : false,
+            // Keep this modest; this endpoint is mainly for payout/status backfill.
+            maxOrders: 120,
+            scanLimit: 12000,
+            ttlHours: 12,
+          }),
         });
         const json = await resp.json().catch(() => ({}));
         if (!resp.ok || json?.success === false) throw new Error(json?.error || `Refresh failed (${resp.status})`);
@@ -993,7 +999,13 @@ export default function TestPurchaseLinkingPage() {
         const resp = await fetch('/api/stockx/sales/backfill-identifiers', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-user-id': u },
-          body: JSON.stringify({ force: opts?.force ? true : false }),
+          body: JSON.stringify({
+            force: opts?.force ? true : false,
+            // This is the main lever to eliminate missing_sale_styleId buckets.
+            maxOrders: 400,
+            scanLimit: 20000,
+            ttlHours: 24,
+          }),
         });
         const json = await resp.json().catch(() => ({}));
         if (!resp.ok || json?.success === false) throw new Error(json?.error || `Backfill failed (${resp.status})`);
@@ -1002,7 +1014,14 @@ export default function TestPurchaseLinkingPage() {
           showNotice(`ℹ️ Identifier backfill skipped (TTL not expired).`, 'info');
         } else {
           const s = json?.summary || {};
-          showNotice(`✅ Identifier backfill — updated=${s.updated ?? 0} failed=${s.failed ?? 0}`, 'success');
+          const remaining =
+            typeof s.candidateSales === 'number' && typeof s.attempted === 'number'
+              ? Math.max(0, s.candidateSales - s.attempted)
+              : null;
+          showNotice(
+            `✅ Identifier backfill — updated=${s.updated ?? 0} failed=${s.failed ?? 0}${remaining !== null ? ` • remaining≈${remaining}` : ''}`,
+            'success'
+          );
         }
         await loadSales();
       } catch (e: any) {
@@ -1797,7 +1816,7 @@ export default function TestPurchaseLinkingPage() {
                   <div className={`mt-1 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                     {lastSalesIdBackfill?.skipped
                       ? 'Skipped (TTL not expired).'
-                      : `Updated ${lastSalesIdBackfill?.summary?.updated ?? 0} sale(s), failed ${lastSalesIdBackfill?.summary?.failed ?? 0}.`}
+                      : `Updated ${lastSalesIdBackfill?.summary?.updated ?? 0} sale(s), failed ${lastSalesIdBackfill?.summary?.failed ?? 0}, attempted ${lastSalesIdBackfill?.summary?.attempted ?? 0} / ${lastSalesIdBackfill?.summary?.candidateSales ?? 0}.`}
                   </div>
                 </div>
               )}
