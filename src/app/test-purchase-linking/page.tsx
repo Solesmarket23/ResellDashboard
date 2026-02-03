@@ -560,6 +560,7 @@ export default function TestPurchaseLinkingPage() {
   const [fifoStrictDelivery, setFifoStrictDelivery] = useState(true);
   const [fifoUnlinkedOnly, setFifoUnlinkedOnly] = useState(false);
   const [fifoIncludePending, setFifoIncludePending] = useState(true);
+  const [cogsMethod, setCogsMethod] = useState<'fifo' | 'lifo'>('fifo');
   const [fifoWindowPreset, setFifoWindowPreset] = useState<'this_month' | 'today' | 'custom'>('this_month');
   const [fifoCustomFromYmd, setFifoCustomFromYmd] = useState(() => {
     const d = new Date();
@@ -858,7 +859,8 @@ export default function TestPurchaseLinkingPage() {
         // strictDelivery=1 means only purchases with actualDelivery are eligible.
         strictDelivery: fifoStrictDelivery ? '1' : '0',
         // includePending=1 includes active/pending/shipped/auth/etc. (excludes known non-sales like CANCELED/AUTHFAILED).
-        includePending: fifoIncludePending ? '1' : '0'
+        includePending: fifoIncludePending ? '1' : '0',
+        cogsMethod
       });
       if (saleWindow) {
         qs.set('saleStartMs', String(saleWindow.startMs));
@@ -893,6 +895,7 @@ export default function TestPurchaseLinkingPage() {
       setFifoLoading(false);
     }
   }, [
+    cogsMethod,
     fifoCustomFromYmd,
     fifoCustomToYmd,
     fifoIncludePending,
@@ -1345,6 +1348,21 @@ export default function TestPurchaseLinkingPage() {
                     className="h-4 w-4"
                   />
                   Include pending/active (exclude canceled/authfailed/didnotship/returned)
+                </label>
+
+                <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <span>COGS:</span>
+                  <select
+                    value={cogsMethod}
+                    onChange={(e) => setCogsMethod(e.target.value === 'lifo' ? 'lifo' : 'fifo')}
+                    className={`h-9 rounded-md border px-2 text-sm ${
+                      isNeon ? 'bg-gray-900 border-gray-700 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
+                    }`}
+                    title="FIFO = oldest inventory first (recommended). LIFO = newest inventory first (debug/testing)."
+                  >
+                    <option value="fifo">FIFO (recommended)</option>
+                    <option value="lifo">LIFO (debug)</option>
+                  </select>
                 </label>
               </div>
 

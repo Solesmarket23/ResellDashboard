@@ -612,6 +612,8 @@ export async function GET(request: NextRequest) {
     const unlinkedOnly = request.nextUrl.searchParams.get('unlinkedOnly') !== '0';
     const strictDelivery = request.nextUrl.searchParams.get('strictDelivery') !== '0';
     const includePending = request.nextUrl.searchParams.get('includePending') !== '0';
+    const cogsMethodRaw = (request.nextUrl.searchParams.get('cogsMethod') || 'fifo').trim().toLowerCase();
+    const cogsMethod: 'fifo' | 'lifo' = cogsMethodRaw === 'lifo' ? 'lifo' : 'fifo';
     const saleStartMsRaw = request.nextUrl.searchParams.get('saleStartMs');
     const saleEndMsRaw = request.nextUrl.searchParams.get('saleEndMs');
     const saleStartMs = saleStartMsRaw ? Number(saleStartMsRaw) : null;
@@ -989,7 +991,7 @@ export async function GET(request: NextRequest) {
       const saleListingId = getSaleListingId(sale);
 
       let linkedPurchase: PurchaseCandidate | null = null;
-      let method: 'listingId' | 'fifo' | 'name' | null = null;
+      let method: 'listingId' | 'fifo' | 'lifo' | 'name' | null = null;
 
       // 1) Exact listingId match
       if (saleListingId) {
@@ -1002,13 +1004,19 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // 2) FIFO by styleId+size
+      // 2) FIFO/LIFO by styleId+size
       if (!linkedPurchase && saleStyleId && saleSize) {
         const key = purchaseKey(saleStyleId, saleSize);
         const candidates = purchaseIndex.get(key) || [];
         const totalCandidates = candidates.length;
         let candidatesConsidered = 0;
-        for (const cand of candidates) {
+        const iter =
+          cogsMethod === 'lifo'
+            ? (function* () {
+                for (let i = candidates.length - 1; i >= 0; i--) yield candidates[i];
+              })()
+            : candidates;
+        for (const cand of iter as any) {
           const pid = String(cand.id || '');
           if (!pid || usedPurchaseIds.has(pid)) continue;
           candidatesConsidered++;
@@ -1022,7 +1030,7 @@ export async function GET(request: NextRequest) {
             continue;
           }
           linkedPurchase = cand;
-          method = 'fifo';
+          method = cogsMethod;
           usedPurchaseIds.add(pid);
           break;
         }
@@ -1052,7 +1060,13 @@ export async function GET(request: NextRequest) {
         let skippedAfterSaleDate = 0;
         let skippedAfterSaleDateButUnreliable = 0;
 
-        for (const cand of candidates) {
+        const iter =
+          cogsMethod === 'lifo'
+            ? (function* () {
+                for (let i = candidates.length - 1; i >= 0; i--) yield candidates[i];
+              })()
+            : candidates;
+        for (const cand of iter as any) {
           const pid = String(cand.id || '');
           if (!pid) continue;
           if (usedPurchaseIds.has(pid)) {
@@ -1121,6 +1135,10 @@ export async function GET(request: NextRequest) {
         const purchaseFifoIso = msToIso(purchaseFifoMs);
         const purchaseFifoSource = (linkedPurchase as any)._dateSource || null;
         const purchaseStyleId = getPurchaseStyleId(linkedPurchase);
+        const inventoryAgeDays =
+          typeof saleCreatedAtMs === 'number' && typeof purchaseFifoMs === 'number'
+            ? Math.round(((saleCreatedAtMs - purchaseFifoMs) / 86400000) * 10) / 10
+            : null;
         const profit =
           typeof saleNetPayout === 'number' && typeof purchaseCost === 'number'
             ? saleNetPayout - purchaseCost
@@ -1143,6 +1161,7 @@ export async function GET(request: NextRequest) {
           linkedPurchaseStyleId: purchaseStyleId,
           purchaseFifoIso,
           purchaseFifoSource,
+          inventoryAgeDays,
           purchaseCost,
           profit,
           purchaseActualDelivery: (linkedPurchase as any)?.actualDelivery || null
@@ -1224,6 +1243,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       userId,
+      cogsMethod,
       filters: hasSaleWindow ? { saleStartMs, saleEndMs } : null,
       summary: {
         // When a sale window is provided, we allocate across all sales before the window end.
