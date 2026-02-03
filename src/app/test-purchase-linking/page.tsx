@@ -556,8 +556,8 @@ export default function TestPurchaseLinkingPage() {
   const [fifoLoading, setFifoLoading] = useState(false);
   const [fifoSummary, setFifoSummary] = useState<any | null>(null);
   const [fifoRows, setFifoRows] = useState<any[]>([]);
-  // Default ON: most users only sell after delivery, so delivered inventory is the safest FIFO constraint.
-  const [fifoStrictDelivery, setFifoStrictDelivery] = useState(true);
+  // Default OFF: until `actualDelivery` is reliably populated, strict delivery causes lots of false no_match.
+  const [fifoStrictDelivery, setFifoStrictDelivery] = useState(false);
   const [fifoUnlinkedOnly, setFifoUnlinkedOnly] = useState(false);
   const [fifoIncludePending, setFifoIncludePending] = useState(true);
   const [cogsMethod, setCogsMethod] = useState<'fifo' | 'lifo'>('fifo');
