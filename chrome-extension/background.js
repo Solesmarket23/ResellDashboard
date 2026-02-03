@@ -115,10 +115,11 @@ async function loadScanSettingsForSlack() {
       slackEnabled: !!s.slackEnabled,
       slackWebhookUrl: safeStr(s.slackWebhookUrl || '').trim(),
       slackChannel: safeStr(s.slackChannel || '').trim(),
-      slackMention: safeStr(s.slackMention || '').trim()
+      slackMention: safeStr(s.slackMention || '').trim(),
+      slackAllowDuplicates: !!s.slackAllowDuplicates
     };
   } catch {
-    return { slackEnabled: false, slackWebhookUrl: '', slackChannel: '', slackMention: '' };
+    return { slackEnabled: false, slackWebhookUrl: '', slackChannel: '', slackMention: '', slackAllowDuplicates: false };
   }
 }
 
@@ -248,17 +249,20 @@ async function maybeNotifySlackForOpportunities({ scanId, resultUrl, result }) {
       return;
     }
 
-    // Dedupe per (scanId, slug, sizeParam, kind) to avoid spam.
+    // Dedupe per (scanId, slug, sizeParam, kind) to avoid spam (unless explicitly disabled for testing).
     const now = Date.now();
-    const idx = await loadSlackNotifiedIndex();
+    const allowDupes = !!cfg.slackAllowDuplicates;
+    const idx = allowDupes ? {} : await loadSlackNotifiedIndex();
     const MAX_SAVE = 3000;
     const TTL_MS = 24 * 60 * 60 * 1000;
 
     // Prune old entries first.
     try {
-      for (const [k, v] of Object.entries(idx)) {
-        const ts = Number(v || 0);
-        if (ts && now - ts > TTL_MS) delete idx[k];
+      if (!allowDupes) {
+        for (const [k, v] of Object.entries(idx)) {
+          const ts = Number(v || 0);
+          if (ts && now - ts > TTL_MS) delete idx[k];
+        }
       }
     } catch {}
 
@@ -318,7 +322,7 @@ async function maybeNotifySlackForOpportunities({ scanId, resultUrl, result }) {
         const kind = safeStr(o?.kind || '').toLowerCase() || (Number.isFinite(Number(o?.discountPct)) ? 'xpress' : 'bid');
         if (!sizeParam && !sizeLabel) continue;
         const key = `${safeStr(scanId)}::${slug}::${sizeParam || sizeLabel}::${kind}`;
-        if (idx[key]) continue;
+        if (!allowDupes && idx[key]) continue;
         skippedAllDeduped = false;
 
         const looksLikeSizeParam = (s) => {
@@ -393,17 +397,19 @@ async function maybeNotifySlackForOpportunities({ scanId, resultUrl, result }) {
         if (!ok) {
           // Keep looping, but record the failure in status (postOne already did).
         }
-        idx[key] = now;
+        if (!allowDupes) idx[key] = now;
         sent += 1;
         // Keep the index from growing without bound.
         try {
-          const keys = Object.keys(idx);
-          if (keys.length > MAX_SAVE) {
-            // delete oldest-ish by timestamp (cheap sort)
-            keys
-              .sort((a, b) => Number(idx[a] || 0) - Number(idx[b] || 0))
-              .slice(0, Math.max(1, keys.length - MAX_SAVE))
-              .forEach((k) => delete idx[k]);
+          if (!allowDupes) {
+            const keys = Object.keys(idx);
+            if (keys.length > MAX_SAVE) {
+              // delete oldest-ish by timestamp (cheap sort)
+              keys
+                .sort((a, b) => Number(idx[a] || 0) - Number(idx[b] || 0))
+                .slice(0, Math.max(1, keys.length - MAX_SAVE))
+                .forEach((k) => delete idx[k]);
+            }
           }
         } catch {}
         // avoid Slack rate limits
@@ -411,7 +417,7 @@ async function maybeNotifySlackForOpportunities({ scanId, resultUrl, result }) {
         // Safety cap per scan result flush
         if (sent >= 25) break;
       }
-      if (sent === 0 && skippedAllDeduped) {
+      if (!allowDupes && sent === 0 && skippedAllDeduped) {
         try {
           await setSlackStatus({
             ok: null,
@@ -420,7 +426,7 @@ async function maybeNotifySlackForOpportunities({ scanId, resultUrl, result }) {
           });
         } catch {}
       }
-      await saveSlackNotifiedIndex(idx);
+      if (!allowDupes) await saveSlackNotifiedIndex(idx);
     });
 
     globalThis.__stockxSlackQueue = nextQueue.catch(() => {});

@@ -250,6 +250,18 @@ bundle"></textarea>
           <label for="slackMention">Mention (optional)</label>
           <input id="slackMention" type="text" placeholder="@Solesmarket23 or <@U123ABC456>" />
         </div>
+        <div class="row">
+          <label for="slackAllowDuplicates">Allow duplicate Slack sends (testing)</label>
+          <div>
+            <label style="display:flex; gap:8px; align-items:center; cursor:pointer; user-select:none;">
+              <input id="slackAllowDuplicates" type="checkbox" />
+              Allow duplicates
+            </label>
+            <div class="muted" style="margin-top:6px;">
+              When enabled, the extension will not de-dupe opportunities and may send repeats.
+            </div>
+          </div>
+        </div>
         <div class="muted" style="margin-top:6px;">
           Note: many Slack Incoming Webhooks are locked to a single channel and will ignore the <code>channel</code> field. If so, create a webhook specifically for the target channel.
         </div>

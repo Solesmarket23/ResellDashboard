@@ -22,7 +22,8 @@ function defaultSettings() {
     slackEnabled: false,
     slackWebhookUrl: '',
     slackChannel: '',
-    slackMention: '@Solesmarket23'
+    slackMention: '@Solesmarket23',
+    slackAllowDuplicates: false
   };
 }
 
@@ -250,6 +251,7 @@ function readForm() {
   const slackWebhookUrl = String(document.getElementById('slackWebhookUrl')?.value || '').trim();
   const slackChannel = String(document.getElementById('slackChannel')?.value || '').trim();
   const slackMention = String(document.getElementById('slackMention')?.value || '').trim();
+  const slackAllowDuplicates = !!document.getElementById('slackAllowDuplicates')?.checked;
 
   const includeCategories = Array.from(document.querySelectorAll('input[data-cat]'))
     .filter((el) => el.checked)
@@ -274,7 +276,8 @@ function readForm() {
     slackEnabled,
     slackWebhookUrl,
     slackChannel,
-    slackMention: slackMention || defaultSettings().slackMention
+    slackMention: slackMention || defaultSettings().slackMention,
+    slackAllowDuplicates
   };
 }
 
@@ -295,6 +298,7 @@ function writeForm(s) {
   document.getElementById('slackWebhookUrl').value = String(s.slackWebhookUrl || '');
   document.getElementById('slackChannel').value = String(s.slackChannel || '');
   document.getElementById('slackMention').value = String(s.slackMention || '');
+  document.getElementById('slackAllowDuplicates').checked = !!s.slackAllowDuplicates;
 
   const set = new Set(Array.isArray(s.includeCategories) ? s.includeCategories : []);
   Array.from(document.querySelectorAll('input[data-cat]')).forEach((el) => {
