@@ -1614,6 +1614,45 @@ export default function TestPurchaseLinkingPage() {
                   Allocated (for FIFO correctness): wouldLink={fifoSummary.allocated.wouldLink} • noMatch={fifoSummary.allocated.noMatch} • alreadyLinked={fifoSummary.allocated.alreadyLinked}
                 </div>
               )}
+
+              {fifoSummary?.windowDebug &&
+                (Number(fifoSummary?.returnedRows ?? fifoRows.length) === 0) &&
+                (typeof fifoSummary?.totalSalesScanned === 'number' ? fifoSummary.totalSalesScanned : 0) > 0 && (
+                  <div
+                    className={`mt-3 rounded-md border p-3 text-xs ${
+                      isNeon
+                        ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-200'
+                        : 'bg-yellow-50 border-yellow-200 text-yellow-900'
+                    }`}
+                  >
+                    <div className="font-semibold">No rows returned for this window</div>
+                    <div className="mt-1">
+                      We allocated FIFO across {fifoSummary.totalSalesScanned} sale(s), but <span className="font-semibold">none</span> have a parsed
+                      sale timestamp inside this window.
+                    </div>
+                    <div className="mt-2">
+                      Window: {String(fifoSummary.windowDebug.startIso || '—')} → {String(fifoSummary.windowDebug.endIso || '—')}
+                    </div>
+                    <div className="mt-1">
+                      Sales date range in DB (parsed): {String(fifoSummary.windowDebug.minEventIso || '—')} → {String(fifoSummary.windowDebug.maxEventIso || '—')}
+                    </div>
+                    <div className="mt-1">
+                      In-window by timestamp: {fifoSummary.windowDebug.inWindowByEventMs}
+                      {typeof fifoSummary.windowDebug.scannedWithMissingEventMs === 'number' && fifoSummary.windowDebug.scannedWithMissingEventMs > 0
+                        ? ` • missingEventMs=${fifoSummary.windowDebug.scannedWithMissingEventMs}`
+                        : ''}
+                    </div>
+                    <div className="mt-2">
+                      Next steps:
+                      <div className="mt-1">
+                        - If you expected Feb sales: run <span className="font-semibold">StockX Sales Import</span> for “Last 1 month” (Completed-only OFF), then reload + recompute.
+                      </div>
+                      <div className="mt-1">
+                        - If sales exist but dates look wrong: click <span className="font-semibold">Refresh StockX (non-final)</span> to backfill status/payout/date, then recompute.
+                      </div>
+                    </div>
+                  </div>
+                )}
               <div className={`mt-1 text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
                 {fifoWindowPreset === 'today'
                   ? 'Filtered to Today (local time).'

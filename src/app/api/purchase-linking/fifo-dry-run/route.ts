@@ -647,6 +647,8 @@ export async function GET(request: NextRequest) {
       const allocationEndMs = saleEndMs as number;
 
       const salesForAllocation: any[] = [];
+      let scannedWithMissingEventMs = 0;
+      let scannedAfterEnd = 0;
 
       // Scan through sales in pages and keep any sale with eventMs < allocationEndMs.
       // This avoids requiring Firestore composite indexes on (userId, date).
@@ -671,10 +673,15 @@ export async function GET(request: NextRequest) {
           if (!shouldIncludeSaleByStatus((s as any)?.status, includePending)) continue;
           const ev = getSaleEventMs(s);
           const ms = ev.ms;
-          if (typeof ms !== 'number') continue;
+          if (typeof ms !== 'number') {
+            scannedWithMissingEventMs++;
+            continue;
+          }
           if (ms < allocationEndMs) {
             (s as any)._eventMs = ms;
             salesForAllocation.push(s);
+          } else {
+            scannedAfterEnd++;
           }
         }
 
@@ -756,6 +763,15 @@ export async function GET(request: NextRequest) {
 
       // We'll allocate FIFO across salesForAllocation, but only return rows inside the requested window.
       sales = salesForAllocation;
+
+      // Attach window debug so the UI can explain "rows=0".
+      (request as any)._fifoWindowDebug = {
+        saleStartMs,
+        saleEndMs,
+        allocationEndMs,
+        scannedWithMissingEventMs,
+        scannedAfterEnd,
+      };
     } else {
       const salesQuery: FirebaseFirestore.Query = db
         .collection('user_sales')
@@ -1266,6 +1282,47 @@ export async function GET(request: NextRequest) {
           noMatch: noMatchAllocated,
           alreadyLinked: alreadyLinkedAllocated,
         },
+        windowDebug: (() => {
+          if (!hasSaleWindow) return null;
+          const dbg = (request as any)._fifoWindowDebug || {};
+          const start = saleStartMs as number;
+          const end = saleEndMs as number;
+          let inWindowByEventMs = 0;
+          let minMs: number | null = null;
+          let maxMs: number | null = null;
+          const sample: any[] = [];
+
+          for (const s of sales) {
+            const ms = typeof (s as any)?._eventMs === 'number' ? (s as any)._eventMs : null;
+            if (typeof ms !== 'number') continue;
+            if (minMs === null || ms < minMs) minMs = ms;
+            if (maxMs === null || ms > maxMs) maxMs = ms;
+            if (ms >= start && ms < end) {
+              inWindowByEventMs += 1;
+              if (sample.length < 5) {
+                sample.push({
+                  orderNumber: s?.orderNumber || null,
+                  status: s?.status || null,
+                  date: s?.date || null,
+                  eventMs: ms,
+                  eventIso: msToIso(ms),
+                });
+              }
+            }
+          }
+
+          return {
+            startIso: msToIso(start),
+            endIso: msToIso(end),
+            allocationEndIso: msToIso((dbg as any).allocationEndMs ?? null),
+            inWindowByEventMs,
+            minEventIso: msToIso(minMs),
+            maxEventIso: msToIso(maxMs),
+            scannedWithMissingEventMs: (dbg as any).scannedWithMissingEventMs ?? 0,
+            scannedAfterEnd: (dbg as any).scannedAfterEnd ?? 0,
+            sampleInWindow: sample,
+          };
+        })(),
         purchasesDebug: {
           total: purchasesTotal,
           eligible: purchasesEligible,
