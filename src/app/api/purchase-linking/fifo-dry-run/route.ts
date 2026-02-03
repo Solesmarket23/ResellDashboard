@@ -931,9 +931,14 @@ export async function GET(request: NextRequest) {
     }
 
     const results: any[] = [];
-    let wouldLink = 0;
-    let noMatch = 0;
-    let alreadyLinked = 0;
+    // NOTE: We allocate across ALL eligible sales <= window end (for FIFO correctness),
+    // but only return rows IN the selected window. Keep both counters to avoid confusing UI.
+    let wouldLinkAllocated = 0;
+    let noMatchAllocated = 0;
+    let alreadyLinkedAllocated = 0;
+    let wouldLinkInWindow = 0;
+    let noMatchInWindow = 0;
+    let alreadyLinkedInWindow = 0;
 
     for (const sale of sales) {
       // If we have a sale window, only return rows in-window, but still allocate FIFO across all sales <= end.
@@ -958,7 +963,8 @@ export async function GET(request: NextRequest) {
       const salePurchasePrice = toNumberOrNull(sale?.purchasePrice);
       const saleProfit = toNumberOrNull(sale?.profit);
       if (existingLinkedPurchaseId) {
-        alreadyLinked++;
+        alreadyLinkedAllocated++;
+        if (isInWindow) alreadyLinkedInWindow++;
         if (isInWindow) {
           results.push({
             saleOrderNumber: sale?.orderNumber || null,
@@ -1129,7 +1135,8 @@ export async function GET(request: NextRequest) {
       }
 
       if (linkedPurchase) {
-        wouldLink++;
+        wouldLinkAllocated++;
+        if (isInWindow) wouldLinkInWindow++;
         const purchaseCost = getPurchaseCost(linkedPurchase);
         const purchaseFifoMs = typeof linkedPurchase._dateMs === 'number' ? linkedPurchase._dateMs : null;
         const purchaseFifoIso = msToIso(purchaseFifoMs);
@@ -1167,7 +1174,8 @@ export async function GET(request: NextRequest) {
           purchaseActualDelivery: (linkedPurchase as any)?.actualDelivery || null
         });
       } else {
-        noMatch++;
+        noMatchAllocated++;
+        if (isInWindow) noMatchInWindow++;
         const dbg = (sale as any)._fifoDebug || null;
         const nameDbg = (sale as any)._nameDebug || null;
         const fifoCandidatesTotal = typeof dbg?.candidatesTotal === 'number' ? dbg.candidatesTotal : 0;
@@ -1246,12 +1254,18 @@ export async function GET(request: NextRequest) {
       cogsMethod,
       filters: hasSaleWindow ? { saleStartMs, saleEndMs } : null,
       summary: {
-        // When a sale window is provided, we allocate across all sales before the window end.
-        // `results` only contains in-window rows.
-        totalSalesScanned: sales.length,
-        wouldLink,
-        noMatch,
-        alreadyLinked,
+        // When a sale window is provided, we allocate across all sales before the window end (FIFO correctness),
+        // but `results` contains ONLY in-window rows (what the UI shows).
+        totalSalesScanned: sales.length, // allocated sales count (not just window)
+        returnedRows: results.length,
+        wouldLink: wouldLinkInWindow,
+        noMatch: noMatchInWindow,
+        alreadyLinked: alreadyLinkedInWindow,
+        allocated: {
+          wouldLink: wouldLinkAllocated,
+          noMatch: noMatchAllocated,
+          alreadyLinked: alreadyLinkedAllocated,
+        },
         purchasesDebug: {
           total: purchasesTotal,
           eligible: purchasesEligible,

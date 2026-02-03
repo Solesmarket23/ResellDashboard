@@ -1607,8 +1607,13 @@ export default function TestPurchaseLinkingPage() {
             <div className={`mt-4 rounded-lg p-4 ${isNeon ? 'bg-gray-900/40 border border-gray-700' : 'bg-gray-50 border border-gray-200'}`}>
               <div className="text-sm font-semibold">FIFO committed profit summary</div>
               <div className={`mt-1 text-sm ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-                scanned={fifoSummary.totalSalesScanned} • wouldLink={fifoSummary.wouldLink} • noMatch={fifoSummary.noMatch} • alreadyLinked={fifoSummary.alreadyLinked}
+                scanned={fifoSummary.totalSalesScanned} • rows={fifoSummary.returnedRows ?? fifoRows.length} • wouldLink={fifoSummary.wouldLink} • noMatch={fifoSummary.noMatch} • alreadyLinked={fifoSummary.alreadyLinked}
               </div>
+              {fifoSummary?.allocated && (
+                <div className={`mt-1 text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                  Allocated (for FIFO correctness): wouldLink={fifoSummary.allocated.wouldLink} • noMatch={fifoSummary.allocated.noMatch} • alreadyLinked={fifoSummary.allocated.alreadyLinked}
+                </div>
+              )}
               <div className={`mt-1 text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
                 {fifoWindowPreset === 'today'
                   ? 'Filtered to Today (local time).'
