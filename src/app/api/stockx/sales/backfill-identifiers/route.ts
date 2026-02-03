@@ -294,12 +294,14 @@ export async function POST(request: NextRequest) {
           const size = details?.variant?.variantValue || details?.variant?.size || details?.size || null;
           const productName = details?.product?.productName || details?.product?.name || details?.productName || null;
           const brand = details?.product?.brand || details?.brand || null;
+          const urlKey = details?.product?.urlKey || details?.product?.url_key || null;
           const listingId = details?.listingId || details?.askId || null;
 
           if (styleId) patch.styleId = String(styleId);
           if (size) patch.size = String(size);
           if (productName) patch.product = String(productName);
           if (brand) patch.brand = String(brand);
+          if (urlKey) patch.urlKey = String(urlKey);
           if (listingId) patch.listingId = String(listingId);
 
           if (salePrice !== null) patch.salePrice = salePrice;

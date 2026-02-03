@@ -313,6 +313,21 @@ function getSaleStyleId(sale: any): string | null {
   return null;
 }
 
+function getSaleUrlKey(sale: any): string | null {
+  const candidates: unknown[] = [
+    sale?.urlKey,
+    sale?.product?.urlKey,
+    sale?.saleData?.product?.urlKey,
+    sale?.saleData?.product?.url_key,
+    sale?.saleData?.product?.urlKey,
+  ];
+  for (const v of candidates) {
+    const s = String(v || '').trim();
+    if (s) return s;
+  }
+  return null;
+}
+
 function getSaleSizeRaw(sale: any): string | null {
   const candidates: unknown[] = [
     sale?.size,
@@ -408,6 +423,7 @@ function normalizeSaleForFifo(raw: any, source: 'user_sales' | 'stockxSales'): a
   const brand = getSaleBrand(base);
   const size = getSaleSizeRaw(base);
   const styleId = getSaleStyleId(base);
+  const urlKey = getSaleUrlKey(base);
   const status = (base?.status || raw?.status || null);
   const imageUrl = base?.imageUrl || base?.product?.imageUrl || base?.product?.image || null;
   const { salePrice, totalPayout, fees } = getSalePricing(base);
@@ -431,6 +447,7 @@ function normalizeSaleForFifo(raw: any, source: 'user_sales' | 'stockxSales'): a
     brand,
     size,
     styleId,
+    urlKey,
     status: status ? String(status) : null,
     imageUrl,
     salePrice,
@@ -487,6 +504,20 @@ function msToIso(ms: number | null): string | null {
 
 function purchaseKey(styleId: string, size: string): string {
   return `${styleId}::${normalizeSize(size)}`;
+}
+
+function slugifyKey(raw: unknown): string {
+  const s = String(raw || '').trim().toLowerCase();
+  if (!s) return '';
+  return s
+    .replace(/[\u2019']/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function purchaseSlugKey(productNameOrSlug: string, size: string): string {
+  return `${slugifyKey(productNameOrSlug)}::${normalizeSize(size)}`;
 }
 
 function normalizeProductName(name: unknown): string {
@@ -837,6 +868,7 @@ export async function GET(request: NextRequest) {
 
     const purchaseIndex = new Map<string, PurchaseCandidate[]>();
     const purchaseNameIndex = new Map<string, PurchaseCandidate[]>();
+    const purchaseSlugIndex = new Map<string, PurchaseCandidate[]>();
     const purchaseBySize = new Map<string, PurchaseCandidate[]>();
     const purchaseByStockxListingId = new Map<string, PurchaseCandidate>();
     const usedPurchaseIds = new Set<string>();
@@ -906,6 +938,14 @@ export async function GET(request: NextRequest) {
           purchaseNameIndex.set(nk, arr);
           purchasesIndexedByName++;
         }
+
+        // Slug index: use StockX-style urlKey match when possible (more stable than fuzzy tokens).
+        const sk = purchaseSlugKey(productName, size);
+        if (sk && !sk.startsWith('::')) {
+          const arr = purchaseSlugIndex.get(sk) || [];
+          arr.push(p);
+          purchaseSlugIndex.set(sk, arr);
+        }
       }
     }
 
@@ -932,6 +972,18 @@ export async function GET(request: NextRequest) {
         return aCreated - bCreated;
       });
       purchaseNameIndex.set(key, arr);
+    }
+
+    for (const [key, arr] of purchaseSlugIndex.entries()) {
+      arr.sort((a, b) => {
+        const aMs = typeof a._dateMs === 'number' ? a._dateMs : Number.POSITIVE_INFINITY;
+        const bMs = typeof b._dateMs === 'number' ? b._dateMs : Number.POSITIVE_INFINITY;
+        if (aMs !== bMs) return aMs - bMs;
+        const aCreated = parseDateMs(a.createdAt) ?? Number.POSITIVE_INFINITY;
+        const bCreated = parseDateMs(b.createdAt) ?? Number.POSITIVE_INFINITY;
+        return aCreated - bCreated;
+      });
+      purchaseSlugIndex.set(key, arr);
     }
 
     for (const [key, arr] of purchaseBySize.entries()) {
@@ -1017,6 +1069,7 @@ export async function GET(request: NextRequest) {
       const saleSizeRaw = sale?.size || '';
       const saleSize = normalizeSize(saleSizeRaw);
       const saleStyleId = (sale?.styleId || '').toString().trim();
+      const saleUrlKey = String((sale as any)?.urlKey || '').trim();
       const saleEvent = getSaleEventMs(sale);
       const saleCreatedAtMs = saleEvent.ms;
       const saleCutoffIso = msToIso(saleCreatedAtMs);
@@ -1024,7 +1077,7 @@ export async function GET(request: NextRequest) {
       const saleListingId = getSaleListingId(sale);
 
       let linkedPurchase: PurchaseCandidate | null = null;
-      let method: 'listingId' | 'fifo' | 'lifo' | 'name' | null = null;
+      let method: 'listingId' | 'slug' | 'fifo' | 'lifo' | 'name' | null = null;
 
       // 1) Exact listingId match
       if (saleListingId) {
@@ -1037,7 +1090,35 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // 2) FIFO/LIFO by styleId+size
+      // 2) Slug (urlKey) + size match
+      if (!linkedPurchase && saleUrlKey && saleSize) {
+        const key = purchaseSlugKey(saleUrlKey, saleSize);
+        const candidates = purchaseSlugIndex.get(key) || [];
+        const iter =
+          cogsMethod === 'lifo'
+            ? (function* () {
+                for (let i = candidates.length - 1; i >= 0; i--) yield candidates[i];
+              })()
+            : candidates;
+        for (const cand of iter as any) {
+          const pid = String(cand.id || '');
+          if (!pid || usedPurchaseIds.has(pid)) continue;
+          if (
+            typeof saleCreatedAtMs === 'number' &&
+            typeof cand._dateMs === 'number' &&
+            cand._dateSource !== 'createdAt' &&
+            cand._dateMs > saleCreatedAtMs
+          ) {
+            continue;
+          }
+          linkedPurchase = cand;
+          method = 'slug';
+          usedPurchaseIds.add(pid);
+          break;
+        }
+      }
+
+      // 3) FIFO/LIFO by styleId+size
       if (!linkedPurchase && saleStyleId && saleSize) {
         const key = purchaseKey(saleStyleId, saleSize);
         const candidates = purchaseIndex.get(key) || [];
@@ -1088,7 +1169,7 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // 3) Fallback: match by product name + size.
+      // 4) Fallback: match by product name + size.
       // First try exact normalized name key; if not found, use token similarity within same size bucket.
       if (!linkedPurchase && saleProduct && saleSize) {
         const nk = purchaseNameKey(String(saleProduct), saleSize);
