@@ -7069,11 +7069,18 @@ function ensureProductHelperOnce(reason) {
 
     const strictOk = isStockXProductPage();
     if (!strictOk) {
-      console.log('🟨 StockX Helper: not a product page (yet)', {
-        reason,
-        strictOk,
-        url
-      });
+      // Avoid spamming console on non-product pages (search/category/listings).
+      // Log only once per URL and only when widget debug is enabled.
+      try {
+        const dbg = !!window.__stockxListingBidScanState?.debugClicks;
+        const key = `notProduct:${url}`;
+        const already = !!window.__stockxHelperOnceLogs?.[key];
+        if (dbg && !already) {
+          window.__stockxHelperOnceLogs = window.__stockxHelperOnceLogs || {};
+          window.__stockxHelperOnceLogs[key] = true;
+          console.log('🟨 StockX Helper: not a product page (yet)', { reason, strictOk, url });
+        }
+      } catch {}
       return false;
     }
 
