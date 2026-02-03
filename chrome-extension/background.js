@@ -321,8 +321,26 @@ async function maybeNotifySlackForOpportunities({ scanId, resultUrl, result }) {
         if (idx[key]) continue;
         skippedAllDeduped = false;
 
-        // Parent-only link (opens StockX app reliably; size deep-linking varies on mobile).
+        const looksLikeSizeParam = (s) => {
+          try {
+            const v = safeStr(s).trim();
+            if (!v) return false;
+            if (/^US\b/i.test(v)) return false;
+            if (/^EU\b/i.test(v)) return false;
+            if (/^UK\b/i.test(v)) return false;
+            // Typical StockX params: 8, 8.5, 9W, 6Y, 10C, XS, S, M, L, XL, XXL, etc.
+            if (/^\d{1,2}(\.\d)?(W|Y|C)?$/i.test(v)) return true;
+            if (/^(XS|S|M|L|XL|XXL|XXXL)$/i.test(v)) return true;
+            if (/^\d{1,2}\s*\/\s*\d{1,2}$/i.test(v)) return true;
+            return false;
+          } catch {
+            return false;
+          }
+        };
+        const sizeVal = looksLikeSizeParam(sizeParam) ? sizeParam : '';
+        // Size-specific PDP link to prevent StockX defaulting to a different size (e.g. women's sizing).
         const parentUrl = slug ? `https://stockx.com/${encodeURIComponent(slug)}` : stripQueryAndHash(baseUrl);
+        const linkUrl = sizeVal ? withSizeParam(parentUrl, sizeVal) : parentUrl;
         const highestBid = o?.highestBid ?? null;
         const lowestAsk = o?.lowestAsk ?? null;
         const profit = o?.profit ?? null;
@@ -335,7 +353,7 @@ async function maybeNotifySlackForOpportunities({ scanId, resultUrl, result }) {
         // Use a section accessory image (smaller) instead of a full-width image block.
         blocks.push({
           type: 'section',
-          text: { type: 'mrkdwn', text: `*Opportunity found*\n<${parentUrl}|${title}${sizeLabel ? ` (${sizeLabel})` : ''}>` },
+          text: { type: 'mrkdwn', text: `*Opportunity found*\n<${linkUrl}|${title}${sizeLabel ? ` (${sizeLabel})` : ''}>` },
           ...(imageUrl && /^https:\/\//i.test(imageUrl)
             ? { accessory: { type: 'image', image_url: imageUrl, alt_text: title.slice(0, 80) || 'StockX' } }
             : {})
@@ -691,7 +709,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             if (/^EU\b/i.test(v)) return false;
             if (/^UK\b/i.test(v)) return false;
             // Typical StockX params: 8, 8.5, 9W, XS, S, M, L, XL, XXL, 5W, etc.
-            if (/^\d{1,2}(\.\d)?W?$/i.test(v)) return true;
+            if (/^\d{1,2}(\.\d)?(W|Y|C)?$/i.test(v)) return true;
             if (/^(XS|S|M|L|XL|XXL|XXXL)$/i.test(v)) return true;
             if (/^\d{1,2}\s*\/\s*\d{1,2}$/i.test(v)) return true; // e.g. 10/11 (rare)
             return false;
