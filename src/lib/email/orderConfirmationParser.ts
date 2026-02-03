@@ -255,10 +255,15 @@ export class OrderConfirmationParser {
       'order shipped to stockx'
     ];
     
-    // Check if this is an intermediate status email that should be treated as "ordered"
-    const isOrderedStatusEmail = orderedStatusSubjects.some(pattern => 
-      normalizedSubject.includes(pattern) || normalizedHtml.includes(pattern)
-    );
+    // Check if this is an intermediate status email that should be treated as "ordered".
+    //
+    // IMPORTANT:
+    // The StockX "Verified & Shipped" buyer email HTML contains the full order timeline, including
+    // steps like "Shipped to StockX" and "Arrived at StockX". If we look for these phrases in the HTML,
+    // we will incorrectly downgrade a shipped-to-buyer email to "Ordered".
+    //
+    // Therefore we ONLY consider the subject line for these intermediate seller-side statuses.
+    const isOrderedStatusEmail = orderedStatusSubjects.some((pattern) => normalizedSubject.includes(pattern));
     
     // Determine email type and status
     let emailType: 'order' | 'shipped' | 'delivered' | 'refund' = 'order';
