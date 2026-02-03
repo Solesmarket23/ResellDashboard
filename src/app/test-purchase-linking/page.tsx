@@ -575,6 +575,8 @@ export default function TestPurchaseLinkingPage() {
   const [fifoTablePage, setFifoTablePage] = useState(1);
   const [fifoRowsPerPage, setFifoRowsPerPage] = useState<number | 'all'>(50);
   const [fifoShowNoMatchOnly, setFifoShowNoMatchOnly] = useState(false);
+  const [refreshingStockX, setRefreshingStockX] = useState(false);
+  const [lastStockXRefresh, setLastStockXRefresh] = useState<any | null>(null);
 
   const monthOptions = useMemo(
     () => [
@@ -944,6 +946,41 @@ export default function TestPurchaseLinkingPage() {
     showNotice,
     userId
   ]);
+
+  const refreshNonFinalStockX = useCallback(
+    async (opts?: { force?: boolean }) => {
+      const u = userId.trim();
+      if (!u) return;
+      setRefreshingStockX(true);
+      try {
+        const resp = await fetch('/api/stockx/sales/refresh-nonfinal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-user-id': u },
+          body: JSON.stringify({ force: opts?.force ? true : false }),
+        });
+        const json = await resp.json().catch(() => ({}));
+        if (!resp.ok || json?.success === false) throw new Error(json?.error || `Refresh failed (${resp.status})`);
+        setLastStockXRefresh(json);
+
+        if (json?.skipped) {
+          showNotice(`ℹ️ StockX refresh skipped (TTL not expired).`, 'info');
+        } else {
+          const s = json?.summary || {};
+          showNotice(
+            `✅ StockX refresh complete — updated=${s.updated ?? 0} refreshed=${s.refreshed ?? 0} failed=${s.failed ?? 0}`,
+            'success'
+          );
+        }
+
+        await loadSales();
+      } catch (e: any) {
+        showNotice(`❌ StockX refresh failed: ${e?.message || 'Unknown error'}`, 'error');
+      } finally {
+        setRefreshingStockX(false);
+      }
+    },
+    [loadSales, showNotice, userId]
+  );
 
   const [linking, setLinking] = useState(false);
   const [allowWrites, setAllowWrites] = useState(false);
@@ -1359,6 +1396,28 @@ export default function TestPurchaseLinkingPage() {
                 >
                   {fifoLoading ? 'Running…' : 'Compute FIFO profit'}
                 </button>
+                <button
+                  onClick={() => refreshNonFinalStockX({ force: false })}
+                  disabled={refreshingStockX}
+                  className={`px-4 py-2 rounded-md font-semibold ${
+                    isNeon
+                      ? 'bg-emerald-500/20 hover:bg-emerald-500/25 text-emerald-100 border border-emerald-500/30'
+                      : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                  } disabled:opacity-60`}
+                  title="Refresh non-final StockX orders (status/payout/fees) with a 12h TTL to reduce API calls."
+                >
+                  {refreshingStockX ? 'Refreshing…' : 'Refresh StockX (non-final)'}
+                </button>
+                <button
+                  onClick={() => refreshNonFinalStockX({ force: true })}
+                  disabled={refreshingStockX}
+                  className={`px-3 py-2 rounded-md text-xs font-semibold ${
+                    isNeon ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10' : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
+                  } disabled:opacity-60`}
+                  title="Force refresh even if TTL hasn't expired."
+                >
+                  Force
+                </button>
                 <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                   <input
                     type="checkbox"
@@ -1588,6 +1647,17 @@ export default function TestPurchaseLinkingPage() {
                     <div className="mt-1">
                       - <span className="font-semibold">no_eligible_purchase</span>: candidates exist but are already used, after the sale date, or ineligible due to Strict delivery → toggle Strict delivery off for testing or backfill `actualDelivery`.
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {lastStockXRefresh && (
+                <div className={`mt-3 rounded-md border p-3 text-xs ${isNeon ? 'bg-white/5 border-white/10 text-gray-200' : 'bg-white border-gray-200 text-gray-800'}`}>
+                  <div className="font-semibold">Last StockX non-final refresh</div>
+                  <div className={`mt-1 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                    {lastStockXRefresh?.skipped
+                      ? 'Skipped (TTL not expired).'
+                      : `Updated ${lastStockXRefresh?.summary?.updated ?? 0} sale(s), failed ${lastStockXRefresh?.summary?.failed ?? 0}.`}
                   </div>
                 </div>
               )}
