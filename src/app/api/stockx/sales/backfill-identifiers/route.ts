@@ -188,6 +188,13 @@ async function fetchOrderDetails(orderNumber: string, apiKey: string, accessToke
     const err = new Error(`StockX order details failed (${res.status})`);
     (err as any).status = res.status;
     (err as any).blocked = res.status === 403 && isPerimeterXBlock(txt);
+    // StockX sometimes includes Retry-After for 429.
+    const retryAfterRaw = res.headers.get('retry-after');
+    const retryAfterSec = retryAfterRaw ? Number(retryAfterRaw) : NaN;
+    (err as any).retryAfterMs =
+      res.status === 429 && Number.isFinite(retryAfterSec) && retryAfterSec > 0
+        ? Math.min(5 * 60 * 1000, Math.round(retryAfterSec * 1000))
+        : undefined;
     (err as any).details = txt;
     throw err;
   }
@@ -313,6 +320,8 @@ export async function POST(request: NextRequest) {
     const failures: Array<{ orderNumber: string; error: string; status?: number; blocked?: boolean }> = [];
     const failureStatusCounts = new Map<string, number>();
     let blockedCount = 0;
+    let rateLimitedCount = 0;
+    let rateLimitedRetryCount = 0;
     const updates: Array<{ docId: string; patch: any }> = [];
 
     const limit = concurrency;
@@ -332,6 +341,17 @@ export async function POST(request: NextRequest) {
             details = await fetchOrderDetails(current.orderNumber, apiKey, accessToken!);
           } catch (e: any) {
             const status = Number(e?.status || 0) || null;
+            if (status === 429) {
+              rateLimitedCount += 1;
+              const backoffMs =
+                typeof e?.retryAfterMs === 'number' && Number.isFinite(e.retryAfterMs) && e.retryAfterMs > 0
+                  ? e.retryAfterMs
+                  : 2500;
+              // Wait, then retry once.
+              await new Promise((r) => setTimeout(r, backoffMs + Math.floor(Math.random() * 250)));
+              rateLimitedRetryCount += 1;
+              details = await fetchOrderDetails(current.orderNumber, apiKey, accessToken!);
+            } else
             if (status === 401 && refreshToken) {
               const refreshed = await refreshStockXTokens(refreshToken);
               if (refreshed.success && refreshed.accessToken) {
@@ -458,6 +478,8 @@ export async function POST(request: NextRequest) {
       failed: failures.length,
       failureStatusCounts: Object.fromEntries(Array.from(failureStatusCounts.entries()).sort((a, b) => Number(b[1]) - Number(a[1]))),
       blockedCount,
+      rateLimitedCount,
+      rateLimitedRetryCount,
       ttlHours,
       maxOrders,
       concurrency,
