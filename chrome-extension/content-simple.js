@@ -9069,6 +9069,15 @@ function ensureListingBidWidget() {
           const doFocus = () => {
             try {
               logWidgetFocusDbg('doFocus(before)', null, { el: describeEl(el), isConnected: !!el?.isConnected });
+              // #region agent log (debug-mode instrumentation)
+              __stockxDbgSend('H3_focusNotApplied', 'chrome-extension/content-simple.js:doFocus', 'doFocus(before)', {
+                lockId,
+                role,
+                el: describeEl(el),
+                isConnected: !!el?.isConnected,
+                activeEl: describeEl(document.activeElement)
+              });
+              // #endregion
               el.focus?.();
               // Select-all for fast editing
               try { el.select?.(); } catch {}
@@ -9077,6 +9086,16 @@ function ensureListingBidWidget() {
                 if (typeof el.setSelectionRange === 'function') el.setSelectionRange(0, v.length);
               } catch {}
               logWidgetFocusDbg('doFocus(after)', null, { el: describeEl(el), isConnected: !!el?.isConnected, activeEl: describeEl(document.activeElement) });
+              // #region agent log (debug-mode instrumentation)
+              __stockxDbgSend('H3_focusNotApplied', 'chrome-extension/content-simple.js:doFocus', 'doFocus(after)', {
+                lockId,
+                role,
+                el: describeEl(el),
+                isConnected: !!el?.isConnected,
+                activeEl: describeEl(document.activeElement),
+                focused: document.activeElement === el
+              });
+              // #endregion
             } catch {}
           };
 
@@ -9099,6 +9118,14 @@ function ensureListingBidWidget() {
                 if (String(lock.id || '') !== lockId) return;
                 if (Date.now() > Number(lock.until || 0)) return;
                 logWidgetFocusDbg('blur(refocus)', null, { el: describeEl(el) });
+                // #region agent log (debug-mode instrumentation)
+                __stockxDbgSend('H2_focusStolen', 'chrome-extension/content-simple.js:onBlur', 'blur(refocus)', {
+                  lockId,
+                  role,
+                  el: describeEl(el),
+                  activeEl: describeEl(document.activeElement)
+                });
+                // #endregion
                 setTimeout(doFocus, 0);
               } catch {}
             };
