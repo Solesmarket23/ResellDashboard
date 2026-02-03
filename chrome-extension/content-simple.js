@@ -8803,7 +8803,7 @@ function ensureListingBidWidget() {
          </div>`
       : '';
 
-  const quickCountsLine = (() => {
+  const quickCountsPills = (() => {
     try {
       const results = state.results && typeof state.results === 'object' ? state.results : {};
       const scanned = Object.keys(results).length;
@@ -8813,10 +8813,10 @@ function ensureListingBidWidget() {
         opps += arr.length;
       }
       if (!state.scanId && scanned === 0 && opps === 0) return '';
-      return `<div style="margin-top:6px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+      return `<span style="display:inline-flex; gap:8px; align-items:center; flex-wrap:wrap;">
         <span style="font-size:11px; font-weight:1000; padding:2px 8px; border-radius:999px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:rgba(255,255,255,0.85);">Scanned ${scanned}${state.total ? `/${state.total}` : ''}</span>
         <span style="font-size:11px; font-weight:1000; padding:2px 8px; border-radius:999px; background:rgba(34,197,94,0.18); border:1px solid rgba(34,197,94,0.35); color:#bbf7d0;">Opps ${opps}</span>
-      </div>`;
+      </span>`;
     } catch {
       return '';
     }
@@ -8833,6 +8833,7 @@ function ensureListingBidWidget() {
         <span style="opacity:.55; font-size:11px; font-weight:800;">drag</span>
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
+        ${quickCountsPills}
         <button title="Dashboard" data-role="open-dashboard" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.10); color:rgba(255,255,255,0.85); cursor:pointer; padding:4px 8px; border-radius:10px; font-weight:900; font-size:12px;">📈</button>
         <button title="Settings" data-role="open-settings" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.10); color:rgba(255,255,255,0.85); cursor:pointer; padding:4px 8px; border-radius:10px; font-weight:900; font-size:12px;">⚙</button>
         <button data-role="close" title="Close" style="background:none;border:none;color:rgba(255,255,255,0.75);cursor:pointer;font-size:18px;">×</button>
@@ -8907,7 +8908,7 @@ function ensureListingBidWidget() {
       </button>
     </div>
     ${stageLine}
-    ${quickCountsLine}
+    
     <div style="margin-top:10px;">${itemsHtml}</div>
   `;
 

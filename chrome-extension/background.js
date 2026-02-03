@@ -1905,7 +1905,11 @@ function setScanResult(scanId, url, result) {
     try {
       updateOpportunitiesIndexFromResult(scanId, { url, ...(result || {}) });
     } catch {}
-    // Slack notifications are handled in the content script on the listing tab (more reliable than MV3 SW).
+    // Slack notifications should not depend on a specific tab being alive.
+    // Fire-and-forget here whenever we persist a scan result.
+    try {
+      Promise.resolve(maybeNotifySlackForOpportunities({ scanId, resultUrl: url, result: { url, scanId, ...(result || {}) } })).catch(() => {});
+    } catch {}
   } catch {}
 }
 
