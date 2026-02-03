@@ -8945,9 +8945,25 @@ function ensureListingBidWidget() {
             try {
               el.focus?.();
               // Select-all for fast editing
-              try { el.select?.(); } catch {}
+              try {
+                // Prefer select() if supported (inputs), otherwise setSelectionRange.
+                el.select?.();
+              } catch {}
+              try {
+                const v = String(el.value ?? '');
+                if (typeof el.setSelectionRange === 'function') el.setSelectionRange(0, v.length);
+              } catch {}
             } catch {}
           }, 0);
+        } catch {}
+      };
+      const focusInputByRole = (role) => {
+        try {
+          const w = document.getElementById('stockx-bid-opps-widget');
+          if (!w) return;
+          const el = w.querySelector?.(`[data-role="${role}"]`);
+          if (!el) return;
+          focusInput(el);
         } catch {}
       };
       const onCap = (e) => {
@@ -8965,7 +8981,31 @@ function ensureListingBidWidget() {
           try { e.stopImmediatePropagation?.(); } catch {}
           try { e.stopPropagation?.(); } catch {}
           // Do NOT preventDefault: we want native focusing/caret behavior.
+          // Focus lock: some pages steal focus on pointerup/mouseup right after a successful focus.
+          // Remember which role we interacted with for a short window.
+          try { window.__stockxWidgetFocusLock = { role, until: Date.now() + 450 }; } catch {}
           focusInput(input);
+        } catch {}
+      };
+      const onCapPost = (e) => {
+        try {
+          const lock = window.__stockxWidgetFocusLock;
+          if (!lock || typeof lock !== 'object') return;
+          const until = Number(lock.until || 0);
+          const role = String(lock.role || '');
+          if (!role || Date.now() > until) return;
+
+          const w = document.getElementById('stockx-bid-opps-widget');
+          if (!w) return;
+          const t = e?.target;
+          if (!t || !w.contains(t)) return;
+
+          // Stop StockX capture handlers that steal focus.
+          try { e.stopImmediatePropagation?.(); } catch {}
+          try { e.stopPropagation?.(); } catch {}
+
+          // Re-focus after pointerup/mouseup/click.
+          focusInputByRole(role);
         } catch {}
       };
       // Capture phase so we run before StockX capture listeners.
@@ -8973,6 +9013,9 @@ function ensureListingBidWidget() {
       try { window.addEventListener('mousedown', onCap, { capture: true }); } catch {}
       try { window.addEventListener('touchstart', onCap, { capture: true, passive: false }); } catch {}
       try { window.addEventListener('click', onCap, { capture: true }); } catch {}
+      try { window.addEventListener('pointerup', onCapPost, { capture: true }); } catch {}
+      try { window.addEventListener('mouseup', onCapPost, { capture: true }); } catch {}
+      try { window.addEventListener('touchend', onCapPost, { capture: true, passive: false }); } catch {}
     }
   } catch {}
 
@@ -8993,9 +9036,6 @@ function ensureListingBidWidget() {
         'scan-xpress',
         'stop',
         'clear',
-        'edit-max-items',
-        'edit-max-pages',
-        'edit-concurrency',
         'open-size',
         'open-bid',
         'bid-all',
@@ -9034,37 +9074,6 @@ function ensureListingBidWidget() {
             if (role === 'open-dashboard') return void openExtensionDashboardTab();
             if (role === 'open-settings') return void openExtensionSettingsTab();
             if (role === 'close') return void widget.remove();
-
-            if (role === 'edit-max-items') {
-              const cur = Number(state.maxItems || 48);
-              const next = window.prompt('Items to scan (1–48):', String(cur));
-              if (next == null) return;
-              const n = Math.max(1, Math.min(48, Number(String(next).trim())));
-              if (!Number.isFinite(n)) return;
-              state.maxItems = Math.round(n);
-              ensureListingBidWidget();
-              return;
-            }
-            if (role === 'edit-max-pages') {
-              const cur = Number(state.maxPages || 5);
-              const next = window.prompt('Pages to scan (1–200):', String(cur));
-              if (next == null) return;
-              const n = Math.max(1, Math.min(200, Number(String(next).trim())));
-              if (!Number.isFinite(n)) return;
-              state.maxPages = Math.round(n);
-              ensureListingBidWidget();
-              return;
-            }
-            if (role === 'edit-concurrency') {
-              const cur = Number(state.concurrency || 1);
-              const next = window.prompt('Tabs at once (1–5):', String(cur));
-              if (next == null) return;
-              const n = Math.max(1, Math.min(5, Number(String(next).trim())));
-              if (!Number.isFinite(n)) return;
-              state.concurrency = Math.round(n);
-              ensureListingBidWidget();
-              return;
-            }
 
             if (role === 'open-size') {
               const url = roleEl.getAttribute('data-url') || '';
