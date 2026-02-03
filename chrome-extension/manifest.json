@@ -10,7 +10,8 @@
     "scripting"
   ],
   "host_permissions": [
-    "https://stockx.com/*"
+    "https://stockx.com/*",
+    "https://hooks.slack.com/*"
   ],
   "content_scripts": [
     {

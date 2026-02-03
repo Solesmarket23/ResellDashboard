@@ -581,6 +581,60 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('📨 Background received message:', request);
   const tabId = sender?.tab?.id;
   
+  if (request?.action === 'slackSendTest') {
+    (async () => {
+      try {
+        const cfg = await loadScanSettingsForSlack();
+        if (!cfg.slackWebhookUrl) return sendResponse({ success: false, error: 'Missing webhook URL (set + Save in Settings)' });
+
+        const channel = safeStr(cfg.slackChannel || '').trim();
+        const mention = safeStr(cfg.slackMention || '').trim();
+        const mentionPrefix = mention ? `${mention} ` : '';
+        const payload = {
+          text: `${mentionPrefix}StockX Scanner test message`,
+          link_names: true
+        };
+        if (channel) payload.channel = channel;
+
+        await appendSlackLog('info', 'slackSendTest: sending', { channel: channel || '', webhook: redactWebhook(cfg.slackWebhookUrl) });
+        try {
+          await setSlackStatus({ ok: null, lastAttemptAt: Date.now(), lastError: '', note: 'sending test…' });
+        } catch {}
+
+        const resp = await fetchWithTimeout(
+          cfg.slackWebhookUrl,
+          { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) },
+          12000
+        );
+        if (!resp.ok) {
+          const txt = await resp.text().catch(() => '');
+          const err = `HTTP ${resp.status}: ${txt || '(no body)'}`;
+          try {
+            await setSlackStatus({ ok: false, lastErrorAt: Date.now(), lastError: err, note: 'test failed' });
+          } catch {}
+          await appendSlackLog('error', 'slackSendTest: non-200', { status: resp.status, body: String(txt || '').slice(0, 200) });
+          return sendResponse({ success: false, error: err });
+        }
+
+        try {
+          await setSlackStatus({ ok: true, lastOkAt: Date.now(), lastError: '', note: 'test ok' });
+        } catch {}
+        await appendSlackLog('info', 'slackSendTest: sent ok', {});
+        sendResponse({ success: true });
+      } catch (e) {
+        const msg = e?.name === 'AbortError' ? 'Timeout sending to Slack (AbortError)' : e?.message || String(e);
+        try {
+          await setSlackStatus({ ok: false, lastErrorAt: Date.now(), lastError: msg, note: 'test failed' });
+        } catch {}
+        try {
+          await appendSlackLog('error', 'slackSendTest: exception', { error: msg });
+        } catch {}
+        sendResponse({ success: false, error: msg });
+      }
+    })();
+    return true; // async sendResponse
+  }
+
   if (request?.action === 'slackSendOpportunity') {
     (async () => {
       try {

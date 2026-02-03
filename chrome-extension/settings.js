@@ -186,23 +186,20 @@ async function copyTextToClipboardBestEffort(text) {
   }
 }
 
-async function sendSlackTest({ webhookUrl, channel, mention } = {}) {
-  const url = String(webhookUrl || '').trim();
-  if (!url) return { ok: false, error: 'Missing webhook URL.' };
-  try {
-    const payload = {
-      text: `${String(mention || '').trim() ? `${String(mention || '').trim()} ` : ''}StockX Scanner test message ✅`,
-      channel: String(channel || '').trim() || undefined
-    };
-    const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
-    if (!res.ok) {
-      const txt = await res.text().catch(() => '');
-      return { ok: false, error: `Slack error ${res.status}: ${txt || '(no body)'}` };
+async function sendSlackTestViaBackground() {
+  return await new Promise((resolve) => {
+    try {
+      if (!chrome?.runtime?.sendMessage) return resolve({ ok: false, error: 'chrome.runtime unavailable' });
+      chrome.runtime.sendMessage({ action: 'slackSendTest' }, (resp) => {
+        const err = chrome.runtime.lastError;
+        if (err) return resolve({ ok: false, error: err.message || String(err) });
+        if (!resp || resp.success === false) return resolve({ ok: false, error: String(resp?.error || 'Slack test failed') });
+        resolve({ ok: true });
+      });
+    } catch (e) {
+      resolve({ ok: false, error: e?.message || String(e) });
     }
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e?.message || String(e) };
-  }
+  });
 }
 
 function parseLineList(v) {
@@ -347,8 +344,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   testSlackBtn?.addEventListener('click', async () => {
     try {
       setToast('Sending test to Slack…');
-      const s = readForm();
-      const res = await sendSlackTest({ webhookUrl: s.slackWebhookUrl, channel: s.slackChannel, mention: s.slackMention });
+      // NOTE: must be sent via background service worker to avoid CORS/network restrictions from extension pages.
+      const res = await sendSlackTestViaBackground();
       setToast(res.ok ? 'Test sent. Check Slack.' : `Slack test failed: ${res.error || 'unknown error'}`);
       const st = await loadSlackStatus();
       renderSlackStatus(st);
