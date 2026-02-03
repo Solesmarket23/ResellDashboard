@@ -337,7 +337,24 @@ async function maybeNotifySlackForOpportunities({ scanId, resultUrl, result }) {
             return false;
           }
         };
-        const sizeVal = looksLikeSizeParam(sizeParam) ? sizeParam : '';
+        const womensFromLabelIfNeeded = () => {
+          try {
+            const t = String(title || '').toLowerCase();
+            const womens = t.includes("women's") || t.includes('womens') || t.includes('(women');
+            if (!womens) return '';
+            // Only handle the specific problematic format: "US M 4" shown on women's products.
+            const m = String(sizeLabel || '').match(/\bUS\s*M\s*(\d{1,2}(?:\.\d)?)\b/i);
+            if (!m?.[1]) return '';
+            const n = Number(m[1]);
+            if (!Number.isFinite(n) || n <= 0) return '';
+            const w = n + 1;
+            const wStr = String(w).endsWith('.0') ? String(Math.round(w)) : String(w);
+            return `${wStr}W`;
+          } catch {
+            return '';
+          }
+        };
+        const sizeVal = looksLikeSizeParam(sizeParam) ? sizeParam : womensFromLabelIfNeeded();
         // Size-specific PDP link to prevent StockX defaulting to a different size (e.g. women's sizing).
         const parentUrl = slug ? `https://stockx.com/${encodeURIComponent(slug)}` : stripQueryAndHash(baseUrl);
         const linkUrl = sizeVal ? withSizeParam(parentUrl, sizeVal) : parentUrl;
@@ -718,7 +735,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           }
         };
         const sizeFromUrls = extractSizeFromUrl(rawFallback) || extractSizeFromUrl(rawSizeUrl);
-        const sizeVal = looksLikeSizeParam(sizeParam) ? sizeParam : looksLikeSizeParam(sizeFromUrls) ? sizeFromUrls : '';
+        const womensFromLabelIfNeeded = () => {
+          try {
+            const t = String(title || '').toLowerCase();
+            const womens = t.includes("women's") || t.includes('womens') || t.includes('(women');
+            if (!womens) return '';
+            const m = String(sizeLabel || '').match(/\bUS\s*M\s*(\d{1,2}(?:\.\d)?)\b/i);
+            if (!m?.[1]) return '';
+            const n = Number(m[1]);
+            if (!Number.isFinite(n) || n <= 0) return '';
+            const w = n + 1;
+            const wStr = String(w).endsWith('.0') ? String(Math.round(w)) : String(w);
+            return `${wStr}W`;
+          } catch {
+            return '';
+          }
+        };
+        const sizeVal = looksLikeSizeParam(sizeParam)
+          ? sizeParam
+          : looksLikeSizeParam(sizeFromUrls)
+            ? sizeFromUrls
+            : womensFromLabelIfNeeded();
         const links = buildStockxOpportunityLinks({ slug, size: sizeVal, fallbackUrl: rawFallback || rawSizeUrl });
         const linkUrl = links.pdpUrl || links.buyUrl || links.bidUrl || links.fallbackUrl || (slug ? `https://stockx.com/${encodeURIComponent(slug)}` : '');
 
