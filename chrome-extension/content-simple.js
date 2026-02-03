@@ -10027,7 +10027,29 @@ function ensureGlobalStopOverlay() {
         font-family: Arial, sans-serif;
         pointer-events: auto;
       `;
+      const pillsHtml = (() => {
+        try {
+          const p = window.__stockxGlobalStopOverlayPills;
+          if (!p) return '';
+          const scanned = Number.isFinite(Number(p.completed)) ? Number(p.completed) : 0;
+          const total = Number.isFinite(Number(p.total)) ? Number(p.total) : 0;
+          const opps = Number.isFinite(Number(p.oppsFound)) ? Number(p.oppsFound) : 0;
+          return `
+            <div style="display:flex; justify-content:flex-end; gap:8px; margin-bottom:8px;">
+              <span style="font-size:11px; font-weight:1000; padding:4px 10px; border-radius:999px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.14); color:rgba(255,255,255,0.92);">
+                Scanned ${Math.max(0, scanned)}${total ? `/${total}` : ''}
+              </span>
+              <span style="font-size:11px; font-weight:1000; padding:4px 10px; border-radius:999px; background:rgba(34,197,94,0.18); border:1px solid rgba(34,197,94,0.35); color:#bbf7d0;">
+                Opps ${Math.max(0, opps)}
+              </span>
+            </div>
+          `;
+        } catch {
+          return '';
+        }
+      })();
       el.innerHTML = `
+        ${pillsHtml}
         <button data-role="stop-scan" style="
           background:#ef4444;
           border:1px solid rgba(239,68,68,0.95);
@@ -10058,7 +10080,20 @@ function ensureGlobalStopOverlay() {
         chrome?.storage?.local?.get?.(['stockxActiveListingScanId'], (res) => {
           void chrome.runtime.lastError;
           const sid = String(res?.stockxActiveListingScanId || '');
-          upsert(sid || '');
+          if (!sid) return upsert('');
+          const stateKey = `stockxListingScanState:${sid}`;
+          chrome.storage.local.get([stateKey], (r2) => {
+            void chrome.runtime.lastError;
+            const s = r2?.[stateKey] && typeof r2[stateKey] === 'object' ? r2[stateKey] : null;
+            try {
+              window.__stockxGlobalStopOverlayPills = {
+                completed: Number(s?.completed || 0),
+                total: Number(s?.total || 0),
+                oppsFound: Number(s?.oppsFound || 0)
+              };
+            } catch {}
+            upsert(sid);
+          });
         });
       } catch {}
     };

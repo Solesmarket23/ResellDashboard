@@ -1882,6 +1882,24 @@ function setScanResult(scanId, url, result) {
     const cache = getScanResultsCache();
     const entry = cache?.get?.(scanId) || null;
     const upsert = (data) => {
+      // Maintain a stable "oppsFound" counter in scan state for lightweight UI overlays.
+      // Compute delta based on per-URL opportunity count changes.
+      let deltaOpps = 0;
+      try {
+        const prevLen = Array.isArray(data?.[url]?.opportunities) ? data[url].opportunities.length : 0;
+        const nextLen = Array.isArray(result?.opportunities) ? result.opportunities.length : 0;
+        deltaOpps = nextLen - prevLen;
+      } catch {
+        deltaOpps = 0;
+      }
+      if (deltaOpps) {
+        try {
+          const stateCache = getScanStateCache();
+          const curState = stateCache?.get?.(scanId) || null;
+          const curOpps = Number(curState?.oppsFound || 0) || 0;
+          setScanState(scanId, { oppsFound: Math.max(0, curOpps + deltaOpps) });
+        } catch {}
+      }
       // Include a timestamp so the UI/debug can verify what is actually persisted.
       data[url] = { scanId, ...(result || {}), savedAt: Date.now() };
       if (!cache) {
