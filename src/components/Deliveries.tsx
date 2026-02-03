@@ -427,6 +427,10 @@ const DeliveriesNew: React.FC = () => {
     deliveryId: string;
     clearPrefill: boolean;
   } | null>(null);
+
+  // Tracking modal UX: allow auto-focus + Enter-to-save.
+  const trackingInputRef = useRef<HTMLInputElement | null>(null);
+  const shouldFocusTrackingInputRef = useRef(false);
   
   const copyTrackingNumber = async (trackingNumber: string, deliveryId: string) => {
     try {
@@ -1340,8 +1344,29 @@ const DeliveriesNew: React.FC = () => {
     });
     setHighlightedDeliveryId(delivery.id);
     setSelectedDelivery(delivery);
+    shouldFocusTrackingInputRef.current = true;
     setShowAddTrackingModal(true);
   };
+
+  // When the tracking modal opens, focus the Tracking Number input so users can paste immediately.
+  useEffect(() => {
+    if (!showAddTrackingModal) return;
+    const t = window.setTimeout(() => {
+      const el = trackingInputRef.current;
+      if (!el) return;
+      // Always focus on open; this is especially important when returning from "Open email".
+      el.focus();
+      // Put cursor at end so paste overwrites less often if user is editing.
+      try {
+        const len = el.value?.length ?? 0;
+        el.setSelectionRange(len, len);
+      } catch {
+        // ignore
+      }
+      shouldFocusTrackingInputRef.current = false;
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [showAddTrackingModal]);
 
   const openPurchasesForDelivery = (purchaseId: string) => {
     if (!purchaseId) return;
@@ -1930,6 +1955,7 @@ const DeliveriesNew: React.FC = () => {
                 {newTracking.purchaseId ? 'Set tracking number' : 'Add Manual Tracking Number'}
               </h3>
               <button
+                type="button"
                 onClick={() => {
                   setShowAddTrackingModal(false);
                   setNewTracking({ purchaseId: '', trackingNumber: '', carrier: 'AUTO', productName: '', productBrand: '', productSize: '' });
@@ -1939,11 +1965,20 @@ const DeliveriesNew: React.FC = () => {
                 <X className="w-5 h-5 text-gray-600 dark:text-gray-300" />
               </button>
             </div>
-            <div className="space-y-4">
+            <form
+              className="space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (addingTracking) return;
+                handleAddManualTracking();
+              }}
+            >
               <div>
                 <label className={`block text-sm mb-1 ${currentTheme.colors.textSecondary}`}>Tracking Number *</label>
                 <input
                   type="text"
+                  ref={trackingInputRef}
+                  autoFocus
                   value={newTracking.trackingNumber}
                   onPaste={(e) => {
                     const pasted = e.clipboardData?.getData('text') || '';
@@ -2076,6 +2111,7 @@ const DeliveriesNew: React.FC = () => {
               </div>
               <div className="flex justify-end gap-3 pt-2">
                 <button
+                  type="button"
                   onClick={() => {
                     setShowAddTrackingModal(false);
                     setNewTracking({ purchaseId: '', trackingNumber: '', carrier: 'AUTO', productName: '', productBrand: '', productSize: '' });
@@ -2095,14 +2131,14 @@ const DeliveriesNew: React.FC = () => {
                   </button>
                 ) : null}
                 <button
-                  onClick={handleAddManualTracking}
+                  type="submit"
                   disabled={addingTracking}
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg"
                 >
                   {addingTracking ? 'Saving…' : (newTracking.purchaseId ? 'Save tracking' : 'Add Tracking')}
                 </button>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       )}

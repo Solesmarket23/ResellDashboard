@@ -1172,6 +1172,7 @@ function defaultScanSettings() {
     xpressMinDiscountPct: 30,
     feeSum: 21,
     excludeRecentReleaseDays: 30,
+    excludeLowAskMax: 69,
     excludeSponsored: true,
     skipOneSize: false,
     excludeUrlSubstrings: [],
@@ -7439,6 +7440,7 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
     const minRoiPct = Number(settings?.minRoiPct);
     const avg30dCushionPct = Number(settings?.avg30dCushionPct);
     const excludeRecentReleaseDays = Number(settings?.excludeRecentReleaseDays);
+    const excludeLowAskMax = Number(settings?.excludeLowAskMax);
     let sizeAll = null;
 
     // User-configured exclusions (fast path; skip all Market Data work).
@@ -7648,6 +7650,7 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
 
     const opportunities = [];
     let eliminatedByAsk = 0;
+    let eliminatedByLowAsk = 0;
     let eliminatedByAvg30d = 0;
     let eliminatedByRoi = 0;
     const viableSizeKeys = new Set();
@@ -7662,6 +7665,10 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
 
       const ask = Number(askBySizeKey.get(sizeKey));
       if (!Number.isFinite(ask) || ask <= 0) continue;
+      if (Number.isFinite(excludeLowAskMax) && excludeLowAskMax > 0 && ask <= excludeLowAskMax) {
+        eliminatedByLowAsk += 1;
+        continue;
+      }
 
       const highestBid = Math.floor(hbNum);
       // Bid we actually place should be $1 above the current highest bid.
@@ -7751,6 +7758,7 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
       slug,
       title,
       feeSum,
+      excludeLowAskMax: Number.isFinite(excludeLowAskMax) ? Math.floor(excludeLowAskMax) : null,
       salesView: md?.salesView || 'unknown',
       sellerViewConfirmed: !!md?.sellerViewConfirmed,
       salesRows: Array.isArray(sales) ? sales.length : 0,
@@ -7771,6 +7779,7 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
       sizeOptionsCount,
       viableSizeCount,
       eliminatedByAsk,
+      eliminatedByLowAsk,
       eliminatedByAvg30d,
       eliminatedByRoi,
       opportunities
@@ -7804,6 +7813,7 @@ async function scanThisProductForXpressDeals({ mode } = {}) {
     const minRoiPct = Number(settings?.minRoiPct);
     const avg30dCushionPct = Number(settings?.avg30dCushionPct);
     const excludeRecentReleaseDays = Number(settings?.excludeRecentReleaseDays);
+    const excludeLowAskMax = Number(settings?.excludeLowAskMax);
     let sizeAll = null;
 
     // Release date exclusions (best-effort; only applies when we can detect a release date).
@@ -7938,6 +7948,7 @@ async function scanThisProductForXpressDeals({ mode } = {}) {
     const minDisc = Number.isFinite(xpressMinDiscountPct) ? Math.max(0, Math.min(95, xpressMinDiscountPct)) : 30;
     const cushion = Number.isFinite(avg30dCushionPct) ? Math.max(0, Math.min(95, avg30dCushionPct)) / 100 : 0;
     let best = null; // best (highest discount) candidate, even if it doesn't pass the threshold
+    let eliminatedByLowAsk = 0;
 
     for (const [sizeKey, ask] of askBySizeKey.entries()) {
       const stat = statsByKey.get(sizeKey);
@@ -7948,6 +7959,10 @@ async function scanThisProductForXpressDeals({ mode } = {}) {
       if (!Number.isFinite(avg30d) || avg30d <= 0) continue;
       const buyNow = Math.floor(Number(ask));
       if (!Number.isFinite(buyNow) || buyNow <= 0) continue;
+      if (Number.isFinite(excludeLowAskMax) && excludeLowAskMax > 0 && buyNow <= excludeLowAskMax) {
+        eliminatedByLowAsk += 1;
+        continue;
+      }
 
       const discount = 1 - buyNow / avg30d;
       const discountPct = Number.isFinite(discount) ? Math.round(discount * 1000) / 10 : null;
@@ -7999,6 +8014,8 @@ async function scanThisProductForXpressDeals({ mode } = {}) {
       salesView: md?.salesView || 'unknown',
       sellerViewConfirmed: !!md?.sellerViewConfirmed,
       xpressMinDiscountPct: minDisc,
+      excludeLowAskMax: Number.isFinite(excludeLowAskMax) ? Math.floor(excludeLowAskMax) : null,
+      eliminatedByLowAsk,
       xpressBest: best || null,
       salesRows: Array.isArray(sales) ? sales.length : 0,
       asksRows: Array.isArray(asks) ? asks.length : 0,

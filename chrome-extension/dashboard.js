@@ -355,6 +355,8 @@ function renderResults(listEl, resultsMap) {
             : `<span class="pill">error</span>`;
       const isXpress = safeStr(r?.mode || '').toLowerCase() === 'xpress' || (opps[0] && String(opps[0]?.kind || '').toLowerCase() === 'xpress');
       const bestX = r?.xpressBest && typeof r.xpressBest === 'object' ? r.xpressBest : null;
+      const lowAskMax = Number.isFinite(Number(r?.excludeLowAskMax)) ? Number(r.excludeLowAskMax) : null;
+      const eliminatedByLowAsk = Number.isFinite(Number(r?.eliminatedByLowAsk)) ? Number(r.eliminatedByLowAsk) : 0;
       const msg = escapeHtml(
         r?.userExcluded
           ? `Excluded by rule: ${(safeStr(r?.userExcludedNeedle || 'rule') || 'rule')}`
@@ -367,10 +369,14 @@ function renderResults(listEl, resultsMap) {
             : isXpress
               ? opps.length
                 ? `Deal: ${safeStr(opps[0]?.sizeLabel || '')} buyNow ${safeStr(opps[0]?.lowestAsk ?? '—')} avg30d ${safeStr(opps[0]?.avg30d ?? '—')} discount ${safeStr(opps[0]?.discountPct ?? '—')}%`
-                : bestX
-                  ? `No deals (best: ${safeStr(bestX?.sizeLabel || '')} buyNow ${safeStr(bestX?.lowestAsk ?? '—')} avg30d ${safeStr(bestX?.avg30d ?? '—')} discount ${safeStr(bestX?.discountPct ?? '—')}%)`
-                  : 'No deals (no comparable sales/asks)'
-              : opps.length
+                : eliminatedByLowAsk > 0 && lowAskMax != null
+                  ? `No deals (filtered: lowest ask ≤ $${safeStr(lowAskMax)} • ${safeStr(eliminatedByLowAsk)} size(s))`
+                  : bestX
+                    ? `No deals (best: ${safeStr(bestX?.sizeLabel || '')} buyNow ${safeStr(bestX?.lowestAsk ?? '—')} avg30d ${safeStr(bestX?.avg30d ?? '—')} discount ${safeStr(bestX?.discountPct ?? '—')}%)`
+                    : 'No deals (no comparable sales/asks)'
+              : eliminatedByLowAsk > 0 && lowAskMax != null
+                ? `No opportunities (filtered: lowest ask ≤ $${safeStr(lowAskMax)} • ${safeStr(eliminatedByLowAsk)} size(s))`
+                : opps.length
                 ? `Best: ${safeStr(opps[0]?.sizeLabel || '')} bid ${safeStr(opps[0]?.highestBid ?? '—')} ask ${safeStr(opps[0]?.lowestAsk ?? '—')} profit ${safeStr(opps[0]?.profit ?? '—')}`
                 : 'No opportunities'
       );

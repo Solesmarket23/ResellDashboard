@@ -9,6 +9,7 @@ function defaultSettings() {
     xpressMinDiscountPct: 30,
     feeSum: 21,
     excludeRecentReleaseDays: 30,
+    excludeLowAskMax: 69,
     excludeSponsored: true,
     skipOneSize: false,
     excludeUrlSubstrings: [],
@@ -101,6 +102,7 @@ function readForm() {
   const xpressMinDiscountPct = clampFloat(document.getElementById('xpressMinDiscountPct')?.value, { min: 0, max: 95 });
   const feeSum = clampInt(document.getElementById('feeSum')?.value, { min: 0, max: 9999 });
   const excludeRecentReleaseDays = clampInt(document.getElementById('excludeRecentReleaseDays')?.value, { min: 0, max: 3650 });
+  const excludeLowAskMax = clampInt(document.getElementById('excludeLowAskMax')?.value, { min: 0, max: 999999 });
   const excludeSponsored = !!document.getElementById('excludeSponsored')?.checked;
   const skipOneSize = !!document.getElementById('skipOneSize')?.checked;
   const excludeUrlSubstrings = parseLineList(document.getElementById('excludeUrlSubstrings')?.value);
@@ -119,6 +121,7 @@ function readForm() {
     xpressMinDiscountPct: xpressMinDiscountPct ?? defaultSettings().xpressMinDiscountPct,
     feeSum: feeSum ?? defaultSettings().feeSum,
     excludeRecentReleaseDays: excludeRecentReleaseDays ?? defaultSettings().excludeRecentReleaseDays,
+    excludeLowAskMax: excludeLowAskMax ?? defaultSettings().excludeLowAskMax,
     excludeSponsored,
     skipOneSize,
     excludeUrlSubstrings,
@@ -135,6 +138,7 @@ function writeForm(s) {
   document.getElementById('xpressMinDiscountPct').value = String(s.xpressMinDiscountPct ?? '');
   document.getElementById('feeSum').value = String(s.feeSum ?? '');
   document.getElementById('excludeRecentReleaseDays').value = String(s.excludeRecentReleaseDays ?? '');
+  document.getElementById('excludeLowAskMax').value = String(s.excludeLowAskMax ?? '');
   document.getElementById('excludeSponsored').checked = !!s.excludeSponsored;
   document.getElementById('skipOneSize').checked = !!s.skipOneSize;
   document.getElementById('excludeUrlSubstrings').value = formatLineList(s.excludeUrlSubstrings);

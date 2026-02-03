@@ -166,6 +166,11 @@
               <input id="excludeRecentReleaseDays" type="number" min="0" step="1" />
               <div class="muted">Best-effort: uses product release date if StockX exposes it (Next.js data / “Release Date” section).</div>
             </div>
+            <div class="row" style="grid-template-columns: 1fr; gap:6px; margin:0 0 10px;">
+              <label for="excludeLowAskMax">Exclude sizes with Lowest Ask ≤ (USD) (0 = off)</label>
+              <input id="excludeLowAskMax" type="number" min="0" step="1" />
+              <div class="muted">Example: 69 excludes any size where Lowest Ask is $69 or less (applies to both bid and xpress modes).</div>
+            </div>
             <label style="display:flex; gap:8px; align-items:center; cursor:pointer; user-select:none;">
               <input id="excludeSponsored" type="checkbox" />
               Exclude sponsored listings
