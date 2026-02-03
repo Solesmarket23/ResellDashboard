@@ -7437,8 +7437,32 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
     setExtScanStage('hydrating');
     await new Promise((r) => setTimeout(r, 2200));
 
+    const getProductImageUrlBestEffort = () => {
+      try {
+        const candidates = [
+          document.querySelector('meta[property="og:image"]')?.getAttribute?.('content'),
+          document.querySelector('meta[name="twitter:image"]')?.getAttribute?.('content'),
+          document.querySelector('meta[name="twitter:image:src"]')?.getAttribute?.('content')
+        ]
+          .map((x) => String(x || '').trim())
+          .filter(Boolean);
+        let raw = candidates[0] || '';
+        if (!raw) return '';
+        if (raw.startsWith('//')) raw = `https:${raw}`;
+        if (raw.startsWith('/')) {
+          try {
+            raw = new URL(raw, location.origin).toString();
+          } catch {}
+        }
+        return /^https?:\/\//i.test(raw) ? raw : '';
+      } catch {
+        return '';
+      }
+    };
+
     const slug = getProductSlugFromUrl() || '';
     const title = safeText(document.querySelector('h1')) || '';
+    const imageUrl = getProductImageUrlBestEffort();
     // Listing-scan opportunity rules are configurable in extension settings.
     const settings = await loadScanSettings();
     const feeSum = Number(settings?.feeSum);
@@ -7458,6 +7482,7 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
           success: true,
           slug,
           title,
+          imageUrl,
           userExcluded: true,
           userExcludedType: ex.type || 'unknown',
           userExcludedNeedle: ex.needle || '',
@@ -7491,6 +7516,7 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
             success: true,
             slug,
             title,
+            imageUrl,
             releaseDate: d.toISOString().slice(0, 10),
             releaseDateSource: rel?.source || 'unknown',
             releaseFutureExcluded: true,
@@ -7514,6 +7540,7 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
               success: true,
               slug,
               title,
+              imageUrl,
               releaseDate: d.toISOString().slice(0, 10),
               releaseDateSource: rel?.source || 'unknown',
               releaseExcluded: true,
@@ -7764,6 +7791,7 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
       success: true,
       slug,
       title,
+      imageUrl,
       feeSum,
       excludeLowAskMax: Number.isFinite(excludeLowAskMax) ? Math.floor(excludeLowAskMax) : null,
       salesView: md?.salesView || 'unknown',
@@ -7812,6 +7840,29 @@ async function scanThisProductForXpressDeals({ mode } = {}) {
 
     const slug = getProductSlugFromUrl() || '';
     const title = safeText(document.querySelector('h1')) || '';
+    const getProductImageUrlBestEffort = () => {
+      try {
+        const candidates = [
+          document.querySelector('meta[property="og:image"]')?.getAttribute?.('content'),
+          document.querySelector('meta[name="twitter:image"]')?.getAttribute?.('content'),
+          document.querySelector('meta[name="twitter:image:src"]')?.getAttribute?.('content')
+        ]
+          .map((x) => String(x || '').trim())
+          .filter(Boolean);
+        let raw = candidates[0] || '';
+        if (!raw) return '';
+        if (raw.startsWith('//')) raw = `https:${raw}`;
+        if (raw.startsWith('/')) {
+          try {
+            raw = new URL(raw, location.origin).toString();
+          } catch {}
+        }
+        return /^https?:\/\//i.test(raw) ? raw : '';
+      } catch {
+        return '';
+      }
+    };
+    const imageUrl = getProductImageUrlBestEffort();
     const settings = await loadScanSettings();
     const minSales30d = Number(settings?.minSales30d);
     const xpressMinDiscountPct = Number(settings?.xpressMinDiscountPct);
@@ -7838,6 +7889,7 @@ async function scanThisProductForXpressDeals({ mode } = {}) {
             mode: 'xpress',
             slug,
             title,
+            imageUrl,
             releaseDate: d.toISOString().slice(0, 10),
             releaseDateSource: rel?.source || 'unknown',
             releaseFutureExcluded: true,
@@ -7861,6 +7913,7 @@ async function scanThisProductForXpressDeals({ mode } = {}) {
               mode: 'xpress',
               slug,
               title,
+              imageUrl,
               releaseDate: d.toISOString().slice(0, 10),
               releaseDateSource: rel?.source || 'unknown',
               releaseExcluded: true,
@@ -7888,6 +7941,7 @@ async function scanThisProductForXpressDeals({ mode } = {}) {
           mode: 'xpress',
           slug,
           title,
+          imageUrl,
           userExcluded: true,
           userExcludedType: ex.type || 'unknown',
           userExcludedNeedle: ex.needle || '',
@@ -8018,6 +8072,7 @@ async function scanThisProductForXpressDeals({ mode } = {}) {
       mode: 'xpress',
       slug,
       title,
+      imageUrl,
       salesView: md?.salesView || 'unknown',
       sellerViewConfirmed: !!md?.sellerViewConfirmed,
       xpressMinDiscountPct: minDisc,

@@ -371,10 +371,11 @@ async function maybeNotifySlackForOpportunities({ scanId, resultUrl, result }) {
         if (mention) {
           blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: `${mention}` }] });
         }
+        blocks.push({ type: 'header', text: { type: 'plain_text', text: 'Opportunity found', emoji: true } });
         // Use a section accessory image (smaller) instead of a full-width image block.
         blocks.push({
           type: 'section',
-          text: { type: 'mrkdwn', text: `*Opportunity found*\n<${linkUrl}|${title}${sizeLabel ? ` (${sizeLabel})` : ''}>` },
+          text: { type: 'mrkdwn', text: `<${linkUrl}|${title}${sizeLabel ? ` (${sizeLabel})` : ''}>\n\n` },
           ...(imageUrl && /^https:\/\//i.test(imageUrl)
             ? { accessory: { type: 'image', image_url: imageUrl, alt_text: title.slice(0, 80) || 'StockX' } }
             : {})
@@ -387,9 +388,22 @@ async function maybeNotifySlackForOpportunities({ scanId, resultUrl, result }) {
         if (avg30d != null) fields.push({ type: 'mrkdwn', text: `*Avg 30d*\n$${avg30d}` });
         if (profit != null) fields.push({ type: 'mrkdwn', text: `*Profit*\n$${profit}` });
         if (fields.length) blocks.push({ type: 'section', fields: fields.slice(0, 10) });
+        blocks.push({ type: 'divider' });
+
+        const textLines = [];
+        if (mentionPrefix) textLines.push(mentionPrefix.trim());
+        textLines.push('Opportunity found');
+        textLines.push(`${title}${sizeLabel ? ` (${sizeLabel})` : ''}`);
+        textLines.push(linkUrl);
+        textLines.push('');
+        if (kind) textLines.push(`Mode: ${kind}`);
+        if (highestBid != null) textLines.push(`Highest Bid: $${highestBid}`);
+        if (lowestAsk != null) textLines.push(`Lowest Ask: $${lowestAsk}`);
+        if (avg30d != null) textLines.push(`Avg 30d: $${avg30d}`);
+        if (profit != null) textLines.push(`Profit: $${profit}`);
 
         const payload = {
-          text: `${mentionPrefix}Opportunity: ${title} ${sizeLabel ? `(${sizeLabel})` : ''} profit $${profit ?? '—'}`,
+          text: textLines.filter((x) => x != null).join('\n'),
           blocks
         };
 
