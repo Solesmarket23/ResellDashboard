@@ -8943,6 +8943,25 @@ function ensureListingBidWidget() {
     if (!window.__stockxWidgetInputFocusFixInstalled) {
       window.__stockxWidgetInputFocusFixInstalled = true;
       try { window.__stockxWidgetFocusLock = null; } catch {}
+      // #region agent log (debug-mode instrumentation)
+      const __stockxDbgSend = (hypothesisId, location, message, data) => {
+        try {
+          fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId: 'debug-session',
+              runId: String(window.__stockxDbgRunId || 'focus-input-pre'),
+              hypothesisId: String(hypothesisId || ''),
+              location: String(location || 'chrome-extension/content-simple.js'),
+              message: String(message || ''),
+              data: data || {},
+              timestamp: Date.now()
+            })
+          }).catch(() => {});
+        } catch {}
+      };
+      // #endregion
       const describeEl = (el) => {
         try {
           if (!el) return null;
@@ -8978,6 +8997,14 @@ function ensureListingBidWidget() {
           const lockActive = !!lock && typeof lock === 'object' && Date.now() <= Number(lock.until || 0);
           // Only log during the focus lock window to keep noise down.
           if (!lockActive) return;
+          const dbgEnabled = !!window.__stockxListingBidScanState?.debugClicks;
+          if (!dbgEnabled) return;
+          // Rate limit per click lock (prevents spam)
+          try {
+            lock._seq = Number(lock._seq || 0) + 1;
+            if (lock._seq > 14) return;
+          } catch {}
+
           const ae = document.activeElement;
           const target = e?.target;
           const pt = (() => {
@@ -9001,6 +9028,22 @@ function ensureListingBidWidget() {
             point: pt,
             extra
           });
+          // #region agent log (debug-mode instrumentation)
+          __stockxDbgSend(
+            'H2_focusStolen',
+            'chrome-extension/content-simple.js:widget-input-debug',
+            label,
+            {
+              lock: { role: String(lock?.role || ''), until: Number(lock?.until || 0), seq: Number(lock?._seq || 0) },
+              type: String(e?.type || ''),
+              activeEl: describeEl(ae),
+              target: describeEl(target),
+              relatedTarget: describeEl(e?.relatedTarget),
+              point: pt,
+              extra
+            }
+          );
+          // #endregion
         } catch {}
       };
       const focusInput = (el, role = '') => {
@@ -9014,7 +9057,7 @@ function ensureListingBidWidget() {
           const lockId = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
           const doFocus = () => {
             try {
-              logWidgetFocusDbg('doFocus(before)', null, { el: describeEl(el) });
+              logWidgetFocusDbg('doFocus(before)', null, { el: describeEl(el), isConnected: !!el?.isConnected });
               el.focus?.();
               // Select-all for fast editing
               try { el.select?.(); } catch {}
@@ -9022,7 +9065,7 @@ function ensureListingBidWidget() {
                 const v = String(el.value ?? '');
                 if (typeof el.setSelectionRange === 'function') el.setSelectionRange(0, v.length);
               } catch {}
-              logWidgetFocusDbg('doFocus(after)', null, { el: describeEl(el) });
+              logWidgetFocusDbg('doFocus(after)', null, { el: describeEl(el), isConnected: !!el?.isConnected, activeEl: describeEl(document.activeElement) });
             } catch {}
           };
 
@@ -9076,7 +9119,27 @@ function ensureListingBidWidget() {
           const role = input.getAttribute?.('data-role') || '';
           if (!['max-items', 'max-pages', 'concurrency'].includes(role)) return;
           // Start/refresh focus lock so console logging will capture the next second of events.
-          try { window.__stockxWidgetFocusLock = { id: `cap_${Date.now()}`, role, until: Date.now() + 1200 }; } catch {}
+          const clickId = `cap_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+          try { window.__stockxWidgetFocusLock = { id: clickId, role, until: Date.now() + 1200, _seq: 0 }; } catch {}
+          // #region agent log (debug-mode instrumentation)
+          __stockxDbgSend('H1_overlayTarget', 'chrome-extension/content-simple.js:onCap', 'cap(start)', {
+            clickId,
+            url: String(location.href || ''),
+            role,
+            activeEl: describeEl(document.activeElement),
+            target: describeEl(e?.target),
+            input: describeEl(input),
+            inputConnected: !!input?.isConnected,
+            inputRect: (() => {
+              try {
+                const r = input.getBoundingClientRect?.();
+                return r ? { x: r.x, y: r.y, w: r.width, h: r.height } : null;
+              } catch {
+                return null;
+              }
+            })()
+          });
+          // #endregion
           logWidgetFocusDbg('cap(start)', e, { input: describeEl(input) });
           // Stop StockX capture handlers and focus ourselves.
           try { e.stopImmediatePropagation?.(); } catch {}
@@ -9084,6 +9147,14 @@ function ensureListingBidWidget() {
           // Do NOT preventDefault: we want native focusing/caret behavior.
           focusInput(input, role);
           logWidgetFocusDbg('cap(done)', e, { input: describeEl(input) });
+          // #region agent log (debug-mode instrumentation)
+          __stockxDbgSend('H3_focusNotApplied', 'chrome-extension/content-simple.js:onCap', 'cap(done)', {
+            clickId,
+            role,
+            activeEl: describeEl(document.activeElement),
+            inputConnected: !!input?.isConnected
+          });
+          // #endregion
         } catch {}
       };
       const onCapPost = (e) => {
@@ -9100,6 +9171,15 @@ function ensureListingBidWidget() {
           if (!t || !w.contains(t)) return;
 
           logWidgetFocusDbg('capPost', e, null);
+          // #region agent log (debug-mode instrumentation)
+          __stockxDbgSend('H2_focusStolen', 'chrome-extension/content-simple.js:onCapPost', 'capPost(before)', {
+            clickId: String(lock?.id || ''),
+            role,
+            type: String(e?.type || ''),
+            activeEl: describeEl(document.activeElement),
+            target: describeEl(e?.target)
+          });
+          // #endregion
           // Stop StockX capture handlers that steal focus.
           try { e.stopImmediatePropagation?.(); } catch {}
           try { e.stopPropagation?.(); } catch {}
@@ -9107,6 +9187,14 @@ function ensureListingBidWidget() {
           // Re-focus after pointerup/mouseup/click.
           focusInputByRole(role);
           logWidgetFocusDbg('capPost(done)', e, null);
+          // #region agent log (debug-mode instrumentation)
+          __stockxDbgSend('H2_focusStolen', 'chrome-extension/content-simple.js:onCapPost', 'capPost(after)', {
+            clickId: String(lock?.id || ''),
+            role,
+            type: String(e?.type || ''),
+            activeEl: describeEl(document.activeElement)
+          });
+          // #endregion
         } catch {}
       };
       // Capture phase so we run before StockX capture listeners.
