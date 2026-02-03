@@ -3,6 +3,26 @@ chrome.runtime.onInstalled.addListener(() => {
   console.log('StockX Price Tracker extension installed');
 });
 
+// #region agent log (debug-mode instrumentation)
+function __stockxDbgSend(hypothesisId, location, message, data) {
+  try {
+    fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: 'debug-session',
+        runId: String(globalThis.__stockxDbgRunId || 'page-scan-pre'),
+        hypothesisId: String(hypothesisId || ''),
+        location: String(location || 'chrome-extension/background.js'),
+        message: String(message || ''),
+        data: data || {},
+        timestamp: Date.now()
+      })
+    }).catch(() => {});
+  } catch {}
+}
+// #endregion
+
 // --- MV3 keepalive ---
 // MV3 service workers can be suspended during long scans. A long-lived Port from the listing tab
 // keeps the worker alive while the scan runs.
@@ -2402,6 +2422,19 @@ async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPa
     }
   } catch {}
   const collectorId = collectorTabId || originTabId;
+  // #region agent log (debug-mode instrumentation)
+  __stockxDbgSend('H1_collectorTabCreate', 'chrome-extension/background.js:runListingBidScanPaginated', 'collector tab selected', {
+    scanId,
+    originTabId,
+    collectorTabId,
+    collectorId,
+    startUrl,
+    maxPages,
+    perPage,
+    scanMode: String(scanMode || ''),
+    keepUserFocus: !!entry?.keepUserFocus
+  });
+  // #endregion
 
   const startPage = (() => {
     try {
@@ -2447,8 +2480,46 @@ async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPa
       setScanState(scanId, { stage: `page ${pageNum} loading`, total, completed, currentPage: pageNum, currentUrl: pageUrl });
 
       const navStart = Date.now();
+      // #region agent log (debug-mode instrumentation)
+      __stockxDbgSend('H2_navOrHydrationHang', 'chrome-extension/background.js:runListingBidScanPaginated', 'navigate page(start)', {
+        scanId,
+        pageNum,
+        pageUrl,
+        collectorId,
+        collectorTabId,
+        originTabId
+      });
+      // #endregion
       const nav = await navigateTabTo(collectorId, pageUrl, 60000);
       const navMs = Date.now() - navStart;
+      // #region agent log (debug-mode instrumentation)
+      try {
+        chrome.tabs.get(collectorId, (tab) => {
+          void chrome.runtime.lastError;
+          __stockxDbgSend('H2_navOrHydrationHang', 'chrome-extension/background.js:runListingBidScanPaginated', 'navigate page(done)', {
+            scanId,
+            pageNum,
+            pageUrl,
+            navOk: !!nav?.ok,
+            navError: String(nav?.error || ''),
+            navMs,
+            collectorId,
+            tabUrl: String(tab?.url || ''),
+            tabStatus: String(tab?.status || '')
+          });
+        });
+      } catch {
+        __stockxDbgSend('H2_navOrHydrationHang', 'chrome-extension/background.js:runListingBidScanPaginated', 'navigate page(done)', {
+          scanId,
+          pageNum,
+          pageUrl,
+          navOk: !!nav?.ok,
+          navError: String(nav?.error || ''),
+          navMs,
+          collectorId
+        });
+      }
+      // #endregion
       if (!nav.ok) break;
 
       // Give the SPA time to hydrate and render cards
@@ -2464,12 +2535,35 @@ async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPa
       for (let attempt = 0; attempt < 3; attempt++) {
         const collected = await requestUrlsFromOriginTab(collectorId, { perPage, opts }, 25000);
         urls = Array.isArray(collected?.urls) ? collected.urls : [];
+        // #region agent log (debug-mode instrumentation)
+        __stockxDbgSend('H3_collectReturnsZero', 'chrome-extension/background.js:runListingBidScanPaginated', 'collect attempt', {
+          scanId,
+          pageNum,
+          attempt,
+          collectorId,
+          collectedOk: !!collected?.success,
+          collectedUrl: String(collected?.url || ''),
+          collectedPage: Number(collected?.page || 0),
+          urlsCount: urls.length,
+          sample: urls.slice(0, 3)
+        });
+        // #endregion
         if (urls.length) break;
         await new Promise((r) => setTimeout(r, 1200 + attempt * 700));
       }
       const collectMs = Date.now() - collectStart;
       recordPagePerf(scanId, { navMs, collectMs });
       if (!urls.length) {
+        // #region agent log (debug-mode instrumentation)
+        __stockxDbgSend('H3_collectReturnsZero', 'chrome-extension/background.js:runListingBidScanPaginated', 'collect failed (no urls)', {
+          scanId,
+          pageNum,
+          pageUrl,
+          collectorId,
+          navMs,
+          collectMs
+        });
+        // #endregion
         // Ended early: mark as stopped so it can be resumed.
         setScanState(scanId, {
           stage: `stopped (no urls on page ${pageNum})`,

@@ -8106,6 +8106,30 @@ try {
           const maxItems = Number.isFinite(Number(request?.maxItems)) ? Math.max(1, Math.min(48, Number(request.maxItems))) : 48;
           const opts = request?.opts && typeof request.opts === 'object' ? request.opts : {};
           const urls = collectListingProductUrls(maxItems, opts);
+          // #region agent log (debug-mode instrumentation)
+          try {
+            const entry = {
+              sessionId: 'debug-session',
+              runId: String(window.__stockxDbgRunId || 'page-scan-pre'),
+              hypothesisId: 'H3_collectReturnsZero',
+              location: 'chrome-extension/content-simple.js:collectListingProductUrls',
+              message: 'collectListingProductUrls response',
+              data: {
+                url: String(location.href || ''),
+                readyState: String(document.readyState || ''),
+                maxItems,
+                opts: {
+                  onlySneakers: !!opts.onlySneakers,
+                  skipOneSize: !!opts.skipOneSize
+                },
+                urlsCount: Array.isArray(urls) ? urls.length : 0,
+                sample: Array.isArray(urls) ? urls.slice(0, 3) : []
+              },
+              timestamp: Date.now()
+            };
+            chrome.runtime.sendMessage({ action: 'debugIngestLog', entry }, () => void chrome.runtime.lastError);
+          } catch {}
+          // #endregion
           sendResponse({
             success: true,
             url: location.href,
