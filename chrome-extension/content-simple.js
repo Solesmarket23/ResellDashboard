@@ -10035,11 +10035,22 @@ function ensureGlobalStopOverlay() {
           const total = Number.isFinite(Number(p.total)) ? Number(p.total) : 0;
           const opps = Number.isFinite(Number(p.oppsFound)) ? Number(p.oppsFound) : 0;
           return `
-            <div style="display:flex; justify-content:flex-end; gap:8px; margin-bottom:8px;">
-              <span style="font-size:11px; font-weight:1000; padding:4px 10px; border-radius:999px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.14); color:rgba(255,255,255,0.92);">
+            <div style="
+              display:flex;
+              justify-content:flex-end;
+              gap:10px;
+              margin-bottom:10px;
+              padding:8px 10px;
+              border-radius:14px;
+              background: rgba(17, 24, 39, 0.92);
+              border: 1px solid rgba(99,102,241,0.35);
+              box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+              backdrop-filter: blur(6px);
+            ">
+              <span style="font-size:12px; font-weight:1000; padding:6px 12px; border-radius:999px; background:rgba(255,255,255,0.10); border:1px solid rgba(255,255,255,0.18); color:rgba(255,255,255,0.95);">
                 Scanned ${Math.max(0, scanned)}${total ? `/${total}` : ''}
               </span>
-              <span style="font-size:11px; font-weight:1000; padding:4px 10px; border-radius:999px; background:rgba(34,197,94,0.18); border:1px solid rgba(34,197,94,0.35); color:#bbf7d0;">
+              <span style="font-size:12px; font-weight:1000; padding:6px 12px; border-radius:999px; background:rgba(34,197,94,0.22); border:1px solid rgba(34,197,94,0.45); color:#dcfce7;">
                 Opps ${Math.max(0, opps)}
               </span>
             </div>
