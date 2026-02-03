@@ -10077,20 +10077,43 @@ function ensureGlobalStopOverlay() {
     window.__stockxGlobalStopOverlayPollInstalled = true;
     const tick = () => {
       try {
-        chrome?.storage?.local?.get?.(['stockxActiveListingScanId'], (res) => {
+        chrome?.storage?.local?.get?.(['stockxActiveListingScanId', 'stockxLastListingScanId'], (res) => {
           void chrome.runtime.lastError;
-          const sid = String(res?.stockxActiveListingScanId || '');
+          const active = String(res?.stockxActiveListingScanId || '');
+          const last = String(res?.stockxLastListingScanId || '');
+          const prevSid = String(window.__stockxGlobalStopOverlayLastSid || '');
+          const prevAt = Number(window.__stockxGlobalStopOverlayLastAt || 0);
+
+          // Prefer active; fall back to last; if both missing, keep last-seen briefly (prevents flicker).
+          let sid = active || last || '';
+          if (!sid && prevSid && Date.now() - prevAt < 45000) sid = prevSid;
           if (!sid) return upsert('');
+
           const stateKey = `stockxListingScanState:${sid}`;
           chrome.storage.local.get([stateKey], (r2) => {
             void chrome.runtime.lastError;
             const s = r2?.[stateKey] && typeof r2[stateKey] === 'object' ? r2[stateKey] : null;
+
+            // If we only have "last" and it's already finished/stale, hide the overlay.
+            try {
+              const stage = String(s?.stage || '').toLowerCase();
+              const finishedAt = Number(s?.finishedAt || 0);
+              const updatedAt = Number(s?.updatedAt || 0);
+              const stale = updatedAt && Date.now() - updatedAt > 5 * 60 * 1000;
+              const finished = (stage === 'done' || stage === 'stopped') && finishedAt > 0;
+              if (!active && (finished || stale)) return upsert('');
+            } catch {}
+
             try {
               window.__stockxGlobalStopOverlayPills = {
                 completed: Number(s?.completed || 0),
                 total: Number(s?.total || 0),
                 oppsFound: Number(s?.oppsFound || 0)
               };
+            } catch {}
+            try {
+              window.__stockxGlobalStopOverlayLastSid = sid;
+              window.__stockxGlobalStopOverlayLastAt = Date.now();
             } catch {}
             upsert(sid);
           });
