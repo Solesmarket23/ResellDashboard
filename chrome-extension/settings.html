@@ -217,49 +217,6 @@ bundle"></textarea>
         </div>
       </div>
 
-      <div class="card">
-        <div class="row">
-          <label>Slack notifications</label>
-          <div class="muted">
-            Sends a Slack message for each opportunity found during scans. Best practice: create a separate Incoming Webhook for the channel you want.
-          </div>
-        </div>
-        <div class="row">
-          <label for="slackEnabled">Enable Slack notifications</label>
-          <div>
-            <label style="display:flex; gap:8px; align-items:center; cursor:pointer; user-select:none;">
-              <input id="slackEnabled" type="checkbox" />
-              Enabled
-            </label>
-          </div>
-        </div>
-        <div class="row">
-          <label for="slackWebhookUrl">Slack Incoming Webhook URL</label>
-          <input id="slackWebhookUrl" type="text" placeholder="https://hooks.slack.com/services/..." />
-        </div>
-        <div class="row">
-          <label for="slackChannel">Slack channel (optional)</label>
-          <input id="slackChannel" type="text" placeholder="#your-channel (may be ignored by Slack webhooks)" />
-        </div>
-        <div class="row">
-          <label for="slackMention">Mention (optional)</label>
-          <input id="slackMention" type="text" placeholder="@Solesmarket23 or <@U123ABC456>" />
-        </div>
-        <div class="muted">
-          Note: many Slack Incoming Webhooks are locked to a single channel and will ignore the <code>channel</code> field. If so, create a webhook specifically for the target channel.
-        </div>
-        <div id="slackStatus" class="toast" style="margin-top:10px;"></div>
-        <div class="actions">
-          <button id="testSlackBtn" class="btn-secondary" type="button">Send test to Slack</button>
-          <button id="copySlackLogsBtn" class="btn-secondary" type="button">Copy logs</button>
-          <button id="clearSlackLogsBtn" class="btn-secondary" type="button">Clear logs</button>
-        </div>
-        <details style="margin-top:10px;">
-          <summary style="cursor:pointer; font-weight:900; color:rgba(255,255,255,0.8);">Slack logs</summary>
-          <pre id="slackLogs" style="margin-top:10px; white-space:pre-wrap; word-break:break-word; max-height:220px; overflow:auto; padding:10px; border-radius:10px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.10);"></pre>
-        </details>
-      </div>
-
       <div class="actions">
         <button id="saveBtn" class="btn-primary">Save</button>
         <button id="resetBtn" class="btn-secondary">Reset defaults</button>

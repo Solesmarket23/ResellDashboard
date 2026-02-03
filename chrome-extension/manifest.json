@@ -10,13 +10,11 @@
     "scripting"
   ],
   "host_permissions": [
-    "https://stockx.com/*",
-    "https://*.stockx.com/*",
-    "https://hooks.slack.com/*"
+    "https://stockx.com/*"
   ],
   "content_scripts": [
     {
-      "matches": ["https://stockx.com/*", "https://*.stockx.com/*"],
+      "matches": ["https://stockx.com/*"],
       "js": ["content-simple.js"],
       "run_at": "document_end",
       "all_frames": false

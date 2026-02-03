@@ -120,14 +120,12 @@ function flattenOpportunities(resultsMap, limit = 80) {
     const opps = Array.isArray(v?.opportunities) ? v.opportunities : [];
     for (const o of opps) {
       const isXpress = String(o?.kind || '').toLowerCase() === 'xpress' || Number.isFinite(Number(o?.discountPct));
-      const sizeParam = safeStr(o?.sizeParam || '');
       out.push({
         savedAt: Number(v?.savedAt || 0),
         url,
-        sizeUrl: withSizeParam(url, sizeParam),
         title,
         sizeLabel: safeStr(o?.sizeLabel || ''),
-        sizeParam,
+        sizeParam: safeStr(o?.sizeParam || ''),
         kind: isXpress ? 'xpress' : 'bid',
         buyNow: isXpress ? (o?.lowestAsk ?? null) : null,
         discountPct: isXpress ? (o?.discountPct ?? null) : null,
@@ -205,12 +203,11 @@ function downloadTextFile(filename, text, mime = 'text/plain;charset=utf-8') {
 
 function buildOpportunitiesCsv(resultsMap) {
   const rows = flattenOpportunities(resultsMap, 2000);
-  // Export link as the size-specific URL so clicking opens directly to that size.
-  const header = ['link', 'title', 'size', 'mode', 'bid', 'ask', 'buyNow', 'profit', 'roiPct', 'avg30d', 'discountPct', 'edge'];
+  const header = ['title', 'size', 'mode', 'bid', 'ask', 'buyNow', 'profit', 'roiPct', 'avg30d', 'discountPct', 'edge', 'url'];
   const lines = [header.map(csvEscape).join(',')];
   for (const r of rows) {
     lines.push(
-      [r.sizeUrl || r.url, r.title, r.sizeLabel, r.kind, r.bid, r.ask, r.buyNow, r.profit, r.roiPct, r.avg30d, r.discountPct, r.edge]
+      [r.title, r.sizeLabel, r.kind, r.bid, r.ask, r.buyNow, r.profit, r.roiPct, r.avg30d, r.discountPct, r.edge, r.url]
         .map(csvEscape)
         .join(',')
     );

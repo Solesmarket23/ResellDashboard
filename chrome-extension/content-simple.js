@@ -1009,12 +1009,6 @@ function stockxSizeParamFromLabelWithContext(sizeLabel, ctx = {}) {
     const base = stockxSizeParamFromLabel(raw);
     if (base && /\bW$/i.test(base)) return base;
 
-    // IMPORTANT: Do NOT auto-convert men's sizes into women's sizing unless we are explicitly told to.
-    // We had false positives where men's products were being linked as e.g. "11W" instead of "10",
-    // which makes StockX ignore the size param (and mobile opens the parent product page).
-    const allowWomensConversion = !!ctx?.allowWomensConversion;
-    if (!allowWomensConversion) return base || '';
-
     const title = String(ctx?.title || '').toLowerCase();
     const slug = String(ctx?.slug || '').toLowerCase();
     const url = String(ctx?.url || '').toLowerCase();
@@ -1119,20 +1113,6 @@ async function clearBidHistory() {
 // --- Scan settings (persisted) ---
 const STOCKX_SCAN_SETTINGS_KEY = 'stockxScanSettings';
 const STOCKX_LISTING_WIDGET_POS_KEY = 'stockxListingWidgetPos';
-const STOCKX_LISTING_WIDGET_PREFS_KEY = 'stockxListingWidgetPrefs';
-
-// If a tab was opened with ?extScan=1, StockX SPA navigation can later rewrite the URL and drop that param.
-// Persist a marker in JS memory so we still treat it as a scan/collector tab.
-try {
-  const u = new URL(location.href);
-  if (u.searchParams.get('extScan') === '1') {
-    window.__stockxIsScanTab = true;
-    // Make it obvious in the tab strip which one is the background collector tab.
-    try {
-      if (!/^SCAN:/i.test(String(document.title || ''))) document.title = `SCAN: listing collector`;
-    } catch {}
-  }
-} catch {}
 
 function openExtensionSettingsTab() {
   try {
@@ -1297,41 +1277,6 @@ async function saveListingWidgetPos(pos) {
     return true;
   } catch {
     return false;
-  }
-}
-
-async function loadListingWidgetPrefs() {
-  try {
-    if (!chrome?.storage?.local) return null;
-    const res = await new Promise((resolve) => chrome.storage.local.get([STOCKX_LISTING_WIDGET_PREFS_KEY], resolve));
-    const cur = res?.[STOCKX_LISTING_WIDGET_PREFS_KEY];
-    return cur && typeof cur === 'object' ? cur : null;
-  } catch {
-    return null;
-  }
-}
-
-async function saveListingWidgetPrefs(prefs) {
-  try {
-    if (!chrome?.storage?.local) return false;
-    const p = prefs && typeof prefs === 'object' ? prefs : null;
-    if (!p) return false;
-    await new Promise((resolve) => chrome.storage.local.set({ [STOCKX_LISTING_WIDGET_PREFS_KEY]: p }, resolve));
-    try {
-      window.__stockxListingWidgetPrefsCache = p;
-    } catch {}
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function getListingWidgetPrefsCached() {
-  try {
-    const c = window.__stockxListingWidgetPrefsCache;
-    return c && typeof c === 'object' ? c : null;
-  } catch {
-    return null;
   }
 }
 
@@ -4853,30 +4798,48 @@ function renderProductWidget({ marketData, recentSales }) {
     </div>
 
     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-bottom:10px;">
-      <div style="padding:8px 10px; border-radius:10px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.10);">
-        <div style="opacity:.75;font-size:11px; font-weight:800;">Highest Bid</div>
-        <div data-role="val-highestBid" style="font-weight:1000; font-size:16px; margin-top:2px;">$${formatUsdOrDash(marketData?.highestBid)}</div>
-      </div>
-      <div style="padding:8px 10px; border-radius:10px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.10);">
-        <div style="opacity:.75;font-size:11px; font-weight:800;">Lowest Ask</div>
-        <div data-role="val-lowestAsk" style="font-weight:1000; font-size:16px; margin-top:2px;">$${formatUsdOrDash(marketData?.lowestAsk)}</div>
-      </div>
-      <div style="padding:8px 10px; border-radius:10px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08);">
-        <div style="opacity:.72;font-size:11px; font-weight:800;">Avg (30d)</div>
-        <div data-role="val-monthAvg" style="font-weight:1000; font-size:15px; margin-top:2px;">$${stats30.avg != null ? Math.round(stats30.avg) : '—'}</div>
-      </div>
-      <div style="padding:8px 10px; border-radius:10px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08);">
-        <div style="opacity:.72;font-size:11px; font-weight:800;">Last Sale</div>
-        <div data-role="val-lastSale" style="font-weight:900; font-size:14px; margin-top:2px;">$${formatUsdOrDash(marketData?.lastSale)}</div>
-      </div>
+      <div><div style="opacity:.7;font-size:11px;">Highest Bid</div><div data-role="val-highestBid" style="font-weight:800;">$${formatUsdOrDash(marketData?.highestBid)}</div></div>
+      <div><div style="opacity:.7;font-size:11px;">Lowest Ask</div><div data-role="val-lowestAsk" style="font-weight:800;">$${formatUsdOrDash(marketData?.lowestAsk)}</div></div>
+      <div><div style="opacity:.7;font-size:11px;">Last Sale</div><div data-role="val-lastSale" style="font-weight:800;">$${formatUsdOrDash(marketData?.lastSale)}</div></div>
+      <div><div style="opacity:.7;font-size:11px;">Avg (30d)</div><div data-role="val-monthAvg" style="font-weight:800;">$${stats30.avg != null ? Math.round(stats30.avg) : '—'}</div></div>
+    </div>
+    <div style="margin-top:-6px; margin-bottom:10px; font-size:11px; color:rgba(255,255,255,0.6);">
+      source: <span data-role="meta-source">${String(marketData?.source || 'unknown')}${marketData?.size ? ` • size: ${String(marketData.size)}` : ''}</span>
+      • sales: <span data-role="meta-sales-count">${Array.isArray(recentSales) ? recentSales.length : 0}</span>
+      • 30d: <span data-role="meta-month-count">${stats30.count || 0}</span>
+      • max all-in: <span data-role="meta-maxAllIn">${profitTarget?.maxAllInBid ? `$${profitTarget.maxAllInBid}` : '—'}</span>
+      • <a href="#" data-role="debug" style="color:#93c5fd;text-decoration:underline;">debug dump</a>
     </div>
 
     <div style="margin-bottom:10px;">
-      <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin-bottom:6px;">
-        <div style="font-weight:900;">Recent sales</div>
-        <div style="font-size:11px; color:rgba(255,255,255,0.6);">total <span data-role="meta-sales-count">${Array.isArray(recentSales) ? recentSales.length : 0}</span> • 30d <span data-role="meta-month-count">${stats30.count || 0}</span></div>
+      <div style="font-weight:800; margin-bottom:6px;">Recent sales</div>
+      <div data-role="sales-list" style="display:flex; flex-direction:column; gap:6px;">${salesHtml}</div>
+    </div>
+
+    <div style="margin-bottom:10px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:6px;">
+        <div style="font-weight:800;">Bid targets (30d)</div>
+        <div style="opacity:.7; font-size:11px;">≥4 sales • ≥$15 profit</div>
       </div>
-      <div data-role="sales-list" style="display:flex; flex-direction:column; gap:6px; max-height: 160px; overflow:auto; padding-right:4px;">${salesHtml}</div>
+      <div style="display:flex; justify-content:space-between; gap:8px; margin-bottom:6px;">
+        <button data-role="scan-sizes" style="flex:1; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:white; padding:7px 10px; border-radius:8px; cursor:pointer; font-weight:800;">
+          Scan sizes
+        </button>
+        <button data-role="clear-scan" style="width:110px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.10); color:rgba(255,255,255,0.85); padding:7px 10px; border-radius:8px; cursor:pointer; font-weight:800;">
+          Clear
+        </button>
+      </div>
+      <div data-role="targets-list" style="display:flex; flex-direction:column; gap:6px; max-height: 200px; overflow:auto;">
+        ${targetsHtml}
+      </div>
+      <div style="margin-top:6px; font-size:11px; color:rgba(255,255,255,0.65);">
+        Fees used: ${
+          getCachedFeeSum() != null
+            ? `ship ${feeBd?.shipping != null ? `$${feeBd.shipping}` : '—'} + proc ${feeBd?.processingFee != null ? `$${feeBd.processingFee}` : '—'} = ~$${Math.round(feeSum)}`
+            : `assumed $${Math.round(feeSum)}`
+        } • assumed fees: <input data-role="assumed-fees" value="${String(getAssumedFeeSum())}"
+          style="width:64px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:white; padding:2px 6px; border-radius:6px; margin-left:6px;" />
+      </div>
     </div>
 
     <div style="display:flex; gap:8px; margin-bottom:10px;">
@@ -4893,15 +4856,10 @@ function renderProductWidget({ marketData, recentSales }) {
           style="width:100%; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:white; padding:8px 10px; border-radius:8px; cursor:text;" />
       </div>
     </div>
-    <div data-role="calc" style="margin-top:-2px; margin-bottom:10px; font-size:11px; color:rgba(255,255,255,0.78); line-height:1.35;">
-      <div style="display:flex; flex-wrap:wrap; gap:10px;">
-        <div>All‑in <span data-role="calc-allin">${initialAllIn.total != null ? `$${Math.round(initialAllIn.total)}` : '—'}</span> <span style="opacity:.7;">(fees <span data-role="calc-fees">${initialAllIn.feeSum != null ? `$${Math.round(initialAllIn.feeSum)}` : '—'}</span>)</span></div>
-        <div>Profit vs 30d avg <span data-role="calc-profit">${initialProfit.profit != null ? `$${Math.round(initialProfit.profit)}` : '—'}</span> <span data-role="calc-pass" style="opacity:.85;">${initialProfit.ok == null ? '' : initialProfit.ok ? '(ok)' : '(low)'}</span></div>
-      </div>
-      <div style="display:none;">
-        <span data-role="calc-bid">${initialBid || '—'}</span>
-        <span data-role="calc-avg">${stats30.avg != null ? `$${Math.round(stats30.avg)}` : '—'}</span>
-      </div>
+    <div data-role="calc" style="margin-top:-2px; margin-bottom:10px; font-size:11px; color:rgba(255,255,255,0.75); line-height:1.35;">
+      <div>Bid $<span data-role="calc-bid">${initialBid || '—'}</span> → all‑in <span data-role="calc-allin">${initialAllIn.total != null ? `$${Math.round(initialAllIn.total)}` : '—'}</span> (fees+ship <span data-role="calc-fees">${initialAllIn.feeSum != null ? `$${Math.round(initialAllIn.feeSum)}` : '—'}</span>)</div>
+      <div>Avg30d <span data-role="calc-avg">${stats30.avg != null ? `$${Math.round(stats30.avg)}` : '—'}</span> → profit <span data-role="calc-profit">${initialProfit.profit != null ? `$${Math.round(initialProfit.profit)}` : '—'}</span> <span data-role="calc-pass">${initialProfit.ok == null ? '' : initialProfit.ok ? '(meets $15)' : '(below $15)'}</span></div>
+      <div style="opacity:.7">Note: fees+ship are from the offer flow (cached) unless a “Total” is visible.</div>
     </div>
 
     <div style="display:flex; gap:8px;">
@@ -4912,47 +4870,6 @@ function renderProductWidget({ marketData, recentSales }) {
         Place Bid
       </button>
     </div>
-
-    <details data-role="advanced" style="margin-top:10px; border-top:1px solid rgba(255,255,255,0.10); padding-top:8px;">
-      <summary style="cursor:pointer; color:rgba(255,255,255,0.75); font-weight:900; font-size:12px; list-style:none;">
-        Advanced (targets, fees, debug)
-      </summary>
-      <div style="margin-top:8px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:6px;">
-          <div style="font-weight:800;">Bid targets (30d)</div>
-          <div style="opacity:.7; font-size:11px;">≥4 sales • ≥$15 profit</div>
-        </div>
-        <div style="display:flex; justify-content:space-between; gap:8px; margin-bottom:6px;">
-          <button data-role="scan-sizes" style="flex:1; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:white; padding:7px 10px; border-radius:8px; cursor:pointer; font-weight:800;">
-            Scan sizes
-          </button>
-          <button data-role="clear-scan" style="width:110px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.10); color:rgba(255,255,255,0.85); padding:7px 10px; border-radius:8px; cursor:pointer; font-weight:800;">
-            Clear
-          </button>
-        </div>
-        <div data-role="targets-list" style="display:flex; flex-direction:column; gap:6px; max-height: 200px; overflow:auto;">
-          ${targetsHtml}
-        </div>
-        <div style="margin-top:6px; font-size:11px; color:rgba(255,255,255,0.65); line-height:1.35;">
-          <div>
-            Fees used: ${
-              getCachedFeeSum() != null
-                ? `ship ${feeBd?.shipping != null ? `$${feeBd.shipping}` : '—'} + proc ${feeBd?.processingFee != null ? `$${feeBd.processingFee}` : '—'} = ~$${Math.round(feeSum)}`
-                : `assumed $${Math.round(feeSum)}`
-            }
-          </div>
-          <div style="margin-top:4px;">
-            Assumed fees: <input data-role="assumed-fees" value="${String(getAssumedFeeSum())}"
-              style="width:74px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:white; padding:4px 6px; border-radius:8px; margin-left:6px;" />
-            <span style="opacity:.7; margin-left:8px;">max all‑in: <span data-role="meta-maxAllIn">${profitTarget?.maxAllInBid ? `$${profitTarget.maxAllInBid}` : '—'}</span></span>
-          </div>
-          <div style="margin-top:6px;">
-            source: <span data-role="meta-source">${String(marketData?.source || 'unknown')}${marketData?.size ? ` • size: ${String(marketData.size)}` : ''}</span>
-            • <a href="#" data-role="debug" style="color:#93c5fd;text-decoration:underline;">debug dump</a>
-          </div>
-        </div>
-      </div>
-    </details>
 
     <div data-role="status" style="margin-top:8px; font-size:11px; color:rgba(255,255,255,0.7);"></div>
   `;
@@ -7514,17 +7431,6 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
 
     const slug = getProductSlugFromUrl() || '';
     const title = safeText(document.querySelector('h1')) || '';
-    const imageUrl = (() => {
-      try {
-        const v =
-          document.querySelector('meta[property="og:image"]')?.getAttribute?.('content') ||
-          document.querySelector('meta[name="twitter:image"]')?.getAttribute?.('content') ||
-          '';
-        return String(v || '').trim();
-      } catch {
-        return '';
-      }
-    })();
     // Listing-scan opportunity rules are configurable in extension settings.
     const settings = await loadScanSettings();
     const feeSum = Number(settings?.feeSum);
@@ -7746,17 +7652,15 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
     let eliminatedByRoi = 0;
     const viableSizeKeys = new Set();
 
-    // Evaluate opportunities primarily from the ask grid.
-    // IMPORTANT: If a size has no Highest Bid, we still consider it (treat as bid=$0).
-    for (const [sizeKey, askRaw] of askBySizeKey.entries()) {
-      const hbNumRaw = Number(hbBySizeKey.get(sizeKey));
-      const hbNum = Number.isFinite(hbNumRaw) && hbNumRaw > 0 ? hbNumRaw : 0;
+    for (const [sizeKey, hb] of hbBySizeKey.entries()) {
+      const hbNum = Number(hb);
+      if (!Number.isFinite(hbNum) || hbNum <= 0) continue;
 
       const stat = statsByKey.get(sizeKey);
       const salesCount = Number(stat?.count) || 0;
       if (Number.isFinite(minSales30d) && minSales30d >= 0 && salesCount < minSales30d) continue;
 
-      const ask = Number(askRaw);
+      const ask = Number(askBySizeKey.get(sizeKey));
       if (!Number.isFinite(ask) || ask <= 0) continue;
 
       const highestBid = Math.floor(hbNum);
@@ -7846,7 +7750,6 @@ async function scanThisProductForBidOpportunities({ mode } = {}) {
       success: true,
       slug,
       title,
-      imageUrl: imageUrl || null,
       feeSum,
       salesView: md?.salesView || 'unknown',
       sellerViewConfirmed: !!md?.sellerViewConfirmed,
@@ -7893,17 +7796,6 @@ async function scanThisProductForXpressDeals({ mode } = {}) {
 
     const slug = getProductSlugFromUrl() || '';
     const title = safeText(document.querySelector('h1')) || '';
-    const imageUrl = (() => {
-      try {
-        const v =
-          document.querySelector('meta[property="og:image"]')?.getAttribute?.('content') ||
-          document.querySelector('meta[name="twitter:image"]')?.getAttribute?.('content') ||
-          '';
-        return String(v || '').trim();
-      } catch {
-        return '';
-      }
-    })();
     const settings = await loadScanSettings();
     const minSales30d = Number(settings?.minSales30d);
     const xpressMinDiscountPct = Number(settings?.xpressMinDiscountPct);
@@ -8027,22 +7919,12 @@ async function scanThisProductForXpressDeals({ mode } = {}) {
 
     // Avg30d (Seller View) per size
     const stats30 = computeSizeStatsLastNDays({ recentSales: sales, days: 30 });
-    const statsByKey30 = new Map();
+    const statsByKey = new Map();
     for (const s of Array.isArray(stats30) ? stats30 : []) {
       const k = normalizeSizeKey(s?.sizeLabel);
       if (!k) continue;
-      const prev = statsByKey30.get(k);
-      if (!prev || (Number(s.count) || 0) > (Number(prev.count) || 0)) statsByKey30.set(k, s);
-    }
-
-    // Avg90d (Seller View) per size (instrumentation only; not used for filtering yet)
-    const stats90 = computeSizeStatsLastNDays({ recentSales: sales, days: 90 });
-    const statsByKey90 = new Map();
-    for (const s of Array.isArray(stats90) ? stats90 : []) {
-      const k = normalizeSizeKey(s?.sizeLabel);
-      if (!k) continue;
-      const prev = statsByKey90.get(k);
-      if (!prev || (Number(s.count) || 0) > (Number(prev.count) || 0)) statsByKey90.set(k, s);
+      const prev = statsByKey.get(k);
+      if (!prev || (Number(s.count) || 0) > (Number(prev.count) || 0)) statsByKey.set(k, s);
     }
 
     const labelByKey = new Map();
@@ -8058,14 +7940,12 @@ async function scanThisProductForXpressDeals({ mode } = {}) {
     let best = null; // best (highest discount) candidate, even if it doesn't pass the threshold
 
     for (const [sizeKey, ask] of askBySizeKey.entries()) {
-      const stat = statsByKey30.get(sizeKey);
-      const stat90 = statsByKey90.get(sizeKey);
+      const stat = statsByKey.get(sizeKey);
       const salesCount = Number(stat?.count) || 0;
       if (Number.isFinite(minSales30d) && minSales30d >= 0 && salesCount < minSales30d) continue;
 
       const avg30d = Number(stat?.avg);
       if (!Number.isFinite(avg30d) || avg30d <= 0) continue;
-      const avg90d = Number(stat90?.avg);
       const buyNow = Math.floor(Number(ask));
       if (!Number.isFinite(buyNow) || buyNow <= 0) continue;
 
@@ -8083,7 +7963,6 @@ async function scanThisProductForXpressDeals({ mode } = {}) {
           sizeParam: stockxSizeParamFromLabelWithContext(labelByKey.get(sizeKey) || stat?.sizeLabel || sizeKey, { title, slug, url: location.href }),
           lowestAsk: buyNow,
           avg30d: Math.round(avg30d),
-          avg90d: Number.isFinite(avg90d) ? Math.round(avg90d) : null,
           discountPct,
           profit: Number.isFinite(profit) ? Math.floor(profit) : null,
           roiPct,
@@ -8117,7 +7996,6 @@ async function scanThisProductForXpressDeals({ mode } = {}) {
       mode: 'xpress',
       slug,
       title,
-      imageUrl: imageUrl || null,
       salesView: md?.salesView || 'unknown',
       sellerViewConfirmed: !!md?.sellerViewConfirmed,
       xpressMinDiscountPct: minDisc,
@@ -8177,53 +8055,8 @@ try {
       }
 
       if (request?.action === 'scanProductXpressDeals') {
-        // #region agent log (debug-session)
-        try {
-          fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              sessionId: 'debug-session',
-              runId: 'xpress-check',
-              hypothesisId: 'X3_X4',
-              location: 'content-simple.js:onMessage:scanProductXpressDeals',
-              message: 'Received scanProductXpressDeals request',
-              data: { url: String(location.href || ''), mode: request?.mode || null, scanId: request?.scanId || null },
-              timestamp: Date.now()
-            })
-          }).catch(() => {});
-        } catch {}
-        // #endregion agent log (debug-session)
         const task = scanThisProductForXpressDeals({ mode: request?.mode });
-        withTimeout(task, 45000, 'xpress scan').then((res) => {
-          // #region agent log (debug-session)
-          try {
-            fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                sessionId: 'debug-session',
-                runId: 'xpress-check',
-                hypothesisId: 'X4',
-                location: 'content-simple.js:onMessage:scanProductXpressDeals:done',
-                message: 'scanProductXpressDeals completed',
-                data: {
-                  success: !!res?.success,
-                  mode: res?.mode || null,
-                  sellerViewConfirmed: res?.sellerViewConfirmed ?? null,
-                  opps: Array.isArray(res?.opportunities) ? res.opportunities.length : 0,
-                  bestDiscountPct: res?.xpressBest?.discountPct ?? null,
-                  bestAvg30d: res?.xpressBest?.avg30d ?? null,
-                  bestAvg90d: res?.xpressBest?.avg90d ?? null,
-                  error: res?.error || null
-                },
-                timestamp: Date.now()
-              })
-            }).catch(() => {});
-          } catch {}
-          // #endregion agent log (debug-session)
-          sendResponse(res);
-        });
+        withTimeout(task, 45000, 'xpress scan').then((res) => sendResponse(res));
         return true;
       }
 
@@ -8315,10 +8148,6 @@ function isStockxHomepage() {
 function isStockxListingPage() {
   try {
     if (!location.hostname.includes('stockx.com')) return false;
-    // The background scan runner opens a "collector" listing tab with ?extScan=1
-    // to paginate and collect product URLs. That tab is not meant to be user-facing.
-    // Treat it as non-listing so we don't render the widget there (prevents confusion / duplicates).
-    if (isExtScanTab()) return false;
     if (isStockxHomepage()) return false;
     if (isBuyingOrderDetailPage()) return false;
     if (isBuyFlowPath()) return false;
@@ -8659,111 +8488,6 @@ function ensureListingBidWidget() {
       pendingStop: false
     });
 
-  // Load persisted widget prefs once (maxPages/maxItems/concurrency/toggles) so StockX SPA navigations
-  // (changing page size, filters, etc.) don't reset your inputs back to defaults.
-  try {
-    if (!window.__stockxListingWidgetPrefsLoaded && !window.__stockxListingWidgetPrefsLoading) {
-      window.__stockxListingWidgetPrefsLoading = true;
-      loadListingWidgetPrefs()
-        .then((p) => {
-          try {
-            window.__stockxListingWidgetPrefsLoading = false;
-            window.__stockxListingWidgetPrefsLoaded = true;
-            if (p) window.__stockxListingWidgetPrefsCache = p;
-            const prefs = p && typeof p === 'object' ? p : null;
-            if (prefs) {
-              if (Number.isFinite(Number(prefs.maxItems))) state.maxItems = Math.max(1, Math.min(48, Number(prefs.maxItems)));
-              if (Number.isFinite(Number(prefs.maxPages))) state.maxPages = Math.max(1, Math.min(200, Number(prefs.maxPages)));
-              if (Number.isFinite(Number(prefs.concurrency))) state.concurrency = Math.max(1, Math.min(5, Number(prefs.concurrency)));
-              if (typeof prefs.onlySneakers === 'boolean') state.onlySneakers = prefs.onlySneakers;
-              if (typeof prefs.skipOneSize === 'boolean') state.skipOneSize = prefs.skipOneSize;
-              if (typeof prefs.biddingMode === 'boolean') state.biddingMode = prefs.biddingMode;
-              if (typeof prefs.showNonProfitable === 'boolean') state.showNonProfitable = prefs.showNonProfitable;
-              if (typeof prefs.debugClicks === 'boolean') state.debugClicks = prefs.debugClicks;
-            }
-          } catch {}
-          try {
-            ensureListingBidWidget();
-          } catch {}
-        })
-        .catch(() => {
-          try {
-            window.__stockxListingWidgetPrefsLoading = false;
-            window.__stockxListingWidgetPrefsLoaded = true;
-          } catch {}
-        });
-    } else if (!window.__stockxListingWidgetPrefsApplied) {
-      // If cache already exists (from prior page lifetime), apply it once.
-      const prefs = getListingWidgetPrefsCached();
-      if (prefs) {
-        window.__stockxListingWidgetPrefsApplied = true;
-        if (Number.isFinite(Number(prefs.maxItems))) state.maxItems = Math.max(1, Math.min(48, Number(prefs.maxItems)));
-        if (Number.isFinite(Number(prefs.maxPages))) state.maxPages = Math.max(1, Math.min(200, Number(prefs.maxPages)));
-        if (Number.isFinite(Number(prefs.concurrency))) state.concurrency = Math.max(1, Math.min(5, Number(prefs.concurrency)));
-        if (typeof prefs.onlySneakers === 'boolean') state.onlySneakers = prefs.onlySneakers;
-        if (typeof prefs.skipOneSize === 'boolean') state.skipOneSize = prefs.skipOneSize;
-        if (typeof prefs.biddingMode === 'boolean') state.biddingMode = prefs.biddingMode;
-        if (typeof prefs.showNonProfitable === 'boolean') state.showNonProfitable = prefs.showNonProfitable;
-        if (typeof prefs.debugClicks === 'boolean') state.debugClicks = prefs.debugClicks;
-      }
-    }
-  } catch {}
-
-  // Global guard: this function is called from many places (polling, progress messages, async loaders).
-  // If we re-render the widget while the user is interacting with inputs, the DOM gets replaced and
-  // the input loses focus (appears as a brief flicker and prevents typing).
-  try {
-    if (existing) {
-      const hovering =
-        !!window.__stockxListingWidgetHovering ||
-        (typeof existing?.matches === 'function' ? existing.matches(':hover') : false);
-      const focusedInside = !!(document.activeElement && existing.contains(document.activeElement));
-      const interactingUntil = Number(window.__stockxListingWidgetInteractingUntil || 0);
-      const interacting = Date.now() < interactingUntil;
-      const editing =
-        focusedInside &&
-        (() => {
-          try {
-            const el = document.activeElement;
-            if (!el) return false;
-            const tag = String(el.tagName || '').toUpperCase();
-            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
-            return !!el.isContentEditable;
-          } catch {
-            return false;
-          }
-        })();
-
-      if (hovering || interacting || editing) {
-        // Defer a rerender so the widget eventually catches up after the user stops typing/clicking.
-        try {
-          window.__stockxListingWidgetNeedsRerender = true;
-          if (!window.__stockxListingWidgetFlushTimer) {
-            const delay = Math.max(250, Math.min(3000, interactingUntil ? interactingUntil - Date.now() + 160 : 900));
-            window.__stockxListingWidgetFlushTimer = setTimeout(() => {
-              try {
-                window.__stockxListingWidgetFlushTimer = null;
-                if (!window.__stockxListingWidgetNeedsRerender) return;
-                // Re-check: if still interacting, let the message handler/poller schedule another flush.
-                const w = document.getElementById('stockx-bid-opps-widget');
-                const stillHover = !!window.__stockxListingWidgetHovering || (w?.matches?.(':hover') || false);
-                const stillFocus = !!(w && document.activeElement && w.contains(document.activeElement));
-                const until = Number(window.__stockxListingWidgetInteractingUntil || 0);
-                const stillInteracting = Date.now() < until;
-                if (stillHover || stillFocus || stillInteracting) return;
-                window.__stockxListingWidgetNeedsRerender = false;
-                ensureListingBidWidget();
-              } catch {
-                window.__stockxListingWidgetFlushTimer = null;
-              }
-            }, delay);
-          }
-        } catch {}
-        return;
-      }
-    }
-  } catch {}
-
   // Load saved widget position once (async), then re-render.
   try {
     if (!window.__stockxListingWidgetPosLoaded && !window.__stockxListingWidgetPosLoading) {
@@ -8826,63 +8550,6 @@ function ensureListingBidWidget() {
     }
   };
 
-  // --- Keepalive: prevent MV3 service worker suspension during long scans ---
-  const ensureScanKeepalive = (shouldBeOn) => {
-    try {
-      const key = '__stockxScanKeepalive';
-      const cur = window[key] || null;
-      const stop = () => {
-        try {
-          if (cur?.timer) clearInterval(cur.timer);
-        } catch {}
-        try {
-          cur?.port?.disconnect?.();
-        } catch {}
-        try {
-          window[key] = null;
-        } catch {}
-      };
-      if (!shouldBeOn) return stop();
-      if (cur?.port) return;
-      if (!chrome?.runtime?.connect) return;
-      const port = chrome.runtime.connect({ name: 'stockx-scan-keepalive' });
-      const timer = setInterval(() => {
-        try {
-          port.postMessage({ t: Date.now() });
-        } catch {}
-      }, 25_000);
-      window[key] = { port, timer };
-      try {
-        port.onDisconnect.addListener(() => {
-          try {
-            if (window[key]?.timer) clearInterval(window[key].timer);
-          } catch {}
-          try {
-            window[key] = null;
-          } catch {}
-        });
-      } catch {}
-      // Also stop keepalive when navigating away.
-      try {
-        window.addEventListener(
-          'beforeunload',
-          () => {
-            try {
-              if (window[key]?.timer) clearInterval(window[key].timer);
-            } catch {}
-            try {
-              window[key]?.port?.disconnect?.();
-            } catch {}
-            try {
-              window[key] = null;
-            } catch {}
-          },
-          { once: true }
-        );
-      } catch {}
-    } catch {}
-  };
-
   // Global stop overlay should work from any StockX tab, not just the listing widget tab.
   // We mount it here too (idempotent) so it appears quickly after any rerender.
   try {
@@ -8934,11 +8601,6 @@ function ensureListingBidWidget() {
                 state.current = Number(s.completed || state.current || 0);
                 state.canResume = !!s.canResume && String(s.stage || '').toLowerCase() === 'stopped';
               }
-              // Keepalive while scan is active.
-              try {
-                const active = !!(state.scanId && String(state.stage || '').toLowerCase() !== 'done' && String(state.stage || '').toLowerCase() !== 'stopped');
-                ensureScanKeepalive(active);
-              } catch {}
               if (r && typeof r === 'object') {
                 // Convert map(url->result) into the existing state.results shape.
                 state.results = {};
@@ -9614,24 +9276,6 @@ function ensureListingBidWidget() {
                 state.pendingStop = false;
                 ensureListingBidWidget();
 
-                // #region agent log (debug-session)
-                try {
-                  fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      sessionId: 'debug-session',
-                      runId: 'xpress-check',
-                      hypothesisId: 'X1_X2',
-                      location: 'content-simple.js:widget:scan-xpress',
-                      message: 'User clicked Xpress deals',
-                      data: { url: String(location.href || ''), maxPages, perPage, collectOpts },
-                      timestamp: Date.now()
-                    })
-                  }).catch(() => {});
-                } catch {}
-                // #endregion agent log (debug-session)
-
                 runtimeSendMessageSafe(
                   {
                     action: 'startListingBidScanPaginated',
@@ -9645,23 +9289,6 @@ function ensureListingBidWidget() {
                   },
                   (resp) => {
                     const ok = resp?.success;
-                    // #region agent log (debug-session)
-                    try {
-                      fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          sessionId: 'debug-session',
-                          runId: 'xpress-check',
-                          hypothesisId: 'X2',
-                          location: 'content-simple.js:widget:scan-xpress:resp',
-                          message: 'startListingBidScanPaginated response for xpress',
-                          data: { ok: !!ok, scanId: resp?.scanId || null, total: resp?.total || null, error: resp?.error || null },
-                          timestamp: Date.now()
-                        })
-                      }).catch(() => {});
-                    } catch {}
-                    // #endregion agent log (debug-session)
                     if (!ok) {
                       state.stage = `error: ${resp?.error || 'failed to start'}`;
                       ensureListingBidWidget();
@@ -9888,31 +9515,10 @@ function ensureListingBidWidget() {
   });
 
   const maxEl = widget.querySelector('[data-role="max-items"]');
-  const persistPrefsSoon = () => {
-    try {
-      if (window.__stockxListingWidgetPrefsSaveTimer) clearTimeout(window.__stockxListingWidgetPrefsSaveTimer);
-      window.__stockxListingWidgetPrefsSaveTimer = setTimeout(() => {
-        try {
-          const prefs = {
-            maxItems: state.maxItems,
-            maxPages: state.maxPages,
-            concurrency: state.concurrency,
-            onlySneakers: !!state.onlySneakers,
-            skipOneSize: !!state.skipOneSize,
-            biddingMode: !!state.biddingMode,
-            showNonProfitable: !!state.showNonProfitable,
-            debugClicks: !!state.debugClicks
-          };
-          saveListingWidgetPrefs(prefs).catch(() => {});
-        } catch {}
-      }, 450);
-    } catch {}
-  };
   maxEl?.addEventListener('input', () => {
     const n = Math.max(1, Math.min(48, Number(String(maxEl.value || '').trim())));
     if (!Number.isFinite(n)) return;
     state.maxItems = n;
-    persistPrefsSoon();
   });
 
   const concEl = widget.querySelector('[data-role="concurrency"]');
@@ -9920,7 +9526,6 @@ function ensureListingBidWidget() {
     const n = Math.max(1, Math.min(5, Number(String(concEl.value || '').trim())));
     if (!Number.isFinite(n)) return;
     state.concurrency = n;
-    persistPrefsSoon();
   });
 
   const maxPagesEl = widget.querySelector('[data-role="max-pages"]');
@@ -9928,7 +9533,6 @@ function ensureListingBidWidget() {
     const n = Math.max(1, Math.min(200, Number(String(maxPagesEl.value || '').trim())));
     if (!Number.isFinite(n)) return;
     state.maxPages = n;
-    persistPrefsSoon();
   });
 
   const onlySneakersEl = widget.querySelector('[data-role="only-sneakers"]');
@@ -9936,7 +9540,6 @@ function ensureListingBidWidget() {
     try {
       state.onlySneakers = !!onlySneakersEl.checked;
     } catch {}
-    try { persistPrefsSoon(); } catch {}
   });
 
   const skipOneSizeEl = widget.querySelector('[data-role="skip-one-size"]');
@@ -9944,7 +9547,6 @@ function ensureListingBidWidget() {
     try {
       state.skipOneSize = !!skipOneSizeEl.checked;
     } catch {}
-    try { persistPrefsSoon(); } catch {}
   });
 
   const biddingModeEl = widget.querySelector('[data-role="bidding-mode"]');
@@ -9952,14 +9554,12 @@ function ensureListingBidWidget() {
     try {
       state.biddingMode = !!biddingModeEl.checked;
     } catch {}
-    try { persistPrefsSoon(); } catch {}
   });
 
   const showSkippedEl = widget.querySelector('[data-role="show-skipped"]');
   showSkippedEl?.addEventListener('change', () => {
     try {
       state.showNonProfitable = !!showSkippedEl.checked;
-      try { persistPrefsSoon(); } catch {}
       // Defer rerender to avoid "clunky" clicks where the DOM is replaced mid-toggle.
       setTimeout(() => {
         try { ensureListingBidWidget(); } catch {}
@@ -9972,7 +9572,6 @@ function ensureListingBidWidget() {
     try {
       state.debugClicks = !!debugClicksEl.checked;
     } catch {}
-    try { persistPrefsSoon(); } catch {}
   });
 
   widget.querySelector('[data-role="clear-bids"]')?.addEventListener('click', async (e) => {
@@ -10242,253 +9841,20 @@ function ensureListingBidWidget() {
       if (!msg) return;
       // Only update the active scan
       if (state.scanId && msg.scanId && state.scanId !== msg.scanId) return;
-
-      // --- Slack notifications (trigger from listing tab; send via background to avoid CORS) ---
-      const SLACK_STATUS_KEY = 'stockxSlackLastStatus';
-      const storageGetLocal = async (keys) => {
-        return await new Promise((resolve) => {
-          try {
-            chrome.storage?.local?.get?.(keys, (res) => {
-              void chrome.runtime.lastError;
-              resolve(res || {});
-            });
-          } catch {
-            resolve({});
-          }
-        });
-      };
-      const storageSetLocal = async (obj) => {
-        return await new Promise((resolve) => {
-          try {
-            chrome.storage?.local?.set?.(obj, () => {
-              void chrome.runtime.lastError;
-              resolve(true);
-            });
-          } catch {
-            resolve(false);
-          }
-        });
-      };
-      const setSlackStatus = async (patch) => {
-        try {
-          const p = patch && typeof patch === 'object' ? patch : {};
-          await storageSetLocal({ [SLACK_STATUS_KEY]: { ...(p || {}), updatedAt: Date.now() } });
-        } catch {}
-      };
-      const withSizeParamUrl = (url, sizeParam) => {
-        try {
-          const u = new URL(String(url || ''));
-          const sp = String(sizeParam || '').trim();
-          if (sp) u.searchParams.set('size', sp);
-          return u.toString();
-        } catch {
-          return String(url || '');
-        }
-      };
-      const normalizeTitleForSlack = (v) => {
-        try {
-          let s = String(v == null ? '' : v);
-          s = s.replace(/\s+/g, ' ').trim();
-          s = s.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
-          return s.replace(/\s+/g, ' ').trim();
-        } catch {
-          return String(v || '');
-        }
-      };
-      const runtimeSendMessageSafe = (payload) => {
-        try {
-          if (!chrome?.runtime?.sendMessage) return false;
-          chrome.runtime.sendMessage(payload, (resp) => {
-            const err = chrome.runtime.lastError;
-            if (err) {
-              try {
-                void setSlackStatus({ ok: false, lastErrorAt: Date.now(), lastError: err.message || String(err), note: 'runtime.sendMessage error' });
-              } catch {}
-              return;
-            }
-            // If background returns an explicit failure, surface it in the status box.
-            try {
-              if (resp && resp.success === false) {
-                void setSlackStatus({
-                  ok: false,
-                  lastErrorAt: Date.now(),
-                  lastError: String(resp.error || 'Slack send failed'),
-                  note: 'background rejected'
-                });
-              }
-            } catch {}
-          });
-          return true;
-        } catch {
-          return false;
-        }
-      };
-      const maybeNotifySlackForResult = async (r) => {
-        try {
-          const settings = await loadScanSettings();
-          const enabled = !!settings?.slackEnabled;
-          const mention = String(settings?.slackMention || '').trim();
-          const mentionPrefix = mention ? `${mention} ` : '';
-          if (!enabled) return;
-
-          const baseUrl = String(r?.url || '').trim();
-          const slug = String(r?.slug || '').trim();
-          const title = normalizeTitleForSlack(r?.title || slug || baseUrl || 'StockX');
-          const imageUrl = String(r?.imageUrl || '').trim();
-          const opps = Array.isArray(r?.opportunities) ? r.opportunities : [];
-          if (!opps.length) return;
-
-          // De-dupe within the SAME scan only (so we don't spam repeats while the scan is running),
-          // but allow the same opportunity to be sent again on a future scan.
-          const scanId = String(r?.scanId || state.scanId || '').trim();
-          try {
-            if (!window.__stockxSlackSentThisScan || window.__stockxSlackSentThisScan.scanId !== scanId) {
-              window.__stockxSlackSentThisScan = { scanId, set: new Set() };
-            }
-          } catch {}
-
-          // Serialize sends on the listing tab to avoid Slack rate limits.
-          const queue = (window.__stockxSlackQueue = window.__stockxSlackQueue || Promise.resolve());
-          window.__stockxSlackQueue = queue.then(async () => {
-            let sent = 0;
-            for (const o of opps) {
-              const sizeParam = String(o?.sizeParam || '').trim();
-              const sizeLabel = String(o?.sizeLabel || '').trim();
-              const kind = String(o?.kind || '').toLowerCase() || (Number.isFinite(Number(o?.discountPct)) ? 'xpress' : 'bid');
-              if (!sizeParam && !sizeLabel) continue;
-
-              try {
-                const key = `${scanId}::${slug}::${sizeParam || sizeLabel}::${kind}`;
-                const bag = window.__stockxSlackSentThisScan?.set;
-                if (bag && typeof bag.has === 'function' && bag.has(key)) continue;
-                if (bag && typeof bag.add === 'function') bag.add(key);
-              } catch {}
-
-              // Mobile note: StockX sometimes drops `?size=` on the product PDP when opened from Slack.
-              // Linking to the buy-flow URL tends to preserve size better on mobile.
-              const buyBase = slug ? `${location.origin}/buy/${slug}` : baseUrl;
-              const sizeUrl = withSizeParamUrl(buyBase, sizeParam || sizeLabel);
-              const sizeUrlFallback = withSizeParamUrl(baseUrl, sizeParam || sizeLabel);
-              const highestBid = o?.highestBid ?? null;
-              const lowestAsk = o?.lowestAsk ?? null;
-              const profit = o?.profit ?? null;
-              const avg30d = o?.avg30d ?? null;
-
-              try {
-                await setSlackStatus({ ok: null, lastAttemptAt: Date.now(), lastError: '', note: 'queued (sending via background)…' });
-                // #region agent log (debug-session)
-                try {
-                  if (sent === 0) {
-                    fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        sessionId: 'debug-session',
-                        runId: 'pre-fix',
-                        hypothesisId: 'H1_H2',
-                        location: 'content-simple.js:maybeNotifySlackForResult:first_send',
-                        message: 'Prepared Slack opportunity send (first in batch)',
-                        data: {
-                          slug,
-                          kind,
-                          sizeLabel,
-                          sizeParam,
-                          sizeUrl: String(sizeUrl || '').slice(0, 220),
-                          sizeUrlFallback: String(sizeUrlFallback || '').slice(0, 220)
-                        },
-                        timestamp: Date.now()
-                      })
-                    }).catch(() => {});
-                  }
-                } catch {}
-                // #endregion agent log (debug-session)
-                runtimeSendMessageSafe({
-                  action: 'slackSendOpportunity',
-                  opportunity: {
-                    scanId: String(r?.scanId || state.scanId || ''),
-                    slug,
-                    title,
-                    imageUrl,
-                    sizeUrl,
-                    sizeUrlFallback,
-                    // IMPORTANT: Pass the normalized StockX size param explicitly so the background can
-                    // build links correctly (avoid accidentally using "US M 10" / "EU 44" labels as the param).
-                    sizeParam: sizeParam || '',
-                    sizeLabel,
-                    kind,
-                    highestBid,
-                    lowestAsk,
-                    profit,
-                    avg30d,
-                    mentionPrefix
-                  }
-                });
-              } catch (e) {
-                await setSlackStatus({ ok: false, lastErrorAt: Date.now(), lastError: e?.message || String(e) });
-              }
-
-              sent += 1;
-              await new Promise((rr) => setTimeout(rr, 650));
-              if (sent >= 25) break;
-            }
-          }).catch(() => {});
-        } catch {}
-      };
-
-      const shouldDeferRender = () => {
-        try {
-          const hovering = !!window.__stockxListingWidgetHovering;
-          const widgetEl = document.getElementById('stockx-bid-opps-widget');
-          const focusedInside = !!(widgetEl && document.activeElement && widgetEl.contains(document.activeElement));
-          const interactingUntil = Number(window.__stockxListingWidgetInteractingUntil || 0);
-          const interacting = Date.now() < interactingUntil;
-          return hovering || focusedInside || interacting;
-        } catch {
-          return false;
-        }
-      };
-
-      const scheduleFlush = () => {
-        try {
-          window.__stockxListingWidgetNeedsRerender = true;
-          if (window.__stockxListingWidgetFlushTimer) return;
-          const interactingUntil = Number(window.__stockxListingWidgetInteractingUntil || 0);
-          const delay = Math.max(250, Math.min(3000, interactingUntil ? interactingUntil - Date.now() + 120 : 600));
-          window.__stockxListingWidgetFlushTimer = setTimeout(() => {
-            try {
-              window.__stockxListingWidgetFlushTimer = null;
-              if (!window.__stockxListingWidgetNeedsRerender) return;
-              if (shouldDeferRender()) return scheduleFlush();
-              window.__stockxListingWidgetNeedsRerender = false;
-              ensureListingBidWidget();
-            } catch {
-              window.__stockxListingWidgetFlushTimer = null;
-            }
-          }, delay);
-        } catch {}
-      };
-
-      const maybeRender = () => {
-        if (shouldDeferRender()) return scheduleFlush();
-        ensureListingBidWidget();
-      };
-
       if (msg.action === 'listingBidScanProgress') {
         state.stage = msg.stage || state.stage;
         state.current = msg.current || state.current;
         state.total = msg.total || state.total;
-        maybeRender();
+        ensureListingBidWidget();
       } else if (msg.action === 'listingBidScanResult') {
         const r = msg;
         const key = r.slug || r.url || `${Date.now()}_${Math.random().toString(16).slice(2)}`;
         state.results[key] = r;
-        // Slack notify as soon as a product result comes in (best-effort).
-        try { void maybeNotifySlackForResult(r); } catch {}
-        maybeRender();
+        ensureListingBidWidget();
       } else if (msg.action === 'listingBidScanDone') {
         if (msg.cancelled) state.stage = 'stopped';
         else state.stage = msg.success ? 'done' : `done (error: ${msg.error || 'unknown'})`;
-        maybeRender();
+        ensureListingBidWidget();
       }
     };
   } catch {}
@@ -10623,7 +9989,7 @@ function ensureGlobalStopOverlay() {
     if (!location.hostname.includes('stockx.com')) return;
     const id = 'stockx-global-stop-scan';
 
-    const upsert = (activeScanId, snapshot) => {
+    const upsert = (activeScanId) => {
       const existingNow = document.getElementById(id);
       if (!activeScanId) {
         if (existingNow) existingNow.remove();
@@ -10639,51 +10005,17 @@ function ensureGlobalStopOverlay() {
         font-family: Arial, sans-serif;
         pointer-events: auto;
       `;
-      const scanned = Number(snapshot?.scanned) || 0;
-      const found = Number(snapshot?.found) || 0;
       el.innerHTML = `
-        <div style="
-          display:flex;
-          gap:10px;
-          align-items:stretch;
-        ">
-          <div style="
-            min-width:110px;
-            background:rgba(2,6,23,0.92);
-            border:1px solid rgba(148,163,184,0.35);
-            border-radius:14px;
-            padding:10px 12px;
-            color:rgba(255,255,255,0.9);
-            box-shadow: 0 12px 26px rgba(0,0,0,0.28);
-          ">
-            <div style="font-size:11px; font-weight:900; opacity:.75; letter-spacing:.2px;">Products scanned</div>
-            <div data-role="hud-scanned" style="font-size:22px; font-weight:1000; margin-top:4px;">${scanned}</div>
-          </div>
-          <div style="
-            min-width:130px;
-            background:rgba(2,6,23,0.92);
-            border:1px solid rgba(148,163,184,0.35);
-            border-radius:14px;
-            padding:10px 12px;
-            color:rgba(255,255,255,0.9);
-            box-shadow: 0 12px 26px rgba(0,0,0,0.28);
-          ">
-            <div style="font-size:11px; font-weight:900; opacity:.75; letter-spacing:.2px;">Opportunities (sizes)</div>
-            <div data-role="hud-found" style="font-size:22px; font-weight:1000; margin-top:4px;">${found}</div>
-          </div>
-          <button data-role="stop-scan" style="
-            background:#ef4444;
-            border:1px solid rgba(239,68,68,0.95);
-            color:#450a0a;
-            padding:10px 12px;
-            border-radius:9999px;
-            cursor:pointer;
-            font-weight:1000;
-            box-shadow: 0 10px 22px rgba(0,0,0,0.25);
-            align-self:center;
-            height:44px;
-          ">Stop</button>
-        </div>
+        <button data-role="stop-scan" style="
+          background:#ef4444;
+          border:1px solid rgba(239,68,68,0.95);
+          color:#450a0a;
+          padding:10px 12px;
+          border-radius:9999px;
+          cursor:pointer;
+          font-weight:1000;
+          box-shadow: 0 10px 22px rgba(0,0,0,0.25);
+        ">Stop scan</button>
       `;
       if (!existingNow) document.body.appendChild(el);
       el.querySelector('[data-role="stop-scan"]')?.addEventListener('click', () => {
@@ -10704,43 +10036,7 @@ function ensureGlobalStopOverlay() {
         chrome?.storage?.local?.get?.(['stockxActiveListingScanId'], (res) => {
           void chrome.runtime.lastError;
           const sid = String(res?.stockxActiveListingScanId || '');
-          if (!sid) return upsert('', null);
-          const stateKey = `stockxListingScanState:${sid}`;
-          const resultsKey = `stockxListingScanResults:${sid}`;
-          chrome?.storage?.local?.get?.([stateKey, resultsKey], (res2) => {
-            void chrome.runtime.lastError;
-            const st = res2?.[stateKey] && typeof res2[stateKey] === 'object' ? res2[stateKey] : {};
-            const results = res2?.[resultsKey] && typeof res2[resultsKey] === 'object' ? res2[resultsKey] : {};
-            let found = 0;
-            try {
-              for (const v of Object.values(results)) {
-                const opps = v?.opportunities;
-                if (Array.isArray(opps)) found += opps.length;
-              }
-            } catch {}
-            const scanned = Number(st?.completed) || 0;
-            upsert(sid, { scanned, found });
-            // #region agent log (debug-session)
-            try {
-              if (!window.__stockxHudLoggedOnce) {
-                window.__stockxHudLoggedOnce = true;
-                fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    sessionId: 'debug-session',
-                    runId: 'hud',
-                    hypothesisId: 'HUD1',
-                    location: 'content-simple.js:ensureGlobalStopOverlay:tick',
-                    message: 'HUD tick first render',
-                    data: { sid, scanned, found, stage: st?.stage || null, scanMode: st?.scanMode || null },
-                    timestamp: Date.now()
-                  })
-                }).catch(() => {});
-              }
-            } catch {}
-            // #endregion agent log (debug-session)
-          });
+          upsert(sid || '');
         });
       } catch {}
     };
