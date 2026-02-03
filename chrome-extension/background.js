@@ -3,9 +3,385 @@ chrome.runtime.onInstalled.addListener(() => {
   console.log('StockX Price Tracker extension installed');
 });
 
+// --- MV3 keepalive ---
+// MV3 service workers can be suspended during long scans. A long-lived Port from the listing tab
+// keeps the worker alive while the scan runs.
+try {
+  chrome.runtime.onConnect.addListener((port) => {
+    try {
+      if (!port || port.name !== 'stockx-scan-keepalive') return;
+      port.onMessage.addListener(() => {
+        // no-op: pings keep the service worker active
+      });
+      port.onDisconnect.addListener(() => {
+        void chrome.runtime.lastError;
+      });
+    } catch {}
+  });
+} catch {}
+
 const SCAN_HISTORY_KEY = 'stockxScanHistory';
 const SCAN_COUNTER_KEY = 'stockxScanCounter';
 const SCAN_RESUME_KEY_PREFIX = 'stockxListingScanResume:'; // stores large resume payload (urls/config) once per scan
+const SLACK_NOTIFY_KEY = 'stockxSlackNotifiedIndex';
+const SLACK_STATUS_KEY = 'stockxSlackLastStatus';
+const SLACK_LOG_KEY = 'stockxSlackLogs';
+
+function safeStr(v) {
+  return String(v == null ? '' : v);
+}
+
+function normalizeTitleForDisplay(v) {
+  try {
+    let s = safeStr(v);
+    // Normalize whitespace from DOM newlines/indentation
+    s = s.replace(/\s+/g, ' ').trim();
+    // Fix common StockX title rendering where adjacent spans concatenate words (e.g. "RetroPearl").
+    // Insert a space between lowercase/digit and uppercase boundaries.
+    s = s.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+    // Re-collapse in case we introduced doubles
+    s = s.replace(/\s+/g, ' ').trim();
+    return s;
+  } catch {
+    return safeStr(v || '');
+  }
+}
+
+function withSizeParam(url, sizeParam) {
+  try {
+    const u = new URL(String(url || ''));
+    const sp = safeStr(sizeParam).trim();
+    if (sp) u.searchParams.set('size', sp);
+    return u.toString();
+  } catch {
+    return safeStr(url || '');
+  }
+}
+
+function getQueryParam(url, key) {
+  try {
+    const u = new URL(String(url || ''));
+    return u.searchParams.get(key);
+  } catch {
+    return null;
+  }
+}
+
+function buildStockxOpportunityLinks({ slug, size, fallbackUrl }) {
+  try {
+    const s = safeStr(slug).trim().replace(/^\/+|\/+$/g, '');
+    const sizeVal = safeStr(size).trim();
+    const out = {
+      buyUrl: '',
+      bidUrl: '',
+      pdpUrl: '',
+      fallbackUrl: safeStr(fallbackUrl || '')
+    };
+    if (!s) return out;
+    const buyBase = `https://stockx.com/buy/${encodeURIComponent(s)}`;
+    out.buyUrl = withSizeParam(buyBase, sizeVal);
+    // This route is the same buy flow, but is more likely to land you in a size-specific bid screen on mobile.
+    try {
+      const u = new URL(out.buyUrl);
+      u.searchParams.set('defaultBid', 'true');
+      out.bidUrl = u.toString();
+    } catch {
+      out.bidUrl = out.buyUrl;
+    }
+    const pdpBase = `https://stockx.com/${encodeURIComponent(s)}`;
+    out.pdpUrl = withSizeParam(pdpBase, sizeVal);
+    return out;
+  } catch {
+    return { buyUrl: '', bidUrl: '', pdpUrl: '', fallbackUrl: safeStr(fallbackUrl || '') };
+  }
+}
+
+function stripQueryAndHash(url) {
+  try {
+    const u = new URL(String(url || ''));
+    u.search = '';
+    u.hash = '';
+    return u.toString();
+  } catch {
+    return safeStr(url || '');
+  }
+}
+
+async function loadScanSettingsForSlack() {
+  try {
+    const res = await storageGet(['stockxScanSettings']);
+    const s = res?.stockxScanSettings && typeof res.stockxScanSettings === 'object' ? res.stockxScanSettings : {};
+    return {
+      slackEnabled: !!s.slackEnabled,
+      slackWebhookUrl: safeStr(s.slackWebhookUrl || '').trim(),
+      slackChannel: safeStr(s.slackChannel || '').trim(),
+      slackMention: safeStr(s.slackMention || '').trim()
+    };
+  } catch {
+    return { slackEnabled: false, slackWebhookUrl: '', slackChannel: '', slackMention: '' };
+  }
+}
+
+async function loadSlackNotifiedIndex() {
+  try {
+    const res = await storageGet([SLACK_NOTIFY_KEY]);
+    const cur = res?.[SLACK_NOTIFY_KEY];
+    return cur && typeof cur === 'object' ? cur : {};
+  } catch {
+    return {};
+  }
+}
+
+async function saveSlackNotifiedIndex(next) {
+  try {
+    return await storageSet({ [SLACK_NOTIFY_KEY]: next });
+  } catch {
+    return false;
+  }
+}
+
+async function setSlackStatus(patch) {
+  try {
+    const p = patch && typeof patch === 'object' ? patch : {};
+    const next = { ...(p || {}), updatedAt: Date.now() };
+    await storageSet({ [SLACK_STATUS_KEY]: next });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function appendSlackLog(level, msg, meta) {
+  try {
+    const entry = {
+      ts: Date.now(),
+      level: String(level || 'info'),
+      msg: String(msg || ''),
+      meta: meta && typeof meta === 'object' ? meta : undefined
+    };
+    const res = await storageGet([SLACK_LOG_KEY]);
+    const cur = Array.isArray(res?.[SLACK_LOG_KEY]) ? res[SLACK_LOG_KEY] : [];
+    cur.push(entry);
+    while (cur.length > 220) cur.shift();
+    await storageSet({ [SLACK_LOG_KEY]: cur });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function redactWebhook(url) {
+  try {
+    const u = new URL(String(url || ''));
+    const host = u.hostname;
+    const raw = String(url || '');
+    const tail = raw.slice(-6);
+    return `${host}…${tail}`;
+  } catch {
+    return '';
+  }
+}
+
+async function fetchWithTimeout(url, init, timeoutMs = 12000) {
+  let t = null;
+  try {
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    if (controller) init = { ...(init || {}), signal: controller.signal };
+    t = setTimeout(() => {
+      try {
+        controller?.abort?.();
+      } catch {}
+    }, Math.max(2000, Number(timeoutMs) || 12000));
+    return await fetch(url, init);
+  } finally {
+    try {
+      if (t) clearTimeout(t);
+    } catch {}
+  }
+}
+
+async function maybeNotifySlackForOpportunities({ scanId, resultUrl, result }) {
+  try {
+    const cfg = await loadScanSettingsForSlack();
+    if (!cfg.slackEnabled) {
+      try {
+        await setSlackStatus({ ok: false, lastErrorAt: Date.now(), lastError: 'Slack disabled (enable + Save in Settings)' });
+      } catch {}
+      return;
+    }
+    if (!cfg.slackWebhookUrl) {
+      try {
+        await setSlackStatus({ ok: false, lastErrorAt: Date.now(), lastError: 'Missing Slack webhook URL (set + Save in Settings)' });
+      } catch {}
+      return;
+    }
+    const mention = safeStr(cfg.slackMention || '').trim();
+    const mentionPrefix = mention ? `${mention} ` : '';
+
+    const baseUrl = safeStr(resultUrl || result?.url || '');
+    const slug = safeStr(result?.slug || '');
+    const title = normalizeTitleForDisplay(result?.title || slug || baseUrl || 'StockX');
+    const imageUrl = safeStr(result?.imageUrl || '').trim();
+    const opps = Array.isArray(result?.opportunities) ? result.opportunities : [];
+    if (!opps.length) {
+      // Don't mark as failure; just record why nothing was sent (helps debugging).
+      try {
+        await setSlackStatus({ ok: null, lastAttemptAt: Date.now(), lastError: 'No opportunities in this product result (nothing to send)' });
+      } catch {}
+      return;
+    }
+
+    // Dedupe per (scanId, slug, sizeParam, kind) to avoid spam.
+    const now = Date.now();
+    const idx = await loadSlackNotifiedIndex();
+    const MAX_SAVE = 3000;
+    const TTL_MS = 24 * 60 * 60 * 1000;
+
+    // Prune old entries first.
+    try {
+      for (const [k, v] of Object.entries(idx)) {
+        const ts = Number(v || 0);
+        if (ts && now - ts > TTL_MS) delete idx[k];
+      }
+    } catch {}
+
+    const queue = (globalThis.__stockxSlackQueue = globalThis.__stockxSlackQueue || Promise.resolve());
+    const postOne = async (payload) => {
+      try {
+        try {
+          await setSlackStatus({
+            ok: null,
+            lastAttemptAt: Date.now(),
+            lastError: '',
+            note: 'sending…',
+            webhookHost: (() => {
+              try {
+                return new URL(cfg.slackWebhookUrl).hostname;
+              } catch {
+                return '';
+              }
+            })()
+          });
+        } catch {}
+        // Slack webhooks often ignore channel overrides, but include it if provided.
+        if (cfg.slackChannel) payload.channel = cfg.slackChannel;
+        // Best-effort: resolve @mentions in the message text.
+        payload.link_names = true;
+        const resp = await fetchWithTimeout(
+          cfg.slackWebhookUrl,
+          {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload)
+          },
+          12000
+        );
+        // Slack returns 200 "ok" for webhooks
+        if (!resp.ok) {
+          const txt = await resp.text().catch(() => '');
+          console.warn('⚠️ Slack webhook non-200', resp.status, txt.slice(0, 200));
+          try {
+            await setSlackStatus({ ok: false, lastErrorAt: Date.now(), lastError: `HTTP ${resp.status}: ${txt || '(no body)'}` });
+          } catch {}
+          return false;
+        }
+        try {
+          await setSlackStatus({ ok: true, lastOkAt: Date.now(), lastError: '', note: 'ok' });
+        } catch {}
+        return true;
+      } catch (e) {
+        console.warn('⚠️ Slack webhook send failed', e?.message || String(e));
+        try {
+          const msg = e?.name === 'AbortError' ? 'Timeout sending to Slack (AbortError)' : e?.message || String(e);
+          await setSlackStatus({ ok: false, lastErrorAt: Date.now(), lastError: msg, note: 'failed' });
+        } catch {}
+        return false;
+      }
+    };
+
+    // Rate limit: serialize sends with a short delay.
+    const nextQueue = queue.then(async () => {
+      let sent = 0;
+      let skippedAllDeduped = true;
+      for (const o of opps) {
+        const sizeParam = safeStr(o?.sizeParam || '').trim();
+        const sizeLabel = safeStr(o?.sizeLabel || '').trim();
+        const kind = safeStr(o?.kind || '').toLowerCase() || (Number.isFinite(Number(o?.discountPct)) ? 'xpress' : 'bid');
+        if (!sizeParam && !sizeLabel) continue;
+        const key = `${safeStr(scanId)}::${slug}::${sizeParam || sizeLabel}::${kind}`;
+        if (idx[key]) continue;
+        skippedAllDeduped = false;
+
+        // Parent-only link (opens StockX app reliably; size deep-linking varies on mobile).
+        const parentUrl = slug ? `https://stockx.com/${encodeURIComponent(slug)}` : stripQueryAndHash(baseUrl);
+        const highestBid = o?.highestBid ?? null;
+        const lowestAsk = o?.lowestAsk ?? null;
+        const profit = o?.profit ?? null;
+        const avg30d = o?.avg30d ?? null;
+
+        const blocks = [];
+        if (mention) {
+          blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: `${mention}` }] });
+        }
+        // Use a section accessory image (smaller) instead of a full-width image block.
+        blocks.push({
+          type: 'section',
+          text: { type: 'mrkdwn', text: `*Opportunity found*\n<${parentUrl}|${title}${sizeLabel ? ` (${sizeLabel})` : ''}>` },
+          ...(imageUrl && /^https:\/\//i.test(imageUrl)
+            ? { accessory: { type: 'image', image_url: imageUrl, alt_text: title.slice(0, 80) || 'StockX' } }
+            : {})
+        });
+        const fields = [];
+        if (sizeLabel) fields.push({ type: 'mrkdwn', text: `*Size*\n${sizeLabel}` });
+        fields.push({ type: 'mrkdwn', text: `*Mode*\n${kind}` });
+        if (highestBid != null) fields.push({ type: 'mrkdwn', text: `*Highest Bid*\n$${highestBid}` });
+        if (lowestAsk != null) fields.push({ type: 'mrkdwn', text: `*Lowest Ask*\n$${lowestAsk}` });
+        if (avg30d != null) fields.push({ type: 'mrkdwn', text: `*Avg 30d*\n$${avg30d}` });
+        if (profit != null) fields.push({ type: 'mrkdwn', text: `*Profit*\n$${profit}` });
+        if (fields.length) blocks.push({ type: 'section', fields: fields.slice(0, 10) });
+
+        const payload = {
+          text: `${mentionPrefix}Opportunity: ${title} ${sizeLabel ? `(${sizeLabel})` : ''} profit $${profit ?? '—'}`,
+          blocks
+        };
+
+        const ok = await postOne(payload);
+        if (!ok) {
+          // Keep looping, but record the failure in status (postOne already did).
+        }
+        idx[key] = now;
+        sent += 1;
+        // Keep the index from growing without bound.
+        try {
+          const keys = Object.keys(idx);
+          if (keys.length > MAX_SAVE) {
+            // delete oldest-ish by timestamp (cheap sort)
+            keys
+              .sort((a, b) => Number(idx[a] || 0) - Number(idx[b] || 0))
+              .slice(0, Math.max(1, keys.length - MAX_SAVE))
+              .forEach((k) => delete idx[k]);
+          }
+        } catch {}
+        // avoid Slack rate limits
+        await new Promise((r) => setTimeout(r, 650));
+        // Safety cap per scan result flush
+        if (sent >= 25) break;
+      }
+      if (sent === 0 && skippedAllDeduped) {
+        try {
+          await setSlackStatus({
+            ok: null,
+            lastAttemptAt: Date.now(),
+            lastError: 'All opportunities were deduped (already notified for this scanId/size/mode)'
+          });
+        } catch {}
+      }
+      await saveSlackNotifiedIndex(idx);
+    });
+
+    globalThis.__stockxSlackQueue = nextQueue.catch(() => {});
+  } catch {}
+}
 
 function getScanStateCache() {
   try {
@@ -205,6 +581,216 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('📨 Background received message:', request);
   const tabId = sender?.tab?.id;
   
+  if (request?.action === 'slackSendOpportunity') {
+    (async () => {
+      try {
+        const cfg = await loadScanSettingsForSlack();
+        await appendSlackLog('info', 'slackSendOpportunity: received', {
+          fromTabId: sender?.tab?.id || null,
+          scanId: request?.opportunity?.scanId || null
+        });
+        if (!cfg.slackEnabled) {
+          await appendSlackLog('warn', 'slackSendOpportunity: slack disabled', {});
+          return sendResponse({ success: false, error: 'Slack disabled' });
+        }
+        if (!cfg.slackWebhookUrl) {
+          await appendSlackLog('warn', 'slackSendOpportunity: missing webhook', {});
+          return sendResponse({ success: false, error: 'Missing webhook URL' });
+        }
+
+        const o = request?.opportunity && typeof request.opportunity === 'object' ? request.opportunity : {};
+        const title = normalizeTitleForDisplay(o?.title || 'StockX');
+        const rawSizeUrl = safeStr(o?.sizeUrl || '');
+        const rawFallback = safeStr(o?.sizeUrlFallback || '');
+        const sizeParam = safeStr(o?.sizeParam || '').trim();
+        const sizeLabel = safeStr(o?.sizeLabel || '');
+        const kind = safeStr(o?.kind || 'bid');
+        const imageUrl = safeStr(o?.imageUrl || '').trim();
+        const highestBid = o?.highestBid ?? null;
+        const lowestAsk = o?.lowestAsk ?? null;
+        const profit = o?.profit ?? null;
+        const avg30d = o?.avg30d ?? null;
+        const mentionPrefix = safeStr(o?.mentionPrefix || '');
+        const mention = safeStr(cfg.slackMention || '').trim();
+        const slug = safeStr(o?.slug || '').trim();
+
+        // Slack links should deep-link to the SIZE (avoid landing on a default size conversion).
+        // IMPORTANT: Only use normalized sizeParam (e.g. "8", "8W", "XS"), NOT labels like "US M 8".
+        const extractSizeFromUrl = (u) => {
+          try {
+            const s = getQueryParam(String(u || ''), 'size');
+            return safeStr(s || '').trim();
+          } catch {
+            return '';
+          }
+        };
+        const looksLikeSizeParam = (s) => {
+          try {
+            const v = safeStr(s).trim();
+            if (!v) return false;
+            if (/^US\b/i.test(v)) return false;
+            if (/^EU\b/i.test(v)) return false;
+            if (/^UK\b/i.test(v)) return false;
+            // Typical StockX params: 8, 8.5, 9W, XS, S, M, L, XL, XXL, 5W, etc.
+            if (/^\d{1,2}(\.\d)?W?$/i.test(v)) return true;
+            if (/^(XS|S|M|L|XL|XXL|XXXL)$/i.test(v)) return true;
+            if (/^\d{1,2}\s*\/\s*\d{1,2}$/i.test(v)) return true; // e.g. 10/11 (rare)
+            return false;
+          } catch {
+            return false;
+          }
+        };
+        const sizeFromUrls = extractSizeFromUrl(rawFallback) || extractSizeFromUrl(rawSizeUrl);
+        const sizeVal = looksLikeSizeParam(sizeParam) ? sizeParam : looksLikeSizeParam(sizeFromUrls) ? sizeFromUrls : '';
+        const links = buildStockxOpportunityLinks({ slug, size: sizeVal, fallbackUrl: rawFallback || rawSizeUrl });
+        const linkUrl = links.pdpUrl || links.buyUrl || links.bidUrl || links.fallbackUrl || (slug ? `https://stockx.com/${encodeURIComponent(slug)}` : '');
+
+        // #region agent log (debug-session)
+        try {
+          fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId: 'debug-session',
+              runId: 'pre-fix',
+              hypothesisId: 'H1_H2_H3_H4',
+              location: 'background.js:slackSendOpportunity',
+              message: 'Slack opportunity received; computed links',
+              data: {
+                slug,
+                kind,
+                sizeLabel,
+                sizeParam,
+                rawSizeUrl: String(rawSizeUrl || '').slice(0, 220),
+                rawFallback: String(rawFallback || '').slice(0, 220),
+                linkUrl: String(linkUrl || '').slice(0, 220),
+                rawSizeHasSizeParam: (() => {
+                  try {
+                    const u = new URL(String(rawSizeUrl || ''));
+                    return u.searchParams.has('size');
+                  } catch {
+                    return null;
+                  }
+                })()
+              },
+              timestamp: Date.now()
+            })
+          }).catch(() => {});
+        } catch {}
+        // #endregion agent log (debug-session)
+
+        await appendSlackLog('info', 'slackSendOpportunity: prepared payload', {
+          webhook: redactWebhook(cfg.slackWebhookUrl),
+          channel: cfg.slackChannel || '',
+          title: title.slice(0, 80),
+          sizeLabel,
+          sizeParam,
+          linkUrl: String(linkUrl || '').slice(0, 140),
+          kind,
+          highestBid,
+          lowestAsk,
+          profit,
+          avg30d
+        });
+
+        const blocks = [];
+        if (mention) blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: `${mention}` }] });
+        // Header makes messages much easier to scan in mobile Slack.
+        blocks.push({ type: 'header', text: { type: 'plain_text', text: 'Opportunity found', emoji: true } });
+        blocks.push({
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `<${linkUrl}|${title}${sizeLabel ? ` (${sizeLabel})` : ''}>`
+          },
+          ...(imageUrl && /^https:\/\//i.test(imageUrl)
+            ? { accessory: { type: 'image', image_url: imageUrl, alt_text: title.slice(0, 80) || 'StockX' } }
+            : {})
+        });
+        const fields = [];
+        if (sizeLabel) fields.push({ type: 'mrkdwn', text: `*Size*\n${sizeLabel}` });
+        fields.push({ type: 'mrkdwn', text: `*Mode*\n${kind}` });
+        if (highestBid != null) fields.push({ type: 'mrkdwn', text: `*Highest Bid*\n$${highestBid}` });
+        if (lowestAsk != null) fields.push({ type: 'mrkdwn', text: `*Lowest Ask*\n$${lowestAsk}` });
+        if (avg30d != null) fields.push({ type: 'mrkdwn', text: `*Avg 30d*\n$${avg30d}` });
+        if (profit != null) fields.push({ type: 'mrkdwn', text: `*Profit*\n$${profit}` });
+        if (fields.length) blocks.push({ type: 'section', fields: fields.slice(0, 10) });
+        blocks.push({ type: 'divider' });
+
+        const payload = {
+          text: `${mentionPrefix}Opportunity: ${title} ${sizeLabel ? `(${sizeLabel})` : ''} profit $${profit ?? '—'}`,
+          blocks,
+          link_names: true
+        };
+        if (cfg.slackChannel) payload.channel = cfg.slackChannel;
+
+        // #region agent log (debug-session)
+        try {
+          fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId: 'debug-session',
+              runId: 'pre-fix',
+              hypothesisId: 'H4',
+              location: 'background.js:slackSendOpportunity:payload',
+              message: 'Slack payload built (link target)',
+              data: {
+                linkUrl: String(linkUrl || '').slice(0, 220),
+                title: String(title || '').slice(0, 80),
+                sizeLabel: String(sizeLabel || '').slice(0, 40),
+                kind: String(kind || '').slice(0, 20)
+              },
+              timestamp: Date.now()
+            })
+          }).catch(() => {});
+        } catch {}
+        // #endregion agent log (debug-session)
+
+        const ok = await (async () => {
+          try {
+            await setSlackStatus({ ok: null, lastAttemptAt: Date.now(), lastError: '', note: 'sending…' });
+          } catch {}
+          try {
+            const resp = await fetchWithTimeout(
+              cfg.slackWebhookUrl,
+              { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) },
+              12000
+            );
+            if (!resp.ok) {
+              const txt = await resp.text().catch(() => '');
+              try {
+                await setSlackStatus({ ok: false, lastErrorAt: Date.now(), lastError: `HTTP ${resp.status}: ${txt || '(no body)'}`, note: 'failed' });
+              } catch {}
+              await appendSlackLog('error', 'slackSendOpportunity: non-200', { status: resp.status, body: String(txt || '').slice(0, 200) });
+              return false;
+            }
+            try {
+              await setSlackStatus({ ok: true, lastOkAt: Date.now(), lastError: '', note: 'ok' });
+            } catch {}
+            await appendSlackLog('info', 'slackSendOpportunity: sent ok', {});
+            return true;
+          } catch (e) {
+            const msg = e?.name === 'AbortError' ? 'Timeout sending to Slack (AbortError)' : e?.message || String(e);
+            try {
+              await setSlackStatus({ ok: false, lastErrorAt: Date.now(), lastError: msg, note: 'failed' });
+            } catch {}
+            await appendSlackLog('error', 'slackSendOpportunity: exception', { error: msg });
+            return false;
+          }
+        })();
+
+        sendResponse({ success: ok });
+      } catch (e) {
+        try {
+          await appendSlackLog('error', 'slackSendOpportunity: handler exception', { error: e?.message || String(e) });
+        } catch {}
+        sendResponse({ success: false, error: e?.message || String(e) });
+      }
+    })();
+    return true;
+  }
+
   if (request.action === 'fetchMarketData') {
     // Proxy API requests to avoid CORS issues
     fetchMarketData(request.data)
@@ -429,6 +1015,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     const scanId = `scan_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 
+    // #region agent log (debug-session)
+    try {
+      fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: 'debug-session',
+          runId: 'xpress-check',
+          hypothesisId: 'X2_X5',
+          location: 'background.js:onMessage:startListingBidScanPaginated',
+          message: 'Starting paginated scan',
+          data: { scanId, originTabId: tabId, scanMode, scanName, startUrl, maxPages, perPage, allowBackground: !!allowBackground },
+          timestamp: Date.now()
+        })
+      }).catch(() => {});
+    } catch {}
+    // #endregion agent log (debug-session)
+
     // Track scan so we can cancel it.
     try {
       if (!globalThis.__stockxActiveScans) globalThis.__stockxActiveScans = new Map();
@@ -558,6 +1162,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
 
         const startUrl = String(s.startUrl || '');
+        const scanMode = String(s.scanMode || 'listing').toLowerCase(); // 'listing' | 'xpress'
         const preferredOrigin = Number(request.originTabId) || Number(s.originTabId) || 0;
         const allowCreateOriginTab = request.allowCreateOriginTab !== false;
 
@@ -624,6 +1229,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                   cancelled: false,
                   originTabId,
                   startUrl,
+                  scanMode,
                   activeTabIds: new Set(),
                   keepUserFocus: !!s.keepUserFocus
                 });
@@ -669,7 +1275,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                       currentPage,
                       pageUrls,
                       startIdx: Math.max(0, effectiveIdx),
-                      completed: Number(s.completed || 0)
+                      completed: Number(s.completed || 0),
+                      scanMode
                     });
                   } else {
                     const urls = Array.isArray(resumePayload?.urls) ? resumePayload.urls : (Array.isArray(resume?.urls) ? resume.urls : []);
@@ -682,7 +1289,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                       scanId,
                       urls,
                       startIdx,
-                      completed: Number(s.completed || 0)
+                      completed: Number(s.completed || 0),
+                      scanMode
                     });
                   }
                 } catch (e) {
@@ -726,7 +1334,50 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           const scans = globalThis.__stockxActiveScans;
           const entry = scans?.get(scanId);
           if (!entry) {
-            sendResponse({ success: false, error: 'Unknown scanId (maybe already finished)' });
+            // MV3 service worker can restart mid-scan, losing in-memory scan bookkeeping.
+            // Fall back to persisted scan state so "Stop" still works end-to-end.
+            sendResponse({ success: true, recovered: true });
+            try {
+              chrome.storage?.local?.remove?.(['stockxActiveListingScanId'], () => {
+                void chrome.runtime.lastError;
+              });
+            } catch {}
+            try {
+              const stateKey = `stockxListingScanState:${scanId}`;
+              chrome.storage?.local?.get?.([stateKey], (res) => {
+                void chrome.runtime.lastError;
+                const s = res?.[stateKey] && typeof res[stateKey] === 'object' ? res[stateKey] : null;
+                const originTabId = Number(s?.originTabId || 0);
+                const startUrl = String(s?.startUrl || '');
+                try {
+                  if (originTabId) sendToTab(originTabId, { action: 'listingBidScanDone', scanId, success: false, cancelled: true, total: 0 });
+                } catch {}
+                try {
+                  if (originTabId && startUrl) chrome.tabs.update(originTabId, { url: startUrl }, () => void chrome.runtime.lastError);
+                } catch {}
+                try {
+                  setScanState(scanId, { finishedAt: Date.now(), stage: 'stopped', cancelled: true, success: false });
+                } catch {}
+                try {
+                  patchScanHistory(scanId, { finishedAt: Date.now(), success: false, cancelled: true });
+                } catch {}
+              });
+            } catch {}
+            // Best-effort: close any scan/collector tabs (they all include ?extScan=1).
+            try {
+              chrome.tabs.query({}, (tabs) => {
+                void chrome.runtime.lastError;
+                for (const t of tabs || []) {
+                  const u = String(t?.url || '');
+                  if (!u) continue;
+                  if (!/stockx\.com/i.test(u)) continue;
+                  if (!/[?&]extScan=1\b/i.test(u)) continue;
+                  try {
+                    closeTab(t.id);
+                  } catch {}
+                }
+              });
+            } catch {}
             return;
           }
           entry.cancelled = true;
@@ -1199,6 +1850,7 @@ function setScanResult(scanId, url, result) {
     try {
       updateOpportunitiesIndexFromResult(scanId, { url, ...(result || {}) });
     } catch {}
+    // Slack notifications are handled in the content script on the listing tab (more reliable than MV3 SW).
   } catch {}
 }
 
@@ -1916,6 +2568,25 @@ async function runListingBidScan({ originTabId, scanId, urls }) {
 
     const itemStart = Date.now();
     const action = scanMode === 'xpress' ? 'scanProductXpressDeals' : 'scanProductBidOpportunities';
+    // #region agent log (debug-session)
+    try {
+      if (completed === 0) {
+        fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: 'debug-session',
+            runId: 'xpress-check',
+            hypothesisId: 'X5',
+            location: 'background.js:runListingBidScan:firstItem',
+            message: 'Computed scan action for first item',
+            data: { scanId, scanMode, action, url },
+            timestamp: Date.now()
+          })
+        }).catch(() => {});
+      }
+    } catch {}
+    // #endregion agent log (debug-session)
     const scanStart = Date.now();
     const resp = await requestScanFromTab(
       tab.id,

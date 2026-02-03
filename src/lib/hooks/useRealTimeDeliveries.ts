@@ -32,6 +32,16 @@ interface DeliveryItem {
   courierTrackingLink?: string;
   onTimeStatus?: string;
   archivedAt?: string | null;
+  // Optional purchase/pricing metadata (populated by /api/deliveries/sync when available)
+  purchasePrice?: number | null;
+  marketPrice?: number | null;
+  estimatedProfit?: number | null;
+  marketPriceUpdatedAt?: string | null;
+  stockxUrlKey?: string | null;
+  stockxStyleId?: string | null;
+  stockxProductId?: string;
+  stockxVariantId?: string;
+  stockxUrl?: string;
 }
 
 interface UseRealTimeDeliveriesOptions {

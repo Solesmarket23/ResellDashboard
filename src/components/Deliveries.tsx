@@ -15,6 +15,7 @@ import { formatDisplayDate, formatShortDate, parseLocalDate } from '../lib/utils
 import UPSOAuthButton from './UPSOAuthButton';
 // UPS OAuth UI is handled by `UPSOAuthButton`
 import ImagePreviewModal from './ImagePreviewModal';
+import { buildStockXUrl, normalizeStockXSizeForUrl } from '../lib/stockx/stockxLink';
 
 interface DeliveryItem {
   id: string;
@@ -41,6 +42,16 @@ interface DeliveryItem {
   }[];
   liveTracking?: TrackingInfo;
   isLiveTrackingEnabled?: boolean;
+  // Optional pricing + StockX info (populated by /api/deliveries/sync when available)
+  purchasePrice?: number | null;
+  marketPrice?: number | null;
+  estimatedProfit?: number | null;
+  marketPriceUpdatedAt?: string | null;
+  stockxUrlKey?: string | null;
+  stockxStyleId?: string | null;
+  stockxProductId?: string;
+  stockxVariantId?: string;
+  stockxUrl?: string;
 }
 
 type DisplayStatus = 'label_created' | 'shipped' | 'out_for_delivery' | 'delivered' | 'unknown';
@@ -115,6 +126,30 @@ const DeliveriesNew: React.FC = () => {
     const loc = (best?.location as string | undefined) ?? '';
     if (!loc || loc.trim() === '' || loc === 'Unknown') return '—';
     return loc;
+  };
+
+  const toFinite = (n: unknown): number | null => (typeof n === 'number' && Number.isFinite(n) ? n : null);
+  const formatUsd = (n: number | null | undefined): string => {
+    const v = typeof n === 'number' && Number.isFinite(n) ? n : null;
+    return v === null ? '—' : `$${v.toFixed(2)}`;
+  };
+
+  const getProfit = (delivery: DeliveryItem): number | null => {
+    const provided = toFinite((delivery as any).estimatedProfit);
+    if (provided !== null) return provided;
+    const buy = toFinite((delivery as any).purchasePrice);
+    const market = toFinite((delivery as any).marketPrice);
+    if (buy === null || market === null) return null;
+    return market - buy;
+  };
+
+  const getStockXHref = (delivery: DeliveryItem): string => {
+    const direct = typeof (delivery as any).stockxUrl === 'string' ? ((delivery as any).stockxUrl as string) : '';
+    if (direct && (direct.startsWith('https://') || direct.startsWith('http://'))) return direct;
+    const urlKey = typeof (delivery as any).stockxUrlKey === 'string' ? ((delivery as any).stockxUrlKey as string) : null;
+    const styleId = typeof (delivery as any).stockxStyleId === 'string' ? ((delivery as any).stockxStyleId as string) : null;
+    const size = normalizeStockXSizeForUrl((delivery as any).productSize) || null;
+    return buildStockXUrl({ urlKey, styleId, productName: (delivery as any).productName, size });
   };
   
   // Real-time deliveries hook
@@ -409,6 +444,7 @@ const DeliveriesNew: React.FC = () => {
   // Copy tracking number to clipboard
   const [copiedTrackingId, setCopiedTrackingId] = useState<string | null>(null);
   const [copiedShipmentId, setCopiedShipmentId] = useState<string | null>(null);
+  const [marketPriceLoadingId, setMarketPriceLoadingId] = useState<string | null>(null);
   // Persist the blue "active" highlight until another copy action.
   const [highlightedDeliveryId, setHighlightedDeliveryId] = useState<string | null>(null);
   // Sometimes we intentionally do NOT want to auto-scroll to the highlighted row (e.g. when clearing a stat filter).
@@ -1346,6 +1382,47 @@ const DeliveriesNew: React.FC = () => {
   const openPurchasesForDelivery = (purchaseId: string) => {
     if (!purchaseId) return;
     window.open(`/dashboard?section=purchases&purchaseId=${encodeURIComponent(purchaseId)}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const refreshMarketPriceForDelivery = async (delivery: DeliveryItem) => {
+    if (!user?.uid) {
+      showNotification('Please sign in to refresh market prices', 'error');
+      return;
+    }
+    if (!delivery) return;
+
+    setMarketPriceLoadingId(delivery.id);
+    try {
+      const res = await fetch('/api/stockx/market-price', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.uid,
+          purchaseId: delivery.id,
+          fallback: {
+            productName: delivery.productName,
+            productSize: delivery.productSize,
+            styleId: (delivery as any).stockxStyleId ?? null,
+            stockxUrlKey: (delivery as any).stockxUrlKey ?? null,
+            stockxProductId: (delivery as any).stockxProductId ?? null,
+            stockxVariantId: (delivery as any).stockxVariantId ?? null,
+          },
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) {
+        const msg = String(data?.error || data?.reason || 'Failed to fetch market price');
+        throw new Error(msg);
+      }
+      const price = typeof data?.price === 'number' ? data.price : null;
+      showNotification(price !== null ? `Market price updated: $${price.toFixed(2)}` : 'Market price updated', 'success');
+      await refreshDeliveries();
+    } catch (e: any) {
+      console.error('Market price refresh failed:', e);
+      showNotification(e?.message || 'Market price refresh failed', 'error');
+    } finally {
+      setMarketPriceLoadingId(null);
+    }
   };
 
   const sendSlack = async (type: 'daily_summary' | 'out_for_delivery') => {
@@ -2797,7 +2874,21 @@ const DeliveriesNew: React.FC = () => {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
                               <h4 className={`text-sm font-medium ${currentTheme.colors.textPrimary} truncate`}>
-                      {delivery.productName}
+                                <a
+                                  href={getStockXHref(delivery)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => {
+                                    // Don't select the row when the user is trying to open StockX.
+                                    e.stopPropagation();
+                                  }}
+                                  className={`hover:underline underline-offset-2 ${
+                                    currentTheme.name === 'Neon' ? 'text-cyan-100' : 'text-blue-50'
+                                  }`}
+                                  title="Open on StockX (opens in new tab)"
+                                >
+                                  {delivery.productName}
+                                </a>
                               </h4>
                               <span className={`px-1.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(getDisplayStatus(delivery))}`}>
                       {formatStatus(getDisplayStatus(delivery))}
@@ -2818,6 +2909,29 @@ const DeliveriesNew: React.FC = () => {
                                 <span>{delivery.productBrand}</span>
                                 <span className="text-gray-400">•</span>
                                 <SizePill size={delivery.productSize} />
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span>Buy {formatUsd(delivery.purchasePrice ?? null)}</span>
+                                <span className="text-gray-400">•</span>
+                                <span>
+                                  Market{' '}
+                                  {typeof delivery.marketPrice === 'number' && Number.isFinite(delivery.marketPrice) ? (
+                                    formatUsd(delivery.marketPrice)
+                                  ) : (
+                                    <span className="text-red-400 font-semibold">N/A</span>
+                                  )}
+                                </span>
+                                <span className="text-gray-400">•</span>
+                                {(() => {
+                                  const profit = getProfit(delivery);
+                                  const profitClass =
+                                    typeof profit === 'number'
+                                      ? profit >= 0
+                                        ? 'text-green-400 font-semibold'
+                                        : 'text-red-400 font-semibold'
+                                      : 'text-gray-300';
+                                  return <span className={profitClass}>Profit {profit === null ? '—' : formatUsd(profit)}</span>;
+                                })()}
                               </div>
                               <div className="flex items-center gap-1">
                                 <span>{delivery.carrier} • </span>

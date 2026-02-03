@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDocumentsServer } from '@/lib/firebase/firebaseServerUtils';
 import { trackingService } from '@/lib/tracking/trackingService';
+import { buildStockXUrl, extractStockXUrlKeyFromPurchase, normalizeStockXSizeForUrl } from '@/lib/stockx/stockxLink';
 
 // Simple in-memory storage for manual tracking during testing
 const manualTrackingStorage = new Map<string, any[]>();
@@ -79,6 +80,89 @@ function pickImage(purchase: any): string | null {
       purchase?.product?.img
     ) || null
   );
+}
+
+function toFiniteMoney(val: unknown): number | null {
+  if (typeof val === 'number' && Number.isFinite(val)) return val;
+  if (typeof val !== 'string') return null;
+  const cleaned = val.replace(/[^0-9.\-]/g, '');
+  if (!cleaned) return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
+// Best-effort "purchase cost" normalization for UI display.
+// Prefer netPaid/totalPayment/totalAmount when present; fall back to parsed `price`.
+function pickPurchasePrice(purchase: any): number | null {
+  const netPaid =
+    (typeof purchase?.netPaid === 'number' ? purchase.netPaid : toFiniteMoney(purchase?.netPaid)) ?? null;
+  if (typeof netPaid === 'number' && Number.isFinite(netPaid) && netPaid > 0) return netPaid;
+
+  const totalPayment =
+    (typeof purchase?.totalPayment === 'number' ? purchase.totalPayment : toFiniteMoney(purchase?.totalPayment)) ?? null;
+  if (typeof totalPayment === 'number' && Number.isFinite(totalPayment) && totalPayment > 0) {
+    const credits = toFiniteMoney(purchase?.credits ?? purchase?.discounts) ?? 0;
+    return Math.max(0, totalPayment - Math.max(0, credits));
+  }
+
+  const totalAmount =
+    (typeof purchase?.totalAmount === 'number' ? purchase.totalAmount : toFiniteMoney(purchase?.totalAmount)) ?? null;
+  if (typeof totalAmount === 'number' && Number.isFinite(totalAmount) && totalAmount > 0) {
+    const credits = toFiniteMoney(purchase?.credits ?? purchase?.discounts) ?? 0;
+    return Math.max(0, totalAmount - Math.max(0, credits));
+  }
+
+  const purchasePrice =
+    (typeof purchase?.purchasePrice === 'number' ? purchase.purchasePrice : toFiniteMoney(purchase?.purchasePrice)) ?? null;
+  if (typeof purchasePrice === 'number' && Number.isFinite(purchasePrice) && purchasePrice > 0) return purchasePrice;
+
+  // Some email parsers store "total_amount" (legacy)
+  const totalAmountLegacy =
+    (typeof purchase?.total_amount === 'number' ? purchase.total_amount : toFiniteMoney(purchase?.total_amount)) ?? null;
+  if (typeof totalAmountLegacy === 'number' && Number.isFinite(totalAmountLegacy) && totalAmountLegacy > 0) return totalAmountLegacy;
+
+  // Fall back to "price" (sometimes "$180.00" or "180.00 + $0.00")
+  const rawPrice = purchase?.price;
+  if (rawPrice === null || rawPrice === undefined) return null;
+  if (typeof rawPrice === 'number' && Number.isFinite(rawPrice) && rawPrice > 0) return rawPrice;
+  if (typeof rawPrice === 'string') {
+    const first = rawPrice.split('+')[0] ?? rawPrice;
+    const n = toFiniteMoney(first);
+    if (typeof n === 'number' && Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
+}
+
+function pickMarketPrice(purchase: any): number | null {
+  const raw = purchase?.marketPrice ?? purchase?.lowestAsk ?? purchase?.lowestAskAmount ?? null;
+  const n =
+    (typeof raw === 'number' ? raw : typeof raw === 'string' ? toFiniteMoney(raw) : null) ?? null;
+  if (typeof n === 'number' && Number.isFinite(n) && n > 0) return n;
+  return null;
+}
+
+function pickStockXIds(purchase: any): { stockxProductId?: string; stockxVariantId?: string } {
+  const pid =
+    purchase?.stockxProductId ||
+    purchase?.productId ||
+    purchase?.product?.productId ||
+    purchase?.product?.id ||
+    undefined;
+  const vid =
+    purchase?.stockxVariantId ||
+    purchase?.variantId ||
+    purchase?.variant?.variantId ||
+    purchase?.variant?.id ||
+    undefined;
+  const stockxProductId = typeof pid === 'string' && pid.trim() ? pid.trim() : undefined;
+  const stockxVariantId = typeof vid === 'string' && vid.trim() ? vid.trim() : undefined;
+  return { stockxProductId, stockxVariantId };
+}
+
+function pickStyleId(purchase: any): string | null {
+  const v = purchase?.styleId || purchase?.style_id || purchase?.product?.styleId || purchase?.sku || null;
+  const s = typeof v === 'string' ? v.trim() : '';
+  return s ? s : null;
 }
 
 function buildGmailEmailUrl(args: { emailId?: unknown; orderNumber?: unknown; trackingNumber?: unknown }): string | null {
@@ -510,7 +594,25 @@ export async function GET(request: NextRequest) {
         orderNumber: purchase.orderNumber,
         purchaseDate: purchase.purchaseDate,
         price: purchase.price,
-        platform: purchase.platform
+        platform: purchase.platform,
+        // Pricing + StockX linking (used by Deliveries UI)
+        purchasePrice: pickPurchasePrice(purchase),
+        marketPrice: pickMarketPrice(purchase),
+        estimatedProfit: (() => {
+          const p = pickPurchasePrice(purchase);
+          const m = pickMarketPrice(purchase);
+          return typeof p === 'number' && typeof m === 'number' ? m - p : null;
+        })(),
+        marketPriceUpdatedAt: typeof purchase?.marketPriceUpdatedAt === 'string' ? purchase.marketPriceUpdatedAt : null,
+        stockxUrlKey: extractStockXUrlKeyFromPurchase(purchase),
+        stockxStyleId: pickStyleId(purchase),
+        ...pickStockXIds(purchase),
+        stockxUrl: (() => {
+          const urlKey = extractStockXUrlKeyFromPurchase(purchase) || (typeof purchase?.stockxUrlKey === 'string' ? purchase.stockxUrlKey : null);
+          const styleId = pickStyleId(purchase);
+          const size = normalizeStockXSizeForUrl(pickSize(purchase));
+          return buildStockXUrl({ urlKey, styleId, productName: pickProductName(purchase), size });
+        })(),
       };
     });
 
