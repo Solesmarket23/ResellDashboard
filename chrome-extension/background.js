@@ -200,6 +200,23 @@ async function fetchWithTimeout(url, init, timeoutMs = 12000) {
   }
 }
 
+async function postSlackWebhook(webhookUrl, payloadObj, timeoutMs = 12000) {
+  // Use "payload=" form encoding to avoid CORS preflight issues with Slack Incoming Webhooks.
+  // Slack accepts this legacy format and responds with 200 "ok".
+  const url = safeStr(webhookUrl || '').trim();
+  if (!url) throw new Error('Missing webhook URL');
+  const body = new URLSearchParams({ payload: JSON.stringify(payloadObj || {}) }).toString();
+  return await fetchWithTimeout(
+    url,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded;charset=utf-8' },
+      body
+    },
+    timeoutMs
+  );
+}
+
 async function maybeNotifySlackForOpportunities({ scanId, resultUrl, result }) {
   try {
     const cfg = await loadScanSettingsForSlack();
@@ -267,15 +284,7 @@ async function maybeNotifySlackForOpportunities({ scanId, resultUrl, result }) {
         if (cfg.slackChannel) payload.channel = cfg.slackChannel;
         // Best-effort: resolve @mentions in the message text.
         payload.link_names = true;
-        const resp = await fetchWithTimeout(
-          cfg.slackWebhookUrl,
-          {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(payload)
-          },
-          12000
-        );
+        const resp = await postSlackWebhook(cfg.slackWebhookUrl, payload, 12000);
         // Slack returns 200 "ok" for webhooks
         if (!resp.ok) {
           const txt = await resp.text().catch(() => '');
@@ -601,11 +610,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           await setSlackStatus({ ok: null, lastAttemptAt: Date.now(), lastError: '', note: 'sending test…' });
         } catch {}
 
-        const resp = await fetchWithTimeout(
-          cfg.slackWebhookUrl,
-          { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) },
-          12000
-        );
+        const resp = await postSlackWebhook(cfg.slackWebhookUrl, payload, 12000);
         if (!resp.ok) {
           const txt = await resp.text().catch(() => '');
           const err = `HTTP ${resp.status}: ${txt || '(no body)'}`;
@@ -806,11 +811,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             await setSlackStatus({ ok: null, lastAttemptAt: Date.now(), lastError: '', note: 'sending…' });
           } catch {}
           try {
-            const resp = await fetchWithTimeout(
-              cfg.slackWebhookUrl,
-              { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) },
-              12000
-            );
+            const resp = await postSlackWebhook(cfg.slackWebhookUrl, payload, 12000);
             if (!resp.ok) {
               const txt = await resp.text().catch(() => '');
               try {
