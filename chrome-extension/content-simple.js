@@ -8929,6 +8929,47 @@ function ensureListingBidWidget() {
     }
   } catch {}
 
+  // Fix: some StockX pages attach document-level CAPTURE handlers that prevent focusing inputs in overlays.
+  // If that happens, those numeric inputs become "unclickable". We intercept ONLY input clicks and
+  // manually focus/select the field.
+  try {
+    if (!window.__stockxWidgetInputFocusFixInstalled) {
+      window.__stockxWidgetInputFocusFixInstalled = true;
+      const focusInput = (el) => {
+        try {
+          if (!el) return;
+          // Pause widget rerenders for a moment so the input doesn't get replaced mid-focus.
+          try { window.__stockxListingWidgetInteractingUntil = Date.now() + 2500; } catch {}
+          el.focus?.();
+          // Select-all for fast editing
+          try { el.select?.(); } catch {}
+        } catch {}
+      };
+      const onCap = (e) => {
+        try {
+          const w = document.getElementById('stockx-bid-opps-widget');
+          if (!w) return;
+          const t = e?.target;
+          if (!t || !w.contains(t)) return;
+          const input = t?.closest?.('input,textarea');
+          if (!input) return;
+          // Only for our config inputs; don't interfere with other controls.
+          const role = input.getAttribute?.('data-role') || '';
+          if (!['max-items', 'max-pages', 'concurrency'].includes(role)) return;
+          // Stop StockX capture handlers and focus ourselves.
+          try { e.stopImmediatePropagation?.(); } catch {}
+          try { e.stopPropagation?.(); } catch {}
+          try { e.preventDefault?.(); } catch {}
+          focusInput(input);
+        } catch {}
+      };
+      // Capture phase so we run before StockX capture listeners.
+      try { window.addEventListener('pointerdown', onCap, { capture: true }); } catch {}
+      try { window.addEventListener('mousedown', onCap, { capture: true }); } catch {}
+      try { window.addEventListener('touchstart', onCap, { capture: true, passive: false }); } catch {}
+    }
+  } catch {}
+
   // NOTE: Avoid window-level capture interception here.
   // It can prevent events from ever reaching the widget, making buttons/inputs feel unclickable.
 
