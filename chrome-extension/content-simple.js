@@ -8929,30 +8929,8 @@ function ensureListingBidWidget() {
     }
   } catch {}
 
-  // IMPORTANT: StockX uses document-level CAPTURE listeners that can cancel clicks/focus inside our widget,
-  // especially on inputs. Stopping propagation on the widget itself is too late.
-  // Install a window-level capture "shield" so our widget stays interactable.
-  try {
-    if (!window.__stockxListingWidgetEventShieldInstalled) {
-      window.__stockxListingWidgetEventShieldInstalled = true;
-      const shield = (e) => {
-        try {
-          const w = document.getElementById('stockx-bid-opps-widget');
-          if (!w) return;
-          const t = e?.target;
-          if (!t || !w.contains(t)) return;
-          // Stop StockX capture handlers from seeing this event.
-          try { e.stopImmediatePropagation?.(); } catch {}
-          try { e.stopPropagation?.(); } catch {}
-          // Do NOT preventDefault: we want inputs to focus normally.
-        } catch {}
-      };
-      // Use capture so we run before document capture listeners.
-      ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'touchstart', 'touchend'].forEach((type) => {
-        try { window.addEventListener(type, shield, { capture: true }); } catch {}
-      });
-    }
-  } catch {}
+  // NOTE: Avoid window-level capture interception here.
+  // It can prevent events from ever reaching the widget, making buttons/inputs feel unclickable.
 
   // Delegate primary actions so they still work even if StockX cancels the normal "click" event.
   // Using pointerup in capture phase makes actions reliably fire on the first press.
