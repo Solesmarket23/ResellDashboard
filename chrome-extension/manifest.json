@@ -11,7 +11,9 @@
   ],
   "host_permissions": [
     "https://stockx.com/*",
-    "https://hooks.slack.com/*"
+    "https://hooks.slack.com/*",
+    "http://127.0.0.1:7242/*",
+    "http://localhost:7242/*"
   ],
   "content_scripts": [
     {

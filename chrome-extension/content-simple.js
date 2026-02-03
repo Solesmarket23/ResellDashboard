@@ -8946,18 +8946,29 @@ function ensureListingBidWidget() {
       // #region agent log (debug-mode instrumentation)
       const __stockxDbgSend = (hypothesisId, location, message, data) => {
         try {
+          const entry = {
+            sessionId: 'debug-session',
+            runId: String(window.__stockxDbgRunId || 'focus-input-pre'),
+            hypothesisId: String(hypothesisId || ''),
+            location: String(location || 'chrome-extension/content-simple.js'),
+            message: String(message || ''),
+            data: data || {},
+            timestamp: Date.now()
+          };
+          // Prefer background forwarding (more reliable than content-script fetch to localhost).
+          try {
+            if (chrome?.runtime?.sendMessage) {
+              chrome.runtime.sendMessage({ action: 'debugIngestLog', entry }, () => {
+                void chrome.runtime.lastError;
+              });
+              return;
+            }
+          } catch {}
+          // Fallback: direct fetch
           fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              sessionId: 'debug-session',
-              runId: String(window.__stockxDbgRunId || 'focus-input-pre'),
-              hypothesisId: String(hypothesisId || ''),
-              location: String(location || 'chrome-extension/content-simple.js'),
-              message: String(message || ''),
-              data: data || {},
-              timestamp: Date.now()
-            })
+            body: JSON.stringify(entry)
           }).catch(() => {});
         } catch {}
       };

@@ -630,6 +630,30 @@ chrome.runtime.onStartup?.addListener?.(() => {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('📨 Background received message:', request);
   const tabId = sender?.tab?.id;
+
+  // Debug-mode: forward NDJSON-like logs to the local ingest server.
+  // This avoids CSP/permission issues when a content script tries to fetch localhost directly.
+  if (request?.action === 'debugIngestLog') {
+    (async () => {
+      try {
+        const entry = request?.entry && typeof request.entry === 'object' ? request.entry : null;
+        if (!entry) return sendResponse({ success: false, error: 'missing entry' });
+        const resp = await fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(entry)
+        });
+        if (!resp.ok) {
+          const txt = await resp.text().catch(() => '');
+          return sendResponse({ success: false, error: `HTTP ${resp.status}: ${String(txt || '').slice(0, 160)}` });
+        }
+        return sendResponse({ success: true });
+      } catch (e) {
+        return sendResponse({ success: false, error: e?.message || String(e) });
+      }
+    })();
+    return true;
+  }
   
   if (request?.action === 'slackSendTest') {
     (async () => {
