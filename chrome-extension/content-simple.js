@@ -8936,6 +8936,66 @@ function ensureListingBidWidget() {
     if (!window.__stockxWidgetInputFocusFixInstalled) {
       window.__stockxWidgetInputFocusFixInstalled = true;
       try { window.__stockxWidgetFocusLock = null; } catch {}
+      const describeEl = (el) => {
+        try {
+          if (!el) return null;
+          const role = el.getAttribute?.('data-role') || '';
+          const testid = el.getAttribute?.('data-testid') || '';
+          const id = el.id || '';
+          const name = el.getAttribute?.('name') || '';
+          const type = el.getAttribute?.('type') || '';
+          const cls = String(el.className || '').slice(0, 120);
+          const tag = String(el.tagName || '');
+          const value = (() => {
+            try {
+              if (tag === 'INPUT' || tag === 'TEXTAREA') return String(el.value ?? '').slice(0, 80);
+            } catch {}
+            return undefined;
+          })();
+          const text = (() => {
+            try {
+              if (tag === 'INPUT' || tag === 'TEXTAREA') return undefined;
+              return safeText(el).slice(0, 80);
+            } catch {
+              return undefined;
+            }
+          })();
+          return { tag, role, testid, id, name, type, class: cls, value, text };
+        } catch {
+          return null;
+        }
+      };
+      const logWidgetFocusDbg = (label, e, extra = null) => {
+        try {
+          const lock = window.__stockxWidgetFocusLock;
+          const lockActive = !!lock && typeof lock === 'object' && Date.now() <= Number(lock.until || 0);
+          // Only log during the focus lock window to keep noise down.
+          if (!lockActive) return;
+          const ae = document.activeElement;
+          const target = e?.target;
+          const pt = (() => {
+            try {
+              const x = Number(e?.clientX);
+              const y = Number(e?.clientY);
+              if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+              const top = document.elementFromPoint?.(x, y);
+              return { x, y, top: describeEl(top) };
+            } catch {
+              return null;
+            }
+          })();
+          console.log('[stockx-ext][widget-input-debug]', label, {
+            ts: new Date().toISOString(),
+            type: String(e?.type || ''),
+            role: String(lock?.role || ''),
+            activeEl: describeEl(ae),
+            target: describeEl(target),
+            relatedTarget: describeEl(e?.relatedTarget),
+            point: pt,
+            extra
+          });
+        } catch {}
+      };
       const focusInput = (el, role = '') => {
         try {
           if (!el) return;
@@ -8947,6 +9007,7 @@ function ensureListingBidWidget() {
           const lockId = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
           const doFocus = () => {
             try {
+              logWidgetFocusDbg('doFocus(before)', null, { el: describeEl(el) });
               el.focus?.();
               // Select-all for fast editing
               try { el.select?.(); } catch {}
@@ -8954,6 +9015,7 @@ function ensureListingBidWidget() {
                 const v = String(el.value ?? '');
                 if (typeof el.setSelectionRange === 'function') el.setSelectionRange(0, v.length);
               } catch {}
+              logWidgetFocusDbg('doFocus(after)', null, { el: describeEl(el) });
             } catch {}
           };
 
@@ -8975,6 +9037,7 @@ function ensureListingBidWidget() {
                 if (!lock || typeof lock !== 'object') return;
                 if (String(lock.id || '') !== lockId) return;
                 if (Date.now() > Number(lock.until || 0)) return;
+                logWidgetFocusDbg('blur(refocus)', null, { el: describeEl(el) });
                 setTimeout(doFocus, 0);
               } catch {}
             };
@@ -9005,11 +9068,15 @@ function ensureListingBidWidget() {
           // Only for our config inputs; don't interfere with other controls.
           const role = input.getAttribute?.('data-role') || '';
           if (!['max-items', 'max-pages', 'concurrency'].includes(role)) return;
+          // Start/refresh focus lock so console logging will capture the next second of events.
+          try { window.__stockxWidgetFocusLock = { id: `cap_${Date.now()}`, role, until: Date.now() + 1200 }; } catch {}
+          logWidgetFocusDbg('cap(start)', e, { input: describeEl(input) });
           // Stop StockX capture handlers and focus ourselves.
           try { e.stopImmediatePropagation?.(); } catch {}
           try { e.stopPropagation?.(); } catch {}
           // Do NOT preventDefault: we want native focusing/caret behavior.
           focusInput(input, role);
+          logWidgetFocusDbg('cap(done)', e, { input: describeEl(input) });
         } catch {}
       };
       const onCapPost = (e) => {
@@ -9025,12 +9092,14 @@ function ensureListingBidWidget() {
           const t = e?.target;
           if (!t || !w.contains(t)) return;
 
+          logWidgetFocusDbg('capPost', e, null);
           // Stop StockX capture handlers that steal focus.
           try { e.stopImmediatePropagation?.(); } catch {}
           try { e.stopPropagation?.(); } catch {}
 
           // Re-focus after pointerup/mouseup/click.
           focusInputByRole(role);
+          logWidgetFocusDbg('capPost(done)', e, null);
         } catch {}
       };
       // Capture phase so we run before StockX capture listeners.
@@ -9042,6 +9111,20 @@ function ensureListingBidWidget() {
       try { window.addEventListener('mouseup', onCapPost, { capture: true }); } catch {}
       try { window.addEventListener('touchend', onCapPost, { capture: true, passive: false }); } catch {}
       try { window.addEventListener('click', onCapPost, { capture: true }); } catch {}
+
+      // Also trace focus transitions during the lock window (who steals focus).
+      try {
+        window.addEventListener(
+          'focusin',
+          (e) => logWidgetFocusDbg('window focusin', e, null),
+          { capture: true }
+        );
+        window.addEventListener(
+          'focusout',
+          (e) => logWidgetFocusDbg('window focusout', e, null),
+          { capture: true }
+        );
+      } catch {}
     }
   } catch {}
 
