@@ -1007,8 +1007,8 @@ export default function TestPurchaseLinkingPage() {
             scanLimit: 20000,
             ttlHours: 24,
             // Be gentle to reduce bot protection / 429s during high-volume backfills.
-            concurrency: 2,
-            perRequestDelayMs: 250,
+            concurrency: 1,
+            perRequestDelayMs: 750,
           }),
         });
         const json = await resp.json().catch(() => ({}));

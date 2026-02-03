@@ -8,6 +8,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+type StopReason = 'rate_limited_429' | 'blocked_403' | null;
+
 function isPerimeterXBlock(body: string): boolean {
   const b = String(body || '').toLowerCase();
   return (
@@ -247,8 +249,8 @@ export async function POST(request: NextRequest) {
     const maxOrders = Math.max(1, Math.min(400, Number(body?.maxOrders ?? 120)));
     const scanLimit = Math.max(100, Math.min(20000, Number(body?.scanLimit ?? 12000)));
     // Default to gentler pacing to reduce PerimeterX / 429s for this high-volume endpoint.
-    const concurrency = Math.max(1, Math.min(6, Number(body?.concurrency ?? 2)));
-    const perRequestDelayMs = Math.max(0, Math.min(2000, Number(body?.perRequestDelayMs ?? 250)));
+    const concurrency = Math.max(1, Math.min(6, Number(body?.concurrency ?? 1)));
+    const perRequestDelayMs = Math.max(0, Math.min(5000, Number(body?.perRequestDelayMs ?? 750)));
 
     const now = Date.now();
     const lastRunMs = await getLastRunMs(userId);
@@ -328,12 +330,15 @@ export async function POST(request: NextRequest) {
     let rateLimitedCount = 0;
     let rateLimitedRetryCount = 0;
     let stoppedEarly = false;
+    let stoppedEarlyReason: StopReason = null;
+    let suggestedWaitMs: number | null = null;
     const updates: Array<{ docId: string; patch: any }> = [];
 
     const limit = concurrency;
     let idx = 0;
     let stopAll = false;
     let seen403 = 0;
+    let seen429 = 0;
 
     const worker = async () => {
       while (idx < toBackfill.length) {
@@ -355,11 +360,22 @@ export async function POST(request: NextRequest) {
             const status = Number(e?.status || 0) || null;
             if (status === 429) {
               rateLimitedCount += 1;
+              seen429 += 1;
               const backoffMs =
                 typeof e?.retryAfterMs === 'number' && Number.isFinite(e.retryAfterMs) && e.retryAfterMs > 0
                   ? e.retryAfterMs
                   : 2500;
-              // Wait, then retry once.
+              // If we are getting flooded with 429s, stop early to avoid burning requests.
+              // (Vercel route has execution limits; better to wait and retry later.)
+              if (seen429 >= 10) {
+                stopAll = true;
+                stoppedEarly = true;
+                stoppedEarlyReason = 'rate_limited_429';
+                suggestedWaitMs = Math.max(suggestedWaitMs ?? 0, Math.min(30 * 60 * 1000, backoffMs));
+                throw e;
+              }
+
+              // Otherwise: wait, then retry once.
               await new Promise((r) => setTimeout(r, backoffMs + Math.floor(Math.random() * 250)));
               rateLimitedRetryCount += 1;
               details = await fetchOrderDetails(current.orderNumber, apiKey, accessToken!);
@@ -462,7 +478,11 @@ export async function POST(request: NextRequest) {
             seen403 += 1;
             // If we trip bot protection, abort remaining work to avoid burning requests.
             // A single 403 can happen transiently, but multiple 403s in a run usually means PerimeterX.
-            if (e?.blocked || seen403 >= 5) stopAll = true;
+            if (e?.blocked || seen403 >= 5) {
+              stopAll = true;
+              stoppedEarly = true;
+              stoppedEarlyReason = 'blocked_403';
+            }
           }
           failures.push({
             orderNumber: current.orderNumber,
@@ -499,6 +519,8 @@ export async function POST(request: NextRequest) {
       rateLimitedCount,
       rateLimitedRetryCount,
       stoppedEarly,
+      stoppedEarlyReason,
+      suggestedWaitMs,
       ttlHours,
       maxOrders,
       concurrency,
