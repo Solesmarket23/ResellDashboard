@@ -956,6 +956,17 @@ export async function GET(request: NextRequest) {
     let noMatchInWindow = 0;
     let alreadyLinkedInWindow = 0;
 
+    // Allocated no_match breakdown (the user actually needs this for debugging FIFO correctness).
+    const allocatedNoMatchByReason = new Map<string, number>();
+    const allocatedNoMatchSamples = new Map<string, any[]>(); // limited samples per reason
+    const recordAllocatedNoMatch = (reason: string, sample: any) => {
+      const key = reason || 'unknown';
+      allocatedNoMatchByReason.set(key, (allocatedNoMatchByReason.get(key) || 0) + 1);
+      const arr = allocatedNoMatchSamples.get(key) || [];
+      if (arr.length < 3) arr.push(sample);
+      allocatedNoMatchSamples.set(key, arr);
+    };
+
     for (const sale of sales) {
       // If we have a sale window, only return rows in-window, but still allocate FIFO across all sales <= end.
       const isInWindow =
@@ -1032,6 +1043,8 @@ export async function GET(request: NextRequest) {
         const candidates = purchaseIndex.get(key) || [];
         const totalCandidates = candidates.length;
         let candidatesConsidered = 0;
+        let skippedUsed = 0;
+        let skippedAfterSaleDate = 0;
         const iter =
           cogsMethod === 'lifo'
             ? (function* () {
@@ -1040,7 +1053,11 @@ export async function GET(request: NextRequest) {
             : candidates;
         for (const cand of iter as any) {
           const pid = String(cand.id || '');
-          if (!pid || usedPurchaseIds.has(pid)) continue;
+          if (!pid) continue;
+          if (usedPurchaseIds.has(pid)) {
+            skippedUsed++;
+            continue;
+          }
           candidatesConsidered++;
           if (
             typeof saleCreatedAtMs === 'number' &&
@@ -1049,6 +1066,7 @@ export async function GET(request: NextRequest) {
             cand._dateSource !== 'createdAt' &&
             cand._dateMs > saleCreatedAtMs
           ) {
+            skippedAfterSaleDate++;
             continue;
           }
           linkedPurchase = cand;
@@ -1064,6 +1082,8 @@ export async function GET(request: NextRequest) {
             saleSize,
             candidatesTotal: totalCandidates,
             candidatesConsidered,
+            skippedUsed,
+            skippedAfterSaleDate,
           };
         }
       }
@@ -1208,6 +1228,60 @@ export async function GET(request: NextRequest) {
         const nameSkippedAfterSaleDateButUnreliable =
           typeof nameDbg?.skippedAfterSaleDateButUnreliable === 'number' ? nameDbg.skippedAfterSaleDateButUnreliable : null;
         const nameMode = typeof nameDbg?.mode === 'string' ? nameDbg.mode : null;
+        const computedReason: string =
+          !saleStyleId
+            ? (() => {
+                // Prefer explaining why size candidates (or exact name candidates) were ineligible.
+                // Note: nameCandidatesTotal is "exact normalized name key" count; fuzzy may still be attempted via size bucket.
+                const attempted = typeof nameAttempted === 'number' ? nameAttempted : 0;
+                const skippedAfter = typeof nameSkippedAfterSaleDate === 'number' ? nameSkippedAfterSaleDate : 0;
+                const skippedUsed = typeof nameSkippedUsed === 'number' ? nameSkippedUsed : 0;
+
+                if (attempted > 0 && skippedAfter === attempted) return 'missing_sale_styleId_all_size_candidates_after_sale_date';
+                if (attempted > 0 && skippedUsed === attempted) return 'missing_sale_styleId_all_size_candidates_already_used';
+
+                if (nameCandidatesTotal > 0) {
+                  if (skippedAfter > 0) return 'missing_sale_styleId_name_candidate_after_sale_date';
+                  if (skippedUsed > 0) return 'missing_sale_styleId_name_candidate_already_used';
+                  return 'missing_sale_styleId_but_name_candidates_exist';
+                }
+                return 'missing_sale_styleId';
+              })()
+            : !saleSize
+              ? 'missing_sale_size'
+              : (() => {
+                  // If we had styleId+size candidates, try to be specific about why they were not eligible.
+                  const sdbg = (sale as any)._fifoDebug || null;
+                  const total = typeof sdbg?.candidatesTotal === 'number' ? sdbg.candidatesTotal : 0;
+                  const skippedUsed = typeof sdbg?.skippedUsed === 'number' ? sdbg.skippedUsed : 0;
+                  const skippedAfter = typeof sdbg?.skippedAfterSaleDate === 'number' ? sdbg.skippedAfterSaleDate : 0;
+                  if (total === 0) return 'no_purchase_candidates';
+                  // If every candidate was already used, it's an inventory deficit / double-sale problem.
+                  if (skippedUsed >= total) return 'no_eligible_purchase_all_candidates_already_used';
+                  // If every candidate appears after the sale date, it's a date problem (sale date too early or delivery date too late).
+                  if (skippedAfter >= total) return 'no_eligible_purchase_all_candidates_after_sale_date';
+                  return 'no_eligible_purchase';
+                })();
+
+        // Record allocated breakdown + a small sample payload for this sale.
+        recordAllocatedNoMatch(computedReason, {
+          saleOrderNumber,
+          saleProduct,
+          saleSize: saleSizeRaw,
+          saleStyleId: saleStyleId || null,
+          saleCutoffIso,
+          saleCutoffSource,
+          status: sale?.status || null,
+          strictDelivery,
+          fifoCandidatesTotal,
+          fifoCandidatesConsidered,
+          nameMatchMode: nameMode,
+          nameCandidatesAttempted: nameAttempted,
+          nameCandidatesConsidered: nameConsidered,
+          bestNameMatchScore: bestScore,
+          bestNameMatchOverlap: bestOverlap,
+        });
+
         if (isInWindow) results.push({
           saleOrderNumber,
           saleProduct,
@@ -1220,27 +1294,7 @@ export async function GET(request: NextRequest) {
           saleNetPayout,
           status: 'no_match',
           method: null,
-          reason: !saleStyleId
-            ? (() => {
-              // Prefer explaining why size candidates (or exact name candidates) were ineligible.
-              // Note: nameCandidatesTotal is "exact normalized name key" count; fuzzy may still be attempted via size bucket.
-              const attempted = typeof nameAttempted === 'number' ? nameAttempted : 0;
-              const skippedAfter = typeof nameSkippedAfterSaleDate === 'number' ? nameSkippedAfterSaleDate : 0;
-              const skippedUsed = typeof nameSkippedUsed === 'number' ? nameSkippedUsed : 0;
-
-              if (attempted > 0 && skippedAfter === attempted) return 'missing_sale_styleId_all_size_candidates_after_sale_date';
-              if (attempted > 0 && skippedUsed === attempted) return 'missing_sale_styleId_all_size_candidates_already_used';
-
-              if (nameCandidatesTotal > 0) {
-                if (skippedAfter > 0) return 'missing_sale_styleId_name_candidate_after_sale_date';
-                if (skippedUsed > 0) return 'missing_sale_styleId_name_candidate_already_used';
-                return 'missing_sale_styleId_but_name_candidates_exist';
-              }
-              return 'missing_sale_styleId';
-            })()
-            : !saleSize
-              ? 'missing_sale_size'
-              : (fifoCandidatesTotal === 0 ? 'no_purchase_candidates' : 'no_eligible_purchase'),
+          reason: computedReason,
           saleStyleId: saleStyleId || null,
           saleSizeNorm: saleSize || null,
           candidatesTotal: fifoCandidatesTotal,
@@ -1264,6 +1318,15 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    const allocatedNoMatchTopReasons = Array.from(allocatedNoMatchByReason.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 12)
+      .map(([reason, count]) => ({
+        reason,
+        count,
+        samples: allocatedNoMatchSamples.get(reason) || [],
+      }));
+
     return NextResponse.json({
       success: true,
       userId,
@@ -1281,6 +1344,7 @@ export async function GET(request: NextRequest) {
           wouldLink: wouldLinkAllocated,
           noMatch: noMatchAllocated,
           alreadyLinked: alreadyLinkedAllocated,
+          noMatchTopReasons: allocatedNoMatchTopReasons,
         },
         windowDebug: (() => {
           if (!hasSaleWindow) return null;

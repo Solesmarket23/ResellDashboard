@@ -1615,6 +1615,37 @@ export default function TestPurchaseLinkingPage() {
                 </div>
               )}
 
+              {fifoSummary?.allocated?.noMatchTopReasons?.length > 0 && (
+                <div className={`mt-3 rounded-md border p-3 text-xs ${isNeon ? 'bg-white/5 border-white/10 text-gray-200' : 'bg-white border-gray-200 text-gray-800'}`}>
+                  <div className="font-semibold">Allocated no_match breakdown (this is the big number)</div>
+                  <div className={`mt-1 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                    These failures occurred in pre-window sales that FIFO must allocate first. Fixing these improves FIFO accuracy for February.
+                  </div>
+                  <div className="mt-2 grid gap-2">
+                    {fifoSummary.allocated.noMatchTopReasons.map((x: any) => (
+                      <div key={String(x?.reason || 'unknown')} className={`rounded-md border p-2 ${isNeon ? 'border-white/10' : 'border-gray-200'}`}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="truncate font-mono">{String(x?.reason || 'unknown')}</div>
+                          <div className="font-semibold tabular-nums">{Number(x?.count || 0)}</div>
+                        </div>
+                        {Array.isArray(x?.samples) && x.samples.length > 0 && (
+                          <div className={`mt-1 space-y-1 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                            {x.samples.map((s: any, idx: number) => (
+                              <div key={`${String(x?.reason)}-${idx}`} className="truncate">
+                                ex: order={String(s?.saleOrderNumber || '—')} • styleId={String(s?.saleStyleId || '—')} • size={String(s?.saleSize || '—')} • date={String(s?.saleCutoffIso || '—')}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className={`mt-2 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                    The next step is to click <span className="font-semibold">Show only no_match</span> and switch the window to a broader range (or month-by-month) while you fix the top reasons above.
+                  </div>
+                </div>
+              )}
+
               {fifoSummary?.windowDebug &&
                 (Number(fifoSummary?.returnedRows ?? fifoRows.length) === 0) &&
                 (typeof fifoSummary?.totalSalesScanned === 'number' ? fifoSummary.totalSalesScanned : 0) > 0 && (
