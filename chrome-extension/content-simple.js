@@ -8862,21 +8862,18 @@ function ensureListingBidWidget() {
       <span style="opacity:.8;">Items to scan:</span>
       <input data-role="max-items" inputmode="numeric" value="${String(state.maxItems || 48)}"
         style="width:64px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:white; padding:6px 8px; border-radius:8px;" />
-      <button data-role="edit-max-items" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.10); color:rgba(255,255,255,0.9); padding:6px 8px; border-radius:10px; cursor:pointer; font-weight:900;">Edit</button>
       <span style="opacity:.6;">(max 48)</span>
     </div>
     <div style="display:flex; align-items:center; gap:8px; margin-top:6px; font-size:12px; color:rgba(255,255,255,0.8);">
       <span style="opacity:.8;">Pages:</span>
       <input data-role="max-pages" inputmode="numeric" value="${String(state.maxPages || 5)}"
         style="width:64px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:white; padding:6px 8px; border-radius:8px;" />
-      <button data-role="edit-max-pages" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.10); color:rgba(255,255,255,0.9); padding:6px 8px; border-radius:10px; cursor:pointer; font-weight:900;">Edit</button>
       <span style="opacity:.6;">(scan next pages via ?page=)</span>
     </div>
     <div style="display:flex; align-items:center; gap:8px; margin-top:6px; font-size:12px; color:rgba(255,255,255,0.8);">
       <span style="opacity:.8;">Tabs at once:</span>
       <input data-role="concurrency" inputmode="numeric" value="${String(state.concurrency || 1)}"
         style="width:64px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:white; padding:6px 8px; border-radius:8px;" />
-      <button data-role="edit-concurrency" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.10); color:rgba(255,255,255,0.9); padding:6px 8px; border-radius:10px; cursor:pointer; font-weight:900;">Edit</button>
       <span style="opacity:.6;">(1–5)</span>
     </div>
     <div style="display:flex; align-items:center; gap:10px; margin-top:8px; font-size:12px; color:rgba(255,255,255,0.82);">
@@ -8943,9 +8940,14 @@ function ensureListingBidWidget() {
           if (!el) return;
           // Pause widget rerenders for a moment so the input doesn't get replaced mid-focus.
           try { window.__stockxListingWidgetInteractingUntil = Date.now() + 2500; } catch {}
-          el.focus?.();
-          // Select-all for fast editing
-          try { el.select?.(); } catch {}
+          // Focus on next tick: some pages will block focus changes inside pointerdown.
+          setTimeout(() => {
+            try {
+              el.focus?.();
+              // Select-all for fast editing
+              try { el.select?.(); } catch {}
+            } catch {}
+          }, 0);
         } catch {}
       };
       const onCap = (e) => {
@@ -8962,7 +8964,7 @@ function ensureListingBidWidget() {
           // Stop StockX capture handlers and focus ourselves.
           try { e.stopImmediatePropagation?.(); } catch {}
           try { e.stopPropagation?.(); } catch {}
-          try { e.preventDefault?.(); } catch {}
+          // Do NOT preventDefault: we want native focusing/caret behavior.
           focusInput(input);
         } catch {}
       };
@@ -8970,6 +8972,7 @@ function ensureListingBidWidget() {
       try { window.addEventListener('pointerdown', onCap, { capture: true }); } catch {}
       try { window.addEventListener('mousedown', onCap, { capture: true }); } catch {}
       try { window.addEventListener('touchstart', onCap, { capture: true, passive: false }); } catch {}
+      try { window.addEventListener('click', onCap, { capture: true }); } catch {}
     }
   } catch {}
 
