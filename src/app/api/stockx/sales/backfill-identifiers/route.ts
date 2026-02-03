@@ -15,7 +15,11 @@ function isPerimeterXBlock(body: string): boolean {
     b.includes('"appid":"px') ||
     b.includes('"blockscript"') ||
     b.includes('/captcha/captcha.js') ||
-    b.includes('perimeterx')
+    b.includes('perimeterx') ||
+    b.includes('verify you are human') ||
+    b.includes('access denied') ||
+    b.includes('request blocked') ||
+    b.includes('captcha')
   );
 }
 
@@ -242,8 +246,9 @@ export async function POST(request: NextRequest) {
     const ttlMs = ttlHours * 60 * 60 * 1000;
     const maxOrders = Math.max(1, Math.min(400, Number(body?.maxOrders ?? 120)));
     const scanLimit = Math.max(100, Math.min(20000, Number(body?.scanLimit ?? 12000)));
-    const concurrency = Math.max(1, Math.min(6, Number(body?.concurrency ?? 3)));
-    const perRequestDelayMs = Math.max(0, Math.min(2000, Number(body?.perRequestDelayMs ?? 125)));
+    // Default to gentler pacing to reduce PerimeterX / 429s for this high-volume endpoint.
+    const concurrency = Math.max(1, Math.min(6, Number(body?.concurrency ?? 2)));
+    const perRequestDelayMs = Math.max(0, Math.min(2000, Number(body?.perRequestDelayMs ?? 250)));
 
     const now = Date.now();
     const lastRunMs = await getLastRunMs(userId);
@@ -322,13 +327,20 @@ export async function POST(request: NextRequest) {
     let blockedCount = 0;
     let rateLimitedCount = 0;
     let rateLimitedRetryCount = 0;
+    let stoppedEarly = false;
     const updates: Array<{ docId: string; patch: any }> = [];
 
     const limit = concurrency;
     let idx = 0;
+    let stopAll = false;
+    let seen403 = 0;
 
     const worker = async () => {
       while (idx < toBackfill.length) {
+        if (stopAll) {
+          stoppedEarly = true;
+          return;
+        }
         const current = toBackfill[idx];
         idx += 1;
         try {
@@ -446,6 +458,12 @@ export async function POST(request: NextRequest) {
           const st = typeof e?.status === 'number' ? String(e.status) : 'unknown';
           failureStatusCounts.set(st, (failureStatusCounts.get(st) || 0) + 1);
           if (e?.blocked) blockedCount += 1;
+          if (Number(e?.status) === 403) {
+            seen403 += 1;
+            // If we trip bot protection, abort remaining work to avoid burning requests.
+            // A single 403 can happen transiently, but multiple 403s in a run usually means PerimeterX.
+            if (e?.blocked || seen403 >= 5) stopAll = true;
+          }
           failures.push({
             orderNumber: current.orderNumber,
             error: e?.message || String(e),
@@ -480,6 +498,7 @@ export async function POST(request: NextRequest) {
       blockedCount,
       rateLimitedCount,
       rateLimitedRetryCount,
+      stoppedEarly,
       ttlHours,
       maxOrders,
       concurrency,
