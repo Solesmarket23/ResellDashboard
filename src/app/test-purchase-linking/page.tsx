@@ -574,6 +574,7 @@ export default function TestPurchaseLinkingPage() {
   const fifoResultsAnchorId = 'fifo-results-anchor';
   const [fifoTablePage, setFifoTablePage] = useState(1);
   const [fifoRowsPerPage, setFifoRowsPerPage] = useState<number | 'all'>(50);
+  const [fifoShowNoMatchOnly, setFifoShowNoMatchOnly] = useState(false);
 
   const monthOptions = useMemo(
     () => [
@@ -758,10 +759,46 @@ export default function TestPurchaseLinkingPage() {
     showNotice(`✅ Exported CSV (${rows.length} row${rows.length === 1 ? '' : 's'}).`, 'success');
   }, [fifoCustomFromYmd, fifoCustomToYmd, fifoRows, fifoSelectedMonth, fifoSelectedYear, fifoWindowPreset, monthOptions, showNotice]);
 
+  const fifoNoMatchBreakdown = useMemo(() => {
+    const byReason = new Map<string, number>();
+    let totalNoMatch = 0;
+    let missingStyleId = 0;
+    let missingSize = 0;
+    let noPurchaseCandidates = 0;
+    let noEligiblePurchase = 0;
+    let other = 0;
+
+    for (const r of fifoRows) {
+      if (r?.status !== 'no_match') continue;
+      totalNoMatch += 1;
+      const reason = String(r?.reason || 'unknown');
+      byReason.set(reason, (byReason.get(reason) || 0) + 1);
+
+      if (reason.startsWith('missing_sale_styleId')) missingStyleId += 1;
+      else if (reason === 'missing_sale_size') missingSize += 1;
+      else if (reason === 'no_purchase_candidates') noPurchaseCandidates += 1;
+      else if (reason === 'no_eligible_purchase') noEligiblePurchase += 1;
+      else other += 1;
+    }
+
+    const topReasons = Array.from(byReason.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([reason, count]) => ({ reason, count }));
+
+    return {
+      totalNoMatch,
+      topReasons,
+      stats: { missingStyleId, missingSize, noPurchaseCandidates, noEligiblePurchase, other },
+    };
+  }, [fifoRows]);
+
   const filteredFifoRows = useMemo(() => {
     const q = saleSearch.trim().toLowerCase();
-    if (!q) return fifoRows;
-    return fifoRows.filter((r: any) => {
+    let base = fifoRows;
+    if (fifoShowNoMatchOnly) base = base.filter((r: any) => r?.status === 'no_match');
+    if (!q) return base;
+    return base.filter((r: any) => {
       const fields = [
         r?.saleOrderNumber,
         r?.saleProduct,
@@ -777,7 +814,7 @@ export default function TestPurchaseLinkingPage() {
         .filter(Boolean);
       return fields.some((f: string) => f.includes(q));
     });
-  }, [fifoRows, saleSearch]);
+  }, [fifoRows, fifoShowNoMatchOnly, saleSearch]);
 
   // Reset to page 1 when filters/results/page-size change.
   useEffect(() => {
@@ -1343,6 +1380,15 @@ export default function TestPurchaseLinkingPage() {
                 <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                   <input
                     type="checkbox"
+                    checked={fifoShowNoMatchOnly}
+                    onChange={(e) => setFifoShowNoMatchOnly(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Show only no_match
+                </label>
+                <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <input
+                    type="checkbox"
                     checked={fifoIncludePending}
                     onChange={(e) => setFifoIncludePending(e.target.checked)}
                     className="h-4 w-4"
@@ -1511,6 +1557,41 @@ export default function TestPurchaseLinkingPage() {
                     ? `Filtered to ${fifoCustomFromYmd} → ${fifoCustomToYmd} (local time).`
                     : `Filtered to ${monthOptions[fifoSelectedMonth]?.label} ${fifoSelectedYear} (local time).`}
               </div>
+
+              {fifoNoMatchBreakdown.totalNoMatch > 0 && (
+                <div className={`mt-3 rounded-md border p-3 text-xs ${isNeon ? 'bg-white/5 border-white/10 text-gray-200' : 'bg-white border-gray-200 text-gray-800'}`}>
+                  <div className="font-semibold">Why no_match is happening (top reasons)</div>
+                  <div className={`mt-1 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                    These are the most common failure reasons for this window. Toggle <span className="font-semibold">Show only no_match</span> to inspect rows.
+                  </div>
+                  <div className="mt-2 grid gap-1">
+                    {fifoNoMatchBreakdown.topReasons.map((x) => (
+                      <div key={x.reason} className="flex items-center justify-between gap-3">
+                        <div className="truncate">
+                          <span className="font-mono">{x.reason}</span>
+                        </div>
+                        <div className="font-semibold tabular-nums">{x.count}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className={`mt-2 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                    Quick fixes:
+                    <div className="mt-1">
+                      - <span className="font-semibold">missing_sale_styleId</span>: sale import is missing styleId → re-import with catalog/details, or ensure styleId is saved on `user_sales`.
+                    </div>
+                    <div className="mt-1">
+                      - <span className="font-semibold">missing_sale_size</span>: sale import missing size → fix normalization or enrich sale data.
+                    </div>
+                    <div className="mt-1">
+                      - <span className="font-semibold">no_purchase_candidates</span>: we have no purchases matching styleId+size (or name+size fallback) → check purchases have styleId/size and are under the same userId.
+                    </div>
+                    <div className="mt-1">
+                      - <span className="font-semibold">no_eligible_purchase</span>: candidates exist but are already used, after the sale date, or ineligible due to Strict delivery → toggle Strict delivery off for testing or backfill `actualDelivery`.
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {fifoStrictDelivery &&
                 typeof fifoSummary?.wouldLink === 'number' &&
                 typeof fifoSummary?.noMatch === 'number' &&
