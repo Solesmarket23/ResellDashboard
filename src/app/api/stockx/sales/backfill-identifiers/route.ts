@@ -218,6 +218,60 @@ function hasUsefulIdentifierGaps(s: any): boolean {
   return isMissingish(styleId) || isMissingish(size) || isMissingish(product) || isMissingish(brand);
 }
 
+async function loadLegacyStockxSalesByOrderNumbers(orderNumbers: string[]): Promise<Map<string, any>> {
+  const db = getAdminDb();
+  const out = new Map<string, any>();
+  const uniq = Array.from(new Set(orderNumbers.filter(Boolean)));
+  const CHUNK = 30; // Firestore 'in' query limit
+  for (let i = 0; i < uniq.length; i += CHUNK) {
+    const chunk = uniq.slice(i, i + CHUNK);
+    // Use single-field 'in' to avoid requiring a composite index. We'll filter by userId later.
+    const snap = await db.collection('stockxSales').where('stockxOrderId', 'in', chunk).get();
+    for (const doc of snap.docs) {
+      const d = doc.data() as any;
+      const order = String(d?.stockxOrderId || d?.saleData?.orderNumber || '').trim();
+      if (!order) continue;
+      out.set(order, d);
+    }
+  }
+  return out;
+}
+
+function patchFromLegacySaleData(legacyDoc: any): any {
+  const saleData = legacyDoc?.saleData || legacyDoc?.sale || legacyDoc || null;
+  if (!saleData) return null;
+  const styleId = saleData?.product?.styleId || saleData?.product?.sku || saleData?.product?.productId || null;
+  const size = saleData?.variant?.size || saleData?.variant?.variantValue || saleData?.size || null;
+  const productName = saleData?.product?.productName || saleData?.product?.name || saleData?.productName || null;
+  const brand = saleData?.product?.brand || saleData?.brand || null;
+  const urlKey = saleData?.product?.urlKey || saleData?.product?.url_key || null;
+  const listingId = saleData?.listingId || saleData?.askId || null;
+  const date = saleData?.createdAt || saleData?.created || saleData?.updatedAt || saleData?.updated || null;
+
+  const patch: any = {
+    updatedAt: new Date().toISOString(),
+    legacyStockxSalesBackfillAt: new Date().toISOString(),
+    // only set date if we have something meaningful
+    date: date ? String(date) : undefined,
+  };
+
+  const styleIdNorm = styleId ? String(styleId).trim() : '';
+  const sizeNorm = normalizeSize(size);
+  const productNorm = productName ? String(productName).trim() : '';
+  const brandNorm = brand ? String(brand).trim() : '';
+  const urlKeyNorm = urlKey ? String(urlKey).trim() : '';
+  const listingIdNorm = listingId ? String(listingId).trim() : '';
+
+  if (!isMissingish(styleIdNorm)) patch.styleId = styleIdNorm;
+  if (sizeNorm) patch.size = sizeNorm;
+  if (!isMissingish(productNorm)) patch.product = productNorm;
+  if (!isMissingish(brandNorm)) patch.brand = brandNorm;
+  if (!isMissingish(urlKeyNorm)) patch.urlKey = urlKeyNorm;
+  if (!isMissingish(listingIdNorm)) patch.listingId = listingIdNorm;
+
+  return stripUndefinedDeep(patch);
+}
+
 export async function POST(request: NextRequest) {
   try {
     const userId = getEffectiveUserId(request);
@@ -270,42 +324,6 @@ export async function POST(request: NextRequest) {
     const apiKey = process.env.STOCKX_API_KEY || '';
     if (!apiKey) return NextResponse.json({ success: false, error: 'Missing STOCKX_API_KEY' }, { status: 500 });
 
-    // Prefer cookie tokens (interactive), fall back to Firebase user doc (server-side)
-    const cookieStore = cookies();
-    let accessToken = cookieStore.get('stockx_access_token')?.value || undefined;
-    let refreshToken = cookieStore.get('stockx_refresh_token')?.value || undefined;
-    const expiresAtCookie = cookieStore.get('stockx_token_expires_at')?.value || '';
-    const expiresAtFromCookie = expiresAtCookie ? Number(expiresAtCookie) : null;
-
-    if (!accessToken || !refreshToken) {
-      const stored = await loadUserStockxTokens(userId);
-      accessToken = accessToken || stored.accessToken;
-      refreshToken = refreshToken || stored.refreshToken;
-    }
-
-    if (!refreshToken) {
-      return NextResponse.json(
-        { success: false, error: 'StockX not connected (missing refresh token). Reconnect to StockX first.' },
-        { status: 401 }
-      );
-    }
-
-    const shouldRefresh =
-      !accessToken ||
-      (typeof expiresAtFromCookie === 'number' && Number.isFinite(expiresAtFromCookie) && expiresAtFromCookie > 0 && expiresAtFromCookie <= now);
-    if (shouldRefresh) {
-      const refreshed = await refreshStockXTokens(refreshToken);
-      if (!refreshed.success || !refreshed.accessToken) {
-        return NextResponse.json(
-          { success: false, error: refreshed.error || 'StockX token refresh failed', needsReauth: true },
-          { status: 401 }
-        );
-      }
-      accessToken = refreshed.accessToken;
-      refreshToken = refreshed.refreshToken || refreshToken;
-      await saveUserStockxTokens(userId, { accessToken, refreshToken, expiresAt: now + 3600 * 1000 });
-    }
-
     const sales = await scanSalesByUserId(userId, scanLimit);
     const candidates = sales
       .filter((s) => hasUsefulIdentifierGaps(s))
@@ -321,8 +339,103 @@ export async function POST(request: NextRequest) {
       uniq.push(c);
     }
 
-    const toBackfill = uniq.slice(0, maxOrders);
     const db = getAdminDb();
+
+    // Phase 1: local backfill from legacy `stockxSales` data (no upstream StockX calls).
+    const toConsider = uniq.slice(0, maxOrders);
+    const legacyByOrder = await loadLegacyStockxSalesByOrderNumbers(toConsider.map((x) => x.orderNumber));
+    const legacyUpdates: Array<{ docId: string; patch: any }> = [];
+    const remainingForRemote: Array<{ docId: string; orderNumber: string }> = [];
+    for (const c of toConsider) {
+      const legacy = legacyByOrder.get(c.orderNumber) || null;
+      const patch = legacy ? patchFromLegacySaleData(legacy) : null;
+      if (patch && Object.keys(patch).length > 2) {
+        // We found some usable fields locally.
+        legacyUpdates.push({ docId: c.docId, patch });
+        // If local data still didn't include styleId or size, keep it for remote attempt.
+        const stillMissingStyle = isMissingish(patch?.styleId);
+        const stillMissingSize = isMissingish(patch?.size);
+        const stillMissingProduct = isMissingish(patch?.product);
+        const stillMissingBrand = isMissingish(patch?.brand);
+        if (stillMissingStyle || stillMissingSize || stillMissingProduct || stillMissingBrand) remainingForRemote.push(c);
+      } else {
+        remainingForRemote.push(c);
+      }
+    }
+
+    // Commit local legacy updates first (cheap, no StockX calls).
+    let legacyUpdated = 0;
+    if (legacyUpdates.length > 0) {
+      const batchSize = 400;
+      for (let i = 0; i < legacyUpdates.length; i += batchSize) {
+        const chunk = legacyUpdates.slice(i, i + batchSize);
+        const batch = db.batch();
+        for (const u of chunk) batch.set(db.collection('user_sales').doc(u.docId), u.patch, { merge: true });
+        await batch.commit();
+        legacyUpdated += chunk.length;
+      }
+    }
+
+    // Phase 2: remote StockX order-details backfill for anything still missing.
+    const toBackfill = remainingForRemote.slice(0, maxOrders);
+
+    // Prefer cookie tokens (interactive), fall back to Firebase user doc (server-side)
+    const cookieStore = cookies();
+    let accessToken = cookieStore.get('stockx_access_token')?.value || undefined;
+    let refreshToken = cookieStore.get('stockx_refresh_token')?.value || undefined;
+    const expiresAtCookie = cookieStore.get('stockx_token_expires_at')?.value || '';
+    const expiresAtFromCookie = expiresAtCookie ? Number(expiresAtCookie) : null;
+
+    if (!accessToken || !refreshToken) {
+      const stored = await loadUserStockxTokens(userId);
+      accessToken = accessToken || stored.accessToken;
+      refreshToken = refreshToken || stored.refreshToken;
+    }
+
+    // If we have no remote work, we don't need StockX tokens.
+    if (toBackfill.length > 0) {
+      if (!refreshToken) {
+        return NextResponse.json(
+          {
+            success: true,
+            userId,
+            skipped: false,
+            summary: {
+              scannedSales: sales.length,
+              candidateSales: uniq.length,
+              attempted: toConsider.length,
+              legacyUpdated,
+              remoteAttempted: 0,
+              updated: legacyUpdated,
+              failed: 0,
+              note: 'StockX not connected; performed local legacy backfill only.',
+              ttlHours,
+              maxOrders,
+              concurrency,
+              perRequestDelayMs,
+            },
+            failures: [],
+          },
+          { status: 200 }
+        );
+      }
+
+      const shouldRefresh =
+        !accessToken ||
+        (typeof expiresAtFromCookie === 'number' && Number.isFinite(expiresAtFromCookie) && expiresAtFromCookie > 0 && expiresAtFromCookie <= now);
+      if (shouldRefresh) {
+        const refreshed = await refreshStockXTokens(refreshToken);
+        if (!refreshed.success || !refreshed.accessToken) {
+          return NextResponse.json(
+            { success: false, error: refreshed.error || 'StockX token refresh failed', needsReauth: true },
+            { status: 401 }
+          );
+        }
+        accessToken = refreshed.accessToken;
+        refreshToken = refreshed.refreshToken || refreshToken;
+        await saveUserStockxTokens(userId, { accessToken, refreshToken, expiresAt: now + 3600 * 1000 });
+      }
+    }
 
     const failures: Array<{ orderNumber: string; error: string; status?: number; blocked?: boolean }> = [];
     const failureStatusCounts = new Map<string, number>();
@@ -511,8 +624,10 @@ export async function POST(request: NextRequest) {
     const summary = {
       scannedSales: sales.length,
       candidateSales: uniq.length,
-      attempted: toBackfill.length,
-      updated,
+      attempted: toConsider.length,
+      legacyUpdated,
+      remoteAttempted: toBackfill.length,
+      updated: legacyUpdated + updated,
       failed: failures.length,
       failureStatusCounts: Object.fromEntries(Array.from(failureStatusCounts.entries()).sort((a, b) => Number(b[1]) - Number(a[1]))),
       blockedCount,
