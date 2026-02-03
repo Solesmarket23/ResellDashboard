@@ -1,7 +1,11 @@
 // Background script for StockX Price Tracker
-chrome.runtime.onInstalled.addListener(() => {
-  console.log('StockX Price Tracker extension installed');
-});
+try {
+  // In rare cases this file can appear in a normal page context during debugging (window.chrome exists but chrome.runtime does not).
+  // Guard so we never crash the service worker on startup.
+  chrome?.runtime?.onInstalled?.addListener?.(() => {
+    console.log('StockX Price Tracker extension installed');
+  });
+} catch {}
 
 // #region agent log (debug-mode instrumentation)
 function __stockxDbgSend(hypothesisId, location, message, data) {
