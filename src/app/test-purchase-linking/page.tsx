@@ -577,6 +577,8 @@ export default function TestPurchaseLinkingPage() {
   const [fifoShowNoMatchOnly, setFifoShowNoMatchOnly] = useState(false);
   const [refreshingStockX, setRefreshingStockX] = useState(false);
   const [lastStockXRefresh, setLastStockXRefresh] = useState<any | null>(null);
+  const [backfillingSalesIds, setBackfillingSalesIds] = useState(false);
+  const [lastSalesIdBackfill, setLastSalesIdBackfill] = useState<any | null>(null);
 
   const monthOptions = useMemo(
     () => [
@@ -977,6 +979,36 @@ export default function TestPurchaseLinkingPage() {
         showNotice(`❌ StockX refresh failed: ${e?.message || 'Unknown error'}`, 'error');
       } finally {
         setRefreshingStockX(false);
+      }
+    },
+    [loadSales, showNotice, userId]
+  );
+
+  const backfillSaleIdentifiers = useCallback(
+    async (opts?: { force?: boolean }) => {
+      const u = userId.trim();
+      if (!u) return;
+      setBackfillingSalesIds(true);
+      try {
+        const resp = await fetch('/api/stockx/sales/backfill-identifiers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-user-id': u },
+          body: JSON.stringify({ force: opts?.force ? true : false }),
+        });
+        const json = await resp.json().catch(() => ({}));
+        if (!resp.ok || json?.success === false) throw new Error(json?.error || `Backfill failed (${resp.status})`);
+        setLastSalesIdBackfill(json);
+        if (json?.skipped) {
+          showNotice(`ℹ️ Identifier backfill skipped (TTL not expired).`, 'info');
+        } else {
+          const s = json?.summary || {};
+          showNotice(`✅ Identifier backfill — updated=${s.updated ?? 0} failed=${s.failed ?? 0}`, 'success');
+        }
+        await loadSales();
+      } catch (e: any) {
+        showNotice(`❌ Identifier backfill failed: ${e?.message || 'Unknown error'}`, 'error');
+      } finally {
+        setBackfillingSalesIds(false);
       }
     },
     [loadSales, showNotice, userId]
@@ -1418,6 +1450,28 @@ export default function TestPurchaseLinkingPage() {
                 >
                   Force
                 </button>
+                <button
+                  onClick={() => backfillSaleIdentifiers({ force: false })}
+                  disabled={backfillingSalesIds}
+                  className={`px-4 py-2 rounded-md font-semibold ${
+                    isNeon
+                      ? 'bg-purple-500/20 hover:bg-purple-500/25 text-purple-100 border border-purple-500/30'
+                      : 'bg-purple-600 text-white hover:bg-purple-700'
+                  } disabled:opacity-60`}
+                  title="Backfill missing styleId/size/product/brand on your saved sales by fetching StockX order details. This directly fixes missing_sale_styleId no-matches."
+                >
+                  {backfillingSalesIds ? 'Backfilling…' : 'Backfill sale identifiers'}
+                </button>
+                <button
+                  onClick={() => backfillSaleIdentifiers({ force: true })}
+                  disabled={backfillingSalesIds}
+                  className={`px-3 py-2 rounded-md text-xs font-semibold ${
+                    isNeon ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10' : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
+                  } disabled:opacity-60`}
+                  title="Force identifier backfill even if TTL hasn't expired."
+                >
+                  Force IDs
+                </button>
                 <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                   <input
                     type="checkbox"
@@ -1733,6 +1787,17 @@ export default function TestPurchaseLinkingPage() {
                     {lastStockXRefresh?.skipped
                       ? 'Skipped (TTL not expired).'
                       : `Updated ${lastStockXRefresh?.summary?.updated ?? 0} sale(s), failed ${lastStockXRefresh?.summary?.failed ?? 0}.`}
+                  </div>
+                </div>
+              )}
+
+              {lastSalesIdBackfill && (
+                <div className={`mt-3 rounded-md border p-3 text-xs ${isNeon ? 'bg-white/5 border-white/10 text-gray-200' : 'bg-white border-gray-200 text-gray-800'}`}>
+                  <div className="font-semibold">Last sale identifier backfill</div>
+                  <div className={`mt-1 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                    {lastSalesIdBackfill?.skipped
+                      ? 'Skipped (TTL not expired).'
+                      : `Updated ${lastSalesIdBackfill?.summary?.updated ?? 0} sale(s), failed ${lastSalesIdBackfill?.summary?.failed ?? 0}.`}
                   </div>
                 </div>
               )}
