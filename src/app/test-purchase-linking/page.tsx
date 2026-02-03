@@ -1012,7 +1012,29 @@ export default function TestPurchaseLinkingPage() {
         if (!resp.ok || json?.success === false) throw new Error(json?.error || `Backfill failed (${resp.status})`);
         setLastSalesIdBackfill(json);
         if (json?.skipped) {
-          showNotice(`ℹ️ Identifier backfill skipped (TTL not expired).`, 'info', 12000);
+          const ttlHours = typeof json?.ttlHours === 'number' ? json.ttlHours : 24;
+          const lastRunAtMs = typeof json?.lastRunAtMs === 'number' ? json.lastRunAtMs : null;
+          const lastRunAtIso = typeof json?.lastRunAtIso === 'string' ? json.lastRunAtIso : null;
+          const nextEligibleMs =
+            typeof lastRunAtMs === 'number' && Number.isFinite(lastRunAtMs) ? lastRunAtMs + ttlHours * 60 * 60 * 1000 : null;
+          const remainingMs = typeof nextEligibleMs === 'number' ? Math.max(0, nextEligibleMs - Date.now()) : null;
+          const remainingMin = typeof remainingMs === 'number' ? Math.round(remainingMs / 60000) : null;
+          const remainingLabel =
+            typeof remainingMin === 'number'
+              ? remainingMin >= 120
+                ? `~${Math.round(remainingMin / 60)}h`
+                : remainingMin >= 60
+                  ? `~${Math.round(remainingMin / 60)}h`
+                  : `~${remainingMin}m`
+              : null;
+
+          showNotice(
+            `ℹ️ Identifier backfill skipped (TTL ${ttlHours}h).${lastRunAtIso ? ` Last run: ${lastRunAtIso}.` : ''}${
+              remainingLabel ? ` Try again in ${remainingLabel} or click “Force IDs”.` : ' Click “Force IDs” to bypass TTL.'
+            }`,
+            'info',
+            20000
+          );
         } else {
           const s = json?.summary || {};
           const remaining =
@@ -1818,7 +1840,11 @@ export default function TestPurchaseLinkingPage() {
                   <div className="font-semibold">Last sale identifier backfill</div>
                   <div className={`mt-1 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                     {lastSalesIdBackfill?.skipped
-                      ? 'Skipped (TTL not expired).'
+                      ? (() => {
+                          const ttlHours = typeof lastSalesIdBackfill?.ttlHours === 'number' ? lastSalesIdBackfill.ttlHours : 24;
+                          const lastRunAtIso = typeof lastSalesIdBackfill?.lastRunAtIso === 'string' ? lastSalesIdBackfill.lastRunAtIso : null;
+                          return `Skipped (TTL ${ttlHours}h not expired).${lastRunAtIso ? ` Last run: ${lastRunAtIso}.` : ''} Use “Force IDs” to bypass.`;
+                        })()
                       : `Updated ${lastSalesIdBackfill?.summary?.updated ?? 0} sale(s), failed ${lastSalesIdBackfill?.summary?.failed ?? 0}, attempted ${lastSalesIdBackfill?.summary?.attempted ?? 0} / ${lastSalesIdBackfill?.summary?.candidateSales ?? 0}.`}
                   </div>
                 </div>
