@@ -8,6 +8,21 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+function stripUndefinedDeep<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((v) => stripUndefinedDeep(v)) as any;
+  }
+  if (value && typeof value === 'object') {
+    const out: any = {};
+    for (const [k, v] of Object.entries(value as any)) {
+      if (v === undefined) continue;
+      out[k] = stripUndefinedDeep(v);
+    }
+    return out;
+  }
+  return value;
+}
+
 function parseMoney(value: any): number | null {
   if (value === null || value === undefined) return null;
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -308,7 +323,7 @@ export async function POST(request: NextRequest) {
           if (payout !== null) patch.payout = payout;
           if (fees !== null) patch.fees = fees;
 
-          updates.push({ docId: current.docId, patch });
+          updates.push({ docId: current.docId, patch: stripUndefinedDeep(patch) });
         } catch (e: any) {
           failures.push({
             orderNumber: current.orderNumber,

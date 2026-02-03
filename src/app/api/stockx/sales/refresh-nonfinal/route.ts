@@ -8,6 +8,21 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+function stripUndefinedDeep<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((v) => stripUndefinedDeep(v)) as any;
+  }
+  if (value && typeof value === 'object') {
+    const out: any = {};
+    for (const [k, v] of Object.entries(value as any)) {
+      if (v === undefined) continue;
+      out[k] = stripUndefinedDeep(v);
+    }
+    return out;
+  }
+  return value;
+}
+
 function normalizeOrderStatus(status: unknown): string {
   const raw = String(status || '').trim();
   if (!raw) return '';
@@ -342,7 +357,7 @@ export async function POST(request: NextRequest) {
           if (brand) patch.brand = String(brand);
           if (urlKey) patch.urlKey = String(urlKey);
 
-          updates.push({ docId: current.docId, patch });
+          updates.push({ docId: current.docId, patch: stripUndefinedDeep(patch) });
           refreshedCount += 1;
         } catch (e: any) {
           failedCount += 1;
