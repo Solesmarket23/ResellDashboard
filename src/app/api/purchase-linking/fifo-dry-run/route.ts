@@ -144,10 +144,9 @@ function getPurchaseFifoDate(p: PurchaseCandidate, strictDelivery: boolean): { m
     return { ms: null, source: 'none' };
   }
 
-  // In non-strict mode, if we DO have an actual delivery timestamp, treat that as the preferred "inventory available" time.
-  // This matches the real-world FIFO constraint: you can't sell inventory you haven't received yet.
-  const deliveryMs = parseDateMs((p as any).actualDelivery);
-  if (deliveryMs !== null) return { ms: deliveryMs, source: 'actualDelivery' };
+  // In non-strict mode, do NOT force "delivery-first" matching.
+  // Many users want analytical matching even when actualDelivery is recorded later than the sale event.
+  // We'll still fall back to actualDelivery if purchase/email dates are missing.
 
   // Prefer the most precise timestamps first (include time-of-day).
   const purchaseDateRaw = (p as any).purchaseDate;
@@ -188,6 +187,10 @@ function getPurchaseFifoDate(p: PurchaseCandidate, strictDelivery: boolean): { m
     if (msPurchaseDate !== null) return { ms: msPurchaseDate, source: 'purchaseDate' };
   }
 
+  // Last resort: actual delivery timestamp (if that's all we have)
+  const deliveryMs = parseDateMs((p as any).actualDelivery);
+  if (deliveryMs !== null) return { ms: deliveryMs, source: 'actualDelivery' };
+
   const msCreated = parseDateMs((p as any).createdAt);
   if (msCreated !== null) return { ms: msCreated, source: 'createdAt' };
   return { ms: null, source: 'none' };
@@ -200,6 +203,27 @@ function getPurchaseStyleId(p: PurchaseCandidate): string | null {
     (typeof p.product?.styleId === 'string' && p.product.styleId.trim()) ||
     null
   );
+}
+
+function splitStyleIdParts(styleId: string): string[] {
+  const raw = String(styleId || '').trim();
+  if (!raw) return [];
+  const parts = raw
+    .split('/')
+    .map((p) => p.trim())
+    .filter(Boolean);
+  // Keep original first, then unique parts.
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (s: string) => {
+    const key = s.toUpperCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(s);
+  };
+  push(raw);
+  for (const p of parts) push(p);
+  return out;
 }
 
 function getPurchaseCost(p: PurchaseCandidate): number | null {
@@ -922,10 +946,13 @@ export async function GET(request: NextRequest) {
 
       const styleId = getPurchaseStyleId(p);
       if (styleId) {
-        const key = purchaseKey(styleId, size);
-        const arr = purchaseIndex.get(key) || [];
-        arr.push(p);
-        purchaseIndex.set(key, arr);
+        const variants = splitStyleIdParts(styleId);
+        for (const sid of variants) {
+          const key = purchaseKey(sid, size);
+          const arr = purchaseIndex.get(key) || [];
+          arr.push(p);
+          purchaseIndex.set(key, arr);
+        }
         purchasesIndexedByStyleId++;
       }
 
@@ -1120,8 +1147,17 @@ export async function GET(request: NextRequest) {
 
       // 3) FIFO/LIFO by styleId+size
       if (!linkedPurchase && saleStyleId && saleSize) {
-        const key = purchaseKey(saleStyleId, saleSize);
-        const candidates = purchaseIndex.get(key) || [];
+        const styleVariants = splitStyleIdParts(saleStyleId);
+        let candidates: PurchaseCandidate[] = [];
+        // Try the full styleId first; if none, try the split variants.
+        for (const sid of styleVariants) {
+          const key = purchaseKey(sid, saleSize);
+          const arr = purchaseIndex.get(key) || [];
+          if (arr.length > 0) {
+            candidates = arr;
+            break;
+          }
+        }
         const totalCandidates = candidates.length;
         let candidatesConsidered = 0;
         let skippedUsed = 0;
