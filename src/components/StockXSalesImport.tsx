@@ -27,7 +27,7 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
   const [isImporting, setIsImporting] = useState(false);
   const [importRange, setImportRange] = useState<ImportRange>('all');
   // PerimeterX tends to trigger on high request volume; this mode drastically reduces calls.
-  const [completedOnly, setCompletedOnly] = useState(true);
+  const [completedOnly, setCompletedOnly] = useState(false);
   const [progress, setProgress] = useState<ImportProgress>({
     phase: 'idle',
     message: '',
@@ -537,7 +537,7 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
                   onChange={(e) => setCompletedOnly(e.target.checked)}
                   className="h-4 w-4"
                 />
-                <span className="font-medium">Completed-only</span>
+                <span className="font-medium">Completed-only (fewer requests)</span>
               </label>
             </div>
           </div>
@@ -736,7 +736,7 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
           <div className={`mt-4 text-xs space-y-1 ${
             isNeon ? 'text-gray-400' : 'text-gray-500'
           }`}>
-            <p>✅ Fetches all completed sales from StockX</p>
+            <p>✅ Fetches StockX seller orders (completed + pending/active if enabled)</p>
             <p>✅ Enriches with brand data from product catalog</p>
             <p>✅ Includes accurate payout and fee information</p>
             <p>✅ Saves complete product details to your database</p>

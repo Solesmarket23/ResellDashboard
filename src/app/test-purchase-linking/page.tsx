@@ -552,13 +552,23 @@ export default function TestPurchaseLinkingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
-  // FIFO dry-run using existing debug endpoint (localhost only unless INTERNAL_DEBUG_SECRET configured)
+  // FIFO profit using existing debug endpoint (now supports committed-profit windows + status filtering)
   const [fifoLoading, setFifoLoading] = useState(false);
   const [fifoSummary, setFifoSummary] = useState<any | null>(null);
   const [fifoRows, setFifoRows] = useState<any[]>([]);
   // Default ON: most users only sell after delivery, so delivered inventory is the safest FIFO constraint.
   const [fifoStrictDelivery, setFifoStrictDelivery] = useState(true);
   const [fifoUnlinkedOnly, setFifoUnlinkedOnly] = useState(false);
+  const [fifoIncludePending, setFifoIncludePending] = useState(true);
+  const [fifoWindowPreset, setFifoWindowPreset] = useState<'this_month' | 'today' | 'custom'>('this_month');
+  const [fifoCustomFromYmd, setFifoCustomFromYmd] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  });
+  const [fifoCustomToYmd, setFifoCustomToYmd] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
   const [showRawSalesTable, setShowRawSalesTable] = useState(false);
   const fifoResultsAnchorId = 'fifo-results-anchor';
   const [fifoTablePage, setFifoTablePage] = useState(1);
@@ -583,6 +593,7 @@ export default function TestPurchaseLinkingPage() {
   );
 
   const defaultYear = useMemo(() => new Date().getFullYear(), []);
+  const defaultMonth = useMemo(() => new Date().getMonth(), []);
   const yearOptions = useMemo(() => {
     // Always show a few sensible years, even before we have any FIFO rows.
     const base = [defaultYear, defaultYear - 1, defaultYear - 2, defaultYear - 3];
@@ -595,20 +606,13 @@ export default function TestPurchaseLinkingPage() {
   }, [defaultYear, fifoRows]);
 
   const [fifoSelectedYear, setFifoSelectedYear] = useState<number>(defaultYear);
-  const [fifoSelectedMonth, setFifoSelectedMonth] = useState<number | null>(null); // 0-11, null=All
+  const [fifoSelectedMonth, setFifoSelectedMonth] = useState<number>(defaultMonth); // 0-11
 
+  // FIFO API now returns ONLY the selected window’s rows (today/month/custom),
+  // so profit totals should be computed over all returned rows (no extra month/year filtering here).
   const fifoRowsForProfit = useMemo(() => {
-    const year = fifoSelectedYear;
-    const month = fifoSelectedMonth;
-    return fifoRows.filter((r) => {
-      const ym = getLocalYearMonth(typeof r?.saleCutoffIso === 'string' ? r.saleCutoffIso : null);
-      if (!ym) return false;
-      if (ym.year !== year) return false;
-      if (typeof month === 'number' && ym.month !== month) return false;
-      // Only rows that have dollars to sum.
-      return r?.status === 'would_link' || r?.status === 'already_linked';
-    });
-  }, [fifoRows, fifoSelectedMonth, fifoSelectedYear]);
+    return fifoRows.filter((r) => r?.status === 'would_link' || r?.status === 'already_linked');
+  }, [fifoRows]);
 
   const fifoProfitTotals = useMemo(() => {
     let count = 0;
@@ -718,8 +722,14 @@ export default function TestPurchaseLinkingPage() {
 
   const exportFifoCsv = useCallback(() => {
     if (typeof window === 'undefined') return;
-    const monthLabel = typeof fifoSelectedMonth === 'number' ? monthOptions[fifoSelectedMonth]?.label || String(fifoSelectedMonth + 1) : 'All';
-    const filename = `fifo-results-${fifoSelectedYear}-${monthLabel}.csv`.replace(/\s+/g, '-');
+    const monthLabel = monthOptions[fifoSelectedMonth]?.label || String(fifoSelectedMonth + 1);
+    const filename =
+      fifoWindowPreset === 'today'
+        ? `fifo-committed-today-${new Date().toISOString().slice(0, 10)}.csv`
+        : fifoWindowPreset === 'custom'
+          ? `fifo-committed-${fifoCustomFromYmd}-to-${fifoCustomToYmd}.csv`
+          : `fifo-committed-${fifoSelectedYear}-${monthLabel}.csv`;
+    const safeFilename = filename.replace(/\s+/g, '-');
 
     const rows = fifoRows.map((r: any) => ({
       saleOrderNumber: r.saleOrderNumber ?? '',
@@ -743,9 +753,9 @@ export default function TestPurchaseLinkingPage() {
       reason: r.reason ?? ''
     }));
 
-    downloadCsv(filename, rows);
+    downloadCsv(safeFilename, rows);
     showNotice(`✅ Exported CSV (${rows.length} row${rows.length === 1 ? '' : 's'}).`, 'success');
-  }, [fifoRows, fifoSelectedMonth, fifoSelectedYear, monthOptions, showNotice]);
+  }, [fifoCustomFromYmd, fifoCustomToYmd, fifoRows, fifoSelectedMonth, fifoSelectedYear, fifoWindowPreset, monthOptions, showNotice]);
 
   const filteredFifoRows = useMemo(() => {
     const q = saleSearch.trim().toLowerCase();
@@ -794,14 +804,50 @@ export default function TestPurchaseLinkingPage() {
     setFifoSummary(null);
     setFifoRows([]);
     try {
-      // If a month/year is selected, pass a local-time window to the API so it scans *only* that period.
+      const ymdLocal = (d: Date) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      };
+
+      // Window is [startMs, endMs) in local time.
+      const now = new Date();
+      const todayStartMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).getTime();
+      const todayEndMs = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0).getTime();
+
+      const monthStartMs = new Date(fifoSelectedYear, fifoSelectedMonth, 1, 0, 0, 0, 0).getTime();
+      const monthEndMs = new Date(fifoSelectedYear, fifoSelectedMonth + 1, 1, 0, 0, 0, 0).getTime();
+
+      const parseLocalYmdStartMs = (ymd: string): number | null => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
+        const [yy, mm, dd] = ymd.split('-').map((x) => parseInt(x, 10));
+        if (!yy || !mm || !dd) return null;
+        return new Date(yy, mm - 1, dd, 0, 0, 0, 0).getTime();
+      };
+
+      const customStartMs = parseLocalYmdStartMs(fifoCustomFromYmd);
+      const customEndMs = (() => {
+        const base = parseLocalYmdStartMs(fifoCustomToYmd);
+        return base === null ? null : base + 86400000;
+      })();
+
       const saleWindow =
-        typeof fifoSelectedMonth === 'number'
-          ? {
-              startMs: new Date(fifoSelectedYear, fifoSelectedMonth, 1, 0, 0, 0, 0).getTime(),
-              endMs: new Date(fifoSelectedYear, fifoSelectedMonth + 1, 1, 0, 0, 0, 0).getTime(),
-            }
-          : null;
+        fifoWindowPreset === 'today'
+          ? { startMs: todayStartMs, endMs: todayEndMs }
+          : fifoWindowPreset === 'custom'
+            ? (customStartMs !== null && customEndMs !== null && customEndMs > customStartMs
+                ? { startMs: customStartMs, endMs: customEndMs }
+                : null)
+            : { startMs: monthStartMs, endMs: monthEndMs };
+
+      // Keep the year/month picker in sync with presets (helps CSV naming + profit table filter).
+      if (fifoWindowPreset === 'today') {
+        setFifoSelectedYear(now.getFullYear());
+        setFifoSelectedMonth(now.getMonth());
+        setFifoCustomFromYmd(ymdLocal(now));
+        setFifoCustomToYmd(ymdLocal(now));
+      }
 
       const qs = new URLSearchParams({
         userId: u,
@@ -810,7 +856,9 @@ export default function TestPurchaseLinkingPage() {
         limitSales: '5000',
         scanLimit: '20000',
         // strictDelivery=1 means only purchases with actualDelivery are eligible.
-        strictDelivery: fifoStrictDelivery ? '1' : '0'
+        strictDelivery: fifoStrictDelivery ? '1' : '0',
+        // includePending=1 includes active/pending/shipped/auth/etc. (excludes known non-sales like CANCELED/AUTHFAILED).
+        includePending: fifoIncludePending ? '1' : '0'
       });
       if (saleWindow) {
         qs.set('saleStartMs', String(saleWindow.startMs));
@@ -830,7 +878,7 @@ export default function TestPurchaseLinkingPage() {
       const noMatch = typeof summary?.noMatch === 'number' ? summary.noMatch : null;
       const alreadyLinked = typeof summary?.alreadyLinked === 'number' ? summary.alreadyLinked : null;
       showNotice(
-        `✅ FIFO dry-run complete${scanned !== null ? ` — scanned=${scanned}` : ''}${wouldLink !== null ? ` • wouldLink=${wouldLink}` : ''}${noMatch !== null ? ` • noMatch=${noMatch}` : ''}${alreadyLinked !== null ? ` • alreadyLinked=${alreadyLinked}` : ''}`,
+        `✅ FIFO profit computed${scanned !== null ? ` — scanned=${scanned}` : ''}${wouldLink !== null ? ` • matched=${wouldLink}` : ''}${noMatch !== null ? ` • noMatch=${noMatch}` : ''}${alreadyLinked !== null ? ` • alreadyLinked=${alreadyLinked}` : ''}`,
         'success'
       );
 
@@ -840,11 +888,22 @@ export default function TestPurchaseLinkingPage() {
         el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 50);
     } catch (e: any) {
-      showNotice(`❌ FIFO dry-run failed: ${e?.message || 'Unknown error'}`, 'error');
+      showNotice(`❌ FIFO profit failed: ${e?.message || 'Unknown error'}`, 'error');
     } finally {
       setFifoLoading(false);
     }
-  }, [fifoSelectedMonth, fifoSelectedYear, fifoStrictDelivery, fifoUnlinkedOnly, showNotice, userId]);
+  }, [
+    fifoCustomFromYmd,
+    fifoCustomToYmd,
+    fifoIncludePending,
+    fifoSelectedMonth,
+    fifoSelectedYear,
+    fifoStrictDelivery,
+    fifoUnlinkedOnly,
+    fifoWindowPreset,
+    showNotice,
+    userId
+  ]);
 
   const [linking, setLinking] = useState(false);
   const [allowWrites, setAllowWrites] = useState(false);
@@ -1258,7 +1317,7 @@ export default function TestPurchaseLinkingPage() {
                     isNeon ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10' : 'bg-gray-900 text-white hover:bg-gray-800'
                   } disabled:opacity-60`}
                 >
-                  {fifoLoading ? 'Running…' : 'FIFO dry-run'}
+                  {fifoLoading ? 'Running…' : 'Compute FIFO profit'}
                 </button>
                 <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                   <input
@@ -1278,61 +1337,131 @@ export default function TestPurchaseLinkingPage() {
                   />
                   Unlinked only
                 </label>
+                <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <input
+                    type="checkbox"
+                    checked={fifoIncludePending}
+                    onChange={(e) => setFifoIncludePending(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Include pending/active (exclude canceled/authfailed/didnotship/returned)
+                </label>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Scan month:</span>
-                <select
-                  value={fifoSelectedYear}
-                  onChange={(e) => setFifoSelectedYear(Number(e.target.value))}
-                  className={`h-9 rounded-md border px-2 text-sm ${
-                    isNeon ? 'bg-gray-900 border-gray-700 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
+                <span className={`text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Window:</span>
+
+                <button
+                  onClick={() => setFifoWindowPreset('today')}
+                  className={`h-9 rounded-md px-3 text-xs font-semibold ${
+                    fifoWindowPreset === 'today'
+                      ? isNeon
+                        ? 'bg-cyan-500 text-black'
+                        : 'bg-blue-600 text-white'
+                      : isNeon
+                        ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
+                        : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
                   }`}
-                  title="Year used when selecting a month filter"
+                  title="Profit for today (local time)"
                 >
-                  {yearOptions.map((y) => (
-                    <option key={y} value={y}>
-                      {y}
-                    </option>
-                  ))}
-                </select>
-                <div className="flex-1 overflow-x-auto">
-                  <div className="inline-flex items-center gap-2 whitespace-nowrap pr-2">
-                    <button
-                      onClick={() => setFifoSelectedMonth(null)}
-                      className={`h-9 rounded-md px-3 text-xs font-semibold ${
-                        fifoSelectedMonth === null
-                          ? isNeon
-                            ? 'bg-cyan-500 text-black'
-                            : 'bg-blue-600 text-white'
-                          : isNeon
-                            ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
-                            : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
+                  Today
+                </button>
+                <button
+                  onClick={() => setFifoWindowPreset('this_month')}
+                  className={`h-9 rounded-md px-3 text-xs font-semibold ${
+                    fifoWindowPreset === 'this_month'
+                      ? isNeon
+                        ? 'bg-cyan-500 text-black'
+                        : 'bg-blue-600 text-white'
+                      : isNeon
+                        ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
+                        : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
+                  }`}
+                  title="Profit for a month (select year + month)"
+                >
+                  Month
+                </button>
+                <button
+                  onClick={() => setFifoWindowPreset('custom')}
+                  className={`h-9 rounded-md px-3 text-xs font-semibold ${
+                    fifoWindowPreset === 'custom'
+                      ? isNeon
+                        ? 'bg-cyan-500 text-black'
+                        : 'bg-blue-600 text-white'
+                      : isNeon
+                        ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
+                        : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
+                  }`}
+                  title="Profit for a custom date range (local time)"
+                >
+                  Custom
+                </button>
+
+                {fifoWindowPreset === 'custom' && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="date"
+                      value={fifoCustomFromYmd}
+                      onChange={(e) => setFifoCustomFromYmd(e.target.value)}
+                      className={`h-9 rounded-md border px-2 text-sm ${
+                        isNeon ? 'bg-gray-900 border-gray-700 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
                       }`}
-                      title="Scan all sales (no month filter)"
-                    >
-                      All
-                    </button>
-                    {monthOptions.map((m) => (
-                      <button
-                        key={m.value}
-                        onClick={() => setFifoSelectedMonth(m.value)}
-                        className={`h-9 rounded-md px-3 text-xs font-semibold ${
-                          fifoSelectedMonth === m.value
-                            ? isNeon
-                              ? 'bg-cyan-500 text-black'
-                              : 'bg-blue-600 text-white'
-                            : isNeon
-                              ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
-                              : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
-                        }`}
-                        title={`Scan only ${m.label} ${fifoSelectedYear} sales (local time)`}
-                      >
-                        {m.label}
-                      </button>
-                    ))}
+                    />
+                    <span className={isNeon ? 'text-gray-400' : 'text-gray-600'}>→</span>
+                    <input
+                      type="date"
+                      value={fifoCustomToYmd}
+                      onChange={(e) => setFifoCustomToYmd(e.target.value)}
+                      className={`h-9 rounded-md border px-2 text-sm ${
+                        isNeon ? 'bg-gray-900 border-gray-700 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
+                      }`}
+                    />
                   </div>
-                </div>
+                )}
+
+                {fifoWindowPreset === 'this_month' && (
+                  <>
+                    <span className={`ml-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Year:
+                    </span>
+                    <select
+                      value={fifoSelectedYear}
+                      onChange={(e) => setFifoSelectedYear(Number(e.target.value))}
+                      className={`h-9 rounded-md border px-2 text-sm ${
+                        isNeon ? 'bg-gray-900 border-gray-700 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
+                      }`}
+                      title="Year used when selecting a month filter"
+                    >
+                      {yearOptions.map((y) => (
+                        <option key={y} value={y}>
+                          {y}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="flex-1 overflow-x-auto">
+                      <div className="inline-flex items-center gap-2 whitespace-nowrap pr-2">
+                        {monthOptions.map((m) => (
+                          <button
+                            key={m.value}
+                            onClick={() => setFifoSelectedMonth(m.value)}
+                            className={`h-9 rounded-md px-3 text-xs font-semibold ${
+                              fifoSelectedMonth === m.value
+                                ? isNeon
+                                  ? 'bg-cyan-500 text-black'
+                                  : 'bg-blue-600 text-white'
+                                : isNeon
+                                  ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
+                                  : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
+                            }`}
+                            title={`Scan ${m.label} ${fifoSelectedYear} sales (local time)`}
+                          >
+                            {m.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -1353,15 +1482,17 @@ export default function TestPurchaseLinkingPage() {
 
           {fifoSummary && (
             <div className={`mt-4 rounded-lg p-4 ${isNeon ? 'bg-gray-900/40 border border-gray-700' : 'bg-gray-50 border border-gray-200'}`}>
-              <div className="text-sm font-semibold">FIFO dry-run summary</div>
+              <div className="text-sm font-semibold">FIFO committed profit summary</div>
               <div className={`mt-1 text-sm ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                 scanned={fifoSummary.totalSalesScanned} • wouldLink={fifoSummary.wouldLink} • noMatch={fifoSummary.noMatch} • alreadyLinked={fifoSummary.alreadyLinked}
               </div>
-              {fifoSelectedYear !== null && typeof fifoSelectedMonth === 'number' && (
-                <div className={`mt-1 text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-                  Filtered to {monthOptions[fifoSelectedMonth]?.label} {fifoSelectedYear} (local time).
-                </div>
-              )}
+              <div className={`mt-1 text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                {fifoWindowPreset === 'today'
+                  ? 'Filtered to Today (local time).'
+                  : fifoWindowPreset === 'custom'
+                    ? `Filtered to ${fifoCustomFromYmd} → ${fifoCustomToYmd} (local time).`
+                    : `Filtered to ${monthOptions[fifoSelectedMonth]?.label} ${fifoSelectedYear} (local time).`}
+              </div>
               {fifoStrictDelivery &&
                 typeof fifoSummary?.wouldLink === 'number' &&
                 typeof fifoSummary?.noMatch === 'number' &&
@@ -1376,7 +1507,7 @@ export default function TestPurchaseLinkingPage() {
                   >
                     <div className="font-semibold">Strict delivery is ON.</div>
                     <div className="mt-1">
-                      Your purchases are only eligible if they have <span className="font-semibold">actualDelivery</span>. Right now, it looks like most purchases don’t have that field yet, so everything becomes <span className="font-semibold">no_match</span> and month profit totals show $0.
+                      Your purchases are only eligible if they have <span className="font-semibold">actualDelivery</span>. Right now, it looks like most purchases don’t have that field yet, so everything becomes <span className="font-semibold">no_match</span> and profit totals show $0.
                     </div>
                     <div className="mt-1">
                       Fix: toggle <span className="font-semibold">Strict delivery</span> OFF and re-run, or backfill delivery dates via tracking / Delivered-email fallback.
@@ -2116,7 +2247,7 @@ export default function TestPurchaseLinkingPage() {
                 </span>
               </div>
               <div className={`mt-1 text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-                Totals are based on the FIFO dry-run rows for the selected month/year (local sale date).
+                Totals are based on the FIFO committed-profit window you selected above.
               </div>
               {fifoProfitTotals.count === 0 && fifoRows.length > 0 && (
                 <div className={`mt-2 text-xs ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>

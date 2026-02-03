@@ -172,9 +172,9 @@ function DashboardContent() {
       case 'deliveries':
         return <Deliveries />;
       case 'sales':
-        // Replaced legacy Sales page with the StockX Orders (Test) tooling.
-        // This keeps the existing dashboard nav route (/dashboard?section=sales) but uses the newer UI.
-        return <TestStockXOrders />;
+        // Sales Profit (FIFO): show the FIFO profit + unmatched diagnostics view.
+        // This keeps the existing nav route (/dashboard?section=sales) and makes it actionable for profitability.
+        return <TestPurchaseLinkingPage />;
       case 'sales-2-0':
         return <TestPurchaseLinkingPage />;
       case 'purchase-linking':

@@ -408,6 +408,7 @@ function normalizeSaleForFifo(raw: any, source: 'user_sales' | 'stockxSales'): a
   const brand = getSaleBrand(base);
   const size = getSaleSizeRaw(base);
   const styleId = getSaleStyleId(base);
+  const status = (base?.status || raw?.status || null);
   const imageUrl = base?.imageUrl || base?.product?.imageUrl || base?.product?.image || null;
   const { salePrice, totalPayout, fees } = getSalePricing(base);
   const date =
@@ -430,6 +431,7 @@ function normalizeSaleForFifo(raw: any, source: 'user_sales' | 'stockxSales'): a
     brand,
     size,
     styleId,
+    status: status ? String(status) : null,
     imageUrl,
     salePrice,
     fees,
@@ -442,6 +444,36 @@ function normalizeSaleForFifo(raw: any, source: 'user_sales' | 'stockxSales'): a
     listingId,
     _source: source,
   };
+}
+
+function normalizeOrderStatus(status: unknown): string {
+  const raw = String(status || '').trim();
+  if (!raw) return '';
+  return raw.toUpperCase().replace(/\s+/g, '_');
+}
+
+function shouldIncludeSaleByStatus(status: unknown, includePending: boolean): boolean {
+  const st = normalizeOrderStatus(status);
+  if (!st) return true; // missing status: include (we'll rely on dates + fields)
+
+  // Known non-sales / failed orders: exclude from FIFO allocation.
+  const nonSales = new Set([
+    'AUTHFAILED',
+    'DIDNOTSHIP',
+    'CANCELED',
+    'CANCELLED',
+    'RETURNED',
+    'CCAUTHORIZATIONFAILED',
+  ]);
+  if (nonSales.has(st)) return false;
+
+  // Completed / paid out sales: always include.
+  const completed = new Set(['COMPLETED', 'PAYOUTCOMPLETED', 'PAYOUT_COMPLETED']);
+  if (completed.has(st)) return true;
+
+  // Pending/active statuses: include only when requested.
+  if (!includePending) return false;
+  return true;
 }
 
 function msToIso(ms: number | null): string | null {
@@ -579,6 +611,7 @@ export async function GET(request: NextRequest) {
     const scanLimit = Math.max(1, Math.min(20000, Number(request.nextUrl.searchParams.get('scanLimit') || 5000)));
     const unlinkedOnly = request.nextUrl.searchParams.get('unlinkedOnly') !== '0';
     const strictDelivery = request.nextUrl.searchParams.get('strictDelivery') !== '0';
+    const includePending = request.nextUrl.searchParams.get('includePending') !== '0';
     const saleStartMsRaw = request.nextUrl.searchParams.get('saleStartMs');
     const saleEndMsRaw = request.nextUrl.searchParams.get('saleEndMs');
     const saleStartMs = saleStartMsRaw ? Number(saleStartMsRaw) : null;
@@ -605,7 +638,15 @@ export async function GET(request: NextRequest) {
     let hasMoreLegacySales = false;
 
     if (hasSaleWindow) {
-      // Scan through sales in pages and filter to the requested window in-memory.
+      // IMPORTANT (FIFO correctness):
+      // To compute FIFO allocations for a window [saleStartMs, saleEndMs), we must process
+      // *all* sales that occurred before saleEndMs (oldest → newest), not just sales inside the window.
+      // Otherwise earlier sales won't consume inventory first and window profits will be overstated.
+      const allocationEndMs = saleEndMs as number;
+
+      const salesForAllocation: any[] = [];
+
+      // Scan through sales in pages and keep any sale with eventMs < allocationEndMs.
       // This avoids requiring Firestore composite indexes on (userId, date).
       let lastDoc: FirebaseFirestore.DocumentSnapshot | null = null;
       const pageSize = 1000;
@@ -624,25 +665,28 @@ export async function GET(request: NextRequest) {
         let batch = snap.docs.map((d) => normalizeSaleForFifo({ id: d.id, ...(d.data() as any) }, 'user_sales'));
         if (unlinkedOnly) batch = batch.filter((s: any) => (s?.linkedPurchaseId ?? null) === null);
 
-        // Filter to time window
         for (const s of batch) {
+          if (!shouldIncludeSaleByStatus((s as any)?.status, includePending)) continue;
           const ev = getSaleEventMs(s);
           const ms = ev.ms;
           if (typeof ms !== 'number') continue;
-          if (ms >= (saleStartMs as number) && ms < (saleEndMs as number)) sales.push(s);
+          if (ms < allocationEndMs) {
+            (s as any)._eventMs = ms;
+            salesForAllocation.push(s);
+          }
         }
 
         if (snap.docs.length < pageSize) break;
       }
       hasMoreSales = salesRead >= scanLimit;
 
-      // ALSO scan legacy stockxSales when a time window is requested.
+      // ALSO scan legacy stockxSales for sales with eventMs < allocationEndMs.
       // Many older imports wrote sales into stockxSales; user_sales may only contain a subset.
       // We merge+dedupe by orderNumber to avoid double counting.
       try {
         let legacyLastDoc: FirebaseFirestore.DocumentSnapshot | null = null;
         const legacyPageSize = 1000;
-        const legacyMatches: any[] = [];
+        const legacyForAllocation: any[] = [];
         while (legacySalesRead < scanLimit) {
           let q: FirebaseFirestore.Query = db
             .collection(COLLECTIONS.STOCKX_SALES)
@@ -662,41 +706,54 @@ export async function GET(request: NextRequest) {
           if (unlinkedOnly) filtered = filtered.filter((s: any) => (s?.linkedPurchaseId ?? null) === null);
 
           for (const s of filtered) {
+            if (!shouldIncludeSaleByStatus((s as any)?.status, includePending)) continue;
             const ev = getSaleEventMs(s);
             const ms = ev.ms;
             if (typeof ms !== 'number') continue;
-            if (ms >= (saleStartMs as number) && ms < (saleEndMs as number)) legacyMatches.push(s);
+            if (ms < allocationEndMs) {
+              (s as any)._eventMs = ms;
+              legacyForAllocation.push(s);
+            }
           }
 
           if (snap.docs.length < legacyPageSize) break;
         }
         hasMoreLegacySales = legacySalesRead >= scanLimit;
 
-        if (legacyMatches.length > 0) {
+        if (legacyForAllocation.length > 0) {
           const byOrder = new Map<string, any>();
-          for (const s of sales) {
+          for (const s of salesForAllocation) {
             const k = String(s?.orderNumber || '').trim();
             if (!k) continue;
             byOrder.set(k, s);
           }
-          for (const s of legacyMatches) {
+          for (const s of legacyForAllocation) {
             const k = String(s?.orderNumber || '').trim();
             if (!k) continue;
-            if (!byOrder.has(k)) {
-              byOrder.set(k, s);
-            }
+            if (!byOrder.has(k)) byOrder.set(k, s);
           }
-          sales = Array.from(byOrder.values());
+          salesForAllocation.splice(0, salesForAllocation.length, ...Array.from(byOrder.values()));
         }
       } catch (e: any) {
         console.warn('⚠️ fifo-dry-run legacy sales scan failed (non-fatal):', e?.message || String(e));
       }
 
-      // Safety: cap how many we actually process downstream in this run.
-      if (sales.length > limitSales) {
-        sales = sales.slice(0, limitSales);
+      // Safety: cap the number of sales we allocate across.
+      // NOTE: capping reduces FIFO correctness; prefer increasing scanLimit/limitSales for accuracy.
+      if (salesForAllocation.length > limitSales) {
+        salesForAllocation.splice(limitSales);
         hasMoreSales = true;
       }
+
+      // Sort oldest → newest for FIFO allocation.
+      salesForAllocation.sort((a: any, b: any) => {
+        const aMs = typeof a?._eventMs === 'number' ? a._eventMs : (getSaleEventMs(a).ms ?? 0);
+        const bMs = typeof b?._eventMs === 'number' ? b._eventMs : (getSaleEventMs(b).ms ?? 0);
+        return aMs - bMs;
+      });
+
+      // We'll allocate FIFO across salesForAllocation, but only return rows inside the requested window.
+      sales = salesForAllocation;
     } else {
       const salesQuery: FirebaseFirestore.Query = db
         .collection('user_sales')
@@ -709,13 +766,9 @@ export async function GET(request: NextRequest) {
       if (unlinkedOnly) {
         sales = sales.filter((s: any) => (s?.linkedPurchaseId ?? null) === null);
       }
+      sales = sales.filter((s: any) => shouldIncludeSaleByStatus(s?.status, includePending));
     }
-    // Sort newest-first for stable UI (best-effort).
-    sales.sort((a: any, b: any) => {
-      const aMs = parseDateMs(a?.date) ?? parseDateMs(a?.createdAt) ?? parseDateMs(a?.updatedAt) ?? 0;
-      const bMs = parseDateMs(b?.date) ?? parseDateMs(b?.createdAt) ?? parseDateMs(b?.updatedAt) ?? 0;
-      return bMs - aMs;
-    });
+    // IMPORTANT: Do NOT sort newest-first here. FIFO allocation requires oldest → newest ordering.
 
     // Back-compat fallback: if user_sales has no docs, try legacy stockxSales docs ({saleData: ...})
     // so the dry-run can still demonstrate FIFO logic even before migration.
@@ -881,6 +934,15 @@ export async function GET(request: NextRequest) {
     let alreadyLinked = 0;
 
     for (const sale of sales) {
+      // If we have a sale window, only return rows in-window, but still allocate FIFO across all sales <= end.
+      const isInWindow =
+        hasSaleWindow &&
+        typeof saleStartMs === 'number' &&
+        typeof saleEndMs === 'number' &&
+        typeof (sale as any)?._eventMs === 'number'
+          ? (sale as any)._eventMs >= (saleStartMs as number) && (sale as any)._eventMs < (saleEndMs as number)
+          : true;
+
       const existingLinkedPurchaseId = sale?.linkedPurchaseId || sale?.matchedPurchaseId || null;
       const saleSalePrice = toNumberOrNull(sale?.salePrice);
       const saleFees = toNumberOrNull(sale?.fees);
@@ -895,21 +957,23 @@ export async function GET(request: NextRequest) {
       const saleProfit = toNumberOrNull(sale?.profit);
       if (existingLinkedPurchaseId) {
         alreadyLinked++;
-        results.push({
-          saleOrderNumber: sale?.orderNumber || null,
-          saleProduct: sale?.product || null,
-          saleSize: sale?.size || null,
-          salePrice: saleSalePrice,
-          saleFees,
-          salePayout,
-          saleNetPayout,
-          purchaseCost: salePurchasePrice,
-          profit: saleProfit,
-          status: 'already_linked',
-          linkedPurchaseId: existingLinkedPurchaseId,
-          linkedPurchaseOrderNumber: sale?.linkedPurchaseOrderNumber || null,
-          method: 'existing_link'
-        });
+        if (isInWindow) {
+          results.push({
+            saleOrderNumber: sale?.orderNumber || null,
+            saleProduct: sale?.product || null,
+            saleSize: sale?.size || null,
+            salePrice: saleSalePrice,
+            saleFees,
+            salePayout,
+            saleNetPayout,
+            purchaseCost: salePurchasePrice,
+            profit: saleProfit,
+            status: 'already_linked',
+            linkedPurchaseId: existingLinkedPurchaseId,
+            linkedPurchaseOrderNumber: sale?.linkedPurchaseOrderNumber || null,
+            method: 'existing_link'
+          });
+        }
         continue;
       }
 
@@ -1061,7 +1125,7 @@ export async function GET(request: NextRequest) {
           typeof saleNetPayout === 'number' && typeof purchaseCost === 'number'
             ? saleNetPayout - purchaseCost
             : null;
-        results.push({
+        if (isInWindow) results.push({
           saleOrderNumber,
           saleProduct,
           saleSize: saleSizeRaw,
@@ -1101,7 +1165,7 @@ export async function GET(request: NextRequest) {
         const nameSkippedAfterSaleDateButUnreliable =
           typeof nameDbg?.skippedAfterSaleDateButUnreliable === 'number' ? nameDbg.skippedAfterSaleDateButUnreliable : null;
         const nameMode = typeof nameDbg?.mode === 'string' ? nameDbg.mode : null;
-        results.push({
+        if (isInWindow) results.push({
           saleOrderNumber,
           saleProduct,
           saleSize: saleSizeRaw,
@@ -1162,6 +1226,8 @@ export async function GET(request: NextRequest) {
       userId,
       filters: hasSaleWindow ? { saleStartMs, saleEndMs } : null,
       summary: {
+        // When a sale window is provided, we allocate across all sales before the window end.
+        // `results` only contains in-window rows.
         totalSalesScanned: sales.length,
         wouldLink,
         noMatch,
