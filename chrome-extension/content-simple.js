@@ -8238,6 +8238,70 @@ try {
 } catch {}
 
 // --- Listing-page "Bid Opportunities" widget ---
+// --- MV3 keepalive (prevents background service worker suspension during long scans) ---
+function startScanKeepalive(reason = '') {
+  try {
+    if (!chrome?.runtime?.connect) return false;
+    // Mark intent: if the port disconnects unexpectedly, we can reconnect while a scan is active.
+    window.__stockxScanKeepaliveWanted = true;
+    const cur = window.__stockxScanKeepalive;
+    if (cur && cur.port) return true;
+
+    const port = chrome.runtime.connect({ name: 'stockx-scan-keepalive' });
+    const state = {
+      port,
+      reason: String(reason || ''),
+      startedAt: Date.now(),
+      pingMs: 20000,
+      timer: null
+    };
+    window.__stockxScanKeepalive = state;
+
+    const ping = () => {
+      try {
+        state.port?.postMessage?.({ t: Date.now(), reason: state.reason });
+      } catch {}
+    };
+    ping();
+    state.timer = setInterval(ping, state.pingMs);
+
+    try {
+      port.onDisconnect.addListener(() => {
+        try {
+          if (state.timer) clearInterval(state.timer);
+        } catch {}
+        try {
+          if (window.__stockxScanKeepalive === state) window.__stockxScanKeepalive = null;
+        } catch {}
+        // If we're still scanning, attempt a best-effort reconnect.
+        try {
+          if (window.__stockxScanKeepaliveWanted) setTimeout(() => startScanKeepalive(`reconnect:${state.reason}`), 1200);
+        } catch {}
+      });
+    } catch {}
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function stopScanKeepalive() {
+  try {
+    window.__stockxScanKeepaliveWanted = false;
+  } catch {}
+  try {
+    const cur = window.__stockxScanKeepalive;
+    if (!cur) return;
+    try {
+      if (cur.timer) clearInterval(cur.timer);
+    } catch {}
+    try {
+      cur.port?.disconnect?.();
+    } catch {}
+    window.__stockxScanKeepalive = null;
+  } catch {}
+}
+
 function isStockxHomepage() {
   try {
     if (!location.hostname.includes('stockx.com')) return false;
@@ -9595,6 +9659,8 @@ function ensureListingBidWidget() {
                   try {
                     if (!resp?.success) state.stage = `error: ${resp?.error || 'failed to stop'}`;
                     else state.stage = 'stopped';
+                    // Best-effort: allow MV3 service worker to suspend again once scan is stopped.
+                    try { if (state.stage === 'stopped') stopScanKeepalive(); } catch {}
                     ensureListingBidWidget();
                   } catch {}
                 });
@@ -9607,6 +9673,7 @@ function ensureListingBidWidget() {
 
             if (role === 'scan') {
               try {
+                try { startScanKeepalive('scan-this-page'); } catch {}
                 const maxItems = Math.max(1, Math.min(48, Number(state.maxItems || 48)));
                 const concurrency = Math.max(1, Math.min(5, Number(state.concurrency || 1)));
                 const settings = getScanSettingsCached();
@@ -9657,6 +9724,7 @@ function ensureListingBidWidget() {
 
             if (role === 'scan-pages') {
               try {
+                try { startScanKeepalive('scan-pages'); } catch {}
                 const maxPages = Math.max(1, Math.min(200, Number(state.maxPages || 1)));
                 const perPage = 48;
                 const settings = getScanSettingsCached();
@@ -9705,6 +9773,7 @@ function ensureListingBidWidget() {
 
             if (role === 'scan-xpress') {
               try {
+                try { startScanKeepalive('scan-xpress'); } catch {}
                 const maxPages = Math.max(1, Math.min(200, Number(state.maxPages || 1)));
                 const perPage = 48;
                 const settings = getScanSettingsCached();
@@ -10300,6 +10369,8 @@ function ensureListingBidWidget() {
       } else if (msg.action === 'listingBidScanDone') {
         if (msg.cancelled) state.stage = 'stopped';
         else state.stage = msg.success ? 'done' : `done (error: ${msg.error || 'unknown'})`;
+        // Scan finished; allow service worker to suspend normally again.
+        try { stopScanKeepalive(); } catch {}
         ensureListingBidWidget();
       }
     };
