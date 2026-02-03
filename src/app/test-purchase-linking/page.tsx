@@ -1041,8 +1041,18 @@ export default function TestPurchaseLinkingPage() {
             typeof s.candidateSales === 'number' && typeof s.attempted === 'number'
               ? Math.max(0, s.candidateSales - s.attempted)
               : null;
+          const statusCounts = s?.failureStatusCounts && typeof s.failureStatusCounts === 'object' ? s.failureStatusCounts : null;
+          const blockedCount = typeof s?.blockedCount === 'number' ? s.blockedCount : 0;
+          const hint =
+            blockedCount > 0
+              ? ` • blocked=${blockedCount} (StockX bot protection; wait + retry)`
+              : statusCounts?.['401']
+                ? ` • 401s detected (reconnect StockX)`
+                : statusCounts?.['403']
+                  ? ` • 403s detected (possible bot protection)`
+                  : '';
           showNotice(
-            `✅ Identifier backfill — updated=${s.updated ?? 0} failed=${s.failed ?? 0}${remaining !== null ? ` • remaining≈${remaining}` : ''}`,
+            `✅ Identifier backfill — updated=${s.updated ?? 0} failed=${s.failed ?? 0}${remaining !== null ? ` • remaining≈${remaining}` : ''}${hint}`,
             'success',
             20000
           );
@@ -1847,6 +1857,32 @@ export default function TestPurchaseLinkingPage() {
                         })()
                       : `Updated ${lastSalesIdBackfill?.summary?.updated ?? 0} sale(s), failed ${lastSalesIdBackfill?.summary?.failed ?? 0}, attempted ${lastSalesIdBackfill?.summary?.attempted ?? 0} / ${lastSalesIdBackfill?.summary?.candidateSales ?? 0}.`}
                   </div>
+                  {!!lastSalesIdBackfill?.summary?.failed && (
+                    <div className={`mt-2 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                      <div className="font-semibold">Failure breakdown</div>
+                      <div className="mt-1">
+                        <span className="font-semibold">blocked</span>: {lastSalesIdBackfill?.summary?.blockedCount ?? 0}{' '}
+                        <span className="opacity-70">(403 PerimeterX)</span>
+                      </div>
+                      <div className="mt-1 whitespace-pre-wrap break-words">
+                        <span className="font-semibold">statusCounts</span>: {JSON.stringify(lastSalesIdBackfill?.summary?.failureStatusCounts || {})}
+                      </div>
+                      {Array.isArray(lastSalesIdBackfill?.failures) && lastSalesIdBackfill.failures.length > 0 && (
+                        <div className="mt-2">
+                          <div className="font-semibold">Sample failures</div>
+                          <div className="mt-1 space-y-1">
+                            {lastSalesIdBackfill.failures.slice(0, 5).map((f: any, i: number) => (
+                              <div key={i} className="opacity-90">
+                                <span className="font-semibold">{f?.orderNumber || '—'}</span>: {f?.error || 'error'}
+                                {typeof f?.status === 'number' ? ` (status=${f.status})` : ''}
+                                {f?.blocked ? ' (blocked)' : ''}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -8,6 +8,17 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+function isPerimeterXBlock(body: string): boolean {
+  const b = String(body || '').toLowerCase();
+  return (
+    b.includes('px-cloud.net') ||
+    b.includes('"appid":"px') ||
+    b.includes('"blockscript"') ||
+    b.includes('/captcha/captcha.js') ||
+    b.includes('perimeterx')
+  );
+}
+
 function stripUndefinedDeep<T>(value: T): T {
   if (Array.isArray(value)) {
     return value.map((v) => stripUndefinedDeep(v)) as any;
@@ -176,6 +187,7 @@ async function fetchOrderDetails(orderNumber: string, apiKey: string, accessToke
     const txt = await res.text().catch(() => '');
     const err = new Error(`StockX order details failed (${res.status})`);
     (err as any).status = res.status;
+    (err as any).blocked = res.status === 403 && isPerimeterXBlock(txt);
     (err as any).details = txt;
     throw err;
   }
@@ -223,6 +235,8 @@ export async function POST(request: NextRequest) {
     const ttlMs = ttlHours * 60 * 60 * 1000;
     const maxOrders = Math.max(1, Math.min(400, Number(body?.maxOrders ?? 120)));
     const scanLimit = Math.max(100, Math.min(20000, Number(body?.scanLimit ?? 12000)));
+    const concurrency = Math.max(1, Math.min(6, Number(body?.concurrency ?? 3)));
+    const perRequestDelayMs = Math.max(0, Math.min(2000, Number(body?.perRequestDelayMs ?? 125)));
 
     const now = Date.now();
     const lastRunMs = await getLastRunMs(userId);
@@ -296,10 +310,12 @@ export async function POST(request: NextRequest) {
     const toBackfill = uniq.slice(0, maxOrders);
     const db = getAdminDb();
 
-    const failures: Array<{ orderNumber: string; error: string; status?: number }> = [];
+    const failures: Array<{ orderNumber: string; error: string; status?: number; blocked?: boolean }> = [];
+    const failureStatusCounts = new Map<string, number>();
+    let blockedCount = 0;
     const updates: Array<{ docId: string; patch: any }> = [];
 
-    const limit = 6;
+    const limit = concurrency;
     let idx = 0;
 
     const worker = async () => {
@@ -307,6 +323,10 @@ export async function POST(request: NextRequest) {
         const current = toBackfill[idx];
         idx += 1;
         try {
+          if (perRequestDelayMs > 0) {
+            // Small pacing to reduce StockX bot-protection triggers / rate limiting.
+            await new Promise((r) => setTimeout(r, perRequestDelayMs));
+          }
           let details: any = null;
           try {
             details = await fetchOrderDetails(current.orderNumber, apiKey, accessToken!);
@@ -403,10 +423,14 @@ export async function POST(request: NextRequest) {
 
           updates.push({ docId: current.docId, patch: stripUndefinedDeep(patch) });
         } catch (e: any) {
+          const st = typeof e?.status === 'number' ? String(e.status) : 'unknown';
+          failureStatusCounts.set(st, (failureStatusCounts.get(st) || 0) + 1);
+          if (e?.blocked) blockedCount += 1;
           failures.push({
             orderNumber: current.orderNumber,
             error: e?.message || String(e),
             status: typeof e?.status === 'number' ? e.status : undefined,
+            blocked: e?.blocked ? true : undefined,
           });
         }
       }
@@ -432,8 +456,12 @@ export async function POST(request: NextRequest) {
       attempted: toBackfill.length,
       updated,
       failed: failures.length,
+      failureStatusCounts: Object.fromEntries(Array.from(failureStatusCounts.entries()).sort((a, b) => Number(b[1]) - Number(a[1]))),
+      blockedCount,
       ttlHours,
       maxOrders,
+      concurrency,
+      perRequestDelayMs,
     };
 
     await setLastRun(userId, now, summary);
