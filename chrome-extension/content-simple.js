@@ -8935,26 +8935,54 @@ function ensureListingBidWidget() {
   try {
     if (!window.__stockxWidgetInputFocusFixInstalled) {
       window.__stockxWidgetInputFocusFixInstalled = true;
-      const focusInput = (el) => {
+      try { window.__stockxWidgetFocusLock = null; } catch {}
+      const focusInput = (el, role = '') => {
         try {
           if (!el) return;
           // Pause widget rerenders for a moment so the input doesn't get replaced mid-focus.
           try { window.__stockxListingWidgetInteractingUntil = Date.now() + 2500; } catch {}
-          // Focus on next tick: some pages will block focus changes inside pointerdown.
-          setTimeout(() => {
+          // Some StockX pages steal focus on pointerup/mouseup. We fight that by:
+          // - focusing multiple times (0ms, 30ms, 140ms, 300ms)
+          // - re-focusing if a blur happens during the lock window
+          const lockId = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+          const doFocus = () => {
             try {
               el.focus?.();
               // Select-all for fast editing
-              try {
-                // Prefer select() if supported (inputs), otherwise setSelectionRange.
-                el.select?.();
-              } catch {}
+              try { el.select?.(); } catch {}
               try {
                 const v = String(el.value ?? '');
                 if (typeof el.setSelectionRange === 'function') el.setSelectionRange(0, v.length);
               } catch {}
             } catch {}
-          }, 0);
+          };
+
+          try {
+            if (role) window.__stockxWidgetFocusLock = { id: lockId, role, until: Date.now() + 1000 };
+          } catch {}
+
+          // Focus on next ticks: avoids focus-blocking during pointerdown.
+          setTimeout(doFocus, 0);
+          setTimeout(doFocus, 30);
+          setTimeout(doFocus, 140);
+          setTimeout(doFocus, 300);
+
+          // If StockX blurs us during the lock window, immediately re-focus.
+          try {
+            const onBlur = () => {
+              try {
+                const lock = window.__stockxWidgetFocusLock;
+                if (!lock || typeof lock !== 'object') return;
+                if (String(lock.id || '') !== lockId) return;
+                if (Date.now() > Number(lock.until || 0)) return;
+                setTimeout(doFocus, 0);
+              } catch {}
+            };
+            el.addEventListener?.('blur', onBlur, { capture: true });
+            setTimeout(() => {
+              try { el.removeEventListener?.('blur', onBlur, { capture: true }); } catch {}
+            }, 1400);
+          } catch {}
         } catch {}
       };
       const focusInputByRole = (role) => {
@@ -8963,7 +8991,7 @@ function ensureListingBidWidget() {
           if (!w) return;
           const el = w.querySelector?.(`[data-role="${role}"]`);
           if (!el) return;
-          focusInput(el);
+          focusInput(el, role);
         } catch {}
       };
       const onCap = (e) => {
@@ -8981,10 +9009,7 @@ function ensureListingBidWidget() {
           try { e.stopImmediatePropagation?.(); } catch {}
           try { e.stopPropagation?.(); } catch {}
           // Do NOT preventDefault: we want native focusing/caret behavior.
-          // Focus lock: some pages steal focus on pointerup/mouseup right after a successful focus.
-          // Remember which role we interacted with for a short window.
-          try { window.__stockxWidgetFocusLock = { role, until: Date.now() + 450 }; } catch {}
-          focusInput(input);
+          focusInput(input, role);
         } catch {}
       };
       const onCapPost = (e) => {
@@ -9016,6 +9041,7 @@ function ensureListingBidWidget() {
       try { window.addEventListener('pointerup', onCapPost, { capture: true }); } catch {}
       try { window.addEventListener('mouseup', onCapPost, { capture: true }); } catch {}
       try { window.addEventListener('touchend', onCapPost, { capture: true, passive: false }); } catch {}
+      try { window.addEventListener('click', onCapPost, { capture: true }); } catch {}
     }
   } catch {}
 
