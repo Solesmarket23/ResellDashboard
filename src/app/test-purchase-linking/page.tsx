@@ -580,6 +580,7 @@ export default function TestPurchaseLinkingPage() {
   const [lastStockXRefresh, setLastStockXRefresh] = useState<any | null>(null);
   const [backfillingSalesIds, setBackfillingSalesIds] = useState(false);
   const [lastSalesIdBackfill, setLastSalesIdBackfill] = useState<any | null>(null);
+  const [salesIdBackfillCursorId, setSalesIdBackfillCursorId] = useState<string>('');
 
   const monthOptions = useMemo(
     () => [
@@ -1004,16 +1005,21 @@ export default function TestPurchaseLinkingPage() {
             force: opts?.force ? true : false,
             // This is the main lever to eliminate missing_sale_styleId buckets.
             maxOrders: 400,
-            scanLimit: 20000,
+            // Scan in pages to avoid 504 timeouts. We'll continue via cursor across clicks.
+            scanLimit: 1500,
             ttlHours: 24,
             // Be gentle to reduce bot protection / 429s during high-volume backfills.
             concurrency: 1,
             perRequestDelayMs: 750,
+            maxRemoteOrders: 30,
+            cursorId: salesIdBackfillCursorId || null,
           }),
         });
         const json = await resp.json().catch(() => ({}));
         if (!resp.ok || json?.success === false) throw new Error(json?.error || `Backfill failed (${resp.status})`);
         setLastSalesIdBackfill(json);
+        const next = typeof json?.summary?.nextCursorId === 'string' ? json.summary.nextCursorId : '';
+        setSalesIdBackfillCursorId(next || '');
         if (json?.skipped) {
           const ttlHours = typeof json?.ttlHours === 'number' ? json.ttlHours : 24;
           const lastRunAtMs = typeof json?.lastRunAtMs === 'number' ? json.lastRunAtMs : null;
@@ -1860,6 +1866,11 @@ export default function TestPurchaseLinkingPage() {
                         })()
                       : `Updated ${lastSalesIdBackfill?.summary?.updated ?? 0} sale(s), failed ${lastSalesIdBackfill?.summary?.failed ?? 0}, attempted ${lastSalesIdBackfill?.summary?.attempted ?? 0} / ${lastSalesIdBackfill?.summary?.candidateSales ?? 0}.`}
                   </div>
+                  {typeof lastSalesIdBackfill?.summary?.nextCursorId === 'string' && lastSalesIdBackfill.summary.nextCursorId && (
+                    <div className={`mt-2 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                      More sales to scan. Click “Force IDs” again to continue (cursor saved).
+                    </div>
+                  )}
                   {!!lastSalesIdBackfill?.summary?.failed && (
                     <div className={`mt-2 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                       <div className="font-semibold">Failure breakdown</div>

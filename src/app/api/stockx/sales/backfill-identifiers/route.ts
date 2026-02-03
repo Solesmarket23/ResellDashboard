@@ -178,6 +178,25 @@ async function scanSalesByUserId(userId: string, scanLimit: number): Promise<any
   return out;
 }
 
+async function scanSalesByUserIdPage(userId: string, pageSize: number, cursorId?: string | null): Promise<{
+  sales: any[];
+  nextCursorId: string | null;
+}> {
+  const db = getAdminDb();
+  let q: FirebaseFirestore.Query = db
+    .collection('user_sales')
+    .where('userId', '==', userId)
+    .orderBy(FieldPath.documentId())
+    .limit(Math.max(1, Math.min(2500, pageSize)));
+  const cursor = String(cursorId || '').trim();
+  if (cursor) q = q.startAfter(cursor);
+  const snap = await q.get();
+  const docs = snap.docs;
+  const sales = docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+  const nextCursorId = docs.length > 0 && docs.length >= Math.max(1, Math.min(2500, pageSize)) ? docs[docs.length - 1].id : null;
+  return { sales, nextCursorId };
+}
+
 async function fetchOrderDetails(orderNumber: string, apiKey: string, accessToken: string): Promise<any> {
   const url = `https://api.stockx.com/v2/selling/orders/${encodeURIComponent(orderNumber)}`;
   const res = await fetch(url, {
@@ -301,10 +320,12 @@ export async function POST(request: NextRequest) {
     const ttlHours = Math.max(1, Math.min(168, Number(body?.ttlHours ?? 24)));
     const ttlMs = ttlHours * 60 * 60 * 1000;
     const maxOrders = Math.max(1, Math.min(400, Number(body?.maxOrders ?? 120)));
-    const scanLimit = Math.max(100, Math.min(20000, Number(body?.scanLimit ?? 12000)));
+    const scanLimit = Math.max(50, Math.min(2500, Number(body?.scanLimit ?? 1500)));
+    const cursorId = typeof body?.cursorId === 'string' ? body.cursorId.trim() : '';
     // Default to gentler pacing to reduce PerimeterX / 429s for this high-volume endpoint.
     const concurrency = Math.max(1, Math.min(6, Number(body?.concurrency ?? 1)));
     const perRequestDelayMs = Math.max(0, Math.min(5000, Number(body?.perRequestDelayMs ?? 750)));
+    const maxRemoteOrders = Math.max(0, Math.min(80, Number(body?.maxRemoteOrders ?? 30)));
 
     const now = Date.now();
     const lastRunMs = await getLastRunMs(userId);
@@ -324,7 +345,8 @@ export async function POST(request: NextRequest) {
     const apiKey = process.env.STOCKX_API_KEY || '';
     if (!apiKey) return NextResponse.json({ success: false, error: 'Missing STOCKX_API_KEY' }, { status: 500 });
 
-    const sales = await scanSalesByUserId(userId, scanLimit);
+    const page = await scanSalesByUserIdPage(userId, scanLimit, cursorId);
+    const sales = page.sales;
     const candidates = sales
       .filter((s) => hasUsefulIdentifierGaps(s))
       .map((s) => ({ docId: String(s.id), orderNumber: String(s?.orderNumber || '').trim() }))
@@ -377,7 +399,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Phase 2: remote StockX order-details backfill for anything still missing.
-    const toBackfill = remainingForRemote.slice(0, maxOrders);
+    const toBackfill = remainingForRemote.slice(0, Math.min(maxOrders, maxRemoteOrders));
 
     // Prefer cookie tokens (interactive), fall back to Firebase user doc (server-side)
     const cookieStore = cookies();
@@ -623,6 +645,8 @@ export async function POST(request: NextRequest) {
 
     const summary = {
       scannedSales: sales.length,
+      cursorId: cursorId || null,
+      nextCursorId: page.nextCursorId,
       candidateSales: uniq.length,
       attempted: toConsider.length,
       legacyUpdated,
@@ -638,6 +662,7 @@ export async function POST(request: NextRequest) {
       suggestedWaitMs,
       ttlHours,
       maxOrders,
+      maxRemoteOrders,
       concurrency,
       perRequestDelayMs,
     };
