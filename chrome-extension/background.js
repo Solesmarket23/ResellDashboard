@@ -1939,6 +1939,13 @@ function setScanResult(scanId, url, result) {
       }
       // Include a timestamp so the UI/debug can verify what is actually persisted.
       data[url] = { scanId, ...(result || {}), savedAt: Date.now() };
+
+      // Slack notifications should not depend on a specific tab being alive.
+      // Fire-and-forget here whenever we persist a scan result (de-duped in maybeNotifySlackForOpportunities).
+      try {
+        Promise.resolve(maybeNotifySlackForOpportunities({ scanId, resultUrl: url, result: { url, scanId, ...(result || {}) } })).catch(() => {});
+      } catch {}
+
       if (!cache) {
         chrome.storage?.local?.set?.({ [key]: data }, () => void chrome.runtime.lastError);
         return;
@@ -1977,11 +1984,6 @@ function setScanResult(scanId, url, result) {
     // Also update the global opportunities index (best-effort).
     try {
       updateOpportunitiesIndexFromResult(scanId, { url, ...(result || {}) });
-    } catch {}
-    // Slack notifications should not depend on a specific tab being alive.
-    // Fire-and-forget here whenever we persist a scan result.
-    try {
-      Promise.resolve(maybeNotifySlackForOpportunities({ scanId, resultUrl: url, result: { url, scanId, ...(result || {}) } })).catch(() => {});
     } catch {}
   } catch {}
 }
