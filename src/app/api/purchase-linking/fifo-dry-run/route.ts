@@ -905,6 +905,10 @@ export async function GET(request: NextRequest) {
     let purchasesEligible = 0;
     let purchasesIndexedByStyleId = 0;
     let purchasesIndexedByName = 0;
+    let slugAttemptsUrlKey = 0;
+    let slugAttemptsProductName = 0;
+    let slugSuccessUrlKey = 0;
+    let slugSuccessProductName = 0;
 
     for (const p of purchases) {
       purchasesTotal++;
@@ -1102,6 +1106,7 @@ export async function GET(request: NextRequest) {
       const saleCutoffIso = msToIso(saleCreatedAtMs);
       const saleCutoffSource = saleEvent.source;
       const saleListingId = getSaleListingId(sale);
+      const saleProductNameForSlug = typeof saleProduct === 'string' ? saleProduct : '';
 
       let linkedPurchase: PurchaseCandidate | null = null;
       let method: 'listingId' | 'slug' | 'fifo' | 'lifo' | 'name' | null = null;
@@ -1118,30 +1123,65 @@ export async function GET(request: NextRequest) {
       }
 
       // 2) Slug (urlKey) + size match
-      if (!linkedPurchase && saleUrlKey && saleSize) {
-        const key = purchaseSlugKey(saleUrlKey, saleSize);
-        const candidates = purchaseSlugIndex.get(key) || [];
-        const iter =
-          cogsMethod === 'lifo'
-            ? (function* () {
-                for (let i = candidates.length - 1; i >= 0; i--) yield candidates[i];
-              })()
-            : candidates;
-        for (const cand of iter as any) {
-          const pid = String(cand.id || '');
-          if (!pid || usedPurchaseIds.has(pid)) continue;
-          if (
-            typeof saleCreatedAtMs === 'number' &&
-            typeof cand._dateMs === 'number' &&
-            cand._dateSource !== 'createdAt' &&
-            cand._dateMs > saleCreatedAtMs
-          ) {
-            continue;
+      if (!linkedPurchase && saleSize) {
+        // Attempt A: match by sale.urlKey when present
+        if (saleUrlKey) {
+          slugAttemptsUrlKey++;
+          const key = purchaseSlugKey(saleUrlKey, saleSize);
+          const candidates = purchaseSlugIndex.get(key) || [];
+          const iter =
+            cogsMethod === 'lifo'
+              ? (function* () {
+                  for (let i = candidates.length - 1; i >= 0; i--) yield candidates[i];
+                })()
+              : candidates;
+          for (const cand of iter as any) {
+            const pid = String(cand.id || '');
+            if (!pid || usedPurchaseIds.has(pid)) continue;
+            if (
+              typeof saleCreatedAtMs === 'number' &&
+              typeof cand._dateMs === 'number' &&
+              cand._dateSource !== 'createdAt' &&
+              cand._dateMs > saleCreatedAtMs
+            ) {
+              continue;
+            }
+            linkedPurchase = cand;
+            method = 'slug';
+            slugSuccessUrlKey++;
+            usedPurchaseIds.add(pid);
+            break;
           }
-          linkedPurchase = cand;
-          method = 'slug';
-          usedPurchaseIds.add(pid);
-          break;
+        }
+
+        // Attempt B: if urlKey missing (or didn't match), try slugifying the sale product name.
+        if (!linkedPurchase && saleProductNameForSlug) {
+          slugAttemptsProductName++;
+          const key = purchaseSlugKey(saleProductNameForSlug, saleSize);
+          const candidates = purchaseSlugIndex.get(key) || [];
+          const iter =
+            cogsMethod === 'lifo'
+              ? (function* () {
+                  for (let i = candidates.length - 1; i >= 0; i--) yield candidates[i];
+                })()
+              : candidates;
+          for (const cand of iter as any) {
+            const pid = String(cand.id || '');
+            if (!pid || usedPurchaseIds.has(pid)) continue;
+            if (
+              typeof saleCreatedAtMs === 'number' &&
+              typeof cand._dateMs === 'number' &&
+              cand._dateSource !== 'createdAt' &&
+              cand._dateMs > saleCreatedAtMs
+            ) {
+              continue;
+            }
+            linkedPurchase = cand;
+            method = 'slug';
+            slugSuccessProductName++;
+            usedPurchaseIds.add(pid);
+            break;
+          }
         }
       }
 
@@ -1514,6 +1554,10 @@ export async function GET(request: NextRequest) {
           skippedNoDate: purchasesNoDateSkipped,
           indexedByStyleId: purchasesIndexedByStyleId,
           indexedByName: purchasesIndexedByName,
+          slugAttemptsUrlKey,
+          slugAttemptsProductName,
+          slugSuccessUrlKey,
+          slugSuccessProductName,
         },
         // Debug: how many sale docs we had to read to find those sales in-window.
         salesRead,

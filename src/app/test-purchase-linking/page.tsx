@@ -975,6 +975,11 @@ export default function TestPurchaseLinkingPage() {
       const wouldLink = typeof summary?.wouldLink === 'number' ? summary.wouldLink : null;
       const noMatch = typeof summary?.noMatch === 'number' ? summary.noMatch : null;
       const alreadyLinked = typeof summary?.alreadyLinked === 'number' ? summary.alreadyLinked : null;
+      const pdbg = summary?.purchasesDebug || null;
+      const slugAttemptsUrlKey = typeof pdbg?.slugAttemptsUrlKey === 'number' ? pdbg.slugAttemptsUrlKey : null;
+      const slugAttemptsProductName = typeof pdbg?.slugAttemptsProductName === 'number' ? pdbg.slugAttemptsProductName : null;
+      const slugSuccessUrlKey = typeof pdbg?.slugSuccessUrlKey === 'number' ? pdbg.slugSuccessUrlKey : null;
+      const slugSuccessProductName = typeof pdbg?.slugSuccessProductName === 'number' ? pdbg.slugSuccessProductName : null;
       // #region agent log
       try {
         const top = Array.isArray(summary?.allocated?.noMatchTopReasons) ? summary.allocated.noMatchTopReasons : [];
@@ -1021,7 +1026,11 @@ export default function TestPurchaseLinkingPage() {
           wouldLink,
           noMatch,
           alreadyLinked,
-          allocatedNoMatch: summary?.allocated?.noMatch ?? null
+          allocatedNoMatch: summary?.allocated?.noMatch ?? null,
+          slugAttemptsUrlKey,
+          slugAttemptsProductName,
+          slugSuccessUrlKey,
+          slugSuccessProductName
         }
       });
       // #endregion
