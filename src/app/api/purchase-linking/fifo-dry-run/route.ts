@@ -668,7 +668,8 @@ export async function GET(request: NextRequest) {
     const strictDelivery = request.nextUrl.searchParams.get('strictDelivery') !== '0';
     const includePending = request.nextUrl.searchParams.get('includePending') !== '0';
     const matchModeRaw = (request.nextUrl.searchParams.get('matchMode') || 'full').trim().toLowerCase();
-    const matchMode: 'full' | 'two_keys' = matchModeRaw === 'two_keys' ? 'two_keys' : 'full';
+    const matchMode: 'full' | 'two_keys' | 'product_name' =
+      matchModeRaw === 'two_keys' ? 'two_keys' : matchModeRaw === 'product_name' ? 'product_name' : 'full';
     const cogsMethodRaw = (request.nextUrl.searchParams.get('cogsMethod') || 'fifo').trim().toLowerCase();
     const cogsMethod: 'fifo' | 'lifo' = cogsMethodRaw === 'lifo' ? 'lifo' : 'fifo';
     const saleStartMsRaw = request.nextUrl.searchParams.get('saleStartMs');
@@ -1130,8 +1131,38 @@ export async function GET(request: NextRequest) {
 
       // 2) Slug (urlKey) + size match
       if (!linkedPurchase && saleSize) {
+        // In product_name mode, prioritize matching by sale product name slug.
+        if (matchMode === 'product_name' && saleProductNameForSlug) {
+          slugAttemptsProductName++;
+          const key = purchaseSlugKey(saleProductNameForSlug, saleSize);
+          const candidates = purchaseSlugIndex.get(key) || [];
+          const iter =
+            cogsMethod === 'lifo'
+              ? (function* () {
+                  for (let i = candidates.length - 1; i >= 0; i--) yield candidates[i];
+                })()
+              : candidates;
+          for (const cand of iter as any) {
+            const pid = String(cand.id || '');
+            if (!pid || usedPurchaseIds.has(pid)) continue;
+            if (
+              typeof saleCreatedAtMs === 'number' &&
+              typeof cand._dateMs === 'number' &&
+              cand._dateSource !== 'createdAt' &&
+              cand._dateMs > saleCreatedAtMs
+            ) {
+              continue;
+            }
+            linkedPurchase = cand;
+            method = 'slug';
+            slugSuccessProductName++;
+            usedPurchaseIds.add(pid);
+            break;
+          }
+        }
+
         // Attempt A: match by sale.urlKey when present
-        if (saleUrlKey) {
+        if (!linkedPurchase && saleUrlKey) {
           slugAttemptsUrlKey++;
           const key = purchaseSlugKey(saleUrlKey, saleSize);
           const candidates = purchaseSlugIndex.get(key) || [];
@@ -1192,7 +1223,7 @@ export async function GET(request: NextRequest) {
       }
 
       // 3) FIFO/LIFO by styleId+size
-      if (!linkedPurchase && saleStyleId && saleSize) {
+      if (!linkedPurchase && matchMode !== 'product_name' && saleStyleId && saleSize) {
         const styleVariants = splitStyleIdParts(saleStyleId);
         let candidates: PurchaseCandidate[] = [];
         // Try the full styleId first; if none, try the split variants.

@@ -585,7 +585,7 @@ export default function TestPurchaseLinkingPage() {
   const [fifoUnlinkedOnly, setFifoUnlinkedOnly] = useState(false);
   const [fifoIncludePending, setFifoIncludePending] = useState(true);
   const [cogsMethod, setCogsMethod] = useState<'fifo' | 'lifo'>('fifo');
-  const [fifoMatchMode, setFifoMatchMode] = useState<'two_keys' | 'full'>('two_keys');
+  const [fifoMatchMode, setFifoMatchMode] = useState<'product_name' | 'two_keys' | 'full'>('product_name');
   const [fifoWindowPreset, setFifoWindowPreset] = useState<'this_month' | 'today' | 'custom'>('this_month');
   const [fifoCustomFromYmd, setFifoCustomFromYmd] = useState(() => {
     const d = new Date();
@@ -2029,13 +2029,18 @@ export default function TestPurchaseLinkingPage() {
                   Unlinked only
                 </label>
                 <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-                  <input
-                    type="checkbox"
-                    checked={fifoMatchMode === 'two_keys'}
-                    onChange={(e) => setFifoMatchMode(e.target.checked ? 'two_keys' : 'full')}
-                    className="h-4 w-4"
-                  />
-                  Only match styleId+size OR urlKey+size
+                  <span className="opacity-80">Match mode:</span>
+                  <select
+                    value={fifoMatchMode}
+                    onChange={(e) => setFifoMatchMode(e.target.value as any)}
+                    className={`rounded-md px-2 py-1 text-xs ${
+                      isNeon ? 'bg-black/30 text-white border border-white/10' : 'bg-white text-gray-900 border border-gray-300'
+                    }`}
+                  >
+                    <option value="product_name">Product name (slug) + size (primary)</option>
+                    <option value="two_keys">Only styleId+size OR urlKey+size</option>
+                    <option value="full">Full (includes product-name fallback + fuzzy)</option>
+                  </select>
                 </label>
                 <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                   <input
