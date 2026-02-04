@@ -2053,7 +2053,7 @@ export default function TestPurchaseLinkingPage() {
                           <div className={`mt-1 space-y-1 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                             {x.samples.map((s: any, idx: number) => (
                               <div key={`${String(x?.reason)}-${idx}`} className="truncate">
-                                ex: order={String(s?.saleOrderNumber || '—')} • styleId={String(s?.saleStyleId || '—')} • size={String(s?.saleSize || '—')} • date={String(s?.saleCutoffIso || '—')}
+                                ex: order={String(s?.saleOrderNumber || '—')} • styleId={String(s?.saleStyleId || '—')} • size={String(s?.saleSize || '—')} • date={String(s?.saleCutoffIso || '—')} • source={String(s?.saleSource || '—')}
                               </div>
                             ))}
                           </div>
