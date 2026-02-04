@@ -697,6 +697,11 @@ export async function GET(request: NextRequest) {
 
     const db = getAdminDb();
 
+    // NOTE: this is computed while loading purchases (later), but we declare it up-front
+    // because sales window scanning may need to reference it (inventoryStartMode).
+    // We'll apply inventoryStartMode cutoffs after purchases are loaded to avoid TDZ crashes.
+    let minEligiblePurchaseMs: number | null = null;
+
     // 1) Load sales
     // IMPORTANT: Avoid Firestore composite-index requirement.
     // Using where(userId) + where(linkedPurchaseId==null) + orderBy(date) often triggers FAILED_PRECONDITION
@@ -719,19 +724,14 @@ export async function GET(request: NextRequest) {
       // When allocationMode=window_only, we intentionally allocate ONLY sales inside the window.
       // This is NOT FIFO-correct for the window profit, but it's useful to quickly validate matching.
       const allocationEndMs = saleEndMs as number;
-      const inventoryStartMs =
-        inventoryStartMode === 'first_purchase' && typeof minEligiblePurchaseMs === 'number'
-          ? minEligiblePurchaseMs
-          : null;
+      // We can't safely compute inventoryStartMs yet (depends on purchases), so we compute it later.
       let scannedBeforeInventoryStart = 0;
       let scannedBeforeAllocationStart = 0;
       let scannedBeforeWindowStart = 0;
       const allocationStartMs =
         typeof salesAllocationStartMs === 'number'
           ? salesAllocationStartMs
-          : typeof inventoryStartMs === 'number'
-            ? inventoryStartMs
-            : null;
+          : null;
 
       const salesForAllocation: any[] = [];
       let scannedWithMissingEventMs = 0;
@@ -875,7 +875,7 @@ export async function GET(request: NextRequest) {
         allocationEndMs,
         allocationMode,
         inventoryStartMode,
-        inventoryStartMs,
+        inventoryStartMs: null,
         scannedWithMissingEventMs,
         scannedAfterEnd,
         scannedBeforeInventoryStart,
@@ -969,7 +969,6 @@ export async function GET(request: NextRequest) {
     let matchesByUrlKey = 0;
     let matchesByName = 0;
     let matchesByListingId = 0;
-    let minEligiblePurchaseMs: number | null = null;
     let purchasesBeforeStartSkipped = 0;
 
     for (const p of purchases) {
@@ -1045,6 +1044,47 @@ export async function GET(request: NextRequest) {
           purchaseSlugIndex.set(sk, arr);
         }
       }
+    }
+
+    // Apply inventory start cutoffs now that we know when the first eligible purchase occurred.
+    if (hasSaleWindow) {
+      const dbg = (request as any)._fifoWindowDebug || {};
+      const inventoryStartMsFinal =
+        inventoryStartMode === 'first_purchase' && typeof minEligiblePurchaseMs === 'number' ? minEligiblePurchaseMs : null;
+      const effectiveAllocationStartMsFinal =
+        typeof salesAllocationStartMs === 'number'
+          ? salesAllocationStartMs
+          : typeof inventoryStartMsFinal === 'number'
+            ? inventoryStartMsFinal
+            : null;
+
+      if (typeof effectiveAllocationStartMsFinal === 'number') {
+        const kept: any[] = [];
+        let skipped = 0;
+        for (const s of sales) {
+          const ms = typeof (s as any)?._eventMs === 'number' ? (s as any)._eventMs : getSaleEventMs(s).ms;
+          if (typeof ms === 'number' && ms < effectiveAllocationStartMsFinal) {
+            skipped++;
+            continue;
+          }
+          kept.push(s);
+        }
+        if (skipped > 0) {
+          sales = kept;
+          // If we were using inventoryStart as the allocationStart (i.e. no explicit salesAllocationStartMs),
+          // track how many were excluded so the UI can explain "why fewer sales were allocated".
+          if (typeof salesAllocationStartMs !== 'number') {
+            scannedBeforeInventoryStart += skipped;
+          }
+        }
+      }
+
+      (request as any)._fifoWindowDebug = {
+        ...dbg,
+        inventoryStartMs: inventoryStartMsFinal,
+        allocationStartMs: effectiveAllocationStartMsFinal ?? null,
+        scannedBeforeInventoryStart,
+      };
     }
 
     // FIFO sort
