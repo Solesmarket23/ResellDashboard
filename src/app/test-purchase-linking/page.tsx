@@ -3362,8 +3362,7 @@ export default function TestPurchaseLinkingPage() {
                                     ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-200 hover:bg-emerald-500/25'
                                     : 'bg-emerald-600 text-white hover:bg-emerald-700'
                                 }`}
-                                title={!allowWrites ? 'Enable Allow writes above to save manual cost' : 'Create manual purchase cost and link it to this sale'}
-                                disabled={!allowWrites}
+                                title={!allowWrites ? 'Opens the form (saving requires Allow writes)' : 'Create manual purchase cost and link it to this sale'}
                                 onClick={() => openManualCogsForRows([r])}
                               >
                                 $ Manual COGS
@@ -3415,6 +3414,16 @@ export default function TestPurchaseLinkingPage() {
                   <X className="h-4 w-4" />
                 </button>
               </div>
+
+              {!allowWrites && (
+                <div
+                  className={`mt-3 rounded-md border px-3 py-2 text-xs ${
+                    isNeon ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-200' : 'bg-yellow-50 border-yellow-200 text-yellow-900'
+                  }`}
+                >
+                  Enable <span className="font-semibold">Allow writes</span> to save and link. You can still fill out this form now.
+                </div>
+              )}
 
               <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="text-xs font-semibold">
@@ -3506,7 +3515,7 @@ export default function TestPurchaseLinkingPage() {
                 <button
                   type="button"
                   onClick={saveManualCogsAndLink}
-                  disabled={manualCogsSaving}
+                  disabled={manualCogsSaving || !allowWrites}
                   className={`h-9 rounded-md px-3 text-xs font-semibold disabled:opacity-60 ${
                     isNeon ? 'bg-emerald-500/20 hover:bg-emerald-500/25 text-emerald-100 border border-emerald-500/30' : 'bg-emerald-600 text-white hover:bg-emerald-700'
                   }`}
