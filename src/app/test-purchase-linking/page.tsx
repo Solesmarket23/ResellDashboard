@@ -3081,11 +3081,17 @@ export default function TestPurchaseLinkingPage() {
                   <span className="font-semibold">{fifoMetrics.avgDays === null ? '—' : `${fifoMetrics.avgDays.toFixed(1)}d`}</span>
                 </span>
                 <span
+                  className="inline-flex flex-col"
                   title="Percent of matched rows that are profitable (Profit ≥ 0). This is not a 'match rate'—it’s a profitability rate."
                 >
-                  Win rate:{' '}
-                  <span className="font-semibold">
-                    {fifoMetrics.count === 0 ? '—' : `${((fifoMetrics.profitable / fifoMetrics.count) * 100).toFixed(1)}%`}
+                  <span className={`text-[11px] leading-4 ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                    % of matched rows with Profit ≥ 0
+                  </span>
+                  <span>
+                    Win rate:{' '}
+                    <span className="font-semibold">
+                      {fifoMetrics.count === 0 ? '—' : `${((fifoMetrics.profitable / fifoMetrics.count) * 100).toFixed(1)}%`}
+                    </span>
                   </span>
                 </span>
               </div>
