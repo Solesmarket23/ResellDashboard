@@ -1299,6 +1299,19 @@ export default function TestPurchaseLinkingPage() {
             }
           ]);
 
+          // IMPORTANT: don't wrap around to the beginning when we've reached the end of the cursor scan.
+          // If there are still missing IDs, the user can run another pass later (often due to 429/403 limits).
+          if (!next) {
+            __agentLog({
+              runId: 'pre-fix',
+              hypothesisId: 'H2',
+              location: 'test-purchase-linking/page.tsx:autoFix:donePaging',
+              message: 'autoFix reached end of cursor paging; stopping to avoid wraparound',
+              data: { iter, legacyUpdated, remoteAttempted, failed }
+            });
+            break;
+          }
+
           // Stop early when we hit heavy rate limiting; better to cool down.
           if (stoppedEarlyReason === 'rate_limited_429') {
             showNotice('⚠️ Auto fix paused due to StockX 429 rate limit. Wait ~30–60 min then click again.', 'warning', 20000);
