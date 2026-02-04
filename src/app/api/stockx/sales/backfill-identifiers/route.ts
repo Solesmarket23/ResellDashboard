@@ -668,6 +668,7 @@ export async function POST(request: NextRequest) {
     let remoteOrderDetailsProductIdPresent = 0;
     let remoteOrderDetailsVariantSizePresent = 0;
     let remoteOrderDetailsStyleIdMissingButProductIdPresent = 0;
+    let debugShapeLogged = 0;
 
     const limit = concurrency;
     let idx = 0;
@@ -728,6 +729,41 @@ export async function POST(request: NextRequest) {
             } else {
               throw e;
             }
+          }
+
+          // Debug: confirm the JSON shape (some wrappers return { data: {...} } or { order: {...} }).
+          if (debugShapeLogged < 3) {
+            const roots: Array<{ label: string; v: any }> = [
+              { label: 'details', v: details },
+              { label: 'details.data', v: details?.data },
+              { label: 'details.order', v: details?.order },
+              { label: 'details.result', v: details?.result },
+            ];
+            const summary = roots.map((r) => {
+              const v = r.v;
+              const has = !!v && typeof v === 'object';
+              const keys = has ? Object.keys(v).slice(0, 10) : [];
+              const style = v?.product?.styleId ?? v?.product?.sku ?? v?.styleId ?? v?.sku ?? null;
+              const pid = v?.product?.productId ?? v?.productId ?? null;
+              const size = v?.variant?.variantValue ?? v?.variant?.size ?? v?.size ?? null;
+              return {
+                label: r.label,
+                has,
+                keys,
+                hasProduct: !!v?.product,
+                styleIdLikePresent: !isMissingish(style),
+                productIdPresent: !isMissingish(pid),
+                sizePresent: !isMissingish(size),
+              };
+            });
+            __agentLog({
+              runId: 'pre-fix',
+              hypothesisId: 'H6',
+              location: 'backfill-identifiers/route.ts:remote:detailsShape',
+              message: 'StockX order-details JSON shape sample',
+              data: { orderMasked: __agentMask(current.orderNumber), roots: summary }
+            });
+            debugShapeLogged += 1;
           }
 
           const payoutObj = details?.payout || null;
