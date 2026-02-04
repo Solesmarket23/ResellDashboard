@@ -610,6 +610,7 @@ export default function TestPurchaseLinkingPage() {
     Array<{
       atIso: string;
       updated: number;
+      embeddedUpdated: number;
       legacyUpdated: number;
       remoteAttempted: number;
       failed: number;
@@ -1295,6 +1296,7 @@ export default function TestPurchaseLinkingPage() {
           setSalesIdBackfillCursorId(cursorId);
 
           const updated = typeof s?.updated === 'number' ? s.updated : 0;
+          const embeddedUpdated = typeof s?.embeddedUpdated === 'number' ? s.embeddedUpdated : 0;
           const legacyUpdated = typeof s?.legacyUpdated === 'number' ? s.legacyUpdated : 0;
           const remoteAttempted = typeof s?.remoteAttempted === 'number' ? s.remoteAttempted : 0;
           const failed = typeof s?.failed === 'number' ? s.failed : 0;
@@ -1311,6 +1313,7 @@ export default function TestPurchaseLinkingPage() {
             data: {
               iter,
               updated,
+              embeddedUpdated,
               legacyUpdated,
               remoteAttempted,
               failed,
@@ -1328,6 +1331,7 @@ export default function TestPurchaseLinkingPage() {
             {
               atIso: new Date().toISOString(),
               updated,
+              embeddedUpdated,
               legacyUpdated,
               remoteAttempted,
               failed,
@@ -1345,7 +1349,7 @@ export default function TestPurchaseLinkingPage() {
               hypothesisId: 'H2',
               location: 'test-purchase-linking/page.tsx:autoFix:donePaging',
               message: 'autoFix reached end of cursor paging; stopping to avoid wraparound',
-              data: { iter, legacyUpdated, remoteAttempted, failed }
+              data: { iter, embeddedUpdated, legacyUpdated, remoteAttempted, failed }
             });
             break;
           }
