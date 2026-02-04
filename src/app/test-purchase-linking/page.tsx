@@ -3139,7 +3139,7 @@ export default function TestPurchaseLinkingPage() {
           </div>
 
           <div className="overflow-x-auto px-6 pb-6">
-            <table className="w-full text-sm" style={{ tableLayout: 'fixed' }}>
+            <table className="min-w-[1400px] w-full text-sm" style={{ tableLayout: 'auto' }}>
               <thead
                 className={`${
                   isNeon
@@ -3188,7 +3188,9 @@ export default function TestPurchaseLinkingPage() {
                   <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all`}>
                     <div className="flex items-center justify-center h-full gap-2">
                       <Calendar className={`w-4 h-4 ${headerIconClass}`} />
-                      <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors whitespace-nowrap`}>
+                      <span
+                        className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors whitespace-nowrap truncate max-w-[110px]`}
+                      >
                         Sale Date
                       </span>
                     </div>
@@ -3196,7 +3198,9 @@ export default function TestPurchaseLinkingPage() {
                   <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all`}>
                     <div className="flex items-center justify-center h-full gap-2">
                       <Box className={`w-4 h-4 ${headerIconClass}`} />
-                      <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors`}>Product</span>
+                      <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors truncate max-w-[160px]`}>
+                        Product
+                      </span>
                     </div>
                   </th>
                   <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all`}>
