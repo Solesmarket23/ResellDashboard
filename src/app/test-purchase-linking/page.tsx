@@ -1205,6 +1205,16 @@ export default function TestPurchaseLinkingPage() {
             data: { iter, cursorPresent: !!cursorId }
           });
           // #endregion
+          // #region agent log
+          __agentLog({
+            runId: 'pre-fix',
+            hypothesisId: 'H2',
+            location: 'test-purchase-linking/page.tsx:autoFix:beforeFetch',
+            message: 'autoFix before fetch backfill',
+            data: { iter }
+          });
+          // #endregion
+          const t0 = Date.now();
           const resp = await fetch('/api/stockx/sales/backfill-identifiers', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-user-id': u },
@@ -1219,7 +1229,25 @@ export default function TestPurchaseLinkingPage() {
               cursorId: cursorId || null
             })
           });
+          // #region agent log
+          __agentLog({
+            runId: 'pre-fix',
+            hypothesisId: 'H2',
+            location: 'test-purchase-linking/page.tsx:autoFix:afterFetch',
+            message: 'autoFix after fetch backfill',
+            data: { iter, status: resp.status, ok: resp.ok, durMs: Date.now() - t0 }
+          });
+          // #endregion
           const json = await resp.json().catch(() => ({}));
+          // #region agent log
+          __agentLog({
+            runId: 'pre-fix',
+            hypothesisId: 'H2',
+            location: 'test-purchase-linking/page.tsx:autoFix:afterJson',
+            message: 'autoFix after json parse',
+            data: { iter, keys: json && typeof json === 'object' ? Object.keys(json).slice(0, 12) : null }
+          });
+          // #endregion
           if (!resp.ok || json?.success === false) throw new Error(json?.error || `Backfill failed (${resp.status})`);
 
           setLastSalesIdBackfill(json);
