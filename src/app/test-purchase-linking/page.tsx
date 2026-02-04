@@ -587,6 +587,8 @@ export default function TestPurchaseLinkingPage() {
   const [cogsMethod, setCogsMethod] = useState<'fifo' | 'lifo'>('fifo');
   const [fifoMatchMode, setFifoMatchMode] = useState<'product_name' | 'two_keys' | 'full'>('product_name');
   const [fifoInventoryStartMode, setFifoInventoryStartMode] = useState<'none' | 'first_purchase'>('first_purchase');
+  const [fifoSalesAllocationStartYmd, setFifoSalesAllocationStartYmd] = useState<string>('2025-01-01');
+  const [fifoPurchaseStartYmd, setFifoPurchaseStartYmd] = useState<string>('2024-11-01');
   const [comparingModes, setComparingModes] = useState(false);
   const [fifoCompare, setFifoCompare] = useState<null | {
     a: { matchMode: 'product_name' | 'two_keys' | 'full'; summary: any | null };
@@ -969,6 +971,10 @@ export default function TestPurchaseLinkingPage() {
         matchMode: fifoMatchMode,
         inventoryStartMode: fifoInventoryStartMode
       });
+      const purchaseStartMs = parseLocalYmdStartMs(fifoPurchaseStartYmd);
+      const salesAllocationStartMs = parseLocalYmdStartMs(fifoSalesAllocationStartYmd);
+      if (purchaseStartMs !== null) qs.set('purchaseStartMs', String(purchaseStartMs));
+      if (salesAllocationStartMs !== null) qs.set('salesAllocationStartMs', String(salesAllocationStartMs));
       if (saleWindow) {
         qs.set('saleStartMs', String(saleWindow.startMs));
         qs.set('saleEndMs', String(saleWindow.endMs));
@@ -2196,6 +2202,28 @@ export default function TestPurchaseLinkingPage() {
                     <option value="first_purchase">Ignore sales before first tracked purchase</option>
                     <option value="none">Include all sales (strict FIFO)</option>
                   </select>
+                </label>
+                <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <span className="opacity-80">Sales start:</span>
+                  <input
+                    value={fifoSalesAllocationStartYmd}
+                    onChange={(e) => setFifoSalesAllocationStartYmd(e.target.value)}
+                    className={`w-28 rounded-md px-2 py-1 text-xs ${
+                      isNeon ? 'bg-black/30 text-white border border-white/10' : 'bg-white text-gray-900 border border-gray-300'
+                    }`}
+                    placeholder="YYYY-MM-DD"
+                  />
+                </label>
+                <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <span className="opacity-80">Purchases start:</span>
+                  <input
+                    value={fifoPurchaseStartYmd}
+                    onChange={(e) => setFifoPurchaseStartYmd(e.target.value)}
+                    className={`w-28 rounded-md px-2 py-1 text-xs ${
+                      isNeon ? 'bg-black/30 text-white border border-white/10' : 'bg-white text-gray-900 border border-gray-300'
+                    }`}
+                    placeholder="YYYY-MM-DD"
+                  />
                 </label>
                 <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                   <input

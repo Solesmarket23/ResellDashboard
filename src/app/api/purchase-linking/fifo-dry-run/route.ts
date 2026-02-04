@@ -678,6 +678,14 @@ export async function GET(request: NextRequest) {
     const saleEndMsRaw = request.nextUrl.searchParams.get('saleEndMs');
     const saleStartMs = saleStartMsRaw ? Number(saleStartMsRaw) : null;
     const saleEndMs = saleEndMsRaw ? Number(saleEndMsRaw) : null;
+    const purchaseStartMsRaw = request.nextUrl.searchParams.get('purchaseStartMs');
+    const salesAllocationStartMsRaw = request.nextUrl.searchParams.get('salesAllocationStartMs');
+    const purchaseStartMs =
+      purchaseStartMsRaw && Number.isFinite(Number(purchaseStartMsRaw)) ? Number(purchaseStartMsRaw) : null;
+    const salesAllocationStartMs =
+      salesAllocationStartMsRaw && Number.isFinite(Number(salesAllocationStartMsRaw))
+        ? Number(salesAllocationStartMsRaw)
+        : null;
     const hasSaleWindow =
       typeof saleStartMs === 'number' &&
       Number.isFinite(saleStartMs) &&
@@ -710,6 +718,13 @@ export async function GET(request: NextRequest) {
           ? minEligiblePurchaseMs
           : null;
       let scannedBeforeInventoryStart = 0;
+      let scannedBeforeAllocationStart = 0;
+      const allocationStartMs =
+        typeof salesAllocationStartMs === 'number'
+          ? salesAllocationStartMs
+          : typeof inventoryStartMs === 'number'
+            ? inventoryStartMs
+            : null;
 
       const salesForAllocation: any[] = [];
       let scannedWithMissingEventMs = 0;
@@ -742,8 +757,8 @@ export async function GET(request: NextRequest) {
             scannedWithMissingEventMs++;
             continue;
           }
-          if (typeof inventoryStartMs === 'number' && ms < inventoryStartMs) {
-            scannedBeforeInventoryStart++;
+          if (typeof allocationStartMs === 'number' && ms < allocationStartMs) {
+            scannedBeforeAllocationStart++;
             continue;
           }
           if (ms < allocationEndMs) {
@@ -788,8 +803,8 @@ export async function GET(request: NextRequest) {
             const ev = getSaleEventMs(s);
             const ms = ev.ms;
             if (typeof ms !== 'number') continue;
-            if (typeof inventoryStartMs === 'number' && ms < inventoryStartMs) {
-              scannedBeforeInventoryStart++;
+            if (typeof allocationStartMs === 'number' && ms < allocationStartMs) {
+              scannedBeforeAllocationStart++;
               continue;
             }
             if (ms < allocationEndMs) {
@@ -847,6 +862,8 @@ export async function GET(request: NextRequest) {
         scannedWithMissingEventMs,
         scannedAfterEnd,
         scannedBeforeInventoryStart,
+        allocationStartMs,
+        scannedBeforeAllocationStart,
       };
     } else {
       const salesQuery: FirebaseFirestore.Query = db
@@ -935,6 +952,7 @@ export async function GET(request: NextRequest) {
     let matchesByName = 0;
     let matchesByListingId = 0;
     let minEligiblePurchaseMs: number | null = null;
+    let purchasesBeforeStartSkipped = 0;
 
     for (const p of purchases) {
       purchasesTotal++;
@@ -965,6 +983,10 @@ export async function GET(request: NextRequest) {
       if (dateMs === null) {
         // Not eligible for FIFO matching in this mode.
         purchasesNoDateSkipped++;
+        continue;
+      }
+      if (typeof purchaseStartMs === 'number' && dateMs < purchaseStartMs) {
+        purchasesBeforeStartSkipped++;
         continue;
       }
       if (minEligiblePurchaseMs === null || dateMs < minEligiblePurchaseMs) minEligiblePurchaseMs = dateMs;
@@ -1680,12 +1702,14 @@ export async function GET(request: NextRequest) {
             allocationEndIso: msToIso((dbg as any).allocationEndMs ?? null),
             inventoryStartMode: (dbg as any).inventoryStartMode ?? null,
             inventoryStartIso: msToIso((dbg as any).inventoryStartMs ?? null),
+            allocationStartIso: msToIso((dbg as any).allocationStartMs ?? null),
             inWindowByEventMs,
             minEventIso: msToIso(minMs),
             maxEventIso: msToIso(maxMs),
             scannedWithMissingEventMs: (dbg as any).scannedWithMissingEventMs ?? 0,
             scannedAfterEnd: (dbg as any).scannedAfterEnd ?? 0,
             scannedBeforeInventoryStart: (dbg as any).scannedBeforeInventoryStart ?? 0,
+            scannedBeforeAllocationStart: (dbg as any).scannedBeforeAllocationStart ?? 0,
             sampleInWindow: sample,
           };
         })(),
@@ -1706,6 +1730,8 @@ export async function GET(request: NextRequest) {
           matchesByName,
           matchesByListingId,
           minEligiblePurchaseIso: msToIso(minEligiblePurchaseMs),
+          purchaseStartIso: msToIso(purchaseStartMs),
+          purchasesBeforeStartSkipped,
         },
         // Debug: how many sale docs we had to read to find those sales in-window.
         salesRead,
