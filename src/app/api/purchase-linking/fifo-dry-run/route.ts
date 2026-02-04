@@ -1049,6 +1049,8 @@ export async function GET(request: NextRequest) {
     // Apply inventory start cutoffs now that we know when the first eligible purchase occurred.
     if (hasSaleWindow) {
       const dbg = (request as any)._fifoWindowDebug || {};
+      let scannedBeforeInventoryStartLocal =
+        typeof (dbg as any).scannedBeforeInventoryStart === 'number' ? (dbg as any).scannedBeforeInventoryStart : 0;
       const inventoryStartMsFinal =
         inventoryStartMode === 'first_purchase' && typeof minEligiblePurchaseMs === 'number' ? minEligiblePurchaseMs : null;
       const effectiveAllocationStartMsFinal =
@@ -1074,7 +1076,7 @@ export async function GET(request: NextRequest) {
           // If we were using inventoryStart as the allocationStart (i.e. no explicit salesAllocationStartMs),
           // track how many were excluded so the UI can explain "why fewer sales were allocated".
           if (typeof salesAllocationStartMs !== 'number') {
-            scannedBeforeInventoryStart += skipped;
+            scannedBeforeInventoryStartLocal += skipped;
           }
         }
       }
@@ -1083,7 +1085,7 @@ export async function GET(request: NextRequest) {
         ...dbg,
         inventoryStartMs: inventoryStartMsFinal,
         allocationStartMs: effectiveAllocationStartMsFinal ?? null,
-        scannedBeforeInventoryStart,
+        scannedBeforeInventoryStart: scannedBeforeInventoryStartLocal,
       };
     }
 
