@@ -1046,10 +1046,13 @@ export default function TestPurchaseLinkingPage() {
           );
         } else {
           const s = json?.summary || {};
-          const remaining =
+          // NOTE: backfill now scans sales in cursor pages to avoid 504 timeouts.
+          // `candidateSales` is "candidates in this scanned page", not a global total.
+          const pageRemaining =
             typeof s.candidateSales === 'number' && typeof s.attempted === 'number'
               ? Math.max(0, s.candidateSales - s.attempted)
               : null;
+          const hasMorePages = typeof s?.nextCursorId === 'string' && !!s.nextCursorId;
           const statusCounts = s?.failureStatusCounts && typeof s.failureStatusCounts === 'object' ? s.failureStatusCounts : null;
           const blockedCount = typeof s?.blockedCount === 'number' ? s.blockedCount : 0;
           const hint =
@@ -1060,8 +1063,14 @@ export default function TestPurchaseLinkingPage() {
                 : statusCounts?.['403']
                   ? ` • 403s detected (possible bot protection)`
                   : '';
+          const legacyUpdated = typeof s?.legacyUpdated === 'number' ? s.legacyUpdated : null;
+          const remoteAttempted = typeof s?.remoteAttempted === 'number' ? s.remoteAttempted : null;
           showNotice(
-            `✅ Identifier backfill — updated=${s.updated ?? 0} failed=${s.failed ?? 0}${remaining !== null ? ` • remaining≈${remaining}` : ''}${hint}`,
+            `✅ Identifier backfill — updated=${s.updated ?? 0} failed=${s.failed ?? 0}${
+              legacyUpdated !== null ? ` • legacyUpdated=${legacyUpdated}` : ''
+            }${remoteAttempted !== null ? ` • remoteAttempted=${remoteAttempted}` : ''}${
+              pageRemaining !== null ? ` • pageRemaining≈${pageRemaining}` : ''
+            }${hasMorePages ? ' • more pages (click Force IDs again)' : ''}${hint}`,
             'success',
             20000
           );
@@ -1864,7 +1873,13 @@ export default function TestPurchaseLinkingPage() {
                           const lastRunAtIso = typeof lastSalesIdBackfill?.lastRunAtIso === 'string' ? lastSalesIdBackfill.lastRunAtIso : null;
                           return `Skipped (TTL ${ttlHours}h not expired).${lastRunAtIso ? ` Last run: ${lastRunAtIso}.` : ''} Use “Force IDs” to bypass.`;
                         })()
-                      : `Updated ${lastSalesIdBackfill?.summary?.updated ?? 0} sale(s), failed ${lastSalesIdBackfill?.summary?.failed ?? 0}, attempted ${lastSalesIdBackfill?.summary?.attempted ?? 0} / ${lastSalesIdBackfill?.summary?.candidateSales ?? 0}.`}
+                      : (() => {
+                          const s = lastSalesIdBackfill?.summary || {};
+                          const legacyUpdated = typeof s?.legacyUpdated === 'number' ? s.legacyUpdated : 0;
+                          const remoteAttempted = typeof s?.remoteAttempted === 'number' ? s.remoteAttempted : 0;
+                          const nextCursor = typeof s?.nextCursorId === 'string' ? s.nextCursorId : '';
+                          return `Updated ${s.updated ?? 0} sale(s), failed ${s.failed ?? 0}, legacyUpdated ${legacyUpdated}, remoteAttempted ${remoteAttempted}, scannedPageCandidates ${s.candidateSales ?? 0}.${nextCursor ? ' (more pages available)' : ''}`;
+                        })()}
                   </div>
                   {typeof lastSalesIdBackfill?.summary?.nextCursorId === 'string' && lastSalesIdBackfill.summary.nextCursorId && (
                     <div className={`mt-2 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
