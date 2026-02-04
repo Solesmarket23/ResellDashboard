@@ -640,6 +640,11 @@ export default function TestPurchaseLinkingPage() {
   const [fifoShowNoMatchOnly, setFifoShowNoMatchOnly] = useState(false);
   const [fifoSortKey, setFifoSortKey] = useState<null | 'total_paid' | 'profit'>(null);
   const [fifoSortDir, setFifoSortDir] = useState<'asc' | 'desc'>('asc');
+  const [fifoProfitCellMode, setFifoProfitCellMode] = useState<'pill' | 'minimal' | 'heatmap' | 'bar'>(() => {
+    if (typeof window === 'undefined') return 'pill';
+    const v = (localStorage.getItem('fifoProfitCellMode') || '').trim();
+    return v === 'minimal' || v === 'heatmap' || v === 'bar' || v === 'pill' ? v : 'pill';
+  });
   const [fifoSelectedSaleIds, setFifoSelectedSaleIds] = useState<Record<string, boolean>>({});
   const [manualCogsOpen, setManualCogsOpen] = useState(false);
   const [manualCogsOrderNumber, setManualCogsOrderNumber] = useState('');
@@ -1099,6 +1104,27 @@ export default function TestPurchaseLinkingPage() {
     if (fifoRowsPerPage === 'all') return sortedFifoRows;
     return sortedFifoRows.slice(fifoPagination.start, fifoPagination.end);
   }, [fifoPagination.end, fifoPagination.start, fifoRowsPerPage, sortedFifoRows]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('fifoProfitCellMode', fifoProfitCellMode);
+    } catch {}
+  }, [fifoProfitCellMode]);
+
+  const fifoProfitAbsMaxVisible = useMemo(() => {
+    let max = 0;
+    const n = (v: any): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+    for (const r of visibleFifoRows as any[]) {
+      const salePrice = n(r?.salePrice);
+      const fees = n(r?.saleFees);
+      const netPayout = n(r?.saleNetPayout) ?? (salePrice !== null ? salePrice - (fees ?? 0) : null);
+      const paid = n(r?.purchaseCost);
+      const profit = n(r?.profit) ?? (netPayout !== null && paid !== null ? netPayout - paid : null);
+      if (profit === null) continue;
+      max = Math.max(max, Math.abs(profit));
+    }
+    return max > 0 ? max : 1;
+  }, [visibleFifoRows]);
   const runFifoDryRun = useCallback(async () => {
     const u = userId.trim();
     if (!u) return;
@@ -3251,6 +3277,46 @@ export default function TestPurchaseLinkingPage() {
                   <option value="all">All</option>
                 </select>
               </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Profit style</span>
+                <div className={`inline-flex rounded-md border overflow-hidden ${isNeon ? 'border-white/10' : 'border-gray-200'}`}>
+                  {[
+                    { key: 'pill', label: 'Pill' },
+                    { key: 'minimal', label: 'Minimal' },
+                    { key: 'heatmap', label: 'Heatmap' },
+                    { key: 'bar', label: 'Bar' },
+                  ].map((o) => {
+                    const active = fifoProfitCellMode === (o.key as any);
+                    return (
+                      <button
+                        key={o.key}
+                        type="button"
+                        onClick={() => setFifoProfitCellMode(o.key as any)}
+                        className={`h-9 px-3 text-xs font-semibold ${
+                          active
+                            ? isNeon
+                              ? 'bg-cyan-500 text-black'
+                              : 'bg-blue-600 text-white'
+                            : isNeon
+                              ? 'bg-white/5 hover:bg-white/10 text-white'
+                              : 'bg-white hover:bg-gray-50 text-gray-900'
+                        }`}
+                        title={
+                          o.key === 'pill'
+                            ? 'Current design'
+                            : o.key === 'minimal'
+                              ? 'Compact colored text'
+                              : o.key === 'heatmap'
+                                ? 'Background intensity shows magnitude'
+                                : 'Centered bar shows +/- magnitude'
+                        }
+                      >
+                        {o.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               {fifoRowsPerPage !== 'all' && fifoPagination.pages > 1 && (
                 <div className="flex items-center gap-2">
                   <button
@@ -3696,19 +3762,84 @@ export default function TestPurchaseLinkingPage() {
                         <td className="py-2 pr-3 text-right">{paidKnown ? currency(totalPaid) : '—'}</td>
                         <td className="py-2 pr-3 text-right" title={paidKnown ? 'Profit = net payout − total paid' : ''}>
                           {paidKnown ? (
-                            <span
-                              className={`inline-flex items-center justify-center rounded-xl border px-4 py-2 font-semibold ${
-                                (profit ?? 0) >= 0
-                                  ? isNeon
-                                    ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-200'
-                                    : 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                                  : isNeon
-                                    ? 'bg-red-500/20 border-red-500/30 text-red-200'
-                                    : 'bg-red-50 border-red-200 text-red-800'
-                              }`}
-                            >
-                              {currency(profit)}
-                            </span>
+                            fifoProfitCellMode === 'minimal' ? (
+                              <span className={`font-semibold tabular-nums ${((profit ?? 0) >= 0) ? (isNeon ? 'text-emerald-200' : 'text-emerald-700') : (isNeon ? 'text-red-200' : 'text-red-700')}`}>
+                                {(profit ?? 0) >= 0 ? '▲ ' : '▼ '}
+                                {currency(profit)}
+                              </span>
+                            ) : fifoProfitCellMode === 'heatmap' ? (
+                              <div
+                                className={`ml-auto inline-flex items-center justify-center rounded-xl border px-4 py-2 font-semibold tabular-nums ${
+                                  (profit ?? 0) >= 0
+                                    ? isNeon
+                                      ? 'border-emerald-500/30 text-emerald-100'
+                                      : 'border-emerald-200 text-emerald-800'
+                                    : isNeon
+                                      ? 'border-red-500/30 text-red-100'
+                                      : 'border-red-200 text-red-800'
+                                }`}
+                                style={{
+                                  background:
+                                    (profit ?? 0) >= 0
+                                      ? `rgba(16, 185, 129, ${0.08 + 0.22 * Math.min(1, Math.abs(profit ?? 0) / fifoProfitAbsMaxVisible)})`
+                                      : `rgba(239, 68, 68, ${0.08 + 0.22 * Math.min(1, Math.abs(profit ?? 0) / fifoProfitAbsMaxVisible)})`,
+                                }}
+                              >
+                                {currency(profit)}
+                              </div>
+                            ) : fifoProfitCellMode === 'bar' ? (
+                              <div className="ml-auto w-[150px]">
+                                <div
+                                  className={`relative h-10 rounded-xl border ${
+                                    isNeon ? 'border-white/10 bg-white/5' : 'border-gray-200 bg-gray-50'
+                                  }`}
+                                >
+                                  <div className={`absolute left-1/2 top-1 bottom-1 w-px ${isNeon ? 'bg-white/10' : 'bg-gray-300'}`} />
+                                  {(() => {
+                                    const pct = Math.min(1, Math.abs(profit ?? 0) / fifoProfitAbsMaxVisible);
+                                    const half = 50 * pct;
+                                    const positive = (profit ?? 0) >= 0;
+                                    return (
+                                      <div
+                                        className={`absolute top-2 bottom-2 rounded-lg ${
+                                          positive
+                                            ? isNeon
+                                              ? 'bg-emerald-400/70'
+                                              : 'bg-emerald-500/70'
+                                            : isNeon
+                                              ? 'bg-red-400/70'
+                                              : 'bg-red-500/70'
+                                        }`}
+                                        style={
+                                          positive
+                                            ? { left: '50%', width: `${half}%` }
+                                            : { right: '50%', width: `${half}%` }
+                                        }
+                                      />
+                                    );
+                                  })()}
+                                  <div className="absolute inset-0 flex items-center justify-center px-2 font-semibold tabular-nums">
+                                    <span className={(profit ?? 0) >= 0 ? (isNeon ? 'text-emerald-100' : 'text-emerald-800') : (isNeon ? 'text-red-100' : 'text-red-800')}>
+                                      {currency(profit)}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              <span
+                                className={`inline-flex items-center justify-center rounded-xl border px-4 py-2 font-semibold ${
+                                  (profit ?? 0) >= 0
+                                    ? isNeon
+                                      ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-200'
+                                      : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                                    : isNeon
+                                      ? 'bg-red-500/20 border-red-500/30 text-red-200'
+                                      : 'bg-red-50 border-red-200 text-red-800'
+                                }`}
+                              >
+                                {currency(profit)}
+                              </span>
+                            )
                           ) : (
                             '—'
                           )}
