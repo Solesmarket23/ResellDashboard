@@ -586,6 +586,7 @@ export default function TestPurchaseLinkingPage() {
   const [fifoIncludePending, setFifoIncludePending] = useState(true);
   const [cogsMethod, setCogsMethod] = useState<'fifo' | 'lifo'>('fifo');
   const [fifoMatchMode, setFifoMatchMode] = useState<'product_name' | 'two_keys' | 'full'>('product_name');
+  const [fifoInventoryStartMode, setFifoInventoryStartMode] = useState<'none' | 'first_purchase'>('first_purchase');
   const [comparingModes, setComparingModes] = useState(false);
   const [fifoCompare, setFifoCompare] = useState<null | {
     a: { matchMode: 'product_name' | 'two_keys' | 'full'; summary: any | null };
@@ -965,7 +966,8 @@ export default function TestPurchaseLinkingPage() {
         // includePending=1 includes active/pending/shipped/auth/etc. (excludes known non-sales like CANCELED/AUTHFAILED).
         includePending: fifoIncludePending ? '1' : '0',
         cogsMethod,
-        matchMode: fifoMatchMode
+        matchMode: fifoMatchMode,
+        inventoryStartMode: fifoInventoryStartMode
       });
       if (saleWindow) {
         qs.set('saleStartMs', String(saleWindow.startMs));
@@ -2180,6 +2182,19 @@ export default function TestPurchaseLinkingPage() {
                     <option value="product_name">Product name (slug) + size (primary)</option>
                     <option value="two_keys">Only styleId+size OR urlKey+size</option>
                     <option value="full">Full (includes product-name fallback + fuzzy)</option>
+                  </select>
+                </label>
+                <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <span className="opacity-80">Inventory start:</span>
+                  <select
+                    value={fifoInventoryStartMode}
+                    onChange={(e) => setFifoInventoryStartMode(e.target.value as any)}
+                    className={`rounded-md px-2 py-1 text-xs ${
+                      isNeon ? 'bg-black/30 text-white border border-white/10' : 'bg-white text-gray-900 border border-gray-300'
+                    }`}
+                  >
+                    <option value="first_purchase">Ignore sales before first tracked purchase</option>
+                    <option value="none">Include all sales (strict FIFO)</option>
                   </select>
                 </label>
                 <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
