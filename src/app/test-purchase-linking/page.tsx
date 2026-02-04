@@ -797,6 +797,26 @@ export default function TestPurchaseLinkingPage() {
     };
   }, [fifoRowsForProfit]);
 
+  const fifoProjectedMonthlyProfit = useMemo(() => {
+    const isSingleDayWindow =
+      fifoWindowPreset === 'today' || (fifoWindowPreset === 'custom' && fifoCustomFromYmd && fifoCustomFromYmd === fifoCustomToYmd);
+    if (!isSingleDayWindow) return null;
+    if (typeof fifoMetrics?.profitSum !== 'number' || !Number.isFinite(fifoMetrics.profitSum)) return null;
+
+    let year = new Date().getFullYear();
+    let month = new Date().getMonth(); // 0-11
+    if (fifoWindowPreset === 'custom' && fifoCustomToYmd) {
+      // Interpret YYYY-MM-DD in local time.
+      const [yy, mm] = fifoCustomToYmd.split('-').map((x) => Number(x));
+      if (Number.isFinite(yy) && Number.isFinite(mm) && yy > 1900 && mm >= 1 && mm <= 12) {
+        year = yy;
+        month = mm - 1;
+      }
+    }
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    return fifoMetrics.profitSum * daysInMonth;
+  }, [fifoCustomFromYmd, fifoCustomToYmd, fifoMetrics?.profitSum, fifoWindowPreset]);
+
   const fifoAnalytics = useMemo(() => {
     const rows = fifoRowsForProfit as any[];
     const n = (v: any): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
@@ -3257,6 +3277,14 @@ export default function TestPurchaseLinkingPage() {
                 >
                   Total Profit: {fifoMetrics.count === 0 ? '—' : currency(fifoMetrics.profitSum)}
                 </span>
+                {fifoProjectedMonthlyProfit !== null && (
+                  <span
+                    className="font-semibold"
+                    title="Projected monthly profit (rough): Current window profit × days in the month. This assumes every day matches this day’s profit."
+                  >
+                    Projected (month): {currency(fifoProjectedMonthlyProfit)}
+                  </span>
+                )}
                 <span
                   className="font-semibold"
                   title="Average profit per matched FIFO row (only rows with net payout + total paid). Profit = Net Payout − Total Paid."
