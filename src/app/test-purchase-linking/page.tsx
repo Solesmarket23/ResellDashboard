@@ -1317,6 +1317,9 @@ export default function TestPurchaseLinkingPage() {
           const productDetailsDebugSamplesLen = Array.isArray(s?.productDetailsDebugSamples) ? s.productDetailsDebugSamples.length : null;
           const productDetailsDebugSample0 =
             Array.isArray(s?.productDetailsDebugSamples) && s.productDetailsDebugSamples.length > 0 ? s.productDetailsDebugSamples[0] : null;
+          const orderDetailsDebugSamplesLen = Array.isArray(s?.orderDetailsDebugSamples) ? s.orderDetailsDebugSamples.length : null;
+          const orderDetailsDebugSample0 =
+            Array.isArray(s?.orderDetailsDebugSamples) && s.orderDetailsDebugSamples.length > 0 ? s.orderDetailsDebugSamples[0] : null;
           const legacyUpdated = typeof s?.legacyUpdated === 'number' ? s.legacyUpdated : 0;
           const remoteAttempted = typeof s?.remoteAttempted === 'number' ? s.remoteAttempted : 0;
           const failed = typeof s?.failed === 'number' ? s.failed : 0;
@@ -1353,6 +1356,8 @@ export default function TestPurchaseLinkingPage() {
               productDetailsStyleIdMissing,
               productDetailsDebugSamplesLen,
               productDetailsDebugSample0,
+              orderDetailsDebugSamplesLen,
+              orderDetailsDebugSample0,
               nextCursorPresent: !!next,
               status429: statusCounts?.['429'] ?? 0,
               status403: statusCounts?.['403'] ?? 0,

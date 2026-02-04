@@ -704,6 +704,7 @@ export async function POST(request: NextRequest) {
     let remoteOrderDetailsVariantSizePresent = 0;
     let remoteOrderDetailsStyleIdMissingButProductIdPresent = 0;
     let debugShapeLogged = 0;
+    const orderDetailsDebugSamples: Array<any> = [];
     const productDetailsCache = new Map<string, any>();
     let productDetailsCalls = 0;
     let productDetailsStyleIdPresent = 0;
@@ -868,7 +869,8 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          // Debug: confirm the JSON shape (some wrappers return { data: {...} } or { order: {...} }).
+          // Capture order-details JSON shape in the API response summary so we can debug from the client logs
+          // (server-side logs can't reach the local ingest endpoint when deployed).
           if (debugShapeLogged < 3) {
             const roots: Array<{ label: string; v: any }> = [
               { label: 'details', v: details },
@@ -879,27 +881,27 @@ export async function POST(request: NextRequest) {
             const summary = roots.map((r) => {
               const v = r.v;
               const has = !!v && typeof v === 'object';
-              const keys = has ? Object.keys(v).slice(0, 10) : [];
-              const style = v?.product?.styleId ?? v?.product?.sku ?? v?.styleId ?? v?.sku ?? null;
-              const pid = v?.product?.productId ?? v?.productId ?? null;
-              const size = v?.variant?.variantValue ?? v?.variant?.size ?? v?.size ?? null;
+              const keys = has ? Object.keys(v).slice(0, 12) : [];
+              const rawStyle = v?.product?.styleId ?? v?.product?.style_id ?? v?.product?.sku ?? v?.styleId ?? v?.style_id ?? v?.sku ?? null;
+              const rawPid = v?.product?.productId ?? v?.productId ?? v?.product_id ?? null;
+              const rawSize = v?.variant?.variantValue ?? v?.variant?.size ?? v?.size ?? null;
+              const stylePreview = String(rawStyle ?? '').trim().slice(0, 24);
+              const pidPreview = __agentMask(rawPid);
+              const sizePreview = String(rawSize ?? '').trim().slice(0, 24);
               return {
                 label: r.label,
                 has,
                 keys,
                 hasProduct: !!v?.product,
-                styleIdLikePresent: !isMissingish(style),
-                productIdPresent: !isMissingish(pid),
-                sizePresent: !isMissingish(size),
+                stylePreview,
+                styleIdLikePresent: !isMissingish(stylePreview),
+                productIdMasked: pidPreview,
+                productIdPresent: !isMissingish(String(rawPid ?? '').trim()),
+                sizePreview,
+                sizePresent: !isMissingish(sizePreview),
               };
             });
-            __agentLog({
-              runId: 'pre-fix',
-              hypothesisId: 'H6',
-              location: 'backfill-identifiers/route.ts:remote:detailsShape',
-              message: 'StockX order-details JSON shape sample',
-              data: { orderMasked: __agentMask(current.orderNumber), roots: summary }
-            });
+            orderDetailsDebugSamples.push({ orderMasked: __agentMask(current.orderNumber), roots: summary });
             debugShapeLogged += 1;
           }
 
@@ -1113,6 +1115,7 @@ export async function POST(request: NextRequest) {
       remoteOrderDetailsProductIdPresent,
       remoteOrderDetailsVariantSizePresent,
       remoteOrderDetailsStyleIdMissingButProductIdPresent,
+      orderDetailsDebugSamples,
       productDetailsCalls,
       productDetailsStyleIdPresent,
       productDetailsStyleIdMissing,
