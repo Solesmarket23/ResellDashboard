@@ -3355,75 +3355,126 @@ export default function TestPurchaseLinkingPage() {
               </button>
             </div>
 
-            {/* FIFO averages / metrics (for matched rows in selected month/year) */}
-            <div
-              className={`mt-4 rounded-lg border p-3 text-sm ${
-                isNeon ? 'bg-gray-900/40 border-gray-700 text-gray-200' : 'bg-gray-50 border-gray-200 text-gray-900'
-              }`}
-            >
-              <div className="flex flex-wrap gap-x-5 gap-y-1">
-                <span
-                  className="font-semibold"
-                  title="Total profit across matched FIFO rows for the selected period. Profit = sum(Net Payout − Total Paid)."
-                >
-                  Total Profit: {fifoMetrics.count === 0 ? '—' : currency(fifoMetrics.profitSum)}
-                </span>
-                {fifoProjectedMonthlyProfit !== null && (
-                  <span
-                    className="font-semibold"
-                    title="Projected monthly profit (rough): Current window profit × days in the month. This assumes every day matches this day’s profit."
-                  >
-                    Projected (month): {currency(fifoProjectedMonthlyProfit)}
-                  </span>
-                )}
-                <span
-                  className="font-semibold"
-                  title="Average profit per matched FIFO row (only rows with net payout + total paid). Profit = Net Payout − Total Paid."
-                >
-                  Avg Profit: {fifoMetrics.avgProfit === null ? '—' : currency(fifoMetrics.avgProfit)}
-                </span>
-                <span title="Average ROI across matched rows, where ROI = Profit ÷ Total Paid (computed per-row then averaged).">
-                  Avg ROI:{' '}
-                  <span className="font-semibold">{fifoMetrics.avgRoi === null ? '—' : `${(fifoMetrics.avgRoi * 100).toFixed(1)}%`}</span>
-                </span>
-                <span title="ROI using totals (more stable): Total Profit ÷ Total Paid, across matched rows.">
-                  ROI (Totals):{' '}
-                  <span className="font-semibold">{fifoMetrics.overallRoi === null ? '—' : `${(fifoMetrics.overallRoi * 100).toFixed(1)}%`}</span>
-                </span>
-                <span title="Average margin across matched rows, where Margin = Profit ÷ Net Payout (computed per-row then averaged).">
-                  Avg Margin:{' '}
-                  <span className="font-semibold">{fifoMetrics.avgMargin === null ? '—' : `${(fifoMetrics.avgMargin * 100).toFixed(1)}%`}</span>
-                </span>
-                <span title="Average net payout per matched row (sale proceeds after platform fees).">
-                  Avg Net Payout:{' '}
-                  <span className="font-semibold">{fifoMetrics.avgNetPayout === null ? '—' : currency(fifoMetrics.avgNetPayout)}</span>
-                </span>
-                <span title="Average total paid per matched row (what you paid for inventory, net of credits).">
-                  Avg Total Paid:{' '}
-                  <span className="font-semibold">{fifoMetrics.avgPaid === null ? '—' : currency(fifoMetrics.avgPaid)}</span>
-                </span>
-                <span title="Average holding time in days: Sale timestamp − Purchase available timestamp.">
-                  Avg Days Held:{' '}
-                  <span className="font-semibold">{fifoMetrics.avgDays === null ? '—' : `${fifoMetrics.avgDays.toFixed(1)}d`}</span>
-                </span>
-                <span
-                  className="inline-flex flex-col"
-                  title="Percent of matched rows that are profitable (Profit ≥ 0). This is not a 'match rate'—it’s a profitability rate."
-                >
-                  <span className={`text-[11px] leading-4 ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-                    % of matched rows with Profit ≥ 0
-                  </span>
-                  <span>
-                    Win rate:{' '}
-                    <span className="font-semibold">
-                      {fifoMetrics.count === 0 ? '—' : `${((fifoMetrics.profitable / fifoMetrics.count) * 100).toFixed(1)}%`}
-                    </span>
-                  </span>
-                </span>
-              </div>
-              <div className={`mt-1 text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
-                Hover a metric to see how it’s calculated.
-              </div>
+            {/* FIFO averages / metrics */}
+            <div className="mt-4">
+              {(() => {
+                const pct = (x: number | null) => (typeof x === 'number' && Number.isFinite(x) ? `${(x * 100).toFixed(1)}%` : '—');
+                const winRate =
+                  fifoMetrics.count === 0 ? null : (fifoMetrics.profitable / Math.max(1, fifoMetrics.count));
+                const cards: Array<{
+                  k: string;
+                  label: string;
+                  value: string;
+                  title: string;
+                  tone?: 'good' | 'bad' | 'neutral';
+                }> = [
+                  {
+                    k: 'totalProfit',
+                    label: 'Total Profit',
+                    value: fifoMetrics.count === 0 ? '—' : currency(fifoMetrics.profitSum),
+                    title: 'Total profit across matched rows. Profit = sum(Net Payout − Total Paid).',
+                    tone: typeof fifoMetrics.profitSum === 'number' && fifoMetrics.profitSum < 0 ? 'bad' : 'good',
+                  },
+                  ...(fifoProjectedMonthlyProfit !== null
+                    ? [
+                        {
+                          k: 'projected',
+                          label: 'Projected (month)',
+                          value: currency(fifoProjectedMonthlyProfit),
+                          title:
+                            'Projected monthly profit (rough): Current window profit × days in the month. Assumes every day matches this day’s profit.',
+                          tone: fifoProjectedMonthlyProfit < 0 ? 'bad' : 'good',
+                        } as const,
+                      ]
+                    : []),
+                  {
+                    k: 'avgProfit',
+                    label: 'Avg Profit',
+                    value: fifoMetrics.avgProfit === null ? '—' : currency(fifoMetrics.avgProfit),
+                    title: 'Average profit per matched row. Profit = Net Payout − Total Paid.',
+                    tone: typeof fifoMetrics.avgProfit === 'number' && fifoMetrics.avgProfit < 0 ? 'bad' : 'good',
+                  },
+                  {
+                    k: 'avgRoi',
+                    label: 'Avg ROI',
+                    value: pct(fifoMetrics.avgRoi),
+                    title: 'Average ROI across matched rows, where ROI = Profit ÷ Total Paid (per-row then averaged).',
+                    tone: typeof fifoMetrics.avgRoi === 'number' && fifoMetrics.avgRoi < 0 ? 'bad' : 'neutral',
+                  },
+                  {
+                    k: 'roiTotals',
+                    label: 'ROI (Totals)',
+                    value: pct(fifoMetrics.overallRoi),
+                    title: 'ROI using totals (more stable): Total Profit ÷ Total Paid, across matched rows.',
+                    tone: typeof fifoMetrics.overallRoi === 'number' && fifoMetrics.overallRoi < 0 ? 'bad' : 'neutral',
+                  },
+                  {
+                    k: 'avgMargin',
+                    label: 'Avg Margin',
+                    value: pct(fifoMetrics.avgMargin),
+                    title: 'Average margin across matched rows, where Margin = Profit ÷ Net Payout (per-row then averaged).',
+                    tone: typeof fifoMetrics.avgMargin === 'number' && fifoMetrics.avgMargin < 0 ? 'bad' : 'neutral',
+                  },
+                  {
+                    k: 'avgNet',
+                    label: 'Avg Net Payout',
+                    value: fifoMetrics.avgNetPayout === null ? '—' : currency(fifoMetrics.avgNetPayout),
+                    title: 'Average net payout per matched row (sale proceeds after platform fees).',
+                    tone: 'neutral',
+                  },
+                  {
+                    k: 'avgPaid',
+                    label: 'Avg Total Paid',
+                    value: fifoMetrics.avgPaid === null ? '—' : currency(fifoMetrics.avgPaid),
+                    title: 'Average total paid per matched row (what you paid for inventory, net of credits).',
+                    tone: 'neutral',
+                  },
+                  {
+                    k: 'avgDays',
+                    label: 'Avg Days Held',
+                    value: fifoMetrics.avgDays === null ? '—' : `${fifoMetrics.avgDays.toFixed(1)}d`,
+                    title: 'Average holding time in days: Sale timestamp − Purchase available timestamp.',
+                    tone: 'neutral',
+                  },
+                  {
+                    k: 'winRate',
+                    label: 'Win rate',
+                    value: winRate === null ? '—' : `${(winRate * 100).toFixed(1)}%`,
+                    title: 'Percent of matched rows that are profitable (Profit ≥ 0). This is not a match rate.',
+                    tone: winRate !== null && winRate < 0.5 ? 'bad' : 'good',
+                  },
+                ];
+
+                const toneClass = (tone?: 'good' | 'bad' | 'neutral') => {
+                  if (tone === 'good') return isNeon ? 'text-emerald-100' : 'text-emerald-700';
+                  if (tone === 'bad') return isNeon ? 'text-red-100' : 'text-red-700';
+                  return isNeon ? 'text-gray-100' : 'text-gray-900';
+                };
+
+                return (
+                  <>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+                      {cards.map((c) => (
+                        <div
+                          key={c.k}
+                          title={c.title}
+                          className={`rounded-xl border p-3 ${
+                            isNeon ? 'bg-gray-950/40 border-white/10' : 'bg-white border-gray-200'
+                          }`}
+                        >
+                          <div className={`text-[11px] font-bold uppercase tracking-wider ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                            {c.label}
+                          </div>
+                          <div className={`mt-1 text-lg font-extrabold tabular-nums ${toneClass(c.tone)}`}>{c.value}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className={`mt-2 text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                      Hover a metric to see how it’s calculated.
+                    </div>
+                  </>
+                );
+              })()}
             </div>
 
             {/* Analytics */}
