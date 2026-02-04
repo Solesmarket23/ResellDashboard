@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useId, useMemo } from 'react';
 
 export type DonutDatum = {
   label: string;
@@ -43,6 +43,10 @@ export default function NeonDonutChart({
   isNeon = true,
   valueFormatter,
 }: Props) {
+  // Multiple charts can exist on the page; make SVG ids unique to avoid filter collisions.
+  const rid = useId().replace(/[^a-zA-Z0-9_-]/g, '');
+  const glowFilterId = `neonGlow-${rid}`;
+
   const prepared = useMemo(() => {
     const clean = (Array.isArray(data) ? data : [])
       .map((d) => ({
@@ -65,14 +69,22 @@ export default function NeonDonutChart({
   const r = Math.max(2, size / 2 - thickness);
   const fmt = valueFormatter || ((v: number) => v.toFixed(0));
 
+  // Add a small angular gap so rounded caps don't visually "bleed" into neighbors.
+  const gapDeg = prepared.rows.length > 1 ? 1.6 : 0;
   let cursor = 0;
-  const arcs = prepared.rows.map((d, idx) => {
-    const pct = prepared.total > 0 ? d.value / prepared.total : 0;
-    const start = cursor * 360;
-    const end = (cursor + pct) * 360;
-    cursor += pct;
-    return { ...d, start, end, idx, pct };
-  });
+  const arcs = prepared.rows
+    .map((d, idx) => {
+      const pct = prepared.total > 0 ? d.value / prepared.total : 0;
+      const startRaw = cursor * 360;
+      const endRaw = (cursor + pct) * 360;
+      cursor += pct;
+
+      // If it's effectively the whole circle, we'll special-case below.
+      const start = startRaw + gapDeg / 2;
+      const end = endRaw - gapDeg / 2;
+      return { ...d, startRaw, endRaw, start, end, idx, pct };
+    })
+    .filter((a) => a.pct > 0 && (a.endRaw - a.startRaw > 0.0001));
 
   return (
     <div
@@ -89,7 +101,7 @@ export default function NeonDonutChart({
         <div className="relative" style={{ width: size, height: size }}>
           <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
             <defs>
-              <filter id="neonGlow" x="-50%" y="-50%" width="200%" height="200%">
+              <filter id={glowFilterId} x="-50%" y="-50%" width="200%" height="200%">
                 <feGaussianBlur stdDeviation="3" result="coloredBlur" />
                 <feMerge>
                   <feMergeNode in="coloredBlur" />
@@ -107,18 +119,35 @@ export default function NeonDonutChart({
               strokeWidth={thickness}
             />
             {arcs.map((a) => {
-              const d = describeArc(cx, cy, r, a.start, a.end);
+              // If there's only one segment, draw a full ring to avoid arc edge artifacts.
+              const isFullCircle = prepared.rows.length === 1 || a.pct >= 0.999;
+              const d = isFullCircle ? null : describeArc(cx, cy, r, a.start, a.end);
               return (
-                <path
-                  key={`${a.label}-${a.idx}`}
-                  d={d}
-                  fill="none"
-                  stroke={a.color}
-                  strokeWidth={thickness}
-                  strokeLinecap="round"
-                  filter={isNeon ? 'url(#neonGlow)' : undefined}
-                  opacity={0.95}
-                />
+                isFullCircle ? (
+                  <circle
+                    key={`${a.label}-${a.idx}`}
+                    cx={cx}
+                    cy={cy}
+                    r={r}
+                    fill="none"
+                    stroke={a.color}
+                    strokeWidth={thickness}
+                    strokeLinecap="round"
+                    filter={isNeon ? `url(#${glowFilterId})` : undefined}
+                    opacity={0.95}
+                  />
+                ) : (
+                  <path
+                    key={`${a.label}-${a.idx}`}
+                    d={d as string}
+                    fill="none"
+                    stroke={a.color}
+                    strokeWidth={thickness}
+                    strokeLinecap="round"
+                    filter={isNeon ? `url(#${glowFilterId})` : undefined}
+                    opacity={0.95}
+                  />
+                )
               );
             })}
           </svg>
