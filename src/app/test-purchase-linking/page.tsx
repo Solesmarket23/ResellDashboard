@@ -3390,7 +3390,10 @@ export default function TestPurchaseLinkingPage() {
                   </div>
                   <div className="flex items-center justify-between gap-3">
                     <span className={isNeon ? 'text-gray-300' : 'text-gray-600'}>Top SKU</span>
-                    <span className="font-semibold truncate max-w-[240px]" title={fifoAnalytics.skus[0]?.label || ''}>
+                    <span
+                      className="font-semibold max-w-[340px] whitespace-normal break-words text-right leading-snug"
+                      title={fifoAnalytics.skus[0]?.label || ''}
+                    >
                       {fifoAnalytics.skus[0]?.label || '—'}
                     </span>
                   </div>
@@ -3461,28 +3464,28 @@ export default function TestPurchaseLinkingPage() {
                   </div>
                 </div>
                 <div className="mt-2 overflow-x-auto">
-                  <table className="min-w-[520px] w-full text-xs">
+                  <table className="min-w-[720px] w-full text-xs" style={{ tableLayout: 'fixed' }}>
                     <thead className={isNeon ? 'text-gray-300' : 'text-gray-600'}>
                       <tr className={isNeon ? 'border-b border-white/10' : 'border-b border-gray-200'}>
-                        <th className="py-1 pr-2 text-left">SKU</th>
-                        <th className="py-1 pr-2 text-right">Sales</th>
-                        <th className="py-1 pr-2 text-right">Net</th>
-                        <th className="py-1 pr-2 text-right">Paid</th>
-                        <th className="py-1 pr-2 text-right">Profit</th>
-                        <th className="py-1 pr-0 text-right">ROI</th>
+                        <th className="py-1 pr-2 text-left w-[46%]">SKU</th>
+                        <th className="py-1 pr-2 text-right w-[9%]">Sales</th>
+                        <th className="py-1 pr-2 text-right w-[12%]">Net</th>
+                        <th className="py-1 pr-2 text-right w-[12%]">Paid</th>
+                        <th className="py-1 pr-2 text-right w-[12%]">Profit</th>
+                        <th className="py-1 pr-0 text-right w-[9%]">ROI</th>
                       </tr>
                     </thead>
                     <tbody className={isNeon ? 'divide-y divide-white/5' : 'divide-y divide-gray-100'}>
                       {fifoAnalytics.skus.slice(0, 8).map((s) => (
                         <tr key={s.key}>
-                          <td className="py-1 pr-2 max-w-[260px] truncate" title={s.label}>
+                          <td className="py-2 pr-2 whitespace-normal break-words leading-snug align-top" title={s.label}>
                             {s.label}
                           </td>
-                          <td className="py-1 pr-2 text-right tabular-nums">{s.count}</td>
-                          <td className="py-1 pr-2 text-right tabular-nums">{currency(s.revenue)}</td>
-                          <td className="py-1 pr-2 text-right tabular-nums">{currency(s.paid)}</td>
-                          <td className="py-1 pr-2 text-right tabular-nums font-semibold">{currency(s.profit)}</td>
-                          <td className="py-1 pr-0 text-right tabular-nums">
+                          <td className="py-2 pr-2 text-right tabular-nums align-top">{s.count}</td>
+                          <td className="py-2 pr-2 text-right tabular-nums align-top">{currency(s.revenue)}</td>
+                          <td className="py-2 pr-2 text-right tabular-nums align-top">{currency(s.paid)}</td>
+                          <td className="py-2 pr-2 text-right tabular-nums font-semibold align-top">{currency(s.profit)}</td>
+                          <td className="py-2 pr-0 text-right tabular-nums align-top">
                             {s.roiTotals === null ? '—' : `${(s.roiTotals * 100).toFixed(1)}%`}
                           </td>
                         </tr>
