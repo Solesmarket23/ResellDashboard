@@ -1212,6 +1212,7 @@ export default function TestPurchaseLinkingPage() {
       setAutoFixingIds(true);
       autoFixStopRef.current = false;
       setAutoFixLogs([]);
+      const eventRunId = `run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 
       // Start from the current cursor so repeated runs continue where you left off.
       let cursorId = salesIdBackfillCursorId || '';
@@ -1226,7 +1227,7 @@ export default function TestPurchaseLinkingPage() {
           hypothesisId: 'H1',
           location: 'test-purchase-linking/page.tsx:autoFix:start',
           message: 'autoFix start',
-          data: { userIdMasked: __agentMask(u), startCursorPresent: !!cursorId, runCompute: !!opts?.runCompute }
+          data: { eventRunId, userIdMasked: __agentMask(u), startCursorPresent: !!cursorId, runCompute: !!opts?.runCompute }
         });
         // #endregion
         for (let iter = 0; iter < MAX_ITERS; iter++) {
@@ -1242,7 +1243,7 @@ export default function TestPurchaseLinkingPage() {
             hypothesisId: 'H2',
             location: 'test-purchase-linking/page.tsx:autoFix:iter',
             message: 'autoFix iter',
-            data: { iter, cursorPresent: !!cursorId }
+            data: { eventRunId, iter, cursorPresent: !!cursorId }
           });
           // #endregion
           // #region agent log
@@ -1251,7 +1252,7 @@ export default function TestPurchaseLinkingPage() {
             hypothesisId: 'H2',
             location: 'test-purchase-linking/page.tsx:autoFix:beforeFetch',
             message: 'autoFix before fetch backfill',
-            data: { iter }
+            data: { eventRunId, iter }
           });
           // #endregion
           const t0 = Date.now();
@@ -1259,6 +1260,7 @@ export default function TestPurchaseLinkingPage() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-user-id': u },
             body: JSON.stringify({
+              __debugEventRunId: eventRunId,
               force: true,
               maxOrders: 400,
               scanLimit: 1500,
@@ -1276,7 +1278,7 @@ export default function TestPurchaseLinkingPage() {
             hypothesisId: 'H2',
             location: 'test-purchase-linking/page.tsx:autoFix:afterFetch',
             message: 'autoFix after fetch backfill',
-            data: { iter, status: resp.status, ok: resp.ok, durMs: Date.now() - t0 }
+            data: { eventRunId, iter, status: resp.status, ok: resp.ok, durMs: Date.now() - t0 }
           });
           // #endregion
           const json = await resp.json().catch(() => ({}));
@@ -1286,7 +1288,7 @@ export default function TestPurchaseLinkingPage() {
             hypothesisId: 'H2',
             location: 'test-purchase-linking/page.tsx:autoFix:afterJson',
             message: 'autoFix after json parse',
-            data: { iter, keys: json && typeof json === 'object' ? Object.keys(json).slice(0, 12) : null }
+            data: { eventRunId, iter, keys: json && typeof json === 'object' ? Object.keys(json).slice(0, 12) : null }
           });
           // #endregion
           if (!resp.ok || json?.success === false) throw new Error(json?.error || `Backfill failed (${resp.status})`);
@@ -1329,6 +1331,7 @@ export default function TestPurchaseLinkingPage() {
             location: 'test-purchase-linking/page.tsx:autoFix:resp',
             message: 'autoFix backfill response',
             data: {
+              eventRunId,
               iter,
               updated,
               embeddedUpdated,
@@ -1381,7 +1384,7 @@ export default function TestPurchaseLinkingPage() {
               hypothesisId: 'H2',
               location: 'test-purchase-linking/page.tsx:autoFix:donePaging',
               message: 'autoFix reached end of cursor paging; stopping to avoid wraparound',
-              data: { iter, embeddedUpdated, legacyUpdated, remoteAttempted, failed }
+              data: { eventRunId, iter, embeddedUpdated, legacyUpdated, remoteAttempted, failed }
             });
             break;
           }
