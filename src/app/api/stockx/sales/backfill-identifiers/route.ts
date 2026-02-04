@@ -751,6 +751,11 @@ export async function POST(request: NextRequest) {
       if (!productDetailsDebugSeen.has(productId) && productDetailsDebugSamples.length < 3) {
         productDetailsDebugSeen.add(productId);
         const keys = pd && typeof pd === 'object' ? Object.keys(pd).slice(0, 20) : [];
+        const pa = (pd as any)?.productAttributes;
+        const productAttributesType = Array.isArray(pa) ? 'array' : pa && typeof pa === 'object' ? 'object' : pa === null ? 'null' : typeof pa;
+        const productAttributesKeys =
+          pa && typeof pa === 'object' && !Array.isArray(pa) ? Object.keys(pa).slice(0, 25) : [];
+
         const candTop = pd?.styleId ?? pd?.style_id ?? null;
         const candProductData = pd?.productData?.styleId ?? pd?.productData?.style_id ?? null;
         const candProduct = pd?.product?.styleId ?? pd?.product?.style_id ?? null;
@@ -760,6 +765,25 @@ export async function POST(request: NextRequest) {
           pd?.productAttributes?.styleCode ??
           pd?.productAttributes?.style_code ??
           null;
+
+        // Heuristic scan: look for likely style-code values inside productAttributes (common for some product types).
+        let scannedStyleCandidate: { key: string; value: string } | null = null;
+        if (pa && typeof pa === 'object' && !Array.isArray(pa)) {
+          for (const k of Object.keys(pa)) {
+            const kl = k.toLowerCase();
+            if (!kl.includes('style') && !kl.includes('sku')) continue;
+            const v = (pa as any)[k];
+            const sv = String(v ?? '').trim();
+            if (!sv) continue;
+            // Avoid obviously-unhelpful placeholders.
+            if (isMissingish(sv)) continue;
+            // Quick sanity: style codes are rarely extremely long.
+            if (sv.length > 64) continue;
+            scannedStyleCandidate = { key: k, value: sv };
+            break;
+          }
+        }
+
         productDetailsDebugSamples.push({
           productIdMasked: __agentMask(productId),
           status: res.status,
@@ -768,6 +792,11 @@ export async function POST(request: NextRequest) {
           bodyLen: typeof txt === 'string' ? txt.length : 0,
           looksLikePx: isPerimeterXBlock(txt),
           keys,
+          styleIdRawType: typeof (pd as any)?.styleId,
+          styleIdRawPreview: String((pd as any)?.styleId ?? '').trim().slice(0, 40),
+          productAttributesType,
+          productAttributesKeys,
+          scannedStyleCandidate,
           styleIdTopPresent: !isMissingish(candTop),
           styleIdProductDataPresent: !isMissingish(candProductData),
           styleIdProductPresent: !isMissingish(candProduct),
