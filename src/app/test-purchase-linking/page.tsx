@@ -623,6 +623,7 @@ export default function TestPurchaseLinkingPage() {
   const [manualCogsShipping, setManualCogsShipping] = useState<string>('');
   const [manualCogsCredits, setManualCogsCredits] = useState<string>('');
   const [manualCogsSaving, setManualCogsSaving] = useState(false);
+  const [fifoShowAdvanced, setFifoShowAdvanced] = useState(false);
   const [refreshingStockX, setRefreshingStockX] = useState(false);
   const [lastStockXRefresh, setLastStockXRefresh] = useState<any | null>(null);
   const [backfillingSalesIds, setBackfillingSalesIds] = useState(false);
@@ -2342,84 +2343,6 @@ export default function TestPurchaseLinkingPage() {
                 <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                   <input
                     type="checkbox"
-                    checked={fifoStrictDelivery}
-                    onChange={(e) => setFifoStrictDelivery(e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  Strict delivery (requires actualDelivery)
-                </label>
-                <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-                  <input
-                    type="checkbox"
-                    checked={fifoUnlinkedOnly}
-                    onChange={(e) => setFifoUnlinkedOnly(e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  Unlinked only
-                </label>
-                <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-                  <input
-                    type="checkbox"
-                    checked={fifoSandboxWindowOnly}
-                    onChange={(e) => setFifoSandboxWindowOnly(e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  Sandbox (allocate only this window)
-                </label>
-                <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-                  <span className="opacity-80">Match mode:</span>
-                  <select
-                    value={fifoMatchMode}
-                    onChange={(e) => setFifoMatchMode(e.target.value as any)}
-                    className={`rounded-md px-2 py-1 text-xs ${
-                      isNeon ? 'bg-black/30 text-white border border-white/10' : 'bg-white text-gray-900 border border-gray-300'
-                    }`}
-                  >
-                    <option value="product_name">Product name (slug) + size (primary)</option>
-                    <option value="two_keys">Only styleId+size OR urlKey+size</option>
-                    <option value="full">Full (includes product-name fallback + fuzzy)</option>
-                  </select>
-                </label>
-                <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-                  <span className="opacity-80">Inventory start:</span>
-                  <select
-                    value={fifoInventoryStartMode}
-                    onChange={(e) => setFifoInventoryStartMode(e.target.value as any)}
-                    className={`rounded-md px-2 py-1 text-xs ${
-                      isNeon ? 'bg-black/30 text-white border border-white/10' : 'bg-white text-gray-900 border border-gray-300'
-                    }`}
-                  >
-                    <option value="first_purchase">Ignore sales before first tracked purchase</option>
-                    <option value="none">Include all sales (strict FIFO)</option>
-                  </select>
-                </label>
-                <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-                  <span className="opacity-80">Sales start:</span>
-                  <input
-                    type="date"
-                    value={fifoSalesAllocationStartYmd}
-                    onChange={(e) => setFifoSalesAllocationStartYmd(e.target.value)}
-                    className={`w-28 rounded-md px-2 py-1 text-xs ${
-                      isNeon ? 'bg-black/30 text-white border border-white/10' : 'bg-white text-gray-900 border border-gray-300'
-                    }`}
-                    title="Sales allocation start date (calendar picker)"
-                  />
-                </label>
-                <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-                  <span className="opacity-80">Purchases start:</span>
-                  <input
-                    type="date"
-                    value={fifoPurchaseStartYmd}
-                    onChange={(e) => setFifoPurchaseStartYmd(e.target.value)}
-                    className={`w-28 rounded-md px-2 py-1 text-xs ${
-                      isNeon ? 'bg-black/30 text-white border border-white/10' : 'bg-white text-gray-900 border border-gray-300'
-                    }`}
-                    title="Purchase eligibility start date (calendar picker)"
-                  />
-                </label>
-                <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-                  <input
-                    type="checkbox"
                     checked={fifoUsePurchaseLookback}
                     onChange={(e) => setFifoUsePurchaseLookback(e.target.checked)}
                     className="h-4 w-4"
@@ -2444,37 +2367,131 @@ export default function TestPurchaseLinkingPage() {
                 <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                   <input
                     type="checkbox"
-                    checked={fifoShowNoMatchOnly}
-                    onChange={(e) => setFifoShowNoMatchOnly(e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  Show only no_match
-                </label>
-                <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-                  <input
-                    type="checkbox"
                     checked={fifoIncludePending}
                     onChange={(e) => setFifoIncludePending(e.target.checked)}
                     className="h-4 w-4"
                   />
                   Include pending/active (exclude canceled/authfailed/didnotship/returned)
                 </label>
-
-                <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-                  <span>COGS:</span>
-                  <select
-                    value={cogsMethod}
-                    onChange={(e) => setCogsMethod(e.target.value === 'lifo' ? 'lifo' : 'fifo')}
-                    className={`h-9 rounded-md border px-2 text-sm ${
-                      isNeon ? 'bg-gray-900 border-gray-700 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
-                    }`}
-                    title="FIFO = oldest inventory first (recommended). LIFO = newest inventory first (debug/testing)."
-                  >
-                    <option value="fifo">FIFO (recommended)</option>
-                    <option value="lifo">LIFO (debug)</option>
-                  </select>
-                </label>
+                <button
+                  type="button"
+                  onClick={() => setFifoShowAdvanced((v) => !v)}
+                  className={`h-9 rounded-md px-3 text-xs font-semibold ${
+                    isNeon ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10' : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
+                  }`}
+                  title="Advanced matching / correctness options"
+                >
+                  {fifoShowAdvanced ? 'Hide advanced' : 'Advanced'}
+                </button>
+                <div className={`text-xs font-semibold ${isNeon ? 'text-gray-400' : 'text-gray-600'}`} title="Cost of goods sold method used for matching">
+                  COGS: {cogsMethod === 'lifo' ? 'LIFO (debug)' : 'FIFO'}
+                </div>
               </div>
+
+              {fifoShowAdvanced && (
+                <div
+                  className={`mt-3 rounded-lg border p-3 text-xs ${
+                    isNeon ? 'bg-white/5 border-white/10 text-gray-200' : 'bg-gray-50 border-gray-200 text-gray-900'
+                  }`}
+                >
+                  <div className="font-semibold">Advanced (rarely needed)</div>
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    <label className={`inline-flex items-center gap-2 font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                      <input
+                        type="checkbox"
+                        checked={fifoStrictDelivery}
+                        onChange={(e) => setFifoStrictDelivery(e.target.checked)}
+                        className="h-4 w-4"
+                      />
+                      Strict delivery (requires actualDelivery)
+                    </label>
+                    <label className={`inline-flex items-center gap-2 font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                      <input
+                        type="checkbox"
+                        checked={fifoUnlinkedOnly}
+                        onChange={(e) => setFifoUnlinkedOnly(e.target.checked)}
+                        className="h-4 w-4"
+                      />
+                      Unlinked only
+                    </label>
+                    <label className={`inline-flex items-center gap-2 font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                      <input
+                        type="checkbox"
+                        checked={fifoSandboxWindowOnly}
+                        onChange={(e) => setFifoSandboxWindowOnly(e.target.checked)}
+                        className="h-4 w-4"
+                      />
+                      Sandbox (allocate only this window)
+                    </label>
+
+                    <label className={`inline-flex items-center gap-2 font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                      <span className="opacity-80">Match mode:</span>
+                      <select
+                        value={fifoMatchMode}
+                        onChange={(e) => setFifoMatchMode(e.target.value as any)}
+                        className={`rounded-md px-2 py-1 text-xs ${
+                          isNeon ? 'bg-black/30 text-white border border-white/10' : 'bg-white text-gray-900 border border-gray-300'
+                        }`}
+                      >
+                        <option value="product_name">Product name + size</option>
+                        <option value="two_keys">Only styleId/urlKey + size</option>
+                        <option value="full">Full (fuzzy fallback)</option>
+                      </select>
+                    </label>
+
+                    <label className={`inline-flex items-center gap-2 font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                      <span className="opacity-80">Inventory start:</span>
+                      <select
+                        value={fifoInventoryStartMode}
+                        onChange={(e) => setFifoInventoryStartMode(e.target.value as any)}
+                        className={`rounded-md px-2 py-1 text-xs ${
+                          isNeon ? 'bg-black/30 text-white border border-white/10' : 'bg-white text-gray-900 border border-gray-300'
+                        }`}
+                      >
+                        <option value="first_purchase">Ignore early sales</option>
+                        <option value="none">Strict FIFO (all sales)</option>
+                      </select>
+                    </label>
+
+                    <label className={`inline-flex items-center gap-2 font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                      <span className="opacity-80">Sales start:</span>
+                      <input
+                        type="date"
+                        value={fifoSalesAllocationStartYmd}
+                        onChange={(e) => setFifoSalesAllocationStartYmd(e.target.value)}
+                        className={`w-36 rounded-md px-2 py-1 text-xs ${
+                          isNeon ? 'bg-black/30 text-white border border-white/10' : 'bg-white text-gray-900 border border-gray-300'
+                        }`}
+                      />
+                    </label>
+                    <label className={`inline-flex items-center gap-2 font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                      <span className="opacity-80">Purchases start:</span>
+                      <input
+                        type="date"
+                        value={fifoPurchaseStartYmd}
+                        onChange={(e) => setFifoPurchaseStartYmd(e.target.value)}
+                        className={`w-36 rounded-md px-2 py-1 text-xs ${
+                          isNeon ? 'bg-black/30 text-white border border-white/10' : 'bg-white text-gray-900 border border-gray-300'
+                        }`}
+                      />
+                    </label>
+
+                    <label className={`inline-flex items-center gap-2 font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                      <span>COGS:</span>
+                      <select
+                        value={cogsMethod}
+                        onChange={(e) => setCogsMethod(e.target.value === 'lifo' ? 'lifo' : 'fifo')}
+                        className={`h-8 rounded-md border px-2 text-xs ${
+                          isNeon ? 'bg-gray-900 border-gray-700 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
+                        }`}
+                      >
+                        <option value="fifo">FIFO</option>
+                        <option value="lifo">LIFO (debug)</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              )}
 
               <div className="flex flex-wrap items-center gap-2">
                 <span className={`text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Window:</span>
@@ -2959,14 +2976,25 @@ export default function TestPurchaseLinkingPage() {
               </div>
             </div>
             <div className="mt-3">
-              <input
-                value={saleSearch}
-                onChange={(e) => setSaleSearch(e.target.value)}
-                className={`w-full px-3 py-2 rounded-md border ${
-                  isNeon ? 'bg-gray-900 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'
-                }`}
-                placeholder="Search sales (order #, product, size, style)…"
-              />
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                <input
+                  value={saleSearch}
+                  onChange={(e) => setSaleSearch(e.target.value)}
+                  className={`w-full px-3 py-2 rounded-md border ${
+                    isNeon ? 'bg-gray-900 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'
+                  }`}
+                  placeholder="Search sales (order #, product, size, style)…"
+                />
+                <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <input
+                    type="checkbox"
+                    checked={fifoShowNoMatchOnly}
+                    onChange={(e) => setFifoShowNoMatchOnly(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Show only no_match
+                </label>
+              </div>
             </div>
             {fifoRows.length > 0 && filteredFifoRows.length === 0 && (
               <div
