@@ -924,7 +924,7 @@ export default function TestPurchaseLinkingPage() {
       }
       if (aNull) return 1;
       if (bNull) return -1;
-      if (av! === bv!) return (av! - bv!) * dir;
+      if (av! !== bv!) return (av! - bv!) * dir;
       const t = ms(a?.saleCutoffIso) - ms(b?.saleCutoffIso);
       if (t !== 0) return t;
       return String(a?.saleOrderNumber || '').localeCompare(String(b?.saleOrderNumber || ''));
