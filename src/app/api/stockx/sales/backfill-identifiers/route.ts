@@ -264,6 +264,48 @@ async function scanSalesByUserIdPage(userId: string, pageSize: number, cursorId?
   return { sales, nextCursorId };
 }
 
+async function scanCandidateSalesPage(opts: {
+  userId: string;
+  pageSize: number;
+  cursorId?: string | null;
+  mode: 'all' | 'missing_styleId';
+}): Promise<{ sales: any[]; nextCursorId: string | null; modeUsed: string }> {
+  const { userId, pageSize, cursorId, mode } = opts;
+  const db = getAdminDb();
+  const limit = Math.max(1, Math.min(2500, pageSize));
+  const cursor = String(cursorId || '').trim();
+
+  // Prefer scanning the highest-impact subset first: sales missing styleId (includes missing fields via == null).
+  if (mode === 'missing_styleId') {
+    let q: FirebaseFirestore.Query = db
+      .collection('user_sales')
+      .where('userId', '==', userId)
+      .where('styleId', '==', null)
+      .orderBy(FieldPath.documentId())
+      .limit(limit);
+    if (cursor) q = q.startAfter(cursor);
+    try {
+      const snap = await q.get();
+      const docs = snap.docs;
+      const sales = docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+      const nextCursorId = docs.length > 0 && docs.length >= limit ? docs[docs.length - 1].id : null;
+      return { sales, nextCursorId, modeUsed: 'missing_styleId' };
+    } catch (e: any) {
+      // If the query requires an index, fall back to full scan paging (still safe; just slower).
+      __agentLog({
+        runId: 'pre-fix',
+        hypothesisId: 'H3',
+        location: 'backfill-identifiers/route.ts:scanCandidateSalesPage:fallback',
+        message: 'missing_styleId query failed; falling back to all-sales scan',
+        data: { error: String(e?.message || e || 'unknown') }
+      });
+    }
+  }
+
+  const page = await scanSalesByUserIdPage(userId, limit, cursor);
+  return { sales: page.sales, nextCursorId: page.nextCursorId, modeUsed: 'all' };
+}
+
 async function fetchOrderDetails(orderNumber: string, apiKey: string, accessToken: string): Promise<any> {
   const url = `https://api.stockx.com/v2/selling/orders/${encodeURIComponent(orderNumber)}`;
   const res = await fetch(url, {
@@ -389,6 +431,8 @@ export async function POST(request: NextRequest) {
     const maxOrders = Math.max(1, Math.min(400, Number(body?.maxOrders ?? 120)));
     const scanLimit = Math.max(50, Math.min(2500, Number(body?.scanLimit ?? 1500)));
     const cursorId = typeof body?.cursorId === 'string' ? body.cursorId.trim() : '';
+    const scanModeRaw = typeof body?.scanMode === 'string' ? body.scanMode.trim() : '';
+    const scanMode: 'all' | 'missing_styleId' = scanModeRaw === 'all' ? 'all' : 'missing_styleId';
     // Default to gentler pacing to reduce PerimeterX / 429s for this high-volume endpoint.
     const concurrency = Math.max(1, Math.min(6, Number(body?.concurrency ?? 1)));
     const perRequestDelayMs = Math.max(0, Math.min(5000, Number(body?.perRequestDelayMs ?? 750)));
@@ -423,7 +467,8 @@ export async function POST(request: NextRequest) {
         maxRemoteOrders,
         concurrency,
         perRequestDelayMs,
-        cursorPresent: !!cursorId
+        cursorPresent: !!cursorId,
+        scanMode
       }
     });
     // #endregion
@@ -431,7 +476,7 @@ export async function POST(request: NextRequest) {
     const apiKey = process.env.STOCKX_API_KEY || '';
     if (!apiKey) return NextResponse.json({ success: false, error: 'Missing STOCKX_API_KEY' }, { status: 500 });
 
-    const page = await scanSalesByUserIdPage(userId, scanLimit, cursorId);
+    const page = await scanCandidateSalesPage({ userId, pageSize: scanLimit, cursorId, mode: scanMode });
     const sales = page.sales;
     const saleByDocId = new Map<string, any>();
     for (const s of sales) {
@@ -773,6 +818,7 @@ export async function POST(request: NextRequest) {
       scannedSales: sales.length,
       cursorId: cursorId || null,
       nextCursorId: page.nextCursorId,
+      scanModeUsed: page.modeUsed,
       candidateSales: uniq.length,
       attempted: toConsider.length,
       embeddedUpdated,

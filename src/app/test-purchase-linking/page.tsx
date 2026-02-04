@@ -1125,6 +1125,7 @@ export default function TestPurchaseLinkingPage() {
             perRequestDelayMs: 750,
             maxRemoteOrders: 30,
             cursorId: salesIdBackfillCursorId || null,
+            scanMode: 'missing_styleId',
           }),
         });
         const json = await resp.json().catch(() => ({}));
@@ -1265,7 +1266,8 @@ export default function TestPurchaseLinkingPage() {
               concurrency: 1,
               perRequestDelayMs: 750,
               maxRemoteOrders: 30,
-              cursorId: cursorId || null
+              cursorId: cursorId || null,
+              scanMode: 'missing_styleId'
             })
           });
           // #region agent log
