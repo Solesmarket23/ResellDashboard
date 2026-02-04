@@ -1186,6 +1186,7 @@ export async function GET(request: NextRequest) {
         if (isInWindow) alreadyLinkedInWindow++;
         if (isInWindow) {
           results.push({
+            saleId: sale?.id || null,
             saleOrderNumber: sale?.orderNumber || null,
             saleProduct: sale?.product || null,
             saleSize: sale?.size || null,
@@ -1554,6 +1555,7 @@ export async function GET(request: NextRequest) {
             ? saleNetPayout - purchaseCost
             : null;
         if (isInWindow) results.push({
+          saleId: sale?.id || null,
           saleOrderNumber,
           saleProduct,
           saleSize: saleSizeRaw,
@@ -1662,6 +1664,7 @@ export async function GET(request: NextRequest) {
         });
 
         if (isInWindow) results.push({
+          saleId: sale?.id || null,
           saleOrderNumber,
           saleProduct,
           saleSize: saleSizeRaw,

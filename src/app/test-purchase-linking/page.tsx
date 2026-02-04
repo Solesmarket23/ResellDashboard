@@ -611,6 +611,18 @@ export default function TestPurchaseLinkingPage() {
   const [fifoTablePage, setFifoTablePage] = useState(1);
   const [fifoRowsPerPage, setFifoRowsPerPage] = useState<number | 'all'>(50);
   const [fifoShowNoMatchOnly, setFifoShowNoMatchOnly] = useState(false);
+  const [fifoSelectedSaleIds, setFifoSelectedSaleIds] = useState<Record<string, boolean>>({});
+  const [manualCogsOpen, setManualCogsOpen] = useState(false);
+  const [manualCogsOrderNumber, setManualCogsOrderNumber] = useState('');
+  const [manualCogsPurchaseDateYmd, setManualCogsPurchaseDateYmd] = useState<string>(() => {
+    const d = new Date();
+    return d.toISOString().slice(0, 10);
+  });
+  const [manualCogsTotalPaid, setManualCogsTotalPaid] = useState<string>('');
+  const [manualCogsTax, setManualCogsTax] = useState<string>('');
+  const [manualCogsShipping, setManualCogsShipping] = useState<string>('');
+  const [manualCogsCredits, setManualCogsCredits] = useState<string>('');
+  const [manualCogsSaving, setManualCogsSaving] = useState(false);
   const [refreshingStockX, setRefreshingStockX] = useState(false);
   const [lastStockXRefresh, setLastStockXRefresh] = useState<any | null>(null);
   const [backfillingSalesIds, setBackfillingSalesIds] = useState(false);
@@ -1750,6 +1762,137 @@ export default function TestPurchaseLinkingPage() {
     }
   }, [selectedPurchase, selectedSale, showNotice, userId]);
 
+  const openManualCogsForRows = useCallback(
+    (rows: any[]) => {
+      const ids: Record<string, boolean> = {};
+      for (const r of rows) {
+        const saleId = String(r?.saleId || '').trim();
+        if (saleId) ids[saleId] = true;
+      }
+      setFifoSelectedSaleIds(ids);
+      const first = rows[0] || null;
+      const defaultOrder = first?.saleOrderNumber ? `retailer-${String(first.saleOrderNumber)}` : `retailer-${Date.now()}`;
+      setManualCogsOrderNumber(defaultOrder);
+      setManualCogsTotalPaid('');
+      setManualCogsTax('');
+      setManualCogsShipping('');
+      setManualCogsCredits('');
+      setManualCogsOpen(true);
+    },
+    []
+  );
+
+  const saveManualCogsAndLink = useCallback(async () => {
+    const u = userId.trim();
+    if (!u) return;
+    if (!allowWrites) {
+      showNotice('⚠️ Enable “Allow writes” to save manual costs.', 'warning', 12000);
+      return;
+    }
+    const selected = fifoRows.filter((r: any) => fifoSelectedSaleIds[String(r?.saleId || '').trim()]);
+    if (selected.length === 0) {
+      showNotice('⚠️ Select at least 1 sale row.', 'warning', 12000);
+      return;
+    }
+    const missing = selected.find((r: any) => !String(r?.saleId || '').trim());
+    if (missing) {
+      showNotice('❌ Missing saleId in results. Hard refresh and recompute FIFO.', 'error', 20000);
+      return;
+    }
+
+    const totalPaidNum = parseMoney(manualCogsTotalPaid);
+    if (typeof totalPaidNum !== 'number' || !Number.isFinite(totalPaidNum) || totalPaidNum <= 0) {
+      showNotice('⚠️ Enter Total paid (required).', 'warning', 12000);
+      return;
+    }
+    const unitCount = selected.length;
+    if (unitCount > 1) {
+      const ok = window.confirm(`Bulk purchase: this will create ${unitCount} purchase unit(s) and link ${unitCount} sale(s). Continue?`);
+      if (!ok) return;
+    } else {
+      const ok = window.confirm('This will WRITE a manual cost purchase and link it to this sale. Continue?');
+      if (!ok) return;
+    }
+
+    setManualCogsSaving(true);
+    try {
+      const orderNumber = String(manualCogsOrderNumber || '').trim() || `retailer-${Date.now()}`;
+      const units = selected.map((r: any) => ({
+        productName: r?.saleProduct ? String(r.saleProduct) : null,
+        productBrand: null,
+        productSize: r?.saleSize ? String(r.saleSize) : null,
+        styleId: r?.saleStyleId ? String(r.saleStyleId) : null,
+      }));
+      const resp = await fetch('/api/purchases/create-manual-cogs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': u },
+        body: JSON.stringify({
+          orderNumber,
+          purchaseDateYmd: manualCogsPurchaseDateYmd,
+          currency: 'USD',
+          totalPaid: manualCogsTotalPaid,
+          tax: manualCogsTax,
+          shipping: manualCogsShipping,
+          credits: manualCogsCredits,
+          units,
+        }),
+      });
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok || json?.success === false) throw new Error(json?.error || `Create manual purchase failed (${resp.status})`);
+      const purchaseIds: string[] = Array.isArray(json?.purchaseIds) ? json.purchaseIds.map((x: any) => String(x)) : [];
+      if (purchaseIds.length !== selected.length) {
+        throw new Error(`Expected ${selected.length} purchaseIds, got ${purchaseIds.length}`);
+      }
+
+      // Link each sale ↔ purchase unit.
+      for (let i = 0; i < selected.length; i++) {
+        const saleId = String(selected[i]?.saleId || '').trim();
+        const purchaseId = purchaseIds[i];
+        const linkResp = await fetch('/api/purchase-linking/manual', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: u,
+            saleId,
+            purchaseId,
+            action: 'link',
+            dryRun: false,
+          }),
+        });
+        const linkJson = await linkResp.json().catch(() => ({}));
+        if (!linkResp.ok || linkJson?.success === false) {
+          throw new Error(linkJson?.error || `Link failed (${linkResp.status})`);
+        }
+      }
+
+      setManualCogsOpen(false);
+      setFifoSelectedSaleIds({});
+      showNotice(`✅ Saved manual cost + linked ${selected.length} sale(s). Recomputing…`, 'success', 20000);
+      await loadSales({ silent: true });
+      await loadPurchases({ silent: true });
+      await runFifoDryRun();
+    } catch (e: any) {
+      showNotice(`❌ Manual cost save failed: ${e?.message || 'Unknown error'}`, 'error', 20000);
+    } finally {
+      setManualCogsSaving(false);
+    }
+  }, [
+    allowWrites,
+    fifoRows,
+    fifoSelectedSaleIds,
+    loadPurchases,
+    loadSales,
+    manualCogsCredits,
+    manualCogsOrderNumber,
+    manualCogsPurchaseDateYmd,
+    manualCogsShipping,
+    manualCogsTax,
+    manualCogsTotalPaid,
+    runFifoDryRun,
+    showNotice,
+    userId,
+  ]);
+
   const commitLinkSelected = useCallback(async () => {
     if (!allowWrites) {
       showNotice('⚠️ Enable “Allow writes” to commit links.', 'warning');
@@ -2822,6 +2965,21 @@ export default function TestPurchaseLinkingPage() {
               >
                 Export FIFO CSV
               </button>
+              {Object.values(fifoSelectedSaleIds).some(Boolean) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const selected = fifoRows.filter((r: any) => fifoSelectedSaleIds[String(r?.saleId || '').trim()]);
+                    openManualCogsForRows(selected);
+                  }}
+                  className={`h-9 rounded-md px-3 text-xs font-semibold ${
+                    isNeon ? 'bg-emerald-500/20 hover:bg-emerald-500/25 text-emerald-100 border border-emerald-500/30' : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                  }`}
+                  title="Create a manual purchase cost (optionally bulk-split across selected sales) and link it to the selected sale(s)."
+                >
+                  Manual COGS ({Object.values(fifoSelectedSaleIds).filter(Boolean).length})
+                </button>
+              )}
               <div className="flex items-center gap-2">
                 <label className={`text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Rows</label>
                 <select
@@ -2947,6 +3105,35 @@ export default function TestPurchaseLinkingPage() {
                 } sticky top-0 z-10`}
               >
                 <tr className={`h-12 ${isNeon ? 'divide-x divide-white/5' : 'divide-x divide-gray-200'}`}>
+                  <th className={`px-3 py-0 h-12 select-none ${isNeon ? 'bg-black/10' : ''}`}>
+                    <div className="flex items-center justify-center h-full">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={
+                          visibleFifoRows.length > 0 &&
+                          visibleFifoRows.every((r: any) => {
+                            const sid = String(r?.saleId || '').trim();
+                            return !!sid && !!fifoSelectedSaleIds[sid];
+                          })
+                        }
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setFifoSelectedSaleIds((prev) => {
+                            const next = { ...prev };
+                            for (const r of visibleFifoRows as any[]) {
+                              const sid = String(r?.saleId || '').trim();
+                              if (!sid) continue;
+                              if (checked) next[sid] = true;
+                              else delete next[sid];
+                            }
+                            return next;
+                          });
+                        }}
+                        title="Select all rows on this page"
+                      />
+                    </div>
+                  </th>
                   <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all`}>
                     <div className="flex items-center justify-center h-full gap-2">
                       <Hash className={`w-4 h-4 ${headerIconClass}`} />
@@ -3025,8 +3212,31 @@ export default function TestPurchaseLinkingPage() {
                       .filter(Boolean)
                       .join(' • ');
 
+                    const saleId = String(r?.saleId || '').trim();
+                    const selected = !!saleId && !!fifoSelectedSaleIds[saleId];
                     return (
-                      <tr key={`${saleOrder || idx}`} className="group">
+                      <tr key={`${saleId || saleOrder || idx}`} className="group">
+                        <td className="py-2 pr-2 whitespace-nowrap">
+                          <div className="flex items-center justify-center">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4"
+                              checked={selected}
+                              disabled={!saleId}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                setFifoSelectedSaleIds((prev) => {
+                                  const next = { ...prev };
+                                  if (!saleId) return next;
+                                  if (checked) next[saleId] = true;
+                                  else delete next[saleId];
+                                  return next;
+                                });
+                              }}
+                              title={!saleId ? 'Missing saleId in results (recompute)' : 'Select row for bulk manual COGS'}
+                            />
+                          </div>
+                        </td>
                         <td className="py-2 pr-3 whitespace-nowrap">{saleOrder || '—'}</td>
                         <td className="py-2 pr-3 max-w-[280px] truncate">{String(r.saleProduct || '—')}</td>
                         <td className="py-2 pr-3 whitespace-nowrap">{String(r.saleSize || '—')}</td>
@@ -3054,23 +3264,40 @@ export default function TestPurchaseLinkingPage() {
                         </td>
                         <td className="py-2 pr-3 whitespace-nowrap">{linkedLabel}</td>
                         <td className="py-2 pr-3">
-                          <button
-                            type="button"
-                            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
-                              isNeon
-                                ? 'bg-gray-900 border border-white/20 text-cyan-400 hover:bg-gray-700 hover:border-cyan-500/50'
-                                : 'bg-white border border-gray-300 text-blue-700 hover:bg-blue-50'
-                            }`}
-                            title={details || 'FIFO details'}
-                            onClick={() => {
-                              const txt = `Sale ${saleOrder} → Purchase ${purchaseOrder || '(none)'}\\n${details}`;
-                              navigator.clipboard?.writeText(txt).catch(() => {});
-                              showNotice('📋 Copied FIFO details to clipboard.', 'success');
-                            }}
-                          >
-                            <Link2 className="w-4 h-4" />
-                            Copy match
-                          </button>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {!paidKnown && (
+                              <button
+                                type="button"
+                                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
+                                  isNeon
+                                    ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-200 hover:bg-emerald-500/25'
+                                    : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                                }`}
+                                title={!allowWrites ? 'Enable Allow writes above to save manual cost' : 'Create manual purchase cost and link it to this sale'}
+                                disabled={!allowWrites}
+                                onClick={() => openManualCogsForRows([r])}
+                              >
+                                $ Manual COGS
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
+                                isNeon
+                                  ? 'bg-gray-900 border border-white/20 text-cyan-400 hover:bg-gray-700 hover:border-cyan-500/50'
+                                  : 'bg-white border border-gray-300 text-blue-700 hover:bg-blue-50'
+                              }`}
+                              title={details || 'FIFO details'}
+                              onClick={() => {
+                                const txt = `Sale ${saleOrder} → Purchase ${purchaseOrder || '(none)'}\\n${details}`;
+                                navigator.clipboard?.writeText(txt).catch(() => {});
+                                showNotice('📋 Copied FIFO details to clipboard.', 'success');
+                              }}
+                            >
+                              <Link2 className="w-4 h-4" />
+                              Copy match
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -3079,6 +3306,129 @@ export default function TestPurchaseLinkingPage() {
             </table>
           </div>
         </div>
+
+        {manualCogsOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <div className={`w-full max-w-xl rounded-xl border p-4 ${isNeon ? 'bg-gray-900 border-white/10 text-gray-100' : 'bg-white border-gray-200 text-gray-900'}`}>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold">Manual COGS</div>
+                  <div className={`text-xs ${isNeon ? 'text-gray-300' : 'text-gray-600'}`}>
+                    Create manual purchase unit(s) and link to {Object.values(fifoSelectedSaleIds).filter(Boolean).length} selected sale(s).
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setManualCogsOpen(false)}
+                  className={`rounded-md p-2 ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}
+                  title="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="text-xs font-semibold">
+                  <div className="opacity-80">Purchase date</div>
+                  <input
+                    type="date"
+                    value={manualCogsPurchaseDateYmd}
+                    onChange={(e) => setManualCogsPurchaseDateYmd(e.target.value)}
+                    className={`mt-1 w-full rounded-md border px-2 py-2 text-sm ${
+                      isNeon ? 'bg-black/30 border-white/10 text-white' : 'bg-white border-gray-300 text-gray-900'
+                    }`}
+                  />
+                </label>
+                <label className="text-xs font-semibold">
+                  <div className="opacity-80">Purchase order # / receipt id</div>
+                  <input
+                    value={manualCogsOrderNumber}
+                    onChange={(e) => setManualCogsOrderNumber(e.target.value)}
+                    className={`mt-1 w-full rounded-md border px-2 py-2 text-sm ${
+                      isNeon ? 'bg-black/30 border-white/10 text-white' : 'bg-white border-gray-300 text-gray-900'
+                    }`}
+                    placeholder="e.g. walmart-12345"
+                  />
+                </label>
+                <label className="text-xs font-semibold">
+                  <div className="opacity-80">Price paid (total)</div>
+                  <input
+                    inputMode="decimal"
+                    value={manualCogsTotalPaid}
+                    onChange={(e) => setManualCogsTotalPaid(e.target.value)}
+                    className={`mt-1 w-full rounded-md border px-2 py-2 text-sm ${
+                      isNeon ? 'bg-black/30 border-white/10 text-white' : 'bg-white border-gray-300 text-gray-900'
+                    }`}
+                    placeholder="e.g. 240"
+                  />
+                </label>
+                <label className="text-xs font-semibold">
+                  <div className="opacity-80">Sales tax (optional)</div>
+                  <input
+                    inputMode="decimal"
+                    value={manualCogsTax}
+                    onChange={(e) => setManualCogsTax(e.target.value)}
+                    className={`mt-1 w-full rounded-md border px-2 py-2 text-sm ${
+                      isNeon ? 'bg-black/30 border-white/10 text-white' : 'bg-white border-gray-300 text-gray-900'
+                    }`}
+                    placeholder="e.g. 18.50"
+                  />
+                </label>
+                <label className="text-xs font-semibold">
+                  <div className="opacity-80">Shipping (optional)</div>
+                  <input
+                    inputMode="decimal"
+                    value={manualCogsShipping}
+                    onChange={(e) => setManualCogsShipping(e.target.value)}
+                    className={`mt-1 w-full rounded-md border px-2 py-2 text-sm ${
+                      isNeon ? 'bg-black/30 border-white/10 text-white' : 'bg-white border-gray-300 text-gray-900'
+                    }`}
+                    placeholder="e.g. 12.99"
+                  />
+                </label>
+                <label className="text-xs font-semibold">
+                  <div className="opacity-80">Credits/discounts (optional)</div>
+                  <input
+                    inputMode="decimal"
+                    value={manualCogsCredits}
+                    onChange={(e) => setManualCogsCredits(e.target.value)}
+                    className={`mt-1 w-full rounded-md border px-2 py-2 text-sm ${
+                      isNeon ? 'bg-black/30 border-white/10 text-white' : 'bg-white border-gray-300 text-gray-900'
+                    }`}
+                    placeholder="e.g. 10"
+                  />
+                </label>
+              </div>
+
+              <div className={`mt-3 text-xs ${isNeon ? 'text-gray-300' : 'text-gray-600'}`}>
+                If multiple sales are selected, the total is split evenly across units and each unit is linked 1:1 to a sale (FIFO-compatible).
+              </div>
+
+              <div className="mt-4 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setManualCogsOpen(false)}
+                  className={`h-9 rounded-md px-3 text-xs font-semibold ${
+                    isNeon ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10' : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
+                  }`}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={saveManualCogsAndLink}
+                  disabled={manualCogsSaving}
+                  className={`h-9 rounded-md px-3 text-xs font-semibold disabled:opacity-60 ${
+                    isNeon ? 'bg-emerald-500/20 hover:bg-emerald-500/25 text-emerald-100 border border-emerald-500/30' : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                  }`}
+                  title={!allowWrites ? 'Enable Allow writes above' : 'Writes to Firestore'}
+                >
+                  {manualCogsSaving ? 'Saving…' : 'Save + Link'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {showRawSalesTable && (
           <div
