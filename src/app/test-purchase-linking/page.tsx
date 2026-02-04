@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import NeonNotification, { type NotificationType } from '@/components/NeonNotification';
+import DatePicker from '@/components/DatePicker';
 import StockXSalesImport from '@/components/StockXSalesImport';
 import { Box, Calendar, DollarSign, HandCoins, Hash, Link2, Mail, Ruler, Settings2, X } from 'lucide-react';
 
@@ -2140,26 +2141,20 @@ export default function TestPurchaseLinkingPage() {
               <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
                   <div className={`text-xs font-bold uppercase tracking-wider mb-1 ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>From</div>
-                  <input
-                    type="date"
+                  <DatePicker
                     value={simFromYmd}
-                    max={todayYmd}
-                    onChange={(e) => setSimFromYmd(e.target.value)}
-                    className={`w-full px-3 py-2 rounded-md border ${
-                      isNeon ? 'bg-gray-900 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'
-                    }`}
+                    onChange={(v) => setSimFromYmd(v)}
+                    placeholder="Select date"
+                    variant={isNeon ? 'neon' : 'gradient'}
                   />
                 </div>
                 <div>
                   <div className={`text-xs font-bold uppercase tracking-wider mb-1 ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>To</div>
-                  <input
-                    type="date"
+                  <DatePicker
                     value={simToYmd}
-                    max={todayYmd}
-                    onChange={(e) => setSimToYmd(e.target.value)}
-                    className={`w-full px-3 py-2 rounded-md border ${
-                      isNeon ? 'bg-gray-900 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'
-                    }`}
+                    onChange={(v) => setSimToYmd(v)}
+                    placeholder="Select date"
+                    variant={isNeon ? 'neon' : 'gradient'}
                   />
                 </div>
               </div>
@@ -2499,25 +2494,25 @@ export default function TestPurchaseLinkingPage() {
 
                     <label className={`inline-flex items-center gap-2 font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                       <span className="opacity-80">Sales start:</span>
-                      <input
-                        type="date"
-                        value={fifoSalesAllocationStartYmd}
-                        onChange={(e) => setFifoSalesAllocationStartYmd(e.target.value)}
-                        className={`w-36 rounded-md px-2 py-1 text-xs ${
-                          isNeon ? 'bg-black/30 text-white border border-white/10' : 'bg-white text-gray-900 border border-gray-300'
-                        }`}
-                      />
+                      <div className="w-40">
+                        <DatePicker
+                          value={fifoSalesAllocationStartYmd}
+                          onChange={(v) => setFifoSalesAllocationStartYmd(v)}
+                          placeholder="Select date"
+                          variant={isNeon ? 'neon' : 'gradient'}
+                        />
+                      </div>
                     </label>
                     <label className={`inline-flex items-center gap-2 font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                       <span className="opacity-80">Purchases start:</span>
-                      <input
-                        type="date"
-                        value={fifoPurchaseStartYmd}
-                        onChange={(e) => setFifoPurchaseStartYmd(e.target.value)}
-                        className={`w-36 rounded-md px-2 py-1 text-xs ${
-                          isNeon ? 'bg-black/30 text-white border border-white/10' : 'bg-white text-gray-900 border border-gray-300'
-                        }`}
-                      />
+                      <div className="w-40">
+                        <DatePicker
+                          value={fifoPurchaseStartYmd}
+                          onChange={(v) => setFifoPurchaseStartYmd(v)}
+                          placeholder="Select date"
+                          variant={isNeon ? 'neon' : 'gradient'}
+                        />
+                      </div>
                     </label>
 
                     <label className={`inline-flex items-center gap-2 font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
@@ -2622,23 +2617,23 @@ export default function TestPurchaseLinkingPage() {
 
                 {fifoWindowPreset === 'custom' && (
                   <div className="flex flex-wrap items-center gap-2">
-                    <input
-                      type="date"
-                      value={fifoCustomFromYmd}
-                      onChange={(e) => setFifoCustomFromYmd(e.target.value)}
-                      className={`h-9 rounded-md border px-2 text-sm ${
-                        isNeon ? 'bg-gray-900 border-gray-700 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
-                      }`}
-                    />
+                    <div className="w-44">
+                      <DatePicker
+                        value={fifoCustomFromYmd}
+                        onChange={(v) => setFifoCustomFromYmd(v)}
+                        placeholder="From"
+                        variant={isNeon ? 'neon' : 'gradient'}
+                      />
+                    </div>
                     <span className={isNeon ? 'text-gray-400' : 'text-gray-600'}>→</span>
-                    <input
-                      type="date"
-                      value={fifoCustomToYmd}
-                      onChange={(e) => setFifoCustomToYmd(e.target.value)}
-                      className={`h-9 rounded-md border px-2 text-sm ${
-                        isNeon ? 'bg-gray-900 border-gray-700 text-gray-100' : 'bg-white border-gray-300 text-gray-900'
-                      }`}
-                    />
+                    <div className="w-44">
+                      <DatePicker
+                        value={fifoCustomToYmd}
+                        onChange={(v) => setFifoCustomToYmd(v)}
+                        placeholder="To"
+                        variant={isNeon ? 'neon' : 'gradient'}
+                      />
+                    </div>
                   </div>
                 )}
 
@@ -3496,14 +3491,14 @@ export default function TestPurchaseLinkingPage() {
               <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="text-xs font-semibold">
                   <div className="opacity-80">Purchase date</div>
-                  <input
-                    type="date"
-                    value={manualCogsPurchaseDateYmd}
-                    onChange={(e) => setManualCogsPurchaseDateYmd(e.target.value)}
-                    className={`mt-1 w-full rounded-md border px-2 py-2 text-sm ${
-                      isNeon ? 'bg-black/30 border-white/10 text-white' : 'bg-white border-gray-300 text-gray-900'
-                    }`}
-                  />
+                  <div className="mt-1">
+                    <DatePicker
+                      value={manualCogsPurchaseDateYmd}
+                      onChange={(v) => setManualCogsPurchaseDateYmd(v)}
+                      placeholder="Select date"
+                      variant={isNeon ? 'neon' : 'gradient'}
+                    />
+                  </div>
                 </label>
                 <label className="text-xs font-semibold">
                   <div className="opacity-80">Purchase order # / receipt id</div>
@@ -3892,16 +3887,11 @@ export default function TestPurchaseLinkingPage() {
                       <label className={`block text-xs font-bold uppercase tracking-wider mb-1 ${isNeon ? 'text-gray-300' : 'text-gray-600'}`}>
                         Simulate actualDelivery (test only)
                       </label>
-                      <input
-                        type="date"
+                      <DatePicker
                         value={(effectiveActualDelivery(selectedPurchase) || '').slice(0, 10)}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setSimulatedDeliveryByPurchaseId((prev) => ({ ...prev, [selectedPurchase.id]: v }));
-                        }}
-                        className={`w-full px-3 py-2 rounded-md border ${
-                          isNeon ? 'bg-gray-900 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'
-                        }`}
+                        onChange={(v) => setSimulatedDeliveryByPurchaseId((prev) => ({ ...prev, [selectedPurchase.id]: v }))}
+                        placeholder="Select date"
+                        variant={isNeon ? 'neon' : 'gradient'}
                       />
                       <div className={`mt-1 text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
                         This only affects matching on this test page (no DB writes).

@@ -7,10 +7,11 @@ interface DatePickerProps {
   value: string;
   onChange: (date: string) => void;
   placeholder: string;
-  variant?: 'gradient' | 'premium';
+  variant?: 'gradient' | 'premium' | 'neon';
+  disabled?: boolean;
 }
 
-const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, placeholder, variant = 'gradient' }) => {
+const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, placeholder, variant = 'gradient', disabled = false }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [dropdownPosition, setDropdownPosition] = useState<'top' | 'bottom'>('bottom');
@@ -117,30 +118,47 @@ const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, placeholder, v
   }, [isOpen]);
 
   const days = getDaysInMonth(currentMonth);
-  const isInModal = variant === 'premium';
+  const isInModal = variant === 'premium' || variant === 'neon';
 
   return (
     <div className="relative" ref={containerRef}>
       <div
-        onClick={() => setIsOpen(!isOpen)}
-        className={`cursor-pointer flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-300 border-2 ${
-          variant === 'gradient'
-            ? 'bg-gradient-to-r from-blue-500/20 via-indigo-500/20 to-cyan-500/20 border-blue-300/50 hover:border-blue-400/70 backdrop-blur-sm'
-            : 'bg-slate-800/50 border-slate-600/50 hover:border-slate-500/70 backdrop-blur-sm'
+        onClick={() => {
+          if (disabled) return;
+          setIsOpen(!isOpen);
+        }}
+        className={`flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-300 border-2 ${
+          disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+        } ${
+          variant === 'neon'
+            ? 'bg-gray-950/40 border-cyan-500/30 hover:border-cyan-400/40 backdrop-blur-sm'
+            : variant === 'gradient'
+              ? 'bg-gradient-to-r from-blue-500/20 via-indigo-500/20 to-cyan-500/20 border-blue-300/50 hover:border-blue-400/70 backdrop-blur-sm'
+              : 'bg-slate-800/50 border-slate-600/50 hover:border-slate-500/70 backdrop-blur-sm'
         }`}
-        style={variant === 'premium' ? {
-          background: 'linear-gradient(135deg, rgba(30,41,59,0.8), rgba(51,65,85,0.9))',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.1)',
-        } : {}}
+        style={
+          variant === 'premium'
+            ? {
+                background: 'linear-gradient(135deg, rgba(30,41,59,0.8), rgba(51,65,85,0.9))',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.1)',
+              }
+            : variant === 'neon'
+              ? {
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.35), 0 0 0 1px rgba(34,211,238,0.08) inset',
+                }
+              : {}
+        }
       >
         <div className="flex items-center">
           <Calendar className={`w-5 h-5 mr-3 ${
-            variant === 'gradient' ? 'text-blue-600' : 'text-slate-300'
+            variant === 'neon' ? 'text-cyan-300' : variant === 'gradient' ? 'text-blue-600' : 'text-slate-300'
           }`} />
         </div>
         
         <span className={
-          variant === 'gradient'
+          variant === 'neon'
+            ? (value ? 'text-white font-semibold tracking-wide' : 'text-cyan-100/70 font-medium')
+            : variant === 'gradient'
             ? (value ? 'text-white font-medium' : 'text-white/70')
             : (value ? 'text-white font-semibold tracking-wide' : 'text-slate-400 font-medium')
         }>
@@ -160,7 +178,11 @@ const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, placeholder, v
           {isInModal ? (
             // Fixed positioning for modal context to prevent clipping
             <div 
-              className="fixed w-80 bg-gradient-to-br from-white via-blue-50 to-purple-50 rounded-xl shadow-2xl border border-purple-200/50 z-[200] overflow-hidden backdrop-blur-sm"
+              className={`fixed w-80 rounded-xl shadow-2xl z-[200] overflow-hidden backdrop-blur-sm ${
+                variant === 'neon'
+                  ? 'bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 border border-cyan-500/20'
+                  : 'bg-gradient-to-br from-white via-blue-50 to-purple-50 border border-purple-200/50'
+              }`}
               style={{
                 top: containerRef.current ? (() => {
                   const rect = containerRef.current.getBoundingClientRect();
@@ -187,30 +209,57 @@ const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, placeholder, v
               }}
             >
               {/* Header */}
-              <div className="flex items-center justify-between p-4 border-b border-white/30 bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-cyan-500/10 backdrop-blur-sm">
+              <div
+                className={`flex items-center justify-between p-4 border-b backdrop-blur-sm ${
+                  variant === 'neon'
+                    ? 'border-white/10 bg-gradient-to-r from-cyan-500/10 via-blue-500/10 to-fuchsia-500/10'
+                    : 'border-white/30 bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-cyan-500/10'
+                }`}
+              >
                 <button
                   onClick={() => navigateMonth('prev')}
-                  className="p-2 hover:bg-gradient-to-r hover:from-blue-500/20 hover:to-indigo-500/20 rounded-lg transition-all duration-300 backdrop-blur-sm"
+                  className={`p-2 rounded-lg transition-all duration-300 backdrop-blur-sm ${
+                    variant === 'neon'
+                      ? 'hover:bg-white/10'
+                      : 'hover:bg-gradient-to-r hover:from-blue-500/20 hover:to-indigo-500/20'
+                  }`}
                 >
-                  <ChevronLeft className="w-4 h-4 text-gray-700" />
+                  <ChevronLeft className={`w-4 h-4 ${variant === 'neon' ? 'text-cyan-100' : 'text-gray-700'}`} />
                 </button>
                 
-                <h3 className="text-lg font-bold text-gray-800 bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                <h3
+                  className={`text-lg font-bold ${
+                    variant === 'neon'
+                      ? 'text-cyan-100'
+                      : 'text-gray-800 bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent'
+                  }`}
+                >
                   {months[currentMonth.getMonth()]} {currentMonth.getFullYear()}
                 </h3>
                 
                 <button
                   onClick={() => navigateMonth('next')}
-                  className="p-2 hover:bg-gradient-to-r hover:from-indigo-500/20 hover:to-cyan-500/20 rounded-lg transition-all duration-300 backdrop-blur-sm"
+                  className={`p-2 rounded-lg transition-all duration-300 backdrop-blur-sm ${
+                    variant === 'neon'
+                      ? 'hover:bg-white/10'
+                      : 'hover:bg-gradient-to-r hover:from-indigo-500/20 hover:to-cyan-500/20'
+                  }`}
                 >
-                  <ChevronRight className="w-4 h-4 text-gray-700" />
+                  <ChevronRight className={`w-4 h-4 ${variant === 'neon' ? 'text-cyan-100' : 'text-gray-700'}`} />
                 </button>
               </div>
 
               {/* Week days */}
-              <div className="grid grid-cols-7 border-b border-white/30 bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-cyan-500/10">
+              <div
+                className={`grid grid-cols-7 border-b ${
+                  variant === 'neon' ? 'border-white/10 bg-white/5' : 'border-white/30 bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-cyan-500/10'
+                }`}
+              >
                 {weekDays.map(day => (
-                  <div key={day} className="p-3 text-center text-sm font-bold text-gray-700">
+                  <div
+                    key={day}
+                    className={`p-3 text-center text-sm font-bold ${variant === 'neon' ? 'text-cyan-100/80' : 'text-gray-700'}`}
+                  >
                     {day}
                   </div>
                 ))}
@@ -225,10 +274,16 @@ const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, placeholder, v
                         onClick={() => handleDateSelect(day)}
                         className={`w-10 h-10 rounded-lg text-sm font-bold transition-all duration-300 transform hover:scale-105 ${
                           isSelected(day)
-                            ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30'
+                            ? variant === 'neon'
+                              ? 'bg-gradient-to-r from-cyan-400 to-blue-500 text-black shadow-lg shadow-cyan-500/25'
+                              : 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30'
                             : isToday(day)
-                            ? 'bg-gradient-to-r from-blue-400 to-blue-500 text-white shadow-md hover:shadow-lg'
-                            : 'hover:bg-gradient-to-r hover:from-blue-500/20 hover:to-indigo-500/20 text-gray-700 hover:text-gray-900 hover:shadow-md'
+                            ? variant === 'neon'
+                              ? 'bg-white/10 text-cyan-100 shadow-md hover:shadow-lg border border-cyan-500/20'
+                              : 'bg-gradient-to-r from-blue-400 to-blue-500 text-white shadow-md hover:shadow-lg'
+                            : variant === 'neon'
+                              ? 'hover:bg-white/10 text-gray-100 hover:text-white hover:shadow-md'
+                              : 'hover:bg-gradient-to-r hover:from-blue-500/20 hover:to-indigo-500/20 text-gray-700 hover:text-gray-900 hover:shadow-md'
                         }`}
                       >
                         {day.getDate()}
@@ -241,16 +296,30 @@ const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, placeholder, v
               </div>
 
               {/* Footer */}
-              <div className="flex items-center justify-between p-3 border-t border-white/30 bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-cyan-500/10">
+              <div
+                className={`flex items-center justify-between p-3 border-t ${
+                  variant === 'neon'
+                    ? 'border-white/10 bg-white/5'
+                    : 'border-white/30 bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-cyan-500/10'
+                }`}
+              >
                 <button
                   onClick={clearDate}
-                  className="text-sm text-gray-600 hover:text-gray-800 transition-all duration-300 hover:bg-gradient-to-r hover:from-red-500/20 hover:to-orange-500/20 px-2 py-1 rounded-lg"
+                  className={`text-sm transition-all duration-300 px-2 py-1 rounded-lg ${
+                    variant === 'neon'
+                      ? 'text-gray-200 hover:text-white hover:bg-white/10'
+                      : 'text-sm text-gray-600 hover:text-gray-800 transition-all duration-300 hover:bg-gradient-to-r hover:from-red-500/20 hover:to-orange-500/20 px-2 py-1 rounded-lg'
+                  }`}
                 >
                   Clear
                 </button>
                 <button
                   onClick={goToToday}
-                  className="text-sm font-bold px-4 py-2 rounded-lg transition-all duration-300 bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:from-blue-600 hover:to-indigo-700 shadow-lg hover:shadow-xl transform hover:scale-105"
+                  className={`text-sm font-bold px-4 py-2 rounded-lg transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 ${
+                    variant === 'neon'
+                      ? 'bg-gradient-to-r from-cyan-400 to-blue-500 text-black hover:from-cyan-300 hover:to-blue-400'
+                      : 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:from-blue-600 hover:to-indigo-700'
+                  }`}
                 >
                   Today
                 </button>
