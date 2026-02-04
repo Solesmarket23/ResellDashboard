@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/contexts/AuthContext';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import NeonNotification, { type NotificationType } from '@/components/NeonNotification';
 import DatePicker from '@/components/DatePicker';
+import NeonDonutChart from '@/components/NeonDonutChart';
 import StockXSalesImport from '@/components/StockXSalesImport';
 import { Box, Calendar, DollarSign, HandCoins, Hash, Link2, Mail, Ruler, Settings2, X } from 'lucide-react';
 
@@ -794,6 +795,108 @@ export default function TestPurchaseLinkingPage() {
       avgMargin,
       avgDays,
     };
+  }, [fifoRowsForProfit]);
+
+  const fifoAnalytics = useMemo(() => {
+    const rows = fifoRowsForProfit as any[];
+    const n = (v: any): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+    const safeDiv = (a: number, b: number): number | null => (b === 0 ? null : a / b);
+    const normKey = (s: any): string => String(s || '').trim();
+    const normSize = (s: any): string => {
+      const raw = String(s || '').trim();
+      if (!raw) return '';
+      return raw.toUpperCase();
+    };
+
+    type Agg = {
+      key: string;
+      label: string;
+      count: number;
+      revenue: number; // net payout
+      paid: number;
+      profit: number;
+      wins: number;
+    };
+
+    const byBrand = new Map<string, Agg>();
+    const bySku = new Map<string, Agg>();
+    const bySize = new Map<string, Agg>();
+
+    for (const r of rows) {
+      const net = n(r?.saleNetPayout);
+      const paid = n(r?.purchaseCost);
+      const profit = n(r?.profit) ?? (net !== null && paid !== null ? net - paid : null);
+      if (net === null || paid === null || profit === null) continue;
+
+      const brand = normKey(r?.saleBrand) || 'Unknown';
+      const styleId = normKey(r?.saleStyleId);
+      const urlKey = normKey(r?.saleUrlKey);
+      const product = normKey(r?.saleProduct);
+      const skuKey = styleId || urlKey || product || 'Unknown SKU';
+      const skuLabel = styleId ? styleId : urlKey ? urlKey : product ? product : 'Unknown SKU';
+      const size = normSize(r?.saleSize) || '—';
+
+      const win = profit >= 0 ? 1 : 0;
+
+      const bump = (m: Map<string, Agg>, key: string, label: string) => {
+        const cur =
+          m.get(key) ||
+          ({
+            key,
+            label,
+            count: 0,
+            revenue: 0,
+            paid: 0,
+            profit: 0,
+            wins: 0,
+          } as Agg);
+        cur.count += 1;
+        cur.revenue += net;
+        cur.paid += paid;
+        cur.profit += profit;
+        cur.wins += win;
+        m.set(key, cur);
+      };
+
+      bump(byBrand, brand, brand);
+      bump(bySku, skuKey, skuLabel);
+      bump(bySize, size, size);
+    }
+
+    const toRows = (m: Map<string, Agg>) =>
+      Array.from(m.values()).map((a) => {
+        const roiTotals = safeDiv(a.profit, a.paid);
+        return {
+          ...a,
+          roiTotals,
+          winRate: safeDiv(a.wins, a.count),
+          avgProfit: safeDiv(a.profit, a.count),
+        };
+      });
+
+    const brands = toRows(byBrand).sort((a, b) => b.profit - a.profit);
+    const skus = toRows(bySku).sort((a, b) => b.profit - a.profit);
+    const sizes = toRows(bySize).sort((a, b) => b.count - a.count);
+
+    const brandPie = (() => {
+      const top = brands.slice(0, 6);
+      const otherProfit = brands.slice(6).reduce((s, x) => s + x.profit, 0);
+      const data = top
+        .map((b) => ({ label: b.label, value: Math.max(0, b.profit) }))
+        .filter((d) => d.value > 0);
+      if (otherProfit > 0) data.push({ label: 'Other', value: otherProfit });
+      return data;
+    })();
+
+    const sizePie = (() => {
+      const top = sizes.slice(0, 7);
+      const other = sizes.slice(7).reduce((s, x) => s + x.count, 0);
+      const data = top.map((s) => ({ label: s.label, value: s.count })).filter((d) => d.value > 0);
+      if (other > 0) data.push({ label: 'Other', value: other });
+      return data;
+    })();
+
+    return { brands, skus, sizes, brandPie, sizePie, rowsUsed: rows.length };
   }, [fifoRowsForProfit]);
 
   const exportFifoCsv = useCallback(() => {
@@ -3201,6 +3304,146 @@ export default function TestPurchaseLinkingPage() {
               </div>
               <div className={`mt-1 text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
                 Hover a metric to see how it’s calculated.
+              </div>
+            </div>
+
+            {/* Analytics */}
+            <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+              <NeonDonutChart
+                isNeon={isNeon}
+                title="Profit by brand (top)"
+                subtitle={`From ${fifoAnalytics.rowsUsed} matched sale(s) in this window`}
+                data={fifoAnalytics.brandPie}
+                valueFormatter={(v) => currency(v)}
+              />
+              <NeonDonutChart
+                isNeon={isNeon}
+                title="Top selling sizes"
+                subtitle={`Share of matched sales (count)`}
+                data={fifoAnalytics.sizePie}
+                valueFormatter={(v) => `${Math.round(v)}`}
+              />
+              <div
+                className={`rounded-xl border p-3 ${isNeon ? 'bg-gray-950/40 border-white/10 text-gray-100' : 'bg-white border-gray-200 text-gray-900'}`}
+              >
+                <div className="text-sm font-semibold">Highlights</div>
+                <div className={`mt-1 text-xs ${isNeon ? 'text-gray-300' : 'text-gray-600'}`}>
+                  Quick readouts based on matched rows (would-link + already-linked).
+                </div>
+                <div className="mt-3 space-y-2 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className={isNeon ? 'text-gray-300' : 'text-gray-600'}>Top brand</span>
+                    <span className="font-semibold">{fifoAnalytics.brands[0]?.label || '—'}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className={isNeon ? 'text-gray-300' : 'text-gray-600'}>Top SKU</span>
+                    <span className="font-semibold truncate max-w-[240px]" title={fifoAnalytics.skus[0]?.label || ''}>
+                      {fifoAnalytics.skus[0]?.label || '—'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className={isNeon ? 'text-gray-300' : 'text-gray-600'}>Most common size</span>
+                    <span className="font-semibold">{fifoAnalytics.sizes[0]?.label || '—'}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+              <div
+                className={`rounded-xl border p-3 ${isNeon ? 'bg-gray-950/40 border-white/10 text-gray-100' : 'bg-white border-gray-200 text-gray-900'}`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold">Top brands</div>
+                    <div className={`text-xs ${isNeon ? 'text-gray-300' : 'text-gray-600'}`}>Sorted by profit</div>
+                  </div>
+                </div>
+                <div className="mt-2 overflow-x-auto">
+                  <table className="min-w-[520px] w-full text-xs">
+                    <thead className={isNeon ? 'text-gray-300' : 'text-gray-600'}>
+                      <tr className={isNeon ? 'border-b border-white/10' : 'border-b border-gray-200'}>
+                        <th className="py-1 pr-2 text-left">Brand</th>
+                        <th className="py-1 pr-2 text-right">Sales</th>
+                        <th className="py-1 pr-2 text-right">Net</th>
+                        <th className="py-1 pr-2 text-right">Paid</th>
+                        <th className="py-1 pr-2 text-right">Profit</th>
+                        <th className="py-1 pr-0 text-right">ROI</th>
+                      </tr>
+                    </thead>
+                    <tbody className={isNeon ? 'divide-y divide-white/5' : 'divide-y divide-gray-100'}>
+                      {fifoAnalytics.brands.slice(0, 8).map((b) => (
+                        <tr key={b.key}>
+                          <td className="py-1 pr-2 max-w-[200px] truncate" title={b.label}>
+                            {b.label}
+                          </td>
+                          <td className="py-1 pr-2 text-right tabular-nums">{b.count}</td>
+                          <td className="py-1 pr-2 text-right tabular-nums">{currency(b.revenue)}</td>
+                          <td className="py-1 pr-2 text-right tabular-nums">{currency(b.paid)}</td>
+                          <td className="py-1 pr-2 text-right tabular-nums font-semibold">{currency(b.profit)}</td>
+                          <td className="py-1 pr-0 text-right tabular-nums">
+                            {b.roiTotals === null ? '—' : `${(b.roiTotals * 100).toFixed(1)}%`}
+                          </td>
+                        </tr>
+                      ))}
+                      {fifoAnalytics.brands.length === 0 && (
+                        <tr>
+                          <td className="py-2 text-xs" colSpan={6}>
+                            No matched rows yet — run Compute FIFO profit.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div
+                className={`rounded-xl border p-3 ${isNeon ? 'bg-gray-950/40 border-white/10 text-gray-100' : 'bg-white border-gray-200 text-gray-900'}`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold">Top SKUs</div>
+                    <div className={`text-xs ${isNeon ? 'text-gray-300' : 'text-gray-600'}`}>Sorted by profit (styleId → urlKey → product)</div>
+                  </div>
+                </div>
+                <div className="mt-2 overflow-x-auto">
+                  <table className="min-w-[520px] w-full text-xs">
+                    <thead className={isNeon ? 'text-gray-300' : 'text-gray-600'}>
+                      <tr className={isNeon ? 'border-b border-white/10' : 'border-b border-gray-200'}>
+                        <th className="py-1 pr-2 text-left">SKU</th>
+                        <th className="py-1 pr-2 text-right">Sales</th>
+                        <th className="py-1 pr-2 text-right">Net</th>
+                        <th className="py-1 pr-2 text-right">Paid</th>
+                        <th className="py-1 pr-2 text-right">Profit</th>
+                        <th className="py-1 pr-0 text-right">ROI</th>
+                      </tr>
+                    </thead>
+                    <tbody className={isNeon ? 'divide-y divide-white/5' : 'divide-y divide-gray-100'}>
+                      {fifoAnalytics.skus.slice(0, 8).map((s) => (
+                        <tr key={s.key}>
+                          <td className="py-1 pr-2 max-w-[260px] truncate" title={s.label}>
+                            {s.label}
+                          </td>
+                          <td className="py-1 pr-2 text-right tabular-nums">{s.count}</td>
+                          <td className="py-1 pr-2 text-right tabular-nums">{currency(s.revenue)}</td>
+                          <td className="py-1 pr-2 text-right tabular-nums">{currency(s.paid)}</td>
+                          <td className="py-1 pr-2 text-right tabular-nums font-semibold">{currency(s.profit)}</td>
+                          <td className="py-1 pr-0 text-right tabular-nums">
+                            {s.roiTotals === null ? '—' : `${(s.roiTotals * 100).toFixed(1)}%`}
+                          </td>
+                        </tr>
+                      ))}
+                      {fifoAnalytics.skus.length === 0 && (
+                        <tr>
+                          <td className="py-2 text-xs" colSpan={6}>
+                            No matched rows yet — run Compute FIFO profit.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>

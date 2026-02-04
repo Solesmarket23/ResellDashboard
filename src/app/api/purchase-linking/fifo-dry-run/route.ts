@@ -1194,9 +1194,12 @@ export async function GET(request: NextRequest) {
             saleId: sale?.id || null,
             saleOrderNumber: sale?.orderNumber || null,
             saleProduct: sale?.product || null,
+            saleBrand: sale?.brand || null,
             saleSize: sale?.size || null,
             saleCutoffIso,
             saleCutoffSource,
+            saleStyleId: (sale?.styleId || '').toString().trim() || null,
+            saleUrlKey: String((sale as any)?.urlKey || '').trim() || null,
             salePrice: saleSalePrice,
             saleFees,
             salePayout,
@@ -1214,6 +1217,7 @@ export async function GET(request: NextRequest) {
 
       const saleOrderNumber = sale?.orderNumber || null;
       const saleProduct = sale?.product || null;
+      const saleBrand = sale?.brand || null;
       const saleSizeRaw = sale?.size || '';
       const saleSize = normalizeSize(saleSizeRaw);
       const saleStyleId = (sale?.styleId || '').toString().trim();
@@ -1561,10 +1565,12 @@ export async function GET(request: NextRequest) {
           saleId: sale?.id || null,
           saleOrderNumber,
           saleProduct,
+          saleBrand,
           saleSize: saleSizeRaw,
           saleCutoffIso,
           saleCutoffSource,
           saleStyleId: saleStyleId || null,
+          saleUrlKey: saleUrlKey || null,
           salePrice: saleSalePrice,
           saleFees,
           salePayout,
@@ -1670,6 +1676,7 @@ export async function GET(request: NextRequest) {
           saleId: sale?.id || null,
           saleOrderNumber,
           saleProduct,
+          saleBrand,
           saleSize: saleSizeRaw,
           saleSource: (sale as any)?._source || null,
           saleCutoffIso,
@@ -1682,6 +1689,7 @@ export async function GET(request: NextRequest) {
           method: null,
           reason: computedReason,
           saleStyleId: saleStyleId || null,
+          saleUrlKey: saleUrlKey || null,
           saleSizeNorm: saleSize || null,
           candidatesTotal: fifoCandidatesTotal,
           candidatesConsidered: fifoCandidatesConsidered,
