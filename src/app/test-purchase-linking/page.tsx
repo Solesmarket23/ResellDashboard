@@ -619,6 +619,8 @@ export default function TestPurchaseLinkingPage() {
       nextCursorId?: string | null;
     }>
   >([]);
+  const [debugOrderNumbersCsv, setDebugOrderNumbersCsv] = useState<string>('72881685, 73038625, 73123272');
+  const [debuggingOrders, setDebuggingOrders] = useState(false);
 
   const monthOptions = useMemo(
     () => [
@@ -1447,6 +1449,58 @@ export default function TestPurchaseLinkingPage() {
     [loadSales, runFifoDryRun, salesIdBackfillCursorId, showNotice, userId]
   );
 
+  const debugSpecificOrders = useCallback(async () => {
+    const u = userId.trim();
+    if (!u) {
+      showNotice('❌ No userId found. Sign in (or ensure site password login).', 'error');
+      return;
+    }
+    const eventRunId = `dbg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    setDebuggingOrders(true);
+    try {
+      // #region agent log
+      __agentLog({
+        runId: 'pre-fix',
+        hypothesisId: 'H7',
+        location: 'test-purchase-linking/page.tsx:debugSpecificOrders:start',
+        message: 'debugSpecificOrders start',
+        data: { eventRunId, userIdMasked: __agentMask(u), debugOrderNumbersCsvLen: debugOrderNumbersCsv.length }
+      });
+      // #endregion
+      const resp = await fetch('/api/stockx/sales/backfill-identifiers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': u },
+        body: JSON.stringify({
+          __debugEventRunId: eventRunId,
+          debugOrderNumbersCsv
+        })
+      });
+      const json = await resp.json().catch(() => ({}));
+      // #region agent log
+      __agentLog({
+        runId: 'pre-fix',
+        hypothesisId: 'H7',
+        location: 'test-purchase-linking/page.tsx:debugSpecificOrders:resp',
+        message: 'debugSpecificOrders response',
+        data: {
+          eventRunId,
+          ok: resp.ok,
+          status: resp.status,
+          debug: json?.debug === true,
+          debugOrderNumbersCount: json?.debugOrderNumbersCount ?? null,
+          debugOrders0: Array.isArray(json?.debugOrders) && json.debugOrders.length > 0 ? json.debugOrders[0] : null
+        }
+      });
+      // #endregion
+      if (!resp.ok || json?.success === false) throw new Error(json?.error || `Debug failed (${resp.status})`);
+      showNotice(`✅ Debug fetched ${Array.isArray(json?.debugOrders) ? json.debugOrders.length : 0} orders (see logs)`, 'success', 20000);
+    } catch (e: any) {
+      showNotice(`❌ Debug orders failed: ${e?.message || 'Unknown error'}`, 'error', 20000);
+    } finally {
+      setDebuggingOrders(false);
+    }
+  }, [debugOrderNumbersCsv, showNotice, userId]);
+
   const [linking, setLinking] = useState(false);
   const [allowWrites, setAllowWrites] = useState(false);
   const [preview, setPreview] = useState<any | null>(null);
@@ -1916,6 +1970,26 @@ export default function TestPurchaseLinkingPage() {
                 >
                   {autoFixingIds ? 'Fixing IDs…' : 'Fix IDs (auto) + Compute'}
                 </button>
+                <div className={`flex items-center gap-2 rounded-md px-2 py-1 ${isNeon ? 'bg-white/5 border border-white/10' : 'bg-gray-50 border border-gray-200'}`}>
+                  <input
+                    value={debugOrderNumbersCsv}
+                    onChange={(e) => setDebugOrderNumbersCsv(e.target.value)}
+                    placeholder="Debug order #s (csv)"
+                    className={`w-56 rounded-md px-2 py-1 text-xs ${
+                      isNeon ? 'bg-black/30 text-white placeholder:text-gray-400 border border-white/10' : 'bg-white text-gray-900 border border-gray-300'
+                    }`}
+                  />
+                  <button
+                    onClick={debugSpecificOrders}
+                    disabled={debuggingOrders}
+                    className={`px-3 py-2 rounded-md text-xs font-semibold ${
+                      isNeon ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10' : 'bg-gray-900 text-white hover:bg-gray-800'
+                    } disabled:opacity-60`}
+                    title="Fetch order-details + product-details for these order numbers (no Firebase writes). See debug.log for results."
+                  >
+                    {debuggingOrders ? 'Debugging…' : 'Debug orders'}
+                  </button>
+                </div>
                 {autoFixingIds && (
                   <button
                     onClick={() => {

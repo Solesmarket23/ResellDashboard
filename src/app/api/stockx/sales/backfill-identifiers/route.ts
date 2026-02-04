@@ -471,6 +471,17 @@ export async function POST(request: NextRequest) {
       body = {};
     }
 
+    const debugOrderNumbersRaw = body?.debugOrderNumbers ?? body?.debugOrderNumbersCsv ?? null;
+    const debugOrderNumbers: string[] = Array.isArray(debugOrderNumbersRaw)
+      ? debugOrderNumbersRaw.map((v) => String(v || '').trim()).filter(Boolean)
+      : typeof debugOrderNumbersRaw === 'string'
+        ? debugOrderNumbersRaw
+            .split(/[,\s]+/g)
+            .map((v: string) => String(v || '').trim())
+            .filter(Boolean)
+        : [];
+    const debugEventRunId = typeof body?.__debugEventRunId === 'string' ? body.__debugEventRunId.trim() : '';
+
     const force = body?.force === true || body?.force === 1 || body?.force === '1';
     const ttlHours = Math.max(1, Math.min(168, Number(body?.ttlHours ?? 24)));
     const ttlMs = ttlHours * 60 * 60 * 1000;
@@ -521,6 +532,117 @@ export async function POST(request: NextRequest) {
 
     const apiKey = process.env.STOCKX_API_KEY || '';
     if (!apiKey) return NextResponse.json({ success: false, error: 'Missing STOCKX_API_KEY' }, { status: 500 });
+
+    // DEBUG MODE: allow a caller to request a targeted inspection of specific order numbers.
+    // This does NOT write to Firestore; it just fetches StockX order-details (and optionally product-details) and returns a compact summary.
+    if (debugOrderNumbers.length > 0) {
+      const cookieStore = cookies();
+      let accessToken = cookieStore.get('stockx_access_token')?.value || undefined;
+      let refreshToken = cookieStore.get('stockx_refresh_token')?.value || undefined;
+      const expiresAtCookie = cookieStore.get('stockx_token_expires_at')?.value || '';
+      const expiresAtFromCookie = expiresAtCookie ? Number(expiresAtCookie) : null;
+
+      if (!accessToken || !refreshToken) {
+        const stored = await loadUserStockxTokens(userId);
+        accessToken = accessToken || stored.accessToken;
+        refreshToken = refreshToken || stored.refreshToken;
+      }
+      if (!refreshToken) {
+        return NextResponse.json({ success: false, error: 'StockX not connected (missing refresh token)' }, { status: 401 });
+      }
+
+      const shouldRefresh =
+        !accessToken ||
+        (typeof expiresAtFromCookie === 'number' && Number.isFinite(expiresAtFromCookie) && expiresAtFromCookie > 0 && expiresAtFromCookie <= now);
+      if (shouldRefresh) {
+        const refreshed = await refreshStockXTokens(refreshToken);
+        if (!refreshed.success || !refreshed.accessToken) {
+          return NextResponse.json(
+            { success: false, error: refreshed.error || 'StockX token refresh failed', needsReauth: true },
+            { status: 401 }
+          );
+        }
+        accessToken = refreshed.accessToken;
+        refreshToken = refreshed.refreshToken || refreshToken;
+        await saveUserStockxTokens(userId, { accessToken, refreshToken, expiresAt: now + 3600 * 1000 });
+      }
+
+      const debugOrders: any[] = [];
+      const productDetailsCache = new Map<string, any>();
+      for (const orderNumber of debugOrderNumbers.slice(0, 10)) {
+        try {
+          const details = await fetchOrderDetails(orderNumber, apiKey, accessToken!);
+          const root = details && typeof details === 'object' ? details : {};
+          const product = (root as any)?.product || null;
+          const productId =
+            product?.productId || product?.id || (root as any)?.productId || (root as any)?.product_id || null;
+          const styleId =
+            product?.styleId ||
+            product?.style_id ||
+            product?.sku ||
+            (root as any)?.styleId ||
+            (root as any)?.style_id ||
+            (root as any)?.sku ||
+            null;
+          const size =
+            (root as any)?.variant?.variantValue ||
+            (root as any)?.variant?.size ||
+            (root as any)?.size ||
+            (root as any)?.variantValue ||
+            null;
+          const productName = product?.productName || product?.name || product?.title || null;
+          const urlKey = product?.urlKey || product?.url_key || (root as any)?.urlKey || null;
+
+          let productDetailsStyleId: string | null = null;
+          if (!isMissingish(productId)) {
+            const pid = String(productId).trim();
+            let pd = productDetailsCache.get(pid) || null;
+            if (!pd) {
+              try {
+                pd = await fetchProductDetails(pid, apiKey, accessToken!);
+              } catch {
+                pd = null;
+              }
+              productDetailsCache.set(pid, pd);
+            }
+            if (pd) {
+              const styleFromPd = (pd as any)?.styleId ?? (pd as any)?.productData?.styleId ?? (pd as any)?.product?.styleId ?? null;
+              const sv = String(styleFromPd ?? '').trim();
+              productDetailsStyleId = sv || null;
+            }
+          }
+
+          debugOrders.push({
+            orderMasked: __agentMask(orderNumber),
+            status: String((root as any)?.status || ''),
+            productIdMasked: __agentMask(productId),
+            styleIdPreview: String(styleId ?? '').trim().slice(0, 40),
+            styleIdPresent: !isMissingish(styleId),
+            sizePreview: String(size ?? '').trim().slice(0, 24),
+            productNamePreview: String(productName ?? '').trim().slice(0, 60),
+            urlKeyPreview: String(urlKey ?? '').trim().slice(0, 60),
+            productDetailsStyleIdPreview: String(productDetailsStyleId ?? '').trim().slice(0, 40),
+            productDetailsStyleIdPresent: !isMissingish(productDetailsStyleId),
+          });
+        } catch (e: any) {
+          debugOrders.push({
+            orderMasked: __agentMask(orderNumber),
+            error: String(e?.message || e || 'unknown'),
+            status: typeof e?.status === 'number' ? e.status : undefined,
+            blocked: e?.blocked ? true : undefined,
+          });
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        debug: true,
+        userId,
+        debugEventRunId: debugEventRunId || null,
+        debugOrderNumbersCount: debugOrderNumbers.length,
+        debugOrders,
+      });
+    }
 
     const page = await scanCandidateSalesPage({ userId, pageSize: scanLimit, cursorId, mode: scanMode });
     const sales = page.sales;
