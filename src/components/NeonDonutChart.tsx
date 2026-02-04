@@ -166,12 +166,15 @@ export default function NeonDonutChart({
               {prepared.rows.map((d) => {
                 const pct = prepared.total > 0 ? (d.value / prepared.total) * 100 : 0;
                 return (
-                  <div key={d.label} className="flex items-center justify-between gap-2 text-xs">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: d.color }} />
-                      <span className="truncate">{d.label}</span>
+                  <div
+                    key={d.label}
+                    className="grid grid-cols-[minmax(140px,1fr)_auto] items-start gap-x-3 gap-y-0 text-xs"
+                  >
+                    <div className="flex items-start gap-2 min-w-0">
+                      <span className="mt-1 inline-block h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: d.color }} />
+                      <span className="whitespace-normal break-words leading-snug">{d.label}</span>
                     </div>
-                    <div className="shrink-0 tabular-nums">
+                    <div className="tabular-nums text-right whitespace-nowrap">
                       {fmt(d.value)} <span className={isNeon ? 'text-gray-400' : 'text-gray-500'}>({pct.toFixed(1)}%)</span>
                     </div>
                   </div>
