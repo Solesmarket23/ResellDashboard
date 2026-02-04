@@ -1301,6 +1301,9 @@ export default function TestPurchaseLinkingPage() {
           const scanModeUsed = typeof s?.scanModeUsed === 'string' ? s.scanModeUsed : '';
           const candidateSales = typeof s?.candidateSales === 'number' ? s.candidateSales : null;
           const embeddedUpdated = typeof s?.embeddedUpdated === 'number' ? s.embeddedUpdated : 0;
+          const embeddedFilledStyleId = typeof s?.embeddedFilledStyleId === 'number' ? s.embeddedFilledStyleId : null;
+          const legacyFilledStyleId = typeof s?.legacyFilledStyleId === 'number' ? s.legacyFilledStyleId : null;
+          const remoteFilledStyleId = typeof s?.remoteFilledStyleId === 'number' ? s.remoteFilledStyleId : null;
           const legacyUpdated = typeof s?.legacyUpdated === 'number' ? s.legacyUpdated : 0;
           const remoteAttempted = typeof s?.remoteAttempted === 'number' ? s.remoteAttempted : 0;
           const failed = typeof s?.failed === 'number' ? s.failed : 0;
@@ -1324,6 +1327,9 @@ export default function TestPurchaseLinkingPage() {
               stoppedEarlyReason,
               scanModeUsed,
               candidateSales,
+              embeddedFilledStyleId,
+              legacyFilledStyleId,
+              remoteFilledStyleId,
               nextCursorPresent: !!next,
               status429: statusCounts?.['429'] ?? 0,
               status403: statusCounts?.['403'] ?? 0,

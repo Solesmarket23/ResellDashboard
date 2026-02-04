@@ -151,9 +151,10 @@ function patchFromEmbeddedSaleDoc(userSaleDoc: any): any | null {
   if (!isMissingish(listingIdNorm)) patch.listingId = listingIdNorm;
 
   const cleaned = stripUndefinedDeep(patch);
-  // If all we did was set timestamps, ignore.
-  const keys = Object.keys(cleaned);
-  return keys.length > 2 ? cleaned : null;
+  // Only return a patch if we actually filled at least one meaningful identifier field.
+  const meaningful = ['styleId', 'size', 'product', 'brand', 'urlKey', 'listingId'];
+  const filledAny = meaningful.some((k) => !isMissingish((cleaned as any)?.[k]));
+  return filledAny ? cleaned : null;
 }
 
 function getEffectiveUserId(request: NextRequest): string | null {
@@ -404,7 +405,10 @@ function patchFromLegacySaleData(legacyDoc: any): any {
   if (!isMissingish(urlKeyNorm)) patch.urlKey = urlKeyNorm;
   if (!isMissingish(listingIdNorm)) patch.listingId = listingIdNorm;
 
-  return stripUndefinedDeep(patch);
+  const cleaned = stripUndefinedDeep(patch);
+  const meaningful = ['styleId', 'size', 'product', 'brand', 'urlKey', 'listingId'];
+  const filledAny = meaningful.some((k) => !isMissingish((cleaned as any)?.[k]));
+  return filledAny ? cleaned : null;
 }
 
 export async function POST(request: NextRequest) {
@@ -514,12 +518,18 @@ export async function POST(request: NextRequest) {
       if (patch) embeddedUpdates.push({ docId: c.docId, patch });
     }
     let embeddedUpdated = 0;
+    let embeddedFilledStyleId = 0;
+    let embeddedFilledSize = 0;
     if (embeddedUpdates.length > 0) {
       const batchSize = 400;
       for (let i = 0; i < embeddedUpdates.length; i += batchSize) {
         const chunk = embeddedUpdates.slice(i, i + batchSize);
         const batch = db.batch();
-        for (const u of chunk) batch.set(db.collection('user_sales').doc(u.docId), u.patch, { merge: true });
+        for (const u of chunk) {
+          if (!isMissingish(u.patch?.styleId)) embeddedFilledStyleId += 1;
+          if (!isMissingish(u.patch?.size)) embeddedFilledSize += 1;
+          batch.set(db.collection('user_sales').doc(u.docId), u.patch, { merge: true });
+        }
         await batch.commit();
         embeddedUpdated += chunk.length;
       }
@@ -533,7 +543,7 @@ export async function POST(request: NextRequest) {
     for (const c of toConsider) {
       const legacy = legacyByOrder.get(c.orderNumber) || null;
       const patch = legacy ? patchFromLegacySaleData(legacy) : null;
-      if (patch && Object.keys(patch).length > 2) {
+      if (patch) {
         // We found some usable fields locally.
         legacyUpdates.push({ docId: c.docId, patch });
         // If local data still didn't include styleId or size, keep it for remote attempt.
@@ -549,12 +559,18 @@ export async function POST(request: NextRequest) {
 
     // Commit local legacy updates first (cheap, no StockX calls).
     let legacyUpdated = 0;
+    let legacyFilledStyleId = 0;
+    let legacyFilledSize = 0;
     if (legacyUpdates.length > 0) {
       const batchSize = 400;
       for (let i = 0; i < legacyUpdates.length; i += batchSize) {
         const chunk = legacyUpdates.slice(i, i + batchSize);
         const batch = db.batch();
-        for (const u of chunk) batch.set(db.collection('user_sales').doc(u.docId), u.patch, { merge: true });
+        for (const u of chunk) {
+          if (!isMissingish(u.patch?.styleId)) legacyFilledStyleId += 1;
+          if (!isMissingish(u.patch?.size)) legacyFilledSize += 1;
+          batch.set(db.collection('user_sales').doc(u.docId), u.patch, { merge: true });
+        }
         await batch.commit();
         legacyUpdated += chunk.length;
       }
@@ -646,6 +662,8 @@ export async function POST(request: NextRequest) {
     let stoppedEarlyReason: StopReason = null;
     let suggestedWaitMs: number | null = null;
     const updates: Array<{ docId: string; patch: any }> = [];
+    let remoteFilledStyleId = 0;
+    let remoteFilledSize = 0;
 
     const limit = concurrency;
     let idx = 0;
@@ -782,7 +800,14 @@ export async function POST(request: NextRequest) {
           if (payout !== null) patch.payout = payout;
           if (fees !== null) patch.fees = fees;
 
-          updates.push({ docId: current.docId, patch: stripUndefinedDeep(patch) });
+          const cleaned = stripUndefinedDeep(patch);
+          const meaningful = ['styleId', 'size', 'product', 'brand', 'urlKey', 'listingId'];
+          const filledAny = meaningful.some((k) => !isMissingish((cleaned as any)?.[k]));
+          if (filledAny) {
+            if (!isMissingish((cleaned as any)?.styleId)) remoteFilledStyleId += 1;
+            if (!isMissingish((cleaned as any)?.size)) remoteFilledSize += 1;
+            updates.push({ docId: current.docId, patch: cleaned });
+          }
         } catch (e: any) {
           const st = typeof e?.status === 'number' ? String(e.status) : 'unknown';
           failureStatusCounts.set(st, (failureStatusCounts.get(st) || 0) + 1);
@@ -829,9 +854,16 @@ export async function POST(request: NextRequest) {
       candidateSales: uniq.length,
       attempted: toConsider.length,
       embeddedUpdated,
+      embeddedFilledStyleId,
+      embeddedFilledSize,
       legacyUpdated,
+      legacyFilledStyleId,
+      legacyFilledSize,
       remoteAttempted: toBackfill.length,
-      updated: legacyUpdated + updated,
+      updated: embeddedUpdated + legacyUpdated + updated,
+      remoteUpdated: updated,
+      remoteFilledStyleId,
+      remoteFilledSize,
       failed: failures.length,
       failureStatusCounts: Object.fromEntries(Array.from(failureStatusCounts.entries()).sort((a, b) => Number(b[1]) - Number(a[1]))),
       blockedCount,
