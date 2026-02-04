@@ -1309,6 +1309,9 @@ export default function TestPurchaseLinkingPage() {
           const remoteOrderDetailsVariantSizePresent = typeof s?.remoteOrderDetailsVariantSizePresent === 'number' ? s.remoteOrderDetailsVariantSizePresent : null;
           const remoteOrderDetailsStyleIdMissingButProductIdPresent =
             typeof s?.remoteOrderDetailsStyleIdMissingButProductIdPresent === 'number' ? s.remoteOrderDetailsStyleIdMissingButProductIdPresent : null;
+          const productDetailsCalls = typeof s?.productDetailsCalls === 'number' ? s.productDetailsCalls : null;
+          const productDetailsStyleIdPresent = typeof s?.productDetailsStyleIdPresent === 'number' ? s.productDetailsStyleIdPresent : null;
+          const productDetailsStyleIdMissing = typeof s?.productDetailsStyleIdMissing === 'number' ? s.productDetailsStyleIdMissing : null;
           const legacyUpdated = typeof s?.legacyUpdated === 'number' ? s.legacyUpdated : 0;
           const remoteAttempted = typeof s?.remoteAttempted === 'number' ? s.remoteAttempted : 0;
           const failed = typeof s?.failed === 'number' ? s.failed : 0;
@@ -1339,6 +1342,9 @@ export default function TestPurchaseLinkingPage() {
               remoteOrderDetailsProductIdPresent,
               remoteOrderDetailsVariantSizePresent,
               remoteOrderDetailsStyleIdMissingButProductIdPresent,
+              productDetailsCalls,
+              productDetailsStyleIdPresent,
+              productDetailsStyleIdMissing,
               nextCursorPresent: !!next,
               status429: statusCounts?.['429'] ?? 0,
               status403: statusCounts?.['403'] ?? 0,

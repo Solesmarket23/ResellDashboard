@@ -98,6 +98,12 @@ function isMissingish(value: any): boolean {
   );
 }
 
+function looksLikeUuid(value: any): boolean {
+  const s = String(value ?? '').trim();
+  if (!s) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
+}
+
 function normalizeSize(value: any): string {
   const s = String(value ?? '').trim();
   if (!s) return '';
@@ -121,7 +127,6 @@ function patchFromEmbeddedSaleDoc(userSaleDoc: any): any | null {
     base?.product?.styleId ||
     base?.product?.sku ||
     base?.sku ||
-    base?.product?.productId ||
     null;
   const size = base?.size || base?.variant?.size || base?.variant?.variantValue || base?.variant?.variant_value || null;
   const productName = base?.productName || base?.product?.productName || base?.product?.name || base?.product?.title || null;
@@ -137,13 +142,14 @@ function patchFromEmbeddedSaleDoc(userSaleDoc: any): any | null {
   };
 
   const styleIdNorm = styleId ? String(styleId).trim() : '';
+  const styleIdClean = looksLikeUuid(styleIdNorm) ? '' : styleIdNorm;
   const sizeNorm = normalizeSize(size);
   const productNorm = productName ? String(productName).trim() : '';
   const brandNorm = brand ? String(brand).trim() : '';
   const urlKeyNorm = urlKey ? String(urlKey).trim() : '';
   const listingIdNorm = listingId ? String(listingId).trim() : '';
 
-  if (!isMissingish(styleIdNorm)) patch.styleId = styleIdNorm;
+  if (!isMissingish(styleIdClean)) patch.styleId = styleIdClean;
   if (sizeNorm) patch.size = sizeNorm;
   if (!isMissingish(productNorm)) patch.product = productNorm;
   if (!isMissingish(brandNorm)) patch.brand = brandNorm;
@@ -343,6 +349,34 @@ async function fetchOrderDetails(orderNumber: string, apiKey: string, accessToke
   return await res.json().catch(() => ({}));
 }
 
+async function fetchProductDetails(productId: string, apiKey: string, accessToken: string): Promise<any> {
+  const url = `https://api.stockx.com/v2/catalog/products/${encodeURIComponent(productId)}`;
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'x-api-key': apiKey,
+      Accept: 'application/json',
+      'User-Agent': 'FlipFlow/1.0',
+    },
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    const err = new Error(`StockX product details failed (${res.status})`);
+    (err as any).status = res.status;
+    (err as any).blocked = res.status === 403 && isPerimeterXBlock(txt);
+    const retryAfterRaw = res.headers.get('retry-after');
+    const retryAfterSec = retryAfterRaw ? Number(retryAfterRaw) : NaN;
+    (err as any).retryAfterMs =
+      res.status === 429 && Number.isFinite(retryAfterSec) && retryAfterSec > 0
+        ? Math.min(5 * 60 * 1000, Math.round(retryAfterSec * 1000))
+        : undefined;
+    (err as any).details = txt;
+    throw err;
+  }
+  return await res.json().catch(() => ({}));
+}
+
 function hasUsefulIdentifierGaps(s: any): boolean {
   const styleId = String(s?.styleId || s?.product?.styleId || s?.product?.sku || '').trim();
   const sizeRaw = s?.size || s?.variant?.size || s?.variant?.variantValue || '';
@@ -376,7 +410,7 @@ async function loadLegacyStockxSalesByOrderNumbers(orderNumbers: string[]): Prom
 function patchFromLegacySaleData(legacyDoc: any): any {
   const saleData = legacyDoc?.saleData || legacyDoc?.sale || legacyDoc || null;
   if (!saleData) return null;
-  const styleId = saleData?.product?.styleId || saleData?.product?.sku || saleData?.product?.productId || null;
+  const styleId = saleData?.product?.styleId || saleData?.product?.sku || null;
   const size = saleData?.variant?.size || saleData?.variant?.variantValue || saleData?.size || null;
   const productName = saleData?.product?.productName || saleData?.product?.name || saleData?.productName || null;
   const brand = saleData?.product?.brand || saleData?.brand || null;
@@ -392,13 +426,14 @@ function patchFromLegacySaleData(legacyDoc: any): any {
   };
 
   const styleIdNorm = styleId ? String(styleId).trim() : '';
+  const styleIdClean = looksLikeUuid(styleIdNorm) ? '' : styleIdNorm;
   const sizeNorm = normalizeSize(size);
   const productNorm = productName ? String(productName).trim() : '';
   const brandNorm = brand ? String(brand).trim() : '';
   const urlKeyNorm = urlKey ? String(urlKey).trim() : '';
   const listingIdNorm = listingId ? String(listingId).trim() : '';
 
-  if (!isMissingish(styleIdNorm)) patch.styleId = styleIdNorm;
+  if (!isMissingish(styleIdClean)) patch.styleId = styleIdClean;
   if (sizeNorm) patch.size = sizeNorm;
   if (!isMissingish(productNorm)) patch.product = productNorm;
   if (!isMissingish(brandNorm)) patch.brand = brandNorm;
@@ -669,6 +704,10 @@ export async function POST(request: NextRequest) {
     let remoteOrderDetailsVariantSizePresent = 0;
     let remoteOrderDetailsStyleIdMissingButProductIdPresent = 0;
     let debugShapeLogged = 0;
+    const productDetailsCache = new Map<string, any>();
+    let productDetailsCalls = 0;
+    let productDetailsStyleIdPresent = 0;
+    let productDetailsStyleIdMissing = 0;
 
     const limit = concurrency;
     let idx = 0;
@@ -830,18 +869,72 @@ export async function POST(request: NextRequest) {
           const listingId = details?.listingId || details?.askId || details?.listing?.id || null;
 
           const styleIdNorm = styleId ? String(styleId).trim() : '';
+          const styleIdClean = looksLikeUuid(styleIdNorm) ? '' : styleIdNorm;
           const sizeNorm = normalizeSize(size);
           const productNorm = productName ? String(productName).trim() : '';
           const brandNorm = brand ? String(brand).trim() : '';
           const urlKeyNorm = urlKey ? String(urlKey).trim() : '';
           const listingIdNorm = listingId ? String(listingId).trim() : '';
 
-          if (!isMissingish(styleIdNorm)) patch.styleId = styleIdNorm;
+          if (!isMissingish(styleIdClean)) patch.styleId = styleIdClean;
           if (sizeNorm) patch.size = sizeNorm;
           if (!isMissingish(productNorm)) patch.product = productNorm;
           if (!isMissingish(brandNorm)) patch.brand = brandNorm;
           if (!isMissingish(urlKeyNorm)) patch.urlKey = urlKeyNorm;
           if (!isMissingish(listingIdNorm)) patch.listingId = listingIdNorm;
+
+          // Fallback: if order-details doesn't include styleId but DOES include productId, fetch catalog product details.
+          const productIdNorm = productId ? String(productId).trim() : '';
+          if (isMissingish(patch.styleId) && !isMissingish(productIdNorm)) {
+            let pd = productDetailsCache.get(productIdNorm) || null;
+            if (!pd) {
+              productDetailsCalls += 1;
+              try {
+                pd = await fetchProductDetails(productIdNorm, apiKey, accessToken!);
+              } catch (e: any) {
+                const status = Number(e?.status || 0) || null;
+                if (status === 401 && refreshToken) {
+                  const refreshed = await refreshStockXTokens(refreshToken);
+                  if (refreshed.success && refreshed.accessToken) {
+                    accessToken = refreshed.accessToken;
+                    refreshToken = refreshed.refreshToken || refreshToken;
+                    await saveUserStockxTokens(userId, { accessToken, refreshToken, expiresAt: Date.now() + 3600 * 1000 });
+                    pd = await fetchProductDetails(productIdNorm, apiKey, accessToken!);
+                  } else {
+                    throw e;
+                  }
+                } else if (status === 429) {
+                  const backoffMs =
+                    typeof e?.retryAfterMs === 'number' && Number.isFinite(e.retryAfterMs) && e.retryAfterMs > 0
+                      ? e.retryAfterMs
+                      : 2500;
+                  await new Promise((r) => setTimeout(r, backoffMs + Math.floor(Math.random() * 250)));
+                  pd = await fetchProductDetails(productIdNorm, apiKey, accessToken!);
+                } else {
+                  throw e;
+                }
+              }
+              productDetailsCache.set(productIdNorm, pd);
+            }
+
+            const styleFromPd = pd?.styleId ?? pd?.productData?.styleId ?? pd?.product?.styleId ?? null;
+            const styleFromPdNorm = styleFromPd ? String(styleFromPd).trim() : '';
+            const styleFromPdClean = looksLikeUuid(styleFromPdNorm) ? '' : styleFromPdNorm;
+            if (!isMissingish(styleFromPdClean)) {
+              patch.styleId = styleFromPdClean;
+              productDetailsStyleIdPresent += 1;
+            } else {
+              productDetailsStyleIdMissing += 1;
+            }
+
+            // Also lift urlKey/brand/title when missing.
+            const urlFromPd = pd?.urlKey ?? pd?.productData?.urlKey ?? pd?.product?.urlKey ?? null;
+            const brandFromPd = pd?.brand ?? pd?.productData?.brand ?? pd?.product?.brand ?? null;
+            const titleFromPd = pd?.title ?? pd?.productData?.title ?? pd?.product?.title ?? null;
+            if (isMissingish(patch.urlKey) && !isMissingish(urlFromPd)) patch.urlKey = String(urlFromPd).trim();
+            if (isMissingish(patch.brand) && !isMissingish(brandFromPd)) patch.brand = String(brandFromPd).trim();
+            if (isMissingish(patch.product) && !isMissingish(titleFromPd)) patch.product = String(titleFromPd).trim();
+          }
 
           if (salePrice !== null) patch.salePrice = salePrice;
           if (payout !== null) patch.payout = payout;
@@ -852,10 +945,10 @@ export async function POST(request: NextRequest) {
           const filledAny = meaningful.some((k) => !isMissingish((cleaned as any)?.[k]));
 
           // Diagnostics: determine whether order-details actually contains styleId/size info.
-          if (!isMissingish(styleIdNorm)) remoteOrderDetailsStyleIdPresent += 1;
+          if (!isMissingish(styleIdClean)) remoteOrderDetailsStyleIdPresent += 1;
           if (!isMissingish(productId)) remoteOrderDetailsProductIdPresent += 1;
           if (sizeNorm) remoteOrderDetailsVariantSizePresent += 1;
-          if (isMissingish(styleIdNorm) && !isMissingish(productId)) remoteOrderDetailsStyleIdMissingButProductIdPresent += 1;
+          if (isMissingish(styleIdClean) && !isMissingish(productId)) remoteOrderDetailsStyleIdMissingButProductIdPresent += 1;
 
           if (filledAny) {
             if (!isMissingish((cleaned as any)?.styleId)) remoteFilledStyleId += 1;
@@ -922,6 +1015,9 @@ export async function POST(request: NextRequest) {
       remoteOrderDetailsProductIdPresent,
       remoteOrderDetailsVariantSizePresent,
       remoteOrderDetailsStyleIdMissingButProductIdPresent,
+      productDetailsCalls,
+      productDetailsStyleIdPresent,
+      productDetailsStyleIdMissing,
       failed: failures.length,
       failureStatusCounts: Object.fromEntries(Array.from(failureStatusCounts.entries()).sort((a, b) => Number(b[1]) - Number(a[1]))),
       blockedCount,
