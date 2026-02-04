@@ -2253,23 +2253,25 @@ export default function TestPurchaseLinkingPage() {
                 <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                   <span className="opacity-80">Sales start:</span>
                   <input
+                    type="date"
                     value={fifoSalesAllocationStartYmd}
                     onChange={(e) => setFifoSalesAllocationStartYmd(e.target.value)}
                     className={`w-28 rounded-md px-2 py-1 text-xs ${
                       isNeon ? 'bg-black/30 text-white border border-white/10' : 'bg-white text-gray-900 border border-gray-300'
                     }`}
-                    placeholder="YYYY-MM-DD"
+                    title="Sales allocation start date (calendar picker)"
                   />
                 </label>
                 <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                   <span className="opacity-80">Purchases start:</span>
                   <input
+                    type="date"
                     value={fifoPurchaseStartYmd}
                     onChange={(e) => setFifoPurchaseStartYmd(e.target.value)}
                     className={`w-28 rounded-md px-2 py-1 text-xs ${
                       isNeon ? 'bg-black/30 text-white border border-white/10' : 'bg-white text-gray-900 border border-gray-300'
                     }`}
-                    placeholder="YYYY-MM-DD"
+                    title="Purchase eligibility start date (calendar picker)"
                   />
                 </label>
                 <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
