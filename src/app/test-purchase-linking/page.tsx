@@ -2756,9 +2756,26 @@ export default function TestPurchaseLinkingPage() {
         >
           <div className="p-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Sales</h2>
-              <div className={`text-sm ${isNeon ? 'text-gray-300' : 'text-gray-600'}`}>
-                Showing {fifoPagination.total === 0 ? 0 : fifoPagination.start + 1}–{fifoPagination.end} of {fifoPagination.total}
+              <h2 className="text-lg font-semibold">Sales (FIFO results)</h2>
+              <div className="flex items-center gap-3">
+                {(saleSearch.trim() || fifoShowNoMatchOnly) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSaleSearch('');
+                      setFifoShowNoMatchOnly(false);
+                    }}
+                    className={`h-8 rounded-md px-3 text-xs font-semibold ${
+                      isNeon ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10' : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
+                    }`}
+                    title="Clear table filters"
+                  >
+                    Clear filters
+                  </button>
+                )}
+                <div className={`text-sm ${isNeon ? 'text-gray-300' : 'text-gray-600'}`}>
+                  Showing {fifoPagination.total === 0 ? 0 : fifoPagination.start + 1}–{fifoPagination.end} of {fifoPagination.total}
+                </div>
               </div>
             </div>
             <div className="mt-3">
@@ -2771,6 +2788,29 @@ export default function TestPurchaseLinkingPage() {
                 placeholder="Search sales (order #, product, size, style)…"
               />
             </div>
+            {fifoRows.length > 0 && filteredFifoRows.length === 0 && (
+              <div
+                className={`mt-2 rounded-md border px-3 py-2 text-xs ${
+                  isNeon ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-200' : 'bg-yellow-50 border-yellow-200 text-yellow-900'
+                }`}
+              >
+                No rows are showing because of active filters
+                {fifoShowNoMatchOnly ? (
+                  <>
+                    {' '}
+                    (<span className="font-semibold">Show only no_match</span> is ON, but there are 0 no_match rows).
+                  </>
+                ) : saleSearch.trim() ? (
+                  <>
+                    {' '}
+                    (search query doesn’t match any rows).
+                  </>
+                ) : (
+                  '.'
+                )}{' '}
+                Click <span className="font-semibold">Clear filters</span>.
+              </div>
+            )}
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <button
                 type="button"
