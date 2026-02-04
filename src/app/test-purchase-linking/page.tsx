@@ -2158,7 +2158,7 @@ export default function TestPurchaseLinkingPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    const returnTo = '/dashboard?section=sales-2-0';
+                    const returnTo = '/dashboard?section=sales';
                     window.location.href = `/api/stockx/auth?returnTo=${encodeURIComponent(returnTo)}`;
                   }}
                   className={`px-4 py-2 rounded-lg font-semibold transition-all ${
@@ -2172,7 +2172,7 @@ export default function TestPurchaseLinkingPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    const returnTo = '/dashboard?section=sales-2-0';
+                    const returnTo = '/dashboard?section=sales';
                     window.location.href = `/api/stockx/disconnect?returnTo=${encodeURIComponent(returnTo)}`;
                   }}
                   className={`px-4 py-2 rounded-lg font-semibold transition-all ${

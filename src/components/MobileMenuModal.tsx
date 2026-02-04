@@ -44,6 +44,7 @@ interface MobileMenuModalProps {
 }
 
 const PRICE_MONITOR_DISABLED = process.env.NEXT_PUBLIC_DISABLE_PRICE_MONITOR === 'true';
+const DISABLED_DASHBOARD_SECTIONS = new Set(['sales-2-0', 'purchase-linking']);
 
 // Organized menu sections for mobile
 const menuSections = [
@@ -54,8 +55,9 @@ const menuSections = [
       { id: 'purchases', label: 'Purchases', icon: ShoppingCart },
       { id: 'deliveries', label: 'Deliveries', icon: Truck },
       { id: 'sales', label: 'Sales', icon: TrendingUp },
-      { id: 'sales-2-0', label: 'Sales 2.0', icon: TrendingUp },
-      { id: 'purchase-linking', label: 'Purchase Linking', icon: ArrowLeftRight },
+      // legacy sections: keep code but hide entry points
+      { id: 'sales-2-0', label: 'Sales 2.0', icon: TrendingUp, disabled: true },
+      { id: 'purchase-linking', label: 'Purchase Linking', icon: ArrowLeftRight, disabled: true },
     ]
   },
   {
@@ -215,7 +217,9 @@ const MobileMenuModal: React.FC<MobileMenuModalProps> = ({
               {section.title}
             </h3>
             <div className="space-y-1">
-              {section.items.map((item) => {
+              {section.items
+                .filter((item: any) => !DISABLED_DASHBOARD_SECTIONS.has(item.id))
+                .map((item) => {
                 const Icon = item.icon;
                 const isActive = activeItem === item.id;
 

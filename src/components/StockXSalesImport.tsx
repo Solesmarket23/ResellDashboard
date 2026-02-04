@@ -605,7 +605,7 @@ const StockXSalesImport: React.FC<StockXSalesImportProps> = ({ userId, onImportC
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <a
-                  href="/api/stockx/auth?returnTo=/dashboard?section=sales-2-0"
+                  href="/api/stockx/auth?returnTo=/dashboard?section=sales"
                   className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all duration-200 ${
                     isNeon
                       ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-black'

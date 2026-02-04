@@ -68,6 +68,9 @@ function DashboardContent() {
     return (raw && raw.trim() ? raw : 'dashboard').toLowerCase();
   }, [searchParams]);
 
+  // Soft-disabled sections: keep code, but remove entry points and bounce to the canonical page.
+  const DISABLED_SECTIONS = useMemo(() => new Set(['sales-2-0', 'purchase-linking']), []);
+
   // Remove/disable certain legacy StockX sections
   const REMOVED_SECTIONS = useMemo(
     () =>
@@ -124,6 +127,15 @@ function DashboardContent() {
     router.replace(`/dashboard?${params.toString()}`);
   }, [REMOVED_SECTIONS, currentSection, isClient, router, searchParams]);
 
+  // If a user hits a disabled legacy section directly, bounce them to the canonical Sales page.
+  useEffect(() => {
+    if (!isClient) return;
+    if (!DISABLED_SECTIONS.has(currentSection)) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('section', 'sales');
+    router.replace(`/dashboard?${params.toString()}`);
+  }, [DISABLED_SECTIONS, currentSection, isClient, router, searchParams]);
+
   const handleItemClick = (item: string) => {
     // Convert section name to URL-friendly format (e.g., "Market Research" -> "market-research")
     const urlSection = item.toLowerCase().replace(/\s+/g, '-');
@@ -176,8 +188,8 @@ function DashboardContent() {
         // This keeps the existing nav route (/dashboard?section=sales) and makes it actionable for profitability.
         return <TestPurchaseLinkingPage />;
       case 'sales-2-0':
-        return <TestPurchaseLinkingPage />;
       case 'purchase-linking':
+        // Disabled legacy sections (should be redirected by effect above).
         return <TestPurchaseLinkingPage />;
       case 'analytics':
         return <Analytics />;
