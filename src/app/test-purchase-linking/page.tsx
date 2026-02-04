@@ -590,6 +590,8 @@ export default function TestPurchaseLinkingPage() {
   const [fifoSandboxWindowOnly, setFifoSandboxWindowOnly] = useState(false);
   const [fifoSalesAllocationStartYmd, setFifoSalesAllocationStartYmd] = useState<string>('2025-01-01');
   const [fifoPurchaseStartYmd, setFifoPurchaseStartYmd] = useState<string>('2024-11-01');
+  const [fifoUsePurchaseLookback, setFifoUsePurchaseLookback] = useState(true);
+  const [fifoPurchaseLookbackDays, setFifoPurchaseLookbackDays] = useState(60);
   const [comparingModes, setComparingModes] = useState(false);
   const [fifoCompare, setFifoCompare] = useState<null | {
     a: { matchMode: 'product_name' | 'two_keys' | 'full'; summary: any | null };
@@ -950,6 +952,14 @@ export default function TestPurchaseLinkingPage() {
                 : null)
             : { startMs: monthStartMs, endMs: monthEndMs };
 
+      const computedPurchaseStartMs = (() => {
+        if (!saleWindow) return null;
+        if (!fifoUsePurchaseLookback) return null;
+        const days = Number(fifoPurchaseLookbackDays);
+        if (!Number.isFinite(days) || days <= 0) return null;
+        return saleWindow.startMs - Math.floor(days) * 86400000;
+      })();
+
       // Keep the year/month picker in sync with presets (helps CSV naming + profit table filter).
       if (fifoWindowPreset === 'today') {
         setFifoSelectedYear(now.getFullYear());
@@ -974,7 +984,7 @@ export default function TestPurchaseLinkingPage() {
         // Sandbox: allocate only the selected window's sales (not FIFO-correct, but great for validating matching)
         allocationMode: fifoSandboxWindowOnly ? 'window_only' : 'full',
       });
-      const purchaseStartMs = parseLocalYmdStartMs(fifoPurchaseStartYmd);
+      const purchaseStartMs = computedPurchaseStartMs ?? parseLocalYmdStartMs(fifoPurchaseStartYmd);
       const salesAllocationStartMs = parseLocalYmdStartMs(fifoSalesAllocationStartYmd);
       if (purchaseStartMs !== null) qs.set('purchaseStartMs', String(purchaseStartMs));
       if (salesAllocationStartMs !== null) qs.set('salesAllocationStartMs', String(salesAllocationStartMs));
@@ -1101,6 +1111,8 @@ export default function TestPurchaseLinkingPage() {
     fifoInventoryStartMode,
     fifoMatchMode,
     fifoPurchaseStartYmd,
+    fifoPurchaseLookbackDays,
+    fifoUsePurchaseLookback,
     fifoSalesAllocationStartYmd,
     fifoSandboxWindowOnly,
     fifoSelectedMonth,
@@ -1151,6 +1163,14 @@ export default function TestPurchaseLinkingPage() {
                 : null)
             : { startMs: monthStartMs, endMs: monthEndMs };
 
+      const computedPurchaseStartMs = (() => {
+        if (!saleWindow) return null;
+        if (!fifoUsePurchaseLookback) return null;
+        const days = Number(fifoPurchaseLookbackDays);
+        if (!Number.isFinite(days) || days <= 0) return null;
+        return saleWindow.startMs - Math.floor(days) * 86400000;
+      })();
+
       const fetchForMode = async (mode: 'product_name' | 'two_keys') => {
         const qs = new URLSearchParams({
           userId: u,
@@ -1163,6 +1183,10 @@ export default function TestPurchaseLinkingPage() {
           matchMode: mode,
           allocationMode: fifoSandboxWindowOnly ? 'window_only' : 'full',
         });
+        const purchaseStartMs = computedPurchaseStartMs ?? parseLocalYmdStartMs(fifoPurchaseStartYmd);
+        const salesAllocationStartMs = parseLocalYmdStartMs(fifoSalesAllocationStartYmd);
+        if (purchaseStartMs !== null) qs.set('purchaseStartMs', String(purchaseStartMs));
+        if (salesAllocationStartMs !== null) qs.set('salesAllocationStartMs', String(salesAllocationStartMs));
         if (saleWindow) {
           qs.set('saleStartMs', String(saleWindow.startMs));
           qs.set('saleEndMs', String(saleWindow.endMs));
@@ -1223,6 +1247,10 @@ export default function TestPurchaseLinkingPage() {
     fifoSandboxWindowOnly,
     fifoStrictDelivery,
     fifoUnlinkedOnly,
+    fifoPurchaseStartYmd,
+    fifoSalesAllocationStartYmd,
+    fifoPurchaseLookbackDays,
+    fifoUsePurchaseLookback,
     fifoWindowPreset,
     showNotice,
     userId
@@ -2242,6 +2270,30 @@ export default function TestPurchaseLinkingPage() {
                       isNeon ? 'bg-black/30 text-white border border-white/10' : 'bg-white text-gray-900 border border-gray-300'
                     }`}
                     placeholder="YYYY-MM-DD"
+                  />
+                </label>
+                <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <input
+                    type="checkbox"
+                    checked={fifoUsePurchaseLookback}
+                    onChange={(e) => setFifoUsePurchaseLookback(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Purchase lookback
+                </label>
+                <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <span className="opacity-80">Days:</span>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={fifoPurchaseLookbackDays}
+                    onChange={(e) => setFifoPurchaseLookbackDays(Math.max(1, Math.floor(Number(e.target.value || 0))))}
+                    className={`w-16 rounded-md px-2 py-1 text-xs ${
+                      isNeon ? 'bg-black/30 text-white border border-white/10' : 'bg-white text-gray-900 border border-gray-300'
+                    }`}
+                    title="If enabled, only purchases on/after (windowStart - N days) are eligible. This prevents old purchases from matching and speeds up testing."
+                    disabled={!fifoUsePurchaseLookback}
                   />
                 </label>
                 <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
