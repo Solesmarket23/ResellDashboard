@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import NeonNotification, { type NotificationType } from '@/components/NeonNotification';
@@ -581,6 +581,20 @@ export default function TestPurchaseLinkingPage() {
   const [backfillingSalesIds, setBackfillingSalesIds] = useState(false);
   const [lastSalesIdBackfill, setLastSalesIdBackfill] = useState<any | null>(null);
   const [salesIdBackfillCursorId, setSalesIdBackfillCursorId] = useState<string>('');
+  const [autoFixingIds, setAutoFixingIds] = useState(false);
+  const autoFixStopRef = useRef(false);
+  const [autoFixLogs, setAutoFixLogs] = useState<
+    Array<{
+      atIso: string;
+      updated: number;
+      legacyUpdated: number;
+      remoteAttempted: number;
+      failed: number;
+      statusCounts: Record<string, number>;
+      stoppedEarlyReason?: string | null;
+      nextCursorId?: string | null;
+    }>
+  >([]);
 
   const monthOptions = useMemo(
     () => [
@@ -1085,6 +1099,112 @@ export default function TestPurchaseLinkingPage() {
     [loadSales, showNotice, userId]
   );
 
+  const autoFixIdsAndMaybeCompute = useCallback(
+    async (opts?: { runCompute?: boolean }) => {
+      const u = userId.trim();
+      if (!u) {
+        showNotice('❌ No userId found. Sign in (or ensure site password login).', 'error');
+        return;
+      }
+
+      setAutoFixingIds(true);
+      autoFixStopRef.current = false;
+      setAutoFixLogs([]);
+
+      // Start from the current cursor so repeated runs continue where you left off.
+      let cursorId = salesIdBackfillCursorId || '';
+      const startedAt = Date.now();
+      const MAX_RUNTIME_MS = 6 * 60 * 1000;
+      const MAX_ITERS = 25;
+
+      try {
+        for (let iter = 0; iter < MAX_ITERS; iter++) {
+          if (autoFixStopRef.current) break;
+          if (Date.now() - startedAt > MAX_RUNTIME_MS) {
+            showNotice('ℹ️ Auto fix stopped (time budget). Click again to continue.', 'info', 20000);
+            break;
+          }
+
+          const resp = await fetch('/api/stockx/sales/backfill-identifiers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-user-id': u },
+            body: JSON.stringify({
+              force: true,
+              maxOrders: 400,
+              scanLimit: 1500,
+              ttlHours: 24,
+              concurrency: 1,
+              perRequestDelayMs: 750,
+              maxRemoteOrders: 30,
+              cursorId: cursorId || null
+            })
+          });
+          const json = await resp.json().catch(() => ({}));
+          if (!resp.ok || json?.success === false) throw new Error(json?.error || `Backfill failed (${resp.status})`);
+
+          setLastSalesIdBackfill(json);
+          const s = json?.summary || {};
+          const next = typeof s?.nextCursorId === 'string' ? s.nextCursorId : null;
+          cursorId = next || '';
+          setSalesIdBackfillCursorId(cursorId);
+
+          const updated = typeof s?.updated === 'number' ? s.updated : 0;
+          const legacyUpdated = typeof s?.legacyUpdated === 'number' ? s.legacyUpdated : 0;
+          const remoteAttempted = typeof s?.remoteAttempted === 'number' ? s.remoteAttempted : 0;
+          const failed = typeof s?.failed === 'number' ? s.failed : 0;
+          const statusCounts =
+            s?.failureStatusCounts && typeof s.failureStatusCounts === 'object' ? (s.failureStatusCounts as Record<string, number>) : {};
+          const stoppedEarlyReason = typeof s?.stoppedEarlyReason === 'string' ? s.stoppedEarlyReason : null;
+
+          setAutoFixLogs((prev) => [
+            ...prev,
+            {
+              atIso: new Date().toISOString(),
+              updated,
+              legacyUpdated,
+              remoteAttempted,
+              failed,
+              statusCounts,
+              stoppedEarlyReason,
+              nextCursorId: next
+            }
+          ]);
+
+          // Stop early when we hit heavy rate limiting; better to cool down.
+          if (stoppedEarlyReason === 'rate_limited_429') {
+            showNotice('⚠️ Auto fix paused due to StockX 429 rate limit. Wait ~30–60 min then click again.', 'warning', 20000);
+            break;
+          }
+          if (stoppedEarlyReason === 'blocked_403') {
+            showNotice('⚠️ Auto fix paused due to StockX bot protection (403). Wait and retry.', 'warning', 20000);
+            break;
+          }
+
+          // Done when no more pages to scan and this page had no remaining remote work.
+          const hasMorePages = !!next;
+          if (!hasMorePages && legacyUpdated === 0 && remoteAttempted === 0) break;
+
+          // Small spacing between iterations so we don't spam our own API.
+          await new Promise((r) => setTimeout(r, 300));
+        }
+
+        await loadSales({ silent: true });
+
+        if (opts?.runCompute && !autoFixStopRef.current) {
+          await runFifoDryRun();
+        } else {
+          showNotice('✅ Auto fix finished. Now run “Compute FIFO profit”.', 'success', 12000);
+        }
+      } catch (e: any) {
+        showNotice(`❌ Auto fix failed: ${e?.message || 'Unknown error'}`, 'error', 20000);
+      } finally {
+        setAutoFixingIds(false);
+        autoFixStopRef.current = false;
+      }
+    },
+    [loadSales, runFifoDryRun, salesIdBackfillCursorId, showNotice, userId]
+  );
+
   const [linking, setLinking] = useState(false);
   const [allowWrites, setAllowWrites] = useState(false);
   const [preview, setPreview] = useState<any | null>(null);
@@ -1536,7 +1656,7 @@ export default function TestPurchaseLinkingPage() {
                 </button>
                 <button
                   onClick={() => backfillSaleIdentifiers({ force: true })}
-                  disabled={backfillingSalesIds}
+                  disabled={backfillingSalesIds || autoFixingIds}
                   className={`px-3 py-2 rounded-md text-xs font-semibold ${
                     isNeon ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10' : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
                   } disabled:opacity-60`}
@@ -1544,6 +1664,30 @@ export default function TestPurchaseLinkingPage() {
                 >
                   Force IDs
                 </button>
+                <button
+                  onClick={() => autoFixIdsAndMaybeCompute({ runCompute: true })}
+                  disabled={autoFixingIds || backfillingSalesIds || fifoLoading}
+                  className={`px-3 py-2 rounded-md text-xs font-semibold ${
+                    isNeon ? 'bg-cyan-500/20 hover:bg-cyan-500/25 text-cyan-100 border border-cyan-500/30' : 'bg-cyan-600 text-white hover:bg-cyan-700'
+                  } disabled:opacity-60`}
+                  title="One-click: repeatedly backfill identifiers (cursor paging) then run Compute FIFO profit. Stops automatically on heavy rate limiting."
+                >
+                  {autoFixingIds ? 'Fixing IDs…' : 'Fix IDs (auto) + Compute'}
+                </button>
+                {autoFixingIds && (
+                  <button
+                    onClick={() => {
+                      autoFixStopRef.current = true;
+                      showNotice('ℹ️ Stopping after the current batch finishes…', 'info', 12000);
+                    }}
+                    className={`px-3 py-2 rounded-md text-xs font-semibold ${
+                      isNeon ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10' : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
+                    }`}
+                    title="Stop the auto run after the current request finishes."
+                  >
+                    Stop
+                  </button>
+                )}
                 <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                   <input
                     type="checkbox"
@@ -1912,6 +2056,31 @@ export default function TestPurchaseLinkingPage() {
                       )}
                     </div>
                   )}
+                </div>
+              )}
+
+              {autoFixLogs.length > 0 && (
+                <div className={`mt-3 rounded-md border p-3 text-xs ${isNeon ? 'bg-white/5 border-white/10 text-gray-200' : 'bg-white border-gray-200 text-gray-800'}`}>
+                  <div className="font-semibold">Auto fix progress</div>
+                  <div className={`mt-1 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                    {autoFixLogs.length} batch{autoFixLogs.length === 1 ? '' : 'es'} run (most recent first)
+                  </div>
+                  <div className="mt-2 space-y-1">
+                    {autoFixLogs
+                      .slice()
+                      .reverse()
+                      .slice(0, 8)
+                      .map((l, i) => (
+                        <div key={i} className="opacity-90 whitespace-pre-wrap break-words">
+                          <span className="font-semibold">{l.atIso}</span> — updated={l.updated} legacyUpdated={l.legacyUpdated}{' '}
+                          remoteAttempted={l.remoteAttempted} failed={l.failed}{' '}
+                          {l.stoppedEarlyReason ? ` stoppedEarlyReason=${l.stoppedEarlyReason}` : ''}
+                          {l.nextCursorId ? ' • more pages' : ''}
+                          {' • '}
+                          statusCounts={JSON.stringify(l.statusCounts)}
+                        </div>
+                      ))}
+                  </div>
                 </div>
               )}
 
