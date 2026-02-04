@@ -1094,11 +1094,21 @@ export default function TestPurchaseLinkingPage() {
     setComparingModes(true);
     try {
       const eventRunId = `cmp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+
+      // Keep window logic consistent with Compute FIFO profit.
       const now = new Date();
-      const todayStartMs = ymdLocalStartMs(now);
-      const todayEndMs = todayStartMs + 86400000;
-      const monthStartMs = ymdLocalStartMs(new Date(now.getFullYear(), now.getMonth(), 1));
-      const monthEndMs = Date.now() + 1;
+      const todayStartMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).getTime();
+      const todayEndMs = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0).getTime();
+
+      const monthStartMs = new Date(fifoSelectedYear, fifoSelectedMonth, 1, 0, 0, 0, 0).getTime();
+      const monthEndMs = new Date(fifoSelectedYear, fifoSelectedMonth + 1, 1, 0, 0, 0, 0).getTime();
+
+      const parseLocalYmdStartMs = (ymd: string): number | null => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
+        const [yy, mm, dd] = ymd.split('-').map((x) => parseInt(x, 10));
+        if (!yy || !mm || !dd) return null;
+        return new Date(yy, mm - 1, dd, 0, 0, 0, 0).getTime();
+      };
       const customStartMs = parseLocalYmdStartMs(fifoCustomFromYmd);
       const customEndMs = (() => {
         const base = parseLocalYmdStartMs(fifoCustomToYmd);
