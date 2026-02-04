@@ -1169,6 +1169,11 @@ export async function GET(request: NextRequest) {
           ? (sale as any)._eventMs >= (saleStartMs as number) && (sale as any)._eventMs < (saleEndMs as number)
           : true;
 
+      const saleEvent = getSaleEventMs(sale);
+      const saleCreatedAtMs = saleEvent.ms;
+      const saleCutoffIso = msToIso(saleCreatedAtMs);
+      const saleCutoffSource = saleEvent.source;
+
       const existingLinkedPurchaseId = sale?.linkedPurchaseId || sale?.matchedPurchaseId || null;
       const saleSalePrice = toNumberOrNull(sale?.salePrice);
       const saleFees = toNumberOrNull(sale?.fees);
@@ -1190,6 +1195,8 @@ export async function GET(request: NextRequest) {
             saleOrderNumber: sale?.orderNumber || null,
             saleProduct: sale?.product || null,
             saleSize: sale?.size || null,
+            saleCutoffIso,
+            saleCutoffSource,
             salePrice: saleSalePrice,
             saleFees,
             salePayout,
@@ -1211,10 +1218,6 @@ export async function GET(request: NextRequest) {
       const saleSize = normalizeSize(saleSizeRaw);
       const saleStyleId = (sale?.styleId || '').toString().trim();
       const saleUrlKey = String((sale as any)?.urlKey || '').trim();
-      const saleEvent = getSaleEventMs(sale);
-      const saleCreatedAtMs = saleEvent.ms;
-      const saleCutoffIso = msToIso(saleCreatedAtMs);
-      const saleCutoffSource = saleEvent.source;
       const saleListingId = getSaleListingId(sale);
       const saleProductNameForSlug = typeof saleProduct === 'string' ? saleProduct : '';
 

@@ -5,7 +5,7 @@ import { useAuth } from '@/lib/contexts/AuthContext';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import NeonNotification, { type NotificationType } from '@/components/NeonNotification';
 import StockXSalesImport from '@/components/StockXSalesImport';
-import { Box, DollarSign, HandCoins, Hash, Link2, Mail, Ruler, Settings2, X } from 'lucide-react';
+import { Box, Calendar, DollarSign, HandCoins, Hash, Link2, Mail, Ruler, Settings2, X } from 'lucide-react';
 
 // #region agent log
 const __agentMask = (v: unknown) => {
@@ -3144,6 +3144,14 @@ export default function TestPurchaseLinkingPage() {
                   </th>
                   <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all`}>
                     <div className="flex items-center justify-center h-full gap-2">
+                      <Calendar className={`w-4 h-4 ${headerIconClass}`} />
+                      <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors whitespace-nowrap`}>
+                        Sale Date
+                      </span>
+                    </div>
+                  </th>
+                  <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all`}>
+                    <div className="flex items-center justify-center h-full gap-2">
                       <Box className={`w-4 h-4 ${headerIconClass}`} />
                       <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors`}>Product</span>
                     </div>
@@ -3238,6 +3246,12 @@ export default function TestPurchaseLinkingPage() {
                           </div>
                         </td>
                         <td className="py-2 pr-3 whitespace-nowrap">{saleOrder || '—'}</td>
+                        <td
+                          className="py-2 pr-3 whitespace-nowrap"
+                          title={r?.saleCutoffSource ? `source=${String(r.saleCutoffSource)}` : ''}
+                        >
+                          {formatIsoToLocal(r?.saleCutoffIso || null)}
+                        </td>
                         <td className="py-2 pr-3 max-w-[280px] truncate">{String(r.saleProduct || '—')}</td>
                         <td className="py-2 pr-3 whitespace-nowrap">{String(r.saleSize || '—')}</td>
                         <td className="py-2 pr-3 text-right">{salePrice === null ? '—' : currency(salePrice)}</td>
