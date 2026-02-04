@@ -586,6 +586,11 @@ export default function TestPurchaseLinkingPage() {
   const [fifoIncludePending, setFifoIncludePending] = useState(true);
   const [cogsMethod, setCogsMethod] = useState<'fifo' | 'lifo'>('fifo');
   const [fifoMatchMode, setFifoMatchMode] = useState<'product_name' | 'two_keys' | 'full'>('product_name');
+  const [comparingModes, setComparingModes] = useState(false);
+  const [fifoCompare, setFifoCompare] = useState<null | {
+    a: { matchMode: 'product_name' | 'two_keys' | 'full'; summary: any | null };
+    b: { matchMode: 'product_name' | 'two_keys' | 'full'; summary: any | null };
+  }>(null);
   const [fifoWindowPreset, setFifoWindowPreset] = useState<'this_month' | 'today' | 'custom'>('this_month');
   const [fifoCustomFromYmd, setFifoCustomFromYmd] = useState(() => {
     const d = new Date();
@@ -1073,6 +1078,110 @@ export default function TestPurchaseLinkingPage() {
     fifoIncludePending,
     fifoSelectedMonth,
     fifoSelectedYear,
+    fifoStrictDelivery,
+    fifoUnlinkedOnly,
+    fifoWindowPreset,
+    showNotice,
+    userId
+  ]);
+
+  const compareFifoMatchModes = useCallback(async () => {
+    const u = userId.trim();
+    if (!u) {
+      showNotice('❌ No userId found. Sign in (or ensure site password login).', 'error');
+      return;
+    }
+    setComparingModes(true);
+    try {
+      const eventRunId = `cmp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+      const now = new Date();
+      const todayStartMs = ymdLocalStartMs(now);
+      const todayEndMs = todayStartMs + 86400000;
+      const monthStartMs = ymdLocalStartMs(new Date(now.getFullYear(), now.getMonth(), 1));
+      const monthEndMs = Date.now() + 1;
+      const customStartMs = parseLocalYmdStartMs(fifoCustomFromYmd);
+      const customEndMs = (() => {
+        const base = parseLocalYmdStartMs(fifoCustomToYmd);
+        return base === null ? null : base + 86400000;
+      })();
+
+      const saleWindow =
+        fifoWindowPreset === 'today'
+          ? { startMs: todayStartMs, endMs: todayEndMs }
+          : fifoWindowPreset === 'custom'
+            ? (customStartMs !== null && customEndMs !== null && customEndMs > customStartMs
+                ? { startMs: customStartMs, endMs: customEndMs }
+                : null)
+            : { startMs: monthStartMs, endMs: monthEndMs };
+
+      const fetchForMode = async (mode: 'product_name' | 'two_keys') => {
+        const qs = new URLSearchParams({
+          userId: u,
+          unlinkedOnly: fifoUnlinkedOnly ? 'true' : '0',
+          limitSales: '5000',
+          scanLimit: '20000',
+          strictDelivery: fifoStrictDelivery ? '1' : '0',
+          includePending: fifoIncludePending ? '1' : '0',
+          cogsMethod,
+          matchMode: mode
+        });
+        if (saleWindow) {
+          qs.set('saleStartMs', String(saleWindow.startMs));
+          qs.set('saleEndMs', String(saleWindow.endMs));
+        }
+        const resp = await fetch(`/api/purchase-linking/fifo-dry-run?${qs.toString()}`, {
+          cache: 'no-store',
+          headers: { 'x-user-id': u }
+        });
+        const json = await resp.json().catch(() => ({}));
+        if (!resp.ok || json?.success === false) throw new Error(json?.error || `Dry run failed (${resp.status})`);
+        return json;
+      };
+
+      const aMode: 'product_name' | 'two_keys' = 'product_name';
+      const bMode: 'product_name' | 'two_keys' = 'two_keys';
+      const a = await fetchForMode(aMode);
+      const b = await fetchForMode(bMode);
+
+      setFifoCompare({
+        a: { matchMode: aMode, summary: a?.summary || null },
+        b: { matchMode: bMode, summary: b?.summary || null }
+      });
+
+      const pick = (s: any) => ({
+        matchMode: s?.matchMode ?? null,
+        scanned: s?.totalSalesScanned ?? null,
+        wouldLink: s?.wouldLink ?? null,
+        noMatch: s?.noMatch ?? null,
+        allocatedNoMatch: s?.allocated?.noMatch ?? null,
+        matchesByStyleId: s?.purchasesDebug?.matchesByStyleId ?? null,
+        matchesByUrlKey: s?.purchasesDebug?.matchesByUrlKey ?? null,
+        matchesByName: s?.purchasesDebug?.matchesByName ?? null,
+        slugSuccessUrlKey: s?.purchasesDebug?.slugSuccessUrlKey ?? null,
+        slugSuccessProductName: s?.purchasesDebug?.slugSuccessProductName ?? null,
+      });
+
+      // #region agent log
+      __agentLog({
+        runId: 'pre-fix',
+        hypothesisId: 'H8',
+        location: 'test-purchase-linking/page.tsx:compareFifoMatchModes',
+        message: 'compare FIFO match modes',
+        data: { eventRunId, a: pick(a?.summary), b: pick(b?.summary) }
+      });
+      // #endregion
+
+      showNotice('✅ Compared product-name vs two-keys (see panel below)', 'success', 20000);
+    } catch (e: any) {
+      showNotice(`❌ Compare failed: ${e?.message || 'Unknown error'}`, 'error', 20000);
+    } finally {
+      setComparingModes(false);
+    }
+  }, [
+    cogsMethod,
+    fifoCustomFromYmd,
+    fifoCustomToYmd,
+    fifoIncludePending,
     fifoStrictDelivery,
     fifoUnlinkedOnly,
     fifoWindowPreset,
@@ -1923,6 +2032,16 @@ export default function TestPurchaseLinkingPage() {
                   {fifoLoading ? 'Running…' : 'Compute FIFO profit'}
                 </button>
                 <button
+                  onClick={compareFifoMatchModes}
+                  disabled={comparingModes || fifoLoading}
+                  className={`px-3 py-2 rounded-md text-xs font-semibold ${
+                    isNeon ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10' : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
+                  } disabled:opacity-60`}
+                  title="Run FIFO twice (product-name vs two-keys) and show a side-by-side comparison. Does not change your table."
+                >
+                  {comparingModes ? 'Comparing…' : 'Compare modes'}
+                </button>
+                <button
                   onClick={() => refreshNonFinalStockX({ force: false })}
                   disabled={refreshingStockX}
                   className={`px-4 py-2 rounded-md font-semibold ${
@@ -2441,6 +2560,39 @@ export default function TestPurchaseLinkingPage() {
                     </div>
                   </div>
                 )}
+
+              {fifoCompare?.a?.summary && fifoCompare?.b?.summary && (
+                <div
+                  className={`mt-3 rounded-md border p-3 text-xs ${
+                    isNeon ? 'bg-white/5 border-white/10 text-gray-200' : 'bg-gray-50 border-gray-200 text-gray-900'
+                  }`}
+                >
+                  <div className="font-semibold">Match mode comparison</div>
+                  <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {(['a', 'b'] as const).map((k) => {
+                      const entry = fifoCompare[k];
+                      const s = entry?.summary || {};
+                      const dbg = s?.purchasesDebug || {};
+                      return (
+                        <div key={k} className={`rounded-md p-2 ${isNeon ? 'bg-black/20' : 'bg-white border border-gray-200'}`}>
+                          <div className="font-semibold">mode={entry?.matchMode}</div>
+                          <div className="mt-1 opacity-90">
+                            scanned={s?.totalSalesScanned ?? '—'} • matched={s?.wouldLink ?? '—'} • noMatch={s?.noMatch ?? '—'} • allocatedNoMatch=
+                            {s?.allocated?.noMatch ?? '—'}
+                          </div>
+                          <div className="mt-1 opacity-90">
+                            matchesByStyleId={dbg?.matchesByStyleId ?? '—'} • matchesByUrlKey={dbg?.matchesByUrlKey ?? '—'} • slugSuccessProductName=
+                            {dbg?.slugSuccessProductName ?? '—'}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-2 opacity-80">
+                    Tip: pick the mode with higher <span className="font-semibold">matched</span> and lower <span className="font-semibold">allocatedNoMatch</span>.
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
