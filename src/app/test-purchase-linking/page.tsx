@@ -2525,6 +2525,40 @@ export default function TestPurchaseLinkingPage() {
                   Custom
                 </button>
 
+                {/* Quick ranges (single click) */}
+                <span className={`ml-2 text-xs ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>Quick:</span>
+                {[
+                  { label: '7d', days: 7 },
+                  { label: '30d', days: 30 },
+                  { label: '90d', days: 90 },
+                ].map((q) => (
+                  <button
+                    key={q.label}
+                    type="button"
+                    onClick={() => {
+                      const now = new Date();
+                      const to = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                      const from = new Date(to);
+                      from.setDate(from.getDate() - (q.days - 1));
+                      const ymd = (d: Date) => {
+                        const y = d.getFullYear();
+                        const m = String(d.getMonth() + 1).padStart(2, '0');
+                        const day = String(d.getDate()).padStart(2, '0');
+                        return `${y}-${m}-${day}`;
+                      };
+                      setFifoCustomFromYmd(ymd(from));
+                      setFifoCustomToYmd(ymd(to));
+                      setFifoWindowPreset('custom');
+                    }}
+                    className={`h-9 rounded-md px-3 text-xs font-semibold ${
+                      isNeon ? 'bg-white/10 hover:bg-white/15 text-white border border-white/10' : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
+                    }`}
+                    title={`Last ${q.days} days (local time)`}
+                  >
+                    Last {q.label}
+                  </button>
+                ))}
+
                 {fifoWindowPreset === 'custom' && (
                   <div className="flex flex-wrap items-center gap-2">
                     <input
@@ -2549,6 +2583,9 @@ export default function TestPurchaseLinkingPage() {
 
                 {fifoWindowPreset === 'this_month' && (
                   <>
+                    <span className={`ml-2 text-[11px] ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+                      (Example: Jan 2026 = 1/1/26 → 1/31/26)
+                    </span>
                     <span className={`ml-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                       Year:
                     </span>
