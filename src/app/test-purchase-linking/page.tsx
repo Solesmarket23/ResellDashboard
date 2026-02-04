@@ -1304,6 +1304,11 @@ export default function TestPurchaseLinkingPage() {
           const embeddedFilledStyleId = typeof s?.embeddedFilledStyleId === 'number' ? s.embeddedFilledStyleId : null;
           const legacyFilledStyleId = typeof s?.legacyFilledStyleId === 'number' ? s.legacyFilledStyleId : null;
           const remoteFilledStyleId = typeof s?.remoteFilledStyleId === 'number' ? s.remoteFilledStyleId : null;
+          const remoteOrderDetailsStyleIdPresent = typeof s?.remoteOrderDetailsStyleIdPresent === 'number' ? s.remoteOrderDetailsStyleIdPresent : null;
+          const remoteOrderDetailsProductIdPresent = typeof s?.remoteOrderDetailsProductIdPresent === 'number' ? s.remoteOrderDetailsProductIdPresent : null;
+          const remoteOrderDetailsVariantSizePresent = typeof s?.remoteOrderDetailsVariantSizePresent === 'number' ? s.remoteOrderDetailsVariantSizePresent : null;
+          const remoteOrderDetailsStyleIdMissingButProductIdPresent =
+            typeof s?.remoteOrderDetailsStyleIdMissingButProductIdPresent === 'number' ? s.remoteOrderDetailsStyleIdMissingButProductIdPresent : null;
           const legacyUpdated = typeof s?.legacyUpdated === 'number' ? s.legacyUpdated : 0;
           const remoteAttempted = typeof s?.remoteAttempted === 'number' ? s.remoteAttempted : 0;
           const failed = typeof s?.failed === 'number' ? s.failed : 0;
@@ -1330,6 +1335,10 @@ export default function TestPurchaseLinkingPage() {
               embeddedFilledStyleId,
               legacyFilledStyleId,
               remoteFilledStyleId,
+              remoteOrderDetailsStyleIdPresent,
+              remoteOrderDetailsProductIdPresent,
+              remoteOrderDetailsVariantSizePresent,
+              remoteOrderDetailsStyleIdMissingButProductIdPresent,
               nextCursorPresent: !!next,
               status429: statusCounts?.['429'] ?? 0,
               status403: statusCounts?.['403'] ?? 0,

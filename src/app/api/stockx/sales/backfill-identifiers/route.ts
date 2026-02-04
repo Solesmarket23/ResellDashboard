@@ -664,6 +664,10 @@ export async function POST(request: NextRequest) {
     const updates: Array<{ docId: string; patch: any }> = [];
     let remoteFilledStyleId = 0;
     let remoteFilledSize = 0;
+    let remoteOrderDetailsStyleIdPresent = 0;
+    let remoteOrderDetailsProductIdPresent = 0;
+    let remoteOrderDetailsVariantSizePresent = 0;
+    let remoteOrderDetailsStyleIdMissingButProductIdPresent = 0;
 
     const limit = concurrency;
     let idx = 0;
@@ -750,6 +754,13 @@ export async function POST(request: NextRequest) {
             details?.lineItem?.product?.styleId ||
             details?.lineItem?.product?.sku ||
             null;
+          const productId =
+            details?.product?.productId ||
+            details?.product?.id ||
+            details?.productId ||
+            details?.product_id ||
+            details?.lineItem?.product?.productId ||
+            null;
           const size =
             details?.variant?.variantValue ||
             details?.variant?.size ||
@@ -803,6 +814,13 @@ export async function POST(request: NextRequest) {
           const cleaned = stripUndefinedDeep(patch);
           const meaningful = ['styleId', 'size', 'product', 'brand', 'urlKey', 'listingId'];
           const filledAny = meaningful.some((k) => !isMissingish((cleaned as any)?.[k]));
+
+          // Diagnostics: determine whether order-details actually contains styleId/size info.
+          if (!isMissingish(styleIdNorm)) remoteOrderDetailsStyleIdPresent += 1;
+          if (!isMissingish(productId)) remoteOrderDetailsProductIdPresent += 1;
+          if (sizeNorm) remoteOrderDetailsVariantSizePresent += 1;
+          if (isMissingish(styleIdNorm) && !isMissingish(productId)) remoteOrderDetailsStyleIdMissingButProductIdPresent += 1;
+
           if (filledAny) {
             if (!isMissingish((cleaned as any)?.styleId)) remoteFilledStyleId += 1;
             if (!isMissingish((cleaned as any)?.size)) remoteFilledSize += 1;
@@ -864,6 +882,10 @@ export async function POST(request: NextRequest) {
       remoteUpdated: updated,
       remoteFilledStyleId,
       remoteFilledSize,
+      remoteOrderDetailsStyleIdPresent,
+      remoteOrderDetailsProductIdPresent,
+      remoteOrderDetailsVariantSizePresent,
+      remoteOrderDetailsStyleIdMissingButProductIdPresent,
       failed: failures.length,
       failureStatusCounts: Object.fromEntries(Array.from(failureStatusCounts.entries()).sort((a, b) => Number(b[1]) - Number(a[1]))),
       blockedCount,
