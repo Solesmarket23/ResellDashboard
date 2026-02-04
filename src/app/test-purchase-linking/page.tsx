@@ -1008,7 +1008,13 @@ export default function TestPurchaseLinkingPage() {
                   orderMasked: __agentMask(samples[0]?.saleOrderNumber),
                   styleIdPresent: !!String(samples[0]?.saleStyleId || '').trim(),
                   sizeRaw: String(samples[0]?.saleSize || ''),
-                  source: String(samples[0]?.saleSource || '')
+                  source: String(samples[0]?.saleSource || ''),
+                  nameMatchMode: String(samples[0]?.nameMatchMode || ''),
+                  nameCandidatesTotal: samples[0]?.nameCandidatesTotal ?? null,
+                  exactNameCandidatesTotal: samples[0]?.exactNameCandidatesTotal ?? null,
+                  nameSkippedAfter: samples[0]?.nameCandidatesSkippedAfterSaleDate ?? null,
+                  nameSkippedUsed: samples[0]?.nameCandidatesSkippedUsed ?? null,
+                  exactNameKey: typeof samples[0]?.exactNameKey === 'string' ? String(samples[0].exactNameKey).slice(0, 80) : null
                 }
               : null
           };

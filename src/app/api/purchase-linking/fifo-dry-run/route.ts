@@ -1227,20 +1227,46 @@ export async function GET(request: NextRequest) {
       if (!linkedPurchase && matchMode === 'product_name' && saleProduct && saleSize) {
         const nk = purchaseNameKey(String(saleProduct), saleSize);
         const exact = purchaseNameIndex.get(nk) || [];
+        let attempted = 0;
+        let skippedUsed = 0;
+        let skippedAfterSaleDate = 0;
+        let skippedAfterSaleDateButUnreliable = 0;
         for (const cand of exact as any) {
+          attempted++;
           const pid = String(cand.id || '');
-          if (!pid || usedPurchaseIds.has(pid)) continue;
+          if (!pid) continue;
+          if (usedPurchaseIds.has(pid)) {
+            skippedUsed++;
+            continue;
+          }
           if (
             typeof saleCreatedAtMs === 'number' &&
             typeof cand._dateMs === 'number' &&
             cand._dateMs > saleCreatedAtMs
           ) {
-            if (cand._dateSource !== 'createdAt') continue;
+            if (cand._dateSource !== 'createdAt') {
+              skippedAfterSaleDate++;
+              continue;
+            }
+            // createdAt is a sync-time; allow matching but record it as unreliable.
+            skippedAfterSaleDateButUnreliable++;
           }
           linkedPurchase = cand;
           method = 'name';
           usedPurchaseIds.add(pid);
           break;
+        }
+        if (!linkedPurchase && exact.length > 0) {
+          (sale as any)._nameDebug = {
+            mode: 'exact_key',
+            attempted,
+            considered: attempted,
+            skippedUsed,
+            skippedAfterSaleDate,
+            skippedAfterSaleDateButUnreliable,
+            nameKey: nk,
+            exactNameCandidatesTotal: exact.length,
+          };
         }
       }
 
@@ -1499,6 +1525,12 @@ export async function GET(request: NextRequest) {
           nameMatchMode: nameMode,
           nameCandidatesAttempted: nameAttempted,
           nameCandidatesConsidered: nameConsidered,
+          nameCandidatesTotal,
+          exactNameKey: typeof nameDbg?.nameKey === 'string' ? nameDbg.nameKey : null,
+          exactNameCandidatesTotal: typeof nameDbg?.exactNameCandidatesTotal === 'number' ? nameDbg.exactNameCandidatesTotal : null,
+          nameCandidatesSkippedUsed: nameSkippedUsed,
+          nameCandidatesSkippedAfterSaleDate: nameSkippedAfterSaleDate,
+          nameCandidatesSkippedAfterSaleDateButUnreliable: nameSkippedAfterSaleDateButUnreliable,
           bestNameMatchScore: bestScore,
           bestNameMatchOverlap: bestOverlap,
         });
