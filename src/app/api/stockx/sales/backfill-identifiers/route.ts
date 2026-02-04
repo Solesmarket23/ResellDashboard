@@ -10,6 +10,29 @@ export const revalidate = 0;
 
 type StopReason = 'rate_limited_429' | 'blocked_403' | null;
 
+// #region agent log
+const __agentMask = (v: unknown) => {
+  const s = String(v ?? '').trim();
+  if (!s) return '';
+  return s.length <= 12 ? `${s.slice(0, 2)}…${s.slice(-2)}` : `${s.slice(0, 6)}…${s.slice(-4)}`;
+};
+const __agentLog = (payload: { runId: string; hypothesisId: string; location: string; message: string; data?: any }) => {
+  fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sessionId: 'debug-session',
+      runId: payload.runId,
+      hypothesisId: payload.hypothesisId,
+      location: payload.location,
+      message: payload.message,
+      data: payload.data || {},
+      timestamp: Date.now()
+    })
+  }).catch(() => {});
+};
+// #endregion
+
 function isPerimeterXBlock(body: string): boolean {
   const b = String(body || '').toLowerCase();
   return (
@@ -342,6 +365,25 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // #region agent log
+    __agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H3',
+      location: 'backfill-identifiers/route.ts:POST:entry',
+      message: 'backfill entry',
+      data: {
+        userIdMasked: __agentMask(userId),
+        force,
+        scanLimit,
+        maxOrders,
+        maxRemoteOrders,
+        concurrency,
+        perRequestDelayMs,
+        cursorPresent: !!cursorId
+      }
+    });
+    // #endregion
+
     const apiKey = process.env.STOCKX_API_KEY || '';
     if (!apiKey) return NextResponse.json({ success: false, error: 'Missing STOCKX_API_KEY' }, { status: 500 });
 
@@ -397,6 +439,22 @@ export async function POST(request: NextRequest) {
         legacyUpdated += chunk.length;
       }
     }
+
+    // #region agent log
+    __agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H3',
+      location: 'backfill-identifiers/route.ts:POST:phase1',
+      message: 'backfill phase1 legacy complete',
+      data: {
+        scannedSales: sales.length,
+        candidatesInPage: uniq.length,
+        legacyCandidates: legacyUpdates.length,
+        legacyUpdated,
+        remainingForRemote: remainingForRemote.length
+      }
+    });
+    // #endregion
 
     // Phase 2: remote StockX order-details backfill for anything still missing.
     const toBackfill = remainingForRemote.slice(0, Math.min(maxOrders, maxRemoteOrders));
@@ -666,6 +724,29 @@ export async function POST(request: NextRequest) {
       concurrency,
       perRequestDelayMs,
     };
+
+    // #region agent log
+    __agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H3',
+      location: 'backfill-identifiers/route.ts:POST:exit',
+      message: 'backfill exit summary',
+      data: {
+        scannedSales: summary.scannedSales,
+        candidatesInPage: summary.candidateSales,
+        attempted: summary.attempted,
+        legacyUpdated: summary.legacyUpdated,
+        remoteAttempted: summary.remoteAttempted,
+        updated: summary.updated,
+        failed: summary.failed,
+        stoppedEarly: summary.stoppedEarly,
+        stoppedEarlyReason: summary.stoppedEarlyReason,
+        status429: (summary.failureStatusCounts as any)?.['429'] ?? 0,
+        status403: (summary.failureStatusCounts as any)?.['403'] ?? 0,
+        nextCursorPresent: !!summary.nextCursorId
+      }
+    });
+    // #endregion
 
     await setLastRun(userId, now, summary);
 

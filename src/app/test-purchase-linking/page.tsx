@@ -7,6 +7,29 @@ import NeonNotification, { type NotificationType } from '@/components/NeonNotifi
 import StockXSalesImport from '@/components/StockXSalesImport';
 import { Box, DollarSign, HandCoins, Hash, Link2, Mail, Ruler, Settings2, X } from 'lucide-react';
 
+// #region agent log
+const __agentMask = (v: unknown) => {
+  const s = String(v ?? '').trim();
+  if (!s) return '';
+  return s.length <= 12 ? `${s.slice(0, 2)}…${s.slice(-2)}` : `${s.slice(0, 6)}…${s.slice(-4)}`;
+};
+const __agentLog = (payload: { runId: string; hypothesisId: string; location: string; message: string; data?: any }) => {
+  fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sessionId: 'debug-session',
+      runId: payload.runId,
+      hypothesisId: payload.hypothesisId,
+      location: payload.location,
+      message: payload.message,
+      data: payload.data || {},
+      timestamp: Date.now()
+    })
+  }).catch(() => {});
+};
+// #endregion
+
 type SaleRow = {
   id: string;
   orderNumber?: string | null;
@@ -861,6 +884,21 @@ export default function TestPurchaseLinkingPage() {
     setFifoLoading(true);
     setFifoSummary(null);
     setFifoRows([]);
+    // #region agent log
+    __agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H4',
+      location: 'test-purchase-linking/page.tsx:runFifoDryRun:start',
+      message: 'runFifoDryRun start',
+      data: {
+        userIdMasked: __agentMask(u),
+        strictDelivery: fifoStrictDelivery,
+        includePending: fifoIncludePending,
+        cogsMethod,
+        preset: fifoWindowPreset
+      }
+    });
+    // #endregion
     try {
       const ymdLocal = (d: Date) => {
         const y = d.getFullYear();
@@ -936,6 +974,21 @@ export default function TestPurchaseLinkingPage() {
       const wouldLink = typeof summary?.wouldLink === 'number' ? summary.wouldLink : null;
       const noMatch = typeof summary?.noMatch === 'number' ? summary.noMatch : null;
       const alreadyLinked = typeof summary?.alreadyLinked === 'number' ? summary.alreadyLinked : null;
+      // #region agent log
+      __agentLog({
+        runId: 'pre-fix',
+        hypothesisId: 'H4',
+        location: 'test-purchase-linking/page.tsx:runFifoDryRun:ok',
+        message: 'runFifoDryRun success',
+        data: {
+          scanned,
+          wouldLink,
+          noMatch,
+          alreadyLinked,
+          allocatedNoMatch: summary?.allocated?.noMatch ?? null
+        }
+      });
+      // #endregion
       showNotice(
         `✅ FIFO profit computed${scanned !== null ? ` — scanned=${scanned}` : ''}${wouldLink !== null ? ` • matched=${wouldLink}` : ''}${noMatch !== null ? ` • noMatch=${noMatch}` : ''}${alreadyLinked !== null ? ` • alreadyLinked=${alreadyLinked}` : ''}`,
         'success'
@@ -947,6 +1000,15 @@ export default function TestPurchaseLinkingPage() {
         el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 50);
     } catch (e: any) {
+      // #region agent log
+      __agentLog({
+        runId: 'pre-fix',
+        hypothesisId: 'H4',
+        location: 'test-purchase-linking/page.tsx:runFifoDryRun:error',
+        message: 'runFifoDryRun error',
+        data: { error: String(e?.message || e || 'unknown') }
+      });
+      // #endregion
       showNotice(`❌ FIFO profit failed: ${e?.message || 'Unknown error'}`, 'error');
     } finally {
       setFifoLoading(false);
@@ -1118,6 +1180,15 @@ export default function TestPurchaseLinkingPage() {
       const MAX_ITERS = 25;
 
       try {
+        // #region agent log
+        __agentLog({
+          runId: 'pre-fix',
+          hypothesisId: 'H1',
+          location: 'test-purchase-linking/page.tsx:autoFix:start',
+          message: 'autoFix start',
+          data: { userIdMasked: __agentMask(u), startCursorPresent: !!cursorId, runCompute: !!opts?.runCompute }
+        });
+        // #endregion
         for (let iter = 0; iter < MAX_ITERS; iter++) {
           if (autoFixStopRef.current) break;
           if (Date.now() - startedAt > MAX_RUNTIME_MS) {
@@ -1125,6 +1196,15 @@ export default function TestPurchaseLinkingPage() {
             break;
           }
 
+          // #region agent log
+          __agentLog({
+            runId: 'pre-fix',
+            hypothesisId: 'H2',
+            location: 'test-purchase-linking/page.tsx:autoFix:iter',
+            message: 'autoFix iter',
+            data: { iter, cursorPresent: !!cursorId }
+          });
+          // #endregion
           const resp = await fetch('/api/stockx/sales/backfill-identifiers', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-user-id': u },
@@ -1155,6 +1235,27 @@ export default function TestPurchaseLinkingPage() {
           const statusCounts =
             s?.failureStatusCounts && typeof s.failureStatusCounts === 'object' ? (s.failureStatusCounts as Record<string, number>) : {};
           const stoppedEarlyReason = typeof s?.stoppedEarlyReason === 'string' ? s.stoppedEarlyReason : null;
+
+          // #region agent log
+          __agentLog({
+            runId: 'pre-fix',
+            hypothesisId: 'H3',
+            location: 'test-purchase-linking/page.tsx:autoFix:resp',
+            message: 'autoFix backfill response',
+            data: {
+              iter,
+              updated,
+              legacyUpdated,
+              remoteAttempted,
+              failed,
+              stoppedEarlyReason,
+              nextCursorPresent: !!next,
+              status429: statusCounts?.['429'] ?? 0,
+              status403: statusCounts?.['403'] ?? 0,
+              status401: statusCounts?.['401'] ?? 0
+            }
+          });
+          // #endregion
 
           setAutoFixLogs((prev) => [
             ...prev,
@@ -1196,6 +1297,15 @@ export default function TestPurchaseLinkingPage() {
           showNotice('✅ Auto fix finished. Now run “Compute FIFO profit”.', 'success', 12000);
         }
       } catch (e: any) {
+        // #region agent log
+        __agentLog({
+          runId: 'pre-fix',
+          hypothesisId: 'H2',
+          location: 'test-purchase-linking/page.tsx:autoFix:error',
+          message: 'autoFix error',
+          data: { error: String(e?.message || e || 'unknown') }
+        });
+        // #endregion
         showNotice(`❌ Auto fix failed: ${e?.message || 'Unknown error'}`, 'error', 20000);
       } finally {
         setAutoFixingIds(false);
