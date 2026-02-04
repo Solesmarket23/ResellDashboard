@@ -667,6 +667,8 @@ export async function GET(request: NextRequest) {
     const unlinkedOnly = request.nextUrl.searchParams.get('unlinkedOnly') !== '0';
     const strictDelivery = request.nextUrl.searchParams.get('strictDelivery') !== '0';
     const includePending = request.nextUrl.searchParams.get('includePending') !== '0';
+    const matchModeRaw = (request.nextUrl.searchParams.get('matchMode') || 'full').trim().toLowerCase();
+    const matchMode: 'full' | 'two_keys' = matchModeRaw === 'two_keys' ? 'two_keys' : 'full';
     const cogsMethodRaw = (request.nextUrl.searchParams.get('cogsMethod') || 'fifo').trim().toLowerCase();
     const cogsMethod: 'fifo' | 'lifo' = cogsMethodRaw === 'lifo' ? 'lifo' : 'fifo';
     const saleStartMsRaw = request.nextUrl.searchParams.get('saleStartMs');
@@ -909,6 +911,10 @@ export async function GET(request: NextRequest) {
     let slugAttemptsProductName = 0;
     let slugSuccessUrlKey = 0;
     let slugSuccessProductName = 0;
+    let matchesByStyleId = 0;
+    let matchesByUrlKey = 0;
+    let matchesByName = 0;
+    let matchesByListingId = 0;
 
     for (const p of purchases) {
       purchasesTotal++;
@@ -1112,7 +1118,7 @@ export async function GET(request: NextRequest) {
       let method: 'listingId' | 'slug' | 'fifo' | 'lifo' | 'name' | null = null;
 
       // 1) Exact listingId match
-      if (saleListingId) {
+      if (matchMode === 'full' && saleListingId) {
         const candidate = purchaseByStockxListingId.get(saleListingId) || null;
         const pid = candidate ? String(candidate.id || '') : '';
         if (candidate && pid && !usedPurchaseIds.has(pid)) {
@@ -1154,8 +1160,8 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        // Attempt B: if urlKey missing (or didn't match), try slugifying the sale product name.
-        if (!linkedPurchase && saleProductNameForSlug) {
+        // Attempt B: (full mode only) if urlKey missing (or didn't match), try slugifying the sale product name.
+        if (!linkedPurchase && matchMode === 'full' && saleProductNameForSlug) {
           slugAttemptsProductName++;
           const key = purchaseSlugKey(saleProductNameForSlug, saleSize);
           const candidates = purchaseSlugIndex.get(key) || [];
@@ -1247,7 +1253,7 @@ export async function GET(request: NextRequest) {
 
       // 4) Fallback: match by product name + size.
       // First try exact normalized name key; if not found, use token similarity within same size bucket.
-      if (!linkedPurchase && saleProduct && saleSize) {
+      if (!linkedPurchase && matchMode === 'full' && saleProduct && saleSize) {
         const nk = purchaseNameKey(String(saleProduct), saleSize);
         const exact = purchaseNameIndex.get(nk) || [];
         const candidates = exact.length > 0 ? exact : (purchaseBySize.get(saleSize) || []);
@@ -1328,6 +1334,10 @@ export async function GET(request: NextRequest) {
       }
 
       if (linkedPurchase) {
+        if (method === 'listingId') matchesByListingId += 1;
+        if (method === 'slug') matchesByUrlKey += 1;
+        if (method === 'name') matchesByName += 1;
+        if (method === 'fifo' || method === 'lifo') matchesByStyleId += 1;
         wouldLinkAllocated++;
         if (isInWindow) wouldLinkInWindow++;
         const purchaseCost = getPurchaseCost(linkedPurchase);
@@ -1490,6 +1500,7 @@ export async function GET(request: NextRequest) {
       success: true,
       userId,
       cogsMethod,
+      matchMode,
       filters: hasSaleWindow ? { saleStartMs, saleEndMs } : null,
       summary: {
         // When a sale window is provided, we allocate across all sales before the window end (FIFO correctness),
@@ -1558,6 +1569,10 @@ export async function GET(request: NextRequest) {
           slugAttemptsProductName,
           slugSuccessUrlKey,
           slugSuccessProductName,
+          matchesByStyleId,
+          matchesByUrlKey,
+          matchesByName,
+          matchesByListingId,
         },
         // Debug: how many sale docs we had to read to find those sales in-window.
         salesRead,

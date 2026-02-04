@@ -585,6 +585,7 @@ export default function TestPurchaseLinkingPage() {
   const [fifoUnlinkedOnly, setFifoUnlinkedOnly] = useState(false);
   const [fifoIncludePending, setFifoIncludePending] = useState(true);
   const [cogsMethod, setCogsMethod] = useState<'fifo' | 'lifo'>('fifo');
+  const [fifoMatchMode, setFifoMatchMode] = useState<'two_keys' | 'full'>('two_keys');
   const [fifoWindowPreset, setFifoWindowPreset] = useState<'this_month' | 'today' | 'custom'>('this_month');
   const [fifoCustomFromYmd, setFifoCustomFromYmd] = useState(() => {
     const d = new Date();
@@ -958,7 +959,8 @@ export default function TestPurchaseLinkingPage() {
         strictDelivery: fifoStrictDelivery ? '1' : '0',
         // includePending=1 includes active/pending/shipped/auth/etc. (excludes known non-sales like CANCELED/AUTHFAILED).
         includePending: fifoIncludePending ? '1' : '0',
-        cogsMethod
+        cogsMethod,
+        matchMode: fifoMatchMode
       });
       if (saleWindow) {
         qs.set('saleStartMs', String(saleWindow.startMs));
@@ -1032,7 +1034,11 @@ export default function TestPurchaseLinkingPage() {
           slugAttemptsUrlKey,
           slugAttemptsProductName,
           slugSuccessUrlKey,
-          slugSuccessProductName
+          slugSuccessProductName,
+          matchMode: fifoMatchMode,
+          matchesByStyleId: typeof pdbg?.matchesByStyleId === 'number' ? pdbg.matchesByStyleId : null,
+          matchesByUrlKey: typeof pdbg?.matchesByUrlKey === 'number' ? pdbg.matchesByUrlKey : null,
+          matchesByName: typeof pdbg?.matchesByName === 'number' ? pdbg.matchesByName : null
         }
       });
       // #endregion
@@ -2021,6 +2027,15 @@ export default function TestPurchaseLinkingPage() {
                     className="h-4 w-4"
                   />
                   Unlinked only
+                </label>
+                <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <input
+                    type="checkbox"
+                    checked={fifoMatchMode === 'two_keys'}
+                    onChange={(e) => setFifoMatchMode(e.target.checked ? 'two_keys' : 'full')}
+                    className="h-4 w-4"
+                  />
+                  Only match styleId+size OR urlKey+size
                 </label>
                 <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                   <input
