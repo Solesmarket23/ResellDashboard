@@ -50,6 +50,31 @@ type SaleRow = {
   date?: string | null;
 };
 
+const CANONICAL_BRANDS = ['Fear of God', 'Denim Tears', 'YZY', 'Adidas', 'Nike', 'Travis Scott'] as const;
+type CanonicalBrand = (typeof CANONICAL_BRANDS)[number] | 'Other';
+
+function canonicalizeBrand(inputBrand: unknown, contextText?: unknown): CanonicalBrand {
+  const raw = String(inputBrand || '').trim().toLowerCase();
+  const ctx = String(contextText || '').trim().toLowerCase();
+  const hay = `${raw} ${ctx}`.trim();
+  if (!hay) return 'Other';
+
+  // Travis Scott
+  if (hay.includes('travis scott') || hay.includes('travic scott') || hay.includes('cactus jack')) return 'Travis Scott';
+  // Fear of God / Essentials
+  if (hay.includes('fear of god') || hay.includes('fog essentials') || hay.includes('essentials')) return 'Fear of God';
+  // Denim Tears
+  if (hay.includes('denim tears')) return 'Denim Tears';
+  // Yeezy
+  if (hay.includes('yzy') || hay.includes('yeezy')) return 'YZY';
+  // Adidas
+  if (hay.includes('adidas')) return 'Adidas';
+  // Nike
+  if (hay.includes('nike') || hay.includes('jordan')) return 'Nike';
+
+  return 'Other';
+}
+
 type PurchaseRow = {
   id: string;
   orderNumber?: string | null;
@@ -848,7 +873,7 @@ export default function TestPurchaseLinkingPage() {
       const profit = n(r?.profit) ?? (net !== null && paid !== null ? net - paid : null);
       if (net === null || paid === null || profit === null) continue;
 
-      const brand = normKey(r?.saleBrand) || 'Unknown';
+      const brand = canonicalizeBrand(r?.saleBrand, `${r?.saleProduct || ''} ${r?.saleUrlKey || ''}`);
       const styleId = normKey(r?.saleStyleId);
       const urlKey = normKey(r?.saleUrlKey);
       const product = normKey(r?.saleProduct);
@@ -1988,7 +2013,7 @@ export default function TestPurchaseLinkingPage() {
       const orderNumber = String(manualCogsOrderNumber || '').trim() || `retailer-${Date.now()}`;
       const units = selected.map((r: any) => ({
         productName: r?.saleProduct ? String(r.saleProduct) : null,
-        productBrand: null,
+        productBrand: canonicalizeBrand(r?.saleBrand, `${r?.saleProduct || ''} ${r?.saleUrlKey || ''}`) || null,
         productSize: r?.saleSize ? String(r.saleSize) : null,
         styleId: r?.saleStyleId ? String(r.saleStyleId) : null,
       }));
@@ -3340,7 +3365,7 @@ export default function TestPurchaseLinkingPage() {
               <NeonDonutChart
                 isNeon={isNeon}
                 title="Profit by brand (top)"
-                subtitle={`From ${fifoAnalytics.rowsUsed} matched sale(s) in this window`}
+                subtitle={`From ${fifoAnalytics.rowsUsed} matched sale(s). Brands normalized to: ${CANONICAL_BRANDS.join(', ')}, Other.`}
                 data={fifoAnalytics.brandPie}
                 valueFormatter={(v) => currency(v)}
               />
