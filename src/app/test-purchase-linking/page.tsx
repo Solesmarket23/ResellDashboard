@@ -611,6 +611,8 @@ export default function TestPurchaseLinkingPage() {
   const [fifoTablePage, setFifoTablePage] = useState(1);
   const [fifoRowsPerPage, setFifoRowsPerPage] = useState<number | 'all'>(50);
   const [fifoShowNoMatchOnly, setFifoShowNoMatchOnly] = useState(false);
+  const [fifoSortKey, setFifoSortKey] = useState<null | 'total_paid' | 'profit'>(null);
+  const [fifoSortDir, setFifoSortDir] = useState<'asc' | 'desc'>('asc');
   const [fifoSelectedSaleIds, setFifoSelectedSaleIds] = useState<Record<string, boolean>>({});
   const [manualCogsOpen, setManualCogsOpen] = useState(false);
   const [manualCogsOrderNumber, setManualCogsOrderNumber] = useState('');
@@ -887,25 +889,67 @@ export default function TestPurchaseLinkingPage() {
     });
   }, [fifoRows, fifoShowNoMatchOnly, saleSearch]);
 
+  const sortedFifoRows = useMemo(() => {
+    const rows = Array.isArray(filteredFifoRows) ? [...filteredFifoRows] : [];
+    if (!fifoSortKey) return rows;
+
+    const n = (v: any): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+    const ms = (v: any): number => {
+      if (typeof v !== 'string' || !v) return 0;
+      const t = Date.parse(v);
+      return Number.isFinite(t) ? t : 0;
+    };
+    const profitVal = (r: any): number | null => {
+      const p = n(r?.profit);
+      if (p !== null) return p;
+      const netPayout = n(r?.saleNetPayout);
+      const paid = n(r?.purchaseCost);
+      if (netPayout === null || paid === null) return null;
+      return netPayout - paid;
+    };
+    const paidVal = (r: any): number | null => n(r?.purchaseCost);
+
+    const dir = fifoSortDir === 'desc' ? -1 : 1;
+    rows.sort((a: any, b: any) => {
+      const av = fifoSortKey === 'profit' ? profitVal(a) : paidVal(a);
+      const bv = fifoSortKey === 'profit' ? profitVal(b) : paidVal(b);
+      const aNull = av === null;
+      const bNull = bv === null;
+      if (aNull && bNull) {
+        // Stable-ish tiebreakers
+        const t = ms(a?.saleCutoffIso) - ms(b?.saleCutoffIso);
+        if (t !== 0) return t;
+        return String(a?.saleOrderNumber || '').localeCompare(String(b?.saleOrderNumber || ''));
+      }
+      if (aNull) return 1;
+      if (bNull) return -1;
+      if (av! === bv!) return (av! - bv!) * dir;
+      const t = ms(a?.saleCutoffIso) - ms(b?.saleCutoffIso);
+      if (t !== 0) return t;
+      return String(a?.saleOrderNumber || '').localeCompare(String(b?.saleOrderNumber || ''));
+    });
+    return rows;
+  }, [filteredFifoRows, fifoSortDir, fifoSortKey]);
+
   // Reset to page 1 when filters/results/page-size change.
   useEffect(() => {
     setFifoTablePage(1);
-  }, [saleSearch, fifoRows, fifoRowsPerPage]);
+  }, [saleSearch, fifoRows, fifoRowsPerPage, fifoShowNoMatchOnly, fifoSortDir, fifoSortKey]);
 
   const fifoPagination = useMemo(() => {
-    const total = filteredFifoRows.length;
+    const total = sortedFifoRows.length;
     const perPage = fifoRowsPerPage === 'all' ? total : fifoRowsPerPage;
     const pages = perPage > 0 ? Math.max(1, Math.ceil(total / perPage)) : 1;
     const page = Math.min(Math.max(1, fifoTablePage), pages);
     const start = (page - 1) * perPage;
     const end = fifoRowsPerPage === 'all' ? total : Math.min(total, start + perPage);
     return { total, perPage, pages, page, start, end };
-  }, [filteredFifoRows.length, fifoRowsPerPage, fifoTablePage]);
+  }, [fifoRowsPerPage, fifoTablePage, sortedFifoRows.length]);
 
   const visibleFifoRows = useMemo(() => {
-    if (fifoRowsPerPage === 'all') return filteredFifoRows;
-    return filteredFifoRows.slice(fifoPagination.start, fifoPagination.end);
-  }, [filteredFifoRows, fifoPagination.end, fifoPagination.start, fifoRowsPerPage]);
+    if (fifoRowsPerPage === 'all') return sortedFifoRows;
+    return sortedFifoRows.slice(fifoPagination.start, fifoPagination.end);
+  }, [fifoPagination.end, fifoPagination.start, fifoRowsPerPage, sortedFifoRows]);
   const runFifoDryRun = useCallback(async () => {
     const u = userId.trim();
     if (!u) return;
@@ -3252,13 +3296,37 @@ export default function TestPurchaseLinkingPage() {
                   <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all text-right`}>
                     <div className="flex items-center justify-center h-full gap-2">
                       <DollarSign className={`w-4 h-4 ${headerIconClass}`} />
-                      <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors`}>Total Paid</span>
+                      <span
+                        className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors whitespace-nowrap cursor-pointer`}
+                        title="Sort by Total Paid"
+                        onClick={() => {
+                          if (fifoSortKey === 'total_paid') setFifoSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+                          else {
+                            setFifoSortKey('total_paid');
+                            setFifoSortDir('asc');
+                          }
+                        }}
+                      >
+                        Total Paid{fifoSortKey === 'total_paid' ? (fifoSortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                      </span>
                     </div>
                   </th>
                   <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all text-right`}>
                     <div className="flex items-center justify-center h-full gap-2">
                       <DollarSign className={`w-4 h-4 ${headerIconClass}`} />
-                      <span className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors`}>Profit</span>
+                      <span
+                        className={`text-xs font-bold uppercase tracking-wider ${headerTextClass} transition-colors whitespace-nowrap cursor-pointer`}
+                        title="Sort by Profit"
+                        onClick={() => {
+                          if (fifoSortKey === 'profit') setFifoSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+                          else {
+                            setFifoSortKey('profit');
+                            setFifoSortDir('asc');
+                          }
+                        }}
+                      >
+                        Profit{fifoSortKey === 'profit' ? (fifoSortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                      </span>
                     </div>
                   </th>
                   <th className={`px-4 py-0 h-12 select-none group ${isNeon ? 'hover:bg-white/10' : 'hover:bg-gray-200'} transition-all`}>
