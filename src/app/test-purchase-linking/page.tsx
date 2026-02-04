@@ -975,6 +975,41 @@ export default function TestPurchaseLinkingPage() {
       const noMatch = typeof summary?.noMatch === 'number' ? summary.noMatch : null;
       const alreadyLinked = typeof summary?.alreadyLinked === 'number' ? summary.alreadyLinked : null;
       // #region agent log
+      try {
+        const top = Array.isArray(summary?.allocated?.noMatchTopReasons) ? summary.allocated.noMatchTopReasons : [];
+        const compact = top.slice(0, 6).map((r: any) => {
+          const samples = Array.isArray(r?.samples) ? r.samples : [];
+          const sourceCounts: Record<string, number> = {};
+          for (const s of samples) {
+            const src = String(s?.saleSource || 'unknown');
+            sourceCounts[src] = (sourceCounts[src] || 0) + 1;
+          }
+          return {
+            reason: String(r?.reason || 'unknown'),
+            count: Number(r?.count || 0),
+            sampleSourceCounts: sourceCounts,
+            sample0: samples[0]
+              ? {
+                  orderMasked: __agentMask(samples[0]?.saleOrderNumber),
+                  styleIdPresent: !!String(samples[0]?.saleStyleId || '').trim(),
+                  sizeRaw: String(samples[0]?.saleSize || ''),
+                  source: String(samples[0]?.saleSource || '')
+                }
+              : null
+          };
+        });
+        __agentLog({
+          runId: 'pre-fix',
+          hypothesisId: 'H5',
+          location: 'test-purchase-linking/page.tsx:runFifoDryRun:allocatedTopReasons',
+          message: 'allocated no_match top reasons (with sample sources)',
+          data: { allocatedNoMatch: summary?.allocated?.noMatch ?? null, top: compact }
+        });
+      } catch {
+        // ignore
+      }
+      // #endregion
+      // #region agent log
       __agentLog({
         runId: 'pre-fix',
         hypothesisId: 'H4',
