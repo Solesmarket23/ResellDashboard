@@ -1175,9 +1175,12 @@ export default function TestPurchaseLinkingPage() {
                   ? ` • 403s detected (possible bot protection)`
                   : '';
           const legacyUpdated = typeof s?.legacyUpdated === 'number' ? s.legacyUpdated : null;
+          const embeddedUpdated = typeof s?.embeddedUpdated === 'number' ? s.embeddedUpdated : null;
           const remoteAttempted = typeof s?.remoteAttempted === 'number' ? s.remoteAttempted : null;
           showNotice(
             `✅ Identifier backfill — updated=${s.updated ?? 0} failed=${s.failed ?? 0}${
+              embeddedUpdated !== null ? ` • embeddedUpdated=${embeddedUpdated}` : ''
+            }${
               legacyUpdated !== null ? ` • legacyUpdated=${legacyUpdated}` : ''
             }${remoteAttempted !== null ? ` • remoteAttempted=${remoteAttempted}` : ''}${
               pageRemaining !== null ? ` • pageRemaining≈${pageRemaining}` : ''

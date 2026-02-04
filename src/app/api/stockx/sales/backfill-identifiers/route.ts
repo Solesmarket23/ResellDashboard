@@ -112,6 +112,50 @@ function normalizeSize(value: any): string {
   return u.replace(/^US\s+/i, '');
 }
 
+function patchFromEmbeddedSaleDoc(userSaleDoc: any): any | null {
+  // Some historical imports stored the full StockX payload under `saleData` but did not lift identifiers.
+  const base = userSaleDoc?.saleData || userSaleDoc?.sale || null;
+  if (!base) return null;
+  const styleId =
+    base?.styleId ||
+    base?.product?.styleId ||
+    base?.product?.sku ||
+    base?.sku ||
+    base?.product?.productId ||
+    null;
+  const size = base?.size || base?.variant?.size || base?.variant?.variantValue || base?.variant?.variant_value || null;
+  const productName = base?.productName || base?.product?.productName || base?.product?.name || base?.product?.title || null;
+  const brand = base?.brand || base?.product?.brand || null;
+  const urlKey = base?.urlKey || base?.product?.urlKey || base?.product?.url_key || null;
+  const listingId = base?.listingId || base?.askId || null;
+  const date = base?.createdAt || base?.created || base?.updatedAt || base?.updated || null;
+
+  const patch: any = {
+    updatedAt: new Date().toISOString(),
+    embeddedSaleDataBackfillAt: new Date().toISOString(),
+    date: date ? String(date) : undefined
+  };
+
+  const styleIdNorm = styleId ? String(styleId).trim() : '';
+  const sizeNorm = normalizeSize(size);
+  const productNorm = productName ? String(productName).trim() : '';
+  const brandNorm = brand ? String(brand).trim() : '';
+  const urlKeyNorm = urlKey ? String(urlKey).trim() : '';
+  const listingIdNorm = listingId ? String(listingId).trim() : '';
+
+  if (!isMissingish(styleIdNorm)) patch.styleId = styleIdNorm;
+  if (sizeNorm) patch.size = sizeNorm;
+  if (!isMissingish(productNorm)) patch.product = productNorm;
+  if (!isMissingish(brandNorm)) patch.brand = brandNorm;
+  if (!isMissingish(urlKeyNorm)) patch.urlKey = urlKeyNorm;
+  if (!isMissingish(listingIdNorm)) patch.listingId = listingIdNorm;
+
+  const cleaned = stripUndefinedDeep(patch);
+  // If all we did was set timestamps, ignore.
+  const keys = Object.keys(cleaned);
+  return keys.length > 2 ? cleaned : null;
+}
+
 function getEffectiveUserId(request: NextRequest): string | null {
   const qpUserId = request.nextUrl.searchParams.get('userId')?.trim();
   if (qpUserId) return qpUserId;
@@ -389,6 +433,11 @@ export async function POST(request: NextRequest) {
 
     const page = await scanSalesByUserIdPage(userId, scanLimit, cursorId);
     const sales = page.sales;
+    const saleByDocId = new Map<string, any>();
+    for (const s of sales) {
+      const id = String(s?.id || '').trim();
+      if (id) saleByDocId.set(id, s);
+    }
     const candidates = sales
       .filter((s) => hasUsefulIdentifierGaps(s))
       .map((s) => ({ docId: String(s.id), orderNumber: String(s?.orderNumber || '').trim() }))
@@ -404,6 +453,25 @@ export async function POST(request: NextRequest) {
     }
 
     const db = getAdminDb();
+
+    // Phase 0: lift identifiers from embedded saleData within user_sales docs (no external calls).
+    const embeddedUpdates: Array<{ docId: string; patch: any }> = [];
+    for (const c of uniq.slice(0, maxOrders)) {
+      const raw = saleByDocId.get(c.docId) || null;
+      const patch = raw ? patchFromEmbeddedSaleDoc(raw) : null;
+      if (patch) embeddedUpdates.push({ docId: c.docId, patch });
+    }
+    let embeddedUpdated = 0;
+    if (embeddedUpdates.length > 0) {
+      const batchSize = 400;
+      for (let i = 0; i < embeddedUpdates.length; i += batchSize) {
+        const chunk = embeddedUpdates.slice(i, i + batchSize);
+        const batch = db.batch();
+        for (const u of chunk) batch.set(db.collection('user_sales').doc(u.docId), u.patch, { merge: true });
+        await batch.commit();
+        embeddedUpdated += chunk.length;
+      }
+    }
 
     // Phase 1: local backfill from legacy `stockxSales` data (no upstream StockX calls).
     const toConsider = uniq.slice(0, maxOrders);
@@ -707,6 +775,7 @@ export async function POST(request: NextRequest) {
       nextCursorId: page.nextCursorId,
       candidateSales: uniq.length,
       attempted: toConsider.length,
+      embeddedUpdated,
       legacyUpdated,
       remoteAttempted: toBackfill.length,
       updated: legacyUpdated + updated,
