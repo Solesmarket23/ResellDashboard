@@ -1222,6 +1222,28 @@ export async function GET(request: NextRequest) {
         }
       }
 
+      // 2.5) Product_name mode: exact normalized name key fallback (no fuzzy)
+      // This targets the "missing_sale_styleId_but_name_candidates_exist" bucket.
+      if (!linkedPurchase && matchMode === 'product_name' && saleProduct && saleSize) {
+        const nk = purchaseNameKey(String(saleProduct), saleSize);
+        const exact = purchaseNameIndex.get(nk) || [];
+        for (const cand of exact as any) {
+          const pid = String(cand.id || '');
+          if (!pid || usedPurchaseIds.has(pid)) continue;
+          if (
+            typeof saleCreatedAtMs === 'number' &&
+            typeof cand._dateMs === 'number' &&
+            cand._dateMs > saleCreatedAtMs
+          ) {
+            if (cand._dateSource !== 'createdAt') continue;
+          }
+          linkedPurchase = cand;
+          method = 'name';
+          usedPurchaseIds.add(pid);
+          break;
+        }
+      }
+
       // 3) FIFO/LIFO by styleId+size
       if (!linkedPurchase && matchMode !== 'product_name' && saleStyleId && saleSize) {
         const styleVariants = splitStyleIdParts(saleStyleId);
