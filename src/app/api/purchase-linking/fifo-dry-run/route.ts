@@ -670,6 +670,8 @@ export async function GET(request: NextRequest) {
     const matchModeRaw = (request.nextUrl.searchParams.get('matchMode') || 'full').trim().toLowerCase();
     const matchMode: 'full' | 'two_keys' | 'product_name' =
       matchModeRaw === 'two_keys' ? 'two_keys' : matchModeRaw === 'product_name' ? 'product_name' : 'full';
+    const allocationModeRaw = (request.nextUrl.searchParams.get('allocationMode') || 'full').trim().toLowerCase();
+    const allocationMode: 'full' | 'window_only' = allocationModeRaw === 'window_only' ? 'window_only' : 'full';
     const inventoryStartModeRaw = (request.nextUrl.searchParams.get('inventoryStartMode') || 'none').trim().toLowerCase();
     const inventoryStartMode: 'none' | 'first_purchase' = inventoryStartModeRaw === 'first_purchase' ? 'first_purchase' : 'none';
     const cogsMethodRaw = (request.nextUrl.searchParams.get('cogsMethod') || 'fifo').trim().toLowerCase();
@@ -712,6 +714,10 @@ export async function GET(request: NextRequest) {
       // To compute FIFO allocations for a window [saleStartMs, saleEndMs), we must process
       // *all* sales that occurred before saleEndMs (oldest → newest), not just sales inside the window.
       // Otherwise earlier sales won't consume inventory first and window profits will be overstated.
+      //
+      // DEBUG/SANDBOX:
+      // When allocationMode=window_only, we intentionally allocate ONLY sales inside the window.
+      // This is NOT FIFO-correct for the window profit, but it's useful to quickly validate matching.
       const allocationEndMs = saleEndMs as number;
       const inventoryStartMs =
         inventoryStartMode === 'first_purchase' && typeof minEligiblePurchaseMs === 'number'
@@ -719,6 +725,7 @@ export async function GET(request: NextRequest) {
           : null;
       let scannedBeforeInventoryStart = 0;
       let scannedBeforeAllocationStart = 0;
+      let scannedBeforeWindowStart = 0;
       const allocationStartMs =
         typeof salesAllocationStartMs === 'number'
           ? salesAllocationStartMs
@@ -729,6 +736,7 @@ export async function GET(request: NextRequest) {
       const salesForAllocation: any[] = [];
       let scannedWithMissingEventMs = 0;
       let scannedAfterEnd = 0;
+      const windowStartMs = saleStartMs as number;
 
       // Scan through sales in pages and keep any sale with eventMs < allocationEndMs.
       // This avoids requiring Firestore composite indexes on (userId, date).
@@ -759,6 +767,10 @@ export async function GET(request: NextRequest) {
           }
           if (typeof allocationStartMs === 'number' && ms < allocationStartMs) {
             scannedBeforeAllocationStart++;
+            continue;
+          }
+          if (allocationMode === 'window_only' && ms < windowStartMs) {
+            scannedBeforeWindowStart++;
             continue;
           }
           if (ms < allocationEndMs) {
@@ -805,6 +817,10 @@ export async function GET(request: NextRequest) {
             if (typeof ms !== 'number') continue;
             if (typeof allocationStartMs === 'number' && ms < allocationStartMs) {
               scannedBeforeAllocationStart++;
+              continue;
+            }
+            if (allocationMode === 'window_only' && ms < windowStartMs) {
+              scannedBeforeWindowStart++;
               continue;
             }
             if (ms < allocationEndMs) {
@@ -857,6 +873,7 @@ export async function GET(request: NextRequest) {
         saleStartMs,
         saleEndMs,
         allocationEndMs,
+        allocationMode,
         inventoryStartMode,
         inventoryStartMs,
         scannedWithMissingEventMs,
@@ -864,6 +881,7 @@ export async function GET(request: NextRequest) {
         scannedBeforeInventoryStart,
         allocationStartMs,
         scannedBeforeAllocationStart,
+        scannedBeforeWindowStart,
       };
     } else {
       const salesQuery: FirebaseFirestore.Query = db
@@ -1652,6 +1670,7 @@ export async function GET(request: NextRequest) {
       userId,
       cogsMethod,
       matchMode,
+      allocationMode,
       filters: hasSaleWindow ? { saleStartMs, saleEndMs } : null,
       summary: {
         // When a sale window is provided, we allocate across all sales before the window end (FIFO correctness),
@@ -1700,6 +1719,7 @@ export async function GET(request: NextRequest) {
             startIso: msToIso(start),
             endIso: msToIso(end),
             allocationEndIso: msToIso((dbg as any).allocationEndMs ?? null),
+            allocationMode: (dbg as any).allocationMode ?? 'full',
             inventoryStartMode: (dbg as any).inventoryStartMode ?? null,
             inventoryStartIso: msToIso((dbg as any).inventoryStartMs ?? null),
             allocationStartIso: msToIso((dbg as any).allocationStartMs ?? null),
@@ -1710,6 +1730,7 @@ export async function GET(request: NextRequest) {
             scannedAfterEnd: (dbg as any).scannedAfterEnd ?? 0,
             scannedBeforeInventoryStart: (dbg as any).scannedBeforeInventoryStart ?? 0,
             scannedBeforeAllocationStart: (dbg as any).scannedBeforeAllocationStart ?? 0,
+            scannedBeforeWindowStart: (dbg as any).scannedBeforeWindowStart ?? 0,
             sampleInWindow: sample,
           };
         })(),

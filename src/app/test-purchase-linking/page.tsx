@@ -587,6 +587,7 @@ export default function TestPurchaseLinkingPage() {
   const [cogsMethod, setCogsMethod] = useState<'fifo' | 'lifo'>('fifo');
   const [fifoMatchMode, setFifoMatchMode] = useState<'product_name' | 'two_keys' | 'full'>('product_name');
   const [fifoInventoryStartMode, setFifoInventoryStartMode] = useState<'none' | 'first_purchase'>('first_purchase');
+  const [fifoSandboxWindowOnly, setFifoSandboxWindowOnly] = useState(false);
   const [fifoSalesAllocationStartYmd, setFifoSalesAllocationStartYmd] = useState<string>('2025-01-01');
   const [fifoPurchaseStartYmd, setFifoPurchaseStartYmd] = useState<string>('2024-11-01');
   const [comparingModes, setComparingModes] = useState(false);
@@ -969,7 +970,9 @@ export default function TestPurchaseLinkingPage() {
         includePending: fifoIncludePending ? '1' : '0',
         cogsMethod,
         matchMode: fifoMatchMode,
-        inventoryStartMode: fifoInventoryStartMode
+        inventoryStartMode: fifoInventoryStartMode,
+        // Sandbox: allocate only the selected window's sales (not FIFO-correct, but great for validating matching)
+        allocationMode: fifoSandboxWindowOnly ? 'window_only' : 'full',
       });
       const purchaseStartMs = parseLocalYmdStartMs(fifoPurchaseStartYmd);
       const salesAllocationStartMs = parseLocalYmdStartMs(fifoSalesAllocationStartYmd);
@@ -1095,6 +1098,11 @@ export default function TestPurchaseLinkingPage() {
     fifoCustomFromYmd,
     fifoCustomToYmd,
     fifoIncludePending,
+    fifoInventoryStartMode,
+    fifoMatchMode,
+    fifoPurchaseStartYmd,
+    fifoSalesAllocationStartYmd,
+    fifoSandboxWindowOnly,
     fifoSelectedMonth,
     fifoSelectedYear,
     fifoStrictDelivery,
@@ -1152,7 +1160,8 @@ export default function TestPurchaseLinkingPage() {
           strictDelivery: fifoStrictDelivery ? '1' : '0',
           includePending: fifoIncludePending ? '1' : '0',
           cogsMethod,
-          matchMode: mode
+          matchMode: mode,
+          allocationMode: fifoSandboxWindowOnly ? 'window_only' : 'full',
         });
         if (saleWindow) {
           qs.set('saleStartMs', String(saleWindow.startMs));
@@ -1211,6 +1220,7 @@ export default function TestPurchaseLinkingPage() {
     fifoCustomFromYmd,
     fifoCustomToYmd,
     fifoIncludePending,
+    fifoSandboxWindowOnly,
     fifoStrictDelivery,
     fifoUnlinkedOnly,
     fifoWindowPreset,
@@ -2177,6 +2187,15 @@ export default function TestPurchaseLinkingPage() {
                   Unlinked only
                 </label>
                 <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <input
+                    type="checkbox"
+                    checked={fifoSandboxWindowOnly}
+                    onChange={(e) => setFifoSandboxWindowOnly(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Sandbox (allocate only this window)
+                </label>
+                <label className={`inline-flex items-center gap-2 text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
                   <span className="opacity-80">Match mode:</span>
                   <select
                     value={fifoMatchMode}
@@ -2408,7 +2427,9 @@ export default function TestPurchaseLinkingPage() {
                 <div className={`mt-3 rounded-md border p-3 text-xs ${isNeon ? 'bg-white/5 border-white/10 text-gray-200' : 'bg-white border-gray-200 text-gray-800'}`}>
                   <div className="font-semibold">Allocated no_match breakdown (this is the big number)</div>
                   <div className={`mt-1 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-                    These failures occurred in pre-window sales that FIFO must allocate first. Fixing these improves FIFO accuracy for February.
+                    {fifoSandboxWindowOnly
+                      ? 'Sandbox mode is ON, so allocation is limited to the selected window. This breakdown should mostly mirror the window failures (great for validating matching quickly).'
+                      : 'These failures occurred in pre-window sales that FIFO must allocate first. Fixing these improves FIFO accuracy for February.'}
                   </div>
                   <div className="mt-2 grid gap-2">
                     {fifoSummary.allocated.noMatchTopReasons.map((x: any) => (
@@ -2430,7 +2451,16 @@ export default function TestPurchaseLinkingPage() {
                     ))}
                   </div>
                   <div className={`mt-2 ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>
-                    The next step is to click <span className="font-semibold">Show only no_match</span> and switch the window to a broader range (or month-by-month) while you fix the top reasons above.
+                    {fifoSandboxWindowOnly ? (
+                      <>
+                        Next step: click <span className="font-semibold">Show only no_match</span> to inspect the remaining failures in just this window.
+                        When you’re confident matching works, turn Sandbox off to get FIFO-correct month totals.
+                      </>
+                    ) : (
+                      <>
+                        The next step is to click <span className="font-semibold">Show only no_match</span> and switch the window to a broader range (or month-by-month) while you fix the top reasons above.
+                      </>
+                    )}
                   </div>
                 </div>
               )}
