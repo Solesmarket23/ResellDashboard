@@ -1676,7 +1676,7 @@ const Purchases = () => {
         
         // Get existing Gmail purchases to merge (not delete)
         console.log('🔍 Loading existing purchases to merge...');
-        const existingPurchases = await getDocuments('purchases');
+        const existingPurchases = await getDocuments('purchases', userId);
         console.log(`📄 Found ${existingPurchases.length} existing purchases in Firebase`);
         
         // Create a map of existing Gmail purchases by order number
@@ -2031,15 +2031,13 @@ const Purchases = () => {
         // For Firebase auth users, use Firebase directly
         console.log('🔍 Loading purchases from Firebase...');
         console.log(`⏱️ Before Firebase read: ${Date.now() - startTime}ms`);
-        allPurchases = await getDocuments('purchases');
-        console.log(`📄 Firebase returned ${allPurchases.length} total purchases`);
+        allPurchases = await getDocuments('purchases', userId);
+        console.log(`📄 Firebase returned ${allPurchases.length} purchases for user ${userId}`);
         console.log(`⏱️ After Firebase read: ${Date.now() - startTime}ms`);
       }
       
-      // Filter to only show purchases for this user
-      const userPurchases = allPurchases.filter(
-        (purchase: any) => purchase.userId === userId
-      );
+      // Data already scoped to this user above (API for site-password, Firestore query for Firebase users)
+      const userPurchases = allPurchases;
       
       console.log(`📄 Found ${userPurchases.length} purchases for user ${userId}`);
       console.log('🔍 User purchases details:', userPurchases.map(p => ({
@@ -2458,10 +2456,7 @@ const Purchases = () => {
           console.log('✅ All purchases cleared from localStorage');
         } else {
           // For Firebase users, clear Firebase
-          const allPurchases = await getDocuments('purchases');
-          const userPurchases = allPurchases.filter(
-            (purchase: any) => purchase.userId === userId
-          );
+          const userPurchases = await getDocuments('purchases', userId);
           
           // Delete all purchases for this user (both manual and Gmail)
           let deletedCount = 0;
@@ -3549,8 +3544,7 @@ const Purchases = () => {
     
     try {
       console.log('🧹 Starting Firebase duplicate cleanup...');
-      const allPurchases = await getDocuments('purchases');
-      const userPurchases = allPurchases.filter((p: any) => p.userId === userId);
+      const userPurchases = await getDocuments('purchases', userId);
       
       // Group by order number
       const orderGroups = new Map();
@@ -5958,8 +5952,13 @@ const Purchases = () => {
                     } else {
                       await updateDocument('purchases', editingPurchase.id.toString(), updates);
                       // Refresh purchases
-                      const updatedPurchases = await getDocuments('purchases');
-                      setPurchases(updatedPurchases);
+                      const uid = resolvedUserId || user?.uid || null;
+                      if (uid) {
+                        const updatedPurchases = await getDocuments('purchases', uid);
+                        setPurchases(updatedPurchases);
+                      } else {
+                        console.warn('No userId available to refresh purchases after update; keeping local state');
+                      }
                     }
                   }
                   setEditModalOpen(false);

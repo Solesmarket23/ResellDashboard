@@ -8302,6 +8302,27 @@ function stopScanKeepalive() {
   } catch {}
 }
 
+// Debounce widget re-renders. During long scans, progress/results can arrive very frequently;
+// rebuilding a large widget DOM on every message can make the StockX tab unresponsive.
+function scheduleEnsureListingBidWidget() {
+  try {
+    if (window.__stockxEnsureListingBidWidgetScheduled) return;
+    window.__stockxEnsureListingBidWidgetScheduled = true;
+    setTimeout(() => {
+      try {
+        window.__stockxEnsureListingBidWidgetScheduled = false;
+      } catch {}
+      try {
+        ensureListingBidWidget();
+      } catch {}
+    }, 120);
+  } catch {
+    try {
+      ensureListingBidWidget();
+    } catch {}
+  }
+}
+
 function isStockxHomepage() {
   try {
     if (!location.hostname.includes('stockx.com')) return false;
@@ -8759,7 +8780,12 @@ function ensureListingBidWidget() {
               const interactingUntil = Number(window.__stockxListingWidgetInteractingUntil || 0);
               const interacting = Date.now() < interactingUntil;
 
+              // Avoid infinite recursion: only redraw if widget exists
+              const w = document.getElementById('stockx-bid-opps-widget');
+              if (!w) return;
+
               // Track a lightweight snapshot so we only re-render when something actually changed.
+              // IMPORTANT: avoid Object.keys(r).length here (O(n) + alloc) — it becomes expensive on long scans.
               let snap = '';
               try {
                 snap = JSON.stringify({
@@ -8767,13 +8793,17 @@ function ensureListingBidWidget() {
                   stage: String(s?.stage || ''),
                   total: Number(s?.total || 0),
                   completed: Number(s?.completed || 0),
-                  resultCount: r && typeof r === 'object' ? Object.keys(r).length : 0,
                   canResume: !!s?.canResume && String(s?.stage || '').toLowerCase() === 'stopped'
                 });
               } catch {
                 snap = '';
               }
               const lastSnap = String(window.__stockxListingWidgetLastSnap || '');
+              if (snap && snap === lastSnap) return;
+              if (hovering || focusedInside || interacting) return;
+              window.__stockxListingWidgetLastSnap = snap;
+
+              // Apply new state/results (cheap). Avoid copying results map (O(n)).
               if (s && typeof s === 'object') {
                 state.scanId = String(s.scanId || sid);
                 state.stage = String(s.stage || state.stage || '');
@@ -8782,19 +8812,9 @@ function ensureListingBidWidget() {
                 state.canResume = !!s.canResume && String(s.stage || '').toLowerCase() === 'stopped';
               }
               if (r && typeof r === 'object') {
-                // Convert map(url->result) into the existing state.results shape.
-                state.results = {};
-                for (const [url, val] of Object.entries(r)) {
-                  state.results[url] = val;
-                }
+                state.results = r;
               }
-              // Avoid infinite recursion: only redraw if widget exists
-              const w = document.getElementById('stockx-bid-opps-widget');
-              if (!w) return;
-              if (hovering || focusedInside || interacting) return;
-              if (snap && snap === lastSnap) return;
-              window.__stockxListingWidgetLastSnap = snap;
-              ensureListingBidWidget();
+              scheduleEnsureListingBidWidget();
             });
           });
         } catch {}
@@ -8937,18 +8957,42 @@ function ensureListingBidWidget() {
     resultEntries.length === 0
       ? `<div style="opacity:.75; font-size:12px;">No results yet. Click Scan to check the first items on this page.</div>`
       : (() => {
-          const top = profitableEntries.length
-            ? profitableEntries.map(renderEntry).join('')
+          // Rendering hundreds of entries can freeze the StockX tab. Cap what we render in the widget,
+          // and direct the user to the dashboard for the full list.
+          const MAX_RENDER_PROFITABLE = 60;
+          const MAX_RENDER_OTHER = 60;
+
+          const shownProfit = profitableEntries.slice(0, MAX_RENDER_PROFITABLE);
+          const hiddenProfit = Math.max(0, profitableEntries.length - shownProfit.length);
+          const top = shownProfit.length
+            ? `${shownProfit.map(renderEntry).join('')}${
+                hiddenProfit
+                  ? `<div style="margin-top:10px; opacity:.75; font-size:12px; border-top:1px solid rgba(255,255,255,0.08); padding-top:10px;">
+                       Showing first ${shownProfit.length} profitable items (hidden ${hiddenProfit}). Use the 📈 dashboard for the full list.
+                     </div>`
+                  : ''
+              }`
             : `<div style="opacity:.75; font-size:12px;">No profitable opportunities found (with current settings).</div>`;
 
           const showOthers = !!state.showNonProfitable;
+          const shownOther = otherEntries.slice(0, MAX_RENDER_OTHER);
+          const hiddenOther = Math.max(0, otherEntries.length - shownOther.length);
           const others =
             showOthers && otherEntries.length
               ? `<details style="margin-top:10px;">
                    <summary style="cursor:pointer; font-weight:900; font-size:12px; color:rgba(255,255,255,0.85);">
                      No opportunities / skipped (${otherEntries.length})
                    </summary>
-                   <div style="margin-top:8px;">${otherEntries.map(renderEntry).join('')}</div>
+                   <div style="margin-top:8px;">
+                     ${shownOther.map(renderEntry).join('')}
+                     ${
+                       hiddenOther
+                         ? `<div style="margin-top:10px; opacity:.7; font-size:12px;">
+                              Showing first ${shownOther.length} skipped items (hidden ${hiddenOther}). Use the 📈 dashboard for the full list.
+                            </div>`
+                         : ''
+                     }
+                   </div>
                  </details>`
               : otherEntries.length
                 ? `<div style="margin-top:10px; opacity:.65; font-size:12px;">
@@ -10360,18 +10404,18 @@ function ensureListingBidWidget() {
         state.stage = msg.stage || state.stage;
         state.current = msg.current || state.current;
         state.total = msg.total || state.total;
-        ensureListingBidWidget();
+        scheduleEnsureListingBidWidget();
       } else if (msg.action === 'listingBidScanResult') {
         const r = msg;
         const key = r.slug || r.url || `${Date.now()}_${Math.random().toString(16).slice(2)}`;
         state.results[key] = r;
-        ensureListingBidWidget();
+        scheduleEnsureListingBidWidget();
       } else if (msg.action === 'listingBidScanDone') {
         if (msg.cancelled) state.stage = 'stopped';
         else state.stage = msg.success ? 'done' : `done (error: ${msg.error || 'unknown'})`;
         // Scan finished; allow service worker to suspend normally again.
         try { stopScanKeepalive(); } catch {}
-        ensureListingBidWidget();
+        scheduleEnsureListingBidWidget();
       }
     };
   } catch {}

@@ -155,7 +155,7 @@ export const saveUserTheme = async (userId: string, themeName: string) => {
     };
 
     // Check if user theme exists
-    const existingThemes = await getDocuments(COLLECTIONS.THEMES);
+    const existingThemes = await getDocuments(COLLECTIONS.THEMES, userId);
     const userTheme = existingThemes.find((theme: any) => theme.userId === userId);
 
     if (userTheme && userTheme.id) {
@@ -178,7 +178,7 @@ export const getUserTheme = async (userId: string): Promise<string | null> => {
   }
 
   try {
-    const themes = await getDocuments(COLLECTIONS.THEMES);
+    const themes = await getDocuments(COLLECTIONS.THEMES, userId);
     const userTheme = themes.find((theme: any) => theme.userId === userId);
     return userTheme ? userTheme.themeName : null;
   } catch (error) {
@@ -196,7 +196,7 @@ export const saveUserProfile = async (userId: string, profileData: Partial<UserP
       updatedAt: new Date().toISOString()
     } as UserProfileData;
 
-    const existingProfiles = await getDocuments(COLLECTIONS.PROFILES);
+    const existingProfiles = await getDocuments(COLLECTIONS.PROFILES, userId);
     const userProfile = existingProfiles.find((p: any) => p.userId === userId);
 
     if (userProfile && userProfile.id) {
@@ -214,7 +214,7 @@ export const saveUserProfile = async (userId: string, profileData: Partial<UserP
 
 export const getUserProfile = async (userId: string): Promise<UserProfileData | null> => {
   try {
-    const profiles = await getDocuments(COLLECTIONS.PROFILES);
+    const profiles = await getDocuments(COLLECTIONS.PROFILES, userId);
     const userProfile = profiles.find((p: any) => p.userId === userId);
     return userProfile || null;
   } catch (error) {
@@ -246,7 +246,7 @@ export const saveUserSale = async (userId: string, saleData: Partial<UserSaleDat
     console.log('✅ Sale saved to Firebase with doc ID:', docRef.id);
     
     // Verify the save by immediately reading it back
-    const savedSale = await getDocuments('user_sales');
+    const savedSale = await getDocuments('user_sales', userId);
     const justSavedSale = savedSale.find((s: any) => s.id === docRef.id);
     console.log('🔍 Verification - Just saved sale:', justSavedSale);
     console.log('🔍 Verification - userId in saved sale:', justSavedSale?.userId);
@@ -271,10 +271,7 @@ export const getUserSales = async (userId: string): Promise<UserSaleData[]> => {
     const timestamp = Date.now();
     console.log('🔄 getUserSales: Cache-busting timestamp:', timestamp);
     
-    const sales = await getDocuments('user_sales');
-    console.log('📊 getUserSales: Total sales in database:', sales.length);
-    
-    const userSales = sales.filter((sale: any) => sale.userId === userId);
+    const userSales = await getDocuments('user_sales', userId);
     console.log('📊 getUserSales: User sales found:', userSales.length);
     console.log('📊 getUserSales: User sales:', userSales.map(s => ({ id: s.id, product: s.product, profit: s.profit })));
     
@@ -304,11 +301,7 @@ export const clearAllUserSales = async (userId: string): Promise<{success: boole
   try {
     console.log('🔄 Starting clearAllUserSales for user:', userId);
     
-    const sales = await getDocuments('user_sales');
-    console.log('📊 Total sales in database:', sales.length);
-    console.log('📊 All sales sample:', sales.slice(0, 3).map(s => ({ id: s.id, userId: s.userId, product: s.product })));
-    
-    const userSales = sales.filter((sale: any) => sale.userId === userId);
+    const userSales = await getDocuments('user_sales', userId);
     console.log('📊 User sales found:', userSales.length);
     console.log('📊 User sales details:', userSales.map(s => ({ id: s.id, userId: s.userId, product: s.product })));
     
@@ -391,7 +384,7 @@ export const saveUserPurchase = async (userId: string, orderInfo: OrderInfo): Pr
     console.log('✅ Purchase saved to Firebase with doc ID:', docRef.id);
     
     // Verify the save by immediately reading it back
-    const savedPurchases = await getDocuments(COLLECTIONS.PURCHASES);
+    const savedPurchases = await getDocuments(COLLECTIONS.PURCHASES, userId);
     const justSavedPurchase = savedPurchases.find((p: any) => p.id === docRef.id);
     console.log('🔍 Verification - Just saved purchase:', justSavedPurchase);
     
@@ -411,10 +404,7 @@ export const getUserPurchases = async (userId: string): Promise<UserPurchaseData
   try {
     console.log('🔄 getUserPurchases: Loading purchases for user:', userId);
     
-    const purchases = await getDocuments(COLLECTIONS.PURCHASES);
-    console.log('📊 getUserPurchases: Total purchases in database:', purchases.length);
-    
-    const userPurchases = purchases.filter((purchase: any) => purchase.userId === userId);
+    const userPurchases = await getDocuments(COLLECTIONS.PURCHASES, userId);
     console.log('📊 getUserPurchases: User purchases found:', userPurchases.length);
     console.log('📊 getUserPurchases: User purchases:', userPurchases.map(p => ({ 
       id: p.id, 
@@ -448,10 +438,7 @@ export const clearAllUserPurchases = async (userId: string): Promise<{success: b
   try {
     console.log('🔄 Starting clearAllUserPurchases for user:', userId);
     
-    const purchases = await getDocuments(COLLECTIONS.PURCHASES);
-    console.log('📊 Total purchases in database:', purchases.length);
-    
-    const userPurchases = purchases.filter((purchase: any) => purchase.userId === userId);
+    const userPurchases = await getDocuments(COLLECTIONS.PURCHASES, userId);
     console.log('📊 User purchases found:', userPurchases.length);
     
     if (userPurchases.length === 0) {
@@ -490,7 +477,7 @@ export const saveUserEmailConfig = async (userId: string, config: any) => {
       updatedAt: new Date().toISOString()
     };
 
-    const existingConfigs = await getDocuments(COLLECTIONS.EMAIL_CONFIGS);
+    const existingConfigs = await getDocuments(COLLECTIONS.EMAIL_CONFIGS, userId);
     const userConfig = existingConfigs.find((c: any) => c.userId === userId);
 
     if (userConfig && userConfig.id) {
@@ -508,7 +495,7 @@ export const saveUserEmailConfig = async (userId: string, config: any) => {
 
 export const getUserEmailConfig = async (userId: string): Promise<any | null> => {
   try {
-    const configs = await getDocuments(COLLECTIONS.EMAIL_CONFIGS);
+    const configs = await getDocuments(COLLECTIONS.EMAIL_CONFIGS, userId);
     const userConfig = configs.find((c: any) => c.userId === userId);
     return userConfig ? userConfig.config : null;
   } catch (error) {
@@ -526,7 +513,7 @@ export const saveUserDashboardSettings = async (userId: string, settings: Partia
       updatedAt: new Date().toISOString()
     } as UserDashboardSettings;
 
-    const existingSettings = await getDocuments(COLLECTIONS.DASHBOARD_SETTINGS);
+    const existingSettings = await getDocuments(COLLECTIONS.DASHBOARD_SETTINGS, userId);
     const userSettings = existingSettings.find((s: any) => s.userId === userId);
 
     if (userSettings && userSettings.id) {
@@ -544,7 +531,7 @@ export const saveUserDashboardSettings = async (userId: string, settings: Partia
 
 export const getUserDashboardSettings = async (userId: string): Promise<UserDashboardSettings | null> => {
   try {
-    const settings = await getDocuments(COLLECTIONS.DASHBOARD_SETTINGS);
+    const settings = await getDocuments(COLLECTIONS.DASHBOARD_SETTINGS, userId);
     const userSettings = settings.find((s: any) => s.userId === userId);
     return userSettings || null;
   } catch (error) {
@@ -564,7 +551,7 @@ export const saveUserStockXSettings = async (userId: string, settings: Partial<U
 
     try {
       // Try Firebase first
-      const existingSettings = await getDocuments(COLLECTIONS.STOCKX_SETTINGS);
+      const existingSettings = await getDocuments(COLLECTIONS.STOCKX_SETTINGS, userId);
       const userSettings = existingSettings.find((s: any) => s.userId === userId);
 
       if (userSettings && userSettings.id) {
@@ -591,7 +578,7 @@ export const getUserStockXSettings = async (userId: string): Promise<UserStockXS
   try {
     // Try Firebase first
     try {
-      const settings = await getDocuments(COLLECTIONS.STOCKX_SETTINGS);
+      const settings = await getDocuments(COLLECTIONS.STOCKX_SETTINGS, userId);
       const userSettings = settings.find((s: any) => s.userId === userId);
       if (userSettings) {
         console.log('✅ StockX settings loaded from Firebase');
@@ -639,8 +626,7 @@ export const clearAllUserData = async (userId: string) => {
     // Clear themes (with error handling)
     try {
       console.log('🔄 Clearing theme preferences...');
-      const themes = await getDocuments(COLLECTIONS.THEMES);
-      const userThemes = themes.filter((theme: any) => theme.userId === userId);
+      const userThemes = await getDocuments(COLLECTIONS.THEMES, userId);
       for (const theme of userThemes) {
         if (theme.id) {
           await deleteDocument(COLLECTIONS.THEMES, theme.id);
@@ -655,8 +641,7 @@ export const clearAllUserData = async (userId: string) => {
     // Clear profiles (with error handling)
     try {
       console.log('🔄 Clearing profile records...');
-      const profiles = await getDocuments(COLLECTIONS.PROFILES);
-      const userProfiles = profiles.filter((profile: any) => profile.userId === userId);
+      const userProfiles = await getDocuments(COLLECTIONS.PROFILES, userId);
       for (const profile of userProfiles) {
         if (profile.id) {
           await deleteDocument(COLLECTIONS.PROFILES, profile.id);
@@ -671,8 +656,7 @@ export const clearAllUserData = async (userId: string) => {
     // Clear sales (with error handling)
     try {
       console.log('🔄 Clearing sales data...');
-      const sales = await getDocuments('user_sales');
-      const userSales = sales.filter((sale: any) => sale.userId === userId);
+      const userSales = await getDocuments('user_sales', userId);
       for (const sale of userSales) {
         if (sale.id) {
           await deleteDocument('user_sales', sale.id);
@@ -687,8 +671,7 @@ export const clearAllUserData = async (userId: string) => {
     // Clear purchases (with error handling)
     try {
       console.log('🔄 Clearing purchase records...');
-      const allPurchases = await getDocuments(COLLECTIONS.PURCHASES);
-      const userPurchases = allPurchases.filter((purchase: any) => purchase.userId === userId);
+      const userPurchases = await getDocuments(COLLECTIONS.PURCHASES, userId);
       for (const purchase of userPurchases) {
         if (purchase.id) {
           await deleteDocument(COLLECTIONS.PURCHASES, purchase.id);
@@ -703,8 +686,7 @@ export const clearAllUserData = async (userId: string) => {
     // Clear email configs (with error handling)
     try {
       console.log('🔄 Clearing email configurations...');
-      const configs = await getDocuments(COLLECTIONS.EMAIL_CONFIGS);
-      const userConfigs = configs.filter((config: any) => config.userId === userId);
+      const userConfigs = await getDocuments(COLLECTIONS.EMAIL_CONFIGS, userId);
       for (const config of userConfigs) {
         if (config.id) {
           await deleteDocument(COLLECTIONS.EMAIL_CONFIGS, config.id);
@@ -719,8 +701,7 @@ export const clearAllUserData = async (userId: string) => {
     // Clear dashboard settings (with error handling)
     try {
       console.log('🔄 Clearing dashboard settings...');
-      const settings = await getDocuments(COLLECTIONS.DASHBOARD_SETTINGS);
-      const userSettings = settings.filter((setting: any) => setting.userId === userId);
+      const userSettings = await getDocuments(COLLECTIONS.DASHBOARD_SETTINGS, userId);
       for (const setting of userSettings) {
         if (setting.id) {
           await deleteDocument(COLLECTIONS.DASHBOARD_SETTINGS, setting.id);
@@ -735,8 +716,7 @@ export const clearAllUserData = async (userId: string) => {
     // Clear StockX settings (with error handling)
     try {
       console.log('🔄 Clearing StockX settings...');
-      const stockxSettings = await getDocuments(COLLECTIONS.STOCKX_SETTINGS);
-      const userStockXSettings = stockxSettings.filter((setting: any) => setting.userId === userId);
+      const userStockXSettings = await getDocuments(COLLECTIONS.STOCKX_SETTINGS, userId);
       for (const setting of userStockXSettings) {
         if (setting.id) {
           await deleteDocument(COLLECTIONS.STOCKX_SETTINGS, setting.id);

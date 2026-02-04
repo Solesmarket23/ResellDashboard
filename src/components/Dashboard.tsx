@@ -135,16 +135,25 @@ const Dashboard = () => {
 
   // Load purchases data (sales are handled by useSales hook)
   const loadPurchasesData = async (skipCache = false) => {
-    if (!user) {
-      console.log('📊 Dashboard: No user found, skipping purchases load');
+    // Support both Firebase-authenticated users and site-password users.
+    const firebaseUserId = user?.uid || null;
+    const siteUserId = (() => {
+      try {
+        return localStorage.getItem('siteUserId');
+      } catch {
+        return null;
+      }
+    })();
+    const effectiveUserId = siteUserId || firebaseUserId;
+
+    if (!effectiveUserId) {
+      console.log('📊 Dashboard: No userId found, skipping purchases load');
       setPurchasesLoading(false);
       return;
     }
 
     try {
-      // Check if user is using site password (localStorage)
-      const siteUserId = localStorage.getItem('siteUserId');
-      const userId = siteUserId || user.uid;
+      const userId = effectiveUserId;
       
       // Try cache first (unless explicitly skipping)
       if (!skipCache) {
@@ -170,12 +179,9 @@ const Dashboard = () => {
         userPurchasesData = purchasesJson ? JSON.parse(purchasesJson) : [];
         console.log('📊 Dashboard: Found', userPurchasesData.length, 'purchases in localStorage');
       } else {
-        // Load purchases from Firebase (only for this user, with limit)
+        // Load purchases from Firebase (only for this user)
         console.log('📊 Dashboard: Loading from Firebase...');
-        const allPurchases = await getDocuments('purchases');
-        userPurchasesData = allPurchases.filter(
-          (purchase: any) => purchase.userId === user.uid
-        );
+        userPurchasesData = await getDocuments('purchases', userId);
         console.log('📊 Dashboard: Found', userPurchasesData.length, 'purchases');
       }
       
@@ -183,7 +189,7 @@ const Dashboard = () => {
       
       // Cache the results
       const { dataCache, CacheKeys, CacheTTL } = await import('@/lib/utils/dataCache');
-      dataCache.set(CacheKeys.purchases(userId), userPurchasesData, CacheTTL.MEDIUM);
+      dataCache.set(CacheKeys.purchases(userId), userPurchasesData, CacheTTL.LONG);
       
       console.log('📊 Dashboard: Purchases load completed successfully');
       
@@ -248,18 +254,27 @@ const Dashboard = () => {
 
   // Force purchases refresh when returning to dashboard
   useEffect(() => {
+    // Only register background refresh listeners when we have an authenticated user
+    // (Firebase user OR site-password user).
+    const effectiveUserId = (() => {
+      try {
+        return user?.uid || localStorage.getItem('siteUserId');
+      } catch {
+        return user?.uid || null;
+      }
+    })();
+    if (!effectiveUserId) return;
+
     const handleVisibilityChange = () => {
-      if (!document.hidden && user) {
+      if (!document.hidden) {
         console.log('📡 Dashboard: Page became visible - refreshing purchases');
         loadPurchasesData();
       }
     };
 
     const handleFocus = () => {
-      if (user) {
-        console.log('📡 Dashboard: Window focused - refreshing purchases');
-        loadPurchasesData();
-      }
+      console.log('📡 Dashboard: Window focused - refreshing purchases');
+      loadPurchasesData();
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -273,16 +288,23 @@ const Dashboard = () => {
 
   // Add periodic refresh for purchases data
   useEffect(() => {
-    if (!user) return;
+    const effectiveUserId = (() => {
+      try {
+        return user?.uid || localStorage.getItem('siteUserId');
+      } catch {
+        return user?.uid || null;
+      }
+    })();
+    if (!effectiveUserId) return;
 
-    // Refresh purchases data every 5 minutes when user is active (reduced from 30s to save Firebase reads)
+    // Refresh purchases data every 15 minutes when user is active to save Firebase reads.
     const interval = setInterval(() => {
       // Only refresh if the document is visible (user is actively using the app)
       if (!document.hidden) {
-        console.log('🔄 Auto-refresh triggered (5min interval) - refreshing purchases');
+        console.log('🔄 Auto-refresh triggered (15min interval) - refreshing purchases');
         loadPurchasesData();
       }
-    }, 5 * 60 * 1000); // 5 minutes (300 seconds)
+    }, 15 * 60 * 1000); // 15 minutes
 
     return () => {
       console.log('📡 Dashboard: Cleaning up interval');

@@ -54,25 +54,39 @@ export const addDocument = async (collectionName: string, data: any) => {
   }
 };
 
-export const getDocuments = async (collectionName: string): Promise<any[]> => {
+const snapshotToDocs = (querySnapshot: any): any[] => {
+  return querySnapshot.docs.map((docSnap: any) => {
+    const data = docSnap.data();
+    // Remove any internal 'id' field from the document data to prevent conflicts
+    const { id: internalId, ...cleanData } = data || {};
+
+    // Always use Firebase document ID, never the internal id field
+    return {
+      ...cleanData,
+      id: docSnap.id,
+    };
+  });
+};
+
+/**
+ * Read all documents in a collection.
+ *
+ * IMPORTANT: If you pass `userId`, the query will be scoped to `where('userId', '==', userId)`
+ * to avoid accidentally reading the entire collection (which can be very expensive on Blaze).
+ */
+export const getDocuments = async (collectionName: string, userId?: string): Promise<any[]> => {
   if (!db) {
     console.warn('🔧 Firebase not initialized - returning empty array');
     return [];
   }
   
   try {
-    const querySnapshot = await getDocs(collection(db, collectionName));
-    const documents = querySnapshot.docs.map(doc => {
-      const data = doc.data();
-      // Remove any internal 'id' field from the document data to prevent conflicts
-      const { id: internalId, ...cleanData } = data;
-      
-      // Always use Firebase document ID, never the internal id field
-      return {
-        ...cleanData,
-        id: doc.id, // Firebase document ID always takes precedence
-      };
-    });
+    const q = userId
+      ? query(collection(db, collectionName), where('userId', '==', userId))
+      : collection(db, collectionName);
+
+    const querySnapshot = await getDocs(q as any);
+    const documents = snapshotToDocs(querySnapshot);
     
     console.log(`📄 getDocuments: Loaded ${documents.length} documents from ${collectionName}`);
     return documents;
@@ -131,10 +145,7 @@ export const getDocumentsWhere = async (
   try {
     const q = query(collection(db, collectionName), where(fieldPath, operator, value));
     const querySnapshot = await getDocs(q);
-    const documents = querySnapshot.docs.map(doc => ({
-      ...doc.data(),
-      id: doc.id,
-    }));
+    const documents = snapshotToDocs(querySnapshot);
     
     console.log(`📄 getDocumentsWhere: Loaded ${documents.length} documents from ${collectionName}`);
     return documents;
