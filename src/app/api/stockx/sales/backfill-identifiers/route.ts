@@ -708,6 +708,75 @@ export async function POST(request: NextRequest) {
     let productDetailsCalls = 0;
     let productDetailsStyleIdPresent = 0;
     let productDetailsStyleIdMissing = 0;
+    const productDetailsDebugSamples: Array<any> = [];
+    const productDetailsDebugSeen = new Set<string>();
+
+    const fetchProductDetailsWithDebug = async (productId: string, apiKey: string, accessToken: string): Promise<any> => {
+      const url = `https://api.stockx.com/v2/catalog/products/${encodeURIComponent(productId)}`;
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'x-api-key': apiKey,
+          Accept: 'application/json',
+          'User-Agent': 'FlipFlow/1.0',
+        },
+      });
+      const contentType = (res.headers.get('content-type') || '').toLowerCase();
+      const txt = await res.text().catch(() => '');
+      if (!res.ok) {
+        const err = new Error(`StockX product details failed (${res.status})`);
+        (err as any).status = res.status;
+        (err as any).blocked = res.status === 403 && isPerimeterXBlock(txt);
+        const retryAfterRaw = res.headers.get('retry-after');
+        const retryAfterSec = retryAfterRaw ? Number(retryAfterRaw) : NaN;
+        (err as any).retryAfterMs =
+          res.status === 429 && Number.isFinite(retryAfterSec) && retryAfterSec > 0
+            ? Math.min(5 * 60 * 1000, Math.round(retryAfterSec * 1000))
+            : undefined;
+        (err as any).details = txt;
+        throw err;
+      }
+
+      let pd: any = {};
+      let jsonOk = false;
+      try {
+        pd = txt ? JSON.parse(txt) : {};
+        jsonOk = true;
+      } catch {
+        pd = {};
+        jsonOk = false;
+      }
+
+      if (!productDetailsDebugSeen.has(productId) && productDetailsDebugSamples.length < 3) {
+        productDetailsDebugSeen.add(productId);
+        const keys = pd && typeof pd === 'object' ? Object.keys(pd).slice(0, 20) : [];
+        const candTop = pd?.styleId ?? pd?.style_id ?? null;
+        const candProductData = pd?.productData?.styleId ?? pd?.productData?.style_id ?? null;
+        const candProduct = pd?.product?.styleId ?? pd?.product?.style_id ?? null;
+        const candAttrs =
+          pd?.productAttributes?.styleId ??
+          pd?.productAttributes?.style_id ??
+          pd?.productAttributes?.styleCode ??
+          pd?.productAttributes?.style_code ??
+          null;
+        productDetailsDebugSamples.push({
+          productIdMasked: __agentMask(productId),
+          status: res.status,
+          jsonOk,
+          contentType: contentType ? contentType.slice(0, 60) : '',
+          bodyLen: typeof txt === 'string' ? txt.length : 0,
+          looksLikePx: isPerimeterXBlock(txt),
+          keys,
+          styleIdTopPresent: !isMissingish(candTop),
+          styleIdProductDataPresent: !isMissingish(candProductData),
+          styleIdProductPresent: !isMissingish(candProduct),
+          styleIdAttrsPresent: !isMissingish(candAttrs),
+        });
+      }
+
+      return pd;
+    };
 
     const limit = concurrency;
     let idx = 0;
@@ -890,7 +959,7 @@ export async function POST(request: NextRequest) {
             if (!pd) {
               productDetailsCalls += 1;
               try {
-                pd = await fetchProductDetails(productIdNorm, apiKey, accessToken!);
+                pd = await fetchProductDetailsWithDebug(productIdNorm, apiKey, accessToken!);
               } catch (e: any) {
                 const status = Number(e?.status || 0) || null;
                 if (status === 401 && refreshToken) {
@@ -899,7 +968,7 @@ export async function POST(request: NextRequest) {
                     accessToken = refreshed.accessToken;
                     refreshToken = refreshed.refreshToken || refreshToken;
                     await saveUserStockxTokens(userId, { accessToken, refreshToken, expiresAt: Date.now() + 3600 * 1000 });
-                    pd = await fetchProductDetails(productIdNorm, apiKey, accessToken!);
+                    pd = await fetchProductDetailsWithDebug(productIdNorm, apiKey, accessToken!);
                   } else {
                     throw e;
                   }
@@ -909,7 +978,7 @@ export async function POST(request: NextRequest) {
                       ? e.retryAfterMs
                       : 2500;
                   await new Promise((r) => setTimeout(r, backoffMs + Math.floor(Math.random() * 250)));
-                  pd = await fetchProductDetails(productIdNorm, apiKey, accessToken!);
+                  pd = await fetchProductDetailsWithDebug(productIdNorm, apiKey, accessToken!);
                 } else {
                   throw e;
                 }
@@ -1018,6 +1087,7 @@ export async function POST(request: NextRequest) {
       productDetailsCalls,
       productDetailsStyleIdPresent,
       productDetailsStyleIdMissing,
+      productDetailsDebugSamples,
       failed: failures.length,
       failureStatusCounts: Object.fromEntries(Array.from(failureStatusCounts.entries()).sort((a, b) => Number(b[1]) - Number(a[1]))),
       blockedCount,

@@ -1312,6 +1312,9 @@ export default function TestPurchaseLinkingPage() {
           const productDetailsCalls = typeof s?.productDetailsCalls === 'number' ? s.productDetailsCalls : null;
           const productDetailsStyleIdPresent = typeof s?.productDetailsStyleIdPresent === 'number' ? s.productDetailsStyleIdPresent : null;
           const productDetailsStyleIdMissing = typeof s?.productDetailsStyleIdMissing === 'number' ? s.productDetailsStyleIdMissing : null;
+          const productDetailsDebugSamplesLen = Array.isArray(s?.productDetailsDebugSamples) ? s.productDetailsDebugSamples.length : null;
+          const productDetailsDebugSample0 =
+            Array.isArray(s?.productDetailsDebugSamples) && s.productDetailsDebugSamples.length > 0 ? s.productDetailsDebugSamples[0] : null;
           const legacyUpdated = typeof s?.legacyUpdated === 'number' ? s.legacyUpdated : 0;
           const remoteAttempted = typeof s?.remoteAttempted === 'number' ? s.remoteAttempted : 0;
           const failed = typeof s?.failed === 'number' ? s.failed : 0;
@@ -1345,6 +1348,8 @@ export default function TestPurchaseLinkingPage() {
               productDetailsCalls,
               productDetailsStyleIdPresent,
               productDetailsStyleIdMissing,
+              productDetailsDebugSamplesLen,
+              productDetailsDebugSample0,
               nextCursorPresent: !!next,
               status429: statusCounts?.['429'] ?? 0,
               status403: statusCounts?.['403'] ?? 0,
