@@ -109,6 +109,24 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
     }
   };
 
+  const getQueryRangeLabel = (qIndex?: number, totalQueries?: number) => {
+    if (typeof qIndex !== 'number' || typeof totalQueries !== 'number' || totalQueries <= 0) return null;
+    // This mirrors the server's default query slices (see `src/app/api/gmail/purchases-batched/route.ts`).
+    const labels = [
+      'Last 7 days',
+      '7d–1m',
+      '1m–3m',
+      '3m–6m',
+      '6m–1y',
+      '1y–18m (includes ~11/2024)',
+      '18m–2y',
+      '2y+',
+    ];
+    const idx = Math.max(0, Math.min(qIndex, labels.length - 1));
+    const suffix = totalQueries === labels.length ? labels[idx] : `Slice ${qIndex + 1}`;
+    return `Range: ${qIndex + 1}/${totalQueries} • ${suffix}`;
+  };
+
   // Timer effect - update elapsed time every second while loading
   useEffect(() => {
     if (!isLoading || !startTime) {
@@ -222,9 +240,11 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
     let totalEmailsProcessed = 0; // Track cumulative total across all batches
 
     // Process in chunks for frequent updates while maintaining good performance
-    const CHUNK_SIZE = 50; // Process 50 emails per API call (was previously configured at 50)
-    const MAX_TOTAL_EMAILS = 10000; // Maximum total emails to process (matches backend config)
-    const MAX_BATCHES = Math.ceil(MAX_TOTAL_EMAILS / CHUNK_SIZE); // Calculate max batches: 10,000 / 50 = 200 batches
+    const CHUNK_SIZE = 50; // Process 50 emails per API call
+    // Keep this in sync with the backend (`src/app/api/gmail/purchases-batched/route.ts`).
+    // If this is too low, we may never reach older slices like 1y–18m (which includes ~11/2024).
+    const MAX_TOTAL_EMAILS = 20000; // Maximum total emails to process
+    const MAX_BATCHES = Math.ceil(MAX_TOTAL_EMAILS / CHUNK_SIZE); // 20,000 / 50 = 400 batches
     
     while (hasMore && batchIndex < MAX_BATCHES && totalEmailsProcessed < MAX_TOTAL_EMAILS) { // Up to 200 chunks (10,000 emails total)
       try {
@@ -615,6 +635,11 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
                 <p className={`text-xs ${currentTheme.colors.textSecondary}`}>
                   {getDetailText()}
                 </p>
+                {progress && (
+                  <p className={`text-[11px] mt-0.5 ${currentTheme.colors.textSecondary}`}>
+                    {getQueryRangeLabel(progress.qIndex, progress.totalQueries) ?? ''}
+                  </p>
+                )}
               </div>
             </div>
 

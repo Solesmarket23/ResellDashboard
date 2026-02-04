@@ -28,6 +28,9 @@ interface BatchProgress {
   totalFound: number;
   hasMore: boolean;
   nextPageToken?: string;
+  qIndex?: number;
+  totalQueries?: number;
+  activeQueryPreview?: string;
 }
 
 // Default configuration
@@ -254,6 +257,7 @@ export async function GET(request: NextRequest) {
     // Removed timeFilter - search all emails, not just recent ones
     // const timeFilter = quick ? ' newer_than:30d' : '';
     const activeQuery = queries[qIndex].trim();
+    const activeQueryPreview = activeQuery.length > 160 ? `${activeQuery.slice(0, 160)}…` : activeQuery;
     console.log(`📦 BATCH ${batchIndex}: Searching with query [${qIndex + 1}/${queries.length}]: ${activeQuery.substring(0, 100)}...`);
     console.log(`📦 BATCH ${batchIndex}: Total queries available: ${queries.length}, Current query index: ${qIndex}`);
 
@@ -313,7 +317,8 @@ export async function GET(request: NextRequest) {
           hasMore: hasMoreQueries,
           nextPageToken: undefined,
           qIndex,
-          totalQueries: queries.length
+          totalQueries: queries.length,
+          activeQueryPreview
         },
         isComplete: !hasMoreQueries
       });
