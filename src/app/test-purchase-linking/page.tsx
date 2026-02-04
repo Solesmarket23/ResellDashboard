@@ -1014,7 +1014,12 @@ export default function TestPurchaseLinkingPage() {
                   exactNameCandidatesTotal: samples[0]?.exactNameCandidatesTotal ?? null,
                   nameSkippedAfter: samples[0]?.nameCandidatesSkippedAfterSaleDate ?? null,
                   nameSkippedUsed: samples[0]?.nameCandidatesSkippedUsed ?? null,
-                  exactNameKey: typeof samples[0]?.exactNameKey === 'string' ? String(samples[0].exactNameKey).slice(0, 80) : null
+                  exactNameKey: typeof samples[0]?.exactNameKey === 'string' ? String(samples[0].exactNameKey).slice(0, 80) : null,
+                  earliestCandIso: samples[0]?.exactNameEarliestCandidateIso ?? null,
+                  earliestCandSource: samples[0]?.exactNameEarliestCandidateSource ?? null,
+                  saleCutoffIso: samples[0]?.exactNameSaleCutoffIso ?? null,
+                  saleCutoffSource: samples[0]?.exactNameSaleCutoffSource ?? null,
+                  candDateSources: samples[0]?.exactNameCandidateDateSources ?? null
                 }
               : null
           };

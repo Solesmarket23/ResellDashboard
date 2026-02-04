@@ -1231,8 +1231,22 @@ export async function GET(request: NextRequest) {
         let skippedUsed = 0;
         let skippedAfterSaleDate = 0;
         let skippedAfterSaleDateButUnreliable = 0;
+        let earliestMs: number | null = null;
+        let earliestIso: string | null = null;
+        let earliestSource: string | null = null;
+        const bySource: Record<string, number> = {};
         for (const cand of exact as any) {
           attempted++;
+          const src = String((cand as any)?._dateSource || 'unknown');
+          bySource[src] = (bySource[src] || 0) + 1;
+          if (typeof (cand as any)?._dateMs === 'number') {
+            const ms = (cand as any)._dateMs as number;
+            if (earliestMs === null || ms < earliestMs) {
+              earliestMs = ms;
+              earliestIso = msToIso(ms);
+              earliestSource = src;
+            }
+          }
           const pid = String(cand.id || '');
           if (!pid) continue;
           if (usedPurchaseIds.has(pid)) {
@@ -1266,6 +1280,11 @@ export async function GET(request: NextRequest) {
             skippedAfterSaleDateButUnreliable,
             nameKey: nk,
             exactNameCandidatesTotal: exact.length,
+            candidateDateSources: bySource,
+            earliestCandidateIso: earliestIso,
+            earliestCandidateSource: earliestSource,
+            saleCutoffIso,
+            saleCutoffSource,
           };
         }
       }
@@ -1528,6 +1547,11 @@ export async function GET(request: NextRequest) {
           nameCandidatesTotal,
           exactNameKey: typeof nameDbg?.nameKey === 'string' ? nameDbg.nameKey : null,
           exactNameCandidatesTotal: typeof nameDbg?.exactNameCandidatesTotal === 'number' ? nameDbg.exactNameCandidatesTotal : null,
+          exactNameCandidateDateSources: nameDbg?.candidateDateSources || null,
+          exactNameEarliestCandidateIso: nameDbg?.earliestCandidateIso || null,
+          exactNameEarliestCandidateSource: nameDbg?.earliestCandidateSource || null,
+          exactNameSaleCutoffIso: nameDbg?.saleCutoffIso || null,
+          exactNameSaleCutoffSource: nameDbg?.saleCutoffSource || null,
           nameCandidatesSkippedUsed: nameSkippedUsed,
           nameCandidatesSkippedAfterSaleDate: nameSkippedAfterSaleDate,
           nameCandidatesSkippedAfterSaleDateButUnreliable: nameSkippedAfterSaleDateButUnreliable,
