@@ -275,31 +275,38 @@ async function scanCandidateSalesPage(opts: {
   const limit = Math.max(1, Math.min(2500, pageSize));
   const cursor = String(cursorId || '').trim();
 
-  // Prefer scanning the highest-impact subset first: sales missing styleId (includes missing fields via == null).
+  // Prefer scanning the highest-impact subset first: sales missing styleId.
+  // IMPORTANT: some docs store styleId as '' or '—' (missingish), not null, so a Firestore `== null` query will miss them.
+  // To avoid needing composite indexes or OR queries, we scan user_sales by docId and filter in-process until we collect `limit` candidates.
   if (mode === 'missing_styleId') {
-    let q: FirebaseFirestore.Query = db
-      .collection('user_sales')
-      .where('userId', '==', userId)
-      .where('styleId', '==', null)
-      .orderBy(FieldPath.documentId())
-      .limit(limit);
-    if (cursor) q = q.startAfter(cursor);
-    try {
+    const out: any[] = [];
+    let scanned = 0;
+    let pageCursor: string | null = cursor || null;
+    const BATCH = 500;
+    const MAX_SCANNED = Math.max(limit, 3000); // safety cap to prevent long-running requests
+    while (out.length < limit && scanned < MAX_SCANNED) {
+      let q: FirebaseFirestore.Query = db
+        .collection('user_sales')
+        .where('userId', '==', userId)
+        .orderBy(FieldPath.documentId())
+        .limit(BATCH);
+      if (pageCursor) q = q.startAfter(pageCursor);
       const snap = await q.get();
+      if (snap.empty) return { sales: out, nextCursorId: null, modeUsed: `missing_styleId_scan(scanned=${scanned})` };
       const docs = snap.docs;
-      const sales = docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-      const nextCursorId = docs.length > 0 && docs.length >= limit ? docs[docs.length - 1].id : null;
-      return { sales, nextCursorId, modeUsed: 'missing_styleId' };
-    } catch (e: any) {
-      // If the query requires an index, fall back to full scan paging (still safe; just slower).
-      __agentLog({
-        runId: 'pre-fix',
-        hypothesisId: 'H3',
-        location: 'backfill-identifiers/route.ts:scanCandidateSalesPage:fallback',
-        message: 'missing_styleId query failed; falling back to all-sales scan',
-        data: { error: String(e?.message || e || 'unknown') }
-      });
+      scanned += docs.length;
+      pageCursor = docs[docs.length - 1].id;
+      for (const d of docs) {
+        const data = d.data() as any;
+        const orderNumber = String(data?.orderNumber || '').trim();
+        if (!orderNumber) continue;
+        const styleId = String(data?.styleId || data?.product?.styleId || data?.product?.sku || '').trim();
+        if (isMissingish(styleId)) out.push({ id: d.id, ...data });
+        if (out.length >= limit) break;
+      }
+      if (docs.length < BATCH) break;
     }
+    return { sales: out, nextCursorId: pageCursor, modeUsed: `missing_styleId_scan(scanned=${scanned})` };
   }
 
   const page = await scanSalesByUserIdPage(userId, limit, cursor);

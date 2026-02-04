@@ -1298,6 +1298,8 @@ export default function TestPurchaseLinkingPage() {
           setSalesIdBackfillCursorId(cursorId);
 
           const updated = typeof s?.updated === 'number' ? s.updated : 0;
+          const scanModeUsed = typeof s?.scanModeUsed === 'string' ? s.scanModeUsed : '';
+          const candidateSales = typeof s?.candidateSales === 'number' ? s.candidateSales : null;
           const embeddedUpdated = typeof s?.embeddedUpdated === 'number' ? s.embeddedUpdated : 0;
           const legacyUpdated = typeof s?.legacyUpdated === 'number' ? s.legacyUpdated : 0;
           const remoteAttempted = typeof s?.remoteAttempted === 'number' ? s.remoteAttempted : 0;
@@ -1320,6 +1322,8 @@ export default function TestPurchaseLinkingPage() {
               remoteAttempted,
               failed,
               stoppedEarlyReason,
+              scanModeUsed,
+              candidateSales,
               nextCursorPresent: !!next,
               status429: statusCounts?.['429'] ?? 0,
               status403: statusCounts?.['403'] ?? 0,
