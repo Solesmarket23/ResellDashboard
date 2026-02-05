@@ -7,8 +7,7 @@
     "activeTab",
     "tabs",
     "storage",
-    "scripting",
-    "alarms"
+    "scripting"
   ],
   "host_permissions": [
     "https://stockx.com/*",

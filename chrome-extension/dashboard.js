@@ -35,19 +35,6 @@ function fmtDurationMs(ms) {
   return h > 0 ? `${h}:${pad2(m)}:${pad2(s)}` : `${m}:${pad2(s)}`;
 }
 
-function fmtTimeOfDay(ms) {
-  try {
-    const t = Number(ms);
-    if (!Number.isFinite(t) || t <= 0) return '—';
-    const d = new Date(t);
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mm = String(d.getMinutes()).padStart(2, '0');
-    return `${hh}:${mm}`;
-  } catch {
-    return '—';
-  }
-}
-
 function computeElapsedMeta({ scanId, ids, state, history }) {
   try {
     const startedAtState = Number(state?.startedAt || 0);
@@ -84,78 +71,6 @@ function updateElapsedUi(meta) {
     }
     const end = Number.isFinite(finishedAt) && finishedAt > 0 ? finishedAt : Date.now();
     el.textContent = fmtDurationMs(Math.max(0, end - startedAt));
-  } catch {}
-}
-
-function getEtaStore() {
-  try {
-    if (!window.__stockxDashEtaStore) window.__stockxDashEtaStore = {};
-    return window.__stockxDashEtaStore;
-  } catch {
-    return {};
-  }
-}
-
-function computeEtaMeta({ scanId, startedAt, finishedAt, completed, total }) {
-  try {
-    const sid = safeStr(scanId);
-    const done = Number(completed);
-    const t = Number(total);
-    const s = Number(startedAt);
-    const f = Number(finishedAt);
-    const isFinished = Number.isFinite(f) && f > 0;
-
-    if (!Number.isFinite(t) || t <= 0) return { remainingMs: 0, doneAt: 0, msPerItemEwma: 0, hasEta: false };
-    if (!Number.isFinite(done) || done < 0) return { remainingMs: 0, doneAt: 0, msPerItemEwma: 0, hasEta: false };
-    if (!Number.isFinite(s) || s <= 0) return { remainingMs: 0, doneAt: 0, msPerItemEwma: 0, hasEta: false };
-
-    // If finished, lock ETA at 0 and show finish time.
-    if (isFinished) return { remainingMs: 0, doneAt: f, msPerItemEwma: 0, hasEta: true };
-
-    const now = Date.now();
-    const elapsedMs = Math.max(0, now - s);
-    const remainingItems = Math.max(0, Math.round(t - done));
-
-    // Need a little data before ETA is meaningful.
-    if (done < 2 || elapsedMs < 10_000 || remainingItems <= 0) {
-      return { remainingMs: 0, doneAt: remainingItems <= 0 ? now : 0, msPerItemEwma: 0, hasEta: remainingItems <= 0 };
-    }
-
-    const msPerItem = elapsedMs / Math.max(1, done);
-
-    // Smooth per-item time so ETA doesn't jump on slow items.
-    const store = getEtaStore();
-    const prev = sid && store[sid] && Number.isFinite(Number(store[sid].msPerItemEwma)) ? Number(store[sid].msPerItemEwma) : 0;
-    const alpha = 0.22; // higher = more responsive, lower = more stable
-    const ewma = prev > 0 ? prev * (1 - alpha) + msPerItem * alpha : msPerItem;
-    if (sid) store[sid] = { msPerItemEwma: ewma, updatedAt: now };
-
-    const remainingMs = Math.max(0, Math.round(remainingItems * ewma));
-    const doneAt = now + remainingMs;
-    return { remainingMs, doneAt, msPerItemEwma: ewma, hasEta: true };
-  } catch {
-    return { remainingMs: 0, doneAt: 0, msPerItemEwma: 0, hasEta: false };
-  }
-}
-
-function updateEtaUi(meta) {
-  try {
-    const etaEl = $('etaRemaining');
-    const doneEl = $('etaDoneAt');
-    if (!etaEl || !doneEl) return;
-
-    const hasEta = !!meta?.hasEta;
-    const remainingMs = Number(meta?.remainingMs || 0);
-    const doneAt = Number(meta?.doneAt || 0);
-
-    if (!hasEta) {
-      etaEl.textContent = '—';
-      doneEl.textContent = '—';
-      return;
-    }
-
-    etaEl.textContent = remainingMs > 0 ? fmtDurationMs(remainingMs) : '0:00';
-    doneEl.textContent = doneAt > 0 ? fmtTimeOfDay(doneAt) : '—';
   } catch {}
 }
 
@@ -661,9 +576,6 @@ async function refresh() {
   const { state, results } = await getScanData(scanId);
   const completed = Number(state?.completed || 0);
   const total = Number(state?.total || 0);
-  try {
-    window.__stockxDashLastProgress = { scanId, completed, total };
-  } catch {}
   $('kpiProgress').textContent = scanId ? `${fmtPct(completed, total)} (${fmtInt(completed)}/${fmtInt(total)})` : '—';
   $('kpiScanned').textContent = scanId ? fmtInt(Object.keys(results || {}).length) : '—';
   $('kpiOpps').textContent = scanId ? fmtInt(computeOppCount(results)) : '—';
@@ -688,15 +600,6 @@ async function refresh() {
     const meta = computeElapsedMeta({ scanId, ids, state, history });
     window.__stockxDashElapsedMeta = meta;
     updateElapsedUi(meta);
-  } catch {}
-
-  // ETA (ticks locally; recomputed from startedAt/completed/total).
-  try {
-    const startedAt = Number(window.__stockxDashElapsedMeta?.startedAt || 0);
-    const finishedAt = Number(window.__stockxDashElapsedMeta?.finishedAt || 0);
-    const etaMeta = computeEtaMeta({ scanId, startedAt, finishedAt, completed, total });
-    window.__stockxDashEtaMeta = etaMeta;
-    updateEtaUi(etaMeta);
   } catch {}
 
   // Keep-focus toggle only applies to the active scan.
@@ -813,23 +716,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     setInterval(() => {
       try {
         updateElapsedUi(window.__stockxDashElapsedMeta || null);
-      } catch {}
-      try {
-        // Recompute ETA using the latest progress numbers from the last refresh.
-        const p = window.__stockxDashLastProgress || null;
-        const e = window.__stockxDashElapsedMeta || null;
-        const scanId = safeStr(p?.scanId || '');
-        const startedAt = Number(e?.startedAt || 0);
-        const finishedAt = Number(e?.finishedAt || 0);
-        const completed = Number(p?.completed || 0);
-        const total = Number(p?.total || 0);
-        if (scanId && startedAt > 0 && total > 0) {
-          const etaMeta = computeEtaMeta({ scanId, startedAt, finishedAt, completed, total });
-          window.__stockxDashEtaMeta = etaMeta;
-          updateEtaUi(etaMeta);
-        } else {
-          updateEtaUi(null);
-        }
       } catch {}
     }, 1000);
   } catch {}

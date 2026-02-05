@@ -284,7 +284,7 @@ function extractOrderDetailsFromBuyingPage() {
   if (!details.size) {
     // Fallback: any "Size:" text in body
     try {
-      const m = (document.body?.textContent || '').match(/\bSize:\s*([A-Z]{1,3}\s*[MW]?\s*\d{1,2}(?:\.\d)?)\b/i);
+      const m = (document.body?.innerText || '').match(/\bSize:\s*([A-Z]{1,3}\s*[MW]?\s*\d{1,2}(?:\.\d)?)\b/i);
       if (m?.[1]) details.size = m[1].trim();
     } catch {}
   }
@@ -299,7 +299,7 @@ function extractOrderDetailsFromBuyingPage() {
   if (!details.orderNumber) {
     // Fallback: "Order number: 03-XXXX"
     try {
-      const m = (document.body?.textContent || '').match(/\bOrder\s*(?:number|#)\s*[:#]?\s*(\d{2}-[A-Z0-9]{5,})\b/i);
+      const m = (document.body?.innerText || '').match(/\bOrder\s*(?:number|#)\s*[:#]?\s*(\d{2}-[A-Z0-9]{5,})\b/i);
       if (m?.[1]) details.orderNumber = m[1].trim();
     } catch {}
   }
@@ -310,14 +310,14 @@ function extractOrderDetailsFromBuyingPage() {
   try {
     const orderEl = document.querySelector('[data-testid="order-number"]');
     const container = orderEl?.closest('section, div') || orderEl?.parentElement;
-    const text = (container?.textContent || '').replace(/\s+/g, ' ').trim();
+    const text = (container?.innerText || '').replace(/\s+/g, ' ').trim();
     const m = text.match(dateRe);
     if (m?.[0]) details.orderDate = m[0];
   } catch {}
   if (!details.orderDate) {
     // Fallback: first date-like string on page (less reliable, but better than blank)
     try {
-      const text = (document.body?.textContent || '').replace(/\s+/g, ' ');
+      const text = (document.body?.innerText || '').replace(/\s+/g, ' ');
       const m = text.match(dateRe);
       if (m?.[0]) details.orderDate = m[0];
     } catch {}
@@ -333,7 +333,7 @@ function extractOrderDetailsFromBuyingPage() {
   } catch {}
   if (!details.total) {
     try {
-      const m = (document.body?.textContent || '').match(/\bTotal\s*\$?(\d+(?:\.\d{2})?)\b/i);
+      const m = (document.body?.innerText || '').match(/\bTotal\s*\$?(\d+(?:\.\d{2})?)\b/i);
       if (m?.[1]) details.total = `$${m[1]}`;
     } catch {}
   }
@@ -358,7 +358,7 @@ function extractOrderDetailsFromBuyingPage() {
   if (!details.credit) {
     // Fallback: regex scan for "Credit: $X.XX"
     try {
-      const text = (document.body?.textContent || '').replace(/\s+/g, ' ');
+      const text = (document.body?.innerText || '').replace(/\s+/g, ' ');
       const m = text.match(/\bCredit:\s*\$?\s*([0-9]+(?:\.[0-9]{2})?)\b/i);
       if (m?.[1]) details.credit = formatMoney(Number(m[1]));
     } catch {}
@@ -881,7 +881,7 @@ function getSelectedSizeFromDom() {
     }
 
     // Another common pattern: a visible "Size: 9.5" label somewhere near the trade box
-    const text = String(document.body?.textContent || '').replace(/\s+/g, ' ');
+    const text = String(document.body?.innerText || '').replace(/\s+/g, ' ');
     const m = text.match(/\bsize\s*[:\-]?\s*([0-9]{1,2}(?:\.[0-9])?)\b/i);
     if (m?.[1]) return normalizeSizeKey(m[1]);
 
@@ -923,18 +923,7 @@ function sizeKeyMatches(candidateSizeKey, wantedSizeKey) {
 }
 
 function safeText(el) {
-  // IMPORTANT: prefer textContent over innerText.
-  // innerText forces layout/style calculations and can freeze heavy SPAs (StockX) during scans.
-  try {
-    const tc = el && typeof el === 'object' ? el.textContent : '';
-    if (tc && typeof tc === 'string') return tc.replace(/\s+/g, ' ').trim();
-  } catch {}
-  try {
-    // Fallback only if textContent is unavailable; hard-cap to avoid huge strings.
-    const it = el && typeof el === 'object' ? el.innerText : '';
-    if (it && typeof it === 'string') return it.slice(0, 20000).replace(/\s+/g, ' ').trim();
-  } catch {}
-  return '';
+  return String(el?.textContent || el?.innerText || '').replace(/\s+/g, ' ').trim();
 }
 
 function findButtonByText(re) {
@@ -2971,7 +2960,7 @@ async function openMarketDataDialogBestEffort(timeoutMs = 14000, opts = {}) {
 
     const isSizePanelOpen = () => {
       try {
-        const t = String(document.body?.textContent || '');
+        const t = String(document.body?.innerText || '');
         // The grid variant uses this heading.
         if (t.includes('Size and Conversions')) return true;
       } catch {}
@@ -3386,7 +3375,7 @@ function extractMarketDataFromDomTestIds() {
     // Parse that string anywhere on the page.
     let highestBidFromText = null;
     if (!isPlausibleUsd(highestBid)) {
-      const allText = String(document.body?.textContent || '').replace(/\s+/g, ' ');
+      const allText = String(document.body?.innerText || '').replace(/\s+/g, ' ');
       const m = allText.match(/\bsell\s+now\s+for\s+\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)\b/i);
       if (m?.[1]) highestBidFromText = Number(m[1].replace(/,/g, ''));
     }
@@ -3394,7 +3383,7 @@ function extractMarketDataFromDomTestIds() {
     // Fallback: parse "Buy Now for $X" text anywhere (sometimes easier than testids)
     let lowestAskFromText = null;
     if (!isPlausibleUsd(lowestAsk)) {
-      const allText = String(document.body?.textContent || '').replace(/\s+/g, ' ');
+      const allText = String(document.body?.innerText || '').replace(/\s+/g, ' ');
       const m = allText.match(/\bbuy\s+now\s+(?:for\s+)?\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)\b/i);
       if (m?.[1]) lowestAskFromText = Number(m[1].replace(/,/g, ''));
     }
@@ -4017,7 +4006,7 @@ async function runPendingOfferRequestIfPresent() {
           } catch {}
 
           try {
-            const txt = (document.body?.textContent || '').slice(0, 20000);
+            const txt = (document.body?.innerText || '').slice(0, 20000);
             if (re.test(txt)) return { ok: true, reason: 'success_text' };
           } catch {}
 
