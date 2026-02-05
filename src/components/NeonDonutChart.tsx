@@ -89,7 +89,7 @@ export default function NeonDonutChart({
 
   return (
     <div
-      className={`rounded-xl border p-3 ${isNeon ? 'bg-gray-950/40 border-white/10 text-gray-100' : 'bg-white border-gray-200 text-gray-900'}`}
+      className={`rounded-xl border p-3 overflow-hidden ${isNeon ? 'bg-gray-950/40 border-white/10 text-gray-100' : 'bg-white border-gray-200 text-gray-900'}`}
     >
       {(title || subtitle) && (
         <div className="mb-2">
@@ -98,8 +98,8 @@ export default function NeonDonutChart({
         </div>
       )}
 
-      <div className="flex gap-3 items-center">
-        <div className="relative" style={{ width: size, height: size }}>
+      <div className="flex gap-3 items-center min-w-0">
+        <div className="relative shrink-0" style={{ width: size, height: size }}>
           <svg className="relative z-0" width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
             <defs>
               <filter id={glowFilterId} x="-50%" y="-50%" width="200%" height="200%">
@@ -170,7 +170,7 @@ export default function NeonDonutChart({
           </div>
         </div>
 
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 overflow-hidden">
           {prepared.rows.length === 0 ? (
             <div className={`text-xs ${isNeon ? 'text-gray-300' : 'text-gray-600'}`}>No data.</div>
           ) : (
@@ -180,7 +180,7 @@ export default function NeonDonutChart({
                 return (
                   <div
                     key={d.label}
-                    className="grid grid-cols-[minmax(140px,1fr)_auto] items-start gap-x-3 gap-y-0 text-xs"
+                    className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-0 text-xs"
                   >
                     <div className="flex items-start gap-2 min-w-0">
                       <span className="mt-1 inline-block h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: d.color }} />
