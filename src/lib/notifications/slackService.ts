@@ -165,7 +165,6 @@ export class SlackNotificationService {
    * Send a delivery summary to Slack
    */
   async sendDeliverySummary(summary: DeliverySummary): Promise<void> {
-    const message = this.formatDeliverySummary(summary);
     const profitToday =
       typeof summary.projectedProfitToday === 'number' && Number.isFinite(summary.projectedProfitToday)
         ? summary.projectedProfitToday
@@ -183,13 +182,24 @@ export class SlackNotificationService {
             return `${summary.arrivingTomorrow} item${summary.arrivingTomorrow === 1 ? '' : 's'} arriving tomorrow for a ${pt} projected profit`;
           })();
     const mention = this.mention ? `${this.mention} ` : '';
-    
+
+    const parts = this.formatDeliverySummaryParts(summary);
+    if (parts.length === 0) return;
+
+    // First message: include mention + the main subject line for Slack notification previews.
     await this.sendMessage({
-      // Slack push notification previews use this top-level `text`.
-      // Keep it concise and informational.
       text: `${mention}${subject}`,
-      blocks: message
+      blocks: parts[0]!.blocks,
     });
+
+    // Continuations: send as additional Slack messages (prevents block-limit truncation).
+    for (let i = 1; i < parts.length; i++) {
+      const p = parts[i]!;
+      await this.sendMessage({
+        text: `📦 Daily Delivery Summary (continued ${i + 1}/${parts.length})`,
+        blocks: p.blocks,
+      });
+    }
   }
 
   /**
@@ -259,28 +269,9 @@ export class SlackNotificationService {
   /**
    * Format delivery summary into Slack blocks
    */
-  private formatDeliverySummary(summary: DeliverySummary): any[] {
-    const blocks: any[] = [];
+  private formatDeliverySummaryParts(summary: DeliverySummary): Array<{ blocks: any[] }> {
+    const MAX_BLOCKS = 50; // Slack hard limit
 
-    // Mention (first line) so Slack notifies the user/channel if supported by workspace settings.
-    if (this.mention) {
-      blocks.push({
-        type: 'section',
-        text: { type: 'mrkdwn', text: `${this.mention}` },
-      });
-    }
-
-    // Header
-    blocks.push({
-      type: 'header',
-      text: {
-        type: 'plain_text',
-        text: '📦 Daily Delivery Summary',
-        emoji: true
-      }
-    });
-
-    // Summary stats
     const profitToday =
       typeof summary.projectedProfitToday === 'number' && Number.isFinite(summary.projectedProfitToday)
         ? summary.projectedProfitToday
@@ -302,7 +293,22 @@ export class SlackNotificationService {
         ? summary.purchaseCostOnTheWay
         : null;
 
-    blocks.push({
+    const baseBlocks: any[] = [];
+
+    // Mention (first line) so Slack notifies the user/channel if supported by workspace settings.
+    if (this.mention) {
+      baseBlocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `${this.mention}` },
+      });
+    }
+
+    baseBlocks.push({
+      type: 'header',
+      text: { type: 'plain_text', text: '📦 Daily Delivery Summary', emoji: true },
+    });
+
+    baseBlocks.push({
       type: 'section',
       fields: [
         { type: 'mrkdwn', text: `*Arriving Today:*\n🚚 ${summary.arrivingToday}` },
@@ -313,168 +319,158 @@ export class SlackNotificationService {
     });
 
     const moneyFields: any[] = [];
-    if (profitOnTheWay !== null) {
-      moneyFields.push({ type: 'mrkdwn', text: `*Projected Profit (On the way):*\n💰 $${profitOnTheWay.toFixed(2)}` });
-    }
-    if (marketOnTheWay !== null) {
-      moneyFields.push({ type: 'mrkdwn', text: `*Market Value (On the way):*\n📈 $${marketOnTheWay.toFixed(2)}` });
-    }
-    if (purchaseOnTheWay !== null) {
-      moneyFields.push({ type: 'mrkdwn', text: `*Purchase Cost (On the way):*\n🧾 $${purchaseOnTheWay.toFixed(2)}` });
-    }
-    if (profitTomorrow !== null) {
-      moneyFields.push({ type: 'mrkdwn', text: `*Projected Profit (Tomorrow):*\n💰 $${profitTomorrow.toFixed(2)}` });
-    }
-    if (profitToday !== null) {
-      moneyFields.push({ type: 'mrkdwn', text: `*Projected Profit (Today):*\n💰 $${profitToday.toFixed(2)}` });
-    }
-
-    if (moneyFields.length) {
-      blocks.push({ type: 'section', fields: moneyFields.slice(0, 10) });
-    }
+    if (profitOnTheWay !== null) moneyFields.push({ type: 'mrkdwn', text: `*Projected Profit (On the way):*\n💰 $${profitOnTheWay.toFixed(2)}` });
+    if (marketOnTheWay !== null) moneyFields.push({ type: 'mrkdwn', text: `*Market Value (On the way):*\n📈 $${marketOnTheWay.toFixed(2)}` });
+    if (purchaseOnTheWay !== null) moneyFields.push({ type: 'mrkdwn', text: `*Purchase Cost (On the way):*\n🧾 $${purchaseOnTheWay.toFixed(2)}` });
+    if (profitTomorrow !== null) moneyFields.push({ type: 'mrkdwn', text: `*Projected Profit (Tomorrow):*\n💰 $${profitTomorrow.toFixed(2)}` });
+    if (profitToday !== null) moneyFields.push({ type: 'mrkdwn', text: `*Projected Profit (Today):*\n💰 $${profitToday.toFixed(2)}` });
+    if (moneyFields.length) baseBlocks.push({ type: 'section', fields: moneyFields.slice(0, 10) });
 
     if (typeof summary.marketPriceNote === 'string' && summary.marketPriceNote.trim()) {
-      blocks.push({
-        type: 'context',
-        elements: [{ type: 'mrkdwn', text: `_${summary.marketPriceNote.trim()}_` }],
-      });
+      baseBlocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: `_${summary.marketPriceNote.trim()}_` }] });
     }
 
-    blocks.push({ type: 'divider' });
+    baseBlocks.push({ type: 'divider' });
 
     const now = new Date();
     const localHour = this.getLocalHourInTimeZone(now);
-    // "Business day" cutover: between midnight and 6am local time, treat it as still "yesterday"
-    // so late-night sends don't label tomorrow's packages as "Arriving Today".
-    const businessNow = (() => {
-      const d = new Date(now);
-      if (localHour < 6) d.setDate(d.getDate() - 1);
-      return d;
-    })();
-    const today = this.toYmdInTimeZone(businessNow);
+    // "Today" in Slack summaries should follow the local calendar day for the configured timezone.
+    const today = this.toYmdInTimeZone(now);
     const tomorrow = (() => {
-      const d = new Date(businessNow);
+      const d = new Date(now);
       d.setDate(d.getDate() + 1);
       return this.toYmdInTimeZone(d);
     })();
 
-    // Breakdown behavior:
-    // - After 9pm local time: include tomorrow's breakdown too
-    // - If nothing arrives today, show tomorrow's breakdown (so daily summary remains useful)
-    // Always avoid showing an empty "Arriving Today (breakdown)" block; it wastes Slack block budget.
     const includeTomorrowBreakdown = localHour >= 21 || (summary.arrivingToday === 0 && summary.arrivingTomorrow > 0);
     const showTodayBreakdown = summary.arrivingToday > 0;
 
-    const chunkMrkdwnLines = (lines: string[], maxChars: number): string[] => {
-      const chunks: string[] = [];
-      let buf = '';
-      for (const line of lines) {
-        const next = buf ? `${buf}\n${line}` : line;
-        if (next.length > maxChars) {
-          if (buf) chunks.push(buf);
-          buf = line;
-          continue;
-        }
-        buf = next;
-      }
-      if (buf) chunks.push(buf);
-      return chunks;
+    const toPriority = (d: any): number => {
+      const s = String(d?.status || '').toLowerCase().trim();
+      if (s === 'out_for_delivery') return 3;
+      if (s === 'in_transit') return 2;
+      if (s === 'shipped') return 1;
+      return 0;
     };
 
-    const buildBreakdown = (args: { label: string; ymd: string; emptyText: string }) => {
-      blocks.push({
-        type: 'section',
-        text: { type: 'mrkdwn', text: `*${args.label} (breakdown)*` },
+    const makeEntryBlock = (delivery: any): any => {
+      const eta = delivery.estimatedDelivery && delivery.estimatedDelivery !== 'TBD' ? delivery.estimatedDelivery : 'TBD';
+      const trackingLink = this.formatTrackingLink(String(delivery.trackingNumber || ''), String(delivery.carrier || ''));
+      const brand = String(delivery.productBrand || '').trim();
+      const size = String(delivery.productSize || '').trim() || '—';
+      const money = this.formatMoneyLine({
+        purchasePrice: delivery.purchasePrice,
+        marketPrice: delivery.marketPrice,
+        estimatedProfit: delivery.estimatedProfit,
       });
+      const moneyLine = money.text ? `\n${money.text}` : '';
+      const links = [delivery.purchaseLink, delivery.gmailLink, delivery.stockxLink, delivery.marketLink].filter(Boolean).join(' | ');
+      const linksLine = links ? `\nLinks: ${links}` : '';
 
-      const itemsAll = summary.deliveries.filter((d) => {
-        const eta = String(d.estimatedDelivery || '').trim();
-        const s = String(d.status || '').toLowerCase().trim();
+      const text =
+        `• *${delivery.productName || 'Unknown Product'}*` +
+        (brand ? `\n(${brand})` : '') +
+        `\nSize: ${size} | ETA: ${eta}` +
+        `\n${delivery.carrier || 'Carrier'}: ${trackingLink}` +
+        `${moneyLine}` +
+        `${linksLine}`;
+
+      const section: any = {
+        type: 'section',
+        text: { type: 'mrkdwn', text },
+      };
+
+      if (typeof delivery.productImage === 'string' && delivery.productImage.startsWith('https://')) {
+        section.accessory = {
+          type: 'image',
+          image_url: delivery.productImage,
+          alt_text: String(delivery.productName || 'Product').slice(0, 200),
+        };
+      }
+      return section;
+    };
+
+    const buildGroupBlocks = (args: { label: string; ymd: string; emptyText: string }): any[] => {
+      const header = { type: 'section', text: { type: 'mrkdwn', text: `*${args.label} (breakdown)*` } };
+      const itemsAll = summary.deliveries.filter((d: any) => {
+        const eta = String(d?.estimatedDelivery || '').trim();
+        const s = String(d?.status || '').toLowerCase().trim();
         return eta === args.ymd || (args.ymd === today && s === 'out_for_delivery');
       });
+      if (!itemsAll.length) return [header, { type: 'section', text: { type: 'mrkdwn', text: args.emptyText } }];
 
-      if (!itemsAll.length) {
-        blocks.push({
-          type: 'section',
-          text: { type: 'mrkdwn', text: args.emptyText },
-        });
-        return;
-      }
-
-      // Sort: OFD first, then highest profit, then name (keeps the list actionable).
-      const toPriority = (d: any): number => {
-        const s = String(d?.status || '').toLowerCase().trim();
-        if (s === 'out_for_delivery') return 3;
-        if (s === 'in_transit') return 2;
-        if (s === 'shipped') return 1;
-        return 0;
-      };
       const sorted = [...itemsAll].sort((a: any, b: any) => {
         const ps = toPriority(b) - toPriority(a);
         if (ps) return ps;
-        const ap = this.toFiniteNumber((a as any).estimatedProfit);
-        const bp = this.toFiniteNumber((b as any).estimatedProfit);
+        const ap = this.toFiniteNumber(a?.estimatedProfit);
+        const bp = this.toFiniteNumber(b?.estimatedProfit);
         if (ap !== null && bp !== null && ap !== bp) return bp - ap;
         if (ap === null && bp !== null) return 1;
         if (ap !== null && bp === null) return -1;
         return String(a?.productName || '').localeCompare(String(b?.productName || ''));
       });
 
-      const lines = sorted.map((delivery: any) => {
-        const size = String(delivery.productSize || '—').trim() || '—';
-        const profit = this.toFiniteNumber(delivery.estimatedProfit);
-        const marketStatus = typeof delivery.marketStatus === 'string' ? delivery.marketStatus.trim() : '';
-        const profitText =
-          profit !== null
-            ? `${profit >= 0 ? '💰' : '⚠️'} $${profit.toFixed(2)}`
-            : marketStatus
-              ? `⚠️ (${marketStatus})`
-              : '⚠️ (profit unavailable)';
-        const shortLinks = [delivery.purchaseLink, delivery.gmailLink, delivery.stockxLink, delivery.marketLink]
-          .filter(Boolean)
-          .join(' ');
-        const linksSuffix = shortLinks ? ` ${shortLinks}` : '';
-        return `• *${delivery.productName}* — Size ${size} — ${profitText}${linksSuffix}`;
-      });
-
-      // Slack section text max is ~3000 chars; keep a little buffer.
-      const chunks = chunkMrkdwnLines(lines, 2800);
-      for (const c of chunks) {
-        blocks.push({ type: 'section', text: { type: 'mrkdwn', text: c } });
-      }
+      return [header, ...sorted.map(makeEntryBlock)];
     };
 
-    if (showTodayBreakdown) {
-      buildBreakdown({
-        label: '🚚 Arriving Today',
-        ymd: today,
-        emptyText: '_No items arriving today._',
-      });
-    }
-
+    const breakdownGroups: any[] = [];
+    if (showTodayBreakdown) breakdownGroups.push(...buildGroupBlocks({ label: '🚚 Arriving Today', ymd: today, emptyText: '_No items arriving today._' }));
     if (includeTomorrowBreakdown) {
-      if (showTodayBreakdown) blocks.push({ type: 'divider' });
-      buildBreakdown({
-        label: '📅 Arriving Tomorrow',
-        ymd: tomorrow,
-        emptyText: '_No items arriving tomorrow._',
-      });
+      if (showTodayBreakdown) breakdownGroups.push({ type: 'divider' });
+      breakdownGroups.push(...buildGroupBlocks({ label: '📅 Arriving Tomorrow', ymd: tomorrow, emptyText: '_No items arriving tomorrow._' }));
     }
 
-    blocks.push({ type: 'divider' });
-
-    // Footer
-    blocks.push({
+    const footer: any = {
       type: 'context',
-      elements: [
-        {
-          type: 'mrkdwn',
-          text: `_Last updated: ${new Date().toLocaleString()}_`
-        }
-      ]
-    });
+      elements: [{ type: 'mrkdwn', text: `_Last updated: ${new Date().toLocaleString()}_` }],
+    };
 
-    return blocks;
+    // Pack into 1+ messages (Slack limit: 50 blocks/message).
+    const parts: Array<{ blocks: any[] }> = [];
+    let current: any[] = [...baseBlocks];
+
+    const pushPart = () => {
+      if (!current.length) return;
+      parts.push({ blocks: current });
+      current = [];
+    };
+
+    const continuationHeader = (idx: number): any[] => ([
+      { type: 'header', text: { type: 'plain_text', text: `📦 Daily Delivery Summary (continued)`, emoji: true } },
+      { type: 'context', elements: [{ type: 'mrkdwn', text: `_Part ${idx}_` }] },
+      { type: 'divider' },
+    ]);
+
+    const canFit = (arr: any[], more: any[]) => arr.length + more.length <= MAX_BLOCKS;
+
+    // Add breakdown blocks, splitting across messages as needed.
+    for (let i = 0; i < breakdownGroups.length; i++) {
+      const block = breakdownGroups[i]!;
+      if (canFit(current, [block])) {
+        current.push(block);
+        continue;
+      }
+      // finalize current part (add footer only to the last part, later)
+      pushPart();
+      const cont = continuationHeader(parts.length + 1);
+      current = [...cont];
+      // if even the continuation header + this block doesn't fit, drop the block (should never happen)
+      if (canFit(current, [block])) current.push(block);
+    }
+
+    // Footer: append to the last message (or the first if nothing else was added).
+    if (!current.length) current = [...baseBlocks];
+    if (!canFit(current, [footer])) {
+      pushPart();
+      current = [...continuationHeader(parts.length + 1), footer];
+    } else {
+      current.push({ type: 'divider' });
+      current.push(footer);
+    }
+    pushPart();
+
+    // Ensure no part exceeds MAX_BLOCKS (safety).
+    return parts.map((p) => ({ blocks: p.blocks.slice(0, MAX_BLOCKS) }));
   }
 
   private formatOutForDeliveryOnly(deliveries: DeliverySummary['deliveries']): any[] {

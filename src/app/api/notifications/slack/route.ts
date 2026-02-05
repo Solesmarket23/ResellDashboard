@@ -479,20 +479,14 @@ export async function POST(request: NextRequest) {
         return new Date().getHours();
       }
     })();
-    // "Business day" cutover: between midnight and 6am local time, treat it as still "yesterday"
-    // so late-night sends don't label tomorrow's packages as "Arriving Today".
-    const businessNowForSlack = (() => {
-      const d = new Date(nowForSlack);
-      if (localHourForSlack < 6) d.setDate(d.getDate() - 1);
-      return d;
-    })();
-    const todayStrForSlack = toYmdInTimeZone(businessNowForSlack, slackTimeZone);
-    const tomorrowStrForSlack = toYmdInTimeZone(new Date(businessNowForSlack.getTime() + 24 * 60 * 60 * 1000), slackTimeZone);
+    // "Today" for Slack should match the user's local calendar day in their configured timezone.
+    // (No midnight→6am cutover; user expects 12:15am to be "today".)
+    const todayStrForSlack = toYmdInTimeZone(nowForSlack, slackTimeZone);
+    const tomorrowStrForSlack = toYmdInTimeZone(new Date(nowForSlack.getTime() + 24 * 60 * 60 * 1000), slackTimeZone);
     const includeTomorrowForSlack = localHourForSlack >= 21;
     const slackDateDebug = {
       slackTimeZone,
       localHourForSlack,
-      businessCutoverApplied: localHourForSlack < 6,
       todayStrForSlack,
       tomorrowStrForSlack,
     };
@@ -1044,15 +1038,14 @@ export async function POST(request: NextRequest) {
     const deliveriesForSlack = deliveriesSortedForSlack.slice(0, MAX_DELIVERIES_IN_SLACK_MESSAGE);
 
     // Calculate summary stats
-    // Use the SAME timezone + business-day bucketing as the breakdown (todayStrForSlack/tomorrowStrForSlack).
-    // These are computed above using `slackTimeZone` and the 12am–6am cutover.
+    // Use the SAME timezone bucketing as the breakdown (todayStrForSlack/tomorrowStrForSlack).
     // Match Deliveries UI behavior: don't count delivered/cancelled/returned items as "arriving".
     const activeDeliveries = deliveries.filter((d) => isOnTheWayStatus(d.status));
     const arrivingToday = activeDeliveries.filter(
       (d) => d.estimatedDelivery === todayStrForSlack || d.status === 'out_for_delivery'
     ).length;
     const arrivingTomorrow = activeDeliveries.filter((d) => d.estimatedDelivery === tomorrowStrForSlack).length;
-    const weekEndStrForSlack = toYmdInTimeZone(new Date(businessNowForSlack.getTime() + 7 * 24 * 60 * 60 * 1000), slackTimeZone);
+    const weekEndStrForSlack = toYmdInTimeZone(new Date(nowForSlack.getTime() + 7 * 24 * 60 * 60 * 1000), slackTimeZone);
     const arrivingThisWeek = activeDeliveries.filter((d) => {
       const eta = String(d.estimatedDelivery || '').trim();
       if (!eta || eta === 'TBD') return false;
