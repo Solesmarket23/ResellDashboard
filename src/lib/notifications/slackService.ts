@@ -199,7 +199,7 @@ export class SlackNotificationService {
           })();
     const mention = this.mention ? `${this.mention} ` : '';
 
-    const parts = this.formatDeliverySummaryParts(summary);
+    const parts = this.buildDeliverySummaryMessages(summary);
     if (parts.length === 0) return;
 
     // First message: include mention + the main subject line for Slack notification previews.
@@ -216,6 +216,22 @@ export class SlackNotificationService {
         blocks: p.blocks,
       });
     }
+  }
+
+  /**
+   * Build Slack message payload(s) for the daily delivery summary without sending.
+   * Useful for dry-run testing and preview endpoints.
+   */
+  public buildDeliverySummaryMessages(summary: DeliverySummary): Array<{ blocks: any[] }> {
+    return this.formatDeliverySummaryParts(summary);
+  }
+
+  /**
+   * Build Slack message blocks for OFD-only without sending.
+   */
+  public buildOutForDeliveryOnlyBlocks(args: { deliveries: DeliverySummary['deliveries'] }): any[] {
+    const list = Array.isArray(args.deliveries) ? args.deliveries : [];
+    return this.formatOutForDeliveryOnly(list);
   }
 
   /**
