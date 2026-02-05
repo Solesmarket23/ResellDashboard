@@ -170,8 +170,18 @@ export class SlackNotificationService {
       typeof summary.projectedProfitToday === 'number' && Number.isFinite(summary.projectedProfitToday)
         ? summary.projectedProfitToday
         : null;
+    const profitTomorrow =
+      typeof summary.projectedProfitTomorrow === 'number' && Number.isFinite(summary.projectedProfitTomorrow)
+        ? summary.projectedProfitTomorrow
+        : null;
     const profitText = profitToday !== null ? `$${profitToday.toFixed(2)}` : 'unknown';
-    const subject = `${summary.arrivingToday} item${summary.arrivingToday === 1 ? '' : 's'} arriving today for a ${profitText} projected profit`;
+    const subject =
+      summary.arrivingToday > 0
+        ? `${summary.arrivingToday} item${summary.arrivingToday === 1 ? '' : 's'} arriving today for a ${profitText} projected profit`
+        : (() => {
+            const pt = profitTomorrow !== null ? `$${profitTomorrow.toFixed(2)}` : 'unknown';
+            return `${summary.arrivingTomorrow} item${summary.arrivingTomorrow === 1 ? '' : 's'} arriving tomorrow for a ${pt} projected profit`;
+          })();
     const mention = this.mention ? `${this.mention} ` : '';
     
     await this.sendMessage({
@@ -348,8 +358,28 @@ export class SlackNotificationService {
       return this.toYmdInTimeZone(d);
     })();
 
-    // Late-night behavior: after 9pm local time, include tomorrow's breakdown too.
-    const includeTomorrowBreakdown = localHour >= 21;
+    // Breakdown behavior:
+    // - After 9pm local time: include tomorrow's breakdown too
+    // - If nothing arrives today, show tomorrow's breakdown (so daily summary remains useful)
+    // Always avoid showing an empty "Arriving Today (breakdown)" block; it wastes Slack block budget.
+    const includeTomorrowBreakdown = localHour >= 21 || (summary.arrivingToday === 0 && summary.arrivingTomorrow > 0);
+    const showTodayBreakdown = summary.arrivingToday > 0;
+
+    const chunkMrkdwnLines = (lines: string[], maxChars: number): string[] => {
+      const chunks: string[] = [];
+      let buf = '';
+      for (const line of lines) {
+        const next = buf ? `${buf}\n${line}` : line;
+        if (next.length > maxChars) {
+          if (buf) chunks.push(buf);
+          buf = line;
+          continue;
+        }
+        buf = next;
+      }
+      if (buf) chunks.push(buf);
+      return chunks;
+    };
 
     const buildBreakdown = (args: { label: string; ymd: string; emptyText: string }) => {
       blocks.push({
@@ -363,19 +393,7 @@ export class SlackNotificationService {
         return eta === args.ymd || (args.ymd === today && s === 'out_for_delivery');
       });
 
-      // Slack hard limit: 50 blocks. Each delivery item here is one block + overhead.
-      const MAX_ITEMS = includeTomorrowBreakdown ? 20 : 40;
-      const truncated = itemsAll.length > MAX_ITEMS;
-      const items = itemsAll.slice(0, MAX_ITEMS);
-
-      if (truncated) {
-        blocks.push({
-          type: 'context',
-          elements: [{ type: 'mrkdwn', text: `_Showing ${MAX_ITEMS} of ${itemsAll.length} to stay within Slack limits._` }],
-        });
-        }
-
-      if (!items.length) {
+      if (!itemsAll.length) {
         blocks.push({
           type: 'section',
           text: { type: 'mrkdwn', text: args.emptyText },
@@ -383,57 +401,59 @@ export class SlackNotificationService {
         return;
       }
 
-      items.forEach((delivery) => {
-        const eta = delivery.estimatedDelivery && delivery.estimatedDelivery !== 'TBD' ? delivery.estimatedDelivery : 'TBD';
-        const money = this.formatMoneyLine({
-          purchasePrice: (delivery as any).purchasePrice,
-          marketPrice: (delivery as any).marketPrice,
-          estimatedProfit: (delivery as any).estimatedProfit,
-        });
-        const hasMarket = this.toFiniteNumber((delivery as any).marketPrice) !== null;
-        const marketStatus = typeof (delivery as any).marketStatus === 'string' ? (delivery as any).marketStatus.trim() : '';
-        const moneyWithMarketStatus =
-          money.text && !hasMarket && marketStatus
-            ? `${money.text} | Market: (${marketStatus})`
-            : money.text;
-        const moneyLine =
-          moneyWithMarketStatus
-            ? `\n  ${moneyWithMarketStatus}`
-            : marketStatus && !hasMarket
-              ? `\n  Market: (${marketStatus})`
-              : '';
-        const trackingLink = this.formatTrackingLink(delivery.trackingNumber, delivery.carrier);
-        const links = [delivery.purchaseLink, (delivery as any).gmailLink, (delivery as any).stockxLink, delivery.marketLink]
-          .filter(Boolean)
-          .join(' | ');
-        const linksLine = links ? `\n  Links: ${links}` : '';
-        
-        const section: any = {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: `• *${delivery.productName}* (${delivery.productBrand})\n  Size: ${delivery.productSize} | ETA: ${eta}\n  ${delivery.carrier}: ${trackingLink}${moneyLine}${linksLine}`,
-          },
-        };
-        if (typeof (delivery as any).productImage === 'string' && (delivery as any).productImage.startsWith('https://')) {
-          section.accessory = {
-            type: 'image',
-            image_url: (delivery as any).productImage,
-            alt_text: String(delivery.productName || 'Product').slice(0, 200),
-          };
-        }
-        blocks.push(section);
+      // Sort: OFD first, then highest profit, then name (keeps the list actionable).
+      const toPriority = (d: any): number => {
+        const s = String(d?.status || '').toLowerCase().trim();
+        if (s === 'out_for_delivery') return 3;
+        if (s === 'in_transit') return 2;
+        if (s === 'shipped') return 1;
+        return 0;
+      };
+      const sorted = [...itemsAll].sort((a: any, b: any) => {
+        const ps = toPriority(b) - toPriority(a);
+        if (ps) return ps;
+        const ap = this.toFiniteNumber((a as any).estimatedProfit);
+        const bp = this.toFiniteNumber((b as any).estimatedProfit);
+        if (ap !== null && bp !== null && ap !== bp) return bp - ap;
+        if (ap === null && bp !== null) return 1;
+        if (ap !== null && bp === null) return -1;
+        return String(a?.productName || '').localeCompare(String(b?.productName || ''));
       });
+
+      const lines = sorted.map((delivery: any) => {
+        const size = String(delivery.productSize || '—').trim() || '—';
+        const profit = this.toFiniteNumber(delivery.estimatedProfit);
+        const marketStatus = typeof delivery.marketStatus === 'string' ? delivery.marketStatus.trim() : '';
+        const profitText =
+          profit !== null
+            ? `${profit >= 0 ? '💰' : '⚠️'} $${profit.toFixed(2)}`
+            : marketStatus
+              ? `⚠️ (${marketStatus})`
+              : '⚠️ (profit unavailable)';
+        const shortLinks = [delivery.purchaseLink, delivery.gmailLink, delivery.stockxLink, delivery.marketLink]
+          .filter(Boolean)
+          .join(' ');
+        const linksSuffix = shortLinks ? ` ${shortLinks}` : '';
+        return `• *${delivery.productName}* — Size ${size} — ${profitText}${linksSuffix}`;
+      });
+
+      // Slack section text max is ~3000 chars; keep a little buffer.
+      const chunks = chunkMrkdwnLines(lines, 2800);
+      for (const c of chunks) {
+        blocks.push({ type: 'section', text: { type: 'mrkdwn', text: c } });
+      }
     };
 
-    buildBreakdown({
-      label: '🚚 Arriving Today',
-      ymd: today,
-      emptyText: '_No items arriving today._',
-    });
+    if (showTodayBreakdown) {
+      buildBreakdown({
+        label: '🚚 Arriving Today',
+        ymd: today,
+        emptyText: '_No items arriving today._',
+      });
+    }
 
     if (includeTomorrowBreakdown) {
-      blocks.push({ type: 'divider' });
+      if (showTodayBreakdown) blocks.push({ type: 'divider' });
       buildBreakdown({
         label: '📅 Arriving Tomorrow',
         ymd: tomorrow,

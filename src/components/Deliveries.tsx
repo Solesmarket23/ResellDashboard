@@ -43,7 +43,7 @@ interface DeliveryItem {
   isLiveTrackingEnabled?: boolean;
 }
 
-type DisplayStatus = 'label_created' | 'shipped' | 'out_for_delivery' | 'delivered' | 'unknown';
+type DisplayStatus = 'label_created' | 'shipped' | 'delayed' | 'out_for_delivery' | 'delivered' | 'unknown';
 
 const DeliveriesNew: React.FC = () => {
   const { currentTheme } = useTheme();
@@ -62,6 +62,7 @@ const DeliveriesNew: React.FC = () => {
     { value: 'delivered', label: 'Delivered' },
     { value: 'shipped', label: 'Shipped' },
     { value: 'in_transit', label: 'In Transit' },
+    { value: 'delayed', label: 'Delayed' },
     { value: 'out_for_delivery', label: 'Out for Delivery' },
   ];
   const carrierOptions: DropdownOption[] = [
@@ -874,8 +875,8 @@ const DeliveriesNew: React.FC = () => {
         return <Truck className="w-4 h-4 text-orange-300" />;
       case 'shipped':
         return <Package className="w-4 h-4 text-blue-500" />;
-      case 'exception':
-        return <X className="w-4 h-4 text-red-500" />;
+      case 'delayed':
+        return <AlertTriangle className="w-4 h-4 text-red-500" />;
       default:
         return <Clock className="w-4 h-4 text-gray-500" />;
     }
@@ -893,6 +894,8 @@ const DeliveriesNew: React.FC = () => {
         return 'bg-orange-100 text-orange-900 dark:bg-orange-400/25 dark:text-orange-100';
       case 'shipped':
         return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
+      case 'delayed':
+        return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
       default:
         return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200';
     }
@@ -904,6 +907,7 @@ const DeliveriesNew: React.FC = () => {
     if (status === 'out_for_delivery') return 'OUT FOR DELIVERY';
     if (status === 'delivered') return 'DELIVERED';
     if (status === 'shipped') return 'SHIPPED';
+    if (status === 'delayed') return 'DELAYED';
     return 'UNKNOWN';
   };
 
@@ -912,6 +916,7 @@ const DeliveriesNew: React.FC = () => {
     if (note.includes('label created')) return 'label_created';
     if (delivery.status === 'delivered') return 'delivered';
     if (delivery.status === 'out_for_delivery') return 'out_for_delivery';
+    if (delivery.status === 'exception') return 'delayed';
     // Collapse in_transit into "shipped" for a simpler, more intuitive set
     if (delivery.status === 'in_transit' || delivery.status === 'shipped') return 'shipped';
     return 'unknown';
@@ -1055,7 +1060,7 @@ const DeliveriesNew: React.FC = () => {
     },
     exceptions: {
       id: 'exceptions',
-      label: 'Exceptions',
+      label: 'Delayed',
       icon: X,
       color: 'text-red-500',
       getValue: () => deliveries.filter(d => d.status === 'exception').length
@@ -1086,7 +1091,8 @@ const DeliveriesNew: React.FC = () => {
     arriving_this_week: { statusFilter: 'this_week', label: 'Arriving This Week' },
     in_transit: { statusFilter: 'in_transit', label: 'In Transit' },
     delivered: { statusFilter: 'delivered', label: 'Delivered' },
-    // total/live_tracking/exceptions intentionally not mapped for now
+    exceptions: { statusFilter: 'delayed', label: 'Delayed' },
+    // total/live_tracking intentionally not mapped for now
   };
 
   const activeStatusFilterLabel = useMemo((): string | null => {
@@ -1098,6 +1104,7 @@ const DeliveriesNew: React.FC = () => {
     if (statusFilter === 'delivered') return 'Delivered';
     if (statusFilter === 'out_for_delivery') return 'Out for Delivery';
     if (statusFilter === 'shipped') return 'Shipped';
+    if (statusFilter === 'delayed') return 'Delayed';
     return `Status: ${statusFilter}`;
   }, [statusFilter]);
 
@@ -1601,6 +1608,8 @@ const DeliveriesNew: React.FC = () => {
       // "Shipped" is used as an "active shipments" view: include common in-progress states plus unknown.
       (statusFilter === 'shipped'
         ? delivery.status !== 'delivered'
+        : statusFilter === 'delayed'
+          ? delivery.status === 'exception'
         : statusFilter === 'today'
           ? (delivery.estimatedDelivery === toLocalYmd(new Date()) || delivery.status === 'out_for_delivery')
           : statusFilter === 'tomorrow'
@@ -3855,7 +3864,6 @@ const DeliveriesNew: React.FC = () => {
             message={notification.message}
             type={(notification.type === 'error' ? 'error' : notification.type === 'success' ? 'success' : 'warning') as NotificationType}
             onClose={closeToast}
-            duration={3000}
           />
         )}
 

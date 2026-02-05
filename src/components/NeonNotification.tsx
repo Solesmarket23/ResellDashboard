@@ -17,6 +17,8 @@ const NeonNotification: React.FC<NeonNotificationProps> = ({
   message, 
   type, 
   onClose, 
+  // Keep every toast consistent across the app (user request).
+  // Callers may pass `duration`, but we currently enforce a fixed 8s timeout.
   duration = 8000,
   placement = 'fixed'
 }) => {
@@ -25,8 +27,7 @@ const NeonNotification: React.FC<NeonNotificationProps> = ({
   const [present, setPresent] = useState(false);
   const [copied, setCopied] = useState(false);
   const [paused, setPaused] = useState(false);
-  // Keep toast duration consistent across types by default; callers can override via `duration`.
-  const effectiveDuration = duration;
+  const effectiveDuration = 8000;
   const [remainingMs, setRemainingMs] = useState(effectiveDuration);
   const [progressKey, setProgressKey] = useState(0);
   const timerRef = useRef<number | null>(null);

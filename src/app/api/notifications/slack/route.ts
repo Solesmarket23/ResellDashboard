@@ -1031,7 +1031,7 @@ export async function POST(request: NextRequest) {
       };
     }));
 
-    // Slack message payload guardrail: keep within Slack block limits and keep request snappy.
+    // Slack message payload guardrail: keep within Slack block limits.
     const toSlackPriority = (d: any): number => {
       const s = String(d?.status || '').toLowerCase();
       if (s === 'out_for_delivery') return 3;
@@ -1096,9 +1096,9 @@ export async function POST(request: NextRequest) {
       purchaseCostOnTheWay !== null && marketValueOnTheWay === null && projectedProfitOnTheWay === null
         ? buildMarketNote()
         : null;
-    const slackTruncationNote = truncatedForSlack
-      ? `Slack message truncated to ${MAX_DELIVERIES_IN_SLACK_MESSAGE} items (of ${deliveriesSortedForSlack.length} tracked with delivery info).`
-      : null;
+    // Daily summary no longer pre-truncates the deliveries list (the Slack formatter will select + chunk
+    // arrivals for today/tomorrow into compact blocks). Keep truncation notes out of the daily message.
+    const slackTruncationNote = null;
     const marketPriceNote =
       [baseMarketNote, slackTruncationNote].filter(Boolean).join(' ') || null;
 
@@ -1116,7 +1116,9 @@ export async function POST(request: NextRequest) {
         ...(marketValueOnTheWay !== null ? { marketValueOnTheWay } : {}),
         ...(purchaseCostOnTheWay !== null ? { purchaseCostOnTheWay } : {}),
         ...(marketPriceNote ? { marketPriceNote } : {}),
-        deliveries: deliveriesForSlack
+        // IMPORTANT: Don't pre-truncate here; the Slack formatter will pick the best "Arriving Today/Tomorrow"
+        // items and slice within Slack block limits. Pre-truncating can drop all "Arriving Tomorrow" items.
+        deliveries: deliveriesSortedForSlack
       });
     } else if (type === 'out_for_delivery') {
       await slackService.sendOutForDeliveryOnly({ deliveries: deliveriesForSlack });

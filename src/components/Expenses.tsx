@@ -104,7 +104,6 @@ export default function Expenses() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: NotificationType } | null>(null);
-  const toastTimerRef = useRef<number | null>(null);
 
   const [amount, setAmount] = useState<string>('');
   const [date, setDate] = useState<string>(() => yyyyMmDd(new Date()));
@@ -115,8 +114,6 @@ export default function Expenses() {
 
   const showToast = (message: string, type: NotificationType = 'success') => {
     setToast({ message, type });
-    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = window.setTimeout(() => setToast(null), 2200);
   };
 
   const resolveUserId = () => {

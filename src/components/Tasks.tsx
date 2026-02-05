@@ -250,7 +250,6 @@ export default function Tasks() {
   const [filter, setFilter] = useState<'open' | 'today' | 'overdue' | 'high' | 'all'>('open');
 
   const [toast, setToast] = useState<{ message: string; type: NotificationType } | null>(null);
-  const toastTimerRef = useRef<number | null>(null);
 
   const [justCompletedId, setJustCompletedId] = useState<string | null>(null);
   const justCompletedTimerRef = useRef<number | null>(null);
@@ -298,8 +297,6 @@ export default function Tasks() {
 
   const showToast = (message: string, type: NotificationType = 'success') => {
     setToast({ message, type });
-    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = window.setTimeout(() => setToast(null), 2200);
   };
 
   const cls = useMemo(() => {
