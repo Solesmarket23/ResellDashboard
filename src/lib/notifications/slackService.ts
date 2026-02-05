@@ -329,17 +329,18 @@ export class SlackNotificationService {
       fields: [
         { type: 'mrkdwn', text: `*Arriving Today:*\n🚚 ${summary.arrivingToday}` },
         { type: 'mrkdwn', text: `*Arriving Tomorrow:*\n📅 ${summary.arrivingTomorrow}` },
-        { type: 'mrkdwn', text: `*Arriving This Week:*\n🗓️ ${summary.arrivingThisWeek}` },
+        { type: 'mrkdwn', text: `*Arriving later this week:*\n🗓️ ${summary.arrivingThisWeek}` },
         { type: 'mrkdwn', text: `*In Transit:*\n📦 ${summary.inTransit}` },
       ],
     });
 
     const moneyFields: any[] = [];
+    // Order: Today → Tomorrow → Overall (on the way) → Totals
+    if (profitToday !== null) moneyFields.push({ type: 'mrkdwn', text: `*Projected Profit (Today):*\n💰 ${this.formatUsd(profitToday)}` });
+    if (profitTomorrow !== null) moneyFields.push({ type: 'mrkdwn', text: `*Projected Profit (Tomorrow):*\n💰 ${this.formatUsd(profitTomorrow)}` });
     if (profitOnTheWay !== null) moneyFields.push({ type: 'mrkdwn', text: `*Projected Profit (On the way):*\n💰 ${this.formatUsd(profitOnTheWay)}` });
     if (marketOnTheWay !== null) moneyFields.push({ type: 'mrkdwn', text: `*Market Value (On the way):*\n📈 ${this.formatUsd(marketOnTheWay)}` });
     if (purchaseOnTheWay !== null) moneyFields.push({ type: 'mrkdwn', text: `*Purchase Cost (On the way):*\n🧾 ${this.formatUsd(purchaseOnTheWay)}` });
-    if (profitTomorrow !== null) moneyFields.push({ type: 'mrkdwn', text: `*Projected Profit (Tomorrow):*\n💰 ${this.formatUsd(profitTomorrow)}` });
-    if (profitToday !== null) moneyFields.push({ type: 'mrkdwn', text: `*Projected Profit (Today):*\n💰 ${this.formatUsd(profitToday)}` });
     if (moneyFields.length) baseBlocks.push({ type: 'section', fields: moneyFields.slice(0, 10) });
 
     if (typeof summary.marketPriceNote === 'string' && summary.marketPriceNote.trim()) {
