@@ -50,6 +50,22 @@ const SCAN_RESUME_KEY_PREFIX = 'stockxListingScanResume:'; // stores large resum
 const SLACK_NOTIFY_KEY = 'stockxSlackNotifiedIndex';
 const SLACK_STATUS_KEY = 'stockxSlackLastStatus';
 const SLACK_LOG_KEY = 'stockxSlackLogs';
+const SLACK_SCAN_END_KEY = 'stockxSlackScanEndNotified';
+
+function fmtDurationMs(ms) {
+  try {
+    const x = Math.max(0, Number(ms) || 0);
+    const totalSec = Math.floor(x / 1000);
+    const s = totalSec % 60;
+    const totalMin = Math.floor(totalSec / 60);
+    const m = totalMin % 60;
+    const h = Math.floor(totalMin / 60);
+    const pad2 = (n) => String(n).padStart(2, '0');
+    return h > 0 ? `${h}:${pad2(m)}:${pad2(s)}` : `${m}:${pad2(s)}`;
+  } catch {
+    return '—';
+  }
+}
 
 function safeStr(v) {
   return String(v == null ? '' : v);
@@ -163,6 +179,171 @@ async function saveSlackNotifiedIndex(next) {
   } catch {
     return false;
   }
+}
+
+async function loadSlackScanEndIndex() {
+  try {
+    const res = await storageGet([SLACK_SCAN_END_KEY]);
+    const cur = res?.[SLACK_SCAN_END_KEY];
+    return cur && typeof cur === 'object' ? cur : {};
+  } catch {
+    return {};
+  }
+}
+
+async function saveSlackScanEndIndex(next) {
+  try {
+    return await storageSet({ [SLACK_SCAN_END_KEY]: next });
+  } catch {
+    return false;
+  }
+}
+
+async function maybeNotifySlackScanEnded(scanId, patch = {}) {
+  try {
+    const id = safeStr(scanId || '').trim();
+    if (!id) return;
+
+    const cfg = await loadScanSettingsForSlack();
+    if (!cfg.slackEnabled) return;
+    if (!cfg.slackWebhookUrl) return;
+
+    // Dedupe once per scanId (unless explicitly allowed)
+    const allowDupes = !!cfg.slackAllowDuplicates;
+    if (!allowDupes) {
+      const idx = await loadSlackScanEndIndex();
+      if (idx?.[id]) return;
+      idx[id] = Date.now();
+      // keep last 400 entries
+      const entries = Object.entries(idx).sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0));
+      const pruned = {};
+      for (const [k, v] of entries.slice(0, 400)) pruned[k] = v;
+      await saveSlackScanEndIndex(pruned);
+    }
+
+    // Load latest scan state (best-effort) for extra context
+    const stateKey = `stockxListingScanState:${id}`;
+    const res = await storageGet([stateKey]);
+    const s = res?.[stateKey] && typeof res[stateKey] === 'object' ? res[stateKey] : {};
+
+    const scanName = safeStr(patch.scanName || s.scanName || '');
+    const scanNumber = Number(patch.scanNumber || s.scanNumber || 0);
+    const scanMode = safeStr(patch.scanMode || s.scanMode || s.mode || '');
+    const startUrl = safeStr(patch.startUrl || s.startUrl || '');
+    const stage = safeStr(patch.stage || s.stage || '');
+    const success = typeof patch.success === 'boolean' ? patch.success : !!s.success;
+    const cancelled = typeof patch.cancelled === 'boolean' ? patch.cancelled : !!s.cancelled;
+    const completed = Number.isFinite(Number(patch.completed)) ? Number(patch.completed) : Number(s.completed || 0);
+    const total = Number.isFinite(Number(patch.total)) ? Number(patch.total) : Number(s.total || 0);
+    const startedAt = Number(patch.startedAt || s.startedAt || 0);
+    const finishedAt = Number(patch.finishedAt || s.finishedAt || Date.now());
+    const duration = startedAt > 0 ? fmtDurationMs(Math.max(0, finishedAt - startedAt)) : '—';
+    const lastError = safeStr(patch.error || s.lastError || s.error || '');
+    const lastErrorUrl = safeStr(patch.lastErrorUrl || s.lastErrorUrl || '');
+
+    // Summarize scan errors (best-effort). Keep it compact to avoid huge Slack payloads.
+    let errorSummary = null;
+    try {
+      const resultsKey = `stockxListingScanResults:${id}`;
+      const res2 = await storageGet([resultsKey]);
+      const results = res2?.[resultsKey] && typeof res2[resultsKey] === 'object' ? res2[resultsKey] : {};
+      const entries = Object.values(results || []).filter((x) => x && typeof x === 'object');
+      const failures = [];
+      for (const r of entries) {
+        const ok = r?.success !== false;
+        const err = safeStr(r?.error || '');
+        // treat explicit failures as errors; don't count user/release exclusions as "errors"
+        const excluded = !!(r?.userExcluded || r?.releaseExcluded || r?.releaseFutureExcluded);
+        if (!excluded && (!ok || err)) {
+          failures.push({ err: err || (!ok ? 'scan failed' : ''), url: safeStr(r?.url || '') });
+        }
+      }
+      if (failures.length) {
+        const norm = (e) =>
+          safeStr(e || '')
+            .toLowerCase()
+            .replace(/\s+/g, ' ')
+            .replace(/[0-9]{2,}/g, '#')
+            .slice(0, 90)
+            .trim();
+        const buckets = new Map();
+        for (const f of failures) {
+          const k = norm(f.err) || 'unknown';
+          buckets.set(k, (buckets.get(k) || 0) + 1);
+        }
+        const top = Array.from(buckets.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 4)
+          .map(([k, n]) => `${n}× ${k}`);
+        const examples = failures
+          .filter((f) => f.url)
+          .slice(0, 3)
+          .map((f) => f.url);
+        errorSummary = {
+          count: failures.length,
+          top,
+          examples
+        };
+      }
+    } catch {}
+
+    const mention = safeStr(cfg.slackMention || '').trim();
+    const mentionPrefix = mention ? `${mention} ` : '';
+
+    const titleBase = scanName || (scanNumber ? `Scan ${scanNumber}` : 'Scan');
+    const statusWord = cancelled ? 'stopped' : success ? 'done' : 'ended';
+    const headerText = `Scan ${statusWord}`;
+
+    const lines = [];
+    lines.push(`${mentionPrefix}*${headerText}* — ${titleBase}${scanMode ? ` • ${scanMode}` : ''}`.trim());
+    if (Number.isFinite(completed) && Number.isFinite(total) && total > 0) lines.push(`Progress: ${completed}/${total}`);
+    if (duration && duration !== '—') lines.push(`Elapsed: ${duration}`);
+    if (stage) lines.push(`Stage: ${stage}`);
+    if (startUrl) lines.push(`Start: ${startUrl}`);
+    if (lastError) lines.push(`Last error: ${lastError}${lastErrorUrl ? ` (${lastErrorUrl})` : ''}`);
+    if (errorSummary?.count) {
+      lines.push(`Errors: ${errorSummary.count}`);
+      if (Array.isArray(errorSummary.top) && errorSummary.top.length) lines.push(`Top: ${errorSummary.top.join(' • ')}`);
+      if (Array.isArray(errorSummary.examples) && errorSummary.examples.length) lines.push(`Examples: ${errorSummary.examples.join(' | ')}`);
+    }
+
+    const payload = { text: lines.join('\n'), link_names: true };
+    if (cfg.slackChannel) payload.channel = cfg.slackChannel;
+
+    // Serialize sends (reuse existing queue if present)
+    const queue = (globalThis.__stockxSlackQueue = globalThis.__stockxSlackQueue || Promise.resolve());
+    const nextQueue = queue.then(async () => {
+      try {
+        await appendSlackLog('info', 'slackScanEnd: sending', {
+          scanId: id,
+          status: statusWord,
+          completed,
+          total,
+          errorCount: errorSummary?.count || 0,
+          topErrors: errorSummary?.top || []
+        });
+      } catch {}
+      try {
+        const resp = await postSlackWebhook(cfg.slackWebhookUrl, payload, 12000);
+        if (!resp.ok) {
+          const txt = await resp.text().catch(() => '');
+          try {
+            await appendSlackLog('error', 'slackScanEnd: non-200', { status: resp.status, body: String(txt || '').slice(0, 200) });
+          } catch {}
+          return;
+        }
+        try {
+          await appendSlackLog('info', 'slackScanEnd: sent ok', {});
+        } catch {}
+      } catch (e) {
+        try {
+          await appendSlackLog('error', 'slackScanEnd: exception', { error: e?.message || String(e) });
+        } catch {}
+      }
+      await new Promise((r) => setTimeout(r, 650));
+    });
+    globalThis.__stockxSlackQueue = nextQueue.catch(() => {});
+  } catch {}
 }
 
 async function setSlackStatus(patch) {
@@ -663,6 +844,137 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.runtime.onStartup?.addListener?.(() => {
   applyPopupToAllTabs();
 });
+
+// --- Scan stall watchdog (sleep/wake resilience) ---
+// When the OS sleeps, MV3 workers + tabs are suspended. On wake, scans can appear "active" but never resume.
+// This watchdog marks an active scan as "stopped (stalled)" after a heartbeat gap so the user can Resume.
+const ACTIVE_SCAN_ID_KEY = 'stockxActiveListingScanId';
+const WATCHDOG_ALARM_NAME = 'stockxScanWatchdog';
+const WATCHDOG_PERIOD_MIN = 1; // check frequently; work is tiny
+const WATCHDOG_STALL_MS = 3 * 60 * 1000; // 3 minutes without heartbeat/update => stalled
+
+function scheduleWatchdogAlarm() {
+  try {
+    if (!chrome?.alarms?.create) return false;
+    chrome.alarms.create(WATCHDOG_ALARM_NAME, { periodInMinutes: WATCHDOG_PERIOD_MIN });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function checkForStalledActiveScan(reason = '') {
+  try {
+    if (!chrome?.storage?.local?.get) return;
+    const ids = await storageGet([ACTIVE_SCAN_ID_KEY]);
+    const scanId = safeStr(ids?.[ACTIVE_SCAN_ID_KEY] || '').trim();
+    if (!scanId) return;
+
+    const stateKey = `stockxListingScanState:${scanId}`;
+    const res = await storageGet([stateKey]);
+    const s = res?.[stateKey] && typeof res[stateKey] === 'object' ? res[stateKey] : null;
+    if (!s) return;
+
+    const stage = safeStr(s?.stage || '');
+    const stageLower = stage.toLowerCase();
+    const finishedAt = Number(s?.finishedAt || 0);
+    const cancelled = !!s?.cancelled;
+    const success = !!s?.success;
+
+    // If scan already ended but active key wasn't cleared, fix that quietly.
+    if (finishedAt > 0 || stageLower === 'done' || stageLower.startsWith('stopped')) {
+      try {
+        chrome.storage?.local?.remove?.([ACTIVE_SCAN_ID_KEY], () => void chrome.runtime.lastError);
+      } catch {}
+      return;
+    }
+
+    const hb = Number(s?.heartbeatAt || 0);
+    const up = Number(s?.updatedAt || 0);
+    const startedAt = Number(s?.startedAt || 0);
+    const last = Math.max(hb, up, startedAt);
+    if (!Number.isFinite(last) || last <= 0) return;
+
+    const ageMs = Math.max(0, Date.now() - last);
+    if (ageMs < WATCHDOG_STALL_MS) return;
+
+    const total = Number(s?.total || 0);
+    const completed = Number(s?.completed || 0);
+    const originTabId = Number(s?.originTabId || 0);
+
+    const msg = `No updates for ${fmtDurationMs(ageMs)} (likely sleep/locked)`;
+    const stopStage = `stopped (stalled — ${fmtDurationMs(ageMs)} idle)`;
+
+    // Best-effort cancel in-memory scan + close tabs if this worker still has them.
+    try {
+      const entry = getScanEntry(scanId);
+      if (entry) {
+        entry.cancelled = true;
+        try {
+          for (const tId of entry.activeTabIds || []) closeTab(tId);
+        } catch {}
+      }
+    } catch {}
+
+    // Persist stopped state so UI enables Resume.
+    try {
+      setScanState(scanId, {
+        stage: stopStage,
+        cancelled: true,
+        success: false,
+        canResume: true,
+        finishedAt: Date.now(),
+        lastError: msg,
+        lastErrorAt: Date.now(),
+        heartbeatNote: reason ? `watchdog:${safeStr(reason).slice(0, 40)}` : 'watchdog'
+      });
+    } catch {}
+    try {
+      await patchScanHistory(scanId, { finishedAt: Date.now(), success: false, cancelled: true, completed });
+    } catch {}
+    try {
+      chrome.storage?.local?.remove?.([ACTIVE_SCAN_ID_KEY], () => void chrome.runtime.lastError);
+    } catch {}
+    try {
+      if (originTabId) sendToTab(originTabId, { action: 'listingBidScanDone', scanId, success: false, cancelled: true, total });
+    } catch {}
+    try {
+      maybeNotifySlackScanEnded(scanId, {
+        success: false,
+        cancelled: true,
+        completed,
+        total,
+        stage: stopStage,
+        error: msg,
+        startUrl: safeStr(s?.startUrl || ''),
+        scanMode: safeStr(s?.scanMode || s?.mode || '')
+      });
+    } catch {}
+  } catch {}
+}
+
+try {
+  chrome.alarms?.onAlarm?.addListener?.((alarm) => {
+    try {
+      if (alarm?.name !== WATCHDOG_ALARM_NAME) return;
+      checkForStalledActiveScan('alarm').catch(() => {});
+    } catch {}
+  });
+} catch {}
+
+try {
+  // Create alarm on install/startup, and do a one-shot check whenever the worker loads.
+  chrome.runtime.onInstalled.addListener(() => {
+    scheduleWatchdogAlarm();
+    checkForStalledActiveScan('installed').catch(() => {});
+  });
+  chrome.runtime.onStartup?.addListener?.(() => {
+    scheduleWatchdogAlarm();
+    checkForStalledActiveScan('startup').catch(() => {});
+  });
+  scheduleWatchdogAlarm();
+  setTimeout(() => checkForStalledActiveScan('boot').catch(() => {}), 1500);
+} catch {}
 
 // Handle messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -1584,6 +1896,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             setScanState(scanId, { finishedAt: Date.now(), stage: 'stopped', cancelled: true, success: false });
           } catch {}
           try { patchScanHistory(scanId, { finishedAt: Date.now(), success: false, cancelled: true }); } catch {}
+          try { maybeNotifySlackScanEnded(scanId, { success: false, cancelled: true, stage: 'stopped' }); } catch {}
           return;
         } catch (e2) {
           sendResponse({ success: false, error: e2?.message || String(e2) });
@@ -2413,6 +2726,7 @@ async function navigateTabTo(tabId, url, timeoutMs = 45000) {
 async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPages, perPage, collectOpts, scanMode }) {
   const total = Math.max(1, Number(maxPages) || 1) * Math.max(1, Number(perPage) || 48);
   let completed = 0;
+  let stopReason = '';
 
   const entry = getScanEntry(scanId);
   const opts = collectOpts && typeof collectOpts === 'object' ? collectOpts : {};
@@ -2569,12 +2883,20 @@ async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPa
         });
         // #endregion
         // Ended early: mark as stopped so it can be resumed.
+        stopReason = `no urls on page ${pageNum}`;
+        try {
+          const entry = getScanEntry(scanId);
+          if (entry) entry.cancelled = true;
+        } catch {}
         setScanState(scanId, {
-          stage: `stopped (no urls on page ${pageNum})`,
+          stage: `stopped (${stopReason})`,
           cancelled: true,
           success: false,
           canResume: true,
-          finishedAt: Date.now()
+          finishedAt: Date.now(),
+          lastError: `No product URLs detected on page ${pageNum}`,
+          lastErrorAt: Date.now(),
+          lastErrorUrl: pageUrl
         });
         break;
       }
@@ -2747,12 +3069,15 @@ async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPa
   if (cancelled) {
     sendToTab(originTabId, { action: 'listingBidScanDone', scanId, success: false, cancelled: true, total });
     // Note: resume cursor already persisted during the loop; keep it.
-    setScanState(scanId, { stage: 'stopped', total, completed, cancelled: true, success: false, finishedAt: Date.now(), canResume: true });
+    const stage = stopReason ? `stopped (${stopReason})` : 'stopped';
+    setScanState(scanId, { stage, total, completed, cancelled: true, success: false, finishedAt: Date.now(), canResume: true });
     try { await patchScanHistory(scanId, { finishedAt: Date.now(), success: false, cancelled: true, completed }); } catch {}
+    try { maybeNotifySlackScanEnded(scanId, { success: false, cancelled: true, completed, total, scanMode, startUrl, stage }); } catch {}
   } else {
     sendToTab(originTabId, { action: 'listingBidScanDone', scanId, success: true, cancelled: false, total });
     setScanState(scanId, { stage: 'done', total, completed, cancelled: false, success: true, finishedAt: Date.now() });
     try { await patchScanHistory(scanId, { finishedAt: Date.now(), success: true, cancelled: false, completed }); } catch {}
+    try { maybeNotifySlackScanEnded(scanId, { success: true, cancelled: false, completed, total, scanMode, startUrl, stage: 'done' }); } catch {}
   }
   try {
     globalThis.__stockxActiveScans?.delete?.(scanId);
@@ -2920,10 +3245,12 @@ async function runListingBidScan({ originTabId, scanId, urls }) {
       resume: { kind: 'listing', nextIdx, inFlightIdx: null }
     });
     try { await patchScanHistory(scanId, { finishedAt: Date.now(), success: false, cancelled: true, completed }); } catch {}
+    try { maybeNotifySlackScanEnded(scanId, { success: false, cancelled: true, completed, total, scanMode, stage: 'stopped' }); } catch {}
   } else {
     sendToTab(originTabId, { action: 'listingBidScanDone', scanId, success: true, cancelled: false, total });
     setScanState(scanId, { stage: 'done', total, completed, cancelled: false, success: true, finishedAt: Date.now() });
     try { await patchScanHistory(scanId, { finishedAt: Date.now(), success: true, cancelled: false, completed }); } catch {}
+    try { maybeNotifySlackScanEnded(scanId, { success: true, cancelled: false, completed, total, scanMode, stage: 'done' }); } catch {}
   }
   try {
     globalThis.__stockxActiveScans?.delete?.(scanId);
