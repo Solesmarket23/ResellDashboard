@@ -97,7 +97,8 @@ const menuSections = [
     title: 'ACCOUNT',
     items: [
       { id: 'profile', label: 'Profile', icon: User },
-      { id: 'plans', label: 'Plans & Billing', icon: CreditCard },
+      { id: 'billing', label: 'Billing', icon: CreditCard },
+      { id: 'plans', label: 'Plans & Pricing', icon: Tag },
       { id: 'faq', label: 'Help & FAQ', icon: HelpCircle },
     ]
   }

@@ -30,6 +30,7 @@ const AudioPreview = dynamic(() => import('../../components/AudioPreview'), { ss
 const MarketAlerts = dynamic(() => import('../../components/MarketAlerts'), { ssr: false, loading: SectionFallback });
 const Insights = dynamic(() => import('../../components/Insights'), { ssr: false, loading: SectionFallback });
 const Plans = dynamic(() => import('../../components/Plans'), { ssr: false, loading: SectionFallback });
+const Billing = dynamic(() => import('../../components/Billing'), { ssr: false, loading: SectionFallback });
 const FAQ = dynamic(() => import('../../components/FAQ'), { ssr: false, loading: SectionFallback });
 const FeatureRequests = dynamic(() => import('../../components/FeatureRequests'), { ssr: false, loading: SectionFallback });
 const StockXArbitrage = dynamic(() => import('../../components/StockXArbitrage'), { ssr: false, loading: SectionFallback });
@@ -258,6 +259,8 @@ function DashboardContent() {
         );
       case 'plans':
         return <Plans />;
+      case 'billing':
+        return <Billing />;
       case 'feature-requests':
         return <FeatureRequests />;
       case 'faq':
