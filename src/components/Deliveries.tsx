@@ -1538,11 +1538,17 @@ const DeliveriesNew: React.FC = () => {
       const data = await res.json();
       if (!res.ok || !data?.success) throw new Error(data?.error || 'Failed to load Slack schedule');
       const s = data?.settings || {};
+      const normalizeTzForUi = (tz: string) => {
+        const t = String(tz || '').trim();
+        if (!t) return 'ET';
+        if (t === 'America/New_York') return 'ET';
+        return t;
+      };
       setSlackSchedule({
         enabled: s.enabled === true,
         webhookUrl: String(s.webhookUrl || ''),
         timeLocal: String(s.timeLocal || '09:30'),
-        timezone: String(s.timezone || 'America/New_York'),
+        timezone: normalizeTzForUi(String(s.timezone || 'America/New_York')),
         lastSentLocalDate: typeof s.lastSentLocalDate === 'string' ? s.lastSentLocalDate : null,
       });
     } catch (e) {
@@ -1557,6 +1563,13 @@ const DeliveriesNew: React.FC = () => {
     if (!user) return;
     setSlackScheduleSaving(true);
     try {
+      const normalizeTzForSave = (tz: string) => {
+        const raw = String(tz || '').trim();
+        const upper = raw.toUpperCase();
+        if (!raw) return 'America/New_York';
+        if (upper === 'ET' || upper === 'EST' || upper === 'EDT') return 'America/New_York';
+        return raw;
+      };
       const res = await fetch(`/api/deliveries/slack-settings?userId=${encodeURIComponent(user.uid)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-user-id': user.uid },
@@ -1564,7 +1577,7 @@ const DeliveriesNew: React.FC = () => {
           enabled: slackSchedule.enabled,
           webhookUrl: slackSchedule.webhookUrl,
           timeLocal: slackSchedule.timeLocal,
-          timezone: slackSchedule.timezone,
+          timezone: normalizeTzForSave(slackSchedule.timezone),
         }),
       });
       const data = await res.json();
@@ -1575,7 +1588,10 @@ const DeliveriesNew: React.FC = () => {
         enabled: s.enabled === true,
         webhookUrl: String(s.webhookUrl || ''),
         timeLocal: String(s.timeLocal || prev.timeLocal),
-        timezone: String(s.timezone || prev.timezone),
+        timezone: (() => {
+          const t = String(s.timezone || prev.timezone || '').trim();
+          return t === 'America/New_York' ? 'ET' : (t || 'ET');
+        })(),
         lastSentLocalDate: typeof s.lastSentLocalDate === 'string' ? s.lastSentLocalDate : prev.lastSentLocalDate,
       }));
       showNotification('Saved daily Slack schedule', 'success');
@@ -3817,31 +3833,23 @@ const DeliveriesNew: React.FC = () => {
                               : 'border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30'
                           }`}
                         />
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setSlackSchedule((prev) => ({ ...prev, timeLocal: '09:30', timezone: 'America/New_York' }))
-                          }
-                          className={`text-xs font-semibold underline ${
-                            currentTheme.name === 'Neon' ? 'text-cyan-200/80 hover:text-cyan-100' : 'text-blue-600 hover:text-blue-500'
-                          }`}
-                        >
-                          Set to 9:30am EST (America/New_York)
-                        </button>
                       </div>
 
                       <div className="space-y-2">
-                        <div className="text-sm font-semibold">Timezone</div>
+                        <div className="text-sm font-semibold">Timezone (ET)</div>
                         <input
                           value={slackSchedule.timezone}
                           onChange={(e) => setSlackSchedule((prev) => ({ ...prev, timezone: e.target.value }))}
-                          placeholder="America/New_York"
+                          placeholder="ET"
                           className={`w-full h-11 px-3 rounded-xl border bg-transparent text-sm ${
                             currentTheme.name === 'Neon'
                               ? 'border-cyan-500/30 focus:outline-none focus:ring-2 focus:ring-cyan-400/30'
                               : 'border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30'
                           }`}
                         />
+                        <div className={`text-[11px] ${currentTheme.name === 'Neon' ? 'text-gray-400' : 'text-gray-500'}`}>
+                          Tip: enter <span className="font-semibold">ET</span> (recommended). We store it as <span className="font-mono">America/New_York</span> so daylight savings works.
+                        </div>
                       </div>
                     </div>
 
