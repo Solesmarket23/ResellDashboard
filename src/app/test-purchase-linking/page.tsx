@@ -3667,7 +3667,7 @@ export default function TestPurchaseLinkingPage() {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="text-sm font-semibold">Top SKUs</div>
-                    <div className={`text-xs ${isNeon ? 'text-gray-300' : 'text-gray-600'}`}>Sorted by profit (styleId → urlKey → product)</div>
+                    <div className={`text-xs ${isNeon ? 'text-gray-300' : 'text-gray-600'}`}>Sorted by profit (style ID → product slug → product name)</div>
                   </div>
                 </div>
                 <div className="mt-2 overflow-x-auto">
