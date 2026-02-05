@@ -1380,7 +1380,10 @@ const DeliveriesNew: React.FC = () => {
     window.open(`/dashboard?section=purchases&purchaseId=${encodeURIComponent(purchaseId)}`, '_blank', 'noopener,noreferrer');
   };
 
-  const sendSlack = async (type: 'daily_summary' | 'out_for_delivery') => {
+  const sendSlack = async (
+    type: 'daily_summary' | 'out_for_delivery',
+    opts?: { testForceOFDCount?: number }
+  ) => {
     if (!user) {
       showNotification('Please sign in to send notifications', 'error');
       return;
@@ -1429,7 +1432,8 @@ const DeliveriesNew: React.FC = () => {
         body: JSON.stringify({
           userId: user.uid,
           type,
-          purchases // Send purchases for localStorage users
+          purchases, // Send purchases for localStorage users
+          ...(opts?.testForceOFDCount ? { testForceOFDCount: opts.testForceOFDCount } : {}),
         })
       });
 
@@ -1516,6 +1520,11 @@ const DeliveriesNew: React.FC = () => {
   // Send Slack notification (out for delivery only)
   const handleSendSlackOutForDelivery = async () => {
     await sendSlack('out_for_delivery');
+  };
+
+  // Test-only: force a couple entries to OFD in the Slack payload so you can preview layout
+  const handleTestSendSlackOutForDelivery = async () => {
+    await sendSlack('out_for_delivery', { testForceOFDCount: 2 });
   };
 
   const loadSlackSchedule = async () => {
@@ -1853,33 +1862,52 @@ const DeliveriesNew: React.FC = () => {
                  )}
                </div>
 
-               {/* Send Out-for-Delivery-only Slack Button */}
-               <div className="relative group">
-                 <button
-                   onClick={handleSendSlackOutForDelivery}
-                   disabled={sendingSlackNotification || ofdDisabledBecauseNone}
-                   className={`h-11 px-4 min-w-[120px] inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors text-white disabled:text-white disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 ${
-                     currentTheme.name === 'Neon' ? 'focus:ring-cyan-400/40' : 'focus:ring-blue-500'
-                   } bg-orange-600 hover:bg-orange-700 ${
-                     sendingSlackNotification && sendingSlackType === 'out_for_delivery' ? 'animate-pulse cursor-wait' : ''
-                   }`}
-                   title={undefined}
-                   aria-busy={sendingSlackNotification && sendingSlackType === 'out_for_delivery'}
-                 >
-                   {sendingSlackNotification && sendingSlackType === 'out_for_delivery' ? (
-                     <RefreshCw className="w-4 h-4 animate-spin" />
-                   ) : (
-                     <Truck className="w-4 h-4" />
-                   )}
-                   {sendingSlackNotification && sendingSlackType === 'out_for_delivery' ? 'Sending...' : 'Send OFD'}
-                 </button>
-                 {ofdDisabledReason && (
-                   <div className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden group-hover:block z-50">
-                    <div className="w-[min(28rem,calc(100vw-2rem))] whitespace-normal text-left rounded-xl border border-white/10 bg-black/80 px-4 py-3 text-xs leading-snug text-white shadow-xl">
-                       {ofdDisabledReason}
+               {/* Send Out-for-Delivery-only Slack Button + Test */}
+               <div className="flex flex-col items-stretch gap-1">
+                 <div className="relative group">
+                   <button
+                     onClick={handleSendSlackOutForDelivery}
+                     disabled={sendingSlackNotification || ofdDisabledBecauseNone}
+                     className={`h-11 px-4 min-w-[120px] inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors text-white disabled:text-white disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 ${
+                       currentTheme.name === 'Neon' ? 'focus:ring-cyan-400/40' : 'focus:ring-blue-500'
+                     } bg-orange-600 hover:bg-orange-700 ${
+                       sendingSlackNotification && sendingSlackType === 'out_for_delivery' ? 'animate-pulse cursor-wait' : ''
+                     }`}
+                     title={undefined}
+                     aria-busy={sendingSlackNotification && sendingSlackType === 'out_for_delivery'}
+                   >
+                     {sendingSlackNotification && sendingSlackType === 'out_for_delivery' ? (
+                       <RefreshCw className="w-4 h-4 animate-spin" />
+                     ) : (
+                       <Truck className="w-4 h-4" />
+                     )}
+                     {sendingSlackNotification && sendingSlackType === 'out_for_delivery' ? 'Sending...' : 'Send OFD'}
+                   </button>
+                   {ofdDisabledReason && (
+                     <div className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden group-hover:block z-50">
+                      <div className="w-[min(28rem,calc(100vw-2rem))] whitespace-normal text-left rounded-xl border border-white/10 bg-black/80 px-4 py-3 text-xs leading-snug text-white shadow-xl">
+                         {ofdDisabledReason}
+                       </div>
                      </div>
-                   </div>
-                 )}
+                   )}
+                 </div>
+
+                 <button
+                   type="button"
+                   onClick={handleTestSendSlackOutForDelivery}
+                   disabled={sendingSlackNotification}
+                   className={`h-9 px-4 min-w-[120px] inline-flex items-center justify-center gap-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 ${
+                     currentTheme.name === 'Neon' ? 'focus:ring-cyan-400/40' : 'focus:ring-blue-500'
+                   } ${
+                     currentTheme.name === 'Neon'
+                       ? 'bg-orange-500/20 hover:bg-orange-500/30 border border-orange-400/30 text-orange-100'
+                       : 'bg-orange-50 hover:bg-orange-100 border border-orange-200 text-orange-700'
+                   }`}
+                   title="Test layout: forces 2 items into Out for Delivery for the Slack payload only (no data changes)"
+                 >
+                   <Truck className="w-3.5 h-3.5" />
+                   Test OFD
+                 </button>
                </div>
 
                {/* Daily Slack schedule settings */}

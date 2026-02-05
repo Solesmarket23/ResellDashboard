@@ -262,7 +262,7 @@ async function getStockXAuthForUser(request: NextRequest, userId: string): Promi
  */
 export async function POST(request: NextRequest) {
   try {
-    const { userId, type = 'daily_summary', purchases } = await request.json();
+    const { userId, type = 'daily_summary', purchases, testForceOFDCount } = await request.json();
     
     if (!userId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
@@ -316,6 +316,11 @@ export async function POST(request: NextRequest) {
 
     console.log(`📨 Sending Slack notification (${type}) for user: ${userId}`);
     const isOutForDeliveryMode = String(type || '').trim() === 'out_for_delivery';
+    const testForceCountRaw =
+      typeof testForceOFDCount === 'number' ? testForceOFDCount : parseInt(String(testForceOFDCount || ''), 10);
+    const testForceCount =
+      Number.isFinite(testForceCountRaw) && testForceCountRaw > 0 ? Math.min(10, Math.floor(testForceCountRaw)) : 0;
+    const shouldForceOFDForTest = isOutForDeliveryMode && testForceCount > 0 && process.env.NODE_ENV !== 'production';
 
     // Get purchases - either from request body (localStorage users) or Firebase
     let allPurchases: any[] = [];
@@ -1052,6 +1057,33 @@ export async function POST(request: NextRequest) {
     const deliveriesSortedForSlack = [...deliveries].sort((a, b) => toSlackPriority(b) - toSlackPriority(a));
     const truncatedForSlack = deliveriesSortedForSlack.length > MAX_DELIVERIES_IN_SLACK_MESSAGE;
     const deliveriesForSlack = deliveriesSortedForSlack.slice(0, MAX_DELIVERIES_IN_SLACK_MESSAGE);
+    const deliveriesForOfdPayload = (() => {
+      if (!shouldForceOFDForTest) return deliveriesForSlack;
+      let forced = 0;
+      const out = deliveriesForSlack.map((d) => {
+        if (forced >= testForceCount) return d;
+        const s = String((d as any)?.status || '').toLowerCase().trim();
+        if (s === 'out_for_delivery') return d;
+        // Prefer items arriving today; otherwise force any on-the-way-ish entry.
+        const eta = String((d as any)?.estimatedDelivery || '').trim();
+        if (eta === todayStrForSlack || isOnTheWayStatus(s)) {
+          forced++;
+          return { ...(d as any), status: 'out_for_delivery' };
+        }
+        return d;
+      });
+      // If we still didn't force enough, force remaining earliest items.
+      if (forced < testForceCount) {
+        for (let i = 0; i < out.length && forced < testForceCount; i++) {
+          const s = String((out[i] as any)?.status || '').toLowerCase().trim();
+          if (s !== 'out_for_delivery') {
+            out[i] = { ...(out[i] as any), status: 'out_for_delivery' };
+            forced++;
+          }
+        }
+      }
+      return out;
+    })();
 
     // Calculate summary stats
     // Use the SAME timezone bucketing as the breakdown (todayStrForSlack/tomorrowStrForSlack).
@@ -1130,7 +1162,7 @@ export async function POST(request: NextRequest) {
         deliveries: deliveriesSortedForSlack
       });
     } else if (type === 'out_for_delivery') {
-      await slackService.sendOutForDeliveryOnly({ deliveries: deliveriesForSlack });
+      await slackService.sendOutForDeliveryOnly({ deliveries: deliveriesForOfdPayload });
     }
 
     console.log(`✅ Slack notification sent successfully`);
@@ -1147,7 +1179,7 @@ export async function POST(request: NextRequest) {
         arrivingTomorrow,
         arrivingThisWeek,
         inTransit,
-        outForDelivery: deliveries.filter((d) => d.status === 'out_for_delivery').length
+        outForDelivery: deliveriesForOfdPayload.filter((d) => String((d as any)?.status || '').toLowerCase().trim() === 'out_for_delivery').length
       }
     });
 
