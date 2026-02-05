@@ -68,6 +68,69 @@ const Purchases = () => {
   };
 
   const formatUsd = (n: number): string => `$${(Number.isFinite(n) ? n : 0).toFixed(2)}`;
+
+  const normalizeStockXSizeParam = (raw: unknown): string | null => {
+    const s = String(raw ?? '').trim();
+    if (!s || s.toLowerCase() === 'unknown') return null;
+    const upper = s.toUpperCase();
+    const isWomen =
+      /\bW\b/.test(upper) ||
+      upper.includes('USW') ||
+      upper.includes('WOMEN') ||
+      /(\d+(?:\.\d+)?)W\b/.test(upper);
+    const isYouth =
+      /\bY\b/.test(upper) ||
+      upper.includes('YOUTH') ||
+      /(\d+(?:\.\d+)?)Y\b/.test(upper);
+
+    // Numeric sizes: "US M 8.5" -> "8.5", "US W 6.5" -> "6.5W", "US 6.5Y" -> "6.5Y"
+    const m = s.match(/(\d+(?:\.\d+)?)/);
+    if (m) {
+      const num = m[1];
+      if (isYouth) return `${num}Y`;
+      if (isWomen) return `${num}W`;
+      return num;
+    }
+
+    // Apparel sizes: XS/S/M/L/XL/XXL/XXXL
+    const letter = s.match(/\b(XXXL|XXL|XL|XS|S|M|L)\b/i)?.[1];
+    if (letter) return letter.toUpperCase();
+
+    return s.replace(/^US\s+/i, '').trim() || null;
+  };
+
+  const slugifyStockXTitle = (title: unknown): string | null => {
+    const s = String(title ?? '').trim().toLowerCase();
+    if (!s) return null;
+    const slug = s
+      .replace(/&/g, ' and ')
+      .replace(/['"]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+    return slug || null;
+  };
+
+  const buildStockXProductUrlForPurchase = (purchase: any): string | null => {
+    const name = String(purchase?.product?.name || purchase?.productName || '').trim();
+    if (!name) return null;
+    const rawSize = purchase?.product?.size || purchase?.size || '';
+    const sizeParam = normalizeStockXSizeParam(rawSize);
+    const urlKey =
+      String(
+        purchase?.stockxUrlKey ||
+          purchase?.urlKey ||
+          purchase?.product?.urlKey ||
+          purchase?.product?.slug ||
+          purchase?.slug ||
+          ''
+      ).trim() || null;
+    const slug = urlKey || slugifyStockXTitle(name);
+    if (!slug) return null;
+    const base = `https://stockx.com/${encodeURIComponent(slug)}`;
+    const qs = sizeParam ? `?size=${encodeURIComponent(sizeParam)}` : '';
+    return `${base}${qs}`;
+  };
   // NOTE: sortBy should always store the internal column key (e.g. "purchaseDate"), not a label.
   const [sortBy, setSortBy] = useState('purchaseDate');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
@@ -4793,7 +4856,27 @@ const Purchases = () => {
                       </div>
                       <div className="flex-1 py-1 text-left">
                         <div className={`text-sm font-semibold ${currentTheme.colors.textPrimary} leading-tight mb-1`} style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
-                          {purchase.product?.name || 'Unknown Product'}
+                          {(() => {
+                            const stockxUrl = buildStockXProductUrlForPurchase(purchase);
+                            const label = purchase.product?.name || 'Unknown Product';
+                            if (!stockxUrl) return label;
+                            return (
+                              <a
+                                href={stockxUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className={`hover:underline underline-offset-2 ${
+                                  currentTheme.name === 'Neon'
+                                    ? 'text-cyan-300 hover:text-cyan-200'
+                                    : 'text-blue-700 hover:text-blue-800'
+                                }`}
+                                title="Open on StockX"
+                              >
+                                {label}
+                              </a>
+                            );
+                          })()}
                         </div>
                         <div className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold ${
                           currentTheme.name === 'Neon' 
