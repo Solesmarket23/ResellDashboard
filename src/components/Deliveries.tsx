@@ -1846,7 +1846,7 @@ const DeliveriesNew: React.FC = () => {
                  </button>
                  {slackSummaryDisabledReason && (
                    <div className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden group-hover:block z-50">
-                     <div className="max-w-xs whitespace-normal text-left rounded-xl border border-white/10 bg-black/80 px-3 py-2 text-xs text-white shadow-xl">
+                    <div className="w-[min(28rem,calc(100vw-2rem))] whitespace-normal text-left rounded-xl border border-white/10 bg-black/80 px-4 py-3 text-xs leading-snug text-white shadow-xl">
                        {slackSummaryDisabledReason}
                      </div>
                    </div>
@@ -1875,7 +1875,7 @@ const DeliveriesNew: React.FC = () => {
                  </button>
                  {ofdDisabledReason && (
                    <div className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden group-hover:block z-50">
-                     <div className="max-w-xs whitespace-normal text-left rounded-xl border border-white/10 bg-black/80 px-3 py-2 text-xs text-white shadow-xl">
+                    <div className="w-[min(28rem,calc(100vw-2rem))] whitespace-normal text-left rounded-xl border border-white/10 bg-black/80 px-4 py-3 text-xs leading-snug text-white shadow-xl">
                        {ofdDisabledReason}
                      </div>
                    </div>
