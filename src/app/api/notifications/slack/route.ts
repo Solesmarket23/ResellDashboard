@@ -315,6 +315,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`📨 Sending Slack notification (${type}) for user: ${userId}`);
+    const isOutForDeliveryMode = String(type || '').trim() === 'out_for_delivery';
 
     // Get purchases - either from request body (localStorage users) or Firebase
     let allPurchases: any[] = [];
@@ -532,6 +533,12 @@ export async function POST(request: NextRequest) {
       const aEta = normalizeEtaYmd(a, aLive);
       const bEta = normalizeEtaYmd(b, bLive);
 
+      // For OFD-only notifications, prioritize out_for_delivery first. Otherwise, prioritize arrivals (today + OFD + late-night tomorrow).
+      if (isOutForDeliveryMode) {
+        const aOfd = aStatus === 'out_for_delivery';
+        const bOfd = bStatus === 'out_for_delivery';
+        if (aOfd !== bOfd) return aOfd ? -1 : 1;
+      }
       const aArr = aEta === todayStrForSlack || aStatus === 'out_for_delivery' || (includeTomorrowForSlack && aEta === tomorrowStrForSlack);
       const bArr = bEta === todayStrForSlack || bStatus === 'out_for_delivery' || (includeTomorrowForSlack && bEta === tomorrowStrForSlack);
       if (aArr !== bArr) return aArr ? -1 : 1;
@@ -756,9 +763,17 @@ export async function POST(request: NextRequest) {
         status === 'out_for_delivery' ||
         (includeTomorrowForSlack && estimatedDelivery === tomorrowStrForSlack);
       const shouldAttemptLiveFetch = (() => {
-        // For Slack daily summaries: focus live market fetch on items arriving today (and late-night: tomorrow too).
-        if (!arrivingTodayOrTomorrowForSlack) return false;
-        if (!onTheWay) return false;
+        // For OFD-only Slack notifications: prefer cached prices (ballpark is fine) and only live-fetch
+        // when an OFD item is missing a cached price.
+        if (isOutForDeliveryMode) {
+          if (String(status || '').toLowerCase().trim() !== 'out_for_delivery') return false;
+          if (cachedMarketPrice !== undefined) return false;
+          if (!onTheWay) return false;
+        } else {
+          // For Slack daily summaries: focus live market fetch on items arriving today (and late-night: tomorrow too).
+          if (!arrivingTodayOrTomorrowForSlack) return false;
+          if (!onTheWay) return false;
+        }
         if (!allowAnyLiveMarketFetch) return false;
         if (remainingLiveMarketFetchBudget <= 0) return false;
         remainingLiveMarketFetchBudget--;
@@ -766,6 +781,7 @@ export async function POST(request: NextRequest) {
       })();
       // If we have exact StockX productId+variantId, prefer forcing live price (but only when allowed).
       const forceLivePrice =
+        !isOutForDeliveryMode &&
         shouldAttemptLiveFetch &&
         typeof ids.productId === 'string' &&
         ids.productId.trim() !== '' &&
