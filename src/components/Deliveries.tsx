@@ -3857,10 +3857,6 @@ const DeliveriesNew: React.FC = () => {
                       <div>
                         <span className="font-semibold">Last sent:</span> {slackSchedule.lastSentLocalDate ? slackSchedule.lastSentLocalDate : '—'}
                       </div>
-                      <div>
-                        <span className="font-semibold">Cron status:</span>{' '}
-                        {cronStatus?.status ? `${cronStatus.status}${cronStatus.paused ? ' (paused)' : ''}` : 'unknown'}
-                      </div>
                     </div>
 
                     <div className="flex items-center justify-between gap-3 pt-2">
