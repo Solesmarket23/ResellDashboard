@@ -45,6 +45,16 @@ function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
+function timeLocalToMinutes(timeLocal: string): number | null {
+  const s = String(timeLocal || '').trim();
+  const m = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const hh = parseInt(m[1] || '', 10);
+  const mm = parseInt(m[2] || '', 10);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+  return hh * 60 + mm;
+}
+
 function normalizeStockXShoeSize(raw: unknown): string {
   const s = String(raw ?? '').trim();
   if (!s) return 'Unknown';
@@ -164,6 +174,12 @@ export async function GET(request: NextRequest) {
       const webhookUrl = String(s.webhookUrl || '').trim();
       const timeLocal = String(s.timeLocal || '09:30');
       const timezone = String(s.timezone || 'America/New_York');
+      const ofdAfterDailyMinutesRaw =
+        typeof s.ofdAfterDailyMinutes === 'number' ? s.ofdAfterDailyMinutes : parseInt(String(s.ofdAfterDailyMinutes || ''), 10);
+      const ofdAfterDailyMinutes =
+        Number.isFinite(ofdAfterDailyMinutesRaw) && ofdAfterDailyMinutesRaw >= 0 && ofdAfterDailyMinutesRaw <= 180
+          ? Math.floor(ofdAfterDailyMinutesRaw)
+          : 5;
 
       if (!webhookUrl) {
         skipped++;
@@ -171,6 +187,7 @@ export async function GET(request: NextRequest) {
       }
 
       let parts: { localDate: string; hh: string; min: string };
+      let acquiredOfd = false;
       try {
         parts = localParts(now, timezone);
       } catch {
@@ -179,33 +196,49 @@ export async function GET(request: NextRequest) {
       }
 
       const [schedH, schedM] = timeLocal.split(':');
-      const isDue = parts.hh > schedH || (parts.hh === schedH && parts.min >= schedM);
+      const nowMinutes = parseInt(parts.hh, 10) * 60 + parseInt(parts.min, 10);
+      const schedMinutes = timeLocalToMinutes(timeLocal) ?? (parseInt(schedH || '0', 10) * 60 + parseInt(schedM || '0', 10));
+      const dailyDueMinutes = schedMinutes;
+      const ofdDueMinutes = dailyDueMinutes + ofdAfterDailyMinutes;
+      const isDueDaily = nowMinutes >= dailyDueMinutes;
+      const isDueOfd = nowMinutes >= ofdDueMinutes;
 
       // Optional: minutely test mode (disabled unless explicitly enabled in env).
       // Useful to validate cron wiring without waiting until the scheduled time.
       const isMinutelyTest = mode === 'minutely' && minutelyEnabled && (!!minutelyUserId ? userId === minutelyUserId : true);
-      if (!isDue && !isMinutelyTest) {
+      if (!isMinutelyTest && !isDueDaily && !isDueOfd) {
         skipped++;
         continue;
       }
 
-      // Idempotency lock per user+localDate
+      // Idempotency locks per user+localDate (daily summary + OFD follow-up)
       const lockSuffix = isMinutelyTest ? `${parts.localDate}__minutely` : parts.localDate;
       const lockId = `${userId}__${lockSuffix}`;
-      const lockRef = db.collection('deliveriesSlackDailyLocks').doc(lockId);
-      const acquired = await db.runTransaction(async (tx) => {
-        const snap = await tx.get(lockRef);
-        if (snap.exists) return false;
-        tx.set(lockRef, {
-          userId,
-          localDate: parts.localDate,
-          timezone,
-          timeLocal,
-          createdAt: new Date().toISOString(),
-        });
-        return true;
-      });
-      if (!acquired) {
+      const dailyLockRef = db.collection('deliveriesSlackDailyLocks').doc(lockId);
+      const ofdLockRef = db.collection('deliveriesSlackOfdLocks').doc(lockId);
+
+      const shouldAttemptDaily = isMinutelyTest || isDueDaily;
+      const acquiredDaily = shouldAttemptDaily
+        ? await db.runTransaction(async (tx) => {
+            const snap = await tx.get(dailyLockRef);
+            if (snap.exists) return false;
+            tx.set(dailyLockRef, {
+              userId,
+              localDate: parts.localDate,
+              timezone,
+              timeLocal,
+              createdAt: new Date().toISOString(),
+            });
+            return true;
+          })
+        : false;
+
+      // If OFD is due, check if already sent today (cheap read); we'll only do heavy work if needed.
+      const shouldAttemptOfd = isMinutelyTest || isDueOfd;
+      const ofdAlreadySent = shouldAttemptOfd ? (await ofdLockRef.get().then((s) => s.exists).catch(() => false)) : true;
+      const needsOfdAttempt = shouldAttemptOfd && !ofdAlreadySent;
+
+      if (!acquiredDaily && !needsOfdAttempt) {
         skipped++;
         continue;
       }
@@ -459,26 +492,65 @@ export async function GET(request: NextRequest) {
           iconEmoji: ':package:',
           timezone
         });
-        await slack.sendDeliverySummary({
-          totalDeliveries: deliveries.length,
-          arrivingToday,
-          arrivingTomorrow,
-          arrivingThisWeek: 0,
-          inTransit: deliveries.filter((d) => ['in_transit', 'shipped', 'out_for_delivery'].includes(d.status)).length,
-          ...(projectedProfitToday !== null ? { projectedProfitToday } : {}),
-          ...(projectedProfitTomorrow !== null ? { projectedProfitTomorrow } : {}),
-          ...(projectedProfitOnTheWay !== null ? { projectedProfitOnTheWay } : {}),
-          ...(marketValueOnTheWay !== null ? { marketValueOnTheWay } : {}),
-          ...(purchaseCostOnTheWay !== null ? { purchaseCostOnTheWay } : {}),
-          ...(marketPriceNote ? { marketPriceNote } : {}),
-          deliveries
-        });
+        if (acquiredDaily || isMinutelyTest) {
+          await slack.sendDeliverySummary({
+            totalDeliveries: deliveries.length,
+            arrivingToday,
+            arrivingTomorrow,
+            arrivingThisWeek: 0,
+            inTransit: deliveries.filter((d) => ['in_transit', 'shipped', 'out_for_delivery'].includes(d.status)).length,
+            ...(projectedProfitToday !== null ? { projectedProfitToday } : {}),
+            ...(projectedProfitTomorrow !== null ? { projectedProfitTomorrow } : {}),
+            ...(projectedProfitOnTheWay !== null ? { projectedProfitOnTheWay } : {}),
+            ...(marketValueOnTheWay !== null ? { marketValueOnTheWay } : {}),
+            ...(purchaseCostOnTheWay !== null ? { purchaseCostOnTheWay } : {}),
+            ...(marketPriceNote ? { marketPriceNote } : {}),
+            deliveries
+          });
+          await db.collection('users').doc(userId).set({ deliveriesSlack: { lastSentLocalDate: parts.localDate } }, { merge: true });
+          sent++;
+        }
 
-        await db.collection('users').doc(userId).set({ deliveriesSlack: { lastSentLocalDate: parts.localDate } }, { merge: true });
-        sent++;
+        // OFD follow-up: send once per local day when due (>= dailyTime + N minutes).
+        // If no OFD items yet, retry for a while, then give up to avoid heavy work all day.
+        if (needsOfdAttempt) {
+          const onlyOfd = deliveries.filter((d) => String(d.status || '').toLowerCase().trim() === 'out_for_delivery');
+          const ofdCount = onlyOfd.length;
+          const giveUpAfterMinutes = 180; // 3 hours after OFD due time
+          const shouldGiveUpForDay = ofdCount === 0 && nowMinutes >= ofdDueMinutes + giveUpAfterMinutes && !isMinutelyTest;
+
+          if (ofdCount > 0 || shouldGiveUpForDay) {
+            acquiredOfd = await db.runTransaction(async (tx) => {
+              const snap = await tx.get(ofdLockRef);
+              if (snap.exists) return false;
+              tx.set(ofdLockRef, {
+                userId,
+                localDate: parts.localDate,
+                timezone,
+                timeLocal,
+                ofdAfterDailyMinutes,
+                createdAt: new Date().toISOString(),
+                ofdCount,
+                gaveUp: shouldGiveUpForDay,
+              });
+              return true;
+            });
+
+            if (acquiredOfd && ofdCount > 0) {
+              await slack.sendOutForDeliveryOnly({ deliveries: onlyOfd });
+              await db.collection('users').doc(userId).set({ deliveriesSlack: { ofdLastSentLocalDate: parts.localDate } }, { merge: true });
+              sent++;
+            } else if (acquiredOfd && shouldGiveUpForDay) {
+              skipped++;
+            }
+          } else {
+            skipped++;
+          }
+        }
       } catch (e: any) {
-        // Release lock on failure so we can retry next run
-        await lockRef.delete().catch(() => null);
+        // Release locks on failure so we can retry next run
+        await dailyLockRef.delete().catch(() => null);
+        if (acquiredOfd) await ofdLockRef.delete().catch(() => null);
         errors.push({ userId, error: e?.message || 'Unknown error' });
       }
     }
