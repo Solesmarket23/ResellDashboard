@@ -127,6 +127,22 @@ export class SlackNotificationService {
     return null;
   }
 
+  private formatUsd(value: unknown): string | null {
+    const n = this.toFiniteNumber(value);
+    if (n === null) return null;
+    try {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(n);
+    } catch {
+      const abs = Math.abs(n).toFixed(2);
+      return n < 0 ? `-$${abs}` : `$${abs}`;
+    }
+  }
+
   private formatMoneyLine(args: {
     purchasePrice?: unknown;
     marketPrice?: unknown;
@@ -142,11 +158,11 @@ export class SlackNotificationService {
         : null);
 
     const parts: string[] = [];
-    if (purchase !== null) parts.push(`Purchase: $${purchase.toFixed(2)}`);
-    if (market !== null) parts.push(`Market: $${market.toFixed(2)}`);
+    if (purchase !== null) parts.push(`Purchase: ${this.formatUsd(purchase)}`);
+    if (market !== null) parts.push(`Market: ${this.formatUsd(market)}`);
     if (profitComputed !== null) {
       const profitEmoji = profitComputed > 0 ? '💰' : '⚠️';
-      parts.push(`${profitEmoji} Profit: $${profitComputed.toFixed(2)}`);
+      parts.push(`${profitEmoji} Profit: ${this.formatUsd(profitComputed)}`);
     }
 
     return { text: parts.length ? parts.join(' | ') : null, profit: profitComputed };
@@ -173,12 +189,12 @@ export class SlackNotificationService {
       typeof summary.projectedProfitTomorrow === 'number' && Number.isFinite(summary.projectedProfitTomorrow)
         ? summary.projectedProfitTomorrow
         : null;
-    const profitText = profitToday !== null ? `$${profitToday.toFixed(2)}` : 'unknown';
+    const profitText = profitToday !== null ? (this.formatUsd(profitToday) || 'unknown') : 'unknown';
     const subject =
       summary.arrivingToday > 0
         ? `${summary.arrivingToday} item${summary.arrivingToday === 1 ? '' : 's'} arriving today for a ${profitText} projected profit`
         : (() => {
-            const pt = profitTomorrow !== null ? `$${profitTomorrow.toFixed(2)}` : 'unknown';
+            const pt = profitTomorrow !== null ? (this.formatUsd(profitTomorrow) || 'unknown') : 'unknown';
             return `${summary.arrivingTomorrow} item${summary.arrivingTomorrow === 1 ? '' : 's'} arriving tomorrow for a ${pt} projected profit`;
           })();
     const mention = this.mention ? `${this.mention} ` : '';
@@ -216,7 +232,7 @@ export class SlackNotificationService {
     const blocks = this.formatOutForDeliveryOnly(list);
     const mention = this.mention ? `${this.mention} ` : '';
     await this.sendMessage({
-      text: `${mention}${ofd.length} out-for-delivery item${ofd.length === 1 ? '' : 's'} — est. profit $${totalProfit.toFixed(2)}`,
+      text: `${mention}${ofd.length} out-for-delivery item${ofd.length === 1 ? '' : 's'} — est. profit ${this.formatUsd(totalProfit) || '$0.00'}`,
       blocks,
     });
   }
@@ -319,11 +335,11 @@ export class SlackNotificationService {
     });
 
     const moneyFields: any[] = [];
-    if (profitOnTheWay !== null) moneyFields.push({ type: 'mrkdwn', text: `*Projected Profit (On the way):*\n💰 $${profitOnTheWay.toFixed(2)}` });
-    if (marketOnTheWay !== null) moneyFields.push({ type: 'mrkdwn', text: `*Market Value (On the way):*\n📈 $${marketOnTheWay.toFixed(2)}` });
-    if (purchaseOnTheWay !== null) moneyFields.push({ type: 'mrkdwn', text: `*Purchase Cost (On the way):*\n🧾 $${purchaseOnTheWay.toFixed(2)}` });
-    if (profitTomorrow !== null) moneyFields.push({ type: 'mrkdwn', text: `*Projected Profit (Tomorrow):*\n💰 $${profitTomorrow.toFixed(2)}` });
-    if (profitToday !== null) moneyFields.push({ type: 'mrkdwn', text: `*Projected Profit (Today):*\n💰 $${profitToday.toFixed(2)}` });
+    if (profitOnTheWay !== null) moneyFields.push({ type: 'mrkdwn', text: `*Projected Profit (On the way):*\n💰 ${this.formatUsd(profitOnTheWay)}` });
+    if (marketOnTheWay !== null) moneyFields.push({ type: 'mrkdwn', text: `*Market Value (On the way):*\n📈 ${this.formatUsd(marketOnTheWay)}` });
+    if (purchaseOnTheWay !== null) moneyFields.push({ type: 'mrkdwn', text: `*Purchase Cost (On the way):*\n🧾 ${this.formatUsd(purchaseOnTheWay)}` });
+    if (profitTomorrow !== null) moneyFields.push({ type: 'mrkdwn', text: `*Projected Profit (Tomorrow):*\n💰 ${this.formatUsd(profitTomorrow)}` });
+    if (profitToday !== null) moneyFields.push({ type: 'mrkdwn', text: `*Projected Profit (Today):*\n💰 ${this.formatUsd(profitToday)}` });
     if (moneyFields.length) baseBlocks.push({ type: 'section', fields: moneyFields.slice(0, 10) });
 
     if (typeof summary.marketPriceNote === 'string' && summary.marketPriceNote.trim()) {
@@ -508,7 +524,10 @@ export class SlackNotificationService {
 
     blocks.push({
       type: 'section',
-      text: { type: 'mrkdwn', text: `*${only.length}* item${only.length === 1 ? '' : 's'} out for delivery\n*Total est. profit:* $${totalProfit.toFixed(2)}` },
+      text: {
+        type: 'mrkdwn',
+        text: `*${only.length}* item${only.length === 1 ? '' : 's'} out for delivery\n*Total est. profit:* ${this.formatUsd(totalProfit) || '$0.00'}`,
+      },
     });
 
     if (truncated) {
