@@ -3446,9 +3446,10 @@ export default function TestPurchaseLinkingPage() {
                 ];
 
                 const toneClass = (tone?: 'good' | 'bad' | 'neutral') => {
-                  if (tone === 'good') return isNeon ? 'text-emerald-100' : 'text-emerald-700';
-                  if (tone === 'bad') return isNeon ? 'text-red-100' : 'text-red-700';
-                  return isNeon ? 'text-gray-100' : 'text-gray-900';
+                  // Neon theme: use slightly darker / more saturated value colors for readability.
+                  if (tone === 'good') return isNeon ? 'text-emerald-300' : 'text-emerald-700';
+                  if (tone === 'bad') return isNeon ? 'text-rose-300' : 'text-red-700';
+                  return isNeon ? 'text-gray-200' : 'text-gray-900';
                 };
 
                 return (
