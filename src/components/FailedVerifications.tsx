@@ -589,12 +589,12 @@ const FailedVerifications = () => {
   // Show loading state while checking auth
   if (authLoading) {
     return (
-      <div className={`flex-1 p-8 ${
+      <div className={`min-h-full p-8 ${
         isNeon 
           ? 'bg-slate-950' 
           : currentTheme.colors.background
       }`}>
-        <div className="flex items-center justify-center h-64">
+        <div className="flex items-center justify-center min-h-[60vh]">
           <div className={`text-lg ${isNeon ? 'text-slate-400' : 'text-gray-600'}`}>
             Loading...
           </div>
@@ -606,12 +606,12 @@ const FailedVerifications = () => {
   // Show auth prompt if no user
   if (!user && !authLoading) {
     return (
-      <div className={`flex-1 p-8 ${
+      <div className={`min-h-full p-8 ${
         isNeon 
           ? 'bg-slate-950' 
           : currentTheme.colors.background
       }`}>
-        <div className="flex items-center justify-center h-64">
+        <div className="flex items-center justify-center min-h-[60vh]">
           <div className="text-center">
             <AlertTriangle className={`w-12 h-12 mx-auto mb-4 ${
               isNeon ? 'text-orange-400' : 'text-orange-500'
@@ -650,7 +650,7 @@ const FailedVerifications = () => {
   }
 
   return (
-    <div className={`flex-1 p-8 ${
+    <div className={`min-h-full p-8 ${
       isNeon 
         ? 'bg-slate-950' 
         : currentTheme.colors.background
