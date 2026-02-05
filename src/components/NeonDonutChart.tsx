@@ -46,6 +46,7 @@ export default function NeonDonutChart({
   // Multiple charts can exist on the page; make SVG ids unique to avoid filter collisions.
   const rid = useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const glowFilterId = `neonGlow-${rid}`;
+  const ringMaskId = `ringMask-${rid}`;
 
   const prepared = useMemo(() => {
     const clean = (Array.isArray(data) ? data : [])
@@ -70,7 +71,7 @@ export default function NeonDonutChart({
   const fmt = valueFormatter || ((v: number) => v.toFixed(0));
 
   // Add a small angular gap so rounded caps don't visually "bleed" into neighbors.
-  const gapDeg = prepared.rows.length > 1 ? 1.6 : 0;
+  const gapDeg = prepared.rows.length > 1 ? Math.min(2.2, Math.max(1.2, thickness * 0.08)) : 0;
   let cursor = 0;
   const arcs = prepared.rows
     .map((d, idx) => {
@@ -99,7 +100,7 @@ export default function NeonDonutChart({
 
       <div className="flex gap-3 items-center">
         <div className="relative" style={{ width: size, height: size }}>
-          <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+          <svg className="relative z-0" width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
             <defs>
               <filter id={glowFilterId} x="-50%" y="-50%" width="200%" height="200%">
                 <feGaussianBlur stdDeviation="3" result="coloredBlur" />
@@ -108,6 +109,14 @@ export default function NeonDonutChart({
                   <feMergeNode in="SourceGraphic" />
                 </feMerge>
               </filter>
+              {/* Clip/mask the glow to the ring so it doesn't spill into the center and obscure labels. */}
+              <mask id={ringMaskId}>
+                <rect x="0" y="0" width={size} height={size} fill="black" />
+                {/* Reveal outer circle */}
+                <circle cx={cx} cy={cy} r={r + thickness / 2 + 6} fill="white" />
+                {/* Punch out inner hole */}
+                <circle cx={cx} cy={cy} r={Math.max(0, r - thickness / 2 - 6)} fill="black" />
+              </mask>
             </defs>
             {/* Base ring */}
             <circle
@@ -118,12 +127,15 @@ export default function NeonDonutChart({
               stroke={isNeon ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}
               strokeWidth={thickness}
             />
-            {arcs.map((a) => {
-              // If there's only one segment, draw a full ring to avoid arc edge artifacts.
-              const isFullCircle = prepared.rows.length === 1 || a.pct >= 0.999;
-              const d = isFullCircle ? null : describeArc(cx, cy, r, a.start, a.end);
-              return (
-                isFullCircle ? (
+            <g mask={`url(#${ringMaskId})`}>
+              {arcs.map((a) => {
+                // If there's only one segment, draw a full ring to avoid arc edge artifacts.
+                const isFullCircle = prepared.rows.length === 1 || a.pct >= 0.999;
+                const angle = Math.max(0, a.end - a.start);
+                // Tiny segments + rounded caps can look like glitches; use butt caps for very small angles.
+                const cap: 'round' | 'butt' = isFullCircle ? 'round' : angle < 10 ? 'butt' : 'round';
+                const d = isFullCircle ? null : describeArc(cx, cy, r, a.start, a.end);
+                return isFullCircle ? (
                   <circle
                     key={`${a.label}-${a.idx}`}
                     cx={cx}
@@ -132,7 +144,7 @@ export default function NeonDonutChart({
                     fill="none"
                     stroke={a.color}
                     strokeWidth={thickness}
-                    strokeLinecap="round"
+                    strokeLinecap={cap}
                     filter={isNeon ? `url(#${glowFilterId})` : undefined}
                     opacity={0.95}
                   />
@@ -143,16 +155,16 @@ export default function NeonDonutChart({
                     fill="none"
                     stroke={a.color}
                     strokeWidth={thickness}
-                    strokeLinecap="round"
+                    strokeLinecap={cap}
                     filter={isNeon ? `url(#${glowFilterId})` : undefined}
                     opacity={0.95}
                   />
-                )
-              );
-            })}
+                );
+              })}
+            </g>
           </svg>
           {/* Center label */}
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center text-center pointer-events-none">
             <div className={`text-xs ${isNeon ? 'text-gray-300' : 'text-gray-600'}`}>Total</div>
             <div className="text-lg font-bold">{fmt(prepared.total)}</div>
           </div>
