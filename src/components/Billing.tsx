@@ -18,8 +18,8 @@ import {
 
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
-
-type BillingInterval = 'monthly' | 'annually';
+import { getPlanById } from '../lib/billing/plans';
+import { readMockBillingState, writeMockBillingState, type BillingInterval } from '../lib/billing/mockBillingState';
 type PaymentStatus = 'paid' | 'failed' | 'refunded' | 'pending';
 
 type Payment = {
@@ -106,22 +106,21 @@ export default function Billing() {
   const router = useRouter();
 
   const isNeon = currentTheme.name === 'Neon';
-  const [interval, setInterval] = useState<BillingInterval>('monthly');
+  const [billingState, setBillingState] = useState(() => readMockBillingState());
+  const interval = billingState.interval;
+  const selectedPlan = useMemo(() => getPlanById(billingState.planId), [billingState.planId]);
 
   const subscription = useMemo(() => {
-    const plan =
-      interval === 'monthly'
-        ? { name: 'Professional', price: 40, interval: 'monthly' as const }
-        : { name: 'Professional', price: 400, interval: 'annually' as const };
+    const price = interval === 'monthly' ? selectedPlan.monthlyPrice : selectedPlan.annualPrice;
 
     const now = new Date();
     const next = new Date(now);
     next.setDate(now.getDate() + (interval === 'monthly' ? 18 : 240));
 
     return {
-      planName: plan.name,
-      price: plan.price,
-      interval: plan.interval,
+      planName: selectedPlan.name,
+      price,
+      interval,
       status: 'active' as const,
       nextChargeDate: next.toISOString(),
       trialEndsAt: null as string | null,
@@ -139,7 +138,7 @@ export default function Billing() {
     // newest -> oldest
     const base: Omit<Payment, 'createdAt' | 'id' | 'invoiceNumber'> = {
       description: `${subscription.planName} (${subscription.interval})`,
-      amount: subscription.interval === 'monthly' ? 40 : 400,
+      amount: subscription.price,
       status: 'paid',
       planName: subscription.planName,
       interval: subscription.interval,
@@ -168,7 +167,7 @@ export default function Billing() {
       mk(136, 5, 'failed'),
       mk(167, 6, 'paid'),
     ];
-  }, [subscription.interval, subscription.paymentMethod.brand, subscription.paymentMethod.last4, subscription.planName]);
+  }, [subscription.interval, subscription.paymentMethod.brand, subscription.paymentMethod.last4, subscription.planName, subscription.price]);
 
   const visiblePayments = useMemo(() => {
     // Keep “realistic” history: if annually, show annual-like descriptors (still mock)
@@ -176,17 +175,23 @@ export default function Billing() {
       return payments.map((p) => ({
         ...p,
         description: `${subscription.planName} (annual)`,
-        amount: 400,
+        amount: subscription.price,
         interval: 'annually' as const,
       }));
     }
     return payments.map((p) => ({
       ...p,
       description: `${subscription.planName} (monthly)`,
-      amount: 40,
+      amount: subscription.price,
       interval: 'monthly' as const,
     }));
-  }, [interval, payments, subscription.planName]);
+  }, [interval, payments, subscription.planName, subscription.price]);
+
+  const setInterval = (next: BillingInterval) => {
+    const nextState = { ...billingState, interval: next };
+    setBillingState(nextState);
+    writeMockBillingState(nextState);
+  };
 
   const downloadReceipt = (payment: Payment) => {
     const text = buildReceiptText({
@@ -269,14 +274,14 @@ export default function Billing() {
             </div>
 
             <button
-              onClick={() => router.push('/dashboard?section=plans')}
+              onClick={() => router.push('/dashboard?section=plans&from=billing')}
               className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
                 isNeon
                   ? 'bg-white/5 border-cyan-500/20 text-white hover:bg-white/10'
                   : 'bg-white border-gray-200 text-gray-900 hover:bg-gray-50'
               }`}
             >
-              View plans
+              Change plan
               <ArrowUpRight className="w-4 h-4" />
             </button>
           </div>

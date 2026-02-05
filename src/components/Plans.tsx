@@ -1,94 +1,46 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Check, X, Zap, TrendingUp, Crown, Star, ArrowRight, Gift, Shield, Clock, Sparkles, Target, Rocket, Users, Award, Palette, CheckCircle } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Check, X, Star, ArrowRight, Shield, Clock, Sparkles, CheckCircle, ArrowLeft } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
+import { PLANS, type PlanId } from '../lib/billing/plans';
+import { readMockBillingState, writeMockBillingState, type BillingInterval } from '../lib/billing/mockBillingState';
 
 const Plans = () => {
   const { currentTheme } = useTheme();
-  const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'annually'>('monthly');
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const [billingPeriod, setBillingPeriod] = useState<BillingInterval>(() => readMockBillingState().interval);
+  const [currentPlanId, setCurrentPlanId] = useState<PlanId>(() => readMockBillingState().planId);
   
   // Dynamic theme detection for consistent neon styling
   const isNeon = currentTheme.name === 'Neon';
 
-  const plans = [
-    {
-      id: 'starter',
-      name: 'Starter',
-      icon: Zap,
-      description: 'Perfect for beginners starting their resell journey',
-      monthlyPrice: 15,
-      annualPrice: 150,
-      features: [
-        'Gmail integration',
-        'Up to 100 purchases/month',
-        'Basic profit tracking',
-        'Email support',
-        'Mobile app access',
-        'Basic analytics dashboard'
-      ],
-      notIncluded: [
-        'Advanced analytics',
-        'Auto profit calculations',
-        'Priority support',
-        'Custom alerts'
-      ],
-      color: 'bg-blue-500',
-      popular: false,
-      trial: true
-    },
-    {
-      id: 'professional',
-      name: 'Professional',
-      icon: TrendingUp,
-      description: 'Most popular choice for serious resellers',
-      monthlyPrice: 40,
-      annualPrice: 400,
-      features: [
-        'Everything in Starter',
-        'Up to 1,000 purchases/month',
-        'Advanced profit tracking',
-        'Auto profit calculations',
-        'Priority email support',
-        'Advanced analytics & insights',
-        'Custom alerts & notifications',
-        'Export data capabilities',
-        'Mobile & desktop apps'
-      ],
-      notIncluded: [
-        'Phone support',
-        'Custom integrations',
-        'Dedicated account manager'
-      ],
-      color: 'bg-purple-500',
-      popular: true,
-      trial: true
-    },
-    {
-      id: 'enterprise',
-      name: 'Enterprise',
-      icon: Crown,
-      description: 'For high-volume resellers and teams',
-      monthlyPrice: 82,
-      annualPrice: 820,
-      features: [
-        'Everything in Professional',
-        'Unlimited purchases',
-        'Team collaboration tools',
-        'Phone & priority support',
-        'Custom integrations',
-        'Dedicated account manager',
-        'Advanced reporting suite',
-        'API access',
-        'White-label options',
-        'Custom onboarding'
-      ],
-      notIncluded: [],
-      color: 'bg-yellow-500',
-      popular: false,
-      trial: true
+  const fromBilling = useMemo(() => searchParams.get('from') === 'billing', [searchParams]);
+
+  // Keep local state in sync with persisted mock state (for refreshes / multi-tab).
+  useEffect(() => {
+    const state = readMockBillingState();
+    setBillingPeriod(state.interval);
+    setCurrentPlanId(state.planId);
+  }, []);
+
+  useEffect(() => {
+    // Persist interval changes even if user doesn't switch plan.
+    writeMockBillingState({ planId: currentPlanId, interval: billingPeriod });
+  }, [billingPeriod, currentPlanId]);
+
+  const handleSelectPlan = (planId: PlanId) => {
+    setCurrentPlanId(planId);
+    writeMockBillingState({ planId, interval: billingPeriod });
+    if (fromBilling) {
+      router.push('/dashboard?section=billing');
+    } else {
+      alert(`Mock: switched to ${PLANS.find((p) => p.id === planId)?.name ?? planId}`);
     }
-  ];
+  };
 
   return (
     <div className={`relative overflow-hidden min-h-screen py-8 sm:py-12 px-4 flex flex-col ${currentTheme.colors.background}`}>
@@ -106,6 +58,21 @@ const Plans = () => {
         <div className="relative z-10 max-w-7xl mx-auto flex-1 flex flex-col">
           {/* Header Section */}
           <div className="text-center mb-3 sm:mb-4">
+            {fromBilling && (
+              <div className="flex justify-center mb-3">
+                <button
+                  onClick={() => router.push('/dashboard?section=billing')}
+                  className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                    isNeon
+                      ? 'bg-white/5 border-cyan-500/20 text-white hover:bg-white/10'
+                      : 'bg-white border-gray-200 text-gray-900 hover:bg-gray-50'
+                  }`}
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Back to Billing
+                </button>
+              </div>
+            )}
             {isNeon && (
               <div className="inline-flex items-center px-3 py-1 bg-gradient-to-r from-cyan-600/20 to-emerald-600/20 rounded-full border border-cyan-500/30 mb-2 backdrop-blur-xl">
                 <Sparkles className="w-3 h-3 text-cyan-400 mr-1" />
@@ -203,7 +170,7 @@ const Plans = () => {
           {/* Plans Grid */}
           <div className="relative flex-1 flex items-center py-8 sm:py-12">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 w-full">
-              {plans.map((plan, index) => (
+              {PLANS.map((plan) => (
                 <div
                   key={plan.id}
                   className={`relative group transition-all duration-300 ${
@@ -320,27 +287,37 @@ const Plans = () => {
                     </ul>
 
                     {/* CTA Button */}
-                    <button className={`w-full py-2 sm:py-2.5 px-3 rounded-lg font-semibold text-xs transition-all duration-300 ${
-                      isNeon 
-                        ? `transform hover:scale-105 ${
-                            plan.popular
-                              ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 text-white shadow-xl shadow-cyan-500/25 hover:shadow-2xl hover:shadow-cyan-500/40'
-                              : 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-xl shadow-emerald-500/25 hover:shadow-2xl hover:shadow-emerald-500/40'
-                          }` 
-                        : `${plan.popular
-                            ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:from-purple-600 hover:to-pink-600 shadow-lg hover:shadow-xl transform hover:scale-105'
-                            : 'bg-gray-900 text-white hover:bg-gray-800 shadow-md hover:shadow-lg'
-                          }`
-                    }`}>
-                      {isNeon ? (
-                        <>
-                          Start 14-Day Free Trial
-                          <ArrowRight className="w-3 h-3 inline ml-1" />
-                        </>
-                      ) : (
-                        'Start Free Trial'
-                      )}
-                    </button>
+                    {plan.id === currentPlanId ? (
+                      <button
+                        disabled
+                        className={`w-full py-2 sm:py-2.5 px-3 rounded-lg font-semibold text-xs border transition-all duration-300 cursor-not-allowed ${
+                          isNeon
+                            ? 'bg-white/5 text-slate-200 border-cyan-500/20'
+                            : 'bg-gray-50 text-gray-700 border-gray-200'
+                        }`}
+                      >
+                        Current Plan
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleSelectPlan(plan.id)}
+                        className={`w-full py-2 sm:py-2.5 px-3 rounded-lg font-semibold text-xs transition-all duration-300 ${
+                          isNeon
+                            ? `transform hover:scale-105 ${
+                                plan.popular
+                                  ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 text-white shadow-xl shadow-cyan-500/25 hover:shadow-2xl hover:shadow-cyan-500/40'
+                                  : 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-xl shadow-emerald-500/25 hover:shadow-2xl hover:shadow-emerald-500/40'
+                              }`
+                            : `${plan.popular
+                                ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:from-purple-600 hover:to-pink-600 shadow-lg hover:shadow-xl transform hover:scale-105'
+                                : 'bg-gray-900 text-white hover:bg-gray-800 shadow-md hover:shadow-lg'
+                              }`
+                        }`}
+                      >
+                        Switch to {plan.name}
+                        <ArrowRight className="w-3 h-3 inline ml-1" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
