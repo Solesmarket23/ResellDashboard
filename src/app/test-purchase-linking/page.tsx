@@ -607,6 +607,53 @@ export default function TestPurchaseLinkingPage() {
   const [fifoLoading, setFifoLoading] = useState(false);
   const [fifoSummary, setFifoSummary] = useState<any | null>(null);
   const [fifoRows, setFifoRows] = useState<any[]>([]);
+  const [fifoMockUi, setFifoMockUi] = useState(false);
+  const fifoMockRows = useMemo(() => {
+    if (!fifoMockUi) return [] as any[];
+
+    const now = Date.now();
+    const mk = (i: number, args: { brand: string; size: string; net: number; paid: number; heldDays: number }) => {
+      const saleIso = new Date(now - Math.max(0, args.heldDays) * 86400000).toISOString();
+      const purchaseIso = new Date(now - (Math.max(0, args.heldDays) + 12) * 86400000).toISOString();
+      return {
+        status: 'would_link',
+        saleBrand: args.brand,
+        saleProduct: `Mock ${args.brand} Item ${i}`,
+        saleUrlKey: `mock-${args.brand.toLowerCase().replace(/\s+/g, '-')}-${i}`,
+        saleStyleId: `MOCK-${String(i).padStart(4, '0')}`,
+        saleSize: args.size,
+        saleNetPayout: args.net,
+        purchaseCost: args.paid,
+        profit: args.net - args.paid,
+        saleCutoffIso: saleIso,
+        purchaseFifoIso: purchaseIso,
+      };
+    };
+
+    // Deterministic sample distribution (matches the kinds of charts shown in screenshots).
+    const rows: any[] = [];
+    let i = 1;
+    const pushMany = (n: number, cfg: Omit<Parameters<typeof mk>[1], 'heldDays'> & { heldDaysRange?: [number, number] }) => {
+      const [a, b] = cfg.heldDaysRange || [6, 22];
+      for (let k = 0; k < n; k++) {
+        const heldDays = a + ((k * 7) % Math.max(1, b - a + 1));
+        rows.push(mk(i++, { ...cfg, heldDays }));
+      }
+    };
+
+    // Sizes (count-heavy) + brands (profit-heavy).
+    pushMany(43, { brand: 'Fear of God', size: 'L', net: 135.2, paid: 98.7, heldDaysRange: [8, 18] });
+    pushMany(10, { brand: 'Nike', size: 'S', net: 122.4, paid: 89.9, heldDaysRange: [5, 16] });
+    pushMany(6, { brand: 'Denim Tears', size: 'XL', net: 168.6, paid: 120.1, heldDaysRange: [10, 26] });
+    pushMany(4, { brand: 'YZY', size: 'M', net: 99.8, paid: 74.2, heldDaysRange: [7, 20] });
+    pushMany(3, { brand: 'Adidas', size: 'XS', net: 110.0, paid: 82.0, heldDaysRange: [9, 24] });
+    pushMany(1, { brand: 'Travis Scott', size: '11', net: 320.0, paid: 260.0, heldDaysRange: [12, 30] });
+
+    // Add one negative outlier so red styling can be visually validated.
+    rows.push(mk(i++, { brand: 'Other', size: 'Other', net: 88.0, paid: 115.0, heldDays: 14 }));
+
+    return rows;
+  }, [fifoMockUi]);
   // Default OFF: until `actualDelivery` is reliably populated, strict delivery causes lots of false no_match.
   const [fifoStrictDelivery, setFifoStrictDelivery] = useState(false);
   const [fifoUnlinkedOnly, setFifoUnlinkedOnly] = useState(false);
@@ -718,8 +765,9 @@ export default function TestPurchaseLinkingPage() {
   // FIFO API now returns ONLY the selected window’s rows (today/month/custom),
   // so profit totals should be computed over all returned rows (no extra month/year filtering here).
   const fifoRowsForProfit = useMemo(() => {
-    return fifoRows.filter((r) => r?.status === 'would_link' || r?.status === 'already_linked');
-  }, [fifoRows]);
+    const source = fifoMockUi ? fifoMockRows : fifoRows;
+    return source.filter((r) => r?.status === 'would_link' || r?.status === 'already_linked');
+  }, [fifoMockRows, fifoMockUi, fifoRows]);
 
   const fifoProfitTotals = useMemo(() => {
     let count = 0;
@@ -2454,6 +2502,32 @@ export default function TestPurchaseLinkingPage() {
                   } disabled:opacity-60`}
                 >
                   {fifoLoading ? 'Running…' : 'Compute FIFO profit'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFifoMockUi((v) => !v);
+                    showNotice(
+                      !fifoMockUi
+                        ? '🧪 Mock UI enabled — cards/charts use sample data (no Firebase reads/writes).'
+                        : 'Mock UI disabled — cards/charts reflect computed results again.',
+                      'info',
+                      9000
+                    );
+                  }}
+                  disabled={fifoLoading}
+                  className={`px-3 py-2 rounded-md text-xs font-semibold ${
+                    isNeon
+                      ? fifoMockUi
+                        ? 'bg-cyan-500/25 hover:bg-cyan-500/30 text-cyan-100 border border-cyan-400/30'
+                        : 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
+                      : fifoMockUi
+                        ? 'bg-blue-600 text-white hover:bg-blue-700'
+                        : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
+                  } disabled:opacity-60`}
+                  title="Visual QA: populate the cards/charts with mock values. Does not touch Firebase."
+                >
+                  {fifoMockUi ? 'Mock UI: ON' : 'Mock UI'}
                 </button>
                 <button
                   onClick={compareFifoMatchModes}
