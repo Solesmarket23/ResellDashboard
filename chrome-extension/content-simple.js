@@ -8120,7 +8120,8 @@ try {
                 maxItems,
                 opts: {
                   onlySneakers: !!opts.onlySneakers,
-                  skipOneSize: !!opts.skipOneSize
+                  skipOneSize: !!opts.skipOneSize,
+                  excludeSponsored: !!opts.excludeSponsored
                 },
                 urlsCount: Array.isArray(urls) ? urls.length : 0,
                 sample: Array.isArray(urls) ? urls.slice(0, 3) : []
@@ -8450,13 +8451,6 @@ function collectListingProductUrls(max = 48, opts = {}) {
   const urls = [];
   const seen = new Set();
   const anchors = Array.from(document.querySelectorAll('a[href^="/"]'));
-  const isSearch = (() => {
-    try {
-      return String(location.pathname || '').toLowerCase().startsWith('/search');
-    } catch {
-      return false;
-    }
-  })();
 
   const looksLikeProductCardLink = (a) => {
     try {
@@ -8509,37 +8503,30 @@ function collectListingProductUrls(max = 48, opts = {}) {
     }
   };
 
-  // Search-page fallback: users reported every even "row" is sponsored on some search grids.
-  // If excludeSponsored is enabled and we can identify product-card containers, we skip every even card (2,4,6...)
-  // *only* when we don't see explicit "Sponsored" text anywhere.
-  try {
-    if (isSearch && opts.excludeSponsored) {
-      const cards = Array.from(
-        document.querySelectorAll('article,[role="listitem"],li,[data-testid*="product" i],[data-testid*="tile" i]')
-      ).slice(0, 400);
-      const cardAnchors = [];
-      let sponsoredTextSeen = false;
-      for (const c of cards) {
-        const t = safeText(c).toLowerCase();
-        if (t.includes('sponsored')) sponsoredTextSeen = true;
-        const as = Array.from(c.querySelectorAll('a[href^="/"]'));
-        const a = as.find((x) => {
-          try {
-            const u = new URL(x.getAttribute('href') || '', location.origin);
-            return isLikelyProductPathForListing(u.pathname);
-          } catch {
-            return false;
-          }
-        });
-        if (a) cardAnchors.push(a);
-        if (cardAnchors.length >= max * 3) break;
-      }
+  const normalizeUrl = (u) => {
+    try {
+      return `${u.origin}${u.pathname}`;
+    } catch {
+      return String(u || '');
+    }
+  };
 
-      if (!sponsoredTextSeen && cardAnchors.length >= 20) {
-        for (let i = 0; i < cardAnchors.length && urls.length < max; i++) {
-          // Skip even rows: 2,4,6... => i is 1,3,5... (0-based odd)
-          if (i % 2 === 1) continue;
-          const a = cardAnchors[i];
+  // Prefer scanning product-card containers in DOM order. This is stable and avoids skipping long-titled items.
+  try {
+    const cards = Array.from(
+      document.querySelectorAll('article,[role="listitem"],li,[data-testid*="product" i],[data-testid*="tile" i]')
+    ).slice(0, 800);
+
+    for (const c of cards) {
+      if (urls.length >= max) break;
+      try {
+        const as = Array.from(c.querySelectorAll('a[href^="/"]'));
+        if (!as.length) continue;
+
+        // Pick the best anchor within the card (prefer ones that wrap/contain the image).
+        let best = null;
+        let bestScore = -1;
+        for (const a of as) {
           const href = a.getAttribute('href') || '';
           let u = null;
           try {
@@ -8548,17 +8535,29 @@ function collectListingProductUrls(max = 48, opts = {}) {
             continue;
           }
           if (!isLikelyProductPathForListing(u.pathname)) continue;
-          if (String(u.searchParams.get('sponsored') || '').toLowerCase() === 'true') continue;
-          if (!looksLikeProductCardLink(a)) continue;
-          if (shouldSkipByCardText(a)) continue;
-          const normalized = `${u.origin}${u.pathname}`;
-          if (seen.has(normalized)) continue;
-          seen.add(normalized);
-          urls.push(normalized);
+          if (opts.excludeSponsored && String(u.searchParams.get('sponsored') || '').toLowerCase() === 'true') continue;
+          // Card-based heuristics: if the card has an image, this is likely a true product tile.
+          const hasImg = !!(a.querySelector?.('img,picture') || c.querySelector?.('img,picture'));
+          const txtLen = safeText(a).length;
+          const score = (hasImg ? 10 : 0) + (txtLen > 0 ? 1 : 0);
+          if (score > bestScore) {
+            bestScore = score;
+            best = { a, u };
+          }
         }
-        if (urls.length) return urls;
-      }
+        if (!best?.a || !best?.u) continue;
+        if (!looksLikeProductCardLink(best.a)) continue;
+        if (shouldSkipByCardText(best.a)) continue;
+
+        const normalized = normalizeUrl(best.u);
+        if (!normalized) continue;
+        if (seen.has(normalized)) continue;
+        seen.add(normalized);
+        urls.push(normalized);
+      } catch {}
     }
+
+    if (urls.length) return urls;
   } catch {}
 
   for (const a of anchors) {
@@ -8571,20 +8570,13 @@ function collectListingProductUrls(max = 48, opts = {}) {
     }
     if (!isLikelyProductPathForListing(u.pathname)) continue;
     if (opts.excludeSponsored && String(u.searchParams.get('sponsored') || '').toLowerCase() === 'true') continue;
-    if (!looksLikeProductCardLink(a)) continue;
+    // Only accept anchors that actually look like they belong to a product card.
+    const card = a.closest?.('article,li,[role="listitem"],[data-testid*="product" i],[data-testid*="tile" i]') || null;
+    if (!card && !looksLikeProductCardLink(a)) continue;
     if (shouldSkipByCardText(a)) continue;
-    // Ignore links that are clearly not product cards (e.g. header/footer)
-    const txt = safeText(a);
-    if (txt && txt.length > 80) continue;
     // Normalize sponsored / tracking / size params to a canonical product URL.
     // Listing scans will force Size=All, so keeping ?size=... is unnecessary and can cause flakiness.
-    const normalized = (() => {
-      try {
-        return `${u.origin}${u.pathname}`;
-      } catch {
-        return u.toString();
-      }
-    })();
+    const normalized = normalizeUrl(u);
     const key = normalized;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -9717,48 +9709,56 @@ function ensureListingBidWidget() {
 
             if (role === 'scan') {
               try {
-                try { startScanKeepalive('scan-this-page'); } catch {}
-                const maxItems = Math.max(1, Math.min(48, Number(state.maxItems || 48)));
-                const concurrency = Math.max(1, Math.min(5, Number(state.concurrency || 1)));
-                const settings = getScanSettingsCached();
-                const urls = collectListingProductUrls(maxItems, {
-                  onlySneakers: !!state.onlySneakers,
-                  skipOneSize: !!state.skipOneSize || !!settings.skipOneSize,
-                  excludeSponsored: !!settings.excludeSponsored,
-                  includeCategories: Array.isArray(settings.includeCategories) ? settings.includeCategories : []
-                });
-                if (!urls.length) {
-                  state.stage = 'No products detected';
-                  state.total = 0;
-                  state.current = 0;
-                  ensureListingBidWidget();
-                  return;
-                }
-                state.results = {};
-                state.stage = 'starting';
-                state.total = urls.length;
-                state.current = 0;
-                state.pendingStop = false;
-                ensureListingBidWidget();
-                runtimeSendMessageSafe({ action: 'startListingBidScan', urls, maxItems: urls.length, concurrency }, (resp) => {
-                  const ok = resp?.success;
-                  if (!ok) {
-                    state.stage = `error: ${resp?.error || 'failed to start'}`;
+                (async () => {
+                  try {
+                    try { startScanKeepalive('scan-this-page'); } catch {}
+                    const maxItems = Math.max(1, Math.min(48, Number(state.maxItems || 48)));
+                    const concurrency = Math.max(1, Math.min(5, Number(state.concurrency || 1)));
+                    const settings = await loadScanSettings();
+                    const effectiveOpts = {
+                      onlySneakers: !!state.onlySneakers,
+                      skipOneSize: !!state.skipOneSize || !!settings.skipOneSize,
+                      excludeSponsored: !!settings.excludeSponsored,
+                      includeCategories: Array.isArray(settings.includeCategories) ? settings.includeCategories : []
+                    };
+                    const urls = collectListingProductUrls(maxItems, effectiveOpts);
+                    if (!urls.length) {
+                      state.stage = `No products detected (excludeSponsored=${effectiveOpts.excludeSponsored ? 'on' : 'off'})`;
+                      state.total = 0;
+                      state.current = 0;
+                      ensureListingBidWidget();
+                      return;
+                    }
+                    state.results = {};
+                    state.stage = `starting (excludeSponsored=${effectiveOpts.excludeSponsored ? 'on' : 'off'})`;
+                    state.total = urls.length;
+                    state.current = 0;
+                    state.pendingStop = false;
                     ensureListingBidWidget();
-                    return;
-                  }
-                  state.scanId = resp.scanId;
-                  state.total = resp.total || urls.length;
-                  state.stage = 'queued';
-                  state.current = 0;
-                  if (state.pendingStop) {
-                    const sid = state.scanId;
-                    state.stage = 'stopping';
+                    runtimeSendMessageSafe({ action: 'startListingBidScan', urls, maxItems: urls.length, concurrency }, (resp) => {
+                      const ok = resp?.success;
+                      if (!ok) {
+                        state.stage = `error: ${resp?.error || 'failed to start'}`;
+                        ensureListingBidWidget();
+                        return;
+                      }
+                      state.scanId = resp.scanId;
+                      state.total = resp.total || urls.length;
+                      state.stage = 'queued';
+                      state.current = 0;
+                      if (state.pendingStop) {
+                        const sid = state.scanId;
+                        state.stage = 'stopping';
+                        ensureListingBidWidget();
+                        runtimeSendMessageSafe({ action: 'stopListingBidScan', scanId: sid }, () => {});
+                      }
+                      ensureListingBidWidget();
+                    });
+                  } catch (err) {
+                    state.stage = `error: ${err?.message || String(err)}`;
                     ensureListingBidWidget();
-                    runtimeSendMessageSafe({ action: 'stopListingBidScan', scanId: sid }, () => {});
                   }
-                  ensureListingBidWidget();
-                });
+                })();
               } catch (err) {
                 state.stage = `error: ${err?.message || String(err)}`;
                 ensureListingBidWidget();
@@ -9768,46 +9768,53 @@ function ensureListingBidWidget() {
 
             if (role === 'scan-pages') {
               try {
-                try { startScanKeepalive('scan-pages'); } catch {}
-                const maxPages = Math.max(1, Math.min(200, Number(state.maxPages || 1)));
-                const perPage = 48;
-                const settings = getScanSettingsCached();
-                const collectOpts = {
-                  onlySneakers: !!state.onlySneakers,
-                  skipOneSize: !!state.skipOneSize || !!settings.skipOneSize,
-                  excludeSponsored: !!settings.excludeSponsored,
-                  includeCategories: Array.isArray(settings.includeCategories) ? settings.includeCategories : []
-                };
+                (async () => {
+                  try {
+                    try { startScanKeepalive('scan-pages'); } catch {}
+                    const maxPages = Math.max(1, Math.min(200, Number(state.maxPages || 1)));
+                    const perPage = 48;
+                    const settings = await loadScanSettings();
+                    const collectOpts = {
+                      onlySneakers: !!state.onlySneakers,
+                      skipOneSize: !!state.skipOneSize || !!settings.skipOneSize,
+                      excludeSponsored: !!settings.excludeSponsored,
+                      includeCategories: Array.isArray(settings.includeCategories) ? settings.includeCategories : []
+                    };
 
-                state.results = {};
-                state.stage = `starting (pages x${maxPages})`;
-                state.total = maxPages * perPage;
-                state.current = 0;
-                state.pendingStop = false;
-                ensureListingBidWidget();
-
-                runtimeSendMessageSafe(
-                  { action: 'startListingBidScanPaginated', startUrl: location.href, maxPages, perPage, collectOpts, allowBackground: false },
-                  (resp) => {
-                    const ok = resp?.success;
-                    if (!ok) {
-                      state.stage = `error: ${resp?.error || 'failed to start'}`;
-                      ensureListingBidWidget();
-                      return;
-                    }
-                    state.scanId = resp.scanId;
-                    state.total = resp.total || maxPages * perPage;
-                    state.stage = 'queued';
+                    state.results = {};
+                    state.stage = `starting (pages x${maxPages}, excludeSponsored=${collectOpts.excludeSponsored ? 'on' : 'off'})`;
+                    state.total = maxPages * perPage;
                     state.current = 0;
-                    if (state.pendingStop) {
-                      const sid = state.scanId;
-                      state.stage = 'stopping';
-                      ensureListingBidWidget();
-                      runtimeSendMessageSafe({ action: 'stopListingBidScan', scanId: sid }, () => {});
-                    }
+                    state.pendingStop = false;
+                    ensureListingBidWidget();
+
+                    runtimeSendMessageSafe(
+                      { action: 'startListingBidScanPaginated', startUrl: location.href, maxPages, perPage, collectOpts, allowBackground: false },
+                      (resp) => {
+                        const ok = resp?.success;
+                        if (!ok) {
+                          state.stage = `error: ${resp?.error || 'failed to start'}`;
+                          ensureListingBidWidget();
+                          return;
+                        }
+                        state.scanId = resp.scanId;
+                        state.total = resp.total || maxPages * perPage;
+                        state.stage = 'queued';
+                        state.current = 0;
+                        if (state.pendingStop) {
+                          const sid = state.scanId;
+                          state.stage = 'stopping';
+                          ensureListingBidWidget();
+                          runtimeSendMessageSafe({ action: 'stopListingBidScan', scanId: sid }, () => {});
+                        }
+                        ensureListingBidWidget();
+                      }
+                    );
+                  } catch (err) {
+                    state.stage = `error: ${err?.message || String(err)}`;
                     ensureListingBidWidget();
                   }
-                );
+                })();
               } catch (err) {
                 state.stage = `error: ${err?.message || String(err)}`;
                 ensureListingBidWidget();
@@ -9817,55 +9824,62 @@ function ensureListingBidWidget() {
 
             if (role === 'scan-xpress') {
               try {
-                try { startScanKeepalive('scan-xpress'); } catch {}
-                const maxPages = Math.max(1, Math.min(200, Number(state.maxPages || 1)));
-                const perPage = 48;
-                const settings = getScanSettingsCached();
-                const collectOpts = {
-                  onlySneakers: !!state.onlySneakers,
-                  skipOneSize: !!state.skipOneSize || !!settings.skipOneSize,
-                  excludeSponsored: !!settings.excludeSponsored,
-                  includeCategories: Array.isArray(settings.includeCategories) ? settings.includeCategories : []
-                };
+                (async () => {
+                  try {
+                    try { startScanKeepalive('scan-xpress'); } catch {}
+                    const maxPages = Math.max(1, Math.min(200, Number(state.maxPages || 1)));
+                    const perPage = 48;
+                    const settings = await loadScanSettings();
+                    const collectOpts = {
+                      onlySneakers: !!state.onlySneakers,
+                      skipOneSize: !!state.skipOneSize || !!settings.skipOneSize,
+                      excludeSponsored: !!settings.excludeSponsored,
+                      includeCategories: Array.isArray(settings.includeCategories) ? settings.includeCategories : []
+                    };
 
-                state.results = {};
-                state.stage = `starting (xpress deals x${maxPages}p)`;
-                state.total = maxPages * perPage;
-                state.current = 0;
-                state.pendingStop = false;
-                ensureListingBidWidget();
-
-                runtimeSendMessageSafe(
-                  {
-                    action: 'startListingBidScanPaginated',
-                    startUrl: location.href,
-                    maxPages,
-                    perPage,
-                    collectOpts,
-                    allowBackground: false,
-                    scanMode: 'xpress',
-                    scanName: 'Xpress Deals'
-                  },
-                  (resp) => {
-                    const ok = resp?.success;
-                    if (!ok) {
-                      state.stage = `error: ${resp?.error || 'failed to start'}`;
-                      ensureListingBidWidget();
-                      return;
-                    }
-                    state.scanId = resp.scanId;
-                    state.total = resp.total || maxPages * perPage;
-                    state.stage = 'queued';
+                    state.results = {};
+                    state.stage = `starting (xpress deals x${maxPages}p, excludeSponsored=${collectOpts.excludeSponsored ? 'on' : 'off'})`;
+                    state.total = maxPages * perPage;
                     state.current = 0;
-                    if (state.pendingStop) {
-                      const sid = state.scanId;
-                      state.stage = 'stopping';
-                      ensureListingBidWidget();
-                      runtimeSendMessageSafe({ action: 'stopListingBidScan', scanId: sid }, () => {});
-                    }
+                    state.pendingStop = false;
+                    ensureListingBidWidget();
+
+                    runtimeSendMessageSafe(
+                      {
+                        action: 'startListingBidScanPaginated',
+                        startUrl: location.href,
+                        maxPages,
+                        perPage,
+                        collectOpts,
+                        allowBackground: false,
+                        scanMode: 'xpress',
+                        scanName: 'Xpress Deals'
+                      },
+                      (resp) => {
+                        const ok = resp?.success;
+                        if (!ok) {
+                          state.stage = `error: ${resp?.error || 'failed to start'}`;
+                          ensureListingBidWidget();
+                          return;
+                        }
+                        state.scanId = resp.scanId;
+                        state.total = resp.total || maxPages * perPage;
+                        state.stage = 'queued';
+                        state.current = 0;
+                        if (state.pendingStop) {
+                          const sid = state.scanId;
+                          state.stage = 'stopping';
+                          ensureListingBidWidget();
+                          runtimeSendMessageSafe({ action: 'stopListingBidScan', scanId: sid }, () => {});
+                        }
+                        ensureListingBidWidget();
+                      }
+                    );
+                  } catch (err) {
+                    state.stage = `error: ${err?.message || String(err)}`;
                     ensureListingBidWidget();
                   }
-                );
+                })();
               } catch (err) {
                 state.stage = `error: ${err?.message || String(err)}`;
                 ensureListingBidWidget();
@@ -10209,11 +10223,11 @@ function ensureListingBidWidget() {
     }
   });
 
-  widget.querySelector('[data-role="scan"]')?.addEventListener('click', () => {
+  widget.querySelector('[data-role="scan"]')?.addEventListener('click', async () => {
     try {
       const maxItems = Math.max(1, Math.min(48, Number(state.maxItems || 48)));
       const concurrency = Math.max(1, Math.min(5, Number(state.concurrency || 1)));
-      const settings = getScanSettingsCached();
+      const settings = await loadScanSettings();
       const urls = collectListingProductUrls(maxItems, {
         onlySneakers: !!state.onlySneakers,
         skipOneSize: !!state.skipOneSize || !!settings.skipOneSize,
@@ -10221,14 +10235,14 @@ function ensureListingBidWidget() {
         includeCategories: Array.isArray(settings.includeCategories) ? settings.includeCategories : []
       });
       if (!urls.length) {
-        state.stage = 'No products detected';
+        state.stage = `No products detected (excludeSponsored=${settings.excludeSponsored ? 'on' : 'off'})`;
         state.total = 0;
         state.current = 0;
         ensureListingBidWidget();
         return;
       }
       state.results = {};
-      state.stage = 'starting';
+      state.stage = `starting (excludeSponsored=${settings.excludeSponsored ? 'on' : 'off'})`;
       state.total = urls.length;
       state.current = 0;
       state.pendingStop = false;
@@ -10259,11 +10273,11 @@ function ensureListingBidWidget() {
     }
   });
 
-  widget.querySelector('[data-role="scan-pages"]')?.addEventListener('click', () => {
+  widget.querySelector('[data-role="scan-pages"]')?.addEventListener('click', async () => {
     try {
       const maxPages = Math.max(1, Math.min(200, Number(state.maxPages || 1)));
       const perPage = 48;
-      const settings = getScanSettingsCached();
+      const settings = await loadScanSettings();
       const collectOpts = {
         onlySneakers: !!state.onlySneakers,
         skipOneSize: !!state.skipOneSize || !!settings.skipOneSize,
@@ -10273,7 +10287,7 @@ function ensureListingBidWidget() {
 
       // Reset UI state
       state.results = {};
-      state.stage = `starting (pages x${maxPages})`;
+      state.stage = `starting (pages x${maxPages}, excludeSponsored=${collectOpts.excludeSponsored ? 'on' : 'off'})`;
       state.total = maxPages * perPage;
       state.current = 0;
       state.pendingStop = false;
