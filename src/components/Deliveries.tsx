@@ -2446,7 +2446,13 @@ const DeliveriesNew: React.FC = () => {
       {/* Filters */}
       <div className={`${currentTheme.colors.cardBackground} rounded-lg p-6 border ${currentTheme.colors.border} mb-6`}>
         {activeStatusFilterLabel ? (
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/10 backdrop-blur-sm px-3 py-2">
+          <div
+            className={`mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl px-4 py-2.5 backdrop-blur-sm ${
+              currentTheme.name === 'Neon'
+                ? 'border border-cyan-400/40 bg-cyan-500/10 shadow-[0_0_0_1px_rgba(34,211,238,0.15),0_12px_40px_rgba(34,211,238,0.12)]'
+                : 'border border-blue-200/70 bg-blue-50/70 dark:border-blue-400/25 dark:bg-blue-500/10'
+            }`}
+          >
             <div className={`text-sm ${currentTheme.colors.textPrimary}`}>
               <span className="font-semibold">Table filtered to:</span> {activeStatusFilterLabel}{' '}
               <span className={`${currentTheme.colors.textSecondary}`}>({sortedDeliveries.length})</span>
