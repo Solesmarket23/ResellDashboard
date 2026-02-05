@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Check, X, Star, ArrowRight, Shield, Clock, Sparkles, CheckCircle, ArrowLeft } from 'lucide-react';
+import { Check, X, Star, ArrowRight, Shield, Clock, Sparkles, CheckCircle, ArrowLeft, TrendingUp } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { PLANS, type PlanId } from '../lib/billing/plans';
 import { readMockBillingState, writeMockBillingState, type BillingInterval } from '../lib/billing/mockBillingState';
