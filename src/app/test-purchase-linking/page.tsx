@@ -687,11 +687,8 @@ export default function TestPurchaseLinkingPage() {
   const [fifoShowNoMatchOnly, setFifoShowNoMatchOnly] = useState(false);
   const [fifoSortKey, setFifoSortKey] = useState<null | 'total_paid' | 'profit'>(null);
   const [fifoSortDir, setFifoSortDir] = useState<'asc' | 'desc'>('asc');
-  const [fifoProfitCellMode, setFifoProfitCellMode] = useState<'pill' | 'minimal' | 'heatmap' | 'bar'>(() => {
-    if (typeof window === 'undefined') return 'pill';
-    const v = (localStorage.getItem('fifoProfitCellMode') || '').trim();
-    return v === 'minimal' || v === 'heatmap' || v === 'bar' || v === 'pill' ? v : 'pill';
-  });
+  // Lock the FIFO profit cell visual style (no toggle).
+  const fifoProfitCellMode: 'heatmap' = 'heatmap';
   const [fifoSelectedSaleIds, setFifoSelectedSaleIds] = useState<Record<string, boolean>>({});
   const [manualCogsOpen, setManualCogsOpen] = useState(false);
   const [manualCogsOrderNumber, setManualCogsOrderNumber] = useState('');
@@ -1153,11 +1150,7 @@ export default function TestPurchaseLinkingPage() {
     return sortedFifoRows.slice(fifoPagination.start, fifoPagination.end);
   }, [fifoPagination.end, fifoPagination.start, fifoRowsPerPage, sortedFifoRows]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('fifoProfitCellMode', fifoProfitCellMode);
-    } catch {}
-  }, [fifoProfitCellMode]);
+  // (intentionally no persistence; style is fixed)
 
   const fifoProfitAbsMaxVisible = useMemo(() => {
     let max = 0;
@@ -3351,46 +3344,7 @@ export default function TestPurchaseLinkingPage() {
                   <option value="all">All</option>
                 </select>
               </div>
-              <div className="flex items-center gap-2">
-                <span className={`text-xs font-semibold ${isNeon ? 'text-gray-300' : 'text-gray-700'}`}>Profit style</span>
-                <div className={`inline-flex rounded-md border overflow-hidden ${isNeon ? 'border-white/10' : 'border-gray-200'}`}>
-                  {[
-                    { key: 'pill', label: 'Pill' },
-                    { key: 'minimal', label: 'Minimal' },
-                    { key: 'heatmap', label: 'Heatmap' },
-                    { key: 'bar', label: 'Bar' },
-                  ].map((o) => {
-                    const active = fifoProfitCellMode === (o.key as any);
-                    return (
-                      <button
-                        key={o.key}
-                        type="button"
-                        onClick={() => setFifoProfitCellMode(o.key as any)}
-                        className={`h-9 px-3 text-xs font-semibold ${
-                          active
-                            ? isNeon
-                              ? 'bg-cyan-500 text-black'
-                              : 'bg-blue-600 text-white'
-                            : isNeon
-                              ? 'bg-white/5 hover:bg-white/10 text-white'
-                              : 'bg-white hover:bg-gray-50 text-gray-900'
-                        }`}
-                        title={
-                          o.key === 'pill'
-                            ? 'Current design'
-                            : o.key === 'minimal'
-                              ? 'Compact colored text'
-                              : o.key === 'heatmap'
-                                ? 'Background intensity shows magnitude'
-                                : 'Centered bar shows +/- magnitude'
-                        }
-                      >
-                        {o.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              {/* Profit style toggle removed; style is fixed (heatmap). */}
               {fifoRowsPerPage !== 'all' && fifoPagination.pages > 1 && (
                 <div className="flex items-center gap-2">
                   <button
