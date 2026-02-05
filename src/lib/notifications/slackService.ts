@@ -248,7 +248,7 @@ export class SlackNotificationService {
     const blocks = this.formatOutForDeliveryOnly(list);
     const mention = this.mention ? `${this.mention} ` : '';
     await this.sendMessage({
-      text: `${mention}${ofd.length} item${ofd.length === 1 ? '' : 's'} out for delivery`,
+      text: `${mention}${ofd.length} item${ofd.length === 1 ? '' : 's'} out for delivery\nTotal est. profit: ${this.formatUsd(totalProfit) || '$0.00'}`,
       blocks,
     });
   }
