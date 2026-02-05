@@ -3399,21 +3399,36 @@ export default function TestPurchaseLinkingPage() {
                     label: 'Avg ROI',
                     value: pct(fifoMetrics.avgRoi),
                     title: 'Average ROI across matched rows, where ROI = Profit ÷ Total Paid (per-row then averaged).',
-                    tone: typeof fifoMetrics.avgRoi === 'number' && fifoMetrics.avgRoi < 0 ? 'bad' : 'neutral',
+                    tone:
+                      fifoMetrics.avgRoi === null
+                        ? 'neutral'
+                        : fifoMetrics.avgRoi < 0
+                          ? 'bad'
+                          : 'good',
                   },
                   {
                     k: 'roiTotals',
                     label: 'ROI (Totals)',
                     value: pct(fifoMetrics.overallRoi),
                     title: 'ROI using totals (more stable): Total Profit ÷ Total Paid, across matched rows.',
-                    tone: typeof fifoMetrics.overallRoi === 'number' && fifoMetrics.overallRoi < 0 ? 'bad' : 'neutral',
+                    tone:
+                      fifoMetrics.overallRoi === null
+                        ? 'neutral'
+                        : fifoMetrics.overallRoi < 0
+                          ? 'bad'
+                          : 'good',
                   },
                   {
                     k: 'avgMargin',
                     label: 'Avg Margin',
                     value: pct(fifoMetrics.avgMargin),
                     title: 'Average margin across matched rows, where Margin = Profit ÷ Net Payout (per-row then averaged).',
-                    tone: typeof fifoMetrics.avgMargin === 'number' && fifoMetrics.avgMargin < 0 ? 'bad' : 'neutral',
+                    tone:
+                      fifoMetrics.avgMargin === null
+                        ? 'neutral'
+                        : fifoMetrics.avgMargin < 0
+                          ? 'bad'
+                          : 'good',
                   },
                   {
                     k: 'avgNet',
@@ -3449,7 +3464,7 @@ export default function TestPurchaseLinkingPage() {
                   // Neon theme: use slightly darker / more saturated value colors for readability.
                   if (tone === 'good') return isNeon ? 'text-emerald-300' : 'text-emerald-700';
                   if (tone === 'bad') return isNeon ? 'text-rose-300' : 'text-red-700';
-                  return isNeon ? 'text-gray-200' : 'text-gray-900';
+                  return isNeon ? 'text-gray-300' : 'text-gray-900';
                 };
 
                 return (
