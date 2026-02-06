@@ -209,6 +209,8 @@ export default function StockXRepricing() {
   const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
   const [bulkActionMessage, setBulkActionMessage] = useState<string | null>(null);
   const [showBulkPricingModal, setShowBulkPricingModal] = useState(false);
+  const [bulkManualPrice, setBulkManualPrice] = useState<string>('');
+  const [bulkManualApplying, setBulkManualApplying] = useState(false);
   const [previewResults, setPreviewResults] = useState<RepricingResult[]>([]);
   const [isPreviewMinimized, setIsPreviewMinimized] = useState(false);
   const [showPreviewResults, setShowPreviewResults] = useState(false);
@@ -2834,6 +2836,115 @@ export default function StockXRepricing() {
     }
   };
 
+  const applyManualPricingBulk = async () => {
+    const selectedListings = listings.filter(listing => listing.selected);
+    if (selectedListings.length === 0) {
+      alert('Please select at least one listing to apply pricing rule');
+      return;
+    }
+
+    const raw = bulkManualPrice.trim();
+    const manualPriceToApply = Math.round(Number.parseFloat(raw));
+    if (!raw || !Number.isFinite(manualPriceToApply) || manualPriceToApply <= 0) {
+      showToast('Enter a valid manual price first', 'error');
+      return;
+    }
+
+    // Compute unique leader IDs (repricing runs on leaders; followers are synced)
+    const leaderIds = new Set<string>();
+    for (const l of selectedListings) {
+      const group = l.inventoryGroupId ? inventoryGroups.get(l.inventoryGroupId) : null;
+      const isFollower = !!group && group.listings.length > 1 && l.isGroupLeader === false;
+      const leaderId = isFollower ? (group!.leaderId || l.groupLeaderId || l.listingId) : l.listingId;
+      leaderIds.add(leaderId);
+    }
+    const ids = Array.from(leaderIds.values());
+
+    // Validate bounds for manual (Min required; Max optional)
+    const leaderListings = ids
+      .map((id) => listings.find((l) => l.listingId === id))
+      .filter(Boolean) as any[];
+    const missingMinCount = leaderListings.filter((l) => !(l?.minPrice > 0)).length;
+    if (missingMinCount > 0) {
+      showToast(`Manual requires Min price (${missingMinCount} listing(s) missing Min)`, 'error');
+      return;
+    }
+
+    const outOfRangeCount = leaderListings.filter((l) => {
+      const minOk = typeof l.minPrice === 'number' ? manualPriceToApply >= l.minPrice : true;
+      const maxOk =
+        typeof l.maxPrice === 'number' && l.maxPrice > 0 ? manualPriceToApply <= l.maxPrice : true;
+      return !(minOk && maxOk);
+    }).length;
+    if (outOfRangeCount > 0) {
+      showToast(`Manual price must be within Min/Max (${outOfRangeCount} listing(s) out of range)`, 'error');
+      return;
+    }
+
+    setBulkManualApplying(true);
+    try {
+      // Update UI immediately for preview
+      const newStrategy: IndividualPricingStrategy = { type: 'manual', manualPrice: manualPriceToApply };
+      setListings(prev => prev.map(listing => {
+        if (!listing.selected) return listing;
+        return { ...listing, pricingStrategy: newStrategy as any };
+      }));
+
+      // Persist manual strategy (do NOT run the repricer route)
+      const saveOpts = { suppressToast: true, suppressBanner: true, suppressRowState: true, suppressImmediateReprice: true };
+      const results = await Promise.all(ids.map((leaderId) => savePricingRuleChange(leaderId, newStrategy as any, saveOpts as any)));
+      const okCount = results.filter(Boolean).length;
+      const failCount = results.length - okCount;
+
+      if (okCount === 0) {
+        showToast(`Manual • 0/${ids.length} groups saved`, 'error');
+        return;
+      }
+
+      // Apply to StockX now (bulk PATCH)
+      const listingIdsToApply: string[] = [];
+      for (const leaderId of ids) {
+        const leader = listings.find((l) => l.listingId === leaderId);
+        if (!leader) continue;
+        const group = leader.inventoryGroupId ? inventoryGroups.get(leader.inventoryGroupId) : null;
+        if (group && group.listings.length > 1 && leader.isGroupLeader) {
+          for (const gl of group.listings) listingIdsToApply.push(gl.listingId);
+        } else {
+          listingIdsToApply.push(leaderId);
+        }
+      }
+      const uniqueListingIds = Array.from(new Set(listingIdsToApply));
+
+      const resp = await fetch('/api/stockx/listings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update_price',
+          listingIds: uniqueListingIds,
+          newPrice: manualPriceToApply
+        })
+      });
+
+      const json = await resp.json().catch(() => null);
+      if (!resp.ok || json?.success !== true) {
+        showToast(`Manual saved, but apply failed: ${json?.error || 'Unknown error'}`, 'error');
+      } else if (failCount === 0) {
+        showToast(`Applied • Manual $${manualPriceToApply} • ${selectedListings.length} item${selectedListings.length > 1 ? 's' : ''}`, 'success');
+      } else {
+        showToast(`Applied • Manual $${manualPriceToApply} • ${okCount}/${ids.length} groups saved (${failCount} failed)`, 'error');
+      }
+
+      setShowBulkPricingModal(false);
+      setBulkManualPrice('');
+      await fetchListings(true);
+    } catch (e: any) {
+      console.error('Bulk manual apply failed:', e);
+      showToast('Bulk manual apply failed', 'error');
+    } finally {
+      setBulkManualApplying(false);
+    }
+  };
+
   const applyPricingRuleDirectly = async (rule: string, value: number) => {
     const selectedListings = listings.filter(listing => listing.selected);
     
@@ -4134,6 +4245,51 @@ export default function StockXRepricing() {
                   Temporarily resets to $999 to reveal the next ask, then undercuts by $1. Strongly recommended to set Min/Max bounds.
             </div>
           </button>
+
+          {/* Manual (bulk): save manual strategy + apply to StockX now */}
+          <div className={`w-full p-4 rounded-lg border-2 text-left ${
+            isNeon ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'
+          }`}>
+            <div className={`font-medium ${isNeon ? 'text-white' : 'text-gray-900'}`}>Manual (Bulk)</div>
+            <div className={`text-sm ${isNeon ? 'text-gray-400' : 'text-gray-600'}`}>
+              Set the same manual price for all selected items. Requires Min; Max optional. Saves settings and applies to StockX now.
+            </div>
+            <div className="mt-3 flex items-center gap-2">
+              <div className="relative flex-1">
+                <span className={`absolute left-3 top-1/2 -translate-y-1/2 text-sm ${
+                  isNeon ? 'text-cyan-400' : 'text-gray-600'
+                }`}>$</span>
+                <input
+                  type="number"
+                  min="1"
+                  value={bulkManualPrice}
+                  onChange={(e) => setBulkManualPrice(e.target.value)}
+                  placeholder="e.g. 242"
+                  className={`w-full pl-7 pr-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 ${
+                    isNeon
+                      ? 'bg-gray-800 border-gray-700 text-white focus:ring-cyan-500/40'
+                      : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500/40'
+                  }`}
+                />
+              </div>
+              <button
+                onClick={applyManualPricingBulk}
+                disabled={bulkManualApplying}
+                className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all whitespace-nowrap ${
+                  bulkManualApplying
+                    ? isNeon
+                      ? 'bg-gray-700 text-gray-300 cursor-not-allowed'
+                      : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                    : isNeon
+                      ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white'
+                      : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                }`}
+                title="Save Manual for selected leaders and apply price to StockX now"
+              >
+                {bulkManualApplying ? 'Applying…' : 'Apply Manual'}
+              </button>
+            </div>
+          </div>
             </div>
           </div>
         </div>
