@@ -85,8 +85,8 @@ export async function POST(request: NextRequest) {
     // Trigger purchase sync and save to Firebase using Admin SDK
     console.log(`🔄 Triggering sync for user ${userId} with historyId ${historyId}`);
     
-    // Import consolidation utility
-    const { consolidatePurchasesByOrderNumber } = await import('@/lib/utils/statusPriority');
+    // Import consolidation + priority utility
+    const { consolidatePurchasesByOrderNumber, getStatusPriority } = await import('@/lib/utils/statusPriority');
     
     // Check recent webhook activity to prevent duplicate processing
     const recentWebhookTime = userData.lastWebhookSync || 0;
@@ -100,23 +100,6 @@ export async function POST(request: NextRequest) {
         reason: 'Recent webhook already processed'
       });
     }
-    
-    // Check for duplicates before saving to avoid quota waste
-    // Get existing purchase order numbers for this user
-    const existingPurchasesSnapshot = await adminDb
-      .collection('purchases')
-      .where('userId', '==', userId)
-      .where('type', '==', 'gmail')
-      .select('orderNumber') // Only fetch orderNumber field for efficiency
-      .get();
-    
-    const existingOrderNumbers = new Set(
-      existingPurchasesSnapshot.docs
-        .map(doc => doc.data().orderNumber)
-        .filter(Boolean)
-    );
-    
-    console.log(`📊 Found ${existingOrderNumbers.size} existing purchase order numbers for user ${userId}`);
     
     // Fire and forget - fetch purchases and save to Firebase
     // Use limit=5 for webhooks (only very recent emails) to avoid reprocessing
@@ -136,39 +119,142 @@ export async function POST(request: NextRequest) {
           const consolidated = consolidatePurchasesByOrderNumber(purchases);
           console.log(`🔄 Consolidated ${purchases.length} → ${consolidated.length} unique purchases`);
           
-          // Filter out purchases that already exist
-          const newPurchases = consolidated.filter(p => !existingOrderNumbers.has(p.orderNumber));
-          console.log(`🆕 ${newPurchases.length} new purchases (${consolidated.length - newPurchases.length} already exist)`);
-          
-          if (newPurchases.length === 0) {
-            console.log('⏭️ No new purchases to save');
+          const incomingOrders = consolidated.map((p: any) => String(p?.orderNumber || '').trim()).filter(Boolean);
+          if (incomingOrders.length === 0) {
+            console.log('⏭️ Webhook: no orderNumbers found in consolidated payload');
             return;
           }
-          
-          let savedCount = 0;
-          
-          for (const purchase of newPurchases) {
-            try {
-              // Remove the 'id' field if it exists (it might be set to orderNumber by frontend)
-              // Firebase will auto-generate a new document ID
-              const purchaseData = { ...purchase };
-              delete purchaseData.id; // Remove id field to let Firebase auto-generate it
-              
-              await adminDb.collection('purchases').add({
-                ...purchaseData,
-                userId: userId,
-                type: 'gmail',
-                createdAt: new Date().toISOString(),
-                syncedAt: new Date().toISOString()
+
+          // Look up existing docs for just these orders (so we can update status/tracking automatically).
+          const existingByOrderNumber = new Map<
+            string,
+            { docId: string; status?: string; shipping_status?: string; tracking?: string; carrier?: string; statusColor?: string }
+          >();
+
+          const chunk = <T,>(arr: T[], size: number): T[][] => {
+            const out: T[][] = [];
+            for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+            return out;
+          };
+
+          try {
+            // Firestore `in` queries have limits; chunk defensively.
+            // incomingOrders is small (limit=5), but keep this safe.
+            const chunks = chunk(incomingOrders, 10);
+            for (const c of chunks) {
+              const snap = await adminDb
+                .collection('purchases')
+                .where('userId', '==', userId)
+                .where('type', '==', 'gmail')
+                .where('orderNumber', 'in', c)
+                .select('orderNumber', 'status', 'shipping_status', 'tracking', 'carrier', 'statusColor')
+                .get();
+
+              snap.docs.forEach((d) => {
+                const data = d.data() as any;
+                const orderNumber = String(data?.orderNumber || '').trim();
+                if (!orderNumber) return;
+                existingByOrderNumber.set(orderNumber, { docId: d.id, ...data });
               });
-              savedCount++;
-              console.log(`✅ Saved purchase ${purchase.orderNumber} - 🔴 REAL-TIME UPDATE`);
-            } catch (error) {
-              console.error(`❌ Failed to save purchase ${purchase.orderNumber}:`, error);
+            }
+          } catch (e) {
+            // Fall back to a broader scan (avoids index issues at the expense of reads).
+            console.warn('⚠️ Webhook: failed targeted lookup (falling back to full scan):', e);
+            const snap = await adminDb
+              .collection('purchases')
+              .where('userId', '==', userId)
+              .where('type', '==', 'gmail')
+              .select('orderNumber', 'status', 'shipping_status', 'tracking', 'carrier', 'statusColor')
+              .get();
+            snap.docs.forEach((d) => {
+              const data = d.data() as any;
+              const orderNumber = String(data?.orderNumber || '').trim();
+              if (!orderNumber) return;
+              existingByOrderNumber.set(orderNumber, { docId: d.id, ...data });
+            });
+          }
+
+          let createdCount = 0;
+          let updatedCount = 0;
+          let skippedCount = 0;
+
+          for (const incoming of consolidated) {
+            const orderNumber = String((incoming as any)?.orderNumber || '').trim();
+            if (!orderNumber) continue;
+
+            const existing = existingByOrderNumber.get(orderNumber) || null;
+
+            const incomingStatusRaw = String((incoming as any)?.status || (incoming as any)?.shipping_status || 'Ordered');
+            const existingStatusRaw = existing
+              ? String(existing.status || (existing as any).shipping_status || 'Ordered')
+              : 'Ordered';
+
+            const incomingPriority = getStatusPriority(incomingStatusRaw);
+            const existingPriority = getStatusPriority(existingStatusRaw);
+
+            const incomingTracking = String((incoming as any)?.tracking || (incoming as any)?.tracking_number || '').trim();
+            const existingTracking = existing ? String(existing.tracking || '').trim() : '';
+
+            const incomingCarrier = String((incoming as any)?.carrier || '').trim();
+            const existingCarrier = existing ? String(existing.carrier || '').trim() : '';
+
+            // Never downgrade status. Update if:
+            // - incoming status is higher priority than existing, OR
+            // - incoming has tracking and existing doesn't (or differs), OR
+            // - carrier filled in.
+            const shouldUpdateStatus = incomingPriority > existingPriority;
+            const shouldUpdateTracking = !!incomingTracking && incomingTracking !== existingTracking;
+            const shouldUpdateCarrier = !!incomingCarrier && incomingCarrier !== existingCarrier;
+
+            if (existing) {
+              if (!shouldUpdateStatus && !shouldUpdateTracking && !shouldUpdateCarrier) {
+                skippedCount++;
+                continue;
+              }
+
+              const patch: any = {
+                syncedAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              };
+              if (shouldUpdateStatus) {
+                patch.status = (incoming as any)?.status || incomingStatusRaw;
+                patch.shipping_status = (incoming as any)?.shipping_status || patch.status;
+                if ((incoming as any)?.statusColor) patch.statusColor = (incoming as any)?.statusColor;
+              }
+              if (shouldUpdateTracking) patch.tracking = incomingTracking;
+              if (shouldUpdateCarrier) patch.carrier = incomingCarrier;
+
+              try {
+                await adminDb.collection('purchases').doc(existing.docId).update(patch);
+                updatedCount++;
+                console.log(`✅ Updated purchase ${orderNumber} (status=${patch.status || existingStatusRaw}${shouldUpdateTracking ? ', tracking updated' : ''})`);
+              } catch (error) {
+                console.error(`❌ Failed to update purchase ${orderNumber}:`, error);
+              }
+            } else {
+              try {
+                const purchaseData = { ...(incoming as any) };
+                delete (purchaseData as any).id;
+
+                await adminDb.collection('purchases').add({
+                  ...purchaseData,
+                  userId,
+                  type: 'gmail',
+                  createdAt: new Date().toISOString(),
+                  syncedAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                });
+                createdCount++;
+                console.log(`✅ Created purchase ${orderNumber} - 🔴 REAL-TIME INSERT`);
+              } catch (error) {
+                console.error(`❌ Failed to create purchase ${orderNumber}:`, error);
+              }
             }
           }
-          
-          console.log(`✅ Webhook saved ${savedCount}/${consolidated.length} new purchases - 🔴 REAL-TIME UPDATES TRIGGERED`);
+
+          console.log(
+            `✅ Webhook upsert complete for user ${userId}: created=${createdCount}, updated=${updatedCount}, skipped=${skippedCount}`
+          );
         }
         
         // Update last webhook sync time

@@ -1223,6 +1223,61 @@ const Purchases = () => {
     checkGmailConnectionStatus();
   }, [user]);
 
+  // Real-time updates: if the user is Firebase-authenticated, subscribe to their purchases collection.
+  // This makes status/tracking updates appear automatically after the Gmail webhook upserts Firestore docs.
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    // Only live-update while the Purchases section is active to avoid heavy work when browsing other tabs.
+    const isPurchasesSection = typeof window !== 'undefined' && window.location.search.includes('section=purchases');
+    if (!isPurchasesSection) return;
+
+    const unsubscribe = subscribeToCollection('purchases', user.uid, (docs) => {
+      applyLoadedPurchases(docs, { source: 'firestore(onSnapshot)' });
+    });
+
+    return () => {
+      try {
+        unsubscribe?.();
+      } catch {
+        // ignore
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid]);
+
+  // Site-password users don't have a Firestore real-time subscription.
+  // Instead, do a lightweight refresh when the tab regains focus / becomes visible (throttled).
+  const lastAutoRefreshAtRef = useRef<number>(0);
+  useEffect(() => {
+    if (user?.uid) return; // Firebase users handled by onSnapshot above
+
+    const siteUserId = localStorage.getItem('siteUserId');
+    if (!siteUserId) return;
+
+    const maybeRefresh = () => {
+      // Only refresh when on Purchases section.
+      if (!window.location.search.includes('section=purchases')) return;
+      const now = Date.now();
+      if (now - lastAutoRefreshAtRef.current < 60_000) return; // 60s throttle
+      lastAutoRefreshAtRef.current = now;
+      void loadManualPurchasesFromFirebase();
+    };
+
+    const onFocus = () => maybeRefresh();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') maybeRefresh();
+    };
+
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid]);
+
   // Check Gmail connection status
   const checkGmailConnectionStatus = async () => {
     try {
@@ -2027,6 +2082,92 @@ const Purchases = () => {
     }
   };
 
+  // Apply a freshly loaded set of purchase documents (from API, Firestore read, or real-time snapshot)
+  // into the UI state shape used by this component.
+  const applyLoadedPurchases = (userPurchases: any[], meta?: { source?: string }) => {
+    const source = meta?.source || 'unknown';
+    try {
+      // Transform Firebase data to expected component format
+      const transformPurchaseData = (purchase: any) => {
+        // Clean up invalid carrier values
+        const cleanedPurchase = cleanupCarrier(purchase);
+
+        const tracking = cleanedPurchase.tracking || '';
+        const carrier = cleanedPurchase.carrier;
+
+        return {
+          ...cleanedPurchase,
+          product: {
+            name: cleanedPurchase.productName || cleanedPurchase.product?.name || 'Unknown Product',
+            brand: cleanedPurchase.brand || cleanedPurchase.product?.brand || 'Unknown Brand',
+            size: cleanedPurchase.size || cleanedPurchase.product?.size || 'Unknown Size',
+            image:
+              cleanedPurchase.productImageUrl ||
+              cleanedPurchase.product?.image ||
+              `https://picsum.photos/200/200?random=${cleanedPurchase.id?.substring(0, 4) || '1'}`,
+            bgColor: cleanedPurchase.product?.bgColor || 'bg-gray-500',
+            color: cleanedPurchase.product?.color || 'gray',
+          },
+          // Map other fields to expected format
+          orderNumber: cleanedPurchase.orderNumber,
+          status: cleanedPurchase.shippingStatus || cleanedPurchase.status || 'Ordered',
+          tracking: tracking,
+          carrier: carrier, // Will be null if no tracking or invalid, will show "-"
+          market: cleanedPurchase.merchant || cleanedPurchase.market || 'StockX',
+          price: formatUsd(getNetAmount(cleanedPurchase)),
+          originalPrice: (() => {
+            const gross = getGrossAmount(cleanedPurchase);
+            const credits = getCreditsAmount(cleanedPurchase);
+            if (credits > 0) return `${formatUsd(gross)} - ${formatUsd(credits)}`;
+            return formatUsd(gross);
+          })(),
+          // Ensure every row has a stable purchaseDate display value.
+          purchaseDate: derivePurchaseDateDisplay(cleanedPurchase),
+          // Preserve consolidation fields
+          purchase_date: cleanedPurchase.purchase_date || cleanedPurchase.purchaseDate,
+          email_subject: cleanedPurchase.email_subject || cleanedPurchase.emailSubject,
+          email_date: cleanedPurchase.email_date || cleanedPurchase.emailDate,
+          shipping_status: cleanedPurchase.shipping_status || cleanedPurchase.status,
+          dateAdded: cleanedPurchase.createdAt || new Date().toISOString(),
+          verified: cleanedPurchase.verified || 'pending',
+          verifiedColor: cleanedPurchase.verifiedColor || 'orange',
+        };
+      };
+
+      // Separate manual and Gmail purchases
+      const manualOnly = userPurchases.filter((p) => p.type === 'manual');
+      const gmailOnly = userPurchases.filter((p) => p.type === 'gmail' || p.type === 'imported');
+
+      // IMPORTANT: Consolidate Gmail purchases BEFORE transforming
+      const consolidatedGmailPurchases = consolidatePurchasesByOrderNumber(gmailOnly);
+
+      const transformedManualPurchases = manualOnly.map(transformPurchaseData);
+      const transformedGmailPurchases = consolidatedGmailPurchases.map(transformPurchaseData);
+
+      setManualPurchases(transformedManualPurchases);
+      if (transformedGmailPurchases.length > 0) {
+        setPurchases(transformedGmailPurchases);
+      }
+
+      const allUserPurchases = [...transformedGmailPurchases, ...transformedManualPurchases];
+      const combinedPurchases = consolidatePurchasesByOrderNumber(allUserPurchases);
+
+      console.log('✅ applyLoadedPurchases:', {
+        source,
+        total: userPurchases.length,
+        manual: manualOnly.length,
+        gmail: gmailOnly.length,
+        consolidatedGmail: consolidatedGmailPurchases.length,
+        combinedUnique: combinedPurchases.length,
+      });
+
+      // Keep totals in sync immediately (some codepaths rely on it without waiting for effects).
+      calculateTotals(allUserPurchases);
+    } catch (e) {
+      console.error('❌ applyLoadedPurchases failed:', e);
+    }
+  };
+
   const loadManualPurchasesFromFirebase = async () => {
     const startTime = Date.now();
     console.log('⏱️ loadManualPurchasesFromFirebase START');
@@ -2122,156 +2263,8 @@ const Purchases = () => {
         return acc;
       }, {} as Record<string, number>);
       console.log('📊 Purchase types breakdown:', typeBreakdown);
-      
-      // Transform Firebase data to expected component format
-      const transformPurchaseData = (purchase: any) => {
-        // Log purchase data for debugging - DISABLED FOR PERFORMANCE
-        // console.log(`🔍 Transforming purchase: ${purchase.orderNumber}`, {
-        //   tracking: purchase.tracking,
-        //   carrier: purchase.carrier,
-        //   hasTracking: !!(purchase.tracking && purchase.tracking.trim() !== '')
-        // });
-        
-        // Clean up invalid carrier values
-        const cleanedPurchase = cleanupCarrier(purchase);
-        
-        // console.log(`✅ After cleanup:`, {
-        //   orderNumber: purchase.orderNumber,
-        //   originalCarrier: purchase.carrier,
-        //   cleanedCarrier: cleanedPurchase.carrier,
-        //   wasChanged: purchase.carrier !== cleanedPurchase.carrier
-        // });
-        
-        // REMOVED: Don't update Firebase on every page load - this was causing 30+ second delays
-        // Instead, carrier cleanup will happen when user manually edits tracking
-        // if (cleanedPurchase.carrier !== purchase.carrier && purchase.id) {
-        //   console.log(`💾 Updating carrier in Firebase for ${purchase.orderNumber}: ${purchase.carrier} → ${cleanedPurchase.carrier}`);
-        //   updateDocument('purchases', purchase.id, { carrier: cleanedPurchase.carrier }, true).catch(err => {
-        //     console.warn('Could not update carrier in Firebase:', err);
-        //   });
-        // }
-        
-        const tracking = cleanedPurchase.tracking || '';
-        const carrier = cleanedPurchase.carrier;
-        
-        return {
-          ...cleanedPurchase,
-          product: {
-            name: cleanedPurchase.productName || cleanedPurchase.product?.name || 'Unknown Product',
-            brand: cleanedPurchase.brand || cleanedPurchase.product?.brand || 'Unknown Brand',
-            size: cleanedPurchase.size || cleanedPurchase.product?.size || 'Unknown Size',
-            image: cleanedPurchase.productImageUrl || cleanedPurchase.product?.image || `https://picsum.photos/200/200?random=${cleanedPurchase.id?.substring(0, 4) || '1'}`,
-            bgColor: cleanedPurchase.product?.bgColor || 'bg-gray-500',
-            color: cleanedPurchase.product?.color || 'gray'
-          },
-          // Map other fields to expected format
-          orderNumber: cleanedPurchase.orderNumber,
-          status: cleanedPurchase.shippingStatus || cleanedPurchase.status || 'Ordered',
-          tracking: tracking,
-          carrier: carrier, // Will be null if no tracking or invalid, will show "-"
-          market: cleanedPurchase.merchant || cleanedPurchase.market || 'StockX',
-          price: formatUsd(getNetAmount(cleanedPurchase)),
-          originalPrice: (() => {
-            const gross = getGrossAmount(cleanedPurchase);
-            const credits = getCreditsAmount(cleanedPurchase);
-            if (credits > 0) return `${formatUsd(gross)} - ${formatUsd(credits)}`;
-            return formatUsd(gross);
-          })(),
-          // Ensure every row has a stable purchaseDate display value.
-          purchaseDate: derivePurchaseDateDisplay(cleanedPurchase),
-          // Preserve consolidation fields
-          purchase_date: cleanedPurchase.purchase_date || cleanedPurchase.purchaseDate,
-          email_subject: cleanedPurchase.email_subject || cleanedPurchase.emailSubject,
-          email_date: cleanedPurchase.email_date || cleanedPurchase.emailDate,
-          shipping_status: cleanedPurchase.shipping_status || cleanedPurchase.status,
-          dateAdded: cleanedPurchase.createdAt || new Date().toISOString(),
-          verified: cleanedPurchase.verified || 'pending',
-          verifiedColor: cleanedPurchase.verifiedColor || 'orange'
-        };
-      };
 
-      // Separate manual and Gmail purchases
-      const manualPurchases = userPurchases.filter(p => p.type === 'manual');
-      const gmailPurchases = userPurchases.filter(p => p.type === 'gmail' || p.type === 'imported');
-      
-      console.log('🔍 Purchase type filtering:', {
-        total: userPurchases.length,
-        manual: manualPurchases.length,
-        gmail: gmailPurchases.length,
-        types: [...new Set(userPurchases.map(p => p.type))]
-      });
-      
-      // IMPORTANT: Consolidate Gmail purchases BEFORE transforming
-      // This ensures order confirmation emails are found and purchase dates are set correctly
-      console.log(`🔄 Consolidating ${gmailPurchases.length} Gmail purchases before transformation...`);
-      
-      // Log sample purchases to verify they have consolidation fields
-      if (gmailPurchases.length > 0) {
-        console.log(`🔍 Sample purchase before consolidation:`, {
-          orderNumber: gmailPurchases[0].orderNumber,
-          status: gmailPurchases[0].status || gmailPurchases[0].shipping_status,
-          email_subject: gmailPurchases[0].email_subject || gmailPurchases[0].emailSubject,
-          email_date: gmailPurchases[0].email_date || gmailPurchases[0].emailDate,
-          purchaseDate: gmailPurchases[0].purchaseDate,
-          purchase_date: gmailPurchases[0].purchase_date
-        });
-      }
-      
-      const consolidatedGmailPurchases = consolidatePurchasesByOrderNumber(gmailPurchases);
-      console.log(`✅ Consolidation: ${gmailPurchases.length} → ${consolidatedGmailPurchases.length} unique purchases`);
-      
-      // Log sample after consolidation to verify purchase date was set correctly
-      if (consolidatedGmailPurchases.length > 0) {
-        console.log(`🔍 Sample purchase AFTER consolidation:`, {
-          orderNumber: consolidatedGmailPurchases[0].orderNumber,
-          status: consolidatedGmailPurchases[0].status || consolidatedGmailPurchases[0].shipping_status,
-          purchaseDate: consolidatedGmailPurchases[0].purchaseDate,
-          purchase_date: consolidatedGmailPurchases[0].purchase_date,
-          email_date: consolidatedGmailPurchases[0].email_date
-        });
-      }
-      
-      // Transform manual purchases
-      const transformedManualPurchases = manualPurchases.map(transformPurchaseData);
-      setManualPurchases(transformedManualPurchases);
-
-      // Transform Gmail purchases AFTER consolidation (so purchase dates are correct)
-      const transformedGmailPurchases = consolidatedGmailPurchases.map(transformPurchaseData);
-      
-      // Debug: Log sample transformed data to verify structure
-      if (transformedGmailPurchases.length > 0) {
-        console.log('🔍 Sample transformed purchase data:', {
-          original: gmailPurchases[0],
-          transformed: transformedGmailPurchases[0],
-          hasProductSize: !!transformedGmailPurchases[0].product?.size,
-          productSize: transformedGmailPurchases[0].product?.size
-        });
-      }
-      
-      // 🔥 Load Gmail purchases from Firebase if they exist
-      if (transformedGmailPurchases.length > 0) {
-        setPurchases(transformedGmailPurchases);
-        console.log(`✅ Loaded ${transformedGmailPurchases.length} Gmail purchases from Firebase`);
-      } else {
-        console.log('⚠️ No Gmail purchases found in Firebase for this user');
-        // Don't clear existing purchases - they might be in component state
-        // setPurchases([]);
-      }
-      
-      // Combine all purchases for display and deduplicate using priority system
-      const allUserPurchases = [...transformedGmailPurchases, ...transformedManualPurchases];
-      const combinedPurchases = consolidatePurchasesByOrderNumber(allUserPurchases);
-      console.log(`🔄 Display deduplication: ${allUserPurchases.length} → ${combinedPurchases.length} unique`);
-      
-      // Totals will be recalculated automatically via useEffect when purchases change
-      
-      console.log('✅ Loaded purchases:', {
-        manual: manualPurchases.length,
-        gmail: gmailPurchases.length,
-        total: combinedPurchases.length,
-        userId: userId,
-        source: isSitePasswordUser ? 'localStorage' : 'Firebase'
-      });
+      applyLoadedPurchases(userPurchases, { source: isSitePasswordUser ? 'api(list)' : 'firestore(getDocuments)' });
       
       const totalTime = Date.now() - startTime;
       console.log(`⏱️ TOTAL loadManualPurchasesFromFirebase time: ${totalTime}ms`);
