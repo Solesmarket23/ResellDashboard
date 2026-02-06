@@ -3170,14 +3170,14 @@ export default function StockXRepricing() {
   };
 
 
-  const PRODUCT_IMAGE_CACHE_KEY = 'stockx_product_image_cache_v1';
+  const PRODUCT_IMAGE_CACHE_KEY = 'stockx_product_image_cache_v2';
   const PRODUCT_IMAGE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
   const PURCHASE_IMAGE_CACHE_KEY = 'stockx_purchase_image_cache_v1';
   const PURCHASE_IMAGE_CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 
   const enrichProductImagesForListings = useCallback(async (list: Listing[]) => {
     try {
-      let cache: Record<string, { imageUrl: string; cachedAt: number }> = {};
+      let cache: Record<string, { imageUrl?: string; urlKey?: string | null; cachedAt: number }> = {};
       try {
         const raw = localStorage.getItem(PRODUCT_IMAGE_CACHE_KEY);
         if (raw) cache = JSON.parse(raw);
@@ -3191,7 +3191,7 @@ export default function StockXRepricing() {
       const uniqueProductIds = Array.from(
         new Set(
           list
-            .filter((l) => !l.imageUrl || isBrokenListing(l))
+            .filter((l) => !l.imageUrl || isBrokenListing(l) || !String(l.urlKey || '').trim())
             .map((l) => String(l.productId || '').trim())
             .filter(Boolean)
         )
@@ -3199,7 +3199,9 @@ export default function StockXRepricing() {
 
       const missing = uniqueProductIds.filter((pid) => {
         const c = cache[pid];
-        if (!c?.imageUrl || typeof c.cachedAt !== 'number') return true;
+        // We treat urlKey as a first-class enrichment too; refresh if either is missing/stale.
+        const hasAny = Boolean(String(c?.imageUrl || '').trim()) || Boolean(String(c?.urlKey || '').trim());
+        if (!hasAny || typeof c?.cachedAt !== 'number') return true;
         return Date.now() - c.cachedAt > PRODUCT_IMAGE_CACHE_TTL_MS;
       });
 
@@ -3215,10 +3217,15 @@ export default function StockXRepricing() {
         if (res.ok && data?.success && data?.productBrandMap) {
           for (const pid of Object.keys(data.productBrandMap)) {
             const img = String(data.productBrandMap[pid]?.imageUrl || '').trim();
-            if (img) {
-              cache[pid] = { imageUrl: img, cachedAt: Date.now() };
+            const urlKey = String(data.productBrandMap[pid]?.urlKey || '').trim();
+            if (img || urlKey) {
+              cache[pid] = {
+                imageUrl: img || cache[pid]?.imageUrl,
+                urlKey: urlKey || cache[pid]?.urlKey || null,
+                cachedAt: Date.now()
+              };
               // If we fetched a fresh image, clear any "broken product" marker.
-              delete brokenProductIdRef.current[String(pid).trim()];
+              if (img) delete brokenProductIdRef.current[String(pid).trim()];
             }
           }
           try {
@@ -3235,18 +3242,24 @@ export default function StockXRepricing() {
           const listingId = String((l as any)?.listingId || '').trim();
           const pid = String(l.productId || '').trim();
           const brokenListing = Boolean(brokenImageByListingIdRef.current[listingId]);
+          const existingUrlKey = String(l.urlKey || '').trim();
 
           // If the current image is healthy, keep it.
-          if (l.imageUrl && !brokenListing) return l;
+          const shouldTouchImage = !l.imageUrl || brokenListing;
+          const shouldTouchUrlKey = !existingUrlKey;
+          if (!shouldTouchImage && !shouldTouchUrlKey) return l;
 
           // Avoid re-applying a known-broken product image URL.
-          if (pid && isBrokenProduct(pid)) return l;
+          if (shouldTouchImage && pid && isBrokenProduct(pid)) return l;
 
           const c = pid ? cache[pid] : undefined;
-          if (!c?.imageUrl) return l;
+          const nextImg = String(c?.imageUrl || '').trim();
+          const nextUrlKey = String(c?.urlKey || '').trim();
+          // If we have neither enrichment, do nothing.
+          if (!nextImg && !nextUrlKey) return l;
 
           // If we successfully applied a new URL, clear the broken marker for this listing.
-          if (brokenListing) {
+          if (brokenListing && nextImg) {
             setBrokenImageByListingId((prevBroken) => {
               if (!prevBroken[listingId]) return prevBroken;
               const next = { ...prevBroken };
@@ -3254,7 +3267,12 @@ export default function StockXRepricing() {
               return next;
             });
           }
-          return { ...l, imageUrl: c.imageUrl };
+          return {
+            ...l,
+            ...(nextImg && shouldTouchImage ? { imageUrl: nextImg } : {}),
+            // Prefer canonical catalog urlKey over guessed/empty values.
+            ...(nextUrlKey ? { urlKey: nextUrlKey } : {}),
+          };
         })
       );
 

@@ -8,6 +8,7 @@ interface ProductCatalogResponse {
   category?: string;
   retailPrice?: number;
   imageUrl?: string;
+  urlKey?: string | null;
 }
 
 export async function POST(request: NextRequest) {
@@ -121,6 +122,7 @@ export async function POST(request: NextRequest) {
               productName: product.productName || product.name || 'Unknown Product',
               category: product.category,
               retailPrice: product.retailPrice,
+              urlKey: product.urlKey || product.url_key || null,
               imageUrl:
                 (Array.isArray(product.productImages) && product.productImages[0]) ||
                 (Array.isArray(product.product_images) && product.product_images[0]) ||
