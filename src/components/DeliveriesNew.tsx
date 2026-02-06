@@ -61,6 +61,7 @@ const DeliveriesNew: React.FC = () => {
   const {
     deliveries,
     loading,
+    hydrating,
     error,
     refreshDeliveries
   } = useRealTimeDeliveries({
