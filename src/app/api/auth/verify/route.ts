@@ -30,12 +30,15 @@ export async function POST(request: NextRequest) {
       });
       
       const shouldRemember = remember !== false;
+      // Ensure cookies work across both `solesmarket.com` and `www.solesmarket.com` in production.
+      const cookieDomain = process.env.NODE_ENV === 'production' ? '.solesmarket.com' : undefined;
 
       response.cookies.set('site-auth', 'authenticated', {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         path: '/',
+        ...(cookieDomain ? { domain: cookieDomain } : {}),
         ...(shouldRemember ? { maxAge: 60 * 60 * 24 * 30 } : {}), // 30 days or session
       });
       
@@ -45,6 +48,7 @@ export async function POST(request: NextRequest) {
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         path: '/',
+        ...(cookieDomain ? { domain: cookieDomain } : {}),
         ...(shouldRemember ? { maxAge: 60 * 60 * 24 * 30 } : {}), // 30 days or session
       });
       
