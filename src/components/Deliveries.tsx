@@ -330,6 +330,28 @@ const DeliveriesNew: React.FC = () => {
   });
   const [cronStatus, setCronStatus] = useState<{ status?: string; paused?: boolean; message?: string } | null>(null);
 
+  const normalizeTimeLocal = (raw: unknown): string => {
+    const s = String(raw ?? '').trim();
+    const m = s.match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return s;
+    const hh = parseInt(m[1] || '', 10);
+    const mm = parseInt(m[2] || '', 10);
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return s;
+    if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return s;
+    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  };
+
+  const slackTimeOptions = useMemo(() => {
+    const stepMinutes = 5;
+    const out: string[] = [];
+    for (let h = 0; h < 24; h++) {
+      for (let m = 0; m < 60; m += stepMinutes) {
+        out.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+      }
+    }
+    return out;
+  }, []);
+
   // Setup status UI removed (debug-only)
   // const [setupStatus, setSetupStatus] = useState<any | null>(null);
   // const [setupStatusLoading, setSetupStatusLoading] = useState(false);
@@ -3873,16 +3895,36 @@ const DeliveriesNew: React.FC = () => {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-2">
                         <div className="text-sm font-semibold">Time (local)</div>
-                        <input
-                          value={slackSchedule.timeLocal}
-                          onChange={(e) => setSlackSchedule((prev) => ({ ...prev, timeLocal: e.target.value }))}
-                          placeholder="09:30"
-                          className={`w-full h-11 px-3 rounded-xl border bg-transparent text-sm ${
+                        {(() => {
+                          const normalized = normalizeTimeLocal(slackSchedule.timeLocal || '09:30') || '09:30';
+                          const inList = slackTimeOptions.includes(normalized);
+                          const baseClass = `w-full h-11 px-3 rounded-xl border bg-transparent text-sm ${
                             currentTheme.name === 'Neon'
                               ? 'border-cyan-500/30 focus:outline-none focus:ring-2 focus:ring-cyan-400/30'
                               : 'border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30'
-                          }`}
-                        />
+                          }`;
+                          return (
+                            <>
+                              <select
+                                value={normalized}
+                                onChange={(e) => setSlackSchedule((prev) => ({ ...prev, timeLocal: e.target.value }))}
+                                className={baseClass}
+                              >
+                                {!inList && normalized ? (
+                                  <option value={normalized}>{normalized} (custom)</option>
+                                ) : null}
+                                {slackTimeOptions.map((t) => (
+                                  <option key={t} value={t}>
+                                    {t}
+                                  </option>
+                                ))}
+                              </select>
+                              <div className={`text-[11px] ${currentTheme.name === 'Neon' ? 'text-gray-400' : 'text-gray-500'}`}>
+                                Pick a time (5‑minute increments).
+                              </div>
+                            </>
+                          );
+                        })()}
                       </div>
 
                       <div className="space-y-2">
