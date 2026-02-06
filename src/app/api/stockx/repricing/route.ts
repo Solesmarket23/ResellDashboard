@@ -575,9 +575,9 @@ export async function POST(request: NextRequest) {
 
             // If flex is <= your price, you are NOT winning (flex wins).
             const losingToFlex = currentFlexAsk !== null && currentFlexAsk <= listing.currentPrice;
-            // Two-step: treat standard ties as NOT winning, so we don't sit tied and lose queue priority.
-            // If standard is <= your price, you are NOT winning.
-            const losingToStd = currentStdAsk !== null && currentStdAsk <= listing.currentPrice;
+            // Standard ties count as WIN (we can't reliably detect tie-queue position from market data).
+            // We'll resolve true competitor ties during the periodic peek/reset, not by ratcheting down blindly.
+            const losingToStd = currentStdAsk !== null && currentStdAsk < listing.currentPrice;
             const hasAnyAsk = currentStdAsk !== null || currentFlexAsk !== null;
             const isWinning = hasAnyAsk ? (!losingToFlex && !losingToStd) : false;
 
@@ -665,10 +665,11 @@ export async function POST(request: NextRequest) {
             const computedFinal = initialBestAsk !== null ? Math.max(1, initialBestAsk - beatBy) : listing.currentPrice;
             const { due, frequency } = isPeekDue(listing);
 
-            // Two-step "winning" logic: treat standard ties as losing, so we undercut quickly on ties.
+            // Two-step "winning" logic: standard ties count as WIN; flex ties/undercuts beat you.
+            // (We cannot know tie-queue priority from this endpoint. Periodic peeks handle tie-breaking.)
             const hasAnyAsk = initialLowestAsk !== null || initialFlexLowestAsk !== null;
             const losingToFlex = initialFlexLowestAsk !== null && initialFlexLowestAsk <= listing.currentPrice;
-            const losingToStd = initialLowestAsk !== null && initialLowestAsk <= listing.currentPrice;
+            const losingToStd = initialLowestAsk !== null && initialLowestAsk < listing.currentPrice;
             const isWinning = hasAnyAsk ? (!losingToFlex && !losingToStd) : false;
 
             const shouldPeekNextLowest = forceTwoStepPeek
@@ -696,14 +697,7 @@ export async function POST(request: NextRequest) {
               continue;
             }
 
-            // If you're NOT winning (including standard ties), undercut immediately.
-            // This avoids sitting tied and losing queue priority, and it avoids unnecessary $999 peeks.
-            if (!dryRun && initialBestAsk !== null && !isWinning && !forceTwoStepPeek) {
-              newPrice = Math.max(1, initialBestAsk - beatBy);
-              skipReason = `Two-step: not winning (or tied). Undercut best ask ($${initialBestAsk} → $${newPrice})`;
-              twoStepMeta = { ...twoStepMeta, mode: 'direct_undercut', computedFinal: newPrice } as any;
-              // continue into the normal constraint/update pipeline
-            } else {
+            {
 
             // IMPORTANT: Min/Max bounds should prevent unnecessary $999 peeks.
             // If the final undercut would be clamped to Min/Max anyway, skip the reset step entirely to reduce
