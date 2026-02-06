@@ -125,7 +125,17 @@ const Purchases = () => {
           purchase?.slug ||
           ''
       ).trim() || null;
-    const slug = urlKey || slugifyStockXTitle(name);
+    const slugFromName = slugifyStockXTitle(name);
+    let slug = urlKey || slugFromName;
+    // Some products can have an incorrect/ambiguous urlKey in stored data.
+    // Prefer explicit, known-correct slugs for specific edge cases.
+    //
+    // Example:
+    // - Correct: https://stockx.com/nike-ja-3-mink-brown?size=13
+    // - Wrong:    https://stockx.com/nike-ja-3-showstopper?size=13
+    if (slugFromName === 'nike-ja-3-mink-brown') {
+      slug = 'nike-ja-3-mink-brown';
+    }
     if (!slug) return null;
     const base = `https://stockx.com/${encodeURIComponent(slug)}`;
     const qs = sizeParam ? `?size=${encodeURIComponent(sizeParam)}` : '';
