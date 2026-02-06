@@ -492,6 +492,17 @@ export default function StockXRepricing() {
 
   // Sorting logic
   const sortedListings = [...filteredListings].sort((a, b) => {
+    // Always keep duplicate-group leaders first within their group, regardless of the active sort.
+    // This makes multi-unit SKUs easier to reason about (leader controls repricing).
+    if (a.inventoryGroupId && a.inventoryGroupId === b.inventoryGroupId) {
+      const g = inventoryGroups.get(a.inventoryGroupId);
+      if (g && g.listings.length > 1) {
+        const aLeader = a.isGroupLeader === true;
+        const bLeader = b.isGroupLeader === true;
+        if (aLeader !== bLeader) return aLeader ? -1 : 1;
+      }
+    }
+
     if (!sortColumn) return 0;
     
     let aValue: any;
