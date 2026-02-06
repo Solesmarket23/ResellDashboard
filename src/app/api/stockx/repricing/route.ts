@@ -565,7 +565,8 @@ export async function POST(request: NextRequest) {
               equalNullableNumber(listing.lastSeenLowestAsk, currentStdAsk) &&
               equalNullableNumber(listing.lastSeenFlexLowestAsk, currentFlexAsk);
 
-            if (unchanged && isWinning && !violatesBounds) {
+            // If the caller explicitly forces a Two-step peek (manual Save), do NOT skip even if market is unchanged.
+            if (unchanged && isWinning && !violatesBounds && forceTwoStepPeek !== true) {
               console.log(
                 `⏭️ Two-step skip (market unchanged + already winning): ${listing.listingId} ` +
                   `(price=$${listing.currentPrice}, lowestAsk=${currentStdAsk ?? 'null'}, flexLowestAsk=${currentFlexAsk ?? 'null'}, ` +

@@ -4896,7 +4896,13 @@ export default function StockXRepricing() {
                           <button
                             // For Two-step, Save should re-run immediately, but we should not force the $999 peek/reset
                             // when it's not needed. The server will peek only when you're at/below best ask.
-                            onClick={() => (isManual ? saveAndApplyManual(effectiveId) : savePricingRuleChange(effectiveId, undefined, undefined))}
+                            onClick={() =>
+                              isManual
+                                ? saveAndApplyManual(effectiveId)
+                                : isTwoStep
+                                  ? savePricingRuleChange(effectiveId, undefined, { forceTwoStepPeek: true })
+                                  : savePricingRuleChange(effectiveId, undefined, undefined)
+                            }
                             className={`px-2 py-1 rounded text-xs font-semibold transition-all whitespace-nowrap flex items-center gap-1 ${
                               isNeon
                                 ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white'
