@@ -9,7 +9,10 @@ export async function GET(request: NextRequest) {
     const refreshToken = cookieStore.get('gmail_refresh_token')?.value;
     const gmailConnected = cookieStore.get('gmail_connected')?.value;
     const connectedAt = cookieStore.get('gmail_connected_at')?.value;
-    const userId = cookieStore.get('userId')?.value || cookieStore.get('siteUserId')?.value || cookieStore.get('site-user-id')?.value;
+    const userId =
+      cookieStore.get('userId')?.value ||
+      cookieStore.get('siteUserId')?.value ||
+      cookieStore.get('site-user-id')?.value;
 
     if (!accessToken) {
       return NextResponse.json({ 
@@ -18,6 +21,9 @@ export async function GET(request: NextRequest) {
         needsReconnect: true 
       }, { status: 401 });
     }
+
+    const url = new URL(request.url);
+    const verify = url.searchParams.get('verify') === '1' || url.searchParams.get('verify') === 'true';
 
     // Check if connection is older than 7 days
     if (connectedAt) {
@@ -37,44 +43,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Get the current URL to determine the correct redirect URI
-    const url = new URL(request.url);
-    let baseUrl = `${url.protocol}//${url.host}`;
-    
-    // Fix for 0.0.0.0 - convert to localhost for OAuth
-    if (baseUrl.includes('0.0.0.0')) {
-      baseUrl = baseUrl.replace('0.0.0.0', 'localhost');
-    }
-    
-    // Check if we're running locally (localhost, 127.0.0.1)
-    const isLocal = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1');
-    
-    // Use environment variable if set, otherwise auto-detect
-    let redirectUri = process.env.GOOGLE_REDIRECT_URI;
-    
-    if (!redirectUri) {
-      // Always use the current base URL to auto-detect the port
-      redirectUri = `${baseUrl}/api/gmail/callback`;
-    }
-
-    // Set up OAuth2 client
-    const oauth2Client = new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET,
-      redirectUri
-    );
-
-    oauth2Client.setCredentials({
-      access_token: accessToken,
-      refresh_token: refreshToken
-    });
-
-    // Simple test to verify authentication
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
-    
-    // Just get the user profile, don't fetch emails
-    const profile = await gmail.users.getProfile({ userId: 'me' });
-    
     // Calculate days remaining
     let daysRemaining = 7;
     let daysSinceConnection = 0;
@@ -87,50 +55,79 @@ export async function GET(request: NextRequest) {
       daysRemaining = 7 - daysSinceConnection;
     }
 
-    // Save Gmail email and tokens to Firebase for webhook lookups
+    // IMPORTANT:
+    // This endpoint is intentionally lightweight by default.
+    // It should NOT call Google APIs or write to Firestore on a timer/poll.
+    //
+    // If a caller truly needs an online verification of the token, pass `?verify=1`.
+    if (!verify) {
+      return NextResponse.json({
+        connected: true,
+        email: null,
+        messagesTotal: null,
+        daysSinceConnection,
+        daysRemaining,
+        needsReconnect: false,
+      });
+    }
+
+    // Verified mode: perform a cheap Gmail API call to confirm the token still works.
+    // (Still does NOT fetch emails.)
+    let baseUrl = `${url.protocol}//${url.host}`;
+    if (baseUrl.includes('0.0.0.0')) baseUrl = baseUrl.replace('0.0.0.0', 'localhost');
+
+    let redirectUri = process.env.GOOGLE_REDIRECT_URI;
+    if (!redirectUri) redirectUri = `${baseUrl}/api/gmail/callback`;
+
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      redirectUri
+    );
+
+    oauth2Client.setCredentials({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    const profile = await gmail.users.getProfile({ userId: 'me' });
+
+    // Best-effort: save Gmail email/tokens to Firebase for webhook lookups (only on verify mode).
     if (userId && profile.data.emailAddress) {
       try {
         const { getAdminDb } = await import('@/lib/firebase/firebaseAdmin');
         const adminDb = getAdminDb();
-        
-        // First, ensure user document exists (especially for site password users)
-        const userDoc = await adminDb.collection('users').doc(userId).get();
-        
-        if (!userDoc.exists) {
-          // Create user document if it doesn't exist (for site password users)
-          console.log(`📝 Creating user document for user ${userId}`);
-          await adminDb.collection('users').doc(userId).set({
-            userId: userId,
-            userType: 'site-password',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          });
-        }
-        
-        // Now save/update Gmail email and tokens
-        await adminDb.collection('users').doc(userId).set({
-          gmailEmail: profile.data.emailAddress,
-          gmailTokens: {
-            access_token: accessToken,
-            refresh_token: refreshToken
-          },
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
-        
-        console.log(`✅ Saved Gmail email ${profile.data.emailAddress} for user ${userId}`);
+
+        await adminDb
+          .collection('users')
+          .doc(userId)
+          .set(
+            {
+              userId,
+              userType: 'site-password',
+              gmailEmail: profile.data.emailAddress,
+              gmailTokens: {
+                access_token: accessToken,
+                ...(refreshToken ? { refresh_token: refreshToken } : {}),
+              },
+              updatedAt: new Date().toISOString(),
+            },
+            { merge: true }
+          );
       } catch (error) {
-        console.error('Failed to save Gmail email to Firebase:', error);
-        // Don't fail the request if Firebase save fails
+        console.error('Failed to save Gmail email to Firebase (verify mode):', error);
       }
     }
 
-    return NextResponse.json({ 
-      connected: true, 
-      email: profile.data.emailAddress,
-      messagesTotal: profile.data.messagesTotal || 0,
+    return NextResponse.json({
+      connected: true,
+      email: profile.data.emailAddress || null,
+      messagesTotal: profile.data.messagesTotal || null,
       daysSinceConnection,
       daysRemaining,
-      needsReconnect: false
+      needsReconnect: false,
+      verified: true,
     });
 
   } catch (error) {

@@ -78,6 +78,62 @@ export async function GET(request: NextRequest) {
     if (!tokens.access_token) {
       throw new Error('No access token received from Google');
     }
+
+    // Best-effort: persist Gmail identity + tokens for webhook lookups (do this ONCE on connect).
+    // This avoids `/api/gmail/status` needing to hit Google + Firestore on a polling loop.
+    try {
+      const siteUserId =
+        request.cookies.get('site-user-id')?.value ||
+        request.cookies.get('siteUserId')?.value ||
+        cookies().get('site-user-id')?.value ||
+        cookies().get('siteUserId')?.value ||
+        null;
+
+      if (siteUserId) {
+        // Fetch the Gmail email address (cheap profile call; does NOT fetch messages).
+        oauth2Client.setCredentials({
+          access_token: tokens.access_token,
+          ...(tokens.refresh_token ? { refresh_token: tokens.refresh_token } : {}),
+        });
+
+        const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+        const profile = await gmail.users.getProfile({ userId: 'me' });
+        const emailAddress = profile.data.emailAddress || null;
+
+        if (emailAddress) {
+          const { getAdminDb } = await import('@/lib/firebase/firebaseAdmin');
+          const adminDb = getAdminDb();
+
+          // Ensure the user doc exists and store Gmail identity + tokens for webhook processing.
+          await adminDb
+            .collection('users')
+            .doc(siteUserId)
+            .set(
+              {
+                userId: siteUserId,
+                userType: 'site-password',
+                gmailEmail: emailAddress,
+                gmailTokens: {
+                  access_token: tokens.access_token,
+                  ...(tokens.refresh_token ? { refresh_token: tokens.refresh_token } : {}),
+                },
+                updatedAt: new Date().toISOString(),
+                ...(tokens.refresh_token ? { gmailRefreshTokenUpdatedAt: new Date().toISOString() } : {}),
+              },
+              { merge: true }
+            );
+
+          console.log(`✅ Saved Gmail email ${emailAddress} for user ${siteUserId} (callback)`);
+        } else {
+          console.warn('⚠️ Gmail callback: profile missing emailAddress, skipping Firebase persistence');
+        }
+      } else {
+        console.log('ℹ️ Gmail callback: no site-user-id cookie found; skipping webhook persistence');
+      }
+    } catch (e) {
+      // Never block login on persistence issues.
+      console.warn('⚠️ Gmail callback: failed to persist Gmail identity/tokens (continuing):', e);
+    }
     
     // Create response with redirect to the original page
     // Use the current port for local development, or production base URL

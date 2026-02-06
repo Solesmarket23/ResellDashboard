@@ -1267,11 +1267,17 @@ const Purchases = () => {
 
   // Periodic Gmail connection check
   useEffect(() => {
-    const interval = setInterval(() => {
-      checkGmailConnectionStatus();
-    }, 60000); // Check every 60 seconds (reduced frequency for better performance)
-
-    return () => clearInterval(interval);
+    // NOTE:
+    // We intentionally avoid polling `/api/gmail/status` on an interval.
+    // That endpoint may perform network calls (and potentially Firestore writes depending on implementation),
+    // which can create unnecessary cost/quotas and background traffic.
+    //
+    // We rely on:
+    // - the initial mount check, and
+    // - user-triggered actions (Sync Gmail / Manual Status Update) to surface auth issues.
+    //
+    // If you want a "freshness" check, prefer `focus`/`visibilitychange` events instead of a timer.
+    return;
   }, []);
 
   // Separate useEffect for config updates with debouncing - REMOVED lastFetchTime dependency
