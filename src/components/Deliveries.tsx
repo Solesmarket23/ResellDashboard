@@ -2775,7 +2775,11 @@ const DeliveriesNew: React.FC = () => {
          {/* Main Content */}
         <div id="deliveriesTableTop" />
         {sortedDeliveries.length === 0 ? (
-          <div className={`${currentTheme.colors.cardBackground} rounded-lg p-12 text-center border ${currentTheme.colors.border}`}>
+          <div
+            className={`${currentTheme.colors.cardBackground} rounded-lg p-12 text-center border ${currentTheme.colors.border} ${
+              statsUpdating ? 'shadow-xl shadow-black/30 ring-1 ring-white/10' : ''
+            }`}
+          >
             <Package className={`w-12 h-12 mx-auto mb-4 ${currentTheme.colors.textSecondary}`} />
             {(() => {
               const hasAnyFilter =
@@ -2785,6 +2789,22 @@ const DeliveriesNew: React.FC = () => {
                 presetNeedsTracking ||
                 presetInvalidTracking ||
                 presetArchived;
+
+              // If we're actively fetching/hydrating and *no filters* are applied, avoid flashing an empty-state.
+              const showLoadingSkeleton = statsUpdating && !hasAnyFilter;
+              if (showLoadingSkeleton) {
+                return (
+                  <>
+                    <h3 className={`text-lg font-medium ${currentTheme.colors.textPrimary} mb-2`}>Loading deliveries…</h3>
+                    <p className={`${currentTheme.colors.textSecondary} mb-6`}>Refreshing tracking + ETAs. This usually takes a moment.</p>
+                    <div className="mx-auto max-w-md space-y-3">
+                      <div className="h-4 rounded bg-white/10 animate-pulse" />
+                      <div className="h-4 rounded bg-white/10 animate-pulse" />
+                      <div className="h-4 rounded bg-white/10 animate-pulse" />
+                    </div>
+                  </>
+                );
+              }
 
               const chips: string[] = [];
               if (presetNeedsTracking) chips.push('Needs tracking');

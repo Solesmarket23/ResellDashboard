@@ -335,14 +335,28 @@ const DeliveriesNew: React.FC = () => {
 
         {/* Main Content - Left/Right Split */}
         {filteredDeliveries.length === 0 ? (
-          <div className={`${currentTheme.colors.cardBackground} rounded-lg p-12 text-center border ${currentTheme.colors.border}`}>
+          <div className={`${currentTheme.colors.cardBackground} rounded-lg p-12 text-center border ${currentTheme.colors.border} ${loading || hydrating ? 'shadow-xl shadow-black/30 ring-1 ring-white/10' : ''}`}>
             <Package className={`w-12 h-12 mx-auto mb-4 ${currentTheme.colors.textSecondary}`} />
-            <h3 className={`text-lg font-medium ${currentTheme.colors.textPrimary} mb-2`}>No deliveries found</h3>
-            <p className={`${currentTheme.colors.textSecondary} mb-4`}>
-              {searchTerm || statusFilter !== 'all' || carrierFilter !== 'all'
-                ? 'Try adjusting your filters or search terms'
-                : 'No purchases with tracking numbers found. Make sure your purchases have tracking information.'}
-            </p>
+            {loading || hydrating ? (
+              <>
+                <h3 className={`text-lg font-medium ${currentTheme.colors.textPrimary} mb-2`}>Loading deliveries…</h3>
+                <p className={`${currentTheme.colors.textSecondary} mb-6`}>Refreshing tracking + ETAs. This usually takes a moment.</p>
+                <div className="mx-auto max-w-md space-y-3">
+                  <div className="h-4 rounded bg-white/10 animate-pulse" />
+                  <div className="h-4 rounded bg-white/10 animate-pulse" />
+                  <div className="h-4 rounded bg-white/10 animate-pulse" />
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className={`text-lg font-medium ${currentTheme.colors.textPrimary} mb-2`}>No deliveries found</h3>
+                <p className={`${currentTheme.colors.textSecondary} mb-4`}>
+                  {searchTerm || statusFilter !== 'all' || carrierFilter !== 'all'
+                    ? 'Try adjusting your filters or search terms'
+                    : 'No purchases with tracking numbers found. Make sure your purchases have tracking information.'}
+                </p>
+              </>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[600px]">
