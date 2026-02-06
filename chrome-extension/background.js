@@ -2536,11 +2536,9 @@ async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPa
       let urls = [];
       // Collect retries: StockX sometimes returns an empty grid for a moment (SPA/hydration).
       const collectStart = Date.now();
-      let bestUrls = [];
-      for (let attempt = 0; attempt < 6; attempt++) {
-        const collected = await requestUrlsFromOriginTab(collectorId, { perPage, opts }, 30000);
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const collected = await requestUrlsFromOriginTab(collectorId, { perPage, opts }, 25000);
         urls = Array.isArray(collected?.urls) ? collected.urls : [];
-        if (urls.length > bestUrls.length) bestUrls = urls;
         // #region agent log (debug-mode instrumentation)
         __stockxDbgSend('H3_collectReturnsZero', 'chrome-extension/background.js:runListingBidScanPaginated', 'collect attempt', {
           scanId,
@@ -2554,20 +2552,9 @@ async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPa
           sample: urls.slice(0, 3)
         });
         // #endregion
-        // Persist a lightweight hint so the dashboard can show "page X collected Y".
-        try {
-          setScanState(scanId, {
-            lastCollectPage: pageNum,
-            lastCollectCount: bestUrls.length,
-            lastCollectAttempt: attempt,
-            lastCollectAt: Date.now()
-          });
-        } catch {}
-        // If we got a full-ish page, stop retrying. Otherwise keep going to catch late/lazy tiles.
-        if (bestUrls.length >= Math.max(12, Math.min(perPage, 48))) break;
-        await new Promise((r) => setTimeout(r, 1400 + attempt * 800));
+        if (urls.length) break;
+        await new Promise((r) => setTimeout(r, 1200 + attempt * 700));
       }
-      urls = bestUrls;
       const collectMs = Date.now() - collectStart;
       recordPagePerf(scanId, { navMs, collectMs });
       if (!urls.length) {
@@ -2582,12 +2569,6 @@ async function runListingBidScanPaginated({ originTabId, scanId, startUrl, maxPa
         });
         // #endregion
         // Ended early: mark as stopped so it can be resumed.
-        // IMPORTANT: also mark the in-memory scan entry as cancelled; the finalizer uses isScanCancelled(scanId)
-        // and otherwise this scan can incorrectly finalize as "done".
-        try {
-          const entry = getScanEntry(scanId);
-          if (entry) entry.cancelled = true;
-        } catch {}
         setScanState(scanId, {
           stage: `stopped (no urls on page ${pageNum})`,
           cancelled: true,

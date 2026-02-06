@@ -122,7 +122,6 @@ const DeliveriesNew: React.FC = () => {
   const {
     deliveries,
     loading,
-    hydrating,
     error,
     refresh: refreshDeliveries
   } = useRealTimeDeliveries({
@@ -163,20 +162,12 @@ const DeliveriesNew: React.FC = () => {
     return () => window.clearTimeout(t);
   }, []);
 
-  const statsUpdating = useMemo(() => {
-    // "hydrating" covers the 2-phase load where lite data arrives quickly and live tracking fills in after.
-    // We also consider "loading" as updating, but in this hook loading is mostly first-load only.
-    return !!hydrating || !!loading;
-  }, [hydrating, loading]);
-
   const shouldShowStatsSkeleton = useMemo(() => {
-    if (cachedStatValues) return false;
-    // If we're hydrating live tracking and don't have a cache yet, show a shimmer instead of misleading zeros.
-    if (statsUpdating) return true;
     if (hasDeliveries) return false;
+    if (cachedStatValues) return false;
     if (loading) return true;
     return !statsGraceOver;
-  }, [cachedStatValues, hasDeliveries, loading, statsGraceOver, statsUpdating]);
+  }, [cachedStatValues, hasDeliveries, loading, statsGraceOver]);
 
   useEffect(() => {
     if (shouldShowStatsSkeleton) {
@@ -1080,8 +1071,6 @@ const DeliveriesNew: React.FC = () => {
   useEffect(() => {
     if (!statsCacheKey || typeof window === 'undefined') return;
     if (!hasDeliveries) return; // don't overwrite good cache with a temporary empty list
-    // Avoid caching during the lite→full hydration phase; lite data often lacks ETAs and yields misleading zeros.
-    if (statsUpdating) return;
     try {
       const values: Record<string, number> = {};
       Object.keys(availableStats).forEach((id) => {
@@ -1094,7 +1083,7 @@ const DeliveriesNew: React.FC = () => {
       // ignore cache write errors
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statsCacheKey, hasDeliveries, deliveries, statsUpdating]);
+  }, [statsCacheKey, hasDeliveries, deliveries]);
 
   const statCardFilterMap: Record<string, { statusFilter: string; label: string }> = {
     arriving_today: { statusFilter: 'today', label: 'Arriving Today' },
@@ -2479,14 +2468,7 @@ const DeliveriesNew: React.FC = () => {
                     </div>
                   ) : (
                     <p className="text-2xl font-bold text-white mt-1 text-center w-full">
-                      {(() => {
-                        // During live-tracking hydration, the "lite" dataset can show misleading zeros for ETA-based stats.
-                        // Prefer the last-known cached values if we have them.
-                        if (statsUpdating && cachedStatValues && typeof cachedStatValues?.[statId] === 'number') {
-                          return cachedStatValues[statId]!;
-                        }
-                        return hasDeliveries ? stat.getValue() : (cachedStatValues?.[statId] ?? 0);
-                      })()}
+                      {hasDeliveries ? stat.getValue() : (cachedStatValues?.[statId] ?? 0)}
                     </p>
                   )}
                   {/* Reserve footer space so the active card doesn't appear taller */}
