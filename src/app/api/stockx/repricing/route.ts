@@ -599,32 +599,22 @@ export async function POST(request: NextRequest) {
               });
               continue;
             }
-            // "Set once and hold" with occasional refresh:
-            // - If we already have a stored reservePrice and it was set < 7 days ago, hold it (no chasing).
-            // - Otherwise refresh it to RESERVE_MULTIPLIER * bestAsk and persist reservePrice(+SetAt) via cron.
+            // Reserve behavior (duplicate inventory):
+            // Keep non-leader units far above the active unit so you don't compete against yourself.
+            // We only ever move reserves UP (never down), so reserves remain "safe" and stable.
             const storedReserve =
               typeof listing.reservePrice === 'number' && Number.isFinite(listing.reservePrice) && listing.reservePrice > 0
-                ? listing.reservePrice
+                ? Math.max(1, Math.round(listing.reservePrice))
                 : null;
-            const storedAtMs =
-              typeof listing.reservePriceSetAt === 'string' && listing.reservePriceSetAt
-                ? Date.parse(listing.reservePriceSetAt)
-                : Number.NaN;
-            const hasValidStoredAt = Number.isFinite(storedAtMs);
-            const isFresh = storedReserve !== null && hasValidStoredAt && Date.now() - storedAtMs < RESERVE_REFRESH_MS;
-            const computedReserve = Math.max(1, Math.round(Math.round(bestAsk * RESERVE_MULTIPLIER)));
-            newPrice = isFresh ? Math.max(1, Math.round(storedReserve!)) : computedReserve;
+            const computedReserve = Math.max(1, Math.round(bestAsk * RESERVE_MULTIPLIER));
+            newPrice = storedReserve !== null ? Math.max(storedReserve, computedReserve) : computedReserve;
 
-            if (storedReserve === null) {
-              skipReason = `Reserve pricing (set once): duplicate inventory (leader ${groupLeaderId} runs Two-step). Set to ${RESERVE_MULTIPLIER}x best ask ($${bestAsk} → $${newPrice})`;
-            } else if (isFresh) {
-              skipReason = `Reserve pricing (fixed): duplicate inventory (leader ${groupLeaderId} runs Two-step). Hold $${newPrice} (refresh every 7d)`;
-            } else {
-              const since = hasValidStoredAt ? listing.reservePriceSetAt : 'unknown';
-              skipReason =
-                `Reserve pricing (refresh 7d): duplicate inventory (leader ${groupLeaderId} runs Two-step). ` +
-                `Was $${Math.max(1, Math.round(storedReserve))} (setAt=${since}) → ${RESERVE_MULTIPLIER}x best ask ($${bestAsk} → $${newPrice})`;
-            }
+            skipReason =
+              storedReserve === null
+                ? `Reserve pricing: duplicate inventory (leader ${groupLeaderId} runs Two-step). Set to ${RESERVE_MULTIPLIER}x best ask ($${bestAsk} → $${newPrice})`
+                : storedReserve >= computedReserve
+                  ? `Reserve pricing: duplicate inventory (leader ${groupLeaderId} runs Two-step). Hold $${newPrice} (>= ${RESERVE_MULTIPLIER}x $${bestAsk})`
+                  : `Reserve pricing: duplicate inventory (leader ${groupLeaderId} runs Two-step). Raise to ${RESERVE_MULTIPLIER}x best ask ($${bestAsk} → $${newPrice})`;
           } else
           // Special case: two-step strategy (temporary reset to a high price, then undercut)
           if (listing.pricingStrategy.type === 'reset_then_beat_lowest') {
@@ -716,6 +706,42 @@ export async function POST(request: NextRequest) {
                   computedFinal
                 } as any;
               } else {
+              // If this is a duplicate-inventory Two-step group, push reserve followers UP first
+              // so the "next lowest ask" revealed by the $999 peek is a real competitor (not your own other unit).
+              if (!dryRun) {
+                const key = groupKeyFor(listing);
+                const leaderIdForKey = groupLeaderByKey.get(key);
+                const isLeader = !!leaderIdForKey && listing.listingId === leaderIdForKey;
+                const groupArr = groupCandidates.get(key) || [];
+                const shouldPreRaiseFollowers = isLeader && groupArr.length > 1;
+                if (shouldPreRaiseFollowers) {
+                  const stdAsk = toDisplayDollars(parseStockXMoneyToDollars((marketData as any).lowestAskAmount));
+                  const flexAsk = toDisplayDollars(parseStockXMoneyToDollars((marketData as any).flexLowestAskAmount));
+                  const bestAsk = minPositive(stdAsk, flexAsk);
+                  if (bestAsk !== null) {
+                    const reserveTarget = Math.max(1, Math.round(bestAsk * RESERVE_MULTIPLIER));
+                    const followerIds = groupArr.map(a => a.listingId).filter(id => id !== leaderIdForKey);
+                    for (const followerId of followerIds) {
+                      // Best-effort: only raise if follower is below target (avoid churn).
+                      const follower = groupArr.find(a => a.listingId === followerId);
+                      const followerCur = typeof follower?.currentPrice === 'number' ? follower.currentPrice : Number.NaN;
+                      if (Number.isFinite(followerCur) && followerCur >= reserveTarget) continue;
+                      await updateListingPrice(followerId, reserveTarget, accessToken, {
+                        waitForCompletion: true,
+                        timeoutMs: 30_000
+                      });
+                    }
+                    // Give StockX a moment to reflect follower updates before we peek.
+                    await new Promise(r => setTimeout(r, 2500));
+                    // Refresh market snapshot after moving followers up.
+                    try {
+                      marketData = await getMarketData(listing.productId, listing.variantId, { bustCache: true });
+                    } catch {
+                      // ignore; we'll still proceed with the peek/reset
+                    }
+                  }
+                }
+              }
               // Prevent overlapping Two-step sequences for the same listingId.
               // If another run is already in-flight, skip (do NOT set $999).
               const lock = await acquireTwoStepLock(listing.listingId, userId || null);
