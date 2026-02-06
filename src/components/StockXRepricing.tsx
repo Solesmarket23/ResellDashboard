@@ -402,6 +402,57 @@ export default function StockXRepricing() {
   const [pendingStrategyChanges, setPendingStrategyChanges] = useState<Record<string, IndividualPricingStrategy>>({});
   const [pendingBoundChanges, setPendingBoundChanges] = useState<Record<string, true>>({});
   const [rowSaveState, setRowSaveState] = useState<Record<string, 'idle' | 'saving' | 'saved'>>({});
+  // Prevent users from spamming Save while StockX takes 1–2 minutes to reflect updates.
+  // Keyed by effective listingId (group leader).
+  const [saveCooldownUntilById, setSaveCooldownUntilById] = useState<Record<string, number>>({});
+  const saveCooldownTimersRef = useRef<Record<string, NodeJS.Timeout>>({});
+  const DEFAULT_SAVE_COOLDOWN_MS = 120_000;
+
+  const startSaveCooldown = useCallback((effectiveId: string, ms: number = DEFAULT_SAVE_COOLDOWN_MS) => {
+    const id = String(effectiveId || '').trim();
+    if (!id) return;
+    const until = Date.now() + ms;
+
+    setSaveCooldownUntilById((prev) => ({ ...prev, [id]: until }));
+    const existing = saveCooldownTimersRef.current[id];
+    if (existing) clearTimeout(existing);
+    saveCooldownTimersRef.current[id] = setTimeout(() => {
+      setSaveCooldownUntilById((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      delete saveCooldownTimersRef.current[id];
+    }, ms);
+  }, []);
+
+  const isSaveCoolingDown = useCallback(
+    (effectiveId: string) => {
+      const id = String(effectiveId || '').trim();
+      const until = id ? saveCooldownUntilById[id] : undefined;
+      return typeof until === 'number' && until > Date.now();
+    },
+    [saveCooldownUntilById]
+  );
+
+  const saveCooldownSecondsLeft = useCallback(
+    (effectiveId: string) => {
+      const id = String(effectiveId || '').trim();
+      const until = id ? saveCooldownUntilById[id] : undefined;
+      if (typeof until !== 'number') return 0;
+      return Math.max(0, Math.ceil((until - Date.now()) / 1000));
+    },
+    [saveCooldownUntilById]
+  );
+
+  useEffect(() => {
+    return () => {
+      for (const t of Object.values(saveCooldownTimersRef.current)) {
+        try { clearTimeout(t); } catch {}
+      }
+      saveCooldownTimersRef.current = {};
+    };
+  }, []);
   
   const filteredListings = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -2281,9 +2332,16 @@ export default function StockXRepricing() {
       suppressImmediateReprice?: boolean;
       skipTwoStepNoBoundsConfirm?: boolean;
       forceTwoStepPeek?: boolean;
+      allowDuringCooldown?: boolean;
     }
   ): Promise<boolean> => {
     console.log('💾 Save button clicked for listing:', listingId);
+
+    if (!opts?.allowDuringCooldown && isSaveCoolingDown(listingId)) {
+      const left = saveCooldownSecondsLeft(listingId);
+      if (!opts?.suppressToast) showToast(`Please wait ${left}s before saving again (StockX updating)…`, 'warning');
+      return false;
+    }
     
     const listing = listings.find(l => l.listingId === listingId);
     const pendingStrategy = overrideStrategy ?? pendingStrategyChanges[listingId];
@@ -2434,6 +2492,10 @@ export default function StockXRepricing() {
         // - If you're already <= best ask, it may peek/reset to reveal the next ask.
         // - If you're above best ask, it can undercut directly (no $999), which is safer and avoids "stuck at $999" scenarios.
         const forceTwoStepPeek = opts?.forceTwoStepPeek === true;
+        // Start a cooldown immediately so repeated clicks don't queue overlapping StockX operations.
+        // Two-step can take longer; give it a slightly longer lockout.
+        const cooldownMs = strategyToSave?.type === 'reset_then_beat_lowest' ? 150_000 : DEFAULT_SAVE_COOLDOWN_MS;
+        startSaveCooldown(listingId, cooldownMs);
         void runImmediateReprice(listingsToUpdateWithBounds, {
           reason: 'Saved',
           suppressToast: true,
@@ -2671,9 +2733,15 @@ export default function StockXRepricing() {
 
   // Manual UX: one button that persists + applies to StockX.
   const saveAndApplyManual = async (effectiveListingId: string) => {
+    if (isSaveCoolingDown(effectiveListingId)) {
+      const left = saveCooldownSecondsLeft(effectiveListingId);
+      showToast(`Please wait ${left}s before applying again (StockX updating)…`, 'warning');
+      return false;
+    }
+    startSaveCooldown(effectiveListingId, DEFAULT_SAVE_COOLDOWN_MS);
     // Save without triggering the generic immediate repricer (avoids double-apply),
     // then push the manual price directly to StockX.
-    const ok = await savePricingRuleChange(effectiveListingId, undefined, { suppressImmediateReprice: true });
+    const ok = await savePricingRuleChange(effectiveListingId, undefined, { suppressImmediateReprice: true, allowDuringCooldown: true });
     if (!ok) return false;
     await applyManualPriceNow(effectiveListingId);
     return true;
@@ -4924,6 +4992,8 @@ export default function StockXRepricing() {
                           const hasPending = !!pendingStrategyChanges[effectiveId] || !!pendingBoundChanges[effectiveId];
                           const isTwoStep = listing.pricingStrategy?.type === 'reset_then_beat_lowest';
                           const isManual = listing.pricingStrategy?.type === 'manual';
+                          const cooling = isSaveCoolingDown(effectiveId);
+                          const coolingLeft = cooling ? saveCooldownSecondsLeft(effectiveId) : 0;
                           // Save appears when row is dirty OR when Two-step is selected (to allow "re-save" to re-run Two-step).
                           if (!hasPending && !isTwoStep && !isManual) return null;
                           return (
@@ -4937,17 +5007,29 @@ export default function StockXRepricing() {
                                   ? savePricingRuleChange(effectiveId, undefined, { forceTwoStepPeek: true })
                                   : savePricingRuleChange(effectiveId, undefined, undefined)
                             }
+                            disabled={cooling || rowSaveState[effectiveId] === 'saving'}
                             className={`px-2 py-1 rounded text-xs font-semibold transition-all whitespace-nowrap flex items-center gap-1 ${
                               isNeon
                                 ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white'
                                 : 'bg-blue-600 text-white hover:bg-blue-700'
-                            }`}
-                            title={isManual ? "Save manual price + bounds, then apply to StockX" : "Save pricing rule"}
+                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                            title={
+                              cooling
+                                ? `Please wait ${coolingLeft}s (StockX updating)`
+                                : isManual
+                                  ? "Save manual price + bounds, then apply to StockX"
+                                  : "Save pricing rule"
+                            }
                           >
                             {rowSaveState[effectiveId] === 'saving' ? (
                               <>
                                 <Loader className="w-3 h-3 animate-spin" />
                                 {isManual ? 'Applying…' : 'Saving…'}
+                              </>
+                            ) : cooling ? (
+                              <>
+                                <Loader className="w-3 h-3 animate-spin" />
+                                {coolingLeft}s
                               </>
                             ) : rowSaveState[effectiveId] === 'saved' ? (
                               <>
