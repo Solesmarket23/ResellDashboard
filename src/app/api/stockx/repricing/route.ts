@@ -703,7 +703,7 @@ export async function POST(request: NextRequest) {
               skipReason = `Two-step: not winning (or tied). Undercut best ask ($${initialBestAsk} → $${newPrice})`;
               twoStepMeta = { ...twoStepMeta, mode: 'direct_undercut', computedFinal: newPrice } as any;
               // continue into the normal constraint/update pipeline
-            } else
+            } else {
 
             // IMPORTANT: Min/Max bounds should prevent unnecessary $999 peeks.
             // If the final undercut would be clamped to Min/Max anyway, skip the reset step entirely to reduce
@@ -939,6 +939,7 @@ export async function POST(request: NextRequest) {
                 await releaseTwoStepLock(listing.listingId, lock.runId);
               }
               }
+            }
             }
 
           } else if (listing.pricingStrategy.type === 'queue_focus') {
