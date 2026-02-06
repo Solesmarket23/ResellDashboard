@@ -29,6 +29,19 @@ export function middleware(request: NextRequest) {
   // Log for debugging
   console.log('🔐 Middleware checking path:', pathname);
   
+  // Check if user is authenticated via site password (used for conditional redirects even on public routes)
+  const authCookie = request.cookies.get('site-auth');
+  const isSiteAuthed = authCookie?.value === 'authenticated';
+
+  // If the user is already site-authenticated, don't send them back to the public landing page.
+  // Keep them "inside" the app by default.
+  if ((pathname === '/' || pathname === '/landing') && isSiteAuthed) {
+    const url = request.nextUrl.clone();
+    url.pathname = '/dashboard';
+    url.search = '';
+    return NextResponse.redirect(url);
+  }
+
   // Check if this is a public route
   const isPublicRoute = PUBLIC_ROUTES.some(route => pathname.startsWith(route));
   if (isPublicRoute) {
@@ -36,14 +49,12 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
   
-  // Check if user is authenticated via site password
-  const authCookie = request.cookies.get('site-auth');
   console.log('🍪 Auth cookie:', authCookie?.value);
   
   // Special handling for Gmail and StockX API routes - these should be accessible with site password
   if (pathname.startsWith('/api/gmail') || pathname.startsWith('/api/stockx')) {
     console.log('📧 API route detected:', pathname);
-    if (authCookie?.value === 'authenticated') {
+    if (isSiteAuthed) {
       console.log('✅ User has site password, allowing API access');
       return NextResponse.next();
     } else {
@@ -58,7 +69,7 @@ export function middleware(request: NextRequest) {
   const isSitePasswordOnlyRoute = SITE_PASSWORD_ONLY_ROUTES.some(route => pathname.startsWith(route));
   if (isSitePasswordOnlyRoute) {
     // For these routes, only check site password
-    if (authCookie?.value === 'authenticated') {
+    if (isSiteAuthed) {
       return NextResponse.next();
     } else {
       // No site password auth, redirect to password protection
@@ -72,7 +83,7 @@ export function middleware(request: NextRequest) {
   // For dashboard access, we need both site password AND Google authentication
   if (pathname.startsWith('/dashboard')) {
     // Check if user has site password authentication
-    if (authCookie?.value === 'authenticated') {
+    if (isSiteAuthed) {
       // User has site password, let them access the dashboard
       // The dashboard page will handle checking for Google authentication
       return NextResponse.next();
@@ -86,7 +97,7 @@ export function middleware(request: NextRequest) {
   }
   
   // For other protected routes, site password is sufficient
-  if (authCookie?.value === 'authenticated') {
+  if (isSiteAuthed) {
     return NextResponse.next();
   }
   

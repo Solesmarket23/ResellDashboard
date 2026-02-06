@@ -7,6 +7,7 @@ import ParticleBackground from '@/components/ParticleBackground';
 
 function LoginForm() {
   const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(true);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
@@ -22,7 +23,7 @@ function LoginForm() {
       const response = await fetch('/api/auth/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ password, remember }),
       });
 
       if (response.ok) {
@@ -75,6 +76,16 @@ function LoginForm() {
               />
               <div className="absolute inset-0 -z-10 bg-gradient-to-r from-cyan-500/20 to-emerald-500/20 blur-xl rounded-lg opacity-0 group-focus-within:opacity-100 transition-opacity duration-300"></div>
             </div>
+
+            <label className="flex items-center gap-3 text-sm text-gray-300 select-none">
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+                className="h-4 w-4 accent-cyan-500"
+              />
+              Remember this computer for 30 days
+            </label>
 
             {error && (
               <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-3 text-red-400 text-sm animate-pulse">

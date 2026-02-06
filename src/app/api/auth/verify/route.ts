@@ -3,7 +3,7 @@ import { createHash } from 'crypto';
 
 export async function POST(request: NextRequest) {
   try {
-    const { password } = await request.json();
+    const { password, remember } = await request.json();
     
     // Get password from environment variable (do not hardcode secrets in the repo)
     const sitePassword = process.env.SITE_PASSWORD;
@@ -29,12 +29,14 @@ export async function POST(request: NextRequest) {
         email: `user@solesmarket.com` // Default email for password-protected users
       });
       
+      const shouldRemember = remember !== false;
+
       response.cookies.set('site-auth', 'authenticated', {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         path: '/',
-        maxAge: 60 * 60 * 24 * 30, // 30 days
+        ...(shouldRemember ? { maxAge: 60 * 60 * 24 * 30 } : {}), // 30 days or session
       });
       
       // Also set a user ID cookie that can be read client-side
@@ -43,7 +45,7 @@ export async function POST(request: NextRequest) {
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         path: '/',
-        maxAge: 60 * 60 * 24 * 30, // 30 days
+        ...(shouldRemember ? { maxAge: 60 * 60 * 24 * 30 } : {}), // 30 days or session
       });
       
       return response;
