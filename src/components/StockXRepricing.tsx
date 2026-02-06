@@ -2168,13 +2168,36 @@ export default function StockXRepricing() {
 
     if (leadersToReprice.length === 0) return true;
 
+    // IMPORTANT (Two-step only):
+    // If you have duplicate inventory (multiple identical listings), and we only send the leader,
+    // the server can't detect the duplicate group and can accidentally undercut *your own* other unit(s).
+    // When Two-step runs, send the full group for those leaders so the server can apply the
+    // "leader runs Two-step, followers get reserve price" behavior.
+    const expandedListingsToSend = (() => {
+      const out: Listing[] = [];
+      const seen = new Set<string>();
+      for (const leader of leadersToReprice) {
+        const isTwoStep = leader.pricingStrategy?.type === 'reset_then_beat_lowest';
+        const group = leader.inventoryGroupId ? inventoryGroups.get(leader.inventoryGroupId) : null;
+        const shouldExpand = isTwoStep && group && group.listings.length > 1;
+        const toAdd = shouldExpand ? group!.listings : [leader];
+        for (const l of toAdd) {
+          const id = String(l.listingId || '').trim();
+          if (!id || seen.has(id)) continue;
+          seen.add(id);
+          out.push(l);
+        }
+      }
+      return out.length > 0 ? out : leadersToReprice;
+    })();
+
     try {
       setLoading(true);
       const response = await fetch('/api/stockx/repricing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          listings: leadersToReprice.map(l => ({
+          listings: expandedListingsToSend.map(l => ({
             ...l,
             // Estimate cost basis if not provided (matches executeRepricing behavior)
             costBasis: l.costBasis || l.retailPrice || l.originalPrice * 0.7
