@@ -3558,17 +3558,29 @@ const DeliveriesNew: React.FC = () => {
                             <Copy className="w-4 h-4" />
               </button>
                           {isArchivedDelivery(delivery) ? (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setArchiveTarget(delivery);
-                                setConfirmArchiveOpen(true);
-                              }}
-                              className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors duration-200 text-blue-600 dark:text-blue-400"
-                              title="Restore from archive"
-                            >
-                              <RefreshCw className="w-4 h-4" />
-                            </button>
+                            <>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setArchiveTarget(delivery);
+                                  setConfirmArchiveOpen(true);
+                                }}
+                                className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors duration-200 text-blue-600 dark:text-blue-400"
+                                title="Restore from archive"
+                              >
+                                <RefreshCw className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  requestDeleteArchived(delivery);
+                                }}
+                                className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors duration-200 text-red-600 dark:text-red-400"
+                                title="Delete permanently"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </>
                           ) : (
                             <button
                               onClick={(e) => {
