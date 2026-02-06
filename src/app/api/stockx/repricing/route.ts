@@ -118,6 +118,23 @@ function isStuckAtResetPrice(currentPrice: unknown): boolean {
   return typeof currentPrice === 'number' && Number.isFinite(currentPrice) && currentPrice >= 900;
 }
 
+function parseLastPeekMs(listing: ListingToReprice): number {
+  const lastPeekIso =
+    listing.pricingStrategy?.peekSettings?.lastPeekTime ||
+    (typeof listing.lastPeekTime === 'string' ? listing.lastPeekTime : null) ||
+    null;
+  const lastPeekMs = lastPeekIso ? Date.parse(lastPeekIso) : Number.NaN;
+  return lastPeekMs;
+}
+
+function isPeekDue(listing: ListingToReprice): { due: boolean; frequency: string; intervalMs: number; lastPeekMs: number } {
+  const freq = listing.pricingStrategy?.peekSettings?.frequency || 'balanced';
+  const intervalMs = marketPeekIntervalMs(freq);
+  const lastPeekMs = parseLastPeekMs(listing);
+  const due = !Number.isFinite(lastPeekMs) || Date.now() - lastPeekMs >= intervalMs;
+  return { due, frequency: freq, intervalMs, lastPeekMs };
+}
+
 function computeRecoveryPrice(listing: ListingData): number | null {
   // Best-effort: if we ever get left at a "peek/reset" sentinel price (e.g. $999),
   // fall back to Min if present. This is strictly better than remaining at $999.
@@ -254,7 +271,9 @@ async function pollListingOperationStatus(args: {
     }
   }
 
-  return { complete: false, success: true, status: 'TIMEOUT', attempts };
+  // TIMEOUT means we couldn't confirm success. Treat as "unknown" rather than success so callers
+  // can avoid proceeding in multi-step flows (Two-step) that depend on operation ordering.
+  return { complete: false, success: false, status: 'TIMEOUT', attempts };
 }
 
 export async function POST(request: NextRequest) {
@@ -556,8 +575,9 @@ export async function POST(request: NextRequest) {
 
             // If flex is <= your price, you are NOT winning (flex wins).
             const losingToFlex = currentFlexAsk !== null && currentFlexAsk <= listing.currentPrice;
-            // If standard is < your price, you are NOT winning.
-            const losingToStd = currentStdAsk !== null && currentStdAsk < listing.currentPrice;
+            // Two-step: treat standard ties as NOT winning, so we don't sit tied and lose queue priority.
+            // If standard is <= your price, you are NOT winning.
+            const losingToStd = currentStdAsk !== null && currentStdAsk <= listing.currentPrice;
             const hasAnyAsk = currentStdAsk !== null || currentFlexAsk !== null;
             const isWinning = hasAnyAsk ? (!losingToFlex && !losingToStd) : false;
 
@@ -565,7 +585,10 @@ export async function POST(request: NextRequest) {
               equalNullableNumber(listing.lastSeenLowestAsk, currentStdAsk) &&
               equalNullableNumber(listing.lastSeenFlexLowestAsk, currentFlexAsk);
 
-            if (unchanged && isWinning && !violatesBounds) {
+            // If a peek is due (hourly/4h/6h/8h), don't skip — we want the periodic "raise to next ask - $1" behavior.
+            const { due, frequency } = isPeekDue(listing);
+
+            if (unchanged && isWinning && !violatesBounds && !due) {
               console.log(
                 `⏭️ Two-step skip (market unchanged + already winning): ${listing.listingId} ` +
                   `(price=$${listing.currentPrice}, lowestAsk=${currentStdAsk ?? 'null'}, flexLowestAsk=${currentFlexAsk ?? 'null'}, ` +
@@ -576,7 +599,7 @@ export async function POST(request: NextRequest) {
                 currentPrice: listing.currentPrice,
                 newPrice: listing.currentPrice,
                 action: 'no_change',
-                reason: 'Market unchanged and already winning (standard ties = win; flex ties/undercuts beat you)',
+                reason: `Market unchanged and already winning; Two-step peek not due yet (${frequency})`,
                 market: { lowestAsk: currentStdAsk, flexLowestAsk: currentFlexAsk },
               });
               continue;
@@ -640,6 +663,14 @@ export async function POST(request: NextRequest) {
             const initialFlexLowestAsk = toDisplayDollars(parseStockXMoneyToDollars((marketData as any).flexLowestAskAmount));
             const initialBestAsk = minPositive(initialLowestAsk, initialFlexLowestAsk);
             const computedFinal = initialBestAsk !== null ? Math.max(1, initialBestAsk - beatBy) : listing.currentPrice;
+            const { due, frequency } = isPeekDue(listing);
+
+            // Two-step "winning" logic: treat standard ties as losing, so we undercut quickly on ties.
+            const hasAnyAsk = initialLowestAsk !== null || initialFlexLowestAsk !== null;
+            const losingToFlex = initialFlexLowestAsk !== null && initialFlexLowestAsk <= listing.currentPrice;
+            const losingToStd = initialLowestAsk !== null && initialLowestAsk <= listing.currentPrice;
+            const isWinning = hasAnyAsk ? (!losingToFlex && !losingToStd) : false;
+
             const shouldPeekNextLowest = forceTwoStepPeek
               ? true
               : initialBestAsk !== null
@@ -665,6 +696,15 @@ export async function POST(request: NextRequest) {
               continue;
             }
 
+            // If you're NOT winning (including standard ties), undercut immediately.
+            // This avoids sitting tied and losing queue priority, and it avoids unnecessary $999 peeks.
+            if (!dryRun && initialBestAsk !== null && !isWinning && !forceTwoStepPeek) {
+              newPrice = Math.max(1, initialBestAsk - beatBy);
+              skipReason = `Two-step: not winning (or tied). Undercut best ask ($${initialBestAsk} → $${newPrice})`;
+              twoStepMeta = { ...twoStepMeta, mode: 'direct_undercut', computedFinal: newPrice } as any;
+              // continue into the normal constraint/update pipeline
+            } else
+
             // IMPORTANT: Min/Max bounds should prevent unnecessary $999 peeks.
             // If the final undercut would be clamped to Min/Max anyway, skip the reset step entirely to reduce
             // StockX push notification spam. We still fetch market data every run, so when market rises above Min,
@@ -687,6 +727,14 @@ export async function POST(request: NextRequest) {
                   : hasMaxBound && boundedTarget === listing.maxPrice
                     ? `Two-step skipped: market over Max ($${listing.maxPrice})`
                     : 'Two-step skipped: bounded target differs';
+              // Treat this as a peek "check" for cadence purposes so cron doesn't attempt peeks every run.
+              (listing as any).__peekMeta = {
+                frequency,
+                lastPeekTime: new Date().toISOString(),
+                resetPrice,
+                beatBy,
+                skippedDueToBounds: true
+              };
               twoStepMeta = { ...twoStepMeta, computedFinal } as any;
               // continue into the normal constraint/update pipeline with newPrice already bounded
             } else
@@ -704,6 +752,20 @@ export async function POST(request: NextRequest) {
                 computedFinal
               } as any;
             } else {
+              // Cron behavior: if you're winning, only peek on the configured cadence (hourly/4h/6h/8h).
+              // This gives you the "periodically raise up behind the next ask" behavior without peeking every run.
+              const isCronLike = Boolean(userId);
+              if (isCronLike && isWinning && !forceTwoStepPeek && !due) {
+                newPrice = listing.currentPrice;
+                skipReason = `Two-step peek not due yet (${frequency})`;
+                twoStepMeta = {
+                  ...twoStepMeta,
+                  mode: 'peek_next_lowest',
+                  computedFinal: listing.currentPrice,
+                  peekDue: false,
+                  peekFrequency: frequency
+                } as any;
+              } else
               // If we're NOT currently the lowest ask, don't do the risky reset step
               // unless the caller explicitly requested a forced peek.
               // Just undercut the current lowest ask directly.
@@ -736,25 +798,42 @@ export async function POST(request: NextRequest) {
               }
 
               try {
+              // Record peek time for cadence persistence (cron will write this into stockxPricingSettings).
+              (listing as any).__peekMeta = {
+                frequency,
+                lastPeekTime: new Date().toISOString(),
+                resetPrice,
+                beatBy
+              };
               // Step 1: set to reset price (intentionally may violate maxPrice; it's temporary)
               const resetResult = await updateListingPrice(listing.listingId, resetPrice, accessToken, {
                 waitForCompletion: true,
-                timeoutMs: 30_000
+                // Two-step depends on operation ordering; wait longer to avoid proceeding on TIMEOUT.
+                timeoutMs: 90_000
               });
               if (!resetResult.success) {
+                // Best-effort recovery: if the reset may have partially applied (or could apply later),
+                // immediately push a follow-up update back to the original price so we don't leave $999 behind.
+                // (This is safer than doing nothing because StockX operations can complete out-of-order.)
+                const recovery = await updateListingPrice(listing.listingId, listing.currentPrice, accessToken, {
+                  waitForCompletion: true,
+                  timeoutMs: 90_000
+                });
                 repricingResults.push({
                   listingId: listing.listingId,
                   currentPrice: listing.currentPrice,
                   newPrice: listing.currentPrice,
                   action: 'failed',
-                  reason: `Two-step reset failed: ${resetResult.error || 'Unknown error'}`,
+                  reason: `Two-step reset failed: ${resetResult.error || 'Unknown error'}. Recovery to original price ${recovery.success ? 'succeeded' : 'failed'}.`,
                   market: { lowestAsk: currentStdAsk, flexLowestAsk: currentFlexAsk },
                   twoStep: {
                     ...twoStepMeta,
                     mode: 'peek_next_lowest',
                     lock: { acquired: true, lockedUntilMs: lock.lockedUntilMs },
                     resetOperationId: resetResult.operation?.operationId,
-                    resetOperationStatus: resetResult.operationStatus
+                    resetOperationStatus: resetResult.operationStatus,
+                    recoveryOperationId: recovery.operation?.operationId,
+                    recoveryOperationStatus: recovery.operationStatus
                   }
                 });
                 continue;
@@ -1214,7 +1293,7 @@ export async function POST(request: NextRequest) {
             newPrice,
             accessToken,
             // Only wait for completion on the FINAL step of the two-step strategy (LIVE mode)
-            isTwoStepStrategy ? { waitForCompletion: true, timeoutMs: 30_000 } : undefined
+            isTwoStepStrategy ? { waitForCompletion: true, timeoutMs: 90_000 } : undefined
           );
 
           if (twoStepMeta) {
@@ -1511,6 +1590,16 @@ async function updateListingPrice(
         accessToken,
         timeoutMs: options.timeoutMs
       });
+
+      // If we couldn't confirm completion (TIMEOUT) treat as failure for safety in multi-step flows.
+      if (!op.complete && op.status === 'TIMEOUT') {
+        return {
+          success: false,
+          error: 'Operation status poll timed out',
+          operation: result,
+          operationStatus: op.status
+        };
+      }
 
       if (op.complete && !op.success) {
         const opError = op.data?.error?.message || op.data?.error || 'Operation failed';

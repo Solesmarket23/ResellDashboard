@@ -460,6 +460,12 @@ export default function StockXRepricing() {
         group: 'Legacy',
         badge: 'Legacy',
       },
+      {
+        value: 'keep_current',
+        label: 'Repricing Off',
+        description: 'Disable automated repricing for this listing (cron will skip it).',
+        group: 'Other',
+      },
     ],
     []
   );
@@ -2120,6 +2126,31 @@ export default function StockXRepricing() {
       return prev.map(l => (l.listingId === listingId ? { ...l, pricingStrategy: newStrategy } : l));
     });
 
+    // If user chooses "Repricing Off", also disable auto-reprice for this listing/group immediately.
+    if (type === 'keep_current') {
+      setListings(prev => {
+        if (isFollowerInGroup) {
+          const ids = new Set(group!.listings.map(gl => gl.listingId));
+          return prev.map(l => (ids.has(l.listingId) ? { ...l, repricingEnabled: false } : l));
+        }
+        return prev.map(l => (l.listingId === listingId ? { ...l, repricingEnabled: false } : l));
+      });
+      // Persist "enabled: false" for all impacted listing docs (best-effort).
+      const targets = (() => {
+        if (isFollowerInGroup) return group!.listings.map(gl => gl.listingId);
+        return [listingId];
+      })();
+      for (const id of targets) {
+        saveSettingToFirebase(id, {
+          enabled: false,
+          pricingStrategy: newStrategy,
+          minPrice: listings.find(l => l.listingId === id)?.minPrice,
+          maxPrice: listings.find(l => l.listingId === id)?.maxPrice,
+          autoDeactivate: listings.find(l => l.listingId === id)?.autoDeactivate
+        });
+      }
+    }
+
     // Exception: selecting Manual or Two-step should NOT auto-save/run; user must click Save.
     // (Two-step should run only on Save, and Save can be used to re-run Two-step even when unchanged.)
     if (type === 'manual' || type === 'reset_then_beat_lowest') return;
@@ -2323,6 +2354,8 @@ export default function StockXRepricing() {
       if (!opts?.suppressRowState) setRowSaveState(prev => ({ ...prev, [listingId]: 'saving' }));
       for (const l of listingsToUpdateWithBounds) {
         await saveSettingToFirebase(l.listingId, {
+          // "Repricing Off" should also disable cron consideration for this listing.
+          ...(strategyToSave.type === 'keep_current' ? { enabled: false } : {}),
           pricingStrategy: strategyToSave,
           minPrice: l.minPrice,
           maxPrice: l.maxPrice,
@@ -2367,8 +2400,11 @@ export default function StockXRepricing() {
       // Start repricing in the background (can take ~10–15s on StockX).
       // We intentionally do NOT await, so the row doesn't sit in "Saving…" for the duration.
       if (!opts?.suppressImmediateReprice) {
-        const forceTwoStepPeek =
-          opts?.forceTwoStepPeek === true || strategyToSave?.type === 'reset_then_beat_lowest';
+        // IMPORTANT: do NOT force the peek/reset path by default.
+        // Let the server decide:
+        // - If you're already <= best ask, it may peek/reset to reveal the next ask.
+        // - If you're above best ask, it can undercut directly (no $999), which is safer and avoids "stuck at $999" scenarios.
+        const forceTwoStepPeek = opts?.forceTwoStepPeek === true;
         void runImmediateReprice(listingsToUpdateWithBounds, {
           reason: 'Saved',
           suppressToast: true,
@@ -2547,15 +2583,14 @@ export default function StockXRepricing() {
       return;
     }
     
-    if (!listing.maxPrice || listing.maxPrice <= 0) {
-      setBulkActionMessage('⚠️ Please set a Max price before applying manual price');
+    // Validate manual price is within range (support one-sided bounds; Max is optional)
+    if (manualPriceToApply < listing.minPrice) {
+      setBulkActionMessage(`⚠️ Manual price ($${manualPriceToApply}) must be at least Min ($${listing.minPrice})`);
       setTimeout(() => setBulkActionMessage(null), 5000);
       return;
     }
-    
-    // Validate manual price is within range
-    if (manualPriceToApply < listing.minPrice || manualPriceToApply > listing.maxPrice) {
-      setBulkActionMessage(`⚠️ Manual price ($${manualPriceToApply}) must be between Min ($${listing.minPrice}) and Max ($${listing.maxPrice})`);
+    if (listing.maxPrice && listing.maxPrice > 0 && manualPriceToApply > listing.maxPrice) {
+      setBulkActionMessage(`⚠️ Manual price ($${manualPriceToApply}) must be at most Max ($${listing.maxPrice})`);
       setTimeout(() => setBulkActionMessage(null), 5000);
       return;
     }
@@ -2603,6 +2638,16 @@ export default function StockXRepricing() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Manual UX: one button that persists + applies to StockX.
+  const saveAndApplyManual = async (effectiveListingId: string) => {
+    // Save without triggering the generic immediate repricer (avoids double-apply),
+    // then push the manual price directly to StockX.
+    const ok = await savePricingRuleChange(effectiveListingId, undefined, { suppressImmediateReprice: true });
+    if (!ok) return false;
+    await applyManualPriceNow(effectiveListingId);
+    return true;
   };
 
   const updateMinPrice = (listingId: string, minPrice: number, opts?: { persist?: boolean }) => {
@@ -2771,7 +2816,6 @@ export default function StockXRepricing() {
             suppressRowState: true,
             skipTwoStepNoBoundsConfirm: true,
             suppressImmediateReprice: !shouldRunWithoutBounds,
-            forceTwoStepPeek: true,
           }
         : { suppressToast: true, suppressBanner: true, suppressRowState: true };
 
@@ -4688,38 +4732,43 @@ export default function StockXRepricing() {
                               : listing.listingId;
                           const hasPending = !!pendingStrategyChanges[effectiveId] || !!pendingBoundChanges[effectiveId];
                           const isTwoStep = listing.pricingStrategy?.type === 'reset_then_beat_lowest';
+                          const isManual = listing.pricingStrategy?.type === 'manual';
                           // Save appears when row is dirty OR when Two-step is selected (to allow "re-save" to re-run Two-step).
-                          if (!hasPending && !isTwoStep) return null;
+                          if (!hasPending && !isTwoStep && !isManual) return null;
                           return (
                           <button
-                            onClick={() => savePricingRuleChange(effectiveId, undefined, isTwoStep ? { forceTwoStepPeek: true } : undefined)}
+                            // For Two-step, Save should re-run immediately, but we should not force the $999 peek/reset
+                            // when it's not needed. The server will peek only when you're at/below best ask.
+                            onClick={() => (isManual ? saveAndApplyManual(effectiveId) : savePricingRuleChange(effectiveId, undefined, undefined))}
                             className={`px-2 py-1 rounded text-xs font-semibold transition-all whitespace-nowrap flex items-center gap-1 ${
                               isNeon
                                 ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white'
                                 : 'bg-blue-600 text-white hover:bg-blue-700'
                             }`}
-                            title="Save pricing rule"
+                            title={isManual ? "Save manual price + bounds, then apply to StockX" : "Save pricing rule"}
                           >
                             {rowSaveState[effectiveId] === 'saving' ? (
                               <>
                                 <Loader className="w-3 h-3 animate-spin" />
-                                Saving…
+                                {isManual ? 'Applying…' : 'Saving…'}
                               </>
                             ) : rowSaveState[effectiveId] === 'saved' ? (
                               <>
                                 <Check className="w-3 h-3" />
-                                Saved
+                                {isManual ? 'Applied' : 'Saved'}
                               </>
                             ) : (
                               <>
                                 <Save className="w-3 h-3" />
-                                Save
+                                {isManual ? 'Save & Apply' : 'Save'}
                               </>
                             )}
                           </button>
                           );
                         })()}
-                        {listing.pricingStrategy?.type === 'market_peek' || listing.pricingStrategy?.type === 'peek_focus' ? (
+                        {listing.pricingStrategy?.type === 'market_peek' ||
+                        listing.pricingStrategy?.type === 'peek_focus' ||
+                        listing.pricingStrategy?.type === 'reset_then_beat_lowest' ? (
                           <select
                             value={listing.pricingStrategy?.peekSettings?.frequency || 'balanced'}
                             onChange={(e) => updatePeekFrequency(listing.listingId, e.target.value as any)}
@@ -4792,17 +4841,6 @@ export default function StockXRepricing() {
                             }`}
                             placeholder="$"
                           />
-                              <button
-                                onClick={() => applyManualPriceNow(listing.listingId)}
-                                className={`px-2 py-1 rounded text-xs font-semibold transition-all whitespace-nowrap ${
-                                  isNeon
-                                    ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white'
-                                    : 'bg-emerald-600 text-white hover:bg-emerald-700'
-                                }`}
-                                title="Apply this price to StockX now"
-                              >
-                                Apply
-                              </button>
                           </div>
                         ) : (
                           <div className="w-[70px]"></div>
