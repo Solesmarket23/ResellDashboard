@@ -441,30 +441,23 @@ export default function StockXRepricing() {
   const pricingRuleOptions = useMemo<NeonDropdownOption[]>(
     () => [
       {
-        value: 'queue_focus',
-        label: 'Queue Focus',
-        description: 'Match best ask without peeking. Preserves tie-queue behavior (best for high-volume SKUs).',
-        group: 'Recommended',
-        badge: 'Default',
-      },
-      {
-        value: 'peek_focus',
-        label: 'Peek Focus (Low volume)',
-        description: 'Occasionally peeks to discover the next ask and raise. Skips peeks at Min to preserve queue.',
-        group: 'Recommended',
-      },
-      {
         value: 'reset_then_beat_lowest',
-        label: 'Two-step',
-        description: 'Legacy: resets high to reveal the next ask, then undercuts by $1. Use with Min/Max bounds.',
-        group: 'Legacy',
+        label: 'Two-step (Legacy)',
+        description: 'Resets high to reveal the next ask, then undercuts. Now supports tie-breaking + peek cadence via 1h/4h/6h/8h.',
+        group: 'Primary',
         badge: 'Legacy',
+      },
+      {
+        value: 'manual',
+        label: 'Manual',
+        description: 'Set an exact price. Click Save & Apply to push it to StockX now.',
+        group: 'Primary',
       },
       {
         value: 'keep_current',
         label: 'Repricing Off',
         description: 'Disable automated repricing for this listing (cron will skip it).',
-        group: 'Other',
+        group: 'Primary',
       },
     ],
     []
@@ -4713,17 +4706,7 @@ export default function StockXRepricing() {
                           isNeon={isNeon}
                           className="w-[260px] max-w-full"
                         />
-                          <button
-                          onClick={() => updateListingStrategy(listing.listingId, 'manual')}
-                          className={`px-2 py-1 rounded text-xs font-semibold transition-all whitespace-nowrap ${
-                            isNeon
-                              ? 'bg-white/5 hover:bg-white/10 text-gray-200 border border-white/10'
-                              : 'bg-gray-50 hover:bg-gray-100 text-gray-800 border border-gray-200'
-                          }`}
-                          title="Switch this row to Manual price mode (requires Save)"
-                        >
-                          Manual
-                        </button>
+                        {/* Manual is now selected from the dropdown to avoid duplicate actions/controls. */}
                         {(() => {
                           const group = listing.inventoryGroupId ? inventoryGroups.get(listing.inventoryGroupId) : null;
                           const effectiveId =
