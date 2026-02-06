@@ -44,6 +44,7 @@ interface UseRealTimeDeliveriesOptions {
 interface UseRealTimeDeliveriesReturn {
   deliveries: DeliveryItem[];
   loading: boolean;
+  hydrating: boolean; // true while we are fetching "full" live-tracking data in the background
   error: string | null;
   lastSync: Date | null;
   refresh: () => Promise<void>;
@@ -65,6 +66,7 @@ export function useRealTimeDeliveries({
 }: UseRealTimeDeliveriesOptions): UseRealTimeDeliveriesReturn {
   const [deliveries, setDeliveries] = useState<DeliveryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hydrating, setHydrating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const hasLoadedOnceRef = useRef(false);
@@ -123,6 +125,7 @@ export function useRealTimeDeliveries({
             }
 
             // Phase 2 (slow): hydrate live tracking in the background (no blocking loader).
+            setHydrating(true);
             const fullResponse = await fetch(`/api/deliveries/sync`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -143,10 +146,12 @@ export function useRealTimeDeliveries({
             } else {
               throw new Error(fullData.error || 'Failed to fetch deliveries');
             }
+            setHydrating(false);
 
             return;
           } catch (error) {
             console.error('❌ Error parsing localStorage purchases:', error);
+            setHydrating(false);
             // Fall through to regular Firebase fetch
           }
         }
@@ -169,6 +174,7 @@ export function useRealTimeDeliveries({
       }
 
       // Phase 2 (slow): hydrate live tracking in background.
+      setHydrating(true);
       const response = await fetch(url);
       const data = await response.json();
       if (data.success) {
@@ -179,10 +185,12 @@ export function useRealTimeDeliveries({
       } else {
         throw new Error(data.error || 'Failed to fetch deliveries');
       }
+      setHydrating(false);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       console.error('❌ Error fetching deliveries:', errorMessage);
       setError(errorMessage);
+      setHydrating(false);
     } finally {
       setLoading(false);
     }
@@ -214,6 +222,7 @@ export function useRealTimeDeliveries({
   return {
     deliveries,
     loading,
+    hydrating,
     error,
     lastSync,
     refresh: fetchDeliveries,

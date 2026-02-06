@@ -8450,13 +8450,14 @@ function isLikelyProductPathForListing(pathname) {
 function collectListingProductUrls(max = 48, opts = {}) {
   const urls = [];
   const seen = new Set();
-  const anchors = Array.from(document.querySelectorAll('a[href^="/"]'));
+  // Use all anchors; some StockX tiles use absolute URLs.
+  const anchors = Array.from(document.querySelectorAll('a[href]'));
 
   const looksLikeProductCardLink = (a) => {
     try {
-      if (a.querySelector?.('img')) return true;
+      if (a.querySelector?.('img,picture,source')) return true;
       const card = a.closest('article,li,[role="listitem"]') || null;
-      if (card && card.querySelector?.('img')) return true;
+      if (card && card.querySelector?.('img,picture,source')) return true;
       return false;
     } catch {
       return false;
@@ -8520,7 +8521,7 @@ function collectListingProductUrls(max = 48, opts = {}) {
     for (const c of cards) {
       if (urls.length >= max) break;
       try {
-        const as = Array.from(c.querySelectorAll('a[href^="/"]'));
+        const as = Array.from(c.querySelectorAll('a[href]'));
         if (!as.length) continue;
 
         // Pick the best anchor within the card (prefer ones that wrap/contain the image).
@@ -8534,10 +8535,12 @@ function collectListingProductUrls(max = 48, opts = {}) {
           } catch {
             continue;
           }
+          // Ensure this is a StockX link (avoid weird injected links).
+          if (!/(\.|^)stockx\.com$/i.test(String(u.hostname || ''))) continue;
           if (!isLikelyProductPathForListing(u.pathname)) continue;
           if (opts.excludeSponsored && String(u.searchParams.get('sponsored') || '').toLowerCase() === 'true') continue;
           // Card-based heuristics: if the card has an image, this is likely a true product tile.
-          const hasImg = !!(a.querySelector?.('img,picture') || c.querySelector?.('img,picture'));
+          const hasImg = !!(a.querySelector?.('img,picture,source') || c.querySelector?.('img,picture,source'));
           const txtLen = safeText(a).length;
           const score = (hasImg ? 10 : 0) + (txtLen > 0 ? 1 : 0);
           if (score > bestScore) {
@@ -8546,7 +8549,7 @@ function collectListingProductUrls(max = 48, opts = {}) {
           }
         }
         if (!best?.a || !best?.u) continue;
-        if (!looksLikeProductCardLink(best.a)) continue;
+        // We already scoped to a card container; don't require an <img> (lazy-loading can omit it briefly).
         if (shouldSkipByCardText(best.a)) continue;
 
         const normalized = normalizeUrl(best.u);
@@ -8568,6 +8571,7 @@ function collectListingProductUrls(max = 48, opts = {}) {
     } catch {
       continue;
     }
+    if (!/(\.|^)stockx\.com$/i.test(String(u.hostname || ''))) continue;
     if (!isLikelyProductPathForListing(u.pathname)) continue;
     if (opts.excludeSponsored && String(u.searchParams.get('sponsored') || '').toLowerCase() === 'true') continue;
     // Only accept anchors that actually look like they belong to a product card.
@@ -9477,7 +9481,7 @@ function ensureListingBidWidget() {
         'why'
       ]);
 
-      // Swallow click events for action roles so per-element click handlers don't double-run.
+      // Swallow click events for action roles (in BUBBLE phase) so per-element click handlers still run.
       // This also prevents StockX from seeing these clicks.
       try {
         widget.addEventListener(
@@ -9490,7 +9494,7 @@ function ensureListingBidWidget() {
               e.stopPropagation?.();
             } catch {}
           },
-          { capture: true }
+          { capture: false }
         );
       } catch {}
 
@@ -9771,7 +9775,13 @@ function ensureListingBidWidget() {
                 (async () => {
                   try {
                     try { startScanKeepalive('scan-pages'); } catch {}
-                    const maxPages = Math.max(1, Math.min(200, Number(state.maxPages || 1)));
+                    // Read from the input at click time (source of truth), then sync state + clamp UI.
+                    const w = document.getElementById('stockx-bid-opps-widget');
+                    const el = w?.querySelector?.('[data-role="max-pages"]') || null;
+                    const raw = Number(String(el?.value ?? state.maxPages ?? 1).trim());
+                    const maxPages = Number.isFinite(raw) ? Math.max(1, Math.min(200, raw)) : Math.max(1, Math.min(200, Number(state.maxPages || 1)));
+                    try { state.maxPages = maxPages; } catch {}
+                    try { if (el && String(el.value || '').trim() !== String(maxPages)) el.value = String(maxPages); } catch {}
                     const perPage = 48;
                     const settings = await loadScanSettings();
                     const collectOpts = {
@@ -10093,6 +10103,15 @@ function ensureListingBidWidget() {
     if (!Number.isFinite(n)) return;
     state.maxItems = n;
   });
+  // Clamp on blur/change so the input can't visually remain at 0/blank.
+  maxEl?.addEventListener('change', () => {
+    try {
+      const n = Math.max(1, Math.min(48, Number(String(maxEl.value || '').trim())));
+      if (!Number.isFinite(n)) return;
+      state.maxItems = n;
+      if (String(maxEl.value || '').trim() !== String(n)) maxEl.value = String(n);
+    } catch {}
+  });
 
   const concEl = widget.querySelector('[data-role="concurrency"]');
   concEl?.addEventListener('input', () => {
@@ -10100,12 +10119,28 @@ function ensureListingBidWidget() {
     if (!Number.isFinite(n)) return;
     state.concurrency = n;
   });
+  concEl?.addEventListener('change', () => {
+    try {
+      const n = Math.max(1, Math.min(5, Number(String(concEl.value || '').trim())));
+      if (!Number.isFinite(n)) return;
+      state.concurrency = n;
+      if (String(concEl.value || '').trim() !== String(n)) concEl.value = String(n);
+    } catch {}
+  });
 
   const maxPagesEl = widget.querySelector('[data-role="max-pages"]');
   maxPagesEl?.addEventListener('input', () => {
     const n = Math.max(1, Math.min(200, Number(String(maxPagesEl.value || '').trim())));
     if (!Number.isFinite(n)) return;
     state.maxPages = n;
+  });
+  maxPagesEl?.addEventListener('change', () => {
+    try {
+      const n = Math.max(1, Math.min(200, Number(String(maxPagesEl.value || '').trim())));
+      if (!Number.isFinite(n)) return;
+      state.maxPages = n;
+      if (String(maxPagesEl.value || '').trim() !== String(n)) maxPagesEl.value = String(n);
+    } catch {}
   });
 
   const onlySneakersEl = widget.querySelector('[data-role="only-sneakers"]');
@@ -10275,7 +10310,12 @@ function ensureListingBidWidget() {
 
   widget.querySelector('[data-role="scan-pages"]')?.addEventListener('click', async () => {
     try {
-      const maxPages = Math.max(1, Math.min(200, Number(state.maxPages || 1)));
+      // Read from the input at click time (source of truth), then sync state + clamp UI.
+      const el = widget.querySelector?.('[data-role="max-pages"]') || null;
+      const raw = Number(String(el?.value ?? state.maxPages ?? 1).trim());
+      const maxPages = Number.isFinite(raw) ? Math.max(1, Math.min(200, raw)) : Math.max(1, Math.min(200, Number(state.maxPages || 1)));
+      try { state.maxPages = maxPages; } catch {}
+      try { if (el && String(el.value || '').trim() !== String(maxPages)) el.value = String(maxPages); } catch {}
       const perPage = 48;
       const settings = await loadScanSettings();
       const collectOpts = {
