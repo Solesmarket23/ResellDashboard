@@ -6,6 +6,7 @@ const PUBLIC_ROUTES = [
   '/go/',
   '/api/go/',
   '/api/shorten',
+  '/api/debug/', // Debug endpoints (safe; no secrets returned)
   '/_next/',
   '/favicon.ico',
   '/password-protect',  // Site password protection page
@@ -29,9 +30,11 @@ export function middleware(request: NextRequest) {
   // Log for debugging
   console.log('🔐 Middleware checking path:', pathname);
   
-  // Check if user is authenticated via site password (used for conditional redirects even on public routes)
-  const authCookie = request.cookies.get('site-auth');
-  const isSiteAuthed = authCookie?.value === 'authenticated';
+  // Check if user is authenticated via site password (used for conditional redirects even on public routes).
+  // Important: browsers can store multiple cookies with the same name but different scopes (host-only vs domain),
+  // and the order they are sent can vary. Treat as authenticated if ANY `site-auth` cookie is authenticated.
+  const authCookies = request.cookies.getAll('site-auth');
+  const isSiteAuthed = authCookies.some(c => c.value === 'authenticated');
 
   // If the user is already site-authenticated, don't send them back to the public landing page.
   // Keep them "inside" the app by default.
@@ -49,7 +52,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
   
-  console.log('🍪 Auth cookie:', authCookie?.value);
+  console.log('🍪 site-auth cookies:', authCookies.map(c => c.value).join(',') || '(none)');
   
   // Special handling for Gmail and StockX API routes - these should be accessible with site password
   if (pathname.startsWith('/api/gmail') || pathname.startsWith('/api/stockx')) {

@@ -33,6 +33,41 @@ export async function POST(request: NextRequest) {
       // Ensure cookies work across both `solesmarket.com` and `www.solesmarket.com` in production.
       const cookieDomain = process.env.NODE_ENV === 'production' ? '.solesmarket.com' : undefined;
 
+      // Clear any prior cookies that might exist with different scopes (host-only vs domain)
+      // to avoid duplicate-cookie ambiguity in middleware.
+      response.cookies.set('site-auth', '', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 0,
+      });
+      response.cookies.set('site-user-id', '', {
+        httpOnly: false,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 0,
+      });
+      if (cookieDomain) {
+        response.cookies.set('site-auth', '', {
+          httpOnly: true,
+          secure: true,
+          sameSite: 'lax',
+          path: '/',
+          domain: cookieDomain,
+          maxAge: 0,
+        });
+        response.cookies.set('site-user-id', '', {
+          httpOnly: false,
+          secure: true,
+          sameSite: 'lax',
+          path: '/',
+          domain: cookieDomain,
+          maxAge: 0,
+        });
+      }
+
       response.cookies.set('site-auth', 'authenticated', {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
