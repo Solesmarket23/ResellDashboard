@@ -48,6 +48,7 @@ const FailedVerifications = () => {
   
   // Dynamic theme detection for consistent neon styling
   const isNeon = currentTheme.name === 'Neon';
+  const loginHref = '/login?from=%2Fdashboard%3Fsection%3Dfailed-verifications';
 
   const timeOptions = ['Monthly', 'Weekly', 'Daily'];
   const statusOptions = ['All Statuses', 'Failed', 'Pending', 'Completed'];
@@ -326,9 +327,6 @@ const FailedVerifications = () => {
       // Update progress
       setScanProgress({ found: failures.length, saved: 0, message: `Found ${failures.length} verification failure${failures.length !== 1 ? 's' : ''}` });
       
-      // Clear previous scan results to avoid duplicates in the UI
-      setScanResults([]);
-      
       // Save scanned results to Firebase
       if (failures.length > 0 && user) {
         setScanStatus('saving');
@@ -603,58 +601,48 @@ const FailedVerifications = () => {
     );
   }
 
-  // Show auth prompt if no user
-  if (!user && !authLoading) {
-    return (
-      <div className={`min-h-full p-8 ${
-        isNeon 
-          ? 'bg-slate-950' 
-          : currentTheme.colors.background
-      }`}>
-        <div className="flex items-center justify-center min-h-[60vh]">
-          <div className="text-center">
-            <AlertTriangle className={`w-12 h-12 mx-auto mb-4 ${
-              isNeon ? 'text-orange-400' : 'text-orange-500'
-            }`} />
-            <h2 className={`text-xl font-semibold mb-2 ${
-              isNeon ? 'text-white' : 'text-gray-900'
-            }`}>
-              Sign In Required
-            </h2>
-            <p className={`mb-4 ${
-              isNeon ? 'text-slate-400' : 'text-gray-600'
-            }`}>
-              Please sign in to save and view your failed verifications
-            </p>
-            <div className="space-y-2">
-              <a
-                href="/login"
-                className={`inline-block px-6 py-2 rounded-lg text-white transition-all ${
-                  isNeon
-                    ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600'
-                    : 'bg-blue-600 hover:bg-blue-700'
-                }`}
-              >
-                Sign In
-              </a>
-              <p className={`text-sm ${
-                isNeon ? 'text-slate-500' : 'text-gray-500'
-              }`}>
-                or add <code className="bg-gray-800 px-2 py-1 rounded">?testMode=true</code> to the URL for demo mode
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className={`min-h-full p-8 ${
       isNeon 
         ? 'bg-slate-950' 
         : currentTheme.colors.background
     }`}>
+      {!user && (
+        <div
+          className={`rounded-lg p-5 mb-6 ${
+            isNeon
+              ? 'dark-neon-card border border-orange-500/30 shadow-lg shadow-orange-500/10'
+              : `${currentTheme.colors.cardBackground} shadow-sm border border-orange-200 bg-orange-50`
+          }`}
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className={`w-5 h-5 mt-0.5 ${isNeon ? 'text-orange-400' : 'text-orange-600'}`} />
+              <div>
+                <div className={`font-semibold ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+                  Sign in to save failed verifications
+                </div>
+                <div className={`text-sm mt-1 ${isNeon ? 'text-slate-400' : 'text-gray-700'}`}>
+                  You can still scan Gmail here without signing in, but saving/loading your history requires a dashboard account sign-in.
+                  This is separate from StockX authentication.
+                </div>
+              </div>
+            </div>
+
+            <a
+              href={loginHref}
+              className={`shrink-0 inline-block px-4 py-2 rounded-lg text-white transition-all ${
+                isNeon
+                  ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600'
+                  : 'bg-blue-600 hover:bg-blue-700'
+              }`}
+            >
+              Sign In
+            </a>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
@@ -1205,6 +1193,63 @@ const FailedVerifications = () => {
                 Order numbers and failure reasons extracted from StockX emails.
               </p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Temporary scan preview (when not yet saved) */}
+      {scanResults.length > 0 && manualFailures.length === 0 && (
+        <div className={`rounded-lg overflow-hidden mb-6 ${
+          isNeon
+            ? 'dark-neon-card border border-slate-700/50'
+            : `${currentTheme.colors.cardBackground} shadow-sm border border-gray-200`
+        }`}>
+          <div className={`px-6 py-4 border-b ${
+            isNeon ? 'border-slate-700/50' : 'border-gray-200'
+          }`}>
+            <div className={`text-sm ${isNeon ? 'text-slate-300' : 'text-gray-700'}`}>
+              Showing the latest scan results (not saved yet).
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className={`border-b ${
+                isNeon ? 'bg-slate-800/90 border-slate-700/50' : 'bg-gray-50 border-gray-200'
+              }`}>
+                <tr>
+                  <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
+                    isNeon ? 'text-slate-300' : 'text-gray-500'
+                  }`}>Order #</th>
+                  <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
+                    isNeon ? 'text-slate-300' : 'text-gray-500'
+                  }`}>Product</th>
+                  <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
+                    isNeon ? 'text-slate-300' : 'text-gray-500'
+                  }`}>Reason</th>
+                  <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
+                    isNeon ? 'text-slate-300' : 'text-gray-500'
+                  }`}>Email date</th>
+                </tr>
+              </thead>
+              <tbody className={isNeon ? 'divide-y divide-slate-700/50' : 'divide-y divide-gray-200'}>
+                {scanResults.map((r, idx) => (
+                  <tr key={`${r?.orderNumber || 'row'}-${idx}`} className={isNeon ? 'hover:bg-slate-800/40' : 'hover:bg-gray-50'}>
+                    <td className={`px-6 py-4 text-sm ${isNeon ? 'text-white' : 'text-gray-900'}`}>
+                      {r?.orderNumber || '-'}
+                    </td>
+                    <td className={`px-6 py-4 text-sm ${isNeon ? 'text-slate-200' : 'text-gray-700'}`}>
+                      {r?.productName || 'StockX Item'}
+                    </td>
+                    <td className={`px-6 py-4 text-sm ${isNeon ? 'text-slate-300' : 'text-gray-700'}`}>
+                      {r?.failureReason || 'Did not pass verification'}
+                    </td>
+                    <td className={`px-6 py-4 text-sm ${isNeon ? 'text-slate-300' : 'text-gray-700'}`}>
+                      {r?.emailDate || r?.date || '-'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
