@@ -1,0 +1,54 @@
+name: FlipFlowNative
+
+options:
+  bundleIdPrefix: com.flipflow.app
+  deploymentTarget:
+    iOS: "16.0"
+  xcodeVersion: "16.0"
+
+packages:
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk.git
+    from: 11.0.0
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS.git
+    from: 8.0.0
+
+settings:
+  base:
+    PRODUCT_NAME: "Flip Flow Native"
+    MARKETING_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: 1
+    SWIFT_VERSION: 5.0
+    IPHONEOS_DEPLOYMENT_TARGET: 16.0
+    TARGETED_DEVICE_FAMILY: "1" # iPhone
+    SUPPORTS_MACCATALYST: NO
+
+targets:
+  FlipFlowNative:
+    type: application
+    platform: iOS
+    bundleId: com.flipflow.app.native
+    sources:
+      - path: Sources/FlipFlowNative
+    resources:
+      - path: Resources
+    info:
+      path: Resources/Info.plist
+      properties:
+        CFBundleDisplayName: "Flip Flow Native"
+        NSCameraUsageDescription: "Scan tracking numbers and QR codes for receiving and authentication."
+        NSMicrophoneUsageDescription: "Microphone access is not required for receiving, but may be used for future voice features."
+        UIRequiresFullScreen: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+    dependencies:
+      - package: Firebase
+        product: FirebaseCore
+      - package: Firebase
+        product: FirebaseAuth
+      - package: Firebase
+        product: FirebaseFirestore
+      - package: GoogleSignIn
+        product: GoogleSignIn
+

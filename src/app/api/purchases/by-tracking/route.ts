@@ -53,6 +53,44 @@ function pickTracking(data: any): string | null {
   );
 }
 
+function parseMoney(val: unknown): number | null {
+  if (typeof val === 'number' && Number.isFinite(val)) return val;
+  if (typeof val !== 'string') return null;
+  const cleaned = val.replace(/[^0-9.\-]/g, '');
+  if (!cleaned) return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
+function pickCreditsAmount(data: any): number {
+  const raw = data?.credits ?? data?.discounts ?? 0;
+  const n = parseMoney(raw);
+  return n && n > 0 ? n : 0;
+}
+
+function pickGrossAmount(data: any): number | null {
+  const candidates = [data?.totalAmount, data?.totalPayment, data?.purchasePrice, data?.netPaid, data?.price, data?.originalPrice];
+  for (const c of candidates) {
+    const n = parseMoney(c);
+    if (n && n > 0) return n;
+  }
+  return null;
+}
+
+function computeNetPaid(data: any): number | null {
+  const net = parseMoney(data?.netPaid);
+  if (net && net >= 0) return net;
+  const gross = pickGrossAmount(data);
+  if (gross == null) return null;
+  const credits = pickCreditsAmount(data);
+  return Math.max(0, gross - credits);
+}
+
+function formatUsd(n: number | null): string | null {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return null;
+  return `$${n.toFixed(2)}`;
+}
+
 function toMillis(isoOrNumber: any): number {
   if (typeof isoOrNumber === 'number') return isoOrNumber;
   if (typeof isoOrNumber !== 'string') return 0;
@@ -116,6 +154,9 @@ export async function GET(request: NextRequest) {
     const matches = docs
       .map((doc) => {
         const data = doc.data() as any;
+        const gross = pickGrossAmount(data);
+        const credits = pickCreditsAmount(data);
+        const netPaid = computeNetPaid(data);
         return {
           id: doc.id,
           userId: data?.userId || data?.uid || null,
@@ -127,6 +168,16 @@ export async function GET(request: NextRequest) {
           deliveredAt: data?.actualDelivery || data?.deliveredAt || data?.shipment?.deliveredAt || null,
           received: !!data?.received,
           receivedAt: data?.receivedAt || null,
+          pricing: {
+            gross,
+            credits,
+            netPaid,
+            display: formatUsd(netPaid),
+          },
+          authSelf: data?.authSelf || data?.auth?.self || null,
+          authExternal: data?.authExternal || data?.auth?.external || null,
+          stockx: data?.stockx || null,
+          stockxUnitQrRaw: data?.stockx?.unitQrRaw || data?.stockxUnitQrRaw || null,
           product: {
             name: pickProductName(data),
             brand: pickProductBrand(data),

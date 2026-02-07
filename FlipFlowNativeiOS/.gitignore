@@ -1,0 +1,12 @@
+## Xcode
+*.xcuserstate
+xcuserdata/
+DerivedData/
+
+## Secrets / Firebase
+GoogleService-Info.plist
+GoogleService-Info*.plist
+
+## Generated project (we generate via xcodegen)
+FlipFlowNative.xcodeproj/
+
