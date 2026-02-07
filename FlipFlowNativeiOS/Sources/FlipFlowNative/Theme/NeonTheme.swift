@@ -58,6 +58,7 @@ struct NeonCard<Content: View>: View {
       .overlay(
         RoundedRectangle(cornerRadius: 20, style: .continuous)
           .stroke(NeonTheme.border, lineWidth: 1)
+          .allowsHitTesting(false)
       )
   }
 }

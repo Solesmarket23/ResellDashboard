@@ -32,6 +32,7 @@ struct SignInView: View {
               }
             }
             .pickerStyle(.segmented)
+            .tint(NeonTheme.accentCyan)
             .padding(.top, 6)
 
             if mode == .google {
