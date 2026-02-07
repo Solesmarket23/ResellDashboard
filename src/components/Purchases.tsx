@@ -2781,6 +2781,27 @@ const Purchases = () => {
     const carrier = purchase.carrier;
     
     // DISABLED FOR PERFORMANCE - console.log(`🧹 cleanupCarrier for ${purchase.orderNumber}:`, { tracking, carrier });
+
+    // StockX edge case:
+    // Some shipped emails include 12-digit Style IDs (e.g. "710888282001/710888283001").
+    // If the parser ever mis-detects a Style ID as FedEx tracking, clear it so the UI shows "Add Tracking".
+    try {
+      const styleIdRaw =
+        purchase?.styleId ||
+        purchase?.style_id ||
+        purchase?.product?.styleId ||
+        purchase?.product?.style_id ||
+        null;
+      const cleanTracking = String(tracking || '').replace(/[\s\-_]/g, '').trim();
+      if (styleIdRaw && /^\d{12}$/.test(cleanTracking)) {
+        const styleDigits = String(styleIdRaw).match(/\b\d{12}\b/g) || [];
+        if (styleDigits.includes(cleanTracking)) {
+          return { ...purchase, tracking: '', carrier: null };
+        }
+      }
+    } catch {
+      // ignore
+    }
     
     // If no tracking number, carrier should be null
     if (!tracking || tracking.trim() === '') {
