@@ -17,6 +17,9 @@ packages:
 settings:
   base:
     PRODUCT_NAME: "Flip Flow Native"
+    PRODUCT_BUNDLE_IDENTIFIER: com.flipflow.app.native
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: 3U54DYPWFB
     MARKETING_VERSION: 0.1.0
     CURRENT_PROJECT_VERSION: 1
     SWIFT_VERSION: 5.0
@@ -29,6 +32,10 @@ targets:
     type: application
     platform: iOS
     bundleId: com.flipflow.app.native
+    settings:
+      base:
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 3U54DYPWFB
     sources:
       - path: Sources/FlipFlowNative
     resources:
