@@ -3,6 +3,16 @@ import SwiftUI
 struct MainTabView: View {
   var body: some View {
     TabView {
+      PlaceholderTab(title: "Dashboard", subtitle: "Buttons coming next", systemImage: "chart.line.uptrend.xyaxis")
+        .tabItem {
+          Label("Dashboard", systemImage: "chart.line.uptrend.xyaxis")
+        }
+
+      PlaceholderTab(title: "Repricing", subtitle: "Buttons coming next", systemImage: "tag")
+        .tabItem {
+          Label("Repricing", systemImage: "tag")
+        }
+
       ReceivingView()
         .tabItem {
           Label("Purchases", systemImage: "shippingbox")
@@ -11,16 +21,6 @@ struct MainTabView: View {
       PlaceholderTab(title: "Deliveries", subtitle: "Buttons coming next", systemImage: "truck.box")
         .tabItem {
           Label("Deliveries", systemImage: "truck.box")
-        }
-
-      PlaceholderTab(title: "Repricing", subtitle: "Buttons coming next", systemImage: "tag")
-        .tabItem {
-          Label("Repricing", systemImage: "tag")
-        }
-
-      PlaceholderTab(title: "Dashboard", subtitle: "Buttons coming next", systemImage: "chart.line.uptrend.xyaxis")
-        .tabItem {
-          Label("Dashboard", systemImage: "chart.line.uptrend.xyaxis")
         }
     }
   }
