@@ -1,5 +1,4 @@
 import Foundation
-import FirebaseAuth
 
 @MainActor
 final class ReceivingViewModel: ObservableObject {

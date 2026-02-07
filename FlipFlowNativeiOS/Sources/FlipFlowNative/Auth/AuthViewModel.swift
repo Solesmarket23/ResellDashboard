@@ -16,7 +16,21 @@ final class AuthViewModel: ObservableObject {
   // You can change later to a configurable setting if needed.
   private let siteBaseURL = URL(string: "https://solesmarket.com")!
 
+  private var isFirebaseConfigured: Bool {
+    FirebaseApp.app() != nil
+  }
+
   func start() {
+    // Bootstrap site-password session first (works even without Firebase configured).
+    let siteId = UserDefaults.standard.string(forKey: siteUserDefaultsKey) ?? ""
+    if !siteId.isEmpty {
+      session = .sitePassword(userId: siteId)
+    }
+
+    // If Firebase isn't configured yet (e.g. missing/misnamed GoogleService-Info.plist),
+    // do NOT touch FirebaseAuth APIs — they will fatalError.
+    guard isFirebaseConfigured else { return }
+
     guard authHandle == nil else { return }
     authHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
       guard let self else { return }
@@ -34,17 +48,13 @@ final class AuthViewModel: ObservableObject {
         self.session = .signedOut
       }
     }
-
-    // Also bootstrap immediately in case Firebase isn't configured yet.
-    let siteId = UserDefaults.standard.string(forKey: siteUserDefaultsKey) ?? ""
-    if !siteId.isEmpty {
-      session = .sitePassword(userId: siteId)
-    }
   }
 
   func stop() {
     if let authHandle {
-      Auth.auth().removeStateDidChangeListener(authHandle)
+      if isFirebaseConfigured {
+        Auth.auth().removeStateDidChangeListener(authHandle)
+      }
       self.authHandle = nil
     }
   }
@@ -53,7 +63,11 @@ final class AuthViewModel: ObservableObject {
     errorMessage = nil
     do {
       guard let clientID = FirebaseApp.app()?.options.clientID else {
-        throw NSError(domain: "FlipFlowNative", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing Firebase clientID. Did you add GoogleService-Info.plist to the target?"])
+        throw NSError(
+          domain: "FlipFlowNative",
+          code: 1,
+          userInfo: [NSLocalizedDescriptionKey: "Firebase not configured. Ensure `GoogleService-Info.plist` is in the app target (and named exactly that), then set the URL scheme (REVERSED_CLIENT_ID)."]
+        )
       }
 
       let config = GIDConfiguration(clientID: clientID)
@@ -91,9 +105,12 @@ final class AuthViewModel: ObservableObject {
   func signOut() {
     errorMessage = nil
     do {
-      try Auth.auth().signOut()
+      if isFirebaseConfigured {
+        try Auth.auth().signOut()
+      }
       GIDSignIn.sharedInstance.signOut()
       UserDefaults.standard.removeObject(forKey: siteUserDefaultsKey)
+      session = .signedOut
     } catch {
       errorMessage = (error as NSError).localizedDescription
     }

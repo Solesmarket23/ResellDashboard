@@ -1,5 +1,4 @@
 import Foundation
-import FirebaseAuth
 import FirebaseFirestore
 
 protocol PurchaseRepositoryProtocol {
