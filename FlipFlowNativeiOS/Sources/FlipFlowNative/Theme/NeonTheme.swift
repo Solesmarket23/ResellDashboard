@@ -38,6 +38,14 @@ struct NeonScreen<Content: View>: View {
   var body: some View {
     ZStack {
       NeonTheme.backgroundGradient.ignoresSafeArea()
+      // Soft top glow so the screen doesn't read as "black bars".
+      RadialGradient(
+        colors: [NeonTheme.accentCyan.opacity(0.12), .clear],
+        center: .top,
+        startRadius: 0,
+        endRadius: 520
+      )
+      .ignoresSafeArea()
       ParticleBackgroundView()
       content
     }

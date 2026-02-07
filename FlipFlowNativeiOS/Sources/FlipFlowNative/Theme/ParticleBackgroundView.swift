@@ -3,6 +3,8 @@ import SwiftUI
 /// Subtle animated “bubble” background (Neon-style).
 /// Uses Canvas + TimelineView for smooth, low-cost animation.
 struct ParticleBackgroundView: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
   struct Bubble: Identifiable {
     let id = UUID()
     let x: CGFloat        // 0...1
@@ -21,13 +23,12 @@ struct ParticleBackgroundView: View {
     var out: [Bubble] = []
     let base: [(CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat)] = [
       // x, radius, speed, phase, amplitude, alpha
-      (0.12, 10, 10, 0.3, 10, 0.06),
-      (0.22, 14, 9,  1.1, 12, 0.05),
-      (0.33, 12, 11, 2.0, 10, 0.05),
-      (0.46, 16, 8,  0.7, 14, 0.045),
-      (0.58, 12, 10, 1.8, 10, 0.05),
-      (0.70, 18, 7,  2.6, 16, 0.04),
-      (0.82, 12, 9,  0.5, 10, 0.05),
+      (0.14, 8,  7.0, 0.3, 7,  0.030),
+      (0.26, 10, 6.5, 1.1, 8,  0.028),
+      (0.38, 9,  7.2, 2.0, 7,  0.028),
+      (0.52, 11, 6.0, 0.7, 9,  0.024),
+      (0.66, 9,  6.8, 1.8, 7,  0.028),
+      (0.78, 12, 5.5, 2.6, 10, 0.022),
     ]
 
     for (i, b) in base.enumerated() {
@@ -46,14 +47,14 @@ struct ParticleBackgroundView: View {
       )
     }
 
-    // Add a few extra tiny bubbles for depth (keep count low).
-    for j in 0..<6 {
+    // Add a few extra tiny bubbles for depth (very subtle).
+    for j in 0..<4 {
       let x = CGFloat((j * 17) % 100) / 100.0
-      let r = CGFloat(6 + (j % 3) * 2)
-      let speed = CGFloat(12 - (j % 5)) // slower drift
-      let amp = CGFloat(8 + (j % 4) * 2)
+      let r = CGFloat(5 + (j % 2) * 2)
+      let speed = CGFloat(7 - (j % 3)) // slow drift
+      let amp = CGFloat(6 + (j % 3) * 2)
       let phase = CGFloat(j) * 0.8
-      let alpha = CGFloat(0.035 + (j % 3 == 0 ? 0.01 : 0.0))
+      let alpha = CGFloat(0.020 + (j % 3 == 0 ? 0.006 : 0.0))
       // Slightly cooler/less saturated to avoid distraction.
       let tint: Color = (j % 2 == 0) ? NeonTheme.accentCyan.opacity(0.85) : NeonTheme.accentEmerald.opacity(0.75)
       out.append(
@@ -65,29 +66,26 @@ struct ParticleBackgroundView: View {
   }()
 
   var body: some View {
-    TimelineView(.animation(minimumInterval: 1.0 / 45.0)) { timeline in
+    TimelineView(.animation(minimumInterval: reduceMotion ? 1.0 : 1.0 / 20.0)) { timeline in
       Canvas { context, size in
         let t = timeline.date.timeIntervalSinceReferenceDate
 
-        // Soft blur for “bubbles”
-        // NOTE: alphaThreshold can cause shimmering/flicker on device; avoid it.
-        context.addFilter(.blur(radius: 10))
-        context.blendMode = .plusLighter
-
+        // Keep this extremely light: no heavy filters/blend-modes to avoid UI jank.
         for b in bubbles {
           let full = size.height + (b.radius * 2)
           let travel = (CGFloat(t) * b.speed) + b.offset
           let y = full - (travel.truncatingRemainder(dividingBy: full))
-          let x = (b.x * size.width) + sin(CGFloat(t) * 0.65 + b.phase) * b.amplitude
+          let x = (b.x * size.width) + sin(CGFloat(t) * 0.55 + b.phase) * b.amplitude
 
           let rect = CGRect(x: x - b.radius, y: y - b.radius, width: b.radius * 2, height: b.radius * 2)
+          let p = Path(ellipseIn: rect)
 
-          var p = Path(ellipseIn: rect)
+          // Soft “bubble” edge via radial gradient (no blur filter).
           let gradient = Gradient(colors: [
             b.tint.opacity(b.alpha),
             b.tint.opacity(0.0),
           ])
-          context.fill(p, with: .radialGradient(gradient, center: CGPoint(x: x, y: y), startRadius: 0, endRadius: b.radius * 1.35))
+          context.fill(p, with: .radialGradient(gradient, center: CGPoint(x: x, y: y), startRadius: 0, endRadius: b.radius * 1.8))
         }
       }
       .ignoresSafeArea()
