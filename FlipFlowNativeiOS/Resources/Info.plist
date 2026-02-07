@@ -24,6 +24,10 @@
 	<string>Scan tracking numbers and QR codes for receiving and authentication.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Microphone access is not required for receiving, but may be used for future voice features.</string>
+	<key>UIDeviceFamily</key>
+	<array>
+		<integer>1</integer>
+	</array>
 	<key>UIRequiresFullScreen</key>
 	<true/>
 	<key>UISupportedInterfaceOrientations</key>

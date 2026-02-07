@@ -36,6 +36,7 @@ targets:
       base:
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 3U54DYPWFB
+        TARGETED_DEVICE_FAMILY: "1" # iPhone only (prevents any compatibility layout)
     sources:
       - path: Sources/FlipFlowNative
     resources:
@@ -46,6 +47,8 @@ targets:
         CFBundleDisplayName: "Flip Flow Native"
         NSCameraUsageDescription: "Scan tracking numbers and QR codes for receiving and authentication."
         NSMicrophoneUsageDescription: "Microphone access is not required for receiving, but may be used for future voice features."
+        UIDeviceFamily:
+          - 1 # iPhone only (prevents iPad compatibility letterboxing)
         UIRequiresFullScreen: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
