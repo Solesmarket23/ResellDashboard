@@ -96,7 +96,7 @@ struct SignInView: View {
             }
           }
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, 16)
 
         Spacer()
 
@@ -107,6 +107,7 @@ struct SignInView: View {
           .padding(.horizontal, 24)
           .padding(.bottom, 18)
       }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
   }
 }

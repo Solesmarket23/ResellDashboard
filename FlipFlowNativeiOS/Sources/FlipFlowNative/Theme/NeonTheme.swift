@@ -38,6 +38,7 @@ struct NeonScreen<Content: View>: View {
   var body: some View {
     ZStack {
       NeonTheme.backgroundGradient.ignoresSafeArea()
+      ParticleBackgroundView()
       content
     }
     .preferredColorScheme(.dark)
