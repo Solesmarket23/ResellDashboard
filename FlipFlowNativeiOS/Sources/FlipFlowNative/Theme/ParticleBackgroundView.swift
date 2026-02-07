@@ -17,20 +17,17 @@ struct ParticleBackgroundView: View {
 
   private let bubbles: [Bubble] = {
     // Deterministic-ish bubbles (no RNG dependency on runtime state).
-    // We bias smaller bubbles and slow speeds for a calm look.
+    // We bias smaller bubbles and slow speeds for a calm, non-intrusive look.
     var out: [Bubble] = []
     let base: [(CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat)] = [
-      (0.10, 10, 22, 0.3, 14, 0.10),
-      (0.18, 16, 18, 1.1, 18, 0.10),
-      (0.28, 12, 26, 2.0, 16, 0.09),
-      (0.34, 22, 14, 0.7, 20, 0.08),
-      (0.42, 14, 20, 1.8, 12, 0.10),
-      (0.52, 18, 16, 2.6, 16, 0.09),
-      (0.60, 28, 12, 0.9, 22, 0.08),
-      (0.68, 12, 24, 1.4, 16, 0.10),
-      (0.76, 20, 15, 2.2, 18, 0.09),
-      (0.84, 14, 21, 0.5, 14, 0.10),
-      (0.92, 24, 13, 1.7, 20, 0.08),
+      // x, radius, speed, phase, amplitude, alpha
+      (0.12, 10, 10, 0.3, 10, 0.06),
+      (0.22, 14, 9,  1.1, 12, 0.05),
+      (0.33, 12, 11, 2.0, 10, 0.05),
+      (0.46, 16, 8,  0.7, 14, 0.045),
+      (0.58, 12, 10, 1.8, 10, 0.05),
+      (0.70, 18, 7,  2.6, 16, 0.04),
+      (0.82, 12, 9,  0.5, 10, 0.05),
     ]
 
     for (i, b) in base.enumerated() {
@@ -49,15 +46,16 @@ struct ParticleBackgroundView: View {
       )
     }
 
-    // Add a few extra tiny bubbles for depth
-    for j in 0..<12 {
+    // Add a few extra tiny bubbles for depth (keep count low).
+    for j in 0..<6 {
       let x = CGFloat((j * 17) % 100) / 100.0
-      let r = CGFloat(7 + (j % 4) * 2)
-      let speed = CGFloat(30 - (j % 7) * 2)
-      let amp = CGFloat(10 + (j % 5) * 3)
+      let r = CGFloat(6 + (j % 3) * 2)
+      let speed = CGFloat(12 - (j % 5)) // slower drift
+      let amp = CGFloat(8 + (j % 4) * 2)
       let phase = CGFloat(j) * 0.8
-      let alpha = CGFloat(0.06 + (j % 4 == 0 ? 0.03 : 0.0))
-      let tint: Color = (j % 2 == 0) ? NeonTheme.accentCyan : NeonTheme.accentEmerald
+      let alpha = CGFloat(0.035 + (j % 3 == 0 ? 0.01 : 0.0))
+      // Slightly cooler/less saturated to avoid distraction.
+      let tint: Color = (j % 2 == 0) ? NeonTheme.accentCyan.opacity(0.85) : NeonTheme.accentEmerald.opacity(0.75)
       out.append(
         Bubble(x: x, radius: r, speed: speed, phase: phase, amplitude: amp, alpha: alpha, offset: CGFloat(j) * 60, tint: tint)
       )
@@ -67,13 +65,14 @@ struct ParticleBackgroundView: View {
   }()
 
   var body: some View {
-    TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+    TimelineView(.animation(minimumInterval: 1.0 / 45.0)) { timeline in
       Canvas { context, size in
         let t = timeline.date.timeIntervalSinceReferenceDate
 
         // Soft blur for “bubbles”
-        context.addFilter(.blur(radius: 8))
-        context.addFilter(.alphaThreshold(min: 0.02, color: .white))
+        // NOTE: alphaThreshold can cause shimmering/flicker on device; avoid it.
+        context.addFilter(.blur(radius: 10))
+        context.blendMode = .plusLighter
 
         for b in bubbles {
           let full = size.height + (b.radius * 2)
@@ -85,7 +84,7 @@ struct ParticleBackgroundView: View {
 
           var p = Path(ellipseIn: rect)
           let gradient = Gradient(colors: [
-            b.tint.opacity(b.alpha * 0.95),
+            b.tint.opacity(b.alpha),
             b.tint.opacity(0.0),
           ])
           context.fill(p, with: .radialGradient(gradient, center: CGPoint(x: x, y: y), startRadius: 0, endRadius: b.radius * 1.35))
