@@ -64,13 +64,23 @@ private struct HostingBackgroundClearer: UIViewRepresentable {
   }
 
   private func clearSuperviewChain(from view: UIView) {
-    // Walk a few levels up to catch the UIHostingController / UITabBarController container views.
     var current: UIView? = view
-    for _ in 0..<8 {
+    var cleared = 0
+    let maxLevels = 12
+    for level in 0..<maxLevels {
       current = current?.superview
       guard let current else { break }
+      let wasOpaque = current.isOpaque
+      let hadBg = current.backgroundColor != nil
       current.backgroundColor = .clear
       current.isOpaque = false
+      cleared += 1
+      if hadBg || wasOpaque {
+        NSLog("[NeonTheme] HostingBackgroundClearer cleared level %d: %@ (wasOpaque=%@ hadBg=%@)", level + 1, String(describing: type(of: current)), wasOpaque ? "true" : "false", hadBg ? "true" : "false")
+      }
+    }
+    if cleared > 0 {
+      NSLog("[NeonTheme] HostingBackgroundClearer cleared %d superviews (max %d)", cleared, maxLevels)
     }
   }
 }

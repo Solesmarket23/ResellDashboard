@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UserNotifications
 
 @MainActor
 final class DeliveriesViewModel: ObservableObject {
@@ -15,6 +16,8 @@ final class DeliveriesViewModel: ObservableObject {
   @Published var includeArchived: Bool = false
 
   @Published var selectedStats: [DeliveryStatId] = DeliveryStatId.defaultSelection
+  /// When set, the list shows only deliveries matching this stat (e.g. tap "Arriving Tomorrow" card).
+  @Published var cardFilter: DeliveryStatId? = nil
 
   private let repo: DeliveriesRepositoryProtocol
   private let userIdProvider: () -> String
@@ -100,6 +103,43 @@ final class DeliveriesViewModel: ObservableObject {
     showBanner("Test: \(todayCount) deliveries arriving today for \(profitText) profit (cost: \(costText)).", kind: .info)
   }
 
+  /// Requests notification permission if needed, then schedules a local notification with how many packages are arriving tomorrow.
+  func sendArrivingTomorrowNotification() {
+    let count = filteredDeliveries.filter { DeliveryStatusFilter.tomorrow.matches(item: $0) }.count
+    let body: String
+    if count == 0 {
+      body = "You have no packages arriving tomorrow."
+    } else if count == 1 {
+      body = "You have 1 package arriving tomorrow."
+    } else {
+      body = "You have \(count) packages arriving tomorrow."
+    }
+
+    let center = UNUserNotificationCenter.current()
+    center.requestAuthorization(options: [.alert, .badge, .sound]) { [weak self] granted, error in
+      Task { @MainActor in
+        if granted {
+          let content = UNMutableNotificationContent()
+          content.title = "Deliveries"
+          content.body = body
+          content.sound = .default
+          let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 3, repeats: false)
+          let request = UNNotificationRequest(identifier: "deliveries-arriving-tomorrow-\(UUID().uuidString)", content: content, trigger: trigger)
+          center.add(request)
+          self?.showBanner("Notification in 3 seconds.", kind: .info)
+        } else {
+          let message: String
+          if let error = error?.localizedDescription, !error.isEmpty {
+            message = "Notifications denied: \(error). Enable in Settings to get delivery reminders."
+          } else {
+            message = "Enable notifications in Settings to get delivery reminders."
+          }
+          self?.showBanner(message, kind: .info)
+        }
+      }
+    }
+  }
+
   var filteredDeliveries: [DeliveryItem] {
     let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
@@ -128,6 +168,30 @@ final class DeliveriesViewModel: ObservableObject {
         d.status,
       ].joined(separator: " ").lowercased()
       return hay.contains(q)
+    }
+  }
+
+  /// List to display: when cardFilter is set, only items matching that stat; otherwise same as filteredDeliveries. Stats are always from filteredDeliveries.
+  var displayedDeliveries: [DeliveryItem] {
+    guard let cf = cardFilter else { return filteredDeliveries }
+    return filteredDeliveries.filter { itemMatches(stat: cf, item: $0) }
+  }
+
+  private func itemMatches(stat: DeliveryStatId, item: DeliveryItem) -> Bool {
+    func status(_ raw: String) -> String {
+      raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+    switch stat {
+    case .total: return true
+    case .delivered: return status(item.status) == "delivered"
+    case .outForDelivery: return status(item.status) == "out_for_delivery" || status(item.status) == "out for delivery"
+    case .inTransit:
+      let s = status(item.status)
+      return s == "in_transit" || s == "in transit" || s == "shipped"
+    case .delayed: return status(item.status) == "delayed" || status(item.status) == "exception"
+    case .arrivingToday: return DeliveryStatusFilter.today.matches(item: item) || DeliveryStatusFilter.outForDelivery.matches(item: item)
+    case .arrivingTomorrow: return DeliveryStatusFilter.tomorrow.matches(item: item)
+    case .arrivingThisWeek: return DeliveryStatusFilter.thisWeek.matches(item: item)
     }
   }
 
@@ -260,7 +324,7 @@ enum DeliveryStatId: String, CaseIterable, Identifiable {
     case .arrivingToday: return "calendar"
     case .arrivingTomorrow: return "calendar.badge.clock"
     case .arrivingThisWeek: return "calendar.circle"
-    case .inTransit: return "truck.fast.fill"
+    case .inTransit: return "truck.box.fill"
     case .outForDelivery: return "location.fill"
     case .delayed: return "exclamationmark.triangle.fill"
     }

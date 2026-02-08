@@ -47,7 +47,7 @@ struct DeliveryDetailView: View {
     NeonCard {
       HStack(alignment: .top, spacing: 12) {
         DeliveryThumb(urlString: item.productImage)
-          .frame(width: 72, height: 72)
+          .frame(width: 54, height: 54)
 
         VStack(alignment: .leading, spacing: 8) {
           Text(item.productName.isEmpty ? "Unknown Product" : item.productName)

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct DeliveriesView: View {
   @EnvironmentObject private var auth: AuthViewModel
@@ -51,24 +52,32 @@ private struct DeliveriesScreen: View {
   @State private var showCustomizeStats: Bool = false
 
   var body: some View {
-    NeonScreen {
-      ZStack {
-        // Ensure the Neon background shows through even if UIKit containers paint black.
-        NeonTheme.backgroundGradient
-          .ignoresSafeArea()
-
+    Group {
+      NeonScreen {
         NavigationStack {
+        // Gradient must be inside the nav content so the HostingView that wraps this view draws it (avoids black nav content background).
+        ZStack {
+          NeonTheme.backgroundGradient
+            .ignoresSafeArea()
           content
-            .navigationTitle("Deliveries")
+        }
+        .navigationTitle("Deliveries")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
+              ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                  vm.sendArrivingTomorrowNotification()
+                } label: {
+                  Label("Notify: packages arriving tomorrow", systemImage: "bell.badge")
+                }
+              }
               ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                   Button {
                     vm.sendTestNotificationToast()
                   } label: {
-                    Label("Test notification", systemImage: "bell.badge")
+                    Label("Test notification (in-app toast)", systemImage: "bell.badge")
                   }
 
                   Button {
@@ -113,11 +122,13 @@ private struct DeliveriesScreen: View {
                   Image(systemName: "line.3.horizontal.decrease.circle")
                     .foregroundStyle(.white)
                 }
-              }
             }
+          }
         }
-        .background(Color.clear)
       }
+    }
+    .onAppear {
+      DeliveriesBackgroundLogger.log()
     }
     .overlay(alignment: .top) {
       if let banner = vm.banner {
@@ -179,7 +190,7 @@ private struct DeliveriesScreen: View {
               .redacted(reason: .placeholder)
               .padding(.horizontal, 16)
             }
-          } else if vm.filteredDeliveries.isEmpty {
+          } else if vm.displayedDeliveries.isEmpty {
             NeonCard {
               VStack(spacing: 8) {
                 Image(systemName: "shippingbox")
@@ -188,15 +199,16 @@ private struct DeliveriesScreen: View {
                 Text("No deliveries found")
                   .font(.headline.weight(.semibold))
                   .foregroundStyle(.white)
-                Text("Try changing filters or refreshing.")
+                Text(vm.cardFilter != nil ? "Try a different card or clear the filter by tapping the card again." : "Try changing filters or refreshing.")
                   .font(.subheadline)
                   .foregroundStyle(NeonTheme.textSecondary)
+                  .multilineTextAlignment(.center)
               }
               .frame(maxWidth: .infinity)
             }
             .padding(.horizontal, 16)
           } else {
-            ForEach(vm.filteredDeliveries) { item in
+            ForEach(vm.displayedDeliveries) { item in
               DeliveryRow(item: item)
                 .contentShape(Rectangle())
                 .onTapGesture { selected = item }
@@ -206,17 +218,20 @@ private struct DeliveriesScreen: View {
         }
         .padding(.vertical, 10)
       }
+      .scrollContentBackground(.hidden)
+      .background(Color.clear)
       .refreshable {
         await vm.refresh(twoPhase: true)
       }
     }
     .searchable(text: $vm.searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search tracking, product…")
+    .background(Color.clear)
   }
 
   private var header: some View {
     HStack(spacing: 10) {
       VStack(alignment: .leading, spacing: 4) {
-        Text("\(vm.filteredDeliveries.count) package\(vm.filteredDeliveries.count == 1 ? "" : "s")")
+        Text("\(vm.displayedDeliveries.count) package\(vm.displayedDeliveries.count == 1 ? "" : "s")")
           .font(.subheadline.weight(.semibold))
           .foregroundStyle(.white)
         Text(statusLine)
@@ -225,6 +240,17 @@ private struct DeliveriesScreen: View {
       }
 
       Spacer()
+
+      Button {
+        showCustomizeStats = true
+      } label: {
+        Image(systemName: "slider.horizontal.3")
+          .font(.body.weight(.medium))
+          .foregroundStyle(NeonTheme.textSecondary)
+          .frame(width: 44, height: 44)
+          .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+      }
+      .buttonStyle(.plain)
 
       if vm.isHydrating {
         HStack(spacing: 8) {
@@ -242,10 +268,13 @@ private struct DeliveriesScreen: View {
   }
 
   private var statusLine: String {
-    let pieces: [String] = [
+    var pieces: [String] = [
       "Status: \(vm.statusFilter.label)",
       "Carrier: \(vm.carrierFilter.label)",
     ]
+    if let cf = vm.cardFilter {
+      pieces.append("Card: \(cf.title)")
+    }
     return pieces.joined(separator: " • ")
   }
 
@@ -254,8 +283,11 @@ private struct DeliveriesScreen: View {
     return LazyVGrid(columns: cols, spacing: 10) {
       ForEach(vm.selectedStats.prefix(4)) { stat in
         let value = vm.stats[stat] ?? 0
-        DeliveryStatCard(stat: stat, value: value)
-          .onTapGesture { showCustomizeStats = true }
+        let isActive = vm.cardFilter == stat
+        DeliveryStatCard(stat: stat, value: value, isFilterActive: isActive)
+          .onTapGesture {
+            vm.cardFilter = vm.cardFilter == stat ? nil : stat
+          }
       }
     }
   }
@@ -268,7 +300,7 @@ private struct DeliveryRow: View {
     NeonCard {
       HStack(alignment: .top, spacing: 12) {
         DeliveryThumb(urlString: item.productImage)
-          .frame(width: 56, height: 56)
+          .frame(width: 44, height: 44)
 
         VStack(alignment: .leading, spacing: 6) {
           HStack(alignment: .firstTextBaseline) {
@@ -352,31 +384,38 @@ private struct DeliveriesBanner: View {
 private struct DeliveryStatCard: View {
   let stat: DeliveryStatId
   let value: Int
+  var isFilterActive: Bool = false
 
   var body: some View {
     NeonCard {
-      HStack(spacing: 12) {
-        Image(systemName: stat.systemImage)
-          .font(.system(size: 18, weight: .semibold))
-          .foregroundStyle(stat.tint)
-          .frame(width: 26)
-
-        VStack(alignment: .leading, spacing: 4) {
+      ZStack(alignment: .topLeading) {
+        // Centered label + number
+        VStack(spacing: 4) {
           Text(stat.title)
-            .font(.caption.weight(.semibold))
+            .font(.caption2.weight(.semibold))
             .foregroundStyle(NeonTheme.textSecondary)
             .lineLimit(1)
             .minimumScaleFactor(0.85)
-
+            .multilineTextAlignment(.center)
           Text("\(value)")
-            .font(.title3.weight(.semibold))
+            .font(.title2.weight(.bold))
             .foregroundStyle(.white)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-        Spacer(minLength: 0)
+        // Icon top-left
+        Image(systemName: stat.systemImage)
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(stat.tint)
+          .padding(.top, 6)
+          .padding(.leading, 6)
       }
-      .frame(maxWidth: .infinity, alignment: .leading)
+      .frame(minHeight: 52)
     }
+    .overlay(
+      RoundedRectangle(cornerRadius: 18, style: .continuous)
+        .stroke(isFilterActive ? stat.tint.opacity(0.7) : Color.clear, lineWidth: 2)
+    )
   }
 }
 
@@ -542,6 +581,39 @@ private struct ReorderList: View {
     .listStyle(.plain)
     .frame(height: max(52, CGFloat(selection.count) * 44))
     .background(Color.clear)
+  }
+}
+
+// MARK: - Neon background debugging (Xcode console)
+private enum DeliveriesBackgroundLogger {
+  static func log() {
+    NSLog("[DeliveriesBG] DeliveriesScreen appeared — dumping view hierarchy from key window")
+    DispatchQueue.main.async {
+      guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first,
+            let window = scene.windows.first(where: { $0.isKeyWindow }) else {
+        NSLog("[DeliveriesBG] No key window found")
+        return
+      }
+      logView(view: window, depth: 0, maxDepth: 14)
+    }
+  }
+
+  private static func logView(view: UIView, depth: Int, maxDepth: Int) {
+    if depth > maxDepth { return }
+    let indent = String(repeating: "  ", count: depth)
+    let name = String(describing: type(of: view))
+    let bg: String
+    if let c = view.backgroundColor {
+      var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+      c.getRed(&r, green: &g, blue: &b, alpha: &a)
+      bg = String(format: "R=%.2f G=%.2f B=%.2f A=%.2f", r, g, b, a)
+    } else {
+      bg = "nil"
+    }
+    NSLog("[DeliveriesBG] %@%@ opaque=%@ bg=%@", indent, name, view.isOpaque ? "true" : "false", bg)
+    for (i, sub) in view.subviews.prefix(6).enumerated() {
+      if depth < 10 || i < 3 { logView(view: sub, depth: depth + 1, maxDepth: maxDepth) }
+    }
   }
 }
 

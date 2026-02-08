@@ -1,8 +1,14 @@
 import UIKit
+import UserNotifications
 import FirebaseCore
 import GoogleSignIn
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
+  override init() {
+    super.init()
+    UNUserNotificationCenter.current().delegate = self
+  }
+
   func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
@@ -62,6 +68,17 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     options: [UIApplication.OpenURLOptionsKey: Any] = [:]
   ) -> Bool {
     return GIDSignIn.sharedInstance.handle(url)
+  }
+}
+
+extension AppDelegate: UNUserNotificationCenterDelegate {
+  /// Show notification banner/sound even when app is in foreground (otherwise nothing appears when you tap the bell).
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    willPresent notification: UNNotification,
+    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+  ) {
+    completionHandler([.banner, .sound, .badge, .list])
   }
 }
 
