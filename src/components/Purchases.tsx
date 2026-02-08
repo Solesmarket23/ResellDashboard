@@ -468,6 +468,31 @@ const Purchases = () => {
       const stored = localStorage.getItem('purchases-column-widths');
       if (stored) {
         const parsed = JSON.parse(stored);
+        // Migration: older builds stored Brand width under `size` by mistake.
+        if ((!parsed.brand || parsed.brand < 50) && parsed.size && parsed.size > 0) {
+          parsed.brand = parsed.size;
+        }
+        // Ensure required keys exist with sane minimums so tableLayout=fixed doesn't collapse columns.
+        const defaults = {
+          checkbox: 50,
+          product: 300,
+          status: 120,
+          orderNumber: 150,
+          brand: 120,
+          styleId: 120,
+          total: 130,
+          purchaseDate: 120,
+          tracking: 150,
+          carrier: 100,
+          sku: 120,
+          received: 120,
+          authenticity: 140,
+          stockxUnit: 160,
+          actions: 80
+        };
+        Object.entries(defaults).forEach(([k, v]) => {
+          if (!parsed[k] || parsed[k] < 40) parsed[k] = v;
+        });
         // Ensure purchaseDate has a minimum width (might be missing or 0)
         if (!parsed.purchaseDate || parsed.purchaseDate < 100) {
           parsed.purchaseDate = 120;
@@ -483,7 +508,7 @@ const Purchases = () => {
       product: 300,
       status: 120,
       orderNumber: 150,
-      size: 100,
+      brand: 120,
       styleId: 120,
       total: 130,
       purchaseDate: 120, // Minimum width for Purchase Date column
@@ -4468,18 +4493,18 @@ const Purchases = () => {
                 <th 
                   className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
                     currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-200'
-                  }`} 
-                  style={{ width: `${columnWidths.size}px` }}
+                  } overflow-hidden`} 
+                  style={{ width: `${columnWidths.brand}px` }}
                   onClick={() => handleSort('brand')}
                 >
-                  <div className="flex items-center justify-center h-full">
-                    <div className="flex items-center gap-2">
-                      <svg className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="flex items-center justify-center h-full min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <svg className={`w-4 h-4 shrink-0 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                       </svg>
                       <span className={`text-xs font-bold uppercase tracking-wider ${
                         currentTheme.name === 'Neon' ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
-                      } transition-colors`}>
+                      } transition-colors truncate`}>
                         Brand
                       </span>
                       <SortIcon column="brand" />
@@ -4491,11 +4516,11 @@ const Purchases = () => {
                     } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
                     onMouseDown={(e) => {
                       e.stopPropagation();
-                      handleMouseDown(e, 'size');
+                      handleMouseDown(e, 'brand');
                     }}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
-                      handleDoubleClickResize('size', 'Brand');
+                      handleDoubleClickResize('brand', 'Brand');
                     }}
                     title="Drag to resize column, double-click to auto-fit"
                   />
@@ -4715,18 +4740,18 @@ const Purchases = () => {
                 <th
                   className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
                     currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-200'
-                  }`}
+                  } overflow-hidden`}
                   style={{ width: `${columnWidths.received}px` }}
                   onClick={(e) => handleHeaderClick(e, 'received')}
                 >
-                  <div className="flex items-center justify-center h-full">
-                    <div className="flex items-center gap-2">
-                      <svg className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="flex items-center justify-center h-full min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <svg className={`w-4 h-4 shrink-0 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                       <span className={`text-xs font-bold uppercase tracking-wider ${
                         currentTheme.name === 'Neon' ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
-                      } transition-colors`}>
+                      } transition-colors truncate`}>
                         Received
                       </span>
                       <SortIcon column="received" />
@@ -4750,18 +4775,18 @@ const Purchases = () => {
                 <th
                   className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
                     currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-200'
-                  }`}
+                  } overflow-hidden`}
                   style={{ width: `${columnWidths.authenticity}px` }}
                   onClick={(e) => handleHeaderClick(e, 'authenticity')}
                 >
-                  <div className="flex items-center justify-center h-full">
-                    <div className="flex items-center gap-2">
-                      <svg className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="flex items-center justify-center h-full min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <svg className={`w-4 h-4 shrink-0 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11c0 1.657-1.343 3-3 3S6 12.657 6 11s1.343-3 3-3 3 1.343 3 3zm0 0c0 1.657 1.343 3 3 3s3-1.343 3-3-1.343-3-3-3-3 1.343-3 3z" />
                       </svg>
                       <span className={`text-xs font-bold uppercase tracking-wider ${
                         currentTheme.name === 'Neon' ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
-                      } transition-colors`}>
+                      } transition-colors truncate`}>
                         Authenticity
                       </span>
                       <SortIcon column="authenticity" />
@@ -4785,18 +4810,18 @@ const Purchases = () => {
                 <th
                   className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
                     currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-200'
-                  }`}
+                  } overflow-hidden`}
                   style={{ width: `${columnWidths.stockxUnit}px` }}
                   onClick={(e) => handleHeaderClick(e, 'stockxUnit')}
                 >
-                  <div className="flex items-center justify-center h-full">
-                    <div className="flex items-center gap-2">
-                      <svg className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="flex items-center justify-center h-full min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <svg className={`w-4 h-4 shrink-0 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h10v10H7V7z" />
                       </svg>
                       <span className={`text-xs font-bold uppercase tracking-wider ${
                         currentTheme.name === 'Neon' ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
-                      } transition-colors`}>
+                      } transition-colors truncate`}>
                         StockX QR
                       </span>
                       <SortIcon column="stockxUnit" />
