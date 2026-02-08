@@ -47,17 +47,38 @@ private struct ReceivingScreen: View {
   @State private var authSheetItem: IdentifiableURL?
   @State private var pendingAuthUrl: URL?
   @State private var expanded: Set<ReceivingViewModel.FlowStep> = [.tracking]
+  @State private var bannerDismissWorkItem: DispatchWorkItem?
+  @State private var isPrintingLabel: Bool = false
 
   var body: some View {
     NeonScreen { screenContent }
-      .alert("Info", isPresented: Binding(
-        get: { vm.banner != nil },
-        set: { if !$0 { vm.banner = nil } }
-      )) {
-        Button("OK", role: .cancel) { vm.banner = nil }
-      } message: {
-        Text(vm.banner ?? "")
+      .overlay(alignment: .top) {
+        if let message = vm.banner, !message.isEmpty {
+          NeonToast(message: message) {
+            bannerDismissWorkItem?.cancel()
+            bannerDismissWorkItem = nil
+            withAnimation(.easeInOut(duration: 0.18)) {
+              vm.banner = nil
+            }
+          }
+          .padding(.top, 10)
+          .padding(.horizontal, 14)
+          .transition(.move(edge: .top).combined(with: .opacity))
+          .onAppear {
+            bannerDismissWorkItem?.cancel()
+            let work = DispatchWorkItem {
+              Task { @MainActor in
+                withAnimation(.easeInOut(duration: 0.18)) {
+                  if vm.banner == message { vm.banner = nil }
+                }
+              }
+            }
+            bannerDismissWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.2, execute: work)
+          }
+        }
       }
+      .animation(.easeInOut(duration: 0.18), value: vm.banner)
       .sheet(item: $authSheetItem) { item in
         SafariSheet(url: item.url)
           .onDisappear {
@@ -531,23 +552,65 @@ private struct ReceivingScreen: View {
         if isExpanded {
           Button {
             Task {
-              guard let selected = vm.selected else { return }
+              UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+              isPrintingLabel = true
+              vm.banner = "Preparing label…"
+              guard vm.isStep1Complete, let selected = vm.selected else {
+                isPrintingLabel = false
+                vm.banner = "Scan an item first (Step 1: Tracking) before printing a SKU label."
+                return
+              }
               do {
                 let sku = try await vm.assignSku()
-                let pdf = LabelPrinting.makeLabelPDF(sku: sku, productName: selected.productName, productSize: selected.productSize)
-                LabelPrinting.presentPrintSheet(pdfData: pdf, jobName: "FlipFlow SKU \(sku)")
+                let img = await LabelPrinting.loadProductImage(urlString: selected.productImageUrl)
+                let pdf = LabelPrinting.makeLabelPDF(
+                  sku: sku,
+                  productName: selected.productName,
+                  productSize: selected.productSize,
+                  styleId: selected.styleId,
+                  productImage: img,
+                  isTest: !vm.syncEnabled && (selected.sku == nil)
+                )
+                vm.banner = "Opening print dialog…"
+                LabelPrinting.presentPrintSheet(
+                  pdfData: pdf,
+                  jobName: "FlipFlow SKU \(sku)"
+                ) { completed, error in
+                  Task { @MainActor in
+                    isPrintingLabel = false
+                    if let error {
+                      UINotificationFeedbackGenerator().notificationOccurred(.error)
+                      vm.banner = "Print failed: \((error as NSError).localizedDescription)"
+                    } else if completed {
+                      UINotificationFeedbackGenerator().notificationOccurred(.success)
+                      vm.banner = "Sent to printer."
+                    } else {
+                      vm.banner = "Printing canceled."
+                    }
+                  }
+                }
               } catch {
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
+                isPrintingLabel = false
                 vm.banner = "Failed to assign/print SKU: \((error as NSError).localizedDescription)"
               }
             }
           } label: {
             HStack {
               Image(systemName: "printer.fill")
-              Text("Print SKU label")
-                .fontWeight(.semibold)
+              if isPrintingLabel {
+                ProgressView()
+                  .tint(.white)
+                Text("Printing…")
+                  .fontWeight(.semibold)
+              } else {
+                Text("Print SKU label")
+                  .fontWeight(.semibold)
+              }
             }
             .foregroundStyle(.white)
           }
+          .disabled(isPrintingLabel)
           .buttonStyle(NeonPrimaryButtonStyle())
           .padding(.top, 2)
         }
@@ -642,6 +705,46 @@ private struct ReceivingScreen: View {
         }
       }
     }
+  }
+}
+
+private struct NeonToast: View {
+  let message: String
+  let onDismiss: () -> Void
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 10) {
+      Image(systemName: "exclamationmark.triangle.fill")
+        .foregroundStyle(NeonTheme.accentCyan.opacity(0.9))
+        .padding(.top, 1)
+
+      Text(message)
+        .font(.subheadline)
+        .foregroundStyle(.white)
+        .multilineTextAlignment(.leading)
+
+      Spacer(minLength: 10)
+
+      Button(action: onDismiss) {
+        Image(systemName: "xmark")
+          .font(.system(size: 12, weight: .bold))
+          .foregroundStyle(.white.opacity(0.85))
+          .padding(8)
+          .background(Color.white.opacity(0.10), in: Circle())
+          .overlay(Circle().stroke(Color.white.opacity(0.14), lineWidth: 1))
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel("Dismiss message")
+    }
+    .padding(.horizontal, 12)
+    .padding(.vertical, 10)
+    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 16, style: .continuous)
+        .stroke(NeonTheme.border.opacity(0.85), lineWidth: 1)
+    )
+    .shadow(color: Color.black.opacity(0.25), radius: 18, x: 0, y: 10)
+    .onTapGesture { onDismiss() }
   }
 }
 

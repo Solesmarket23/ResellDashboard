@@ -342,6 +342,7 @@ const Purchases = () => {
       carrier: true,
       price: true,
       purchaseDate: true,
+      sku: true,
       received: true,
       authenticity: true,
       stockxUnit: true,
@@ -379,9 +380,10 @@ const Purchases = () => {
         carrier: 8,
         price: 9,
         purchaseDate: 10,
-        received: 11,
-        authenticity: 12,
-        stockxUnit: 13,
+        sku: 11,
+        received: 12,
+        authenticity: 13,
+        stockxUnit: 14,
       };
       
       const position = columnMap[column];
@@ -487,6 +489,7 @@ const Purchases = () => {
       purchaseDate: 120, // Minimum width for Purchase Date column
       tracking: 150,
       carrier: 100,
+      sku: 120,
       received: 120,
       authenticity: 140,
       stockxUnit: 160,
@@ -590,6 +593,13 @@ const Purchases = () => {
           )
             .toLowerCase()
             .trim();
+          aValue = as;
+          bValue = bs;
+          break;
+        }
+        case 'sku': {
+          const as = String(a?.sku ?? a?.skuCode ?? a?.inventorySku ?? a?.unitNumber ?? '').toLowerCase().trim();
+          const bs = String(b?.sku ?? b?.skuCode ?? b?.inventorySku ?? b?.unitNumber ?? '').toLowerCase().trim();
           aValue = as;
           bValue = bs;
           break;
@@ -876,6 +886,11 @@ const Purchases = () => {
             purchase?.unitQrRaw ??
             purchase?.stockxQrRaw ??
             '';
+          cellContent = String(raw || '');
+          break;
+        }
+        case 'sku': {
+          const raw = purchase?.sku ?? purchase?.skuCode ?? purchase?.inventorySku ?? purchase?.unitNumber ?? '';
           cellContent = String(raw || '');
           break;
         }
@@ -3793,6 +3808,7 @@ const Purchases = () => {
                         carrier: 'Carrier',
                         price: 'Price',
                         purchaseDate: 'Purchase Date',
+                        sku: 'SKU',
                         received: 'Received',
                         authenticity: 'Authenticity',
                         stockxUnit: 'StockX QR'
@@ -4665,6 +4681,41 @@ const Purchases = () => {
                   className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
                     currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-200'
                   }`}
+                  style={{ width: `${columnWidths.sku}px` }}
+                  onClick={(e) => handleHeaderClick(e, 'sku')}
+                >
+                  <div className="flex items-center justify-center h-full">
+                    <div className="flex items-center gap-2">
+                      <svg className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h10v10H7V7z" />
+                      </svg>
+                      <span className={`text-xs font-bold uppercase tracking-wider ${
+                        currentTheme.name === 'Neon' ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
+                      } transition-colors`}>
+                        SKU
+                      </span>
+                      <SortIcon column="sku" />
+                    </div>
+                  </div>
+                  <div
+                    className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                    } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      handleMouseDown(e, 'sku');
+                    }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      handleDoubleClickResize('sku', 'SKU');
+                    }}
+                    title="Drag to resize column, double-click to auto-fit"
+                  />
+                </th>
+                <th
+                  className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-200'
+                  }`}
                   style={{ width: `${columnWidths.received}px` }}
                   onClick={(e) => handleHeaderClick(e, 'received')}
                 >
@@ -5262,6 +5313,20 @@ const Purchases = () => {
                         return <span className={`text-xs ${currentTheme.colors.textSecondary}`}>Unknown</span>;
                       })()}
                     </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-3 align-middle text-center" style={{ width: `${columnWidths.sku}px` }}>
+                    <div className="flex items-center justify-center">
+                      {(() => {
+                        const raw = purchase?.sku ?? purchase?.skuCode ?? purchase?.inventorySku ?? purchase?.unitNumber ?? '';
+                        const trimmed = String(raw || '').trim();
+                        if (!trimmed) return <span className={`text-sm ${currentTheme.colors.textSecondary}`}>-</span>;
+                        return (
+                          <span className={`text-sm font-mono ${currentTheme.colors.textPrimary}`} title={trimmed}>
+                            {trimmed}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </td>
                   <td className="px-6 py-3 align-middle text-center" style={{ width: `${columnWidths.received}px` }}>

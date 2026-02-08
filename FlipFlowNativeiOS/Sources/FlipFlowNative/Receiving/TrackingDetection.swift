@@ -74,9 +74,11 @@ enum TrackingDetection {
 
     // FedEx candidates: prefer 12-digit, then 13–15
     let upper = trimmed.uppercased()
+    // Avoid \b word-boundary issues when digits are adjacent to letters.
+    // We only require "not preceded/followed by another digit".
     let fedexCandidates =
-      regexMatches(in: upper, pattern: #"\b[0-9]{12}\b"#) +
-      regexMatches(in: upper, pattern: #"\b[0-9]{13,15}\b"#)
+      regexMatches(in: upper, pattern: #"(?<!\d)[0-9]{12}(?!\d)"#) +
+      regexMatches(in: upper, pattern: #"(?<!\d)[0-9]{13,15}(?!\d)"#)
 
     for c in fedexCandidates {
       let n = normalize(c)
@@ -84,6 +86,29 @@ enum TrackingDetection {
     }
 
     return nil
+  }
+
+  /// Best-effort: extract a tracking-like candidate even if it's not supported.
+  /// Used only for user-facing feedback ("we captured X but can't use it").
+  static func extractTrackingLike(from raw: String) -> String? {
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty { return nil }
+
+    let upper = trimmed.uppercased()
+    // UPS-ish (shorter than full 1Z18 may still show useful info)
+    if let upsLike = firstRegexMatch(in: upper, pattern: #"1Z[0-9A-Z]{6,22}"#) {
+      return normalize(upsLike)
+    }
+
+    // Numeric-ish: return the longest 10–30 digit token, or the last-12 of a longer one.
+    let tokens = regexMatches(in: upper, pattern: #"(?<!\d)[0-9]{10,30}(?!\d)"#)
+    guard let best = tokens.max(by: { $0.count < $1.count }) else { return nil }
+    let n = normalize(best)
+    if n.count >= 16 {
+      let start = n.index(n.endIndex, offsetBy: -12)
+      return String(n[start...])
+    }
+    return n
   }
 
   private static func firstRegexMatch(in s: String, pattern: String) -> String? {

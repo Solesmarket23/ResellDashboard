@@ -63,7 +63,7 @@ final class ApiPurchaseRepository: PurchaseRepositoryProtocol {
     return []
   }
 
-  func assignSku(purchaseId: String, userId: String) async throws -> Int {
+  func assignSku(purchaseId: String, userId: String) async throws -> String {
     let req = try request(
       path: "api/purchases/assign-sku",
       method: "POST",
@@ -83,8 +83,7 @@ final class ApiPurchaseRepository: PurchaseRepositoryProtocol {
       let msg = (obj?["error"] as? String) ?? "Assign SKU failed."
       throw NSError(domain: "FlipFlowNative.API", code: status, userInfo: [NSLocalizedDescriptionKey: msg])
     }
-    if let sku = obj?["sku"] as? Int { return sku }
-    if let skuNum = obj?["sku"] as? NSNumber { return skuNum.intValue }
+    if let sku = obj?["sku"] as? String, !sku.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return sku }
     throw NSError(domain: "FlipFlowNative.API", code: status, userInfo: [NSLocalizedDescriptionKey: "Assign SKU failed (missing sku)."])
   }
 

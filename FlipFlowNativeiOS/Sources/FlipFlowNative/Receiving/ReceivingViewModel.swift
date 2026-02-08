@@ -7,6 +7,7 @@ final class ReceivingViewModel: ObservableObject {
   private let processedLogKey = "flipflow_processed_log_v1"
   private let showItemBannerKey = "flipflow_show_item_banner_v1"
   private let syncEnabledKey = "flipflow_sync_enabled_v1"
+  private let localSkuMapKey = "flipflow_local_sku_map_v1"
   private let maxProcessedEntries = 200
 
   enum FlowStep: Int, CaseIterable, Identifiable {
@@ -133,7 +134,21 @@ final class ReceivingViewModel: ObservableObject {
     case .tracking:
       // Extract UPS/FedEx tracking numbers only; ignore anything else.
       guard let extracted = TrackingDetection.extractSupported(from: payload) else {
-        banner = "Unsupported scan. For now, scan a UPS (1Z...) or FedEx (12–15 digit) tracking number."
+        if let candidate = TrackingDetection.extractTrackingLike(from: payload) {
+          let normalized = TrackingDetection.normalize(candidate)
+          let reason: String = {
+            if normalized.hasPrefix("1Z") { return "Not a complete UPS tracking number yet." }
+            if normalized.range(of: #"^[0-9]+$"#, options: .regularExpression) != nil {
+              if normalized.count == 12, normalized.hasPrefix("9") { return "Looks like USPS (FedEx 12-digit rarely starts with 9)." }
+              if normalized.count < 12 || normalized.count > 15 { return "Not 12–15 digits." }
+              return "Not recognized as UPS/FedEx by current rules."
+            }
+            return "Not recognized as UPS/FedEx by current rules."
+          }()
+          banner = "Scanned: \(shortPayload(payload))\nFound: \(normalized)\n\(reason)"
+        } else {
+          banner = "Scanned: \(shortPayload(payload))\nNo UPS/FedEx tracking number found."
+        }
         return
       }
       trackingEntryMethod = "scan"
@@ -197,8 +212,21 @@ final class ReceivingViewModel: ObservableObject {
       banner = "No item selected."
       return false
     }
-    guard externalStatus != .unknown else {
-      banner = "Mark authenticity first (Step 4)."
+    // Guided gating: always tell the user the *next missing step*.
+    if !isStep1Complete {
+      banner = "Action required: Scan tracking (Step 1) first."
+      return false
+    }
+    if !isStep2Complete {
+      banner = "Action required: Scan the StockX tag (Step 2) next."
+      return false
+    }
+    if !isStep3Complete {
+      banner = "Action required: Scan Verify QR (Step 3) next."
+      return false
+    }
+    if !isStep4Complete {
+      banner = "Action required: Choose Authentic / Not authentic (Step 4) before starting the next item."
       return false
     }
 
@@ -370,21 +398,57 @@ final class ReceivingViewModel: ObservableObject {
     }
   }
 
-  func assignSku() async throws -> Int {
-    guard syncEnabled else {
-      throw NSError(
-        domain: "FlipFlowNative.SKU",
-        code: 1,
-        userInfo: [NSLocalizedDescriptionKey: "Enable web sync (writes) to assign a SKU."]
-      )
-    }
+  func assignSku() async throws -> String {
     guard let userId = userIdProvider() else {
       throw NSError(domain: "FlipFlowNative.SKU", code: 2, userInfo: [NSLocalizedDescriptionKey: "Not signed in."])
     }
     guard let selected else {
       throw NSError(domain: "FlipFlowNative.SKU", code: 3, userInfo: [NSLocalizedDescriptionKey: "No item selected."])
     }
-    return try await repo.assignSku(purchaseId: selected.id, userId: userId)
+
+    // If we already have a persisted SKU, just reuse it (works for both Firestore + API sessions).
+    if let existing = selected.sku, !existing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return existing
+    }
+
+    if syncEnabled {
+      return try await repo.assignSku(purchaseId: selected.id, userId: userId)
+    }
+
+    // Trial/test path: generate and persist a local-only SKU mapping so printing can be tested
+    // without writing to Firebase yet.
+    return assignLocalSku(purchaseId: selected.id)
+  }
+
+  private func assignLocalSku(purchaseId: String) -> String {
+    var map = loadLocalSkuMap()
+    if let existing = map[purchaseId], !existing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return existing
+    }
+
+    // Random, human-friendly SKU code for local testing.
+    let code = SkuCode.generate(length: 7)
+    map[purchaseId] = code
+    persistLocalSkuMap(map)
+    return code
+  }
+
+  private func loadLocalSkuMap() -> [String: String] {
+    guard let data = UserDefaults.standard.data(forKey: localSkuMapKey) else { return [:] }
+    do {
+      return try JSONDecoder().decode([String: String].self, from: data)
+    } catch {
+      return [:]
+    }
+  }
+
+  private func persistLocalSkuMap(_ map: [String: String]) {
+    do {
+      let data = try JSONEncoder().encode(map)
+      UserDefaults.standard.set(data, forKey: localSkuMapKey)
+    } catch {
+      // Ignore in trial mode.
+    }
   }
 
   func saveVerification() async {

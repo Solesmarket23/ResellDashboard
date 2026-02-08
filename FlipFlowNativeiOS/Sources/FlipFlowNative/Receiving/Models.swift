@@ -36,6 +36,8 @@ struct PurchaseMatch: Identifiable, Hashable {
   let received: Bool
   let receivedAt: String?
   let unitNumber: Int?
+  let sku: String?
+  let styleId: String?
 
   let productName: String?
   let productBrand: String?
@@ -54,6 +56,8 @@ struct PurchaseMatch: Identifiable, Hashable {
     self.received = (data["received"] as? Bool) ?? false
     self.receivedAt = data["receivedAt"] as? String
     self.unitNumber = (data["unitNumber"] as? Int) ?? (data["unitNumber"] as? NSNumber)?.intValue
+    self.sku = Self.pickString(data, keys: ["sku", "skuCode", "sku_code", "inventorySku"])
+    self.styleId = Self.pickString(data, keys: ["styleId", "style_id"]) ?? Self.pickNestedString(data, path: ["product", "styleId"]) ?? Self.pickNestedString(data, path: ["product", "style_id"])
 
     self.productName =
       Self.pickString(data, keys: ["productName", "title"]) ??

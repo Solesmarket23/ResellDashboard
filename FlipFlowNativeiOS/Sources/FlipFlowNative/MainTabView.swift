@@ -12,6 +12,8 @@ struct MainTabView: View {
     tabAppearance.backgroundColor = UIColor.clear
 
     UITabBar.appearance().standardAppearance = tabAppearance
+    UITabBar.appearance().isTranslucent = true
+    UITabBar.appearance().backgroundColor = .clear
     if #available(iOS 15.0, *) {
       UITabBar.appearance().scrollEdgeAppearance = tabAppearance
     }
@@ -49,8 +51,6 @@ struct MainTabView: View {
         }
     }
     .background(Color.clear)
-    // Ensure TabView doesn't paint an opaque system background over the app-level Neon background.
-    .toolbarBackground(.hidden, for: .tabBar)
   }
 }
 

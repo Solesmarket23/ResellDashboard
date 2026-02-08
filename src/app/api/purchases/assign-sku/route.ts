@@ -6,6 +6,16 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+function generateSkuCode(length = 7): string {
+  const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no I,L,O,0,1
+  const n = Math.max(4, length);
+  let out = '';
+  for (let i = 0; i < n; i++) {
+    out += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return out;
+}
+
 function resolveUserId(request: NextRequest): string {
   const qpUserId = request.nextUrl.searchParams.get('userId')?.trim() || '';
   const headerUserId = request.headers.get('x-user-id')?.trim() || '';
@@ -42,7 +52,6 @@ export async function POST(request: NextRequest) {
     }
 
     const purchaseRef = adminDb.collection('purchases').doc(purchaseId);
-    const counterRef = adminDb.collection('counters').doc(`sku_${userId}`);
 
     const nowIso = new Date().toISOString();
     const sku = await adminDb.runTransaction(async (tx) => {
@@ -57,24 +66,33 @@ export async function POST(request: NextRequest) {
         throw Object.assign(new Error('Unauthorized'), { status: 403 });
       }
 
-      const existing = purchase?.unitNumber;
-      if (typeof existing === 'number' && Number.isFinite(existing) && existing > 0) {
-        return existing;
+      const existingSku = String(purchase?.sku || '').trim();
+      if (existingSku) {
+        return existingSku;
       }
 
-      const counterSnap = await tx.get(counterRef);
-      const nextRaw = (counterSnap.data() as any)?.nextSku;
-      const nextSku = Math.max(1, Number.isFinite(nextRaw) ? nextRaw : Number(nextRaw) || 1);
+      // Best-effort uniqueness: retry a few times if collision is detected.
+      // Collisions are extremely unlikely but we guard anyway.
+      let code = '';
+      for (let i = 0; i < 6; i++) {
+        code = generateSkuCode(7);
+        const q = adminDb.collection('purchases').where('userId', '==', userId).where('sku', '==', code).limit(1);
+        const qSnap = await tx.get(q);
+        if (qSnap.empty) break;
+        code = '';
+      }
+      if (!code) {
+        throw Object.assign(new Error('Failed to generate unique SKU'), { status: 500 });
+      }
 
-      tx.set(counterRef, { nextSku: nextSku + 1, updatedAt: nowIso }, { merge: true });
       tx.update(purchaseRef, {
-        unitNumber: nextSku,
+        sku: code,
         skuAssignedAt: nowIso,
         skuAssignedBy: userId,
         updatedAt: nowIso,
       });
 
-      return nextSku;
+      return code;
     });
 
     return NextResponse.json({ success: true, sku });

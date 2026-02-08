@@ -1,80 +1,44 @@
 import SwiftUI
-import os
 
 struct SignInView: View {
   @EnvironmentObject private var auth: AuthViewModel
-  @State private var mode: Mode = .google
+  @State private var showSitePasswordSheet: Bool = false
   @State private var sitePassword: String = ""
-  @FocusState private var focusedField: Field?
-  private let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "FlipFlowNative", category: "SignInPerf")
-  @State private var modeChangedAt: Double?
-
-  enum Field: Hashable {
-    case sitePassword
-  }
-
-  enum Mode: String, CaseIterable, Identifiable {
-    case google = "Google"
-    case sitePassword = "Site password"
-    var id: String { rawValue }
-  }
+  @State private var sitePasswordFirstResponder: Bool = false
+  @State private var isSigningIn: Bool = false
 
   var body: some View {
     NeonScreen {
-      // Avoid always-on ScrollView on large devices; it can cause keyboard/layout churn on iOS 18.
-      ViewThatFits(in: .vertical) {
-        centeredContent
+      GeometryReader { proxy in
         ScrollView(.vertical, showsIndicators: false) {
           centeredContent
+            // Center on large screens, still scroll on small screens
+            .frame(minHeight: proxy.size.height, alignment: .center)
+            .frame(maxWidth: .infinity, alignment: .center)
             .padding(.bottom, 16)
         }
         .scrollDismissesKeyboard(.interactively)
       }
     }
-    .onAppear {
-      log.debug("SignInView appeared")
+    .sheet(isPresented: $showSitePasswordSheet, onDismiss: {
+      sitePasswordFirstResponder = false
+      isSigningIn = false
+    }) {
+      sitePasswordSheet
     }
-    .onChange(of: mode) { newMode in
-      let t = CACurrentMediaTime()
-      modeChangedAt = t
-      log.debug("mode changed -> \(newMode.rawValue, privacy: .public)")
-      if newMode == .sitePassword {
-        DispatchQueue.main.async {
-          focusedField = .sitePassword
-        }
-      } else {
-        focusedField = nil
+    .onChange(of: auth.session) { s in
+      // If sign-in succeeds, dismiss the sheet.
+      if case .sitePassword = s {
+        showSitePasswordSheet = false
       }
-    }
-    .onChange(of: focusedField) { newValue in
-      let t = CACurrentMediaTime()
-      if let modeChangedAt, let newValue {
-        log.debug("focus set -> \(String(describing: newValue), privacy: .public) Δ=\(t - modeChangedAt, privacy: .public)s")
-      } else {
-        log.debug("focus changed -> \(String(describing: newValue), privacy: .public)")
-      }
-    }
-    .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-      let t = CACurrentMediaTime()
-      if let modeChangedAt {
-        log.debug("keyboard willShow Δ=\(t - modeChangedAt, privacy: .public)s")
-      } else {
-        log.debug("keyboard willShow")
-      }
-    }
-    .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
-      let t = CACurrentMediaTime()
-      if let modeChangedAt {
-        log.debug("keyboard didShow Δ=\(t - modeChangedAt, privacy: .public)s")
-      } else {
-        log.debug("keyboard didShow")
+      if case .firebase = s {
+        showSitePasswordSheet = false
       }
     }
   }
 
   private var centeredContent: some View {
     VStack(spacing: 18) {
-      Spacer(minLength: 0)
       NeonCard {
         VStack(spacing: 10) {
           Text("Flip Flow Native")
@@ -87,31 +51,27 @@ struct SignInView: View {
             .foregroundStyle(NeonTheme.textSecondary)
             .multilineTextAlignment(.center)
 
-          Picker("Sign in method", selection: $mode) {
-            ForEach(Mode.allCases) { m in
-              Text(m.rawValue).tag(m)
+          // Keep the login page lightweight: open site-password entry in a sheet
+          // to avoid iOS 18 keyboard focus stalls during segmented-control updates.
+          googleSection
+            .padding(.top, 6)
+
+          Button {
+            sitePassword = ""
+            showSitePasswordSheet = true
+            // Delay enabling first responder until the sheet is presented.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+              sitePasswordFirstResponder = true
             }
+          } label: {
+            HStack(spacing: 10) {
+              Image(systemName: "lock.fill")
+              Text("Use site password")
+                .font(.headline)
+            }
+            .foregroundStyle(.white)
           }
-          .pickerStyle(.segmented)
-          .tint(NeonTheme.accentCyan)
-          .padding(.top, 6)
-
-          // Keep both sign-in sections mounted to avoid long stalls when toggling modes
-          // (e.g. keyboard + layout work hitting all at once on first appearance).
-          ZStack(alignment: .top) {
-            googleSection
-              .opacity(mode == .google ? 1 : 0)
-              .allowsHitTesting(mode == .google)
-
-            sitePasswordSection
-              .opacity(mode == .sitePassword ? 1 : 0)
-              .allowsHitTesting(mode == .sitePassword)
-          }
-          .padding(.top, 6)
-          .transaction { txn in
-            // Avoid any implicit animation that can feel like "lag".
-            txn.animation = nil
-          }
+          .buttonStyle(NeonPrimaryButtonStyle())
 
           if let error = auth.errorMessage, !error.isEmpty {
             Text(error)
@@ -129,8 +89,6 @@ struct SignInView: View {
         .foregroundStyle(NeonTheme.textSecondary.opacity(0.9))
         .multilineTextAlignment(.center)
         .padding(.horizontal, 16)
-
-      Spacer(minLength: 0)
     }
     .padding(.vertical, 24)
   }
@@ -161,44 +119,86 @@ struct SignInView: View {
     .buttonStyle(NeonPrimaryButtonStyle())
   }
 
-  private var sitePasswordSection: some View {
-    VStack(spacing: 12) {
-      SecureField("Enter site password", text: $sitePassword)
-        .textInputAutocapitalization(.never)
-        .autocorrectionDisabled()
-        .textContentType(.password)
-        .submitLabel(.go)
-        .focused($focusedField, equals: .sitePassword)
-        .onSubmit { attemptSitePasswordSignIn() }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 14)
-        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-          RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .stroke(NeonTheme.border, lineWidth: 1)
-            .allowsHitTesting(false)
-        )
-        .foregroundStyle(.white)
-
-      Button {
-        attemptSitePasswordSignIn()
-      } label: {
-        HStack(spacing: 10) {
-          Image(systemName: "lock.fill")
-          Text("Access Dashboard")
-            .font(.headline)
-        }
-        .foregroundStyle(.white)
-      }
-      .buttonStyle(NeonPrimaryButtonStyle())
-      .disabled(sitePassword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-    }
-  }
-
   private func attemptSitePasswordSignIn() {
     let pw = sitePassword.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !pw.isEmpty else { return }
-    Task { await auth.signInWithSitePassword(password: pw) }
+    isSigningIn = true
+    Task {
+      await auth.signInWithSitePassword(password: pw)
+      isSigningIn = false
+    }
+  }
+
+  private var sitePasswordSheet: some View {
+    NeonScreen {
+      VStack(spacing: 14) {
+        Spacer(minLength: 0)
+
+        NeonCard {
+          VStack(alignment: .leading, spacing: 12) {
+            HStack {
+              Text("Site password")
+                .font(.headline)
+                .foregroundStyle(.white)
+              Spacer()
+              Button {
+                showSitePasswordSheet = false
+              } label: {
+                Image(systemName: "xmark")
+                  .font(.system(size: 14, weight: .semibold))
+                  .foregroundStyle(.white.opacity(0.9))
+                  .padding(10)
+                  .background(Color.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+              }
+              .buttonStyle(.plain)
+            }
+
+            NoAssistantSecureField(
+              placeholder: "Enter site password",
+              text: $sitePassword,
+              isFirstResponder: $sitePasswordFirstResponder,
+              onSubmit: { attemptSitePasswordSignIn() }
+            )
+            .padding(.vertical, 12)
+            .padding(.horizontal, 14)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+              RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(NeonTheme.border, lineWidth: 1)
+            )
+
+            Button {
+              attemptSitePasswordSignIn()
+            } label: {
+              HStack(spacing: 10) {
+                if isSigningIn {
+                  ProgressView().tint(.white)
+                } else {
+                  Image(systemName: "lock.fill")
+                }
+                Text(isSigningIn ? "Signing in…" : "Access Dashboard")
+                  .font(.headline)
+              }
+              .foregroundStyle(.white)
+            }
+            .buttonStyle(NeonPrimaryButtonStyle())
+            .disabled(isSigningIn || sitePassword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+            if let error = auth.errorMessage, !error.isEmpty {
+              Text(error)
+                .font(.footnote)
+                .foregroundStyle(.red)
+            }
+          }
+        }
+        .padding(.horizontal, 16)
+
+        Spacer(minLength: 0)
+      }
+      .padding(.vertical, 18)
+    }
+    .presentationDetents([.fraction(0.45), .medium])
+    .presentationDragIndicator(.visible)
   }
 }
 

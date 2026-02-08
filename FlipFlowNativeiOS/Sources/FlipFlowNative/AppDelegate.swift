@@ -33,6 +33,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     // This keeps the app runnable while you’re setting up Firebase.
     if let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") {
       if let options = FirebaseOptions(contentsOfFile: path) {
+        // Firebase logs a warning if the options bundleID doesn't match the app bundle id.
+        // This can happen when you run a ".dev" bundle id locally with a production plist.
+        // It is safe to override the options bundleID to the current app id for local builds.
+        let actualBid = Bundle.main.bundleIdentifier ?? ""
+        if !actualBid.isEmpty, options.bundleID != actualBid {
+          #if DEBUG
+          NSLog("⚠️ Firebase plist bundle id mismatch. Overriding options.bundleID from %@ to %@.", options.bundleID ?? "nil", actualBid)
+          #endif
+          options.bundleID = actualBid
+        }
         FirebaseApp.configure(options: options)
       } else {
         let bid = Bundle.main.bundleIdentifier ?? "nil"
