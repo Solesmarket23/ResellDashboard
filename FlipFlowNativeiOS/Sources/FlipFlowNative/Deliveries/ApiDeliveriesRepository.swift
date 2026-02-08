@@ -56,12 +56,35 @@ final class ApiDeliveriesRepository: DeliveriesRepositoryProtocol {
       ])
     }
 
-    let decoded = try JSONDecoder().decode(DeliveriesSyncResponse.self, from: data)
+    // Better diagnostics when the server returns HTML or a different payload.
+    let contentType = (resp as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type") ?? ""
+    let trimmedPrefix = String(decoding: data.prefix(120), as: UTF8.self)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "\n", with: " ")
+
+    if !trimmedPrefix.hasPrefix("{") && !trimmedPrefix.hasPrefix("[") {
+      throw NSError(domain: "FlipFlowNative.Deliveries", code: status, userInfo: [
+        NSLocalizedDescriptionKey: "Deliveries response was not JSON (Content-Type: \(contentType))."
+      ])
+    }
+
+    let decoder = JSONDecoder()
+    let decoded = try decoder.decode(DeliveriesSyncResponse.self, from: data)
     if decoded.success != true {
       let msg = decoded.error ?? "Deliveries sync failed."
       throw NSError(domain: "FlipFlowNative.Deliveries", code: status, userInfo: [NSLocalizedDescriptionKey: msg])
     }
-    return decoded
+
+    // Normalize optionals so UI doesn't have to.
+    return DeliveriesSyncResponse(
+      success: true,
+      deliveries: decoded.deliveries ?? [],
+      count: decoded.count,
+      liveTrackingCount: decoded.liveTrackingCount,
+      errorCount: decoded.errorCount,
+      lastSync: decoded.lastSync,
+      error: decoded.error
+    )
   }
 }
 

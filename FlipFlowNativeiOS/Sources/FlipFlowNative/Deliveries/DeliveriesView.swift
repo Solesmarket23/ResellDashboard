@@ -32,7 +32,13 @@ private struct DeliveriesHostView: View {
 
   var body: some View {
     DeliveriesScreen(vm: vm)
-      .task { vm.loadInitialIfNeeded() }
+      // `.task` can be flaky on-device when views are recreated quickly.
+      // Use `onAppear` to guarantee the first fetch happens.
+      .onAppear {
+        if vm.deliveries.isEmpty, vm.isLoading == false {
+          Task { await vm.refresh(twoPhase: true) }
+        }
+      }
   }
 }
 

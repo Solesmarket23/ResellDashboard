@@ -44,7 +44,7 @@ final class DeliveriesViewModel: ObservableObject {
       defer { isLoading = false }
       do {
         let resp = try await repo.fetchDeliveries(userId: userId, includeLiveTracking: true, includeArchived: includeArchived)
-        deliveries = resp.deliveries
+        deliveries = resp.deliveries ?? []
         lastSyncIso = resp.lastSync
       } catch {
         errorMessage = (error as NSError).localizedDescription
@@ -55,7 +55,7 @@ final class DeliveriesViewModel: ObservableObject {
     isLoading = true
     do {
       let lite = try await repo.fetchDeliveries(userId: userId, includeLiveTracking: false, includeArchived: includeArchived)
-      deliveries = lite.deliveries
+      deliveries = lite.deliveries ?? []
       lastSyncIso = lite.lastSync
       isLoading = false
     } catch {
@@ -68,7 +68,7 @@ final class DeliveriesViewModel: ObservableObject {
     isHydrating = true
     do {
       let full = try await repo.fetchDeliveries(userId: userId, includeLiveTracking: true, includeArchived: includeArchived)
-      deliveries = full.deliveries
+      deliveries = full.deliveries ?? []
       lastSyncIso = full.lastSync
     } catch {
       // Don't clobber the lite list; just show an error banner.
