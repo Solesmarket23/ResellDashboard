@@ -36,7 +36,7 @@ enum LabelPrinting {
       let styleLine = styleTrim.isEmpty ? "" : " • Style: \(styleTrim)"
       // Don't place a "TEST" stamp in the barcode area (it makes the barcode look tiny).
       // Instead, label the SKU line so test prints are still obvious.
-      let skuLine = isTest ? "SKU: \(skuString)  (TEST)" : "SKU: \(skuString)"
+      let skuLine = isTest ? "SKU: \(skuString) (TEST)" : "SKU: \(skuString)"
 
       let titleAttrs: [NSAttributedString.Key: Any] = [
         .font: UIFont.systemFont(ofSize: 8.8, weight: .semibold),
@@ -57,6 +57,7 @@ enum LabelPrinting {
 
       let paragraphTitle: NSParagraphStyle = {
         let p = NSMutableParagraphStyle()
+        p.alignment = .left
         p.lineBreakMode = .byTruncatingTail
         return p
       }()
@@ -70,15 +71,20 @@ enum LabelPrinting {
       // - Title full-width at top (2 lines)
       // - Size/style line on left, image on right (same row block as size+sku)
       // - SKU line below
-      let titleRect = CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: 20)
+      // Slight left inset so wrapped line alignment looks intentional.
+      let titleInsetX: CGFloat = 1
+      // Give the title enough height for 2 lines so it doesn't clip.
+      let titleRect = CGRect(x: bounds.minX + titleInsetX, y: bounds.minY, width: bounds.width - titleInsetX, height: 24)
       let titleAttrs2: [NSAttributedString.Key: Any] = titleAttrs.merging([.paragraphStyle: paragraphTitle]) { $1 }
       (title as NSString).draw(with: titleRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: titleAttrs2, context: nil)
 
       let rowY = titleRect.maxY + 1
       // Make the product image ~40% larger (24 -> ~34).
-      let imgSize: CGFloat = 34
+      // +10% from the last revision.
+      let imgSize: CGFloat = 37
       let imgRect: CGRect = (productImage != nil)
-        ? CGRect(x: bounds.maxX - imgSize - 2, y: rowY, width: imgSize, height: imgSize)
+        // Nudge up slightly so it visually aligns with the text block.
+        ? CGRect(x: bounds.maxX - imgSize - 2, y: rowY - 3, width: imgSize, height: imgSize)
         : .zero
       let textRightPad = (productImage != nil) ? (imgSize + 7) : 0
       let subRect = CGRect(x: bounds.minX, y: rowY, width: bounds.width - textRightPad, height: 10)
@@ -100,7 +106,7 @@ enum LabelPrinting {
           .foregroundColor: UIColor.black.withAlphaComponent(0.55),
           .paragraphStyle: paragraphSub,
         ]
-        skuText.append(NSAttributedString(string: "  (TEST)", attributes: testAttrs))
+        skuText.append(NSAttributedString(string: " (TEST)", attributes: testAttrs))
         skuText.draw(with: skuRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], context: nil)
       } else {
         (skuLine as NSString).draw(with: skuRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: skuAttrs2, context: nil)
@@ -134,7 +140,8 @@ enum LabelPrinting {
       let barcodeRect = CGRect(x: bounds.minX, y: barcodeTop, width: bounds.width, height: bounds.maxY - barcodeTop)
       if let barcode = Code128Barcode.make(payload: skuString) {
         let img = barcode
-        let target = barcodeRect.insetBy(dx: 1, dy: 0)
+        // Snap to whole points to avoid fractional scaling artifacts (thin-looking bars).
+        let target = barcodeRect.insetBy(dx: 1, dy: 0).integral
         ctx.cgContext.interpolationQuality = .none
         ctx.cgContext.setAllowsAntialiasing(false)
         ctx.cgContext.setShouldAntialias(false)
@@ -203,11 +210,20 @@ enum Code128Barcode {
 
     // Scale up without blurring
     // Slightly larger scale yields a bolder-looking barcode when drawn into a small label.
-    let scaleX: CGFloat = 4.0
-    let scaleY: CGFloat = 4.0
+    let scaleX: CGFloat = 5.0
+    let scaleY: CGFloat = 5.0
     let scaled = output.transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
+
+    // Slightly thicken bars (subtle) while staying scannable.
+    // This expands dark regions a bit, making the barcode look less "hairline" in previews.
+    let thickened: CIImage = {
+      guard let f = CIFilter(name: "CIMorphologyMinimum") else { return scaled }
+      f.setValue(scaled, forKey: kCIInputImageKey)
+      f.setValue(1.2, forKey: kCIInputRadiusKey)
+      return f.outputImage ?? scaled
+    }()
     let context = CIContext(options: [.useSoftwareRenderer: false])
-    guard let cg = context.createCGImage(scaled, from: scaled.extent) else { return nil }
+    guard let cg = context.createCGImage(thickened, from: thickened.extent) else { return nil }
     return UIImage(cgImage: cg)
   }
 }

@@ -48,7 +48,6 @@ struct AVCaptureScannerView: UIViewControllerRepresentable {
     private var metadataOutput: AVCaptureMetadataOutput?
     private var captureDevice: AVCaptureDevice?
     private var lastTorchOn: Bool = false
-    private var hasStarted = false
 
     private var lastPayload: String?
     private var lastPayloadAt: Date?
@@ -79,10 +78,10 @@ struct AVCaptureScannerView: UIViewControllerRepresentable {
     }
 
     func start() {
-      guard !hasStarted else { return }
-      hasStarted = true
       sessionQueue.async { [weak self] in
         guard let self else { return }
+        // If permission was just granted, the session may not be configured yet.
+        // Don't "lock out" future start attempts until we actually have inputs.
         guard self.session.inputs.isEmpty == false else { return }
         self.applyMetadataTypesIfNeeded()
         if !self.session.isRunning {
@@ -214,6 +213,9 @@ struct AVCaptureScannerView: UIViewControllerRepresentable {
             conn.videoOrientation = .portrait
           }
           self.updateRectOfInterest()
+          // If this configuration happened after a permission prompt, ensure we start now
+          // without requiring the user to dismiss/reopen the sheet.
+          self.start()
         }
       }
     }

@@ -54,7 +54,7 @@ private struct ReceivingScreen: View {
     NeonScreen { screenContent }
       .overlay(alignment: .top) {
         if let message = vm.banner, !message.isEmpty {
-          NeonToast(message: message) {
+          NeonToast(message: message, kind: toastKind(for: message)) {
             bannerDismissWorkItem?.cancel()
             bannerDismissWorkItem = nil
             withAnimation(.easeInOut(duration: 0.18)) {
@@ -104,6 +104,14 @@ private struct ReceivingScreen: View {
           authSheetItem = IdentifiableURL(url: url)
         }
       }
+  }
+
+  private func toastKind(for message: String) -> NeonToast.Kind {
+    let m = message.trimmingCharacters(in: .whitespacesAndNewlines)
+    if m.hasPrefix("Sent to printer") { return .success }
+    if m.hasPrefix("Print failed") || m.hasPrefix("Failed") || m.hasPrefix("Sync failed") { return .error }
+    if m.hasPrefix("Preparing label") || m.hasPrefix("Opening print") || m.hasPrefix("Printing") { return .progress }
+    return .info
   }
 
   private var screenContent: some View {
@@ -709,14 +717,33 @@ private struct ReceivingScreen: View {
 }
 
 private struct NeonToast: View {
+  enum Kind { case info, progress, success, error }
+
   let message: String
+  let kind: Kind
   let onDismiss: () -> Void
 
+  private var iconName: String {
+    switch kind {
+    case .info: return "info.circle.fill"
+    case .progress: return "printer.fill"
+    case .success: return "checkmark.circle.fill"
+    case .error: return "xmark.octagon.fill"
+    }
+  }
+
+  private var accent: Color {
+    switch kind {
+    case .info, .progress: return NeonTheme.accentCyan
+    case .success: return NeonTheme.accentEmerald
+    case .error: return Color.red
+    }
+  }
+
   var body: some View {
-    HStack(alignment: .top, spacing: 10) {
-      Image(systemName: "exclamationmark.triangle.fill")
-        .foregroundStyle(NeonTheme.accentCyan.opacity(0.9))
-        .padding(.top, 1)
+    HStack(alignment: .center, spacing: 10) {
+      Image(systemName: iconName)
+        .foregroundStyle(accent.opacity(0.95))
 
       Text(message)
         .font(.subheadline)
@@ -736,14 +763,24 @@ private struct NeonToast: View {
       .buttonStyle(.plain)
       .accessibilityLabel("Dismiss message")
     }
-    .padding(.horizontal, 12)
-    .padding(.vertical, 10)
-    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    // Make the toast "thicker" and more visible (neon themed).
+    .padding(.horizontal, 14)
+    .padding(.vertical, 12)
+    .background(
+      ZStack {
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+          // More solid base so it reads clearly on the neon background.
+          .fill(Color.black.opacity(0.90))
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+          // Stronger neon wash for visibility without sacrificing contrast.
+          .fill(NeonTheme.primaryGradient.opacity(kind == .error ? 0.22 : 0.42))
+      }
+    )
     .overlay(
       RoundedRectangle(cornerRadius: 16, style: .continuous)
-        .stroke(NeonTheme.border.opacity(0.85), lineWidth: 1)
+        .stroke(accent.opacity(0.85), lineWidth: 1.6)
     )
-    .shadow(color: Color.black.opacity(0.25), radius: 18, x: 0, y: 10)
+    .shadow(color: accent.opacity(0.18), radius: 18, x: 0, y: 10)
     .onTapGesture { onDismiss() }
   }
 }
