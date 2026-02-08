@@ -49,6 +49,21 @@ private struct ReceivingScreen: View {
   @State private var expanded: Set<ReceivingViewModel.FlowStep> = [.tracking]
   @State private var bannerDismissWorkItem: DispatchWorkItem?
   @State private var isPrintingLabel: Bool = false
+  @State private var showClearProcessedConfirm: Bool = false
+
+  private func applyActiveStepHighlight<V: View>(_ view: V, isActive: Bool) -> some View {
+    view
+      .overlay(
+        RoundedRectangle(cornerRadius: 20, style: .continuous)
+          .stroke(isActive ? NeonTheme.accentCyan.opacity(0.85) : Color.clear, lineWidth: 2)
+          .shadow(color: isActive ? NeonTheme.accentCyan.opacity(0.18) : .clear, radius: 18, x: 0, y: 10)
+          .allowsHitTesting(false)
+      )
+      .background(
+        RoundedRectangle(cornerRadius: 20, style: .continuous)
+          .fill(isActive ? AnyShapeStyle(NeonTheme.primaryGradient.opacity(0.10)) : AnyShapeStyle(Color.clear))
+      )
+  }
 
   var body: some View {
     NeonScreen { screenContent }
@@ -79,6 +94,24 @@ private struct ReceivingScreen: View {
         }
       }
       .animation(.easeInOut(duration: 0.18), value: vm.banner)
+      .overlay {
+        if showClearProcessedConfirm {
+          NeonConfirmDialog(
+            title: "Clear processed log?",
+            message: "This will delete \(vm.processedLog.count) entr\(vm.processedLog.count == 1 ? "y" : "ies") from this device. It won’t change your web dashboard.",
+            confirmTitle: "Clear",
+            confirmStyle: .destructive,
+            onCancel: { showClearProcessedConfirm = false },
+            onConfirm: {
+              showClearProcessedConfirm = false
+              vm.clearProcessedLog()
+              vm.banner = "Cleared local processed log."
+            }
+          )
+          .transition(.opacity)
+        }
+      }
+      .animation(.easeInOut(duration: 0.18), value: showClearProcessedConfirm)
       .sheet(item: $authSheetItem) { item in
         SafariSheet(url: item.url)
           .onDisappear {
@@ -223,7 +256,7 @@ private struct ReceivingScreen: View {
   private var step1Tracking: some View {
     let isActive = (vm.flowStep == .tracking)
     let isExpanded = expanded.contains(.tracking)
-    return NeonCard {
+    return applyActiveStepHighlight(NeonCard {
       VStack(alignment: .leading, spacing: isExpanded ? 12 : 6) {
         StepTitle(
           step: 1,
@@ -365,13 +398,13 @@ private struct ReceivingScreen: View {
           }
         }
       }
-    }
+    }, isActive: isActive)
   }
 
   private var step2Stockx: some View {
     let isActive = (vm.flowStep == .stockx)
     let isExpanded = expanded.contains(.stockx)
-    return NeonCard {
+    return applyActiveStepHighlight(NeonCard {
       VStack(alignment: .leading, spacing: isExpanded ? 12 : 6) {
         StepTitle(
           step: 2,
@@ -421,13 +454,13 @@ private struct ReceivingScreen: View {
           }
         }
       }
-    }
+    }, isActive: isActive)
   }
 
   private var step3Auth: some View {
     let isActive = (vm.flowStep == .auth)
     let isExpanded = expanded.contains(.auth)
-    return NeonCard {
+    return applyActiveStepHighlight(NeonCard {
       VStack(alignment: .leading, spacing: isExpanded ? 12 : 6) {
         StepTitle(
           step: 3,
@@ -483,13 +516,13 @@ private struct ReceivingScreen: View {
           }
         }
       }
-    }
+    }, isActive: isActive)
   }
 
   private var step4Result: some View {
     let isActive = (vm.flowStep == .result)
     let isExpanded = expanded.contains(.result)
-    return NeonCard {
+    return applyActiveStepHighlight(NeonCard {
       VStack(alignment: .leading, spacing: isExpanded ? 12 : 6) {
         StepTitle(
           step: 4,
@@ -663,7 +696,7 @@ private struct ReceivingScreen: View {
             .foregroundStyle(NeonTheme.textSecondary.opacity(0.85))
         }
       }
-    }
+    }, isActive: isActive)
   }
 
   private func toggle(step: ReceivingViewModel.FlowStep) {
@@ -684,7 +717,7 @@ private struct ReceivingScreen: View {
             .foregroundStyle(.white)
           Spacer()
           if !vm.processedLog.isEmpty {
-            Button("Clear") { vm.clearProcessedLog() }
+            Button("Clear") { showClearProcessedConfirm = true }
               .font(.caption.weight(.semibold))
               .foregroundStyle(Color.white.opacity(0.85))
               .padding(.horizontal, 10)
@@ -713,6 +746,66 @@ private struct ReceivingScreen: View {
         }
       }
     }
+  }
+}
+
+private struct NeonConfirmDialog: View {
+  enum ConfirmStyle { case normal, destructive }
+
+  let title: String
+  let message: String
+  let confirmTitle: String
+  let confirmStyle: ConfirmStyle
+  let onCancel: () -> Void
+  let onConfirm: () -> Void
+
+  var body: some View {
+    ZStack {
+      Color.black.opacity(0.55)
+        .ignoresSafeArea()
+        .onTapGesture { onCancel() }
+
+      NeonCard {
+        VStack(alignment: .leading, spacing: 10) {
+          Text(title)
+            .font(.headline)
+            .foregroundStyle(.white)
+
+          Text(message)
+            .font(.subheadline)
+            .foregroundStyle(NeonTheme.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+
+          HStack(spacing: 10) {
+            Button("Cancel") { onCancel() }
+              .foregroundStyle(.white.opacity(0.9))
+              .padding(.vertical, 12)
+              .frame(maxWidth: .infinity)
+              .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+              .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                  .stroke(NeonTheme.border.opacity(0.8), lineWidth: 1)
+              )
+
+            Button(confirmTitle) { onConfirm() }
+              .foregroundStyle(.white)
+              .padding(.vertical, 12)
+              .frame(maxWidth: .infinity)
+              .background(
+                (confirmStyle == .destructive ? AnyShapeStyle(Color.red.opacity(0.65)) : AnyShapeStyle(NeonTheme.primaryGradient.opacity(0.95))),
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+              )
+              .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                  .stroke((confirmStyle == .destructive ? Color.red.opacity(0.9) : NeonTheme.accentCyan.opacity(0.55)), lineWidth: 1)
+              )
+          }
+          .padding(.top, 4)
+        }
+      }
+      .padding(.horizontal, 18)
+    }
+    .accessibilityElement(children: .contain)
   }
 }
 
@@ -1003,8 +1096,14 @@ private struct StepTitle: View {
 
       Spacer()
 
-      Image(systemName: isComplete ? "checkmark.seal.fill" : "circle")
-        .foregroundStyle(isComplete ? NeonTheme.accentEmerald : Color.white.opacity(0.25))
+      if isComplete {
+        Image(systemName: "checkmark.seal.fill")
+          .foregroundStyle(NeonTheme.accentEmerald)
+      } else {
+        // Keep spacing so the chevron doesn't jump when completed.
+        Color.clear
+          .frame(width: 18, height: 18)
+      }
 
       Button(action: onToggle) {
         Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
@@ -1045,33 +1144,7 @@ private struct StepHint: View {
   }
 }
 
-private struct IdentifiableURL: Identifiable {
-  let id = UUID()
-  let url: URL
-}
-
-private struct SafariSheet: View {
-  let url: URL
-
-  var body: some View {
-    SafariViewController(url: url)
-      .presentationDetents([.fraction(0.95), .large])
-      .presentationDragIndicator(.visible)
-  }
-}
-
-private struct SafariViewController: UIViewControllerRepresentable {
-  let url: URL
-
-  func makeUIViewController(context: Context) -> SFSafariViewController {
-    let vc = SFSafariViewController(url: url)
-    vc.dismissButtonStyle = .done
-    vc.preferredControlTintColor = UIColor.white
-    return vc
-  }
-
-  func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
-}
+// SafariSheet + IdentifiableURL live in Support/SafariSheet.swift
 
 private struct ProductThumb: View {
   let urlString: String?

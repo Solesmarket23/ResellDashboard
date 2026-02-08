@@ -45,7 +45,7 @@ struct MainTabView: View {
           Label("Purchases", systemImage: "shippingbox")
         }
 
-      PlaceholderTab(title: "Deliveries", subtitle: "Buttons coming next", systemImage: "truck.box")
+      DeliveriesView()
         .tabItem {
           Label("Deliveries", systemImage: "truck.box")
         }
