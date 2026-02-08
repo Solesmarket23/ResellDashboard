@@ -332,17 +332,28 @@ const Purchases = () => {
   const [showColumnCustomizer, setShowColumnCustomizer] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState(() => {
     const saved = localStorage.getItem('visibleColumns');
-    return saved ? JSON.parse(saved) : {
+    const defaults = {
       product: true,
       status: true,
       orderNumber: true,
+      brand: true,
       styleId: true,
       tracking: true,
       carrier: true,
       price: true,
       purchaseDate: true,
-      actions: true
+      received: true,
+      authenticity: true,
+      stockxUnit: true,
+      actions: true,
     };
+    if (!saved) return defaults;
+    try {
+      const parsed = JSON.parse(saved);
+      return { ...defaults, ...(parsed || {}) };
+    } catch {
+      return defaults;
+    }
   });
 
 
@@ -357,7 +368,7 @@ const Purchases = () => {
     
     const cssRules = hiddenColumns.map(column => {
       // Map column keys to their table positions
-      // Current order: checkbox, product, status, orderNumber, brand, styleId, tracking, carrier, price, purchaseDate, actions
+      // Current order: checkbox, product, status, orderNumber, brand, styleId, tracking, carrier, price, purchaseDate, received, authenticity, stockxUnit, actions
       const columnMap: Record<string, number> = {
         product: 2,
         status: 3,
@@ -367,7 +378,10 @@ const Purchases = () => {
         tracking: 7,
         carrier: 8,
         price: 9,
-        purchaseDate: 10
+        purchaseDate: 10,
+        received: 11,
+        authenticity: 12,
+        stockxUnit: 13,
       };
       
       const position = columnMap[column];
@@ -473,6 +487,9 @@ const Purchases = () => {
       purchaseDate: 120, // Minimum width for Purchase Date column
       tracking: 150,
       carrier: 100,
+      received: 120,
+      authenticity: 140,
+      stockxUnit: 160,
       actions: 80
     };
   };
@@ -514,6 +531,69 @@ const Purchases = () => {
           aValue = a.status.toLowerCase();
           bValue = b.status.toLowerCase();
           break;
+        case 'received': {
+          const ar = !!a?.received;
+          const br = !!b?.received;
+          if (ar !== br) {
+            aValue = ar ? 1 : 0;
+            bValue = br ? 1 : 0;
+            break;
+          }
+          // If both have same boolean, sort by receivedAt when available.
+          const ams = a?.receivedAt ? Date.parse(a.receivedAt) : NaN;
+          const bms = b?.receivedAt ? Date.parse(b.receivedAt) : NaN;
+          aValue = Number.isFinite(ams) ? ams : 0;
+          bValue = Number.isFinite(bms) ? bms : 0;
+          break;
+        }
+        case 'authenticity': {
+          const as = String(
+            a?.authExternal?.status ??
+              a?.authSelf?.status ??
+              a?.authStatus ??
+              a?.authenticityStatus ??
+              ''
+          )
+            .toLowerCase()
+            .trim();
+          const bs = String(
+            b?.authExternal?.status ??
+              b?.authSelf?.status ??
+              b?.authStatus ??
+              b?.authenticityStatus ??
+              ''
+          )
+            .toLowerCase()
+            .trim();
+          aValue = as;
+          bValue = bs;
+          break;
+        }
+        case 'stockxUnit': {
+          const as = String(
+            a?.stockx?.unitQrRaw ??
+              a?.stockx?.unitQr ??
+              a?.stockxUnitQrRaw ??
+              a?.unitQrRaw ??
+              a?.stockxQrRaw ??
+              ''
+          )
+            .toLowerCase()
+            .trim();
+          const bs = String(
+            b?.stockx?.unitQrRaw ??
+              b?.stockx?.unitQr ??
+              b?.stockxUnitQrRaw ??
+              b?.unitQrRaw ??
+              b?.stockxQrRaw ??
+              ''
+          )
+            .toLowerCase()
+            .trim();
+          aValue = as;
+          bValue = bs;
+          break;
+        }
         case 'tracking':
           aValue = a.tracking ? a.tracking.toLowerCase() : '';
           bValue = b.tracking ? b.tracking.toLowerCase() : '';
@@ -772,6 +852,33 @@ const Purchases = () => {
             }
           }
           break;
+        case 'received': {
+          const isReceived = !!purchase?.received;
+          const receivedAt = (purchase?.receivedAt || '').toString().trim();
+          cellContent = isReceived ? (receivedAt ? `Yes ${receivedAt}` : 'Yes') : 'No';
+          break;
+        }
+        case 'authenticity': {
+          const s =
+            purchase?.authExternal?.status ??
+            purchase?.authSelf?.status ??
+            purchase?.authStatus ??
+            purchase?.authenticityStatus ??
+            '';
+          cellContent = String(s || '');
+          break;
+        }
+        case 'stockxUnit': {
+          const raw =
+            purchase?.stockx?.unitQrRaw ??
+            purchase?.stockx?.unitQr ??
+            purchase?.stockxUnitQrRaw ??
+            purchase?.unitQrRaw ??
+            purchase?.stockxQrRaw ??
+            '';
+          cellContent = String(raw || '');
+          break;
+        }
         default:
           cellContent = '';
       }
@@ -3685,7 +3792,10 @@ const Purchases = () => {
                         tracking: 'Tracking',
                         carrier: 'Carrier',
                         price: 'Price',
-                        purchaseDate: 'Purchase Date'
+                        purchaseDate: 'Purchase Date',
+                        received: 'Received',
+                        authenticity: 'Authenticity',
+                        stockxUnit: 'StockX QR'
                       }).map(([key, label]) => (
                         <button
                           key={key}
@@ -4551,6 +4661,111 @@ const Purchases = () => {
                     title="Drag to resize column, double-click to auto-fit"
                   />
                 </th>
+                <th
+                  className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-200'
+                  }`}
+                  style={{ width: `${columnWidths.received}px` }}
+                  onClick={(e) => handleHeaderClick(e, 'received')}
+                >
+                  <div className="flex items-center justify-center h-full">
+                    <div className="flex items-center gap-2">
+                      <svg className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className={`text-xs font-bold uppercase tracking-wider ${
+                        currentTheme.name === 'Neon' ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
+                      } transition-colors`}>
+                        Received
+                      </span>
+                      <SortIcon column="received" />
+                    </div>
+                  </div>
+                  <div
+                    className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                    } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      handleMouseDown(e, 'received');
+                    }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      handleDoubleClickResize('received', 'Received');
+                    }}
+                    title="Drag to resize column, double-click to auto-fit"
+                  />
+                </th>
+                <th
+                  className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-200'
+                  }`}
+                  style={{ width: `${columnWidths.authenticity}px` }}
+                  onClick={(e) => handleHeaderClick(e, 'authenticity')}
+                >
+                  <div className="flex items-center justify-center h-full">
+                    <div className="flex items-center gap-2">
+                      <svg className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11c0 1.657-1.343 3-3 3S6 12.657 6 11s1.343-3 3-3 3 1.343 3 3zm0 0c0 1.657 1.343 3 3 3s3-1.343 3-3-1.343-3-3-3-3 1.343-3 3z" />
+                      </svg>
+                      <span className={`text-xs font-bold uppercase tracking-wider ${
+                        currentTheme.name === 'Neon' ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
+                      } transition-colors`}>
+                        Authenticity
+                      </span>
+                      <SortIcon column="authenticity" />
+                    </div>
+                  </div>
+                  <div
+                    className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                    } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      handleMouseDown(e, 'authenticity');
+                    }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      handleDoubleClickResize('authenticity', 'Authenticity');
+                    }}
+                    title="Drag to resize column, double-click to auto-fit"
+                  />
+                </th>
+                <th
+                  className={`relative px-6 py-0 h-12 cursor-pointer select-none group transition-all duration-200 ${
+                    currentTheme.name === 'Neon' ? 'hover:bg-white/10' : 'hover:bg-gray-200'
+                  }`}
+                  style={{ width: `${columnWidths.stockxUnit}px` }}
+                  onClick={(e) => handleHeaderClick(e, 'stockxUnit')}
+                >
+                  <div className="flex items-center justify-center h-full">
+                    <div className="flex items-center gap-2">
+                      <svg className={`w-4 h-4 ${currentTheme.name === 'Neon' ? 'text-cyan-400' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h10v10H7V7z" />
+                      </svg>
+                      <span className={`text-xs font-bold uppercase tracking-wider ${
+                        currentTheme.name === 'Neon' ? 'text-gray-300 group-hover:text-cyan-400' : 'text-gray-600 group-hover:text-blue-700'
+                      } transition-colors`}>
+                        StockX QR
+                      </span>
+                      <SortIcon column="stockxUnit" />
+                    </div>
+                  </div>
+                  <div
+                    className={`absolute right-0 top-0 h-full w-2 cursor-col-resize ${
+                      currentTheme.name === 'Neon' ? 'hover:bg-cyan-400/50 bg-white/5' : 'hover:bg-blue-300 bg-gray-200'
+                    } opacity-30 hover:opacity-100 transition-opacity border-l border-r`}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      handleMouseDown(e, 'stockxUnit');
+                    }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      handleDoubleClickResize('stockxUnit', 'StockX QR');
+                    }}
+                    title="Drag to resize column, double-click to auto-fit"
+                  />
+                </th>
                 <th 
                   className={`relative px-6 py-0 h-12`} 
                   style={{ width: `${columnWidths.actions}px` }}
@@ -5047,6 +5262,96 @@ const Purchases = () => {
                         return <span className={`text-xs ${currentTheme.colors.textSecondary}`}>Unknown</span>;
                       })()}
                     </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-3 align-middle text-center" style={{ width: `${columnWidths.received}px` }}>
+                    <div className="flex flex-col items-center justify-center gap-1">
+                      {purchase.received ? (
+                        <span
+                          className={`inline-flex items-center px-3 py-1 rounded-lg text-xs font-bold ${
+                            currentTheme.name === 'Neon'
+                              ? 'bg-gradient-to-r from-emerald-500/20 to-green-500/20 text-emerald-300 border border-emerald-500/30'
+                              : 'bg-green-50 text-green-700 border border-green-200'
+                          }`}
+                          title={purchase.receivedAt ? `Received at ${purchase.receivedAt}` : 'Received'}
+                        >
+                          Yes
+                        </span>
+                      ) : (
+                        <span
+                          className={`inline-flex items-center px-3 py-1 rounded-lg text-xs font-bold ${
+                            currentTheme.name === 'Neon'
+                              ? 'bg-white/5 text-gray-300 border border-white/10'
+                              : 'bg-gray-50 text-gray-600 border border-gray-200'
+                          }`}
+                        >
+                          No
+                        </span>
+                      )}
+                      {purchase.receivedAt && (
+                        <span className={`text-[11px] ${currentTheme.colors.textSecondary} truncate max-w-[140px]`}>
+                          {(() => {
+                            const d = new Date(purchase.receivedAt);
+                            return isNaN(d.getTime()) ? String(purchase.receivedAt) : d.toLocaleString();
+                          })()}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-6 py-3 align-middle text-center" style={{ width: `${columnWidths.authenticity}px` }}>
+                    <div className="flex items-center justify-center">
+                      {(() => {
+                        const raw =
+                          purchase?.authExternal?.status ??
+                          purchase?.authSelf?.status ??
+                          purchase?.authStatus ??
+                          purchase?.authenticityStatus ??
+                          '';
+                        const s = String(raw || '').toLowerCase().trim();
+                        if (!s || s === 'unknown') {
+                          return <span className={`text-sm ${currentTheme.colors.textSecondary}`}>-</span>;
+                        }
+                        const isPass = s.includes('authentic') || s === 'pass' || s === 'passed';
+                        const isFail = s.includes('not') || s === 'fail' || s === 'failed';
+                        const badge =
+                          isPass
+                            ? currentTheme.name === 'Neon'
+                              ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/25'
+                              : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : isFail
+                              ? currentTheme.name === 'Neon'
+                                ? 'bg-red-500/15 text-red-300 border border-red-500/25'
+                                : 'bg-red-50 text-red-700 border border-red-200'
+                              : currentTheme.name === 'Neon'
+                                ? 'bg-yellow-500/15 text-yellow-200 border border-yellow-500/25'
+                                : 'bg-yellow-50 text-yellow-800 border border-yellow-200';
+                        return (
+                          <span className={`inline-flex items-center px-3 py-1 rounded-lg text-xs font-bold ${badge}`}>
+                            {isPass ? 'Authentic' : isFail ? 'Not authentic' : s}
+                          </span>
+                        );
+                      })()}
+                    </div>
+                  </td>
+                  <td className="px-6 py-3 align-middle text-center" style={{ width: `${columnWidths.stockxUnit}px` }}>
+                    <div className="flex items-center justify-center">
+                      {(() => {
+                        const raw =
+                          purchase?.stockx?.unitQrRaw ??
+                          purchase?.stockx?.unitQr ??
+                          purchase?.stockxUnitQrRaw ??
+                          purchase?.unitQrRaw ??
+                          purchase?.stockxQrRaw ??
+                          '';
+                        const trimmed = String(raw || '').trim();
+                        if (!trimmed) return <span className={`text-sm ${currentTheme.colors.textSecondary}`}>-</span>;
+                        const short = trimmed.length <= 18 ? trimmed : `${trimmed.slice(0, 8)}…${trimmed.slice(-8)}`;
+                        return (
+                          <span className={`text-sm font-mono ${currentTheme.colors.textPrimary}`} title={trimmed}>
+                            {short}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </td>
                   <td className="px-6 py-3 align-middle text-center" style={{ width: `${columnWidths.actions}px` }}>

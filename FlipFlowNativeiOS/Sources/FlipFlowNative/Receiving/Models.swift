@@ -3,16 +3,16 @@ import FirebaseFirestore
 
 enum ScanMode: String, CaseIterable, Identifiable {
   case tracking = "Tracking"
-  case authQr = "Auth_QR"
-  case stockxQr = "StockX_QR"
+  case authQr = "Verify_QR"
+  case stockxQr = "StockX_Tag"
 
   var id: String { rawValue }
 
   var title: String {
     switch self {
     case .tracking: return "Tracking"
-    case .authQr: return "Auth QR"
-    case .stockxQr: return "StockX QR"
+    case .authQr: return "Verify QR"
+    case .stockxQr: return "StockX Tag"
     }
   }
 }
@@ -35,6 +35,7 @@ struct PurchaseMatch: Identifiable, Hashable {
 
   let received: Bool
   let receivedAt: String?
+  let unitNumber: Int?
 
   let productName: String?
   let productBrand: String?
@@ -52,6 +53,7 @@ struct PurchaseMatch: Identifiable, Hashable {
 
     self.received = (data["received"] as? Bool) ?? false
     self.receivedAt = data["receivedAt"] as? String
+    self.unitNumber = (data["unitNumber"] as? Int) ?? (data["unitNumber"] as? NSNumber)?.intValue
 
     self.productName =
       Self.pickString(data, keys: ["productName", "title"]) ??

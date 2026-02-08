@@ -4,6 +4,11 @@ import SwiftUI
 /// Uses Canvas + TimelineView for smooth, low-cost animation.
 struct ParticleBackgroundView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  let animated: Bool
+
+  init(animated: Bool = true) {
+    self.animated = animated
+  }
 
   struct Bubble: Identifiable {
     let id = UUID()
@@ -66,32 +71,42 @@ struct ParticleBackgroundView: View {
   }()
 
   var body: some View {
-    TimelineView(.animation(minimumInterval: reduceMotion ? 1.0 : 1.0 / 20.0)) { timeline in
-      Canvas { context, size in
-        let t = timeline.date.timeIntervalSinceReferenceDate
-
-        // Keep this extremely light: no heavy filters/blend-modes to avoid UI jank.
-        for b in bubbles {
-          let full = size.height + (b.radius * 2)
-          let travel = (CGFloat(t) * b.speed) + b.offset
-          let y = full - (travel.truncatingRemainder(dividingBy: full))
-          let x = (b.x * size.width) + sin(CGFloat(t) * 0.55 + b.phase) * b.amplitude
-
-          let rect = CGRect(x: x - b.radius, y: y - b.radius, width: b.radius * 2, height: b.radius * 2)
-          let p = Path(ellipseIn: rect)
-
-          // Soft “bubble” edge via radial gradient (no blur filter).
-          let gradient = Gradient(colors: [
-            b.tint.opacity(b.alpha),
-            b.tint.opacity(0.0),
-          ])
-          context.fill(p, with: .radialGradient(gradient, center: CGPoint(x: x, y: y), startRadius: 0, endRadius: b.radius * 1.8))
+    Group {
+      if animated && !reduceMotion {
+        TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { timeline in
+          bubbleCanvas(t: timeline.date.timeIntervalSinceReferenceDate)
         }
+      } else {
+        // Static frame (login screen): keeps the look without the 20fps Canvas updates.
+        bubbleCanvas(t: 0)
       }
-      .ignoresSafeArea()
-      .accessibilityHidden(true)
     }
     .allowsHitTesting(false)
+  }
+
+  @ViewBuilder
+  private func bubbleCanvas(t: TimeInterval) -> some View {
+    Canvas { context, size in
+      // Keep this extremely light: no heavy filters/blend-modes to avoid UI jank.
+      for b in bubbles {
+        let full = size.height + (b.radius * 2)
+        let travel = (CGFloat(t) * b.speed) + b.offset
+        let y = full - (travel.truncatingRemainder(dividingBy: full))
+        let x = (b.x * size.width) + sin(CGFloat(t) * 0.55 + b.phase) * b.amplitude
+
+        let rect = CGRect(x: x - b.radius, y: y - b.radius, width: b.radius * 2, height: b.radius * 2)
+        let p = Path(ellipseIn: rect)
+
+        // Soft “bubble” edge via radial gradient (no blur filter).
+        let gradient = Gradient(colors: [
+          b.tint.opacity(b.alpha),
+          b.tint.opacity(0.0),
+        ])
+        context.fill(p, with: .radialGradient(gradient, center: CGPoint(x: x, y: y), startRadius: 0, endRadius: b.radius * 1.8))
+      }
+    }
+    .ignoresSafeArea()
+    .accessibilityHidden(true)
   }
 }
 

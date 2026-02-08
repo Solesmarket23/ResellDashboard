@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum NeonTheme {
   // Mirrors the web app “Neon” palette (emerald → cyan accents, dark gradient background).
@@ -40,8 +41,37 @@ struct NeonScreen<Content: View>: View {
     // Keeping this wrapper lightweight prevents duplicate animations that can
     // cause tap latency and jank.
     content
+      // TabView/NavigationStack often live inside UIKit containers (UITabBarController / UIHostingController)
+      // that default to an opaque system background (black in dark mode). This clears that so the Neon
+      // app-level background can show through.
+      .background(HostingBackgroundClearer())
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .preferredColorScheme(.dark)
+  }
+}
+
+private struct HostingBackgroundClearer: UIViewRepresentable {
+  func makeUIView(context: Context) -> UIView {
+    let v = UIView(frame: .zero)
+    v.backgroundColor = .clear
+    v.isOpaque = false
+    DispatchQueue.main.async { clearSuperviewChain(from: v) }
+    return v
+  }
+
+  func updateUIView(_ uiView: UIView, context: Context) {
+    DispatchQueue.main.async { clearSuperviewChain(from: uiView) }
+  }
+
+  private func clearSuperviewChain(from view: UIView) {
+    // Walk a few levels up to catch the UIHostingController / UITabBarController container views.
+    var current: UIView? = view
+    for _ in 0..<8 {
+      current = current?.superview
+      guard let current else { break }
+      current.backgroundColor = .clear
+      current.isOpaque = false
+    }
   }
 }
 

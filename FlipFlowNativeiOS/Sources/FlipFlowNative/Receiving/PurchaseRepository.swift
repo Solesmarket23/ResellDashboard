@@ -3,6 +3,7 @@ import FirebaseFirestore
 
 protocol PurchaseRepositoryProtocol {
   func findPurchasesByTracking(trackingNumber: String, userId: String) async throws -> [PurchaseMatch]
+  func assignSku(purchaseId: String, userId: String) async throws -> Int
   func markReceived(
     purchaseId: String,
     userId: String,
@@ -64,6 +65,64 @@ final class FirestorePurchaseRepository: PurchaseRepositoryProtocol {
       return a.id > b.id
     }
     return ordered
+  }
+
+  func assignSku(purchaseId: String, userId: String) async throws -> Int {
+    let now = isoNow()
+    let purchaseRef = db.collection("purchases").document(purchaseId)
+    let counterRef = db.collection("counters").document("sku_\(userId)")
+
+    let result = try await db.runTransaction { tx, errPtr -> Any? in
+      let purchaseSnap: DocumentSnapshot
+      do {
+        purchaseSnap = try tx.getDocument(purchaseRef)
+      } catch {
+        errPtr?.pointee = error as NSError
+        return nil
+      }
+
+      let data = purchaseSnap.data() ?? [:]
+      let owner = (data["userId"] as? String) ?? (data["uid"] as? String) ?? ""
+      if !owner.isEmpty, owner != userId {
+        errPtr?.pointee = NSError(domain: "FlipFlowNative.SKU", code: 403, userInfo: [NSLocalizedDescriptionKey: "Unauthorized"])
+        return nil
+      }
+
+      if let existing = data["unitNumber"] as? Int {
+        return existing
+      }
+      if let existingNum = data["unitNumber"] as? NSNumber {
+        return existingNum.intValue
+      }
+
+      let counterSnap: DocumentSnapshot
+      do {
+        counterSnap = try tx.getDocument(counterRef)
+      } catch {
+        errPtr?.pointee = error as NSError
+        return nil
+      }
+
+      let nextRaw = (counterSnap.data()?["nextSku"] as? Int) ?? (counterSnap.data()?["nextSku"] as? NSNumber)?.intValue ?? 1
+      let nextSku = max(1, nextRaw)
+
+      tx.setData(["nextSku": nextSku + 1, "updatedAt": now], forDocument: counterRef, merge: true)
+      tx.updateData(
+        [
+          "unitNumber": nextSku,
+          "skuAssignedAt": now,
+          "skuAssignedBy": userId,
+          "updatedAt": now,
+        ],
+        forDocument: purchaseRef
+      )
+
+      return nextSku
+    }
+
+    if let sku = result as? Int { return sku }
+    if let skuNum = result as? NSNumber { return skuNum.intValue }
+    throw NSError(domain: "FlipFlowNative.SKU", code: 0, userInfo: [NSLocalizedDescriptionKey: "Assign SKU failed."])
   }
 
   private func isoNow() -> String {

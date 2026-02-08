@@ -18,6 +18,26 @@ enum RuntimeDiagnostics {
       .first(where: { $0.isKeyWindow })
   }
 
+  private static func findTabBarControllerViaResponder(in window: UIWindow?) -> UITabBarController? {
+    guard let window else { return nil }
+
+    func firstTabBar(in view: UIView) -> UITabBar? {
+      if let tb = view as? UITabBar { return tb }
+      for sub in view.subviews {
+        if let found = firstTabBar(in: sub) { return found }
+      }
+      return nil
+    }
+
+    guard let tabBar = firstTabBar(in: window) else { return nil }
+    var responder: UIResponder? = tabBar
+    while let r = responder {
+      if let t = r as? UITabBarController { return t }
+      responder = r.next
+    }
+    return nil
+  }
+
   static func findTabBarController(from vc: UIViewController?) -> UITabBarController? {
     guard let vc else { return nil }
     if let t = vc as? UITabBarController { return t }
@@ -31,18 +51,68 @@ enum RuntimeDiagnostics {
     return nil
   }
 
+  private static func presentedChain(from vc: UIViewController?) -> [UIViewController] {
+    guard let vc else { return [] }
+    var chain: [UIViewController] = [vc]
+    var current: UIViewController? = vc
+    var guardCount = 0
+    while let presented = current?.presentedViewController, guardCount < 16 {
+      chain.append(presented)
+      current = presented
+      guardCount += 1
+    }
+    return chain
+  }
+
+  private static func chainDesc(_ chain: [UIViewController]) -> String {
+    guard !chain.isEmpty else { return "nil" }
+    return chain.map { String(describing: type(of: $0)) }.joined(separator: " > ")
+  }
+
   static func summary(session: AuthSession) -> String {
     let w = keyWindow()
     let root = w?.rootViewController
-    let tab = findTabBarController(from: root)
+    let isSignedOut: Bool = {
+      if case .signedOut = session { return true }
+      return false
+    }()
 
     let screen = UIScreen.main.bounds.size
     let win = w?.bounds.size ?? .zero
+
+    let winBg = w?.backgroundColor
+    if isSignedOut {
+      // Keep signed-out diagnostics cheap to avoid impacting login UI responsiveness.
+      let sessionDesc = "signedOut"
+      return [
+        "session=\(sessionDesc)",
+        "screen=\(Int(screen.width))x\(Int(screen.height))",
+        "window=\(Int(win.width))x\(Int(win.height))",
+        "winBG=\(colorDesc(winBg))",
+        "rootVC=\(root.map { String(describing: type(of: $0)) } ?? "nil")",
+        "rootBG=\(colorDesc(root?.view.backgroundColor))",
+      ].joined(separator: " | ")
+    }
+
+    let tab = findTabBarController(from: root) ?? findTabBarControllerViaResponder(in: w)
+    let selectedVc = tab?.selectedViewController
+
+    // SwiftUI sheets sometimes present from the root hosting controller, not the selected tab host.
+    // Capture both chains so we can see where the presentation actually happens.
+    let rootChain = presentedChain(from: root)
+    let selectedChain = presentedChain(from: selectedVc)
+
+    // Choose the deeper chain as "top", but keep both for debugging.
+    let topChain = (selectedChain.count > rootChain.count) ? selectedChain : rootChain
+    let top = topChain.last
 
     let tabBg = tab?.view.backgroundColor
     let tabBarBg = tab?.tabBar.backgroundColor
     let tabBarStdBg = tab?.tabBar.standardAppearance.backgroundColor
     let tabBarOpaque = tab?.tabBar.standardAppearance.backgroundColor != nil
+    let selectedBg = selectedVc?.view.backgroundColor
+    let selectedOpaque = selectedVc?.view.isOpaque
+    let topBg = top?.view.backgroundColor
 
     let sessionDesc: String = {
       switch session {
@@ -56,35 +126,22 @@ enum RuntimeDiagnostics {
       "session=\(sessionDesc)",
       "screen=\(Int(screen.width))x\(Int(screen.height))",
       "window=\(Int(win.width))x\(Int(win.height))",
+      "winBG=\(colorDesc(winBg))",
       "rootVC=\(root.map { String(describing: type(of: $0)) } ?? "nil")",
       "rootBG=\(colorDesc(root?.view.backgroundColor))",
+      "topVC=\(top.map { String(describing: type(of: $0)) } ?? "nil")",
+      "topBG=\(colorDesc(topBg))",
+      "rootChain=\(chainDesc(rootChain))",
+      "selChain=\(chainDesc(selectedChain))",
       "tabVC=\(tab.map { String(describing: type(of: $0)) } ?? "nil")",
       "tabBG=\(colorDesc(tabBg))",
+      "selVC=\(selectedVc.map { String(describing: type(of: $0)) } ?? "nil")",
+      "selBG=\(colorDesc(selectedBg))",
+      "selOpaque=\(selectedOpaque.map(String.init(describing:)) ?? "nil")",
       "tabBarBG=\(colorDesc(tabBarBg))",
       "tabBarStdBG=\(colorDesc(tabBarStdBg))",
       "tabBarStdOpaque=\(tabBarOpaque)",
     ].joined(separator: " | ")
-  }
-}
-
-struct RuntimeDiagnosticsBanner: View {
-  let text: String
-
-  var body: some View {
-    Text(text)
-      .font(.system(size: 10, weight: .medium, design: .monospaced))
-      .foregroundStyle(.white.opacity(0.92))
-      .lineLimit(3)
-      .padding(.horizontal, 10)
-      .padding(.vertical, 8)
-      .background(Color.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-      .overlay(
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
-          .stroke(Color.white.opacity(0.15), lineWidth: 1)
-      )
-      .padding(.top, 6)
-      .padding(.horizontal, 10)
-      .allowsHitTesting(false)
   }
 }
 

@@ -2,6 +2,44 @@ import Foundation
 
 @MainActor
 final class ReceivingViewModel: ObservableObject {
+  // For now, ALL purchase actions are trial-only (no writes).
+  private let trialModeEnabled: Bool = true
+  private let processedLogKey = "flipflow_processed_log_v1"
+  private let showItemBannerKey = "flipflow_show_item_banner_v1"
+  private let syncEnabledKey = "flipflow_sync_enabled_v1"
+  private let maxProcessedEntries = 200
+
+  enum FlowStep: Int, CaseIterable, Identifiable {
+    case tracking = 1
+    case stockx = 2
+    case auth = 3
+    case result = 4
+
+    var id: Int { rawValue }
+
+    var title: String {
+      switch self {
+      case .tracking: return "Tracking"
+      case .stockx: return "StockX Tag"
+      case .auth: return "Verify QR"
+      case .result: return "Result"
+      }
+    }
+  }
+
+  @Published var flowStep: FlowStep = .tracking
+  @Published private(set) var processedLog: [ProcessedLogEntry] = []
+  @Published var showItemBanner: Bool = true {
+    didSet {
+      UserDefaults.standard.set(showItemBanner, forKey: showItemBannerKey)
+    }
+  }
+  @Published var syncEnabled: Bool = false {
+    didSet {
+      UserDefaults.standard.set(syncEnabled, forKey: syncEnabledKey)
+    }
+  }
+
   @Published var trackingInput: String = ""
   @Published var lookupState: LookupState = .idle
   @Published var lookupError: String = ""
@@ -24,6 +62,7 @@ final class ReceivingViewModel: ObservableObject {
   @Published var stockxUnitQrRaw: String = ""
 
   @Published var banner: String?
+  @Published var authBrowserUrl: URL?
 
   enum LookupState: Equatable {
     case idle
@@ -39,6 +78,9 @@ final class ReceivingViewModel: ObservableObject {
   init(repo: PurchaseRepositoryProtocol, userIdProvider: @escaping () -> String?) {
     self.repo = repo
     self.userIdProvider = userIdProvider
+    self.processedLog = Self.loadProcessedLog(key: processedLogKey)
+    self.showItemBanner = UserDefaults.standard.object(forKey: showItemBannerKey) as? Bool ?? true
+    self.syncEnabled = UserDefaults.standard.object(forKey: syncEnabledKey) as? Bool ?? false
   }
 
   func normalizeTracking(_ raw: String) -> String {
@@ -75,6 +117,8 @@ final class ReceivingViewModel: ObservableObject {
       matches = found
       selected = found.first
       lookupState = .found
+      // Auto-advance the flow once an item is found.
+      flowStep = .stockx
     } catch {
       lookupState = .error
       lookupError = (error as NSError).localizedDescription
@@ -98,10 +142,195 @@ final class ReceivingViewModel: ObservableObject {
 
     case .authQr:
       externalUrl = payload
+      externalProvider = detectExternalProvider(from: payload) ?? "Other"
+      // If the QR is a URL, open it. If it's not (some auth tags are just codes),
+      // open a browser anyway via a search so the flow is still 1-tap.
+      authBrowserUrl = validHttpUrl(from: payload) ?? googleSearchUrl(for: payload)
+      // Avoid showing an alert that can block the Safari sheet presentation.
+      banner = nil
+      // We'll mark step 3 done once Safari returns, but we can advance intent now.
+      flowStep = .auth
 
     case .stockxQr:
       stockxUnitQrRaw = payload
+      banner = "Captured StockX QR:\n\(shortPayload(payload))"
+      flowStep = .auth
     }
+  }
+
+  // MARK: - Step completion (soft gating)
+
+  var isStep1Complete: Bool { selected != nil && lookupState == .found }
+  var isStep2Complete: Bool { !stockxUnitQrRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+  var isStep3Complete: Bool { !externalUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+  var isStep4Complete: Bool { externalStatus != .unknown }
+
+  func onAuthSafariDismissed() {
+    // After returning from the web verifier, move the user to marking the result.
+    flowStep = .result
+  }
+
+  func resetFlowForNextItem() {
+    trackingInput = ""
+    lookupState = .idle
+    lookupError = ""
+    matches = []
+    selected = nil
+    trackingEntryMethod = "manual"
+
+    authSelfStatus = .unknown
+    authSelfNotes = ""
+    externalProvider = "Other"
+    externalUrl = ""
+    externalStatus = .unknown
+    stockxUnitQrRaw = ""
+
+    banner = nil
+    authBrowserUrl = nil
+    flowStep = .tracking
+  }
+
+  // MARK: - Processed log (local trial log)
+
+  func completeCurrentItemAndStartNext() async -> Bool {
+    guard let selected else {
+      banner = "No item selected."
+      return false
+    }
+    guard externalStatus != .unknown else {
+      banner = "Mark authenticity first (Step 4)."
+      return false
+    }
+
+    let entry = ProcessedLogEntry(
+      processedAt: Date(),
+      purchase: selected,
+      stockxUnitQrRaw: stockxUnitQrRaw.trimmingCharacters(in: .whitespacesAndNewlines),
+      authProvider: externalProvider.trimmingCharacters(in: .whitespacesAndNewlines),
+      authUrl: externalUrl.trimmingCharacters(in: .whitespacesAndNewlines),
+      authResult: externalStatus
+    )
+    appendProcessedLog(entry)
+
+    if syncEnabled {
+      guard let userId = userIdProvider() else {
+        banner = "Not signed in. Can't sync."
+        return false
+      }
+      do {
+        // 1) Save verification fields
+        try await repo.saveVerification(
+          purchaseId: selected.id,
+          userId: userId,
+          authSelfStatus: authSelfStatus,
+          authSelfNotes: authSelfNotes.trimmingCharacters(in: .whitespacesAndNewlines),
+          externalProvider: externalProvider,
+          externalUrl: externalUrl,
+          externalStatus: externalStatus,
+          stockxUnitQrRaw: stockxUnitQrRaw
+        )
+
+        // 2) Mark received (NOT delivered) after all steps are complete
+        try await repo.markReceived(
+          purchaseId: selected.id,
+          userId: userId,
+          receivedMethod: trackingEntryMethod,
+          receivedNotes: nil,
+          alsoMarkDelivered: false
+        )
+      } catch {
+        banner = "Sync failed: \((error as NSError).localizedDescription)"
+        return false
+      }
+    }
+
+    resetFlowForNextItem()
+    return true
+  }
+
+  func deleteProcessedLogEntry(id: String) {
+    processedLog.removeAll(where: { $0.id == id })
+    persistProcessedLog()
+  }
+
+  func clearProcessedLog() {
+    processedLog = []
+    persistProcessedLog()
+  }
+
+  private func appendProcessedLog(_ entry: ProcessedLogEntry) {
+    processedLog.removeAll(where: { $0.id == entry.id })
+    processedLog.insert(entry, at: 0)
+    if processedLog.count > maxProcessedEntries {
+      processedLog = Array(processedLog.prefix(maxProcessedEntries))
+    }
+    persistProcessedLog()
+  }
+
+  private func persistProcessedLog() {
+    do {
+      let data = try JSONEncoder().encode(processedLog)
+      UserDefaults.standard.set(data, forKey: processedLogKey)
+    } catch {
+      // Ignore persistence errors in trial mode.
+    }
+  }
+
+  private static func loadProcessedLog(key: String) -> [ProcessedLogEntry] {
+    guard let data = UserDefaults.standard.data(forKey: key) else { return [] }
+    do {
+      return try JSONDecoder().decode([ProcessedLogEntry].self, from: data)
+    } catch {
+      return []
+    }
+  }
+
+  private func shortPayload(_ s: String) -> String {
+    let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.count <= 36 { return trimmed }
+    let prefix = trimmed.prefix(16)
+    let suffix = trimmed.suffix(10)
+    return "\(prefix)…\(suffix)"
+  }
+
+  private func validHttpUrl(from s: String) -> URL? {
+    let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let url = URL(string: trimmed) else { return nil }
+    let scheme = (url.scheme ?? "").lowercased()
+    guard scheme == "https" || scheme == "http" else { return nil }
+    return url
+  }
+
+  private func googleSearchUrl(for s: String) -> URL? {
+    let q = s.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !q.isEmpty else { return nil }
+    var comps = URLComponents()
+    comps.scheme = "https"
+    comps.host = "www.google.com"
+    comps.path = "/search"
+    comps.queryItems = [URLQueryItem(name: "q", value: q)]
+    return comps.url
+  }
+
+  private func detectExternalProvider(from payload: String) -> String? {
+    // Best-effort provider detection by URL host / payload string.
+    // Keep it flexible: we only use this to label the flow for the user.
+    let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+
+    if let url = URL(string: trimmed),
+       let host = url.host?.lowercased() {
+      if host.contains("certilogo") { return "Certilogo" }
+      if host.contains("denimtears") || host.contains("denim-tears") { return "DenimTears" }
+      if host.contains("sertalogo") { return "SertaLogo" }
+      return "Other"
+    }
+
+    let lower = trimmed.lowercased()
+    if lower.contains("certilogo") { return "Certilogo" }
+    if lower.contains("denimtears") || lower.contains("denim tears") { return "DenimTears" }
+    if lower.contains("sertalogo") { return "SertaLogo" }
+    return nil
   }
 
   func noteManualTrackingInput() {
@@ -109,6 +338,7 @@ final class ReceivingViewModel: ObservableObject {
   }
 
   func markReceived(method: String) async {
+    guard !trialModeEnabled else { banner = "Trial Mode is ON. Not saving anything yet."; return }
     guard let userId = userIdProvider() else { banner = "Not signed in."; return }
     guard let selected else { banner = "No purchase selected."; return }
 
@@ -128,6 +358,7 @@ final class ReceivingViewModel: ObservableObject {
   }
 
   func unmarkReceived() async {
+    guard !trialModeEnabled else { banner = "Trial Mode is ON. Not saving anything yet."; return }
     guard selected != nil else { return }
     do {
       guard let userId = userIdProvider() else { banner = "Not signed in."; return }
@@ -139,7 +370,25 @@ final class ReceivingViewModel: ObservableObject {
     }
   }
 
+  func assignSku() async throws -> Int {
+    guard syncEnabled else {
+      throw NSError(
+        domain: "FlipFlowNative.SKU",
+        code: 1,
+        userInfo: [NSLocalizedDescriptionKey: "Enable web sync (writes) to assign a SKU."]
+      )
+    }
+    guard let userId = userIdProvider() else {
+      throw NSError(domain: "FlipFlowNative.SKU", code: 2, userInfo: [NSLocalizedDescriptionKey: "Not signed in."])
+    }
+    guard let selected else {
+      throw NSError(domain: "FlipFlowNative.SKU", code: 3, userInfo: [NSLocalizedDescriptionKey: "No item selected."])
+    }
+    return try await repo.assignSku(purchaseId: selected.id, userId: userId)
+  }
+
   func saveVerification() async {
+    guard !trialModeEnabled else { banner = "Trial Mode is ON. Not saving anything yet."; return }
     guard let userId = userIdProvider() else { banner = "Not signed in."; return }
     guard let selected else { banner = "No purchase selected."; return }
 

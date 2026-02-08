@@ -16,7 +16,7 @@ struct FlipFlowNativeApp: App {
           startRadius: 0,
           endRadius: 520
         )
-        ParticleBackgroundView()
+        ParticleBackgroundView(animated: !isSignedOut(auth.session))
 
         RootView()
           .environmentObject(auth)
@@ -25,6 +25,11 @@ struct FlipFlowNativeApp: App {
       .ignoresSafeArea()
       .preferredColorScheme(.dark)
     }
+  }
+
+  private func isSignedOut(_ session: AuthSession) -> Bool {
+    if case .signedOut = session { return true }
+    return false
   }
 }
 

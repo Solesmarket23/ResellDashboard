@@ -63,6 +63,31 @@ final class ApiPurchaseRepository: PurchaseRepositoryProtocol {
     return []
   }
 
+  func assignSku(purchaseId: String, userId: String) async throws -> Int {
+    let req = try request(
+      path: "api/purchases/assign-sku",
+      method: "POST",
+      userId: userId,
+      body: ["purchaseId": purchaseId, "userId": userId]
+    )
+
+    let (data, resp) = try await URLSession.shared.data(for: req)
+    let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+    if status < 200 || status >= 300 {
+      throw NSError(domain: "FlipFlowNative.API", code: status, userInfo: [NSLocalizedDescriptionKey: "Assign SKU failed (\(status))"])
+    }
+
+    let obj = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any]
+    let ok = (obj?["success"] as? Bool) ?? false
+    if !ok {
+      let msg = (obj?["error"] as? String) ?? "Assign SKU failed."
+      throw NSError(domain: "FlipFlowNative.API", code: status, userInfo: [NSLocalizedDescriptionKey: msg])
+    }
+    if let sku = obj?["sku"] as? Int { return sku }
+    if let skuNum = obj?["sku"] as? NSNumber { return skuNum.intValue }
+    throw NSError(domain: "FlipFlowNative.API", code: status, userInfo: [NSLocalizedDescriptionKey: "Assign SKU failed (missing sku)."])
+  }
+
   func markReceived(
     purchaseId: String,
     userId: String,

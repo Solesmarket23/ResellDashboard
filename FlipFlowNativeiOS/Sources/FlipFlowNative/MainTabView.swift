@@ -62,35 +62,37 @@ private struct PlaceholderTab: View {
   let systemImage: String
 
   var body: some View {
-    NavigationStack {
-      VStack(spacing: 14) {
-        Spacer()
-        NeonCard {
-          VStack(spacing: 10) {
-            Image(systemName: systemImage)
-              .font(.system(size: 34, weight: .semibold))
-              .foregroundStyle(NeonTheme.accentCyan)
-            Text(title)
-              .font(.title2.weight(.semibold))
-              .foregroundStyle(.white)
-            Text(subtitle)
-              .font(.subheadline)
-              .foregroundStyle(NeonTheme.textSecondary)
+    NeonScreen {
+      ZStack(alignment: .topTrailing) {
+        VStack(spacing: 14) {
+          Spacer()
+          NeonCard {
+            VStack(spacing: 10) {
+              Image(systemName: systemImage)
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundStyle(NeonTheme.accentCyan)
+              Text(title)
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.white)
+              Text(subtitle)
+                .font(.subheadline)
+                .foregroundStyle(NeonTheme.textSecondary)
+            }
           }
+          .padding(.horizontal, 16)
+          Spacer()
         }
-        .padding(.horizontal, 16)
-        Spacer()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.clear)
+
+        Button("Sign out") { auth.signOut() }
+          .foregroundStyle(.white)
+          .padding(.horizontal, 12)
+          .padding(.vertical, 8)
+          .background(Color.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+          .padding(.top, 10)
+          .padding(.trailing, 12)
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .background(Color.clear)
-      .navigationTitle("")
-      .toolbar {
-        ToolbarItem(placement: .topBarTrailing) {
-          Button("Sign out") { auth.signOut() }
-            .foregroundStyle(.white)
-        }
-      }
-      .toolbarBackground(.hidden, for: .navigationBar)
     }
   }
 }

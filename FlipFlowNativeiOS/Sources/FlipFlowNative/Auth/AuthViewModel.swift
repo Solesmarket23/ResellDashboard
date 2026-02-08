@@ -21,6 +21,17 @@ final class AuthViewModel: ObservableObject {
   }
 
   func start() {
+#if DEBUG
+    // In Debug builds (Run from Xcode), always start at the login screen.
+    // This prevents auto-restoring an old site-password / Firebase session and jumping
+    // straight to the dashboard when you're actively developing.
+    UserDefaults.standard.removeObject(forKey: siteUserDefaultsKey)
+    session = .signedOut
+    if isFirebaseConfigured {
+      try? Auth.auth().signOut()
+    }
+#endif
+
     // Bootstrap site-password session first (works even without Firebase configured).
     let siteId = UserDefaults.standard.string(forKey: siteUserDefaultsKey) ?? ""
     if !siteId.isEmpty {

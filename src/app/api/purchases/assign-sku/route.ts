@@ -1,0 +1,88 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
+import { getAdminDb } from '@/lib/firebase/firebaseAdmin';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+function resolveUserId(request: NextRequest): string {
+  const qpUserId = request.nextUrl.searchParams.get('userId')?.trim() || '';
+  const headerUserId = request.headers.get('x-user-id')?.trim() || '';
+  const cookieStore = cookies();
+  const cookieUserId =
+    (cookieStore.get('userId')?.value ||
+      cookieStore.get('siteUserId')?.value ||
+      cookieStore.get('site-user-id')?.value ||
+      '')
+      .trim();
+
+  return (qpUserId || headerUserId || cookieUserId).trim();
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const userId = resolveUserId(request);
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: 'Missing userId (query param, x-user-id header, or cookies)' },
+        { status: 400 }
+      );
+    }
+
+    const body = await request.json();
+    const purchaseId: string = (body?.purchaseId || '').toString().trim();
+    if (!purchaseId) {
+      return NextResponse.json({ success: false, error: 'purchaseId is required' }, { status: 400 });
+    }
+
+    const adminDb = getAdminDb();
+    if (!adminDb) {
+      return NextResponse.json({ success: false, error: 'Firebase Admin not initialized' }, { status: 500 });
+    }
+
+    const purchaseRef = adminDb.collection('purchases').doc(purchaseId);
+    const counterRef = adminDb.collection('counters').doc(`sku_${userId}`);
+
+    const nowIso = new Date().toISOString();
+    const sku = await adminDb.runTransaction(async (tx) => {
+      const purchaseSnap = await tx.get(purchaseRef);
+      if (!purchaseSnap.exists) {
+        throw Object.assign(new Error('Purchase not found'), { status: 404 });
+      }
+
+      const purchase = purchaseSnap.data() as any;
+      const owner = String(purchase?.userId || purchase?.uid || '').trim();
+      if (owner && owner !== userId) {
+        throw Object.assign(new Error('Unauthorized'), { status: 403 });
+      }
+
+      const existing = purchase?.unitNumber;
+      if (typeof existing === 'number' && Number.isFinite(existing) && existing > 0) {
+        return existing;
+      }
+
+      const counterSnap = await tx.get(counterRef);
+      const nextRaw = (counterSnap.data() as any)?.nextSku;
+      const nextSku = Math.max(1, Number.isFinite(nextRaw) ? nextRaw : Number(nextRaw) || 1);
+
+      tx.set(counterRef, { nextSku: nextSku + 1, updatedAt: nowIso }, { merge: true });
+      tx.update(purchaseRef, {
+        unitNumber: nextSku,
+        skuAssignedAt: nowIso,
+        skuAssignedBy: userId,
+        updatedAt: nowIso,
+      });
+
+      return nextSku;
+    });
+
+    return NextResponse.json({ success: true, sku });
+  } catch (error: any) {
+    const status = Number(error?.status) || 500;
+    const message = error?.message || 'Server error';
+    console.error('❌ API /api/purchases/assign-sku error:', error);
+    return NextResponse.json({ success: false, error: message }, { status });
+  }
+}
+
