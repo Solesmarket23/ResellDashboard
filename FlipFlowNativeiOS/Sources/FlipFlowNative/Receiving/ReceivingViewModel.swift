@@ -42,15 +42,18 @@ final class ReceivingViewModel: ObservableObject {
   }
 
   func normalizeTracking(_ raw: String) -> String {
-    raw
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-      .replacingOccurrences(of: "[\\s\\-_]+", with: "", options: .regularExpression)
+    TrackingDetection.normalize(raw)
   }
 
   func lookup() async {
     let tracking = normalizeTracking(trackingInput)
     trackingInput = tracking
     guard !tracking.isEmpty else { return }
+    guard TrackingDetection.validateSupported(tracking) != nil else {
+      lookupState = .error
+      lookupError = "Only UPS (1Z...) and FedEx (12–15 digits) tracking numbers are supported right now."
+      return
+    }
     guard let userId = userIdProvider() else {
       lookupState = .error
       lookupError = "Not signed in."
@@ -84,12 +87,13 @@ final class ReceivingViewModel: ObservableObject {
 
     switch scanMode {
     case .tracking:
-      if payload.lowercased().hasPrefix("http://") || payload.lowercased().hasPrefix("https://") {
-        banner = "That looks like a URL. Switch to Auth QR or StockX QR."
+      // Extract UPS/FedEx tracking numbers only; ignore anything else.
+      guard let extracted = TrackingDetection.extractSupported(from: payload) else {
+        banner = "Unsupported scan. For now, scan a UPS (1Z...) or FedEx (12–15 digit) tracking number."
         return
       }
       trackingEntryMethod = "scan"
-      trackingInput = normalizeTracking(payload)
+      trackingInput = extracted.tracking
       Task { await lookup() }
 
     case .authQr:

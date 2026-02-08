@@ -36,27 +36,12 @@ struct NeonScreen<Content: View>: View {
   }
 
   var body: some View {
-    ZStack {
-      // Keep ALL backgrounds truly edge-to-edge (under notch + home indicator).
-      ZStack {
-        NeonTheme.backgroundGradient
-        // Soft top glow so the screen doesn't read as "black bars".
-        RadialGradient(
-          colors: [NeonTheme.accentCyan.opacity(0.12), .clear],
-          center: .top,
-          startRadius: 0,
-          endRadius: 520
-        )
-        ParticleBackgroundView()
-      }
-      .ignoresSafeArea()
-      content
-    }
-    // Ensure the container expands to the full device screen.
-    // Without this, SwiftUI can sometimes size the ZStack to its content,
-    // causing "letterboxed" black areas above/below on some devices.
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .preferredColorScheme(.dark)
+    // Background is painted once at the app window level (in `FlipFlowNativeApp`).
+    // Keeping this wrapper lightweight prevents duplicate animations that can
+    // cause tap latency and jank.
+    content
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .preferredColorScheme(.dark)
   }
 }
 

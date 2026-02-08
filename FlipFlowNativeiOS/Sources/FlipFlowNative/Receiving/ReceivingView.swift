@@ -137,25 +137,31 @@ private struct ReceivingScreen: View {
             if let selected = vm.selected {
               NeonCard {
                 VStack(alignment: .leading, spacing: 10) {
-                  Text(selected.productName ?? "Unknown item")
-                    .font(.headline)
-                    .foregroundStyle(.white)
+                  HStack(alignment: .top, spacing: 12) {
+                    ProductThumb(urlString: selected.productImageUrl)
 
-                  Text([
-                    selected.productBrand,
-                    selected.productSize.map { "Size \($0)" },
-                    selected.priceDisplay.map { "Paid \($0)" },
-                  ].compactMap { $0 }.joined(separator: " • "))
-                  .font(.subheadline)
-                  .foregroundStyle(NeonTheme.textSecondary)
+                    VStack(alignment: .leading, spacing: 6) {
+                      Text(selected.productName ?? "Unknown item")
+                        .font(.headline)
+                        .foregroundStyle(.white)
 
-                  Text([
-                    selected.trackingNumber,
-                    selected.carrier,
-                    selected.shippingStatus,
-                  ].compactMap { $0 }.joined(separator: " • "))
-                  .font(.caption)
-                  .foregroundStyle(NeonTheme.textSecondary)
+                      Text([
+                        selected.productBrand,
+                        selected.productSize.map { "Size \($0)" },
+                        selected.priceDisplay.map { "Paid \($0)" },
+                      ].compactMap { $0 }.joined(separator: " • "))
+                      .font(.subheadline)
+                      .foregroundStyle(NeonTheme.textSecondary)
+
+                      Text([
+                        selected.trackingNumber,
+                        selected.carrier,
+                        selected.shippingStatus,
+                      ].compactMap { $0 }.joined(separator: " • "))
+                      .font(.caption)
+                      .foregroundStyle(NeonTheme.textSecondary)
+                    }
+                  }
 
                   if vm.matches.count > 1 {
                     Picker("Multiple matches", selection: Binding(
@@ -313,6 +319,7 @@ private struct ReceivingScreen: View {
             }
           }
         }
+        .background(Color.clear)
       }
       .navigationTitle("")
       .toolbar {
@@ -321,6 +328,7 @@ private struct ReceivingScreen: View {
             .foregroundStyle(.white)
         }
       }
+      .toolbarBackground(.hidden, for: .navigationBar)
       .alert("Info", isPresented: Binding(
         get: { vm.banner != nil },
         set: { if !$0 { vm.banner = nil } }
@@ -336,23 +344,123 @@ private struct ReceivingScreen: View {
   }
 }
 
+private struct ProductThumb: View {
+  let urlString: String?
+
+  var body: some View {
+    ZStack {
+      RoundedRectangle(cornerRadius: 14, style: .continuous)
+        .fill(Color.white.opacity(0.06))
+
+      if let url = safeURL {
+        AsyncImage(url: url) { phase in
+          switch phase {
+          case .empty:
+            ProgressView().tint(NeonTheme.accentCyan)
+          case .success(let image):
+            image
+              .resizable()
+              .scaledToFill()
+          case .failure:
+            Image(systemName: "photo")
+              .font(.system(size: 18, weight: .semibold))
+              .foregroundStyle(Color.white.opacity(0.6))
+          @unknown default:
+            EmptyView()
+          }
+        }
+      } else {
+        Image(systemName: "photo")
+          .font(.system(size: 18, weight: .semibold))
+          .foregroundStyle(Color.white.opacity(0.6))
+      }
+    }
+    .frame(width: 56, height: 56)
+    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 14, style: .continuous)
+        .stroke(NeonTheme.border.opacity(0.8), lineWidth: 1)
+    )
+  }
+
+  private var safeURL: URL? {
+    guard let urlString = urlString?.trimmingCharacters(in: .whitespacesAndNewlines), !urlString.isEmpty else { return nil }
+    guard let url = URL(string: urlString) else { return nil }
+    let scheme = (url.scheme ?? "").lowercased()
+    guard scheme == "https" || scheme == "http" else { return nil }
+    return url
+  }
+}
+
 private struct ScannerSheet: View {
   @ObservedObject var vm: ReceivingViewModel
   @Binding var isPresented: Bool
+  @State private var torchOn = false
 
   var body: some View {
     NavigationStack {
       Group {
         if #available(iOS 16.0, *) {
-          BarcodeScannerView(
-            onPayload: { payload in
-              vm.applyScanPayload(payload)
-            },
-            onClose: {
-              isPresented = false
+          ZStack {
+            BarcodeScannerView(
+              onPayload: { payload in
+                vm.applyScanPayload(payload)
+              },
+              onClose: {
+                torchOn = false
+                isPresented = false
+              }
+              ,
+              torchOn: $torchOn
+            )
+            .ignoresSafeArea()
+
+            // Scan box overlay to guide the user.
+            VStack {
+              Spacer()
+
+              RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.85), style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+                .background(
+                  RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.black.opacity(0.06))
+                )
+                .frame(width: 280, height: 280)
+                .shadow(color: Color.black.opacity(0.25), radius: 18, x: 0, y: 10)
+
+              Text("Align the barcode/QR inside the square")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.top, 14)
+
+              Spacer()
             }
-          )
-          .ignoresSafeArea()
+            .padding(.vertical, 40)
+            .allowsHitTesting(false)
+
+            // Torch button overlay
+            VStack {
+              HStack {
+                Spacer()
+                Button {
+                  torchOn.toggle()
+                } label: {
+                  Image(systemName: torchOn ? "flashlight.on.fill" : "flashlight.off.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(12)
+                    .background(Color.black.opacity(0.35), in: Circle())
+                    .overlay(
+                      Circle().stroke(Color.white.opacity(0.25), lineWidth: 1)
+                    )
+                }
+                .accessibilityLabel(torchOn ? "Turn flashlight off" : "Turn flashlight on")
+              }
+              .padding(.horizontal, 16)
+              .padding(.top, 8)
+              Spacer()
+            }
+          }
           .task {
             // Start scanning as soon as presented
             // (DataScannerViewController starts scanning automatically when view appears)
@@ -372,7 +480,17 @@ private struct ScannerSheet: View {
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .topBarLeading) {
-          Button("Close") { isPresented = false }
+          Button {
+            torchOn = false
+            isPresented = false
+          } label: {
+            Image(systemName: "xmark")
+              .font(.system(size: 16, weight: .semibold))
+              .foregroundStyle(.white)
+              .padding(8)
+              .background(Color.black.opacity(0.25), in: Circle())
+          }
+          .accessibilityLabel("Close scanner")
         }
       }
     }

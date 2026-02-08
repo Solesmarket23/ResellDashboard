@@ -39,6 +39,7 @@ struct PurchaseMatch: Identifiable, Hashable {
   let productName: String?
   let productBrand: String?
   let productSize: String?
+  let productImageUrl: String?
   let priceDisplay: String?
 
   init(id: String, data: [String: Any]) {
@@ -64,6 +65,11 @@ struct PurchaseMatch: Identifiable, Hashable {
     self.productSize =
       Self.pickString(data, keys: ["productSize", "size"]) ??
       ((data["product"] as? [String: Any])?["size"] as? String)
+
+    self.productImageUrl =
+      Self.pickString(data, keys: ["productImageUrl", "imageUrl", "image"]) ??
+      Self.pickNestedString(data, path: ["product", "imageUrl"]) ??
+      Self.pickNestedString(data, path: ["product", "image"])
 
     self.priceDisplay = Self.formatUsd(Self.computeNetPaid(data: data))
   }

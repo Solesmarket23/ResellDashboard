@@ -37,57 +37,21 @@ struct SignInView: View {
                 .tint(NeonTheme.accentCyan)
                 .padding(.top, 6)
 
-                if mode == .google {
-                  Button {
-                    guard let presenting = UIApplication.shared.topMostViewController() else {
-                      auth.errorMessage = "Unable to find a presenting view controller."
-                      return
-                    }
-                    Task { await auth.signInWithGoogle(presenting: presenting) }
-                  } label: {
-                    HStack(spacing: 10) {
-                      ZStack {
-                        Circle()
-                          .fill(Color.white.opacity(0.18))
-                        Text("G")
-                          .font(.system(size: 14, weight: .bold))
-                          .foregroundStyle(.white)
-                      }
-                      .frame(width: 26, height: 26)
+                // Keep both sign-in sections mounted to avoid long stalls when toggling modes
+                // (e.g. keyboard + layout work hitting all at once on first appearance).
+                ZStack(alignment: .top) {
+                  googleSection
+                    .opacity(mode == .google ? 1 : 0)
+                    .allowsHitTesting(mode == .google)
 
-                      Text("Continue with Google")
-                        .font(.headline)
-                    }
-                    .foregroundStyle(.white)
-                  }
-                  .buttonStyle(NeonPrimaryButtonStyle())
-                  .padding(.top, 6)
-                } else {
-                  SecureField("Enter site password", text: $sitePassword)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .padding(.vertical, 12)
-                    .padding(.horizontal, 14)
-                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(
-                      RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(NeonTheme.border, lineWidth: 1)
-                        .allowsHitTesting(false)
-                    )
-                    .foregroundStyle(.white)
-                    .padding(.top, 6)
-
-                  Button {
-                    Task { await auth.signInWithSitePassword(password: sitePassword) }
-                  } label: {
-                    HStack(spacing: 10) {
-                      Image(systemName: "lock.fill")
-                      Text("Access Dashboard")
-                        .font(.headline)
-                    }
-                    .foregroundStyle(.white)
-                  }
-                  .buttonStyle(NeonPrimaryButtonStyle())
+                  sitePasswordSection
+                    .opacity(mode == .sitePassword ? 1 : 0)
+                    .allowsHitTesting(mode == .sitePassword)
+                }
+                .padding(.top, 6)
+                .transaction { txn in
+                  // Avoid any implicit animation that can feel like "lag".
+                  txn.animation = nil
                 }
 
                 if let error = auth.errorMessage, !error.isEmpty {
@@ -112,6 +76,61 @@ struct SignInView: View {
         }
         .scrollDismissesKeyboard(.interactively)
       }
+    }
+  }
+
+  private var googleSection: some View {
+    Button {
+      guard let presenting = UIApplication.shared.topMostViewController() else {
+        auth.errorMessage = "Unable to find a presenting view controller."
+        return
+      }
+      Task { await auth.signInWithGoogle(presenting: presenting) }
+    } label: {
+      HStack(spacing: 10) {
+        ZStack {
+          Circle()
+            .fill(Color.white.opacity(0.18))
+          Text("G")
+            .font(.system(size: 14, weight: .bold))
+            .foregroundStyle(.white)
+        }
+        .frame(width: 26, height: 26)
+
+        Text("Continue with Google")
+          .font(.headline)
+      }
+      .foregroundStyle(.white)
+    }
+    .buttonStyle(NeonPrimaryButtonStyle())
+  }
+
+  private var sitePasswordSection: some View {
+    VStack(spacing: 12) {
+      SecureField("Enter site password", text: $sitePassword)
+        .textInputAutocapitalization(.never)
+        .autocorrectionDisabled()
+        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+          RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .stroke(NeonTheme.border, lineWidth: 1)
+            .allowsHitTesting(false)
+        )
+        .foregroundStyle(.white)
+
+      Button {
+        Task { await auth.signInWithSitePassword(password: sitePassword) }
+      } label: {
+        HStack(spacing: 10) {
+          Image(systemName: "lock.fill")
+          Text("Access Dashboard")
+            .font(.headline)
+        }
+        .foregroundStyle(.white)
+      }
+      .buttonStyle(NeonPrimaryButtonStyle())
     }
   }
 }

@@ -8,8 +8,22 @@ struct FlipFlowNativeApp: App {
 
   var body: some Scene {
     WindowGroup {
-      RootView()
-        .environmentObject(auth)
+      ZStack {
+        NeonTheme.backgroundGradient
+        RadialGradient(
+          colors: [NeonTheme.accentCyan.opacity(0.12), .clear],
+          center: .top,
+          startRadius: 0,
+          endRadius: 520
+        )
+        ParticleBackgroundView()
+
+        RootView()
+          .environmentObject(auth)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      }
+      .ignoresSafeArea()
+      .preferredColorScheme(.dark)
     }
   }
 }

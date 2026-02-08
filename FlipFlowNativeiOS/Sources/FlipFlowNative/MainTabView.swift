@@ -1,6 +1,31 @@
 import SwiftUI
+import UIKit
 
 struct MainTabView: View {
+  @EnvironmentObject private var auth: AuthViewModel
+
+  init() {
+    // Make the tab bar + nav bars transparent so the Neon app background shows through.
+    let tabAppearance = UITabBarAppearance()
+    tabAppearance.configureWithTransparentBackground()
+    tabAppearance.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterialDark)
+    tabAppearance.backgroundColor = UIColor.clear
+
+    UITabBar.appearance().standardAppearance = tabAppearance
+    if #available(iOS 15.0, *) {
+      UITabBar.appearance().scrollEdgeAppearance = tabAppearance
+    }
+
+    let navAppearance = UINavigationBarAppearance()
+    navAppearance.configureWithTransparentBackground()
+    navAppearance.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterialDark)
+    navAppearance.backgroundColor = UIColor.clear
+
+    UINavigationBar.appearance().standardAppearance = navAppearance
+    UINavigationBar.appearance().scrollEdgeAppearance = navAppearance
+    UINavigationBar.appearance().compactAppearance = navAppearance
+  }
+
   var body: some View {
     TabView {
       PlaceholderTab(title: "Dashboard", subtitle: "Buttons coming next", systemImage: "chart.line.uptrend.xyaxis")
@@ -23,16 +48,21 @@ struct MainTabView: View {
           Label("Deliveries", systemImage: "truck.box")
         }
     }
+    .background(Color.clear)
+    // Ensure TabView doesn't paint an opaque system background over the app-level Neon background.
+    .toolbarBackground(.hidden, for: .tabBar)
   }
 }
 
 private struct PlaceholderTab: View {
+  @EnvironmentObject private var auth: AuthViewModel
+
   let title: String
   let subtitle: String
   let systemImage: String
 
   var body: some View {
-    NeonScreen {
+    NavigationStack {
       VStack(spacing: 14) {
         Spacer()
         NeonCard {
@@ -51,6 +81,16 @@ private struct PlaceholderTab: View {
         .padding(.horizontal, 16)
         Spacer()
       }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .background(Color.clear)
+      .navigationTitle("")
+      .toolbar {
+        ToolbarItem(placement: .topBarTrailing) {
+          Button("Sign out") { auth.signOut() }
+            .foregroundStyle(.white)
+        }
+      }
+      .toolbarBackground(.hidden, for: .navigationBar)
     }
   }
 }

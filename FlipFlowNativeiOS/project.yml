@@ -17,9 +17,9 @@ packages:
 settings:
   base:
     PRODUCT_NAME: "Flip Flow Native"
-    PRODUCT_BUNDLE_IDENTIFIER: com.flipflow.app.native
+    PRODUCT_BUNDLE_IDENTIFIER: com.flipflow.app.native.dev
     CODE_SIGN_STYLE: Automatic
-    DEVELOPMENT_TEAM: 3U54DYPWFB
+    DEVELOPMENT_TEAM: 3SFYC3VA37
     MARKETING_VERSION: 0.1.0
     CURRENT_PROJECT_VERSION: 1
     SWIFT_VERSION: 5.0
@@ -31,11 +31,11 @@ targets:
   FlipFlowNative:
     type: application
     platform: iOS
-    bundleId: com.flipflow.app.native
+    bundleId: com.flipflow.app.native.dev
     settings:
       base:
         CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: 3U54DYPWFB
+        DEVELOPMENT_TEAM: 3SFYC3VA37
         TARGETED_DEVICE_FAMILY: "1" # iPhone only (prevents any compatibility layout)
     sources:
       - path: Sources/FlipFlowNative
@@ -47,8 +47,7 @@ targets:
         CFBundleDisplayName: "Flip Flow Native"
         NSCameraUsageDescription: "Scan tracking numbers and QR codes for receiving and authentication."
         NSMicrophoneUsageDescription: "Microphone access is not required for receiving, but may be used for future voice features."
-        UIDeviceFamily:
-          - 1 # iPhone only (prevents iPad compatibility letterboxing)
+        UILaunchStoryboardName: "LaunchScreen"
         UIRequiresFullScreen: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

@@ -1,11 +1,15 @@
 import SwiftUI
 import VisionKit
+import UIKit
+import AudioToolbox
+import AVFoundation
 
 // VisionKit DataScanner (iOS 16+) provides high-quality barcode + QR scanning.
 @available(iOS 16.0, *)
 struct BarcodeScannerView: UIViewControllerRepresentable {
   let onPayload: (String) -> Void
   let onClose: () -> Void
+  @Binding var torchOn: Bool
 
   func makeUIViewController(context: Context) -> DataScannerViewController {
     let scanner = DataScannerViewController(
@@ -24,10 +28,10 @@ struct BarcodeScannerView: UIViewControllerRepresentable {
         ])
       ],
       qualityLevel: .balanced,
-      recognizesMultipleItems: true,
-      isHighFrameRateTrackingEnabled: true,
+      recognizesMultipleItems: false,
+      isHighFrameRateTrackingEnabled: false,
       isPinchToZoomEnabled: true,
-      isGuidanceEnabled: true,
+      isGuidanceEnabled: false,
       isHighlightingEnabled: true
     )
     scanner.delegate = context.coordinator
@@ -44,6 +48,15 @@ struct BarcodeScannerView: UIViewControllerRepresentable {
       // If scanning can't start (permissions/hardware), close and let the caller handle it.
       onClose()
     }
+
+    // Torch control (DataScannerViewController doesn't expose torch in all SDK versions).
+    context.coordinator.applyTorch(desiredOn: torchOn) { available in
+      if !available && torchOn {
+        DispatchQueue.main.async {
+          torchOn = false
+        }
+      }
+    }
   }
 
   func makeCoordinator() -> Coordinator {
@@ -55,10 +68,44 @@ struct BarcodeScannerView: UIViewControllerRepresentable {
     private let onClose: () -> Void
     private var lastPayloadAt: Date?
     private var lastPayload: String?
+    private let feedback = UIImpactFeedbackGenerator(style: .medium)
+    private var lastTorchOn: Bool?
 
     init(onPayload: @escaping (String) -> Void, onClose: @escaping () -> Void) {
       self.onPayload = onPayload
       self.onClose = onClose
+      feedback.prepare()
+    }
+
+    func applyTorch(desiredOn: Bool, onAvailability: (Bool) -> Void) {
+      // De-dupe repeated updates.
+      if let lastTorchOn, lastTorchOn == desiredOn {
+        onAvailability(true)
+        return
+      }
+
+      guard let device = AVCaptureDevice.default(for: .video), device.hasTorch else {
+        lastTorchOn = false
+        onAvailability(false)
+        return
+      }
+
+      do {
+        try device.lockForConfiguration()
+        if desiredOn {
+          try device.setTorchModeOn(level: 1.0)
+        } else {
+          device.torchMode = .off
+        }
+        device.unlockForConfiguration()
+        lastTorchOn = desiredOn
+        onAvailability(true)
+      } catch {
+        // If torch fails (rare), treat as unavailable.
+        device.unlockForConfiguration()
+        lastTorchOn = false
+        onAvailability(false)
+      }
     }
 
     func dataScanner(_ dataScanner: DataScannerViewController, didTapOn item: RecognizedItem) {
@@ -83,6 +130,11 @@ struct BarcodeScannerView: UIViewControllerRepresentable {
       }
       self.lastPayload = payload
       self.lastPayloadAt = now
+
+      // Beep + haptic on successful capture.
+      feedback.impactOccurred()
+      // "Tock" system sound (keeps it simple; no custom audio files needed).
+      AudioServicesPlaySystemSound(1104)
 
       dataScanner.stopScanning()
       onPayload(payload)
