@@ -1,17 +1,20 @@
 import Foundation
+import SwiftUI
 
 @MainActor
 final class DeliveriesViewModel: ObservableObject {
   @Published var deliveries: [DeliveryItem] = []
   @Published var isLoading: Bool = false
   @Published var isHydrating: Bool = false
-  @Published var errorMessage: String?
+  @Published var banner: DeliveriesBannerState?
   @Published var lastSyncIso: String?
 
   @Published var searchText: String = ""
   @Published var statusFilter: DeliveryStatusFilter = .all
   @Published var carrierFilter: DeliveryCarrierFilter = .all
   @Published var includeArchived: Bool = false
+
+  @Published var selectedStats: [DeliveryStatId] = DeliveryStatId.defaultSelection
 
   private let repo: DeliveriesRepositoryProtocol
   private let userIdProvider: () -> String
@@ -20,6 +23,7 @@ final class DeliveriesViewModel: ObservableObject {
   init(repo: DeliveriesRepositoryProtocol, userIdProvider: @escaping () -> String) {
     self.repo = repo
     self.userIdProvider = userIdProvider
+    loadSelectedStats()
   }
 
   func loadInitialIfNeeded() {
@@ -31,12 +35,12 @@ final class DeliveriesViewModel: ObservableObject {
   func refresh(twoPhase: Bool = true) async {
     let userId = userIdProvider()
     if userId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      errorMessage = "Please sign in to view Deliveries."
+      showBanner("Please sign in to view Deliveries.", kind: .error)
       deliveries = []
       return
     }
 
-    errorMessage = nil
+    banner = nil
 
     // Phase 1: fast (no live tracking) for quick render
     if !twoPhase {
@@ -47,7 +51,8 @@ final class DeliveriesViewModel: ObservableObject {
         deliveries = resp.deliveries ?? []
         lastSyncIso = resp.lastSync
       } catch {
-        errorMessage = (error as NSError).localizedDescription
+        if shouldIgnore(error) { return }
+        showBanner((error as NSError).localizedDescription, kind: .error)
       }
       return
     }
@@ -60,7 +65,8 @@ final class DeliveriesViewModel: ObservableObject {
       isLoading = false
     } catch {
       isLoading = false
-      errorMessage = (error as NSError).localizedDescription
+      if shouldIgnore(error) { return }
+      showBanner((error as NSError).localizedDescription, kind: .error)
       return
     }
 
@@ -72,9 +78,26 @@ final class DeliveriesViewModel: ObservableObject {
       lastSyncIso = full.lastSync
     } catch {
       // Don't clobber the lite list; just show an error banner.
-      errorMessage = (error as NSError).localizedDescription
+      if !shouldIgnore(error) {
+        showBanner((error as NSError).localizedDescription, kind: .error)
+      }
     }
     isHydrating = false
+  }
+
+  func sendTestNotificationToast() {
+    let items = filteredDeliveries
+    let todayCount = items.filter { DeliveryStatusFilter.today.matches(item: $0) || DeliveryStatusFilter.outForDelivery.matches(item: $0) }.count
+
+    let todayCost = items
+      .filter { DeliveryStatusFilter.today.matches(item: $0) || DeliveryStatusFilter.outForDelivery.matches(item: $0) }
+      .compactMap { $0.price }
+      .reduce(0, +)
+
+    // Profit isn't available in the deliveries sync payload today; show placeholder for now.
+    let profitText = "—"
+    let costText = todayCost > 0 ? MoneyFormat.usd(todayCost) : "—"
+    showBanner("Test: \(todayCount) deliveries arriving today for \(profitText) profit (cost: \(costText)).", kind: .info)
   }
 
   var filteredDeliveries: [DeliveryItem] {
@@ -107,6 +130,156 @@ final class DeliveriesViewModel: ObservableObject {
       return hay.contains(q)
     }
   }
+
+  var stats: [DeliveryStatId: Int] {
+    let items = filteredDeliveries
+
+    func status(_ raw: String) -> String {
+      raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    let delivered = items.filter { status($0.status) == "delivered" }.count
+    let outForDelivery = items.filter { status($0.status) == "out_for_delivery" || status($0.status) == "out for delivery" }.count
+    let inTransit = items.filter {
+      let s = status($0.status)
+      return s == "in_transit" || s == "in transit" || s == "shipped"
+    }.count
+    let delayed = items.filter {
+      let s = status($0.status)
+      return s == "delayed" || s == "exception"
+    }.count
+
+    let arrivingToday = items.filter { DeliveryStatusFilter.today.matches(item: $0) || DeliveryStatusFilter.outForDelivery.matches(item: $0) }.count
+    let arrivingTomorrow = items.filter { DeliveryStatusFilter.tomorrow.matches(item: $0) }.count
+    let arrivingThisWeek = items.filter { DeliveryStatusFilter.thisWeek.matches(item: $0) }.count
+
+    return [
+      .total: items.count,
+      .delivered: delivered,
+      .arrivingToday: arrivingToday,
+      .arrivingTomorrow: arrivingTomorrow,
+      .arrivingThisWeek: arrivingThisWeek,
+      .inTransit: inTransit,
+      .outForDelivery: outForDelivery,
+      .delayed: delayed,
+    ]
+  }
+
+  // MARK: - Persistence
+
+  private func statsStorageKey() -> String? {
+    let uid = userIdProvider().trimmingCharacters(in: .whitespacesAndNewlines)
+    if uid.isEmpty { return nil }
+    return "flipflow_deliveries_selected_stats_\(uid)"
+  }
+
+  private func loadSelectedStats() {
+    guard let key = statsStorageKey() else { return }
+    guard let data = UserDefaults.standard.data(forKey: key) else { return }
+    do {
+      let raw = try JSONDecoder().decode([String].self, from: data)
+      let parsed = raw.compactMap { DeliveryStatId(rawValue: $0) }
+      if !parsed.isEmpty {
+        selectedStats = Array(parsed.prefix(4))
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  func persistSelectedStats() {
+    guard let key = statsStorageKey() else { return }
+    let raw = selectedStats.map { $0.rawValue }
+    if let data = try? JSONEncoder().encode(raw) {
+      UserDefaults.standard.set(data, forKey: key)
+    }
+  }
+
+  // MARK: - Banner
+
+  private func showBanner(_ message: String, kind: DeliveriesBannerState.Kind) {
+    let m = message.trimmingCharacters(in: .whitespacesAndNewlines)
+    if m.isEmpty { return }
+    banner = DeliveriesBannerState(kind: kind, message: m)
+  }
+
+  private func shouldIgnore(_ error: Error) -> Bool {
+    if let urlError = error as? URLError, urlError.code == .cancelled { return true }
+    let ns = error as NSError
+    if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { return true }
+    return false
+  }
+}
+
+struct DeliveriesBannerState: Identifiable, Equatable {
+  enum Kind { case info, error }
+  let id = UUID()
+  let kind: Kind
+  let message: String
+}
+
+enum MoneyFormat {
+  static func usd(_ value: Double) -> String {
+    let f = NumberFormatter()
+    f.numberStyle = .currency
+    f.currencyCode = "USD"
+    f.maximumFractionDigits = 0
+    return f.string(from: NSNumber(value: value)) ?? "$\(Int(value))"
+  }
+}
+
+enum DeliveryStatId: String, CaseIterable, Identifiable {
+  case total
+  case delivered
+  case arrivingToday
+  case arrivingTomorrow
+  case arrivingThisWeek
+  case inTransit
+  case outForDelivery
+  case delayed
+
+  var id: String { rawValue }
+
+  var title: String {
+    switch self {
+    case .total: return "Total"
+    case .delivered: return "Delivered"
+    case .arrivingToday: return "Arriving Today"
+    case .arrivingTomorrow: return "Arriving Tomorrow"
+    case .arrivingThisWeek: return "Arriving This Week"
+    case .inTransit: return "In Transit"
+    case .outForDelivery: return "Out for Delivery"
+    case .delayed: return "Delayed"
+    }
+  }
+
+  var systemImage: String {
+    switch self {
+    case .total: return "shippingbox"
+    case .delivered: return "checkmark.circle.fill"
+    case .arrivingToday: return "calendar"
+    case .arrivingTomorrow: return "calendar.badge.clock"
+    case .arrivingThisWeek: return "calendar.circle"
+    case .inTransit: return "truck.fast.fill"
+    case .outForDelivery: return "location.fill"
+    case .delayed: return "exclamationmark.triangle.fill"
+    }
+  }
+
+  var tint: Color {
+    switch self {
+    case .total: return NeonTheme.accentCyan
+    case .delivered: return NeonTheme.accentEmerald
+    case .arrivingToday: return Color.red.opacity(0.95)
+    case .arrivingTomorrow: return Color.yellow.opacity(0.95)
+    case .arrivingThisWeek: return Color.purple.opacity(0.95)
+    case .inTransit: return Color.orange.opacity(0.95)
+    case .outForDelivery: return NeonTheme.accentCyan
+    case .delayed: return Color.red.opacity(0.95)
+    }
+  }
+
+  static let defaultSelection: [DeliveryStatId] = [.arrivingToday, .arrivingTomorrow, .arrivingThisWeek, .inTransit]
 }
 
 enum DeliveryCarrierFilter: String, CaseIterable, Identifiable {

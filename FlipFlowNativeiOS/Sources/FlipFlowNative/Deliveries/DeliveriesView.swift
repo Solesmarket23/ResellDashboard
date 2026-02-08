@@ -48,60 +48,83 @@ private struct DeliveriesScreen: View {
 
   @State private var selected: DeliveryItem?
   @State private var bannerDismiss: DispatchWorkItem?
+  @State private var showCustomizeStats: Bool = false
 
   var body: some View {
     NeonScreen {
-      NavigationStack {
-        content
-          .navigationTitle("Deliveries")
-          .navigationBarTitleDisplayMode(.inline)
-          .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-              Menu {
-                Picker("Status", selection: $vm.statusFilter) {
-                  ForEach(DeliveryStatusFilter.allCases) { s in
-                    Text(s.label).tag(s)
+      ZStack {
+        // Ensure the Neon background shows through even if UIKit containers paint black.
+        NeonTheme.backgroundGradient
+          .ignoresSafeArea()
+
+        NavigationStack {
+          content
+            .navigationTitle("Deliveries")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbar {
+              ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                  Button {
+                    vm.sendTestNotificationToast()
+                  } label: {
+                    Label("Test notification", systemImage: "bell.badge")
                   }
-                }
-                Picker("Carrier", selection: $vm.carrierFilter) {
-                  ForEach(DeliveryCarrierFilter.allCases) { c in
-                    Text(c.label).tag(c)
+
+                  Button {
+                    showCustomizeStats = true
+                  } label: {
+                    Label("Customize stats", systemImage: "slider.horizontal.3")
                   }
-                }
-                Toggle("Include archived", isOn: $vm.includeArchived)
-                  .onChange(of: vm.includeArchived) { _ in
+
+                  Divider()
+
+                  Picker("Status", selection: $vm.statusFilter) {
+                    ForEach(DeliveryStatusFilter.allCases) { s in
+                      Text(s.label).tag(s)
+                    }
+                  }
+                  Picker("Carrier", selection: $vm.carrierFilter) {
+                    ForEach(DeliveryCarrierFilter.allCases) { c in
+                      Text(c.label).tag(c)
+                    }
+                  }
+                  Toggle("Include archived", isOn: $vm.includeArchived)
+                    .onChange(of: vm.includeArchived) { _ in
+                      Task { await vm.refresh(twoPhase: true) }
+                    }
+
+                  Divider()
+
+                  Button {
                     Task { await vm.refresh(twoPhase: true) }
+                  } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
                   }
 
-                Divider()
+                  Divider()
 
-                Button {
-                  Task { await vm.refresh(twoPhase: true) }
+                  Button(role: .destructive) {
+                    auth.signOut()
+                  } label: {
+                    Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right")
+                  }
                 } label: {
-                  Label("Refresh", systemImage: "arrow.clockwise")
+                  Image(systemName: "line.3.horizontal.decrease.circle")
+                    .foregroundStyle(.white)
                 }
-
-                Divider()
-
-                Button(role: .destructive) {
-                  auth.signOut()
-                } label: {
-                  Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right")
-                }
-              } label: {
-                Image(systemName: "line.3.horizontal.decrease.circle")
-                  .foregroundStyle(.white)
               }
             }
-          }
+        }
+        .background(Color.clear)
       }
     }
     .overlay(alignment: .top) {
-      if let message = vm.errorMessage, !message.isEmpty {
-        DeliveriesBanner(kind: .error, message: message) {
+      if let banner = vm.banner {
+        DeliveriesBanner(kind: banner.kind, message: banner.message) {
           bannerDismiss?.cancel()
           bannerDismiss = nil
-          withAnimation(.easeInOut(duration: 0.18)) { vm.errorMessage = nil }
+          withAnimation(.easeInOut(duration: 0.18)) { vm.banner = nil }
         }
         .padding(.top, 10)
         .padding(.horizontal, 14)
@@ -111,7 +134,7 @@ private struct DeliveriesScreen: View {
           let work = DispatchWorkItem {
             Task { @MainActor in
               withAnimation(.easeInOut(duration: 0.18)) {
-                if vm.errorMessage == message { vm.errorMessage = nil }
+                if vm.banner?.id == banner.id { vm.banner = nil }
               }
             }
           }
@@ -120,9 +143,15 @@ private struct DeliveriesScreen: View {
         }
       }
     }
-    .animation(.easeInOut(duration: 0.18), value: vm.errorMessage)
+    .animation(.easeInOut(duration: 0.18), value: vm.banner)
     .sheet(item: $selected) { item in
       DeliveryDetailView(item: item)
+    }
+    .sheet(isPresented: $showCustomizeStats) {
+      CustomizeDeliveryStatsSheet(
+        selection: $vm.selectedStats,
+        onSave: { vm.persistSelectedStats() }
+      )
     }
   }
 
@@ -134,6 +163,10 @@ private struct DeliveriesScreen: View {
 
       ScrollView {
         LazyVStack(spacing: 12) {
+          deliveryStatsGrid
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+
           if vm.isLoading && vm.deliveries.isEmpty {
             ForEach(0..<6, id: \.self) { _ in
               NeonCard {
@@ -215,6 +248,17 @@ private struct DeliveriesScreen: View {
     ]
     return pieces.joined(separator: " • ")
   }
+
+  private var deliveryStatsGrid: some View {
+    let cols = [GridItem(.flexible()), GridItem(.flexible())]
+    return LazyVGrid(columns: cols, spacing: 10) {
+      ForEach(vm.selectedStats.prefix(4)) { stat in
+        let value = vm.stats[stat] ?? 0
+        DeliveryStatCard(stat: stat, value: value)
+          .onTapGesture { showCustomizeStats = true }
+      }
+    }
+  }
 }
 
 private struct DeliveryRow: View {
@@ -271,7 +315,7 @@ private struct DeliveryRow: View {
 }
 
 private struct DeliveriesBanner: View {
-  enum Kind { case error }
+  typealias Kind = DeliveriesBannerState.Kind
 
   let kind: Kind
   let message: String
@@ -279,8 +323,8 @@ private struct DeliveriesBanner: View {
 
   var body: some View {
     HStack(spacing: 10) {
-      Image(systemName: "xmark.octagon.fill")
-        .foregroundStyle(Color.red.opacity(0.95))
+      Image(systemName: kind == .error ? "xmark.octagon.fill" : "info.circle.fill")
+        .foregroundStyle(kind == .error ? Color.red.opacity(0.95) : NeonTheme.accentCyan.opacity(0.95))
       Text(message)
         .font(.subheadline.weight(.semibold))
         .foregroundStyle(.white)
@@ -302,6 +346,202 @@ private struct DeliveriesBanner: View {
       RoundedRectangle(cornerRadius: 18, style: .continuous)
         .stroke(NeonTheme.accentCyan.opacity(0.28), lineWidth: 1)
     )
+  }
+}
+
+private struct DeliveryStatCard: View {
+  let stat: DeliveryStatId
+  let value: Int
+
+  var body: some View {
+    NeonCard {
+      HStack(spacing: 12) {
+        Image(systemName: stat.systemImage)
+          .font(.system(size: 18, weight: .semibold))
+          .foregroundStyle(stat.tint)
+          .frame(width: 26)
+
+        VStack(alignment: .leading, spacing: 4) {
+          Text(stat.title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(NeonTheme.textSecondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
+
+          Text("\(value)")
+            .font(.title3.weight(.semibold))
+            .foregroundStyle(.white)
+        }
+
+        Spacer(minLength: 0)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
+  }
+}
+
+private struct CustomizeDeliveryStatsSheet: View {
+  @Environment(\.dismiss) private var dismiss
+
+  @Binding var selection: [DeliveryStatId]
+  let onSave: () -> Void
+
+  @State private var banner: String?
+
+  var body: some View {
+    NeonScreen {
+      ZStack(alignment: .top) {
+        NeonTheme.backgroundGradient.ignoresSafeArea()
+
+        VStack(spacing: 12) {
+          HStack {
+            Text("Customize Dashboard Stats")
+              .font(.title3.weight(.semibold))
+              .foregroundStyle(.white)
+            Spacer()
+            Button {
+              dismiss()
+            } label: {
+              Image(systemName: "xmark")
+                .foregroundStyle(Color.white.opacity(0.85))
+                .padding(10)
+                .background(Color.white.opacity(0.08), in: Circle())
+            }
+            .buttonStyle(.plain)
+          }
+          .padding(.horizontal, 16)
+          .padding(.top, 14)
+
+          Text("Select up to 4 stats to display. Drag to reorder.")
+            .font(.subheadline)
+            .foregroundStyle(NeonTheme.textSecondary)
+            .padding(.horizontal, 16)
+
+          ScrollView {
+            VStack(spacing: 12) {
+              NeonCard {
+                VStack(alignment: .leading, spacing: 10) {
+                  Text("Available Stats")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.white)
+
+                  LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                    ForEach(DeliveryStatId.allCases) { stat in
+                      statToggle(stat)
+                    }
+                  }
+                }
+              }
+
+              NeonCard {
+                VStack(alignment: .leading, spacing: 10) {
+                  Text("Dashboard Preview (\(selection.count)/4)")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.white)
+
+                  ReorderList(selection: $selection)
+                    .frame(maxWidth: .infinity)
+                }
+              }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 18)
+          }
+
+          HStack(spacing: 12) {
+            Button("Cancel") { dismiss() }
+              .foregroundStyle(.white.opacity(0.9))
+              .padding(.vertical, 12)
+              .frame(maxWidth: .infinity)
+              .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            Button("Save Changes") {
+              onSave()
+              dismiss()
+            }
+            .buttonStyle(NeonPrimaryButtonStyle())
+          }
+          .padding(.horizontal, 16)
+          .padding(.bottom, 12)
+        }
+
+        if let banner, !banner.isEmpty {
+          DeliveriesBanner(kind: .error, message: banner) {
+            withAnimation(.easeInOut(duration: 0.18)) { self.banner = nil }
+          }
+          .padding(.top, 10)
+          .padding(.horizontal, 14)
+          .transition(.move(edge: .top).combined(with: .opacity))
+        }
+      }
+    }
+  }
+
+  private func statToggle(_ stat: DeliveryStatId) -> some View {
+    let isSelected = selection.contains(stat)
+    return Button {
+      if isSelected {
+        selection.removeAll { $0 == stat }
+      } else {
+        if selection.count >= 4 {
+          banner = "Select up to 4 stats."
+          return
+        }
+        selection.append(stat)
+      }
+    } label: {
+      HStack(spacing: 10) {
+        Image(systemName: stat.systemImage)
+          .foregroundStyle(stat.tint)
+        Text(stat.title)
+          .font(.subheadline.weight(.semibold))
+          .foregroundStyle(.white)
+          .lineLimit(1)
+          .minimumScaleFactor(0.8)
+        Spacer()
+        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+          .foregroundStyle(isSelected ? NeonTheme.accentCyan : Color.white.opacity(0.25))
+      }
+      .padding(.vertical, 12)
+      .padding(.horizontal, 12)
+      .background(Color.white.opacity(isSelected ? 0.10 : 0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+      .overlay(
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+          .stroke(isSelected ? NeonTheme.accentCyan.opacity(0.65) : NeonTheme.border.opacity(0.55), lineWidth: 1)
+      )
+    }
+    .buttonStyle(.plain)
+  }
+}
+
+private struct ReorderList: View {
+  @Binding var selection: [DeliveryStatId]
+  @State private var editMode: EditMode = .active
+
+  var body: some View {
+    List {
+      ForEach(selection) { stat in
+        HStack(spacing: 10) {
+          Image(systemName: "line.3.horizontal")
+            .foregroundStyle(Color.white.opacity(0.35))
+          Image(systemName: stat.systemImage)
+            .foregroundStyle(stat.tint)
+          Text(stat.title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.white)
+          Spacer()
+        }
+        .listRowBackground(Color.clear)
+      }
+      .onMove { src, dst in
+        selection.move(fromOffsets: src, toOffset: dst)
+      }
+    }
+    .environment(\.editMode, $editMode)
+    .scrollContentBackground(.hidden)
+    .listStyle(.plain)
+    .frame(height: max(52, CGFloat(selection.count) * 44))
+    .background(Color.clear)
   }
 }
 

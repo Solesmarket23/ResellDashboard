@@ -21,8 +21,8 @@ struct DeliveryThumb: View {
           case .success(let image):
             image
               .resizable()
-              .scaledToFit()
-              .padding(8)
+              .scaledToFill()
+              .clipped()
           case .failure:
             Image(systemName: "photo")
               .font(.system(size: 18, weight: .semibold))
@@ -37,6 +37,7 @@ struct DeliveryThumb: View {
           .foregroundStyle(Color.white.opacity(0.65))
       }
     }
+    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
   }
 }
 

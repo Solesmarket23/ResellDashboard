@@ -73,7 +73,7 @@ struct DeliveryDetailView: View {
     NeonCard {
       VStack(alignment: .leading, spacing: 10) {
         row(label: "Carrier", value: item.carrier)
-        row(label: "Tracking", value: item.trackingNumber, mono: true)
+        trackingRow
         if let eta = displayDate(item.estimatedDelivery) {
           row(label: "Estimated", value: eta)
         }
@@ -92,6 +92,36 @@ struct DeliveryDetailView: View {
         if let last = displayDate(item.lastUpdate) {
           row(label: "Last update", value: last)
         }
+      }
+    }
+  }
+
+  private var trackingRow: some View {
+    let tracking = item.trackingNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+    let url = DeliveryTrackingLink.url(carrierRaw: item.carrier, trackingNumberRaw: tracking)
+
+    return HStack(alignment: .top, spacing: 10) {
+      Text("Tracking")
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(NeonTheme.textSecondary)
+        .frame(width: 90, alignment: .leading)
+
+      Text(tracking.isEmpty ? "—" : tracking)
+        .font(.caption.monospaced().weight(.semibold))
+        .foregroundStyle(.white)
+        .frame(maxWidth: .infinity, alignment: .leading)
+
+      if let url {
+        Button {
+          safariItem = IdentifiableURL(url: url)
+        } label: {
+          Image(systemName: "safari.fill")
+            .foregroundStyle(NeonTheme.accentCyan.opacity(0.95))
+            .padding(8)
+            .background(Color.white.opacity(0.08), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Open carrier tracking")
       }
     }
   }
