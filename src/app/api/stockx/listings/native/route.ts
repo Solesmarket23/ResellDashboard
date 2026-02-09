@@ -7,10 +7,26 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-/** Try api.stockx.com first; on 401/403 try gateway.stockx.com (tokens are issued for audience gateway.stockx.com). */
-async function fetchListings(accessToken: string, page = 1, pageSize = 100): Promise<Response> {
-  const path = `/v2/selling/listings?limit=${pageSize}&page=${page}`;
-  const headers = { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' } as const;
+/** Match web + StockX docs: x-api-key + jwt, pageNumber/pageSize/listingStatuses. Try api first; on 401 try gateway. */
+async function fetchListings(
+  accessToken: string,
+  apiKey: string,
+  pageNumber: number,
+  pageSize: number
+): Promise<Response> {
+  const params = new URLSearchParams({
+    pageNumber: String(pageNumber),
+    pageSize: String(pageSize),
+    listingStatuses: 'ACTIVE',
+  });
+  const path = `/v2/selling/listings?${params.toString()}`;
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+    'X-API-Key': apiKey,
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    'User-Agent': 'FlipFlow/1.0',
+  } as const;
   const opts = { headers, cache: 'no-store' as RequestCache };
   let res = await fetch(`https://api.stockx.com${path}`, opts);
   if (!res.ok && (res.status === 401 || res.status === 403)) {
@@ -84,10 +100,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const page = Math.max(1, Number(request.nextUrl.searchParams.get('page') || '1') || 1);
-    const pageSize = Math.min(200, Math.max(1, Number(request.nextUrl.searchParams.get('pageSize') || '100') || 100));
+    const pageNumber = Math.max(1, Number(request.nextUrl.searchParams.get('page') || request.nextUrl.searchParams.get('pageNumber') || '1') || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(request.nextUrl.searchParams.get('pageSize') || '100') || 100));
+    const apiKey = process.env.STOCKX_API_KEY || process.env.STOCKX_CLIENT_ID || '';
 
-    let res = await fetchListings(accessToken, page, pageSize);
+    let res = await fetchListings(accessToken, apiKey, pageNumber, pageSize);
 
     // If StockX says unauthorized, try refresh once.
     if (res.status === 401 || res.status === 403) {
@@ -114,7 +131,7 @@ export async function GET(request: NextRequest) {
         { merge: true }
       );
 
-      res = await fetchListings(accessToken, page, pageSize);
+      res = await fetchListings(accessToken, apiKey, pageNumber, pageSize);
       console.log('[StockX listings/native] retry response status', { status: res.status, uidPrefix: uid.slice(0, 8) });
     }
 
