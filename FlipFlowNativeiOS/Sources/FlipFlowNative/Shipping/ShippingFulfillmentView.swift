@@ -11,12 +11,23 @@ struct ShippingFulfillmentView: View {
         VStack {
           Spacer()
           NeonCard {
-            Text("Please sign in to use Shipping.")
-              .foregroundStyle(.white)
+            VStack(spacing: 12) {
+              Image(systemName: "shippingbox.fill")
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundStyle(NeonTheme.accentCyan)
+              Text("Ship")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.white)
+              Text("Sign in to print labels, mark shipped, and reconcile.")
+                .font(.subheadline)
+                .foregroundStyle(NeonTheme.textSecondary)
+                .multilineTextAlignment(.center)
+            }
           }
           .padding(.horizontal, 16)
           Spacer()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
     case .firebase(let uid), .sitePassword(let uid):
       ShippingHostView(userId: uid)
@@ -55,37 +66,78 @@ private struct ShippingHostView: View {
   }
 
   private var listContent: some View {
-    List {
-      NavigationLink(value: ShippingRoute.toShip) {
-        Label("To Ship", systemImage: "shippingbox.fill")
-          .foregroundStyle(NeonTheme.textPrimary)
-      }
-      .listRowBackground(NeonTheme.card.opacity(0.8))
-      .listRowSeparatorTint(NeonTheme.border.opacity(0.5))
+    ScrollView {
+      VStack(alignment: .leading, spacing: 16) {
+        Text("Print labels, mark shipped, reconcile.")
+          .font(.subheadline)
+          .foregroundStyle(NeonTheme.textSecondary)
+          .padding(.horizontal, 4)
+          .padding(.top, 4)
 
-      NavigationLink(value: ShippingRoute.printLabel) {
-        Label("Print shipping label", systemImage: "printer.fill")
-          .foregroundStyle(NeonTheme.textPrimary)
+        ShippingOptionCard(
+          route: .toShip,
+          icon: "shippingbox.fill",
+          title: "To Ship",
+          subtitle: "View and undo marked orders"
+        )
+        ShippingOptionCard(
+          route: .printLabel,
+          icon: "printer.fill",
+          title: "Print shipping label",
+          subtitle: "StockX Standard/Direct labels"
+        )
+        ShippingOptionCard(
+          route: .reconciliation,
+          icon: "checklist",
+          title: "Reconciliation",
+          subtitle: "Scan tracking at EOD, find missing"
+        )
+        ShippingOptionCard(
+          route: .pickVerification,
+          icon: "barcode.viewfinder",
+          title: "Pick verification",
+          subtitle: "Scan to confirm SKU or style ID"
+        )
       }
-      .listRowBackground(NeonTheme.card.opacity(0.8))
-      .listRowSeparatorTint(NeonTheme.border.opacity(0.5))
-
-      NavigationLink(value: ShippingRoute.reconciliation) {
-        Label("Reconciliation", systemImage: "checklist")
-          .foregroundStyle(NeonTheme.textPrimary)
-      }
-      .listRowBackground(NeonTheme.card.opacity(0.8))
-      .listRowSeparatorTint(NeonTheme.border.opacity(0.5))
-
-      NavigationLink(value: ShippingRoute.pickVerification) {
-        Label("Pick verification", systemImage: "barcode.viewfinder")
-          .foregroundStyle(NeonTheme.textPrimary)
-      }
-      .listRowBackground(NeonTheme.card.opacity(0.8))
-      .listRowSeparatorTint(NeonTheme.border.opacity(0.5))
+      .padding(.horizontal, 16)
+      .padding(.vertical, 12)
     }
     .scrollContentBackground(.hidden)
-    .listStyle(.insetGrouped)
+    .background(Color.clear)
+  }
+}
+
+private struct ShippingOptionCard: View {
+  let route: ShippingRoute
+  let icon: String
+  let title: String
+  let subtitle: String
+
+  var body: some View {
+    NavigationLink(value: route) {
+      NeonCard {
+        HStack(alignment: .center, spacing: 14) {
+          Image(systemName: icon)
+            .font(.system(size: 22, weight: .semibold))
+            .foregroundStyle(NeonTheme.accentCyan)
+            .frame(width: 36, height: 36, alignment: .center)
+          VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+              .font(.headline.weight(.semibold))
+              .foregroundStyle(NeonTheme.textPrimary)
+            Text(subtitle)
+              .font(.caption)
+              .foregroundStyle(NeonTheme.textSecondary)
+          }
+          Spacer(minLength: 8)
+          Image(systemName: "chevron.right")
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(NeonTheme.textSecondary.opacity(0.9))
+        }
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+    }
   }
 }
 

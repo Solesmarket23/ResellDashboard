@@ -58,44 +58,54 @@ struct ToShipView: View {
         Spacer()
       } else if markedOrderNumbers.isEmpty {
         NeonCard {
-          VStack(spacing: 8) {
+          VStack(spacing: 10) {
+            Image(systemName: "shippingbox")
+              .font(.system(size: 28, weight: .semibold))
+              .foregroundStyle(NeonTheme.accentCyan.opacity(0.9))
             Text("No orders marked as shipped yet.")
-              .foregroundStyle(NeonTheme.textSecondary)
+              .font(.headline.weight(.semibold))
+              .foregroundStyle(NeonTheme.textPrimary)
             Text("Mark orders as shipped from the list when you ship them; use Print shipping label to get labels.")
               .font(.caption)
               .foregroundStyle(NeonTheme.textSecondary)
               .multilineTextAlignment(.center)
           }
+          .frame(maxWidth: .infinity)
         }
         .padding(.horizontal, 16)
         Spacer()
       } else {
-        List {
-          ForEach(markedOrderNumbers, id: \.self) { orderNumber in
-            HStack {
-              VStack(alignment: .leading, spacing: 2) {
-                Text(orderNumber)
-                  .font(.headline)
-                  .foregroundStyle(NeonTheme.textPrimary)
-                if let ts = markedAt[orderNumber] {
-                  Text(formatDate(ts))
-                    .font(.caption)
-                    .foregroundStyle(NeonTheme.textSecondary)
+        ScrollView {
+          LazyVStack(spacing: 12) {
+            ForEach(markedOrderNumbers, id: \.self) { orderNumber in
+              NeonCard {
+                HStack(alignment: .center, spacing: 12) {
+                  VStack(alignment: .leading, spacing: 2) {
+                    Text(orderNumber)
+                      .font(.headline.weight(.semibold))
+                      .foregroundStyle(NeonTheme.textPrimary)
+                    if let ts = markedAt[orderNumber] {
+                      Text(formatDate(ts))
+                        .font(.caption)
+                        .foregroundStyle(NeonTheme.textSecondary)
+                    }
+                  }
+                  Spacer()
+                  Button("Undo") {
+                    orderNumberToUndo = orderNumber
+                  }
+                  .font(.subheadline.weight(.medium))
+                  .foregroundStyle(NeonTheme.accentCyan)
                 }
+                .contentShape(Rectangle())
               }
-              Spacer()
-              Button("Undo") {
-                orderNumberToUndo = orderNumber
-              }
-              .font(.subheadline.weight(.medium))
-              .foregroundStyle(NeonTheme.accentCyan)
+              .padding(.horizontal, 16)
             }
-            .listRowBackground(NeonTheme.card.opacity(0.8))
-            .listRowSeparatorTint(NeonTheme.border.opacity(0.5))
           }
+          .padding(.vertical, 8)
         }
         .scrollContentBackground(.hidden)
-        .listStyle(.insetGrouped)
+        .background(Color.clear)
       }
     }
     .padding(.top, 8)

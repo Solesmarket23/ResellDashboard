@@ -10,10 +10,15 @@ struct ReconciliationView: View {
       NeonTheme.backgroundGradient
         .ignoresSafeArea()
       NeonCard {
-        VStack(alignment: .leading, spacing: 12) {
-          Text("Reconciliation")
-            .font(.headline)
-            .foregroundStyle(NeonTheme.textPrimary)
+        VStack(alignment: .leading, spacing: 14) {
+          HStack(spacing: 10) {
+            Image(systemName: "checklist")
+              .font(.system(size: 24, weight: .semibold))
+              .foregroundStyle(NeonTheme.accentCyan)
+            Text("Reconciliation")
+              .font(.headline.weight(.semibold))
+              .foregroundStyle(NeonTheme.textPrimary)
+          }
           Text("Scan each package’s tracking number at the end of the day. The app will compare scanned tracking numbers to the batch you shipped and show any missing.")
             .font(.subheadline)
             .foregroundStyle(NeonTheme.textSecondary)
