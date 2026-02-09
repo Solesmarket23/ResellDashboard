@@ -68,11 +68,11 @@ private struct RepricingHostView: View {
 }
 
 private enum RepricingSort: String, CaseIterable {
+  case newestToOldest = "Newest to oldest"
   case priceDesc = "Price (high → low)"
   case priceAsc = "Price (low → high)"
   case nameAsc = "Name (A → Z)"
   case nameDesc = "Name (Z → A)"
-  case newestToOldest = "Newest to oldest"
 }
 
 private struct RepricingScreen: View {
@@ -128,7 +128,7 @@ private struct RepricingScreen: View {
     return listing.currentPrice > ask
   }
 
-  /// Simulates the "you're not winning the buybox" push so you can test the open-to-listing flow.
+  /// Sends a real test buybox push to the user's device(s) and optionally expands the first listing in-app.
   private func sendTestBuyboxNotification() {
     UIImpactFeedbackGenerator(style: .light).impactOccurred()
     let listingId: String
@@ -140,29 +140,30 @@ private struct RepricingScreen: View {
       listingId = "test-buybox"
       productName = "Test listing"
     }
-    NotificationCenter.default.post(
-      name: BuyboxPushNotification.openListing,
-      object: nil,
-      userInfo: [
-        BuyboxPushNotification.listingIdKey: listingId,
-        BuyboxPushNotification.productNameKey: productName,
-      ]
-    )
-    if listingId == "test-buybox" {
-      toastMessage = "No listings to expand (load listings first)"
-      Task { @MainActor in
+    Task { @MainActor in
+      do {
+        let message = try await vm.sendTestBuyboxPush(listingId: listingId, productName: productName)
+        toastMessage = message
+        if listingId != "test-buybox" {
+          NotificationCenter.default.post(
+            name: BuyboxPushNotification.openListing,
+            object: nil,
+            userInfo: [
+              BuyboxPushNotification.listingIdKey: listingId,
+              BuyboxPushNotification.productNameKey: productName,
+            ]
+          )
+          try? await Task.sleep(nanoseconds: 350_000_000)
+          expandedListingId = listingId
+        }
         try? await Task.sleep(nanoseconds: 2_500_000_000)
         toastMessage = nil
+      } catch {
+        let msg = (error as NSError).localizedDescription
+        toastMessage = msg
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
+        toastMessage = nil
       }
-      return
-    }
-    // Defer expand so it runs after the menu dismisses; otherwise the state update can be lost.
-    Task { @MainActor in
-      try? await Task.sleep(nanoseconds: 350_000_000) // 0.35s
-      expandedListingId = listingId
-      toastMessage = "Opened first listing"
-      try? await Task.sleep(nanoseconds: 1_500_000_000)
-      toastMessage = nil
     }
   }
 
@@ -220,7 +221,7 @@ private struct RepricingScreen: View {
               Button {
                 sendTestBuyboxNotification()
               } label: {
-                Label("Test buybox notification", systemImage: "bell.badge")
+                Label("Test buybox push", systemImage: "bell.badge")
               }
               Button(role: .destructive) {
                 auth.signOut()
@@ -516,6 +517,11 @@ private struct RepricingScreen: View {
         Text("Market: \(minAgo == 0 ? "just now" : "\(minAgo) min ago")")
           .font(.caption2)
           .foregroundStyle(NeonTheme.textSecondary.opacity(0.85))
+      }
+      if let msg = vm.marketDataErrorMessage, !msg.isEmpty {
+        Text(msg)
+          .font(.caption2)
+          .foregroundStyle(.orange)
       }
       if isSelectionMode && !selectedListingIds.isEmpty {
         batchApplyBar
@@ -853,10 +859,12 @@ private struct RepricingScreen: View {
         .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
       }
       .foregroundStyle(NeonTheme.accentCyan)
+      .disabled(false)
+      .allowsHitTesting(true)
     }
   }
 
-  /// Inline neon dropdown (no full-screen popover).
+  /// Inline neon dropdown (no full-screen popover). Stays interactive during refresh (zIndex + allowsHitTesting).
   private var sortMenuInlineContent: some View {
     VStack(alignment: .leading, spacing: 0) {
       ForEach(RepricingSort.allCases, id: \.rawValue) { option in
@@ -894,6 +902,8 @@ private struct RepricingScreen: View {
       RoundedRectangle(cornerRadius: 16, style: .continuous)
         .stroke(NeonTheme.border, lineWidth: 1)
     )
+    .zIndex(100)
+    .allowsHitTesting(true)
   }
 }
 
@@ -910,6 +920,7 @@ private struct RepricingRowView: View {
   @State private var selectedRule: String
   @State private var minText: String
   @State private var maxText: String
+  @State private var manualPriceText: String = ""
   @State private var isSaving: Bool = false
   @State private var saveError: String?
   @State private var showSavedFeedback: Bool = false
@@ -926,6 +937,8 @@ private struct RepricingRowView: View {
     _selectedRule = State(initialValue: listing.pricingStrategyType ?? "keep_current")
     _minText = State(initialValue: Self.formatBound(listing.minPrice))
     _maxText = State(initialValue: Self.formatBound(listing.maxPrice))
+    let rule = listing.pricingStrategyType ?? "keep_current"
+    _manualPriceText = State(initialValue: rule == "manual" ? Self.formatBound(listing.minPrice ?? listing.maxPrice) : "")
   }
 
   private static func formatBound(_ v: Double?) -> String {
@@ -959,12 +972,14 @@ private struct RepricingRowView: View {
       selectedRule = listing.pricingStrategyType ?? "keep_current"
       minText = Self.formatBound(listing.minPrice)
       maxText = Self.formatBound(listing.maxPrice)
+      manualPriceText = selectedRule == "manual" ? Self.formatBound(listing.minPrice ?? listing.maxPrice) : ""
     }
     .onChange(of: isExpanded) { expanded in
       if expanded {
         selectedRule = listing.pricingStrategyType ?? "keep_current"
         minText = Self.formatBound(listing.minPrice)
         maxText = Self.formatBound(listing.maxPrice)
+        manualPriceText = selectedRule == "manual" ? Self.formatBound(listing.minPrice ?? listing.maxPrice) : ""
         saveError = nil
       }
     }
@@ -1069,6 +1084,8 @@ private struct RepricingRowView: View {
           Text(formatPrice(listing.currentPrice))
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(NeonTheme.accentCyan)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
         }
         VStack(alignment: .trailing, spacing: 2) {
           HStack(spacing: 4) {
@@ -1083,11 +1100,15 @@ private struct RepricingRowView: View {
           Text(marketPriceLabel)
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(NeonTheme.textSecondary)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
         }
       }
       Text("Flex: $\(flexPriceLabel)")
         .font(.caption2)
         .foregroundStyle(NeonTheme.textSecondary.opacity(0.9))
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
     }
   }
 
@@ -1193,6 +1214,7 @@ private struct RepricingRowView: View {
         Button {
           UIImpactFeedbackGenerator(style: .light).impactOccurred()
           selectedRule = opt.value
+          if opt.value == "manual" { manualPriceText = minText }
           showRuleMenu = false
         } label: {
           HStack {
@@ -1245,24 +1267,36 @@ private struct RepricingRowView: View {
           rowRuleDropdown
             .accessibilityLabel("Pricing rule")
         }
-        HStack(spacing: 12) {
+        if selectedRule == "manual" {
           VStack(alignment: .leading, spacing: 4) {
-            Text("Min $")
+            Text("Price $")
               .font(.caption.weight(.semibold))
               .foregroundStyle(NeonTheme.textSecondary)
-            TextField("Optional", text: $minText)
+            TextField("Enter price", text: $manualPriceText)
               .keyboardType(.decimalPad)
               .neonTextFieldStyle()
-              .accessibilityLabel("Minimum price in dollars")
+              .accessibilityLabel("Manual price in dollars")
           }
-          VStack(alignment: .leading, spacing: 4) {
-            Text("Max $")
-              .font(.caption.weight(.semibold))
-              .foregroundStyle(NeonTheme.textSecondary)
-            TextField("Optional", text: $maxText)
-              .keyboardType(.decimalPad)
-              .neonTextFieldStyle()
-              .accessibilityLabel("Maximum price in dollars")
+        } else {
+          HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Min $")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(NeonTheme.textSecondary)
+              TextField("Optional", text: $minText)
+                .keyboardType(.decimalPad)
+                .neonTextFieldStyle()
+                .accessibilityLabel("Minimum price in dollars")
+            }
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Max $")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(NeonTheme.textSecondary)
+              TextField("Optional", text: $maxText)
+                .keyboardType(.decimalPad)
+                .neonTextFieldStyle()
+                .accessibilityLabel("Maximum price in dollars")
+            }
           }
         }
         if let err = saveError {
@@ -1296,15 +1330,23 @@ private struct RepricingRowView: View {
 
   private func save() async {
     saveError = nil
-    let minVal = parseBound(minText)
-    let maxVal = parseBound(maxText)
-    if selectedRule == "manual" && (minVal == nil || minVal ?? 0 <= 0) {
-      saveError = "Min price required for Manual"
-      return
-    }
-    if let a = minVal, let b = maxVal, a >= b {
-      saveError = "Min must be less than Max"
-      return
+    let minVal: Double?
+    let maxVal: Double?
+    if selectedRule == "manual" {
+      let p = parseBound(manualPriceText)
+      if p == nil || (p ?? 0) <= 0 {
+        saveError = "Enter a price for Manual"
+        return
+      }
+      minVal = p
+      maxVal = p
+    } else {
+      minVal = parseBound(minText)
+      maxVal = parseBound(maxText)
+      if let a = minVal, let b = maxVal, a >= b {
+        saveError = "Min must be less than Max"
+        return
+      }
     }
     isSaving = true
     defer { isSaving = false }

@@ -11,6 +11,8 @@ final class RepricingViewModel: ObservableObject {
   @Published private(set) var needsStockXAuth: Bool = false
   /// When we last fetched market data (for cache TTL and "prices as of" UI).
   @Published private(set) var lastMarketDataFetchedAt: Date?
+  /// Non-fatal: market data fetch failed (e.g. 401, rate limit). User can pull to refresh.
+  @Published private(set) var marketDataErrorMessage: String?
 
   private let repo: RepricingRepositoryProtocol
   private let getIDToken: (Bool) async throws -> String?
@@ -27,6 +29,7 @@ final class RepricingViewModel: ObservableObject {
   func refresh(forceRefresh: Bool = false) async {
     print("[Repricing] refresh() called.")
     errorMessage = nil
+    marketDataErrorMessage = nil
     needsStockXAuth = false
 
     // Use forceRefresh: true so pull-to-refresh gets a valid token (same as toolbar button behavior).
@@ -68,6 +71,8 @@ final class RepricingViewModel: ObservableObject {
       for i in merged.indices {
         merged[i].fetchedIndex = i
       }
+      listings = merged
+      totalCount = total
       if !merged.isEmpty {
         let norm = Self.normalizeListingId
         let cacheValid: Bool = {
@@ -83,26 +88,40 @@ final class RepricingViewModel: ObservableObject {
               merged[i].flexLowestAsk = pair.flexLowestAsk
             }
           }
+          listings = merged
           let minAgo = Int(-last.timeIntervalSinceNow / 60)
           print("[Repricing] refresh: using cached market data (\(minAgo) min old).")
         } else {
           let newestFirst = merged.sorted { $0.fetchedIndex < $1.fetchedIndex }
           let toFetch = Array(newestFirst.prefix(100)).map { (listingId: $0.listingId, productId: $0.productId, variantId: $0.variantId) }
-          do {
-            let marketMap = try await repo.fetchMarketData(idToken: token, listings: toFetch)
-            var newCache: [String: (lowestAsk: Double?, flexLowestAsk: Double?)] = [:]
-            for i in merged.indices {
-              let key = norm(merged[i].listingId)
-              if let pair = marketMap[key] ?? marketMap[merged[i].listingId] {
-                merged[i].lowestAsk = pair.lowestAsk
-                merged[i].flexLowestAsk = pair.flexLowestAsk
-                newCache[key] = pair
+          let chunkSize = 25
+          var anyChunkSucceeded = false
+          var lastChunkError: Error?
+          for start in stride(from: 0, to: toFetch.count, by: chunkSize) {
+            let end = min(start + chunkSize, toFetch.count)
+            let chunk = Array(toFetch[start..<end])
+            do {
+              let marketMap = try await repo.fetchMarketData(idToken: token, listings: chunk)
+              for i in merged.indices {
+                let key = norm(merged[i].listingId)
+                if let pair = marketMap[key] ?? marketMap[merged[i].listingId] {
+                  merged[i].lowestAsk = pair.lowestAsk
+                  merged[i].flexLowestAsk = pair.flexLowestAsk
+                }
               }
+              listings = merged
+              anyChunkSucceeded = true
+              for (key, pair) in marketMap {
+                marketDataCache[key] = pair
+              }
+              lastMarketDataFetchedAt = Date()
+              print("[Repricing] refresh: merged market data chunk \(start/chunkSize + 1) (\(chunk.count) listings).")
+            } catch {
+              lastChunkError = error
+              print("[Repricing] refresh: market data chunk failed: \(error). Continuing.")
             }
-            marketDataCache = newCache
-            lastMarketDataFetchedAt = Date()
-            print("[Repricing] refresh: merged market data for \(min(merged.count, 100)) listings (newest first), cache updated.")
-          } catch {
+          }
+          if !anyChunkSucceeded {
             if !marketDataCache.isEmpty {
               for i in merged.indices {
                 let key = norm(merged[i].listingId)
@@ -111,15 +130,15 @@ final class RepricingViewModel: ObservableObject {
                   merged[i].flexLowestAsk = pair.flexLowestAsk
                 }
               }
-              print("[Repricing] refresh: market data failed, using stale cache.")
+              listings = merged
+              print("[Repricing] refresh: using stale cache after chunk failures.")
             } else {
-              print("[Repricing] refresh: market data failed: \(error). Continuing without.")
+              marketDataErrorMessage = "Market data couldn’t load. Pull to refresh."
+              print("[Repricing] refresh: all market data chunks failed: \(lastChunkError.map { "\($0)" } ?? "unknown").")
             }
           }
         }
       }
-      listings = merged
-      totalCount = total
       print("[Repricing] refresh: success, listings=\(merged.count), total=\(total ?? -1).")
     } catch let err as NSError {
       if err.domain == "FlipFlowNative.Repricing", err.code == 401 {
@@ -267,5 +286,13 @@ final class RepricingViewModel: ObservableObject {
     let url = try await repo.startStockXAuth(idToken: token)
     print("[Repricing] getStockXAuthURL: got auth URL.")
     return url
+  }
+
+  /// Sends a test buybox push to the current user's device(s). Returns success message or throws.
+  func sendTestBuyboxPush(listingId: String, productName: String) async throws -> String {
+    guard let token = try await getIDToken(true), !token.isEmpty else {
+      throw NSError(domain: "FlipFlowNative.Repricing", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not signed in"])
+    }
+    return try await repo.sendTestBuyboxPush(idToken: token, listingId: listingId, productName: productName)
   }
 }

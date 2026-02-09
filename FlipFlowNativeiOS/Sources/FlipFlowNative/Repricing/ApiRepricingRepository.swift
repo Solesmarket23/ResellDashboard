@@ -10,6 +10,8 @@ protocol RepricingRepositoryProtocol {
   func savePricingSetting(idToken: String, listingId: String, productId: String?, variantId: String?, strategyType: String, minPrice: Double?, maxPrice: Double?) async throws
   /// Fetch market data (lowestAsk, flexLowestAsk) for given listings. Returns map listingId -> (lowestAsk, flexLowestAsk).
   func fetchMarketData(idToken: String, listings: [(listingId: String, productId: String?, variantId: String?)]) async throws -> [String: (lowestAsk: Double?, flexLowestAsk: Double?)]
+  /// Send a test buybox push to the current user's device(s). Returns message or throws.
+  func sendTestBuyboxPush(idToken: String, listingId: String, productName: String) async throws -> String
 }
 
 final class ApiRepricingRepository: RepricingRepositoryProtocol {
@@ -156,6 +158,7 @@ final class ApiRepricingRepository: RepricingRepositoryProtocol {
     var req = URLRequest(url: url)
     req.httpMethod = "POST"
     req.cachePolicy = .reloadIgnoringLocalCacheData
+    req.timeoutInterval = 180 // Backend fetches up to 100 listings sequentially from StockX; can take 1–2+ min
     req.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -185,6 +188,39 @@ final class ApiRepricingRepository: RepricingRepositoryProtocol {
     }
     return out
   }
+
+  func sendTestBuyboxPush(idToken: String, listingId: String, productName: String) async throws -> String {
+    let url = baseURL.appendingPathComponent("api/notifications/push/test-buybox")
+    var req = URLRequest(url: url)
+    req.httpMethod = "POST"
+    req.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    req.httpBody = try JSONSerialization.data(withJSONObject: [
+      "listingId": listingId,
+      "productName": productName,
+    ])
+
+    let (data, resp) = try await URLSession.shared.data(for: req)
+    let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+    let decoded = try? JSONDecoder().decode(TestBuyboxPushResponse.self, from: data)
+
+    if status == 400, let err = decoded?.error, !err.isEmpty {
+      throw NSError(domain: "FlipFlowNative.Repricing", code: 400, userInfo: [NSLocalizedDescriptionKey: err])
+    }
+    if status == 401 {
+      throw NSError(domain: "FlipFlowNative.Repricing", code: 401, userInfo: [NSLocalizedDescriptionKey: decoded?.error ?? "Not signed in"])
+    }
+    if status < 200 || status >= 300 {
+      throw NSError(domain: "FlipFlowNative.Repricing", code: status, userInfo: [NSLocalizedDescriptionKey: decoded?.error ?? "Failed to send test push"])
+    }
+    return decoded?.message ?? "Test push sent."
+  }
+}
+
+private struct TestBuyboxPushResponse: Decodable {
+  let success: Bool?
+  let error: String?
+  let message: String?
 }
 
 private struct MarketDataErrorResponse: Decodable {
